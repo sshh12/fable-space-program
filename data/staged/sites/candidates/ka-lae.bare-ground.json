@@ -8,7 +8,7 @@
     "lonDeg": -155.603239
   },
   "ground": "baked tiles of earth-ka-lae (live when resolved): level-12 heights (bilinear on the vertex grid: the collision surface), water mask and land cover; global level 7 beyond the finest coverage",
-  "tilesetContentHash": "f70a61d55dca902f",
+  "tilesetContentHash": "f5e6ef420bda7cea",
   "rule": {
     "searchRadiusKm": 95.0,
     "gridM": 30,

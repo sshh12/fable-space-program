@@ -1,18 +1,485 @@
 # Hand-off: site-bake (wave 3.1)
 
-Status: complete. The Madrakah region is baked and swapped into the live `earth` tile set (purely additive: 840
-new directories, 53,140 tiles, 0.46 GB; every existing Earth and Moon tile byte-identical, checked file by file);
-32 pads are resolved (16 per site, `data/staged/sites/`); the data supports keeping the Madrakah site (Q8 option A,
-section 5). `verify.py --region earth-madrakah` passes 24 of 27 checks: the three that fail are measured and
-explained in section 8 (relief shading baked into the imagery near the headland, reduced but not removed; a
-statistically marginal albedo seam excess of 0.03 sRGB levels at level 11). The running log is at the end.
+Status: follow-up round done (2026-11-12 05:00-10:30 Pacific), one item STOPPED for the lead. Madrakah was baked
+again (Copernicus GLO-30 instead of SRTM, the lead's near-shore sea floor, false inland water removed, de-shading
+refit) and swapped in by REPLACE (only the region's directories changed: 506 of its 840 plus `manifest.json`;
+section 0.7). Madrakah's 16 pads were re-resolved under the full LC-1 rule with the built-up and corridor gates,
+LOOKED at pad by pad, and moved along the coast to 19.08-19.37 N (section 0.2). **Ka Lae is stopped**: under the same
+gates only 9 of 16 pads fit within 95 km, so `ka-lae.pads.json` was withdrawn and two candidate layouts await the
+lead's decision (section 0.3). `verify.py --region earth-madrakah`: 24 of 27 pass, 2 WAIVED BY THE LEAD (relief
+shading, measured numbers in section 0.6), 1 fails (the level-11 albedo seam statistic, as in round 1). Sections 1-12
+below are round 1 as written then, marked where superseded. The running log is at the end.
+
+## 0. Follow-up round (the coordinator's review of 2026-11-12)
+
+### 0.1 What was asked and where it is answered
+
+| Item | Answer |
+|---|---|
+| A1 pads: no built-up land within max(blend, keep-out) + margin, no road, no wadi bed, LOOK at every pad | gates in `padresolve.py`; every Madrakah pad looked at (0.2) |
+| A2 launch corridors 60-130 deg to 12 km free of pads' keep-out discs and built-up land; per-pad table | gate, both ways; tables in 0.2 (Madrakah) and 0.3 (Ka Lae candidates) |
+| A3 Madrakah keeps the full LC-1 rule, 45-50 km search, along the coast north of the headland | `--strict --search-km 45`; moved along the coast (0.2) |
+| A3 Ka Lae: gates 1 and 2, ocean sector reported; replace the outliers; Q8 fall-back dry run | STOPPED: 9 of 16 fit; fall-back 8 of 32 (0.3) |
+| B4 near-shore sea floor: ETOPO only where it is itself sea deeper than the ramp | `seaFloorNearShore` "deeper" (0.5) |
+| B6 GLO-30 test at the pad field against SRTM, both pictures, licence | GLO-30 is better and was used (0.4) |
+| B6 REPLACE swap: staged, atomic at the manifest, nothing outside the region's rectangles | `stage.py` / `swaptree.replace_tree` (0.7) |
+| B7 false inland water | dropped by height range, slope and size (0.5) |
+| B8 de-shading refit, else WAIVED BY THE LEAD with the numbers | refit; still fails, reported as waived (0.6) |
+| After the bake: replace-swap, verify, exact changed directories | 0.6, 0.7 |
+| C5 request about `realData.test.ts`; Madrakah level-12 edge continuity not checked by the provider test | `docs/requests/site-bake-2.md`; 0.9 |
+| C10 `pads.test.ts` checks `bareFraction`; the pads file records the tile set's hash | done: `tilesetContentHash`, `rule.dry` (0.8) |
+
+### 0.2 Madrakah: re-resolved under the full LC-1 rule, moved along the coast
+
+`data/staged/sites/madrakah.pads.json` (replaced). Resolved on the live tile set after the replace swap
+(`tilesetContentHash` f5e6ef420bda7cea, recorded in the file) with:
+
+```
+bake.py pads --region earth-madrakah --site madrakah --nominal 19.0,57.8 --strict --search-km 45 --exclude <42 discs, section below>
+```
+
+**The rule** (every gate, `rule` in the file): flat (500 m disc: plane slope < 4 deg, relief <= 12 m), dry (the
+centre and 80 % of the disc bare ground: WorldCover bare / sparse vegetation, as LC-1), clear of the shore (no water
+within 600 m, height >= 15 m), on the coast (the sea within 6 km), **LC-1's open-ocean sector** (every azimuth
+60-130 deg reaches the sea within 6 km and the sector holds no land from there to 100 km: `--strict`, the lead's
+decision), **no built-up land** (WorldCover built-up) within max(blend, keep-out) + 300 m of the pad's class (heavy
+1,200 m, medium 900 m, light 600 m), **the launch corridor** (azimuths 60-130 deg out to 12 km free of built-up land
+and of every other pad's keep-out disc, both ways; keep-out heavy 600, medium 450, light 300 m), **not excluded after
+looking**, latitude < 20.5 deg; spacing as before (same class 2.5 / 1.5 / 1.0 km, two classes the mean). The corridor
+gate strings the pads north-south across the launch direction.
+
+**Moved along the coast.** Within 8.8 km of the nominal point no ground passed every gate and the look (the nearest
+candidates, 5-6 km north on the headland, had a graded road through the disc; the round-1 ground about the nominal
+point fails the open-ocean sector or lies within the built-up clearance): the field lies on the coastal plain north of Ras Madrakah, from 19.08 to 19.37 N, 8.8-41.0 km from the
+nominal point, on a strip 0.6-2.4 km behind the cliffed shore. The site's reference pad (`pads[0]`, lc-1, heavy) is
+at 19.078241 N 57.786868 E; the nominal point 19.0 N 57.8 E stays the region's centre. The heavy pads take the south
+of the strip (19.08-19.12 N, and one at 19.22 N), the medium and light pads the flat gravel plain at 19.25-19.37 N.
+
+**Looked at, every pad.** Each placement was rendered on the level-12 imagery with a hillshade of the level-12
+heights (1.4 km across, the 500 m disc drawn) and judged; ground with a graded road or track through the disc, in a
+wadi bed or a wadi channel network, on broken ground (outcrops, gullies, knolls) was excluded by a disc (`--exclude`)
+and the field re-resolved: thirteen runs, every new placement of each looked at (17 close-up sheets); 42 exclusion
+discs are recorded in the file (`rule.excluded`, with the reason for each; three of them are zones of 1.2-2.5 km
+where several candidates in a row were on dissected ground, and seven a strip along an east-west graded track at
+19.362 N). Faint vehicle tracks and thin rills that the pad apron erases were accepted and are noted below. Pictures: `out/bake/earth/site-bake/pads-madrakah-final-{a,b,c}.png` (every pad, 1.4
+km, imagery and hillshade), `pads-madrakah-sheet.png` (every pad, 2.6 km, flat / blend / built-up rings and corridor
+edges), `pads-madrakah-corridors.png` (the field, 45 km, keep-out discs and corridors); the rejected candidates in
+`pads-madrakah-closeup{1..15}.png`.
+
+What the pictures show per pad: lc-1 dark ophiolite gravel; lc-2 gravel with thin wadi rills in the west of the
+disc; lc-3 clean gravel; lc-4 gravel with faint tracks, a small knoll at the south-east edge; lc-5 a faint north-south
+track through the centre and thin rills; lc-6 thin rills; lc-7 plain, a line of shrubs along a shallow drainage at the
+north-east edge; lc-8 to lc-15 flat pale gravel plain, faint tracks; lc-16 plain, the east-west graded track 330 m
+south (outside its 300 m blend disc) and a pale outcrop 340 m east.
+
+Pads (`rule` and every evaluation in the file; columns as section 3, plus the distance to the sea and to built-up land with the class's need; "> 1500" = none in the 3 x 3 km window):
+
+| Pad | Class | Lat, lon | Elevation m | Slope deg | Relief m | Roughness 10 m (m) | Plane RMS m | Water m | Sea m | Built-up m (need) | Bare | Centre class | Ocean sector 60-130 | From nominal km |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| lc-1 | heavy | 19.078241, 57.786868 | 144.51 | 1.32 | 5.2 | 0.24 | 1.15 | 990 | 1000 | > 1500 (1200) | 1.00 | bareRock | open | 8.81 |
+| lc-2 | heavy | 19.100904, 57.788294 | 114.06 | 0.70 | 5.0 | 0.20 | 1.45 | 738 | 750 | > 1500 (1200) | 1.00 | sand | open | 11.29 |
+| lc-3 | heavy | 19.121947, 57.779726 | 108.50 | 0.28 | 1.5 | 0.10 | 0.46 | 1677 | 1701 | > 1500 (1200) | 1.00 | sand | open | 13.73 |
+| lc-4 | heavy | 19.224994, 57.723139 | 89.86 | 0.47 | 6.2 | 0.16 | 1.19 | 2391 | 2405 | > 1500 (1200) | 1.00 | sand | open | 26.29 |
+| lc-5 | medium | 19.247390, 57.730272 | 97.54 | 0.40 | 1.9 | 0.11 | 0.55 | 1250 | 1251 | > 1500 (900) | 1.00 | sand | open | 28.47 |
+| lc-6 | medium | 19.260073, 57.735411 | 96.74 | 0.29 | 6.2 | 0.14 | 0.59 | 642 | 652 | > 1500 (900) | 1.00 | sand | open | 29.70 |
+| lc-7 | medium | 19.271671, 57.727976 | 88.45 | 0.24 | 2.0 | 0.09 | 0.43 | 1364 | 1400 | > 1500 (900) | 1.00 | sand | open | 31.14 |
+| lc-8 | medium | 19.283545, 57.734830 | 91.45 | 0.14 | 1.4 | 0.08 | 0.51 | 607 | 608 | > 1500 (900) | 1.00 | sand | open | 32.26 |
+| lc-9 | medium | 19.295143, 57.727394 | 93.24 | 0.05 | 1.2 | 0.07 | 0.27 | 1421 | 1450 | > 1500 (900) | 1.00 | sand | open | 33.69 |
+| lc-10 | medium | 19.306208, 57.735679 | 93.15 | 0.04 | 0.7 | 0.07 | 0.23 | 610 | 618 | > 1500 (900) | 1.00 | bareRock | open | 34.71 |
+| lc-11 | light | 19.317540, 57.737676 | 92.72 | 0.09 | 1.9 | 0.07 | 0.29 | 611 | 618 | > 1500 (600) | 1.00 | sand | open | 35.91 |
+| lc-12 | light | 19.326444, 57.739102 | 91.71 | 0.26 | 1.7 | 0.08 | 0.48 | 611 | 618 | > 1500 (600) | 1.00 | sand | open | 36.86 |
+| lc-13 | light | 19.335078, 57.742244 | 85.64 | 0.29 | 1.6 | 0.09 | 0.37 | 622 | 626 | > 1500 (600) | 1.00 | sand | open | 37.75 |
+| lc-14 | light | 19.343713, 57.745672 | 83.51 | 0.04 | 0.9 | 0.07 | 0.21 | 615 | 632 | > 1500 (600) | 1.00 | sand | open | 38.64 |
+| lc-15 | light | 19.352347, 57.748815 | 84.37 | 0.16 | 1.0 | 0.07 | 0.25 | 622 | 640 | > 1500 (600) | 1.00 | sand | open | 39.55 |
+| lc-16 | light | 19.365568, 57.751956 | 88.52 | 0.26 | 2.8 | 0.10 | 0.47 | 790 | 800 | > 1500 (600) | 1.00 | sand | open | 40.96 |
+
+Launch corridors (per pad: the contiguous range of azimuths about 90 deg whose ray is free to 12 km of built-up land and of every other pad's keep-out disc; the nearest pad keep-out disc and the nearest built-up land in the 60-130 deg sector; every sector looks over the open sea, LC-1's rule):
+
+| Pad | Clear launch azimuths (deg, free to 12 km) | Nearest pad keep-out in the 60-130 deg sector | Nearest built-up land in the sector (to 30 km) |
+|---|---|---|---|
+| lc-1 | 17.5-130 | none | none within 30 km |
+| lc-2 | 0-156.5 | none | none within 30 km |
+| lc-3 | 0-145 | none | none within 30 km |
+| lc-4 | 27-141.5 | none | none within 30 km |
+| lc-5 | 38.5-180 | none | none within 30 km |
+| lc-6 | 10-160 | none | none within 30 km |
+| lc-7 | 46-131 | none | none within 30 km |
+| lc-8 | 13.5-168.5 | none | none within 30 km |
+| lc-9 | 53-131 | none | none within 30 km |
+| lc-10 | 23.5-171.5 | none | none within 30 km |
+| lc-11 | 26.5-168.5 | none | none within 30 km |
+| lc-12 | 36.5-171 | none | none within 30 km |
+| lc-13 | 38-180 | none | none within 30 km |
+| lc-14 | 36.5-180 | none | none within 30 km |
+| lc-15 | 24.5-180 | none | none within 30 km |
+| lc-16 | 0-180 | none | none within 30 km |
+
+Nearest built-up land in any direction (6 km window): lc-1 2.4 km at 133 deg, lc-2 4.5 km at 158 deg, lc-3 5.3 km at 348 deg, none within 6 km of lc-4 to lc-16.
+
+Ground excluded after looking (`rule.excluded`; centre, radius m, reason):
+
+| Centre | Radius m | Reason |
+|---|---|---|
+| 19.045056, 57.800571 | 800 | a graded track crosses the disc (looked at, level-12 imagery) |
+| 19.096585, 57.772877 | 600 | braided wadi channels across the disc |
+| 19.130041, 57.777155 | 600 | in a braided wadi bed |
+| 19.140024, 57.786863 | 600 | wadi channels converge at the centre |
+| 19.205577, 57.747432 | 800 | road junction and the bright wadi fan at the coast |
+| 19.051531, 57.794862 | 800 | the same graded track crosses the disc |
+| 19.099284, 57.778301 | 600 | braided wadi channels across the south of the disc |
+| 19.135436, 57.777440 | 600 | braided wadi channels across the disc |
+| 19.147038, 57.784863 | 600 | broken ground: wadis and outcrops |
+| 19.159719, 57.790289 | 600 | a gully through the centre, a wadi at the edge |
+| 19.212589, 57.738573 | 600 | wadi channels through the centre |
+| 19.237410, 57.735420 | 600 | a scarp along the south-east of the disc, wadi patches |
+| 19.119248, 57.774301 | 600 | a wadi bed across the north-west of the disc |
+| 19.134898, 57.791433 | 600 | wadi channels converge through the disc |
+| 19.150815, 57.780579 | 600 | braided wadis and broken ground |
+| 19.163496, 57.786004 | 600 | broken ground, outcrops and a gully |
+| 19.216098, 57.743143 | 600 | rocky hummocky ground, a gully at the south-east edge |
+| 19.231472, 57.730565 | 600 | a rocky knoll and its scarp on the east of the disc |
+| 19.140024, 57.794003 | 600 | wadi channel network across the disc |
+| 19.155402, 57.784006 | 600 | braided wadis through the disc |
+| 19.216095, 57.734000 | 600 | dense branching wadi channels |
+| 19.240645, 57.730561 | 600 | a wadi channel network across the disc |
+| 19.150000, 57.778000 | 2500 | wadi-dissected plain and outcrops between 19.13 and 19.17 N (eleven candidate pads looked at there) |
+| 19.213000, 57.739000 | 1500 | wadi-dissected rocky ground between 19.20 and 19.23 N (five candidate pads looked at there) |
+| 19.149462, 57.754018 | 700 | a graded road junction at the edge, an outcrop ridge through the disc |
+| 19.221219, 57.727426 | 600 | outcrops and hummocks in the disc |
+| 19.155937, 57.754874 | 900 | a graded road through the west of the disc and a junction (the same road as the last) |
+| 19.224998, 57.732282 | 600 | a rocky outcrop in the north-east of the disc |
+| 19.244000, 57.736000 | 700 | wadi channels cross the disc (four candidate pads looked at here) |
+| 19.278686, 57.727687 | 600 | a track with a line of objects crosses the disc |
+| 19.243072, 57.725416 | 700 | the same wadi crosses the centre with its branches |
+| 19.245000, 57.716000 | 1200 | wadi-dissected ground west of the coastal strip, 19.23-19.26 N (three candidate pads looked at there) |
+| 19.285161, 57.727970 | 600 | the same line of objects along a track crosses the disc |
+| 19.360712, 57.753102 | 500 | a straight graded track to the shore crosses the disc, a rocky patch at its east edge |
+| 19.360170, 57.743951 | 500 | the same track crosses the north of the disc, inside the light pad's blend radius |
+| 19.362400, 57.734000 | 400 | the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it) |
+| 19.362400, 57.738000 | 400 | the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it) |
+| 19.362400, 57.742000 | 400 | the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it) |
+| 19.362400, 57.746000 | 400 | the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it) |
+| 19.362400, 57.750000 | 400 | the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it) |
+| 19.362400, 57.754000 | 400 | the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it) |
+| 19.362400, 57.758000 | 400 | the east-west graded track at 19.362 N (a strip of discs along it; three candidate pads looked at on it) |
+
+### 0.3 Ka Lae: STOPPED for the lead (16 pads do not fit under the gates)
+
+Ka Lae was re-resolved under the same gates as Madrakah except the open-ocean sector (reported, as the lead
+decided): bare ground (LC-1's land-cover test), flat, clear of the shore, the sea within 6 km, no built-up land
+within the class radius, the launch corridor both ways, search up to 95 km from LC-1. **Only 9 of 16 pads fit**
+(LC-1 + 3 heavy + 4 medium + 1 light; 2 medium and 5 light unplaced). The old layout's pads 9-13 km west of LC-1
+(round 1, section 3) all lie in one another's corridors (they were clustered east-west) and two (lc-11, lc-15) were
+7-8 km inland at 661-706 m; with the corridor gate the field strings north-east along the Ka'u coast, 17-40 km from
+LC-1, on bare lava from above Punalu'u towards the Ka'u Desert, and runs out of bare, flat, coastal ground there.
+
+**LC-1 itself fails two of the new gates** (it is fixed by the design and kept): WorldCover built-up land 436 m
+east-north-east of it on the South Point shore (needs 1,200 m for a heavy pad), and that patch blocks its launch
+azimuth 90 deg within 12 km (nearest built-up in the sector: 0.5 km at 74 deg).
+
+Measured alternatives (each a complete computation on the live tiles; pictures LOOKED at):
+
+| Layout | Gates | Result | File |
+|---|---|---|---|
+| A | every gate (bare ground) | 9 of 16 (heavy 4 incl. LC-1, medium 4, light 1) | `data/staged/sites/candidates/ka-lae.bare-ground.json` |
+| B | dry = any land but water, wetland and built-up (a measurement, not LC-1's rule) | 16 of 16 within 62.9 km, but 11 of the 15 new pads have grass or trees at the centre (pasture around South Point and above Punalu'u), and the sheet shows roads inside the outer ring of three pads | `data/staged/sites/candidates/ka-lae.any-land.json` |
+| Q8 fall-back | every gate, 32 pads (8 heavy, 12 medium, 12 light) at Ka Lae, dry run | **8 of 32** (7 heavy, 1 light) | `out/bake/earth/site-bake/pads-ka-lae-q8-fallback-dryrun.json` (out/ only) |
+
+Both candidate files carry `"candidate": true` and the unplaced counts; fleet-data must not read them (it reads
+`<site>.pads.json` only, and `ka-lae.pads.json` was removed: commit f9ae0b7). The pads test checks every layout it
+finds (the resolved file, else the candidates) against every gate it records, and Madrakah's against the full rule.
+
+Decision for the lead (the design says 16 pads per site; this package does not choose): (1) accept fewer pads at Ka
+Lae (layout A: 9) and give Madrakah the rest: measured, Madrakah holds 20 pads within 50 km under every gate and
+the 42 exclusions when asked for 32 (8 heavy, 11 medium, 1 light, the field extended to 19.44 N; placements beyond the resolved 16 not
+looked at; dry run `out/bake/earth/site-bake/pads-madrakah-32-dryrun.json`), so 9 + 20 = 29 by this greedy measure,
+short of 32; (2) relax the dry gate at
+Ka Lae (layout B: pads on pasture, roads to be checked pad by pad), or (3) change a gate (corridor reach or the
+built-up radius). The Q8 fall-back (all 32 at Ka Lae) is not possible under these gates: 8 of 32.
+
+Layout A, every gate (`ka-lae.bare-ground.json`, 9 pads; resolved on the live tile set f5e6ef420bda7cea):
+
+| Pad | Class | Lat, lon | Elevation m | Slope deg | Relief m | Roughness 10 m (m) | Plane RMS m | Water m | Sea m | Built-up m (need) | Bare | Centre class | Ocean sector 60-130 | From nominal km |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| lc-1 (fixed) | heavy | 18.987556, -155.603239 | 21.62 | 0.89 | 4.2 | 0.20 | 1.25 | 601 | 1001 | 436 (1200) | 0.80 | bareRock | open | 0.00 |
+| lc-2 | heavy | 19.145439, -155.485194 | 18.31 | 0.45 | 5.7 | 0.21 | 1.33 | 620 | 650 | > 1500 (1200) | 0.83 | bareRock | no: 60 deg, no sea within reach | 21.50 |
+| lc-3 | heavy | 19.181564, -155.446605 | 130.31 | 3.13 | 6.1 | 0.47 | 2.27 | 2049 | 2081 | 1217 (1200) | 0.81 | bareRock | no: 60 deg, no sea within reach | 27.14 |
+| lc-4 | heavy | 19.203412, -155.440870 | 271.86 | 2.87 | 6.7 | 0.50 | 2.46 | 3424 | 3440 | > 1500 (1200) | 0.83 | bareRock | no: 60 deg, no sea within reach | 29.45 |
+| lc-5 | medium | 19.224447, -155.430278 | 397.61 | 3.15 | 7.8 | 0.44 | 2.95 | > 3000 | 4699 | > 1500 (900) | 0.80 | bareRock | no: 60 deg, no sea within reach | 32.00 |
+| lc-6 | medium | 19.248155, -155.397103 | 475.44 | 2.89 | 10.0 | 0.55 | 2.41 | > 3000 | 5607 | > 1500 (900) | 0.80 | bareRock | no: 60 deg, no sea within reach | 36.18 |
+| lc-7 | medium | 19.262972, -155.378508 | 537.92 | 3.10 | 7.2 | 0.46 | 2.78 | > 3000 | 5443 | > 1500 (900) | 0.83 | bareRock | no: 60 deg, no sea within reach | 38.67 |
+| lc-8 | medium | 19.275105, -155.372204 | 605.53 | 3.73 | 8.3 | 0.63 | 2.44 | > 3000 | 5946 | > 1500 (900) | 0.81 | bareRock | no: 60 deg, no sea within reach | 40.14 |
+| lc-9 | light | 19.119289, -155.521192 | 19.02 | 1.62 | 7.1 | 0.36 | 2.55 | 611 | 632 | 727 (600) | 0.82 | bareRock | no: 60 deg, land at 6.0 km | 17.00 |
+
+| Pad | Clear launch azimuths (deg, free to 12 km) | Nearest pad keep-out in the 60-130 deg sector | Nearest built-up land in the sector (to 30 km) |
+|---|---|---|---|
+| lc-1 | blocked at 90 | none | 0.5 km at 74 deg |
+| lc-2 | 58.5-180 | none | 27.7 km at 60 deg |
+| lc-3 | 41-137 | none | none within 30 km |
+| lc-4 | 47.5-176 | none | 20.8 km at 69 deg |
+| lc-5 | 59-180 | none | 26.6 km at 61 deg |
+| lc-6 | 60-180 | none | 15.1 km at 80 deg |
+| lc-7 | 44-180 | none | 13.1 km at 86 deg |
+| lc-8 | 9.5-180 | none | 16.8 km at 63 deg |
+| lc-9 | 60-180 | none | none within 30 km |
+
+Layout B, dry = any land (`ka-lae.any-land.json`, 16 pads; a measurement):
+
+| Pad | Class | Lat, lon | Elevation m | Slope deg | Relief m | Roughness 10 m (m) | Plane RMS m | Water m | Sea m | Built-up m (need) | Bare | Centre class | Ocean sector 60-130 | From nominal km |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| lc-1 (fixed) | heavy | 18.987556, -155.603239 | 21.62 | 0.89 | 4.2 | 0.20 | 1.25 | 601 | 1001 | 436 (1200) | 1.00 | bareRock | open | 0.00 |
+| lc-2 | heavy | 19.031892, -155.585735 | 170.33 | 1.51 | 11.5 | 0.35 | 2.10 | 1457 | 1485 | 1449 (1200) | 1.00 | grass | no: 60 deg, land at 54.0 km | 5.26 |
+| lc-3 | heavy | 19.053473, -155.567750 | 153.10 | 3.10 | 10.2 | 0.51 | 2.81 | 1536 | 1552 | 1208 (1200) | 1.00 | grass | no: 60 deg, land at 45.4 km | 8.22 |
+| lc-4 | heavy | 19.143824, -155.491193 | 15.11 | 0.48 | 5.0 | 0.15 | 1.08 | 660 | 680 | 1822 (1200) | 1.00 | grass | no: 60 deg, no sea within reach | 20.99 |
+| lc-5 | medium | 19.010848, -155.592015 | 32.48 | 1.64 | 7.0 | 0.31 | 1.77 | 902 | 949 | 914 (900) | 1.00 | trees | open | 2.85 |
+| lc-6 | medium | 18.950141, -155.635378 | 37.43 | 2.30 | 7.7 | 0.44 | 2.12 | 613 | 636 | 1085 (900) | 1.00 | grass | open | 5.36 |
+| lc-7 | medium | 19.179405, -155.446036 | 113.83 | 3.15 | 6.8 | 0.47 | 2.12 | 1858 | 1860 | 1006 (900) | 1.00 | bareRock | no: 60 deg, no sea within reach | 26.98 |
+| lc-8 | medium | 19.191283, -155.454309 | 176.24 | 3.51 | 7.9 | 0.59 | 2.87 | 3358 | 3434 | 1187 (900) | 1.00 | trees | no: 60 deg, no sea within reach | 27.53 |
+| lc-9 | medium | 19.204773, -155.454582 | 262.33 | 2.83 | 10.9 | 0.54 | 3.31 | > 3000 | 4482 | 912 (900) | 1.00 | grass | no: 60 deg, no sea within reach | 28.76 |
+| lc-10 | medium | 19.218262, -155.453713 | 334.85 | 3.11 | 8.0 | 0.47 | 2.84 | > 3000 | 5552 | 927 (900) | 1.00 | grass | no: 60 deg, no sea within reach | 30.08 |
+| lc-11 | light | 19.119019, -155.522620 | 17.93 | 1.73 | 11.6 | 0.42 | 3.43 | 620 | 650 | 611 (600) | 1.00 | bareRock | no: 60 deg, land at 6.0 km | 16.90 |
+| lc-12 | light | 19.226079, -155.445134 | 391.28 | 3.48 | 7.0 | 0.54 | 2.45 | > 3000 | 5604 | 1087 (600) | 1.00 | grass | no: 60 deg, no sea within reach | 31.30 |
+| lc-13 | light | 19.233088, -155.439127 | 442.78 | 2.71 | 7.2 | 0.39 | 1.86 | > 3000 | 5972 | 1129 (600) | 1.00 | grass | no: 60 deg, no sea within reach | 32.29 |
+| lc-14 | light | 19.268101, -155.380788 | 566.53 | 3.32 | 6.9 | 0.57 | 2.49 | > 3000 | 5988 | > 1500 (600) | 1.00 | bareRock | no: 60 deg, no sea within reach | 38.98 |
+| lc-15 | light | 19.276991, -155.370200 | 612.98 | 3.88 | 5.7 | 0.58 | 1.93 | > 3000 | 5999 | > 1500 (600) | 1.00 | bareRock | no: 60 deg, no sea within reach | 40.44 |
+| lc-16 | light | 19.335624, -155.131657 | 668.80 | 4.00 | 7.6 | 0.57 | 2.12 | > 3000 | 5727 | > 1500 (600) | 1.00 | grass | no: 60 deg, no sea within reach | 62.86 |
+
+| Pad | Clear launch azimuths (deg, free to 12 km) | Nearest pad keep-out in the 60-130 deg sector | Nearest built-up land in the sector (to 30 km) |
+|---|---|---|---|
+| lc-1 | blocked at 90 | none | 0.5 km at 74 deg |
+| lc-2 | 50-150.5 | none | none within 30 km |
+| lc-3 | 36.5-180 | none | none within 30 km |
+| lc-4 | 54.5-180 | lc-16 at 43.4 km, 60 deg | none within 30 km |
+| lc-5 | 53.5-130.5 | none | none within 30 km |
+| lc-6 | 60-173 | none | none within 30 km |
+| lc-7 | 36.5-130 | lc-16 at 37.3 km, 62 deg | none within 30 km |
+| lc-8 | 44-130 | lc-16 at 37.5 km, 65 deg | none within 30 km |
+| lc-9 | 49.5-153.5 | lc-16 at 36.9 km, 67 deg | none within 30 km |
+| lc-10 | 60-162 | lc-16 at 36.2 km, 69 deg | 28.9 km at 62 deg |
+| lc-11 | 58.5-180 | none | none within 30 km |
+| lc-12 | 57.5-173 | lc-16 at 35.1 km, 70 deg | 27.8 km at 62 deg |
+| lc-13 | 60-179.5 | lc-16 at 34.2 km, 70 deg | 26.5 km at 61 deg |
+| lc-14 | 60-180 | lc-16 at 27.2 km, 74 deg | 13.1 km at 89 deg |
+| lc-15 | 9-180 | lc-16 at 25.9 km, 75 deg | 18.1 km at 65 deg |
+| lc-16 | 0-142.5 | none | 15.0 km at 84 deg |
+
+Pad sheets (2.6 km crops at level 12, flat / blend / built-up rings, corridor edges; and the corridors over the
+field): `out/bake/earth/site-bake/pads-ka-lae-allgates-{sheet,corridors}.png` (layout A),
+`pads-ka-lae-anyland-{sheet,corridors}.png` (layout B).
+
+### 0.4 The land source: Copernicus GLO-30 replaces SRTM (Terrarium)
+
+Test (before the re-bake): Copernicus DEM GLO-30 (1 arc-second, TanDEM-X 2011-2015, edited, EGM2008 like ETOPO; 8
+public tiles from the AWS bucket `copernicus-dem-30m`) against the SRTM-based Terrarium z14 tiles, both carried to
+the level-12 vertex grid the same way, at three points of the new pad field on the coastal plain (19.15, 19.25,
+19.35 N), 600 m (pad level) and 2 km across, imagery | SRTM hillshade x3 | GLO-30 hillshade x3:
+
+![GLO-30 against SRTM at pad level, 19.25 N](../../out/bake/earth/site-bake/glo30-vs-srtm-p1925-600m.png)
+![GLO-30 against SRTM, 2 km, 19.25 N](../../out/bake/earth/site-bake/glo30-vs-srtm-p1925-2km.png)
+
+(`out/` is not committed: the pictures are on this machine, with the 19.15 and 19.35 N pairs beside them.)
+
+| Point | Source | RMS finer than 30 m (m) | RMS curvature 10 m (m) | Slope median / p95 (deg) |
+|---|---|---|---|---|
+| 19.15 N 57.72 E | SRTM | 0.275 | 0.228 | 2.65 / 5.67 |
+| | GLO-30 | 0.160 | 0.115 | 1.16 / 3.99 |
+| 19.25 N 57.72 E | SRTM | 0.232 | 0.180 | 2.17 / 4.66 |
+| | GLO-30 | 0.094 | 0.076 | 0.79 / 2.03 |
+| 19.35 N 57.73 E | SRTM | 0.239 | 0.186 | 2.21 / 4.74 |
+| | GLO-30 | 0.071 | 0.061 | 0.50 / 1.14 |
+
+What the pictures show: the SRTM surface carries a blocky, diagonally streaked texture of about 0.25 m RMS that does
+not follow the imagery (a gravel plain with a median slope of 2.2-2.7 deg); GLO-30 is clean and its shallow
+channels lie where the imagery's wadis are. **GLO-30 was used** for land and inland water of the whole region
+(`sources.height.id` "copernicus-glo30"; `tools/bake/earth/glo30.py`). Licence: the Copernicus DEM GLO-30 public
+licence (free of charge, worldwide, any use, with attribution); the manifest's source and attribution lines read
+"produced using Copernicus WorldDEM-30 (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space GmbH 2014-2018
+provided under COPERNICUS by the European Union and ESA; all rights reserved" (the region file's `credit` and
+`attribution`); the Terrarium/SRTM attribution of the region is removed from the manifest by the replace.
+
+On the baked tiles at the new pads (`bake.py quality`, one pad per class, every number on the level-12 collision
+surface within 2 km of the pad, 10 m grid; columns as section 5; the cliffed shore lies within 2 km of each, and its
+3-7 % of slopes above 16 deg dominate the RMS columns, the medians are the plain):
+
+| Pad | Class | RMS diff 10 / 30 / 100 m | RMS curvature 10 / 30 m (ratio) | Finer than 30 m RMS | Slope median / p95 deg | Slope histogram 0-1/1-2/2-4/4-8/8-16/16-32/>32 % | Albedo neighbour RMS (sRGB) |
+|---|---|---|---|---|---|---|---|
+| lc-1 | heavy | 1.37 / 4.03 / 12.21 | 0.330 / 2.256 (0.15) | 0.48 | 1.9 / 26.1 | 18/35/25/8/4/7/3 | 10.4 |
+| lc-5 | medium | 1.18 / 3.19 / 6.89 | 0.391 / 1.947 (0.20) | 0.53 | 0.9 / 12.2 | 59/29/5/1/2/3/2 | 7.1 |
+| lc-11 | light | 1.56 / 3.94 / 7.22 | 0.491 / 2.233 (0.22) | 0.69 | 0.6 / 1.8 | 85/10/0/0/0/1/3 | 6.8 |
+
+Inside the pad discs the GLO-30 plain is smooth: roughness at 10 m 0.07-0.24 m, plane RMS 0.2-1.5 m (section 0.2).
+A hillshade with relief x3 shows a faint even dimple texture at the source's 30 m grid (amplitude about 0.1 m); in the
+imagery lit by a 45 deg sun (relief x1) it is not visible. Pictures: `out/bake/earth/site-bake/quality-madrakah-{overview,lc-1-*,lc-5-*,lc-11-*}.png`
+(regenerated on the GLO-30 tiles; LOOKED at: lc-5 at 2 km).
+**Q8 decision unchanged and stronger: keep the Madrakah site** (the source swap that section 5 named as the remedy
+is done; the fall-back to Ka Lae is not possible under the new gates, section 0.3).
+
+### 0.5 The Madrakah re-bake (one more bake, REPLACE swap)
+
+Same region, levels, coverage, imagery sources and pipeline as round 1 (section 4), with four changes, all region
+options of `data/defs/regions/earth-madrakah.json` (Ka Lae's configuration hashes unchanged):
+
+1. **Land source GLO-30** (section 0.4) instead of Terrarium/SRTM; `resolutionM` 30 as before (sourceCoverage at
+   levels 8-11, level 12 carries the level-11 procedural detail); `despikeBelow` kept.
+2. **Near-shore sea floor, the lead's rule** (`seaFloorNearShore` "deeper", `regsrc.py`): within 1.5 km of the
+   WorldCover coastline ETOPO counts only where it is itself sea deeper than the ramp, otherwise the ramp; the ramp
+   is 1:50 (`nearShoreSlope` 0.02, was 1:25) held at 30 m beyond 1.5 km; between 1.5 and 3 km the floor becomes
+   ETOPO. Round 1 blended ETOPO in from the coast, and ETOPO's coarse coast lies up to 1.3 km offshore of the real
+   one along this coast, so the floor sat at -1 m for a kilometre. A first version of the re-bake (ETOPO weighted
+   by its own depth, 1:25 ramp) was stopped after its heights because LOOKING at the profile showed a sill (the
+   ramp at -39 m 1 km out, ETOPO's -3.5 m at 1.3 km); 1:50 is the slope that meets ETOPO's own offshore gradient
+   without one. Profiles eastward from the coast (m below sea level; source formula on the region's grids):
+
+   | Latitude | 0 m | 250 m | 500 m | 1 km | 1.5 km | 2 km | 3 km | 5 km | ETOPO at 1 km |
+   |---|---|---|---|---|---|---|---|---|---|
+   | 19.0 N (the headland) | 1.3 | 4.2 | 13.4 | 15.3 | 20.8 | 26.2 | 28.5 | 41.4 | 15.3 |
+   | 19.075 N | 1.2 | 4.9 | 9.6 | 18.8 | 26.4 | 28.9 | 54.7 | 36.4 | 1.0 |
+   | 19.15 N | 1.2 | 4.8 | 9.7 | 19.5 | 29.4 | 36.2 | 39.2 | 20.1 | 15.6 |
+   | 19.25 N | 1.3 | 5.6 | 10.6 | 20.7 | 30.0 | 27.7 | 39.7 | 45.2 | 1.0 |
+   | 19.35 N | 1.2 | 4.6 | 9.3 | 18.2 | 26.6 | 29.8 | 31.2 | 40.0 | 15.6 |
+   | 19.45 N | 1.2 | 3.8 | 6.6 | 10.6 | 21.4 | 34.6 | 42.4 | 41.9 | 8.5 |
+
+   Known consequence: in the shallow bay south-west of the headland (ETOPO about -10 m) the floor within 3 km of
+   the shore is up to 20 m deeper than ETOPO (18.95 N: -30 m at 2.5 km against ETOPO's -8 m).
+3. **False inland water** (`watermask.inlandMaxRangeM` 2.5, `inlandMaxSlopeDeg` 5, `inlandMinAreaM2` 2,000): a
+   WorldCover water component not connected to the sea (20 m cells) becomes land when the land source under it
+   spans more than 2.5 m (5th to 95th percentile), its mean slope exceeds 5 deg, or it is smaller than 2,000 m2.
+   4,035 components, 3,075 made land (5.90 km2), mostly specks of a few WorldCover pixels beside tracks and dark
+   rock on the headland's hills. The two points of the review: 19.00601 N 57.81562 E (dark rock on a hillside) is
+   land; 18.99051 N 57.80224 E was three specks of 92 m2 together on a gravel plain beside a track (LOOKED at:
+   `out/bake/earth/site-bake/water-18.99051-57.80224.png`), now land.
+4. **De-shading refit on the GLO-30 normals** (level 10, slopes above 10 deg, ground above 5 m).
+
+Bake facts: `bake.py stage --region earth-madrakah --replace` through the bake gate with 4 workers (06:39-08:31 after
+a wait for the slot; the first attempt, 06:03-06:33, was stopped after its heights and water mask, above). WorldCover re-read (572
+water components, 1 the ocean); 8 GLO-30 tiles; level-12 corrections: no tile-edge pockets (GLO-30 has none), one
+downward needle removed (10 vertices in 1 tile, a pit 16 m deep at 19.14404 N 57.80163 E on the shore); 60,360
+Sentinel-2 requests again (the round-1 downloads had been cleaned up; 78 min at 12 per second); colour match land
+gains (0.946, 1.175, 1.615), water (0.216, 0.248, 0.630). Staged: 53,140 tiles, 0.42 GB. The staged region was
+checked for `.partial` and empty files before the swap (none). LOOKED at after the bake on the staged tiles: the
+19.075 N profile (-0.5 m at the coast, -9.8 m at 500 m, -18.4 m at 1 km, -26.6 m at 1.5 km, -28.6 m at 2 km, -54.3 m at
+3 km) and both review points are land (water mask 0).
+
+### 0.6 Verify, measured
+
+`python -I tools/bake/earth/verify.py --region earth-madrakah` (through the bake gate), staged before the swap and
+live after it: **24 of 27 pass, 2 WAIVED BY THE LEAD, 1 fails** (live; staged: 23 pass, the 24th was the old pads file
+against the new heights). Passing: 53,140 files present and decoded, no alpha, pyramid complete, pads (16 pads,
+level-12 height within 0.02 m of padElevation, every pad passes the rule), sourceCoverage, shared height edges
+identical, albedo seams at levels 8, 9, 10, 12, coverage edges at every level, coastline at every level, no inland
+pits, no needles, TypeScript decode.
+
+- **WAIVED BY THE LEAD: `no baked hillshade`** (the region's `verifyWaivers`, as the lead decided). The refit on the
+  GLO-30 normals gave alpha +0.412 (east), beta -0.298 (north) from 93,577 texels (round 1 on SRTM: +0.257 / -0.174
+  from 73,789). Paired east/west and north/south brightness of slopes above 5 deg against their 300 m surroundings
+  (need 1 +/- 0.03):
+
+  | Within 10 km of | Level 10 E/W, N/S | Level 12 E/W, N/S |
+  |---|---|---|
+  | the headland (round-1 reference pad 18.996 N 57.794 E), round 1 (SRTM) | 1.205, 0.954 | 1.099, 0.984 |
+  | the headland, re-bake (GLO-30), staged | 1.286, 1.017 | 1.313, 0.947 |
+  | the new field's reference pad (19.078 N 57.787 E), re-bake, live | 1.482, 1.129 | 1.513, 1.039 |
+
+  The ratio got larger, not smaller, although the correction is 60 % stronger. The likely reason is the selection:
+  on SRTM many of the "slopes above 5 deg" were noise on flat gravel, where the imagery has no shading, which pulled
+  the ratio toward 1; on GLO-30 the selected slopes are real, and the morning-sun shading on them is larger than a
+  Lambertian correction within its bounds removes. The lead decides (accept the residual shading, or ask for a
+  different de-shading).
+- **FAIL: `albedo seams` level 11**: border excess +0.0367 sRGB levels against a 2-s.e. bound of 0.0310 (300 borders;
+  round 1 +0.033 against 0.031). The same statistical excess as in round 1 (section 8: about 1-2 % of the neighbour
+  difference; a real seam is about 60 %); not waived.
+
+### 0.7 The REPLACE swap: exactly what changed
+
+`bake.py stage --region earth-madrakah --replace` baked the region under `data/cache/earth/stage/earth-madrakah/` with
+the live tiles readable throughout (routing only in processes with `EARTH_STAGE_REPLACE=earth-madrakah`);
+`bake.py swap` then (1) built the prospective manifest and checked it against the live one (the region's
+rectangles unchanged, its source and attribution lines replaced: the Terrarium/SRTM line removed, GLO-30's added),
+(2) refused unless the staged files are exactly the region's tile paths (`swaptree.replace_tree`: 53,140 = 4 layers x
+13,285; nothing outside the region's rectangles), (3) replaced each live file with `os.replace` (atomic per file,
+same volume), (4) checked the 750,486 promised tiles present and (5) wrote the manifest once, atomically. Manifest
+contentHash **f70a61d55dca902f -> f5e6ef420bda7cea** (09:44:33). A concurrent reader polled the live manifest for
+462 s across the swap: 174 reads (159 of the old manifest, 15 of the new), 0 failed reads, 9,246,360 existence
+checks of promised Madrakah tiles, 0 missing. The tiles were replaced over 73 s before the manifest changed: during
+that window a reader under the old manifest could load a mix of old and new Madrakah tiles (the price of replacing
+in place without versioned paths; a running app that loaded Madrakah tiles in that window should reload them).
+
+**Changed directories** (full form: names, bytes and content of every file, the terrain guard's own summary, taken
+before and after the swap): Earth 9,220 directories, **507 changed, 8,713 unchanged, 0 added, 0 removed**; Moon 2,344
+unchanged. The 507 are `.` (`manifest.json`, 21,925 -> 22,126 bytes) and 506 of the region's 840 column directories
+`{layer}/2/{level}/{x}` (the other 334, over open sea, came out byte-identical):
+
+| Layer | Level | Changed | x |
+|---|---|---|---|
+| height | 8 | 4 | 44-47 |
+| height | 9 | 8 | 88-95 |
+| height | 10 | 15 | 176-190 |
+| height | 11 | 29 | 353-381 |
+| height | 12 | 56 | 707-762 |
+| albedo | 8 | 9 | 43-51 |
+| albedo | 9 | 13 | 87-95, 99-102 |
+| albedo | 10 | 20 | 175-190, 199-202 |
+| albedo | 11 | 36 | 352-381, 398-403 |
+| albedo | 12 | 67 | 706-763, 797-805 |
+| watermask | 8 | 8 | 43-50 |
+| watermask | 9 | 9 | 88-95, 100 |
+| watermask | 10 | 18 | 176-190, 199-201 |
+| watermask | 11 | 32 | 352-380, 399-401 |
+| watermask | 12 | 55 | 706, 709-760, 799-800 |
+| landcover | 8 | 8 | 43-50 |
+| landcover | 9 | 11 | 87-95, 99-100 |
+| landcover | 10 | 19 | 175-190, 199-201 |
+| landcover | 11 | 32 | 352-380, 399-401 |
+| landcover | 12 | 57 | 706-760, 799-800 |
+
+Nothing outside the region's rectangles changed. The terrain guard (run after the swap): heights at the stored
+directions change only in the place group `site:madrakah` the lead appended (f072a36): 497 of its 800 points on
+the collision query, 525 on the band-limited one (the new land source; no uniform direction lies in the region's
+coverage, the nearest is 226 km from its centre); the directory test fails on the directories
+above. The lead re-records both and the mission golden's earth hash (f5e6ef420bda7cea; request site-bake-1).
+Region size: 53,140 files, 422,475,736 bytes (round 1: 461,133,283): height 187.8 MB, albedo 224.2 MB, landcover
+8.9 MB, watermask 1.6 MB.
+
+### 0.8 Files, tests, disk
+
+- Commits of this round: f9ae0b7 (Ka Lae withdrawn, candidates, sea floor rule, inland specks), 540d8d4 (strict
+  ocean pre-filter), a0c258b (Madrakah pads), ec38893 (cleanup), and the commit of this hand-off with the test.
+- `tests/unit/site-bake/pads.test.ts` checks every layout it finds: the resolved file of a site, else its candidate
+  layouts (complete or with the unplaced counts). Gates as recorded, with `bareFraction` the dry gate (`rule.dry`
+  "bareGround"; a candidate measured with "anyLand" is checked on `dryFraction`); the full rule (open ocean) at
+  Madrakah only; built-up clearance by class; corridors both ways and a clear 60-130 deg sector for every resolved
+  pad (a fixed pad, LC-1, is reported); `tilesetContentHash` equal to the live manifest's; and an independent
+  re-measurement with the real TerrainProvider. Result: site-bake 20 of 20 (`npx vitest run tests/unit/site-bake`, after the swap: Madrakah and both Ka Lae candidates; the TerrainProvider re-measurement on the live tiles: Madrakah heights within 0.31 m of padElevation, steepest 500 m disc 1.32 deg; Ka Lae layout A 0.25 m, 3.73 deg; layout B 1.49 m, 4.00 deg). Terrain guard after the swap: 5 of 7, the two failures are the lead's re-record (section 0.7).
+- Disk: free 33 GB after the cleanup (36.6 GB at 10:15; lowest during the round 26 GB, at 09:58, while other packages were writing too); `data/cache/earth` 0.92 GB as found (6.33 GB of downloads and intermediates deleted); the region's tiles 0.42 GB (0.04 GB less than round 1).
+
+### 0.9 What the next packages must know (replaces section 11 where they differ)
+
+- **fleet-data**: take Madrakah's pads from `data/staged/sites/madrakah.pads.json` (format of section 1, plus
+  `tilesetContentHash`, `corridors` and the rule fields `strict`, `dry`, `padRadii`, `builtUpMarginM`, `corridor`,
+  `excluded`). **Do not take Ka Lae's pads yet**: there is no `ka-lae.pads.json` until the lead decides (section
+  0.3); the candidate files in `data/staged/sites/candidates/` are not layouts to consume. Pads face 90 deg. The
+  pads were resolved for the radii of `rule.padRadii` (flat / blend / keep-out: heavy 450 / 900 / 600, medium 300 /
+  600 / 450, light 150 / 300 / 300 m): larger radii need a re-resolve.
+- **fleet-models-pads**: Madrakah's field is the gravel and ophiolite coastal plain north of Ras Madrakah, between
+  the cliffed shore and the inland plain, strung north-south over about 32 km (19.08-19.37 N); no built-up land
+  within 6 km of lc-4 to lc-16, 2.4-5.3 km from lc-1 to lc-3, none in any pad's launch sector within 30 km. Round 1's "town 2-4 km south-east of the southern pads" was
+  wrong: WorldCover built-up land lay 0.44 km east of round-1 lc-4 and 0.64 km south-east of lc-1, scattered
+  patches around the headland rather than one town.
+- **planet-render**: level-12 edge continuity of the height authority at Madrakah is NOT yet checked by the
+  provider test (`tests/unit/terrain-core/realData.test.ts` fails on its tile-cache budget since the region was
+  added: request site-bake-2); `verify.py --region` checks the coverage edges with the bake's own reader. Ground
+  checkpoints at one pad per class: lc-1 (heavy, 19.078 N, dark ophiolite gravel), lc-5 (medium, 19.247 N), lc-11
+  (light, 19.318 N); look for the faint 30 m dimple texture of the GLO-30 grid (section 0.4) and the residual relief
+  shading of the imagery on the headland's hills (section 0.6).
+- **The lead**: decide Ka Lae (section 0.3) and the hillshade waiver (section 0.6); audit the changed directories
+  (section 0.7), re-record the terrain guard and update the mission golden's earth hash (request site-bake-1).
 
 ## 1. What a consumer needs
 
 | Item | Where | Notes |
 |---|---|---|
-| Resolved pads, Ka Lae | `data/staged/sites/ka-lae.pads.json` | 16 pads (4 heavy, 6 medium, 6 light); LC-1 fixed; section 3 |
-| Resolved pads, Madrakah | `data/staged/sites/madrakah.pads.json` | 16 pads; section 3 |
+| Resolved pads, Ka Lae | none: WITHDRAWN (section 0.3); candidates in `data/staged/sites/candidates/` | awaiting the lead |
+| Resolved pads, Madrakah | `data/staged/sites/madrakah.pads.json` | 16 pads, re-resolved in the follow-up (section 0.2) |
 | Madrakah region | `data/defs/regions/earth-madrakah.json` | disc of 100 km about 19.0 N 57.8 E, levels 8-12, sources, the pad rule's numbers (`siteResolution`) |
 | Earth tile set | `data/tiles/earth/` | the Madrakah region added on face 2, levels 8-12, four layers; no existing tile changed (section 6) |
 | Ground-quality note (Q8) | section 5 | pictures in `out/bake/earth/site-bake/` |
@@ -22,11 +489,13 @@ statistically marginal albedo seam excess of 0.03 sRGB levels at level 11). The 
 
 ```
 { site, region, tileset: "earth", bodyId: "earth", nominal: {latDeg, lonDeg}, ground: <what the pads were resolved on>,
-  liveManifestContentHash, rule: { <the region's siteResolution numbers>, gates, reported, classes: {heavy|medium|light:
-  {count, spacingM}}, spacing }, referencePad: "lc-1",
+  tilesetContentHash, rule: { <the region's siteResolution numbers>, searchRadiusKm, gates, reported, strict, dry,
+  padRadii, builtUpMarginM, corridor: {azimuthDeg, reachKm}, excluded: [{latDeg, lonDeg, radiusM, reason}],
+  classes: {heavy|medium|light: {count, spacingM}}, spacing }, referencePad: "lc-1",
+  corridors: [ { id, clearAzimuthDeg: [from, to] | null, nearestPadInSector, nearestBuiltUpInSector30km } ],
   pads: [ { id, class, latDeg, lonDeg, padElevation, azimuthDeg, offsetEnu: [east, north], fixed,
             report: { naturalHeightM, slopeDeg, reliefM, planeRmsM, roughness10M, shoreDistanceM, shoreBeyondWindow,
-                      dryFraction, bareFraction, centreClass, oceanRays, siteTests, passes, failures,
+                      dryFraction, bareFraction, seaDistanceM, builtUpM, builtUpWindowM, builtUpRadiusM, centreClass, oceanRays, siteTests, passes, failures,
                       distanceFromNominalM } } ] }
 ```
 
@@ -46,6 +515,9 @@ python -I tools/bake/earth/bake.py swap    --region <id>     # move its tiles in
 python -I tools/bake/earth/bake.py pads    --region <id> --site <site> --nominal <lat,lon>
                                            [--fixed <id:class:lat:lon:elevation>]... [--azimuth 90]
                                            [--classes heavy=4:2500,medium=6:1500,light=6:1000] [--search-km N] [--strict]
+                                           [--exclude <lat:lon:radiusM:reason>]... [--dry-run] [--allow-partial]
+                                           [--dry-any-land] [--candidate-out <file>]      # follow-up round
+python -I tools/bake/earth/bake.py stage   --region <id> --replace   # bake a LIVE region again; `swap` then replaces it (follow-up)
 python -I tools/bake/earth/bake.py quality --region <id> --site <site>      # Q8 material (pictures, measurements)
 python -I tools/bake/earth/bake.py contact --region <id>     # the region's contact sheets only (staged or live)
 python -I tools/bake/earth/verify.py --region <id> [--quick] # region checks, staged (prospective manifest) or live
@@ -83,9 +555,20 @@ temporary file and `os.replace`. Every step is idempotent: an interrupted swap i
 `sources.height.resolutionM` (land source sample spacing: sourceCoverage only at levels whose parent samples more
 coarsely), `sources.height.credit` / `landSurvey` / `attribution` (manifest source and attribution text of the
 region's land source), `sources.albedo.deshadeFitMinHeightM` (ground used for the regional de-shading fit; default
-1500 m as at Ka Lae: on Madrakah's desert coast every height is sparsely vegetated).
+1500 m as at Ka Lae: on Madrakah's desert coast every height is sparsely vegetated). Added in the follow-up:
+`sources.height.id` "copernicus-glo30" (`glo30.py`), `sources.height.seaFloorNearShore` ("shallower" default,
+"deeper": the lead's rule), `sources.height.despikeBelow`, `sources.albedo.deshadeFitMinSlopeDeg`,
+`sources.watermask.inlandMaxRangeM` / `inlandMaxSlopeDeg` / `inlandMinAreaM2` (false inland water), `verifyWaivers`
+(a check prefix -> the lead's words: `verify.py` prints WAIVED BY THE LEAD with the measured numbers and does not
+fail on it). Python: `stage.begin(region_id, replace=False)`, `stage.is_replace(region_id)`,
+`swaptree.replace_tree(stage, live, allowed, *, delay_s=0.0, log=print) -> dict` (refuses unless the staged files
+are exactly `allowed`; `os.replace` per file).
 
-## 3. Pads
+## 3. Pads (round 1: WITHDRAWN, see sections 0.1-0.3)
+
+Both round-1 layouts below were withdrawn after the review: they gated neither built-up land nor the launch
+corridors (the pads were clustered east-west, in one another's launch sectors), and Madrakah's did not keep LC-1's
+open-ocean rule. `ka-lae.pads.json` was removed and `madrakah.pads.json` replaced. Kept here as the record.
 
 ### The rule and how it was applied
 
@@ -176,7 +659,7 @@ Ka Lae run before and after the resolver was sped up is identical).
 
 Columns: natural height at the centre (padElevation); slope of the plane through the 500 m disc; largest deviation from it (relief); roughness at 10 m = RMS height difference of points 10 m apart in the disc; RMS deviation from the plane; distance to the nearest water (sea or inland; "> 3000" = none in the 6 x 6 km window); dry = share of the disc not water or wetland; bare = share of bare ground (the gate, >= 0.80); the open-ocean sector (reported).
 
-## 4. The Madrakah regional bake
+## 4. The Madrakah regional bake (round 1; the land source, sea floor, inland water and de-shading changed in the follow-up re-bake: section 0.5)
 
 `data/defs/regions/earth-madrakah.json`: a disc of 100 km about the nominal point 19.0 N 57.8 E (4 km inside Ras
 Madrakah; the pads lie within 6 km of it), levels 8-12 all at 100 km, feather 5 km, one margin tile, height scales
@@ -213,7 +696,7 @@ plateau, 75 km west of the pads; found by `verify.py`'s pit check on the first b
 (0.209, 0.239, 0.629). Sizes: height 246 MB, albedo 237 MB, landcover 25 MB, watermask 16 MB (on disk); 53,140
 files, 461,133,283 bytes.
 
-## 5. Ground quality at Madrakah (OPEN_QUESTIONS Q8)
+## 5. Ground quality at Madrakah (OPEN_QUESTIONS Q8; round 1 on SRTM: the follow-up's GLO-30 note is section 0.4 and 0.6)
 
 Question: does the 30 m elevation data at Madrakah meet the v1 standard (Ka Lae, 10 m 3DEP) at pad level?
 
@@ -268,7 +751,7 @@ texture shows under the procedural detail. If it does, the data-side remedy is a
 Copernicus DEM GLO-30 (TanDEM-X based, lower noise, free with attribution; `regsrc.py` reads Terrarium today) or a
 low-pass of the land source below 60 m wavelength. The fall-back (all 32 pads at Ka Lae) was not resolved.
 
-## 6. The terrain guard: exactly what changes
+## 6. The terrain guard: exactly what changes (round 1, the additive swap; the follow-up replace: section 0.7)
 
 **Tile directories added to the Earth set** (all NEW; no directory that existed before holds a new, removed or
 changed file; checked byte for byte in section 8): for each layer `height` (`.hgt`), `albedo` (`.webp`), `watermask`
@@ -357,7 +840,8 @@ regional albedo 12 min, land cover 3 min, pads 15-30 s per site, quality picture
 
 Deviations from the brief (each within the design; say if one is unwelcome):
 
-1. **The open-ocean sector of LC-1's rule is reported per pad, not gated** (section 3): with it no second pad exists
+1. [Round 1; reversed by the lead: Madrakah now gates it, section 0.2] **The open-ocean sector of LC-1's rule is
+   reported per pad, not gated** (section 3): with it no second pad exists
    near LC-1. Ka Lae's fifteen new pads therefore lie 9-13 km west of LC-1 on the Kahuku lava flows ("move along the
    coast"), where a launch to the east crosses about 10 km of the South Point peninsula before the sea; at Madrakah
    one pad (lc-1) has the open sector, the others are 3-6 km inland behind the headland's hills.
@@ -391,7 +875,7 @@ Known limits:
 Requests filed: `docs/requests/site-bake-1.md` (lead: the mission golden and baseline record the earth manifest's
 contentHash, which the swap changes). Open requests against this package's paths: none found.
 
-## 11. What the next packages must know
+## 11. What the next packages must know (round 1; superseded by section 0.9)
 
 - **fleet-data** (wave 4.1, `data/defs/sites/*`): take the pads from `data/staged/sites/{ka-lae,madrakah}.pads.json`:
   `id`, `class`, `azimuthDeg`, `offsetEnu` into `PadDef`; `latDeg`, `lonDeg`, `padElevation` into
@@ -401,7 +885,8 @@ contentHash, which the swap changes). Open requests against this package's paths
   (the Arabian Sea east and south of the site is open water). Every pad faces 90 deg (LC-1's azimuth).
 - **fleet-models-pads**: Ka Lae's new pads are on dark bare lava like LC-1 (Kahuku flows, beside the Kahuku pali
   fault scarp); Madrakah's on sand and gravel with dark ophiolite hills to the east and the town of Madrakah 2-4 km
-  south-east of the southern pads. Site dressing per coast accordingly.
+  south-east of the southern pads [WRONG: built-up land lay 0.44 km from round-1 lc-4; section 0.9]. Site
+  dressing per coast accordingly.
 - **planet-render**: the ground checkpoints at one pad per class per site (31.3): Madrakah lc-1 (heavy, 37 m, the
   only pad with the open sea sector, 1 km from the shore), lc-5 (medium), lc-11 (light); Ka Lae lc-1, lc-5, lc-11.
   Look for the SRTM noise texture and the faint tile-edge lines (section 5) and the residual relief shading on the
@@ -469,3 +954,27 @@ contentHash, which the swap changes). Open requests against this package's paths
   missing tile in 7,521 reads. Guard after: heights bit-identical; full-form directory comparison: only the 840 new
   directories and `manifest.json`. site-bake tests 12 of 12 (the TerrainProvider check now covers Madrakah). Cleanup
   freed 5.95 GB. Request site-bake-1 filed.
+- After 05:00 (follow-up). Coordinator's review: pads withdrawn (no built-up or corridor gate; Madrakah must keep the
+  full LC-1 rule), one more Madrakah bake (land source test, near-shore sea floor, false inland water, de-shading
+  refit), REPLACE swap, request for `realData.test.ts`, `bareFraction` and the tile-set hash in the pads test.
+- 05:42. GLO-30 against SRTM at three points of the coastal plain, LOOKED at (section 0.4): GLO-30 clean, SRTM
+  blocky noise. GLO-30 chosen. Commit 8c97640 (GLO-30 source, REPLACE mode, inland filter, waivers).
+- 06:03. Replace re-bake started. 06:15-06:30 Ka Lae measured under the new gates: 9 of 16 pads (bare ground), 16
+  with dry = any land (pasture, roads), Q8 fall-back 8 of 32. Commit 6c3cd4c (gates, corridors, sheets).
+- 06:31. The staged sea floor LOOKED at on a profile at 19.075 N showed a sill (the ramp at -39 m 1 km out, ETOPO
+  -3.5 m at 1.3 km); one review water point still water (three specks of 92 m2). Re-bake stopped; rule rewritten to
+  the lead's words with a 1:50 ramp (profiles at six latitudes: section 0.5), inland specks under 2,000 m2 to land.
+  Commit f9ae0b7 (also: `ka-lae.pads.json` removed, two Ka Lae candidates). Re-bake restarted 06:39 (waited for the
+  bake slot), done 08:31.
+- 06:50. The strict pad search took hours (LC-1's ocean test on every candidate): a grid pre-filter for it. Commit
+  540d8d4.
+- 08:33-09:40. Madrakah pads resolved on the staged tiles and LOOKED at, pad by pad, thirteen runs, 42 exclusions
+  (roads, wadi beds, broken ground). The exclusions moved into the grid pre-filter and the ocean rays ahead of the
+  windows (the runs went from 10+ minutes to 3).
+- 08:35. Staged verify: 23 of 27, 2 waived (relief shading), 2 failed (the old pads file on the new heights; the
+  level-11 albedo seam statistic).
+- 09:42-09:44. Replace swap: 53,140 files replaced, manifest f70a61d55dca902f -> f5e6ef420bda7cea; concurrent reader
+  0 missing in 174 reads. Full-form before/after: 506 region directories and `.` changed, nothing else.
+- 09:55. Final Madrakah pads on the live tiles (commit a0c258b). Live verify 24 of 27, 2 waived, 1 failed. Ka Lae
+  candidates re-resolved on the live tile set (identical layouts, new hash). Cleanup freed 6.33 GB (run outside the
+  gate while planet-bake held the bake slot and the disk was at 26 GB: deletion only); commit ec38893.
