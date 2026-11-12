@@ -7,12 +7,22 @@
  *   node tools/dev/heavy.mjs --class=cpu  -- npx vitest run src/terrain
  *   node tools/dev/heavy.mjs --class=gpu  -- npx playwright test tests/browser/ocean --project=functional
  *   node tools/dev/heavy.mjs --class=bake --label=earth-albedo -- data/cache/earth/venv/Scripts/python.exe -I tools/bake/earth/bake.py
+ *   node tools/dev/heavy.mjs --class=stack -- node deploy/local/stack.mjs -- npx vitest run tests/net   (npm run stack -- -- <suite>)
  *   node tools/dev/heavy.mjs --status
  *
  * Classes and concurrent slots (override with HEAVY_CAP_CPU / HEAVY_CAP_GPU / HEAVY_CAP_BAKE):
- *   cpu   3  vitest, tsc over many paths, node benchmarks, headless mission runs
- *   gpu   1  Playwright / Chrome with WebGPU (functional); perf specs still take withGpuLock inside
- *   bake  1  Python or Node data bakes with worker pools (keep each pool at 6 workers or fewer)
+ *   cpu    3  vitest, tsc over many paths, node benchmarks, headless mission runs
+ *   gpu    1  Playwright / Chrome with WebGPU (functional); perf specs still take withGpuLock inside
+ *   bake   1  Python or Node data bakes with worker pools (keep each pool at 6 workers or fewer)
+ *   stack  1  the local stack (ARCHITECTURE 16.4): host processes with an embedded Postgres, or the docker
+ *             compose form. ALWAYS ONE, with no override: the two forms never run together and never twice.
+ *
+ * The stack slot model. This wrapper frees a slot when the wrapped command exits, so the stack LAUNCHER is
+ * the wrapped command: it brings the stack up, runs the suite it was given, brings the stack down and
+ * exits, and the slot is held for exactly that long. There is no background mode: a stack left running
+ * behind a finished wrapper would hold no slot. A second launcher waits here; a launcher that died leaves
+ * a slot whose holder is dead, which is reclaimed like any other; --status shows the holder. A command
+ * inside a stack that needs the GPU or many cores is itself wrapped in --class=gpu or --class=cpu.
  *
  * A job waits for a free slot of its class AND for free physical memory above HEAVY_MIN_FREE_GB
  * (default 12). After HEAVY_MAX_WAIT_MIN (default 45) of waiting on memory alone it starts anyway and says
@@ -31,6 +41,7 @@ const CAPS = {
   cpu: Number(process.env.HEAVY_CAP_CPU ?? 3),
   gpu: Number(process.env.HEAVY_CAP_GPU ?? 1),
   bake: Number(process.env.HEAVY_CAP_BAKE ?? 1),
+  stack: 1,
 };
 const MIN_FREE_GB = Number(process.env.HEAVY_MIN_FREE_GB ?? 12);
 const MAX_WAIT_MIN = Number(process.env.HEAVY_MAX_WAIT_MIN ?? 45);
@@ -38,7 +49,7 @@ const GB = 1024 ** 3;
 
 function usage(msg) {
   if (msg) console.error(`heavy: ${msg}`);
-  console.error('usage: node tools/dev/heavy.mjs --class=cpu|gpu|bake [--label=text] -- <command> [args...]');
+  console.error('usage: node tools/dev/heavy.mjs --class=cpu|gpu|bake|stack [--label=text] -- <command> [args...]');
   console.error('       node tools/dev/heavy.mjs --status');
   process.exit(2);
 }
@@ -131,7 +142,7 @@ const opts = Object.fromEntries(
   }),
 );
 const cls = opts.class;
-if (!cls || !(cls in CAPS)) usage('--class must be cpu, gpu or bake');
+if (!cls || !(cls in CAPS)) usage('--class must be cpu, gpu, bake or stack');
 const cmd = argv.slice(sep + 1);
 const label = opts.label ?? cmd.join(' ').slice(0, 120);
 

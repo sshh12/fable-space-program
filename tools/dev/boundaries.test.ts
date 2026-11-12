@@ -4,9 +4,13 @@
  *
  *   npx vitest run tools/dev/boundaries.test.ts
  *
- * It scans the source text of everything under src/ (and the import statements of labs/ and tests/), so it
- * fails the moment a headless package reaches for the DOM or a clock, a render package imports a sibling,
- * or browser code imports a Node module - not weeks later as a non-reproducible mission hash.
+ * It scans the source text of everything under src/, server/ and bots/, so it fails the moment a headless
+ * package reaches for the DOM or a clock, a render package imports a sibling, browser code imports a Node
+ * module, or server code finds its way into the client bundle - not weeks later as a non-reproducible
+ * mission hash or a leaked server module.
+ *
+ * Every rule is a function over a list of source files, so the last block of this file can prove that each
+ * rule fails on a planted violation (synthetic files, nothing is written to disk).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,7 +18,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const srcRoot = path.join(repoRoot, 'src');
+
+/** Directories whose TypeScript is scanned. */
+const SCAN_ROOTS = ['src', 'server', 'bots'];
 
 interface SourceFile {
   /** Path relative to the repo root, forward slashes. */
@@ -24,6 +30,8 @@ interface SourceFile {
   code: string;
   /** Module specifiers of static and dynamic imports. */
   imports: string[];
+  /** Module specifiers of `new URL('<spec>', import.meta.url)` (worker entries): edges of the bundle, not imports. */
+  urlRefs: string[];
 }
 
 function walk(dir: string, out: string[]): string[] {
@@ -35,8 +43,9 @@ function walk(dir: string, out: string[]): string[] {
   }
   for (const e of entries) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p, out);
-    else if (/\.(ts|tsx|mts)$/.test(e.name) && !e.name.endsWith('.d.ts')) out.push(p);
+    if (e.isDirectory()) {
+      if (e.name !== 'node_modules') walk(p, out);
+    } else if (/\.(ts|tsx|mts)$/.test(e.name) && !e.name.endsWith('.d.ts')) out.push(p);
   }
   return out;
 }
@@ -89,9 +98,17 @@ function parseImports(text: string): string[] {
   return specs;
 }
 
-function load(file: string): SourceFile {
-  const text = fs.readFileSync(file, 'utf8');
-  return { rel: path.relative(repoRoot, file).replace(/\\/g, '/'), text, code: stripCommentsAndStrings(text), imports: parseImports(stripCommentsAndStrings(text, true)) };
+function parseUrlRefs(text: string): string[] {
+  const specs: string[] = [];
+  const re = /\bnew\s+URL\s*\(\s*(['"])([^'"\n]+)\1\s*,\s*import\.meta\.url\s*\)/g;
+  for (const m of text.matchAll(re)) specs.push(m[2]!);
+  return specs;
+}
+
+/** Build a SourceFile from text (the real tree and the planted-violation self-tests both go through this). */
+function source(rel: string, text: string): SourceFile {
+  const withStrings = stripCommentsAndStrings(text, true);
+  return { rel, text, code: stripCommentsAndStrings(text), imports: parseImports(withStrings), urlRefs: parseUrlRefs(withStrings) };
 }
 
 /** Resolve a module specifier to a repo-relative path ("src/..."), or null for packages and node builtins. */
@@ -103,13 +120,21 @@ function resolveSpec(fromRel: string, spec: string): string | null {
 
 const isTest = (rel: string): boolean => /\.test\.ts$/.test(rel) || rel.includes('/testing/') || rel.includes('/__tests__/');
 const NODE_ONLY_FILE = /(^|\/)(fsSource|fsTileSource|node)(\.[a-z]+)?\.ts$|\.node\.ts$|\/node\//;
-
-const files = walk(srcRoot, []).map(load);
 const under = (rel: string, dir: string): boolean => rel === dir || rel.startsWith(`${dir}/`);
 
-/** Allowed import targets per source area (prefixes under src/). `self` is always allowed. */
+const files: SourceFile[] = SCAN_ROOTS.flatMap((root) => walk(path.join(repoRoot, root), [])).map((file) =>
+  source(path.relative(repoRoot, file).replace(/\\/g, '/'), fs.readFileSync(file, 'utf8')),
+);
+
+// ------------------------------------------------------------------------------------------- the rules
+
+/**
+ * Allowed import targets per source area (prefixes; a file may always import inside its own area). The most
+ * specific area wins. `src/app` has no rule: only it knows every client subsystem.
+ */
 const RULES: { area: string; allow: string[]; note: string }[] = [
   { area: 'src/core', allow: [], note: 'src/core imports nothing outside src/core' },
+  { area: 'src/gate', allow: [], note: 'src/gate imports nothing at all (it is inlined before the main bundle)' },
   { area: 'src/terrain', allow: ['src/core'], note: 'src/terrain imports src/core only' },
   { area: 'src/sim/orbit', allow: ['src/core', 'src/sim/orbit', 'src/sim/frames', 'src/sim/bodies', 'src/sim/nav'], note: 'orbital mechanics import src/core and each other only' },
   { area: 'src/sim/frames', allow: ['src/core', 'src/sim/orbit', 'src/sim/frames', 'src/sim/bodies', 'src/sim/nav'], note: 'orbital mechanics import src/core and each other only' },
@@ -118,8 +143,12 @@ const RULES: { area: string; allow: string[]; note: string }[] = [
   { area: 'src/sim/vessel', allow: ['src/core', 'src/sim/vessel', 'src/sim/dynamics', 'src/sim/control'], note: 'vessel dynamics see the world only through VesselEnvironment' },
   { area: 'src/sim/dynamics', allow: ['src/core', 'src/sim/vessel', 'src/sim/dynamics', 'src/sim/control'], note: 'vessel dynamics see the world only through VesselEnvironment' },
   { area: 'src/sim/control', allow: ['src/core', 'src/sim/vessel', 'src/sim/dynamics', 'src/sim/control'], note: 'vessel dynamics see the world only through VesselEnvironment' },
-  { area: 'src/sim', allow: ['src/core', 'src/sim'], note: 'src/sim reaches terrain only through the TerrainProvider contract in src/core' },
-  { area: 'src/pilot', allow: ['src/core'], note: 'the pilot reaches the sim only through the Sim contract in src/core' },
+  { area: 'src/sim', allow: ['src/core', 'src/sim'], note: 'src/sim reaches terrain only through the TerrainProvider contract in src/core, and never imports src/universe, src/session or src/client' },
+  { area: 'src/universe', allow: ['src/core', 'src/sim'], note: 'src/universe imports src/core and the public APIs of src/sim; time and storage are injected' },
+  { area: 'src/session', allow: ['src/core', 'src/sim', 'src/universe'], note: 'src/session imports src/core, src/sim and src/universe only' },
+  { area: 'src/net', allow: ['src/core'], note: 'src/net imports src/core only' },
+  { area: 'src/client', allow: ['src/core', 'src/sim', 'src/net'], note: 'src/client imports src/core, src/sim and src/net; never src/universe, src/session or server/' },
+  { area: 'src/pilot', allow: ['src/core'], note: 'the pilot reaches a session only through the FlightSession contract in src/core' },
   { area: 'src/render/core', allow: ['src/core'], note: 'the render core imports src/core only' },
   { area: 'src/render/terrain', allow: ['src/core', 'src/render/core', 'src/terrain'], note: 'render packages never import each other' },
   { area: 'src/render/atmosphere', allow: ['src/core', 'src/render/core'], note: 'render packages never import each other' },
@@ -133,7 +162,21 @@ const RULES: { area: string; allow: string[]; note: string }[] = [
   { area: 'src/ui', allow: ['src/core', 'src/render/core'], note: 'src/ui imports src/core (+ render-core helpers)' },
   { area: 'src/map', allow: ['src/core', 'src/render/core'], note: 'src/map imports src/core (+ render-core helpers)' },
   { area: 'src/audio', allow: ['src/core'], note: 'src/audio imports src/core only' },
+  { area: 'src/shell', allow: ['src/core', 'src/render/core', 'src/sim/vessel/public'], note: 'src/shell imports src/core (+ render-core helpers and the frozen vessel facade for the turntable); planning comes through PlanningService' },
+  { area: 'src/bench', allow: ['src/core', 'src/render/core'], note: 'src/bench imports src/core (+ render-core helpers)' },
+  { area: 'server', allow: ['src/core', 'src/sim', 'src/terrain', 'src/universe', 'src/net'], note: 'server/ imports src/core, src/sim, src/terrain, src/universe and src/net; never the client, the presentation or deploy/' },
 ];
+
+/** Areas that may import anything EXCEPT these (a ban-list where the architecture gives one). */
+const BANS: { area: string; never: string[]; note: string }[] = [
+  { area: 'bots', never: ['src/render', 'src/ui', 'src/map', 'src/shell', 'src/audio', 'server', 'deploy'], note: 'bots/ are headless players: never the presentation, never server/' },
+  { area: 'server', never: ['src/render', 'src/ui', 'src/map', 'src/shell', 'src/audio', 'src/client', 'bots', 'deploy'], note: 'server/ never imports the client, the presentation, bots/ or deploy/' },
+  { area: 'src/sim', never: ['src/universe', 'src/session', 'src/client'], note: 'src/sim never imports its own host (src/universe, src/session) or src/client' },
+  { area: 'src/client', never: ['src/universe', 'src/session', 'server'], note: 'src/client never imports src/universe, src/session or server/' },
+];
+
+/** Entry modules of the client bundle (index.html loads src/app/main.ts; the gate is inlined beside it). */
+const CLIENT_ENTRIES = ['src/app/main.ts'];
 
 function ruleFor(rel: string): (typeof RULES)[number] | null {
   let best: (typeof RULES)[number] | null = null;
@@ -141,9 +184,167 @@ function ruleFor(rel: string): (typeof RULES)[number] | null {
   return best;
 }
 
+/** Layer rule: every file imports only what its area allows. */
+function layerViolations(list: SourceFile[]): string[] {
+  const violations: string[] = [];
+  for (const f of list) {
+    const rule = ruleFor(f.rel);
+    if (!rule) continue; // src/app knows everything; bots/ has a ban-list
+    for (const spec of f.imports) {
+      const target = resolveSpec(f.rel, spec);
+      if (rule.area === 'src/gate') {
+        // Nothing at all: no package, no builtin, nothing outside the gate's own files.
+        if (target === null || !under(target, rule.area)) violations.push(`${f.rel} imports ${spec} (${rule.note})`);
+        continue;
+      }
+      if (target === null) continue;
+      if (under(target, rule.area) || rule.allow.some((a) => under(target, a))) continue;
+      // A path outside the scanned roots (tools/, tests/, data/) is not a layer question, except from server/.
+      if (!SCAN_ROOTS.some((r) => under(target, r)) && rule.area !== 'server') continue;
+      violations.push(`${f.rel} imports ${spec} (${rule.note})`);
+    }
+  }
+  return violations;
+}
+
+/** Ban rule: areas that must never import certain others. */
+function banViolations(list: SourceFile[]): string[] {
+  const violations: string[] = [];
+  for (const f of list) {
+    for (const ban of BANS) {
+      if (!under(f.rel, ban.area)) continue;
+      for (const spec of f.imports) {
+        const target = resolveSpec(f.rel, spec);
+        if (target !== null && ban.never.some((n) => under(target, n))) violations.push(`${f.rel} imports ${spec} (${ban.note})`);
+      }
+    }
+  }
+  return violations;
+}
+
+/** Identifiers that make results depend on wall-clock time, randomness or a browser. */
+const BANNED_HEADLESS: [RegExp, string][] = [
+  [/\bMath\s*\.\s*random\b/, 'Math.random'],
+  [/\bDate\s*\.\s*now\b/, 'Date.now'],
+  [/\bnew\s+Date\b/, 'new Date'],
+  [/\bperformance\s*\.\s*(now|mark|measure|timeOrigin)\b/, 'performance.*'],
+  [/\b(window|document|navigator|localStorage|requestAnimationFrame)\b\s*[.([]/, 'DOM global'],
+  [/\b(setTimeout|setInterval)\s*\(/, 'timer'],
+  [/\bGPU[A-Z]\w+\b/, 'WebGPU type'],
+];
+/** Sockets and storage: banned in headless code except the tile I/O modules of src/terrain. */
+const BANNED_IO: [RegExp, string][] = [
+  [/\b(WebSocket|EventSource|XMLHttpRequest|BroadcastChannel)\b/, 'socket'],
+  [/\bfetch\s*\(/, 'fetch'],
+  [/\b(sessionStorage|indexedDB|caches)\b\s*[.([]/, 'storage'],
+  [/\bnavigator\s*\.\s*storage\b/, 'storage'],
+];
+const HEADLESS = ['src/sim', 'src/terrain', 'src/pilot', 'src/universe', 'src/session'];
+/**
+ * The modules of src/terrain whose whole purpose is tile I/O (fetch, packs, the OPFS cache, the file system).
+ * They may fetch and may open the origin-private file system (`navigator.storage`); everything else of the
+ * headless rule holds for them too (no clock, no timer, no other DOM global).
+ */
+const TERRAIN_IO = /^src\/terrain\/(tileSource|packSource|packIndex|opfsCache|fs[A-Z]\w*)\.ts$/;
+const BANNED_TERRAIN_IO: [RegExp, string][] = BANNED_HEADLESS.map(([re, name]) =>
+  name === 'DOM global' ? [/\b(window|document|localStorage|requestAnimationFrame)\b\s*[.([]|\bnavigator\s*\.\s*(?!storage\b)/, name] : [re, name],
+);
+
+/** Determinism rule: headless packages use no clock, no randomness, no DOM, no WebGPU, no socket, no storage. */
+function headlessViolations(list: SourceFile[]): string[] {
+  const violations: string[] = [];
+  for (const f of list) {
+    if (!HEADLESS.some((d) => under(f.rel, d)) || isTest(f.rel)) continue;
+    const banned = TERRAIN_IO.test(f.rel) ? BANNED_TERRAIN_IO : [...BANNED_HEADLESS, ...BANNED_IO];
+    f.code.split('\n').forEach((line, i) => {
+      for (const [re, name] of banned) if (re.test(line)) violations.push(`${f.rel}:${i + 1} uses ${name}`);
+    });
+  }
+  return violations;
+}
+
+const NODE_BUILTIN = /^(node:|fs$|fs\/|path$|os$|child_process$|crypto$|url$|zlib$|worker_threads$|stream$|util$|net$|http$|https$|dgram$|tls$|cluster$)/;
+/** Packages that only server/ and bots/ may import: Node networking and the database driver. */
+const SERVER_ONLY_PACKAGE = /^(pg|pg-[\w-]+|ws|embedded-postgres|@aws-sdk\/.+)$/;
+const isServerSide = (rel: string): boolean => under(rel, 'server') || under(rel, 'bots');
+
+/** Node rule: under src/, Node builtins stay in fs*.ts, *.node.ts or node/; server-only packages stay in server/ and bots/. */
+function nodeViolations(list: SourceFile[]): string[] {
+  const violations: string[] = [];
+  for (const f of list) {
+    if (isServerSide(f.rel)) continue;
+    for (const spec of f.imports) {
+      if (SERVER_ONLY_PACKAGE.test(spec)) violations.push(`${f.rel} imports ${spec}: only server/ and bots/ import Node networking and the database driver`);
+      else if (!isTest(f.rel) && !NODE_ONLY_FILE.test(f.rel) && NODE_BUILTIN.test(spec)) {
+        violations.push(`${f.rel} imports ${spec}: move it into a *.node.ts / fs*.ts module that browser code never imports`);
+      }
+    }
+  }
+  return violations;
+}
+
+/** Browser-facing code never imports a node-only module. */
+function nodeOnlyImportViolations(list: SourceFile[]): string[] {
+  const violations: string[] = [];
+  for (const f of list) {
+    if (isServerSide(f.rel) || isTest(f.rel) || NODE_ONLY_FILE.test(f.rel)) continue;
+    for (const spec of f.imports) {
+      const target = resolveSpec(f.rel, spec);
+      if (target && NODE_ONLY_FILE.test(`${target}.ts`)) violations.push(`${f.rel} imports node-only module ${spec}`);
+    }
+  }
+  return violations;
+}
+
+/** Find the file a resolved specifier names (`x`, `x.ts`, `x/index.ts`). */
+function lookup(byRel: Map<string, SourceFile>, target: string): SourceFile | null {
+  return byRel.get(target) ?? byRel.get(`${target}.ts`) ?? byRel.get(`${target}.tsx`) ?? byRel.get(`${target}/index.ts`) ?? null;
+}
+
+/**
+ * Bundle rule: starting at the client entries and following imports and worker entries, the client bundle
+ * never contains server/ or bots/, and contains src/universe only behind src/session (a path to src/universe
+ * that does not pass through src/session is a violation).
+ */
+function clientBundleViolations(list: SourceFile[], entries: string[] = CLIENT_ENTRIES): string[] {
+  const byRel = new Map(list.map((f) => [f.rel, f]));
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  const queue: { file: SourceFile; via: string }[] = [];
+  for (const e of entries) {
+    const f = byRel.get(e);
+    if (f) queue.push({ file: f, via: e });
+  }
+  while (queue.length > 0) {
+    const { file, via } = queue.pop()!;
+    if (seen.has(file.rel)) continue;
+    seen.add(file.rel);
+    if (under(file.rel, 'server') || under(file.rel, 'bots')) {
+      violations.push(`the client bundle contains ${file.rel} (reached through ${via})`);
+      continue;
+    }
+    if (under(file.rel, 'src/universe')) {
+      violations.push(`the client bundle reaches ${file.rel} outside src/session (through ${via})`);
+      continue;
+    }
+    // What src/session imports is its own business (layer rule); the walk does not look behind it.
+    if (under(file.rel, 'src/session')) continue;
+    for (const spec of [...file.imports, ...file.urlRefs]) {
+      const target = resolveSpec(file.rel, spec);
+      if (target === null) continue;
+      const next = lookup(byRel, target.replace(/\.(ts|tsx|js)$/, ''));
+      if (next && !isTest(next.rel)) queue.push({ file: next, via: `${via} -> ${next.rel}` });
+    }
+  }
+  return violations;
+}
+
+// --------------------------------------------------------------------------------------------- the tree
+
 describe('architecture boundaries (docs/ARCHITECTURE.md section 2)', () => {
   it('finds the source tree', () => {
     expect(files.some((f) => f.rel === 'src/core/contracts/sim.ts')).toBe(true);
+    expect(files.some((f) => f.rel === CLIENT_ENTRIES[0])).toBe(true);
   });
 
   it('parses imports and strips comments/strings correctly (self-test)', () => {
@@ -155,72 +356,161 @@ describe('architecture boundaries (docs/ARCHITECTURE.md section 2)', () => {
     expect(stripped.match(/Math\.random/g)).toHaveLength(1);
     expect(resolveSpec('src/sim/world/a.ts', '../../terrain/x')).toBe('src/terrain/x');
     expect(resolveSpec('src/sim/world/a.ts', '@/core/math')).toBe('src/core/math');
+    expect(resolveSpec('server/roles/a.ts', '../../src/sim/island/api')).toBe('src/sim/island/api');
     expect(resolveSpec('src/sim/world/a.ts', 'node:fs')).toBeNull();
+    expect(parseUrlRefs("const w = new Worker(new URL('./tileWorker.ts', import.meta.url), { type: 'module' });")).toEqual(['./tileWorker.ts']);
   });
 
   it('every package imports only what its layer allows', () => {
-    const violations: string[] = [];
-    for (const f of files) {
-      const rule = ruleFor(f.rel);
-      if (!rule) continue; // src/app knows everything
-      for (const spec of f.imports) {
-        const target = resolveSpec(f.rel, spec);
-        if (target === null || !target.startsWith('src/')) continue;
-        if (under(target, rule.area) || rule.allow.some((a) => under(target, a))) continue;
-        violations.push(`${f.rel} imports ${spec} (${rule.note})`);
-      }
-    }
-    expect(violations).toEqual([]);
+    expect(layerViolations(files)).toEqual([]);
   });
 
-  it('headless packages are deterministic and DOM-free', () => {
-    // Identifiers that make results depend on wall-clock time, randomness or a browser.
-    const banned: [RegExp, string][] = [
-      [/\bMath\s*\.\s*random\b/, 'Math.random'],
-      [/\bDate\s*\.\s*now\b/, 'Date.now'],
-      [/\bnew\s+Date\b/, 'new Date'],
-      [/\bperformance\s*\.\s*(now|mark|measure|timeOrigin)\b/, 'performance.*'],
-      [/\b(window|document|navigator|localStorage|requestAnimationFrame)\b\s*[.([]/, 'DOM global'],
-      [/\b(setTimeout|setInterval)\s*\(/, 'timer'],
-      [/\bGPU[A-Z]\w+\b/, 'WebGPU type'],
-    ];
-    const headless = ['src/sim', 'src/terrain', 'src/pilot'];
-    const violations: string[] = [];
-    for (const f of files) {
-      if (!headless.some((d) => under(f.rel, d)) || isTest(f.rel)) continue;
-      const lines = f.code.split('\n');
-      lines.forEach((line, i) => {
-        for (const [re, name] of banned) if (re.test(line)) violations.push(`${f.rel}:${i + 1} uses ${name}`);
-      });
-    }
-    expect(violations).toEqual([]);
+  it('nothing imports what its area must never import (server, bots, sim, client)', () => {
+    expect(banViolations(files)).toEqual([]);
   });
 
-  it('only node-only modules import Node builtins', () => {
-    const builtin = /^(node:|fs$|fs\/|path$|os$|child_process$|crypto$|url$|zlib$|worker_threads$|stream$|util$)/;
-    const violations: string[] = [];
-    for (const f of files) {
-      if (isTest(f.rel) || NODE_ONLY_FILE.test(f.rel)) continue;
-      for (const spec of f.imports) if (builtin.test(spec)) violations.push(`${f.rel} imports ${spec}: move it into a *.node.ts / fs*.ts module that browser code never imports`);
-    }
-    expect(violations).toEqual([]);
+  it('headless packages are deterministic and free of DOM, WebGPU, sockets and storage', () => {
+    expect(headlessViolations(files)).toEqual([]);
+  });
+
+  it('only node-only modules import Node builtins; only server/ and bots/ import the server packages', () => {
+    expect(nodeViolations(files)).toEqual([]);
   });
 
   it('browser-facing code never imports a node-only module', () => {
-    const violations: string[] = [];
-    for (const f of files) {
-      if (isTest(f.rel) || NODE_ONLY_FILE.test(f.rel)) continue;
-      for (const spec of f.imports) {
-        const target = resolveSpec(f.rel, spec);
-        if (target && NODE_ONLY_FILE.test(`${target}.ts`)) violations.push(`${f.rel} imports node-only module ${spec}`);
-      }
-    }
-    expect(violations).toEqual([]);
+    expect(nodeOnlyImportViolations(files)).toEqual([]);
   });
 
-  it('nothing under src/ or public/ mentions an API key variable', () => {
+  it('the client bundle contains no server/, no bots/, and src/universe only behind src/session', () => {
+    expect(clientBundleViolations(files)).toEqual([]);
+  });
+
+  it('nothing under src/, server/ or bots/ mentions an API key variable', () => {
     const keyNames = /\b(OPENAI_API_KEY|HF_TOKEN|ELEVENLABS_API_KEY)\b/;
     const hits = files.filter((f) => keyNames.test(f.text)).map((f) => f.rel);
     expect(hits).toEqual([]);
+  });
+});
+
+// ------------------------------------------------------------------------------ planted violations
+
+/** A synthetic file that imports the given specifiers. */
+const importing = (rel: string, ...specs: string[]): SourceFile => source(rel, specs.map((s, i) => `import x${i} from '${s}';`).join('\n'));
+const code = (rel: string, text: string): SourceFile => source(rel, text);
+
+describe('each rule fails on a planted violation', () => {
+  const layerCases: [string, SourceFile][] = [
+    ['src/universe imports src/terrain', importing('src/universe/directory.ts', '@/terrain/provider')],
+    ['src/universe imports src/session', importing('src/universe/directory.ts', '../session/index')],
+    ['src/universe imports src/net', importing('src/universe/clock.ts', '@/net/codec')],
+    ['src/session imports src/client', importing('src/session/index.ts', '@/client/net/netSession')],
+    ['src/session imports src/render', importing('src/session/local.ts', '@/render/core/renderer')],
+    ['src/net imports src/sim', importing('src/net/codec.ts', '@/sim/island/api')],
+    ['src/net imports src/universe', importing('src/net/session.ts', '../universe/rules')],
+    ['src/client imports src/universe', importing('src/client/net/netSession.ts', '@/universe/directory')],
+    ['src/client imports src/session', importing('src/client/stores.ts', '@/session/index')],
+    ['src/client imports server/', importing('src/client/net/netSession.ts', '../../../server/gateway')],
+    ['src/client imports src/render', importing('src/client/stores.ts', '@/render/core/renderer')],
+    ['src/shell imports src/sim', importing('src/shell/hangar.ts', '@/sim/vessel/analyze')],
+    ['src/shell imports src/client', importing('src/shell/state.ts', '@/client/stores')],
+    ['src/bench imports src/sim', importing('src/bench/solver.ts', '@/sim/orbit/kepler')],
+    ['src/bench imports src/ui', importing('src/bench/shots.ts', '@/ui/hud/hud')],
+    ['src/gate imports src/core', importing('src/gate/gate.ts', '@/core/gpu/device')],
+    ['src/gate imports a package', importing('src/gate/gate.ts', 'some-package')],
+    ['src/sim imports src/universe', importing('src/sim/island/api.ts', '@/universe/rules')],
+    ['src/sim imports src/session', importing('src/sim/view/readouts.ts', '@/session/index')],
+    ['src/sim imports src/client', importing('src/sim/orbit/kepler.ts', '@/client/planning')],
+    ['server imports src/render', importing('server/roles/shard.ts', '../../src/render/core/renderer')],
+    ['server imports src/client', importing('server/gateway/index.ts', '../../src/client/net/netSession')],
+    ['server imports deploy/', importing('server/roles/api.ts', '../../deploy/roles/shell')],
+    ['server imports src/session', importing('server/roles/dir.ts', '../../src/session/index')],
+  ];
+  it.each(layerCases)('layer rule: %s', (_name, planted) => {
+    expect(layerViolations([planted]).length + banViolations([planted]).length).toBeGreaterThan(0);
+  });
+
+  const banCases: [string, SourceFile][] = [
+    ['bots imports src/render', importing('bots/fleet/bot.ts', '../../src/render/core/renderer')],
+    ['bots imports src/ui', importing('bots/fleet/bot.ts', '../../src/ui/hud/hud')],
+    ['bots imports src/map', importing('bots/bot.ts', '../src/map/scene')],
+    ['bots imports src/shell', importing('bots/bot.ts', '../src/shell/state')],
+    ['bots imports src/audio', importing('bots/bot.ts', '../src/audio/engine')],
+    ['server imports src/ui', importing('server/roles/api.ts', '../../src/ui/format')],
+    ['server imports src/map', importing('server/roles/api.ts', '../../src/map/scene')],
+    ['server imports src/shell', importing('server/roles/api.ts', '../../src/shell/state')],
+    ['server imports src/audio', importing('server/roles/api.ts', '../../src/audio/engine')],
+  ];
+  it.each(banCases)('ban rule: %s', (_name, planted) => {
+    expect(banViolations([planted]).length).toBeGreaterThan(0);
+  });
+
+  it('the allowed edges of the new areas pass', () => {
+    const allowed = [
+      importing('src/universe/directory.ts', '@/core/contracts/net', '@/sim/orbit', './clock'),
+      importing('src/session/index.ts', '@/core/contracts/session', '@/sim', '@/universe/host'),
+      importing('src/net/codec.ts', '@/core/contracts/net', './framing'),
+      importing('src/client/net/netSession.ts', '@/core/contracts/session', '@/sim/island/api', '@/net/session'),
+      importing('src/shell/hangar.ts', '@/core/contracts/vehicle', '@/render/core/public', '@/sim/vessel/public'),
+      importing('src/bench/solver.ts', '@/core/contracts/render', '@/render/core/public'),
+      importing('src/gate/gate.ts', './blockPage'),
+      importing('server/roles/shard.ts', '../../src/sim/island/api', '../../src/universe/host', '../../src/terrain', '../../src/net/session', 'pg', 'node:worker_threads'),
+      importing('bots/fleet/bot.ts', '../../src/client/net/netSession', '../../src/pilot', 'ws'),
+    ];
+    expect(layerViolations(allowed)).toEqual([]);
+    expect(banViolations(allowed)).toEqual([]);
+    expect(nodeViolations(allowed)).toEqual([]);
+  });
+
+  const headlessCases: [string, SourceFile][] = [
+    ['src/universe reads the wall clock', code('src/universe/expiry.ts', 'export const now = () => Date.now();')],
+    ['src/universe uses a timer', code('src/universe/clock.ts', 'setTimeout(() => tick(), 8);')],
+    ['src/universe uses Math.random', code('src/universe/ids.ts', 'const id = Math.random();')],
+    ['src/session touches the DOM', code('src/session/local.ts', "const el = document.getElementById('x');")],
+    ['src/session uses performance.now', code('src/session/local.ts', 'const t = performance.now();')],
+    ['src/session opens a socket', code('src/session/local.ts', 'const s = new WebSocket(url);')],
+    ['src/universe uses storage', code('src/universe/store.ts', "localStorage.setItem('k', v);")],
+    ['src/universe uses IndexedDB', code('src/universe/store.ts', "const r = indexedDB.open('u');")],
+    ['src/sim fetches', code('src/sim/orbit/ephemeris.ts', 'const r = await fetch(url);')],
+    ['src/pilot opens a socket', code('src/pilot/generic/common.ts', 'new WebSocket(u);')],
+    ['src/terrain provider uses a socket', code('src/terrain/provider.ts', 'new WebSocket(u);')],
+  ];
+  it.each(headlessCases)('determinism rule: %s', (_name, planted) => {
+    expect(headlessViolations([planted]).length).toBeGreaterThan(0);
+  });
+
+  it('the tile I/O modules of src/terrain may fetch and use the OPFS cache, and stay otherwise headless', () => {
+    expect(headlessViolations([code('src/terrain/tileSource.ts', 'const r = await fetch(url);'), code('src/terrain/opfsCache.ts', 'const root = await navigator.storage.getDirectory();')])).toEqual([]);
+    expect(headlessViolations([code('src/terrain/opfsCache.ts', 'const a = await navigator.gpu.requestAdapter();')])).toEqual(['src/terrain/opfsCache.ts:1 uses DOM global']);
+    expect(headlessViolations([code('src/terrain/packSource.ts', 'setTimeout(retry, 500);')])).toEqual(['src/terrain/packSource.ts:1 uses timer']);
+    expect(headlessViolations([code('src/terrain/packSource.ts', 'const r = await fetch(url, { headers });')])).toEqual([]);
+    expect(headlessViolations([code('src/terrain/packSource.ts', 'const t = Date.now();')]).length).toBe(1);
+  });
+
+  const nodeCases: [string, SourceFile][] = [
+    ['src/client imports the database driver', importing('src/client/stores.ts', 'pg')],
+    ['src/net imports ws', importing('src/net/transport.ts', 'ws')],
+    ['src/universe imports node:fs', importing('src/universe/storage.ts', 'node:fs')],
+    ['src/session imports worker_threads', importing('src/session/local.ts', 'node:worker_threads')],
+    ['src/net imports node:net', importing('src/net/transport.ts', 'node:net')],
+    ['src/core imports the S3 client', importing('src/core/defs/loader.ts', '@aws-sdk/client-s3')],
+  ];
+  it.each(nodeCases)('node rule: %s', (_name, planted) => {
+    expect(nodeViolations([planted]).length).toBeGreaterThan(0);
+  });
+
+  it('bundle rule: the client entry reaching server/, bots/ or src/universe outside src/session is caught', () => {
+    const entry = importing('src/app/main.ts', './game');
+    const viaServer = [entry, importing('src/app/game.ts', '@/client/net/netSession'), importing('src/client/net/netSession.ts', '../../../server/gateway/index'), importing('server/gateway/index.ts', 'node:http')];
+    expect(clientBundleViolations(viaServer)).toEqual(['the client bundle contains server/gateway/index.ts (reached through src/app/main.ts -> src/app/game.ts -> src/client/net/netSession.ts -> server/gateway/index.ts)']);
+    const viaBots = [entry, importing('src/app/game.ts', '../../bots/fleet/bot'), importing('bots/fleet/bot.ts', '@/pilot')];
+    expect(clientBundleViolations(viaBots).length).toBe(1);
+    const universeDirect = [entry, importing('src/app/game.ts', '@/universe/directory'), importing('src/universe/directory.ts', '@/core/contracts/net')];
+    expect(clientBundleViolations(universeDirect)).toEqual(['the client bundle reaches src/universe/directory.ts outside src/session (through src/app/main.ts -> src/app/game.ts -> src/universe/directory.ts)']);
+    // Through a worker entry.
+    const viaWorker = [entry, code('src/app/game.ts', "const w = new Worker(new URL('./planningWorker.ts', import.meta.url));"), importing('src/app/planningWorker.ts', '@/universe/screening')];
+    expect(clientBundleViolations([...viaWorker, importing('src/universe/screening.ts', '@/sim/orbit')]).length).toBe(1);
+    // Behind src/session it is allowed.
+    const throughSession = [entry, importing('src/app/game.ts', '@/session'), importing('src/session/index.ts', '@/universe/host'), importing('src/universe/host.ts', '@/sim')];
+    expect(clientBundleViolations(throughSession)).toEqual([]);
   });
 });

@@ -1,0 +1,13 @@
+{
+  // The headless and server-side code, type-checked WITHOUT the DOM library (ARCHITECTURE section 2): what
+  // compiles here cannot have used a browser global. Run by `npm run typecheck` after tsconfig.json.
+  // "@webgpu/types" stays visible because the shared contracts name GPU object types; the declarations add
+  // no global a headless module could call, and tools/dev/boundaries.test.ts forbids the names anyway.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["@webgpu/types", "node"]
+  },
+  "include": ["server", "bots", "deploy", "src/sim", "src/universe", "src/session", "src/terrain", "src/pilot", "src/net"],
+  "exclude": ["node_modules", "dist", "spikes", "data", "out"]
+}

@@ -21,8 +21,18 @@ function freePort(): Promise<number> {
  * Starts a private Vite dev server on an OS-assigned port for this test run and publishes its URL in
  * E2E_BASE_URL. Several agents can run browser tests at the same time without colliding.
  * Set E2E_BASE_URL yourself to test an already running server (e.g. `vite preview` of a build).
+ *
+ * Inside a local stack (`npm run stack -- [options] -- <command>`, ARCHITECTURE 16.4) the launcher has
+ * already started the page a browser loads and hands its address in STACK_URL: no server is started here and
+ * every spec of the run (the `functional` and `acceptance` projects are the ones run there) loads that
+ * page, which serves the stack's endpoint document at /endpoints.json. STACK_URL wins over E2E_BASE_URL.
  */
 export default async function globalSetup(): Promise<() => Promise<void>> {
+  if (process.env.STACK_URL) {
+    const url = process.env.STACK_URL;
+    process.env.E2E_BASE_URL = url.endsWith('/') ? url.slice(0, -1) : url;
+    return async () => undefined;
+  }
   if (process.env.E2E_BASE_URL) return async () => undefined;
   let server: ViteDevServer | null = null;
   const port = await freePort();

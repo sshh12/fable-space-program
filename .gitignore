@@ -22,6 +22,11 @@ data/sky/
 data/cache/
 data/raw/
 data/tmp/
+# v2: tile packs (rebuilt by tools/pack), reference screenshots (tracked manifest:
+# tests/browser/baselines.manifest.json), the local stack's database, state and client builds
+data/packs/
+data/baselines/
+data/stack/
 *.whl
 *.partial
 

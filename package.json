@@ -9,31 +9,44 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "build": "npm run typecheck && vite build",
+    "build:ci": "npm run typecheck && node tools/dev/build-client.mjs --target=ci",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "typecheck:paths": "node tools/dev/typecheck-paths.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:mission": "node tools/dev/run-mission.mjs",
+    "test:net": "node tools/dev/run-net.mjs",
     "test:py": "python -I tools/bake/common/test_common.py",
     "e2e": "playwright test --project=functional",
     "e2e:perf": "playwright test --project=perf",
     "e2e:mission": "playwright test --project=mission",
+    "e2e:acceptance": "playwright test --project=acceptance",
+    "stack": "node tools/dev/stack.mjs",
+    "stack:client": "node tools/dev/heavy.mjs --class=cpu -- node tools/dev/build-client.mjs --target=stack",
     "golden": "tsx tools/dev/gen-golden.ts",
     "check:secrets": "node tools/dev/check-secrets.mjs",
+    "check:stubs": "node tools/dev/check-stubs.mjs",
     "check:boundaries": "vitest run tools/dev/boundaries.test.ts",
-    "check": "npm run check:secrets && npm run typecheck && npm run test && npm run test:py && npm run build && npm run check:secrets && npm run e2e"
+    "check": "npm run check:secrets && npm run check:stubs && npm run typecheck && npm run test && npm run test:py && npm run build && npm run check:secrets && npm run e2e"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "@types/pngjs": "^6.0.5",
     "@webgpu/types": "^0.1.60",
+    "embedded-postgres": "18.6.0-beta.19",
     "pngjs": "^7.0.0",
     "tsx": "^4.20.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.7",
     "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1167.0",
+    "@aws-sdk/s3-request-presigner": "^3.1167.0",
+    "pg": "^8.23.1"
   }
 }

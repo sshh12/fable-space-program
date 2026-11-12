@@ -10,8 +10,12 @@ import { chromeArgs } from './tests/browser/chromeArgs';
  *   functional  everything except *.perf.spec.ts and mission specs; safe to run while other agents use the GPU
  *   perf        *.perf.spec.ts; each test must wrap its measurement in withGpuLock()
  *   mission     tests/browser/mission/**; the long real-time acceptance flight
+ *   acceptance  tests/acceptance/**; the two-browser stories, restart, expiry and whole flights of v2
+ *               (ARCHITECTURE 28.5), run inside a local stack: npm run stack -- [options] --
+ *               node tools/dev/heavy.mjs --class=gpu -- npx playwright test --project=acceptance
  *
- * The dev server is started per run on a free port by globalSetup (E2E_BASE_URL); tests use appUrl().
+ * The dev server is started per run on a free port by globalSetup (E2E_BASE_URL); tests use appUrl(). With
+ * STACK_URL set (inside `npm run stack`) globalSetup starts no server and every spec loads the stack's page.
  */
 const runId = (process.env.E2E_RUN_ID ??= `${Date.now()}-${process.pid}`);
 
@@ -39,5 +43,6 @@ export default defineConfig({
     { name: 'functional', testIgnore: ['**/*.perf.spec.ts', 'mission/**'] },
     { name: 'perf', testMatch: ['**/*.perf.spec.ts'] },
     { name: 'mission', testMatch: ['mission/**/*.spec.ts'], timeout: 3 * 60 * 60_000 },
+    { name: 'acceptance', testDir: 'tests/acceptance', testMatch: ['**/*.spec.ts'], timeout: 60 * 60_000 },
   ],
 });

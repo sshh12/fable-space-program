@@ -1,0 +1,12 @@
+[
+  {"path":"package.json","word":"stub","contains":"check:stubs","reason":"the name of this scan's npm script"},
+  {"path":"data/defs/bodies/","except":["data/defs/bodies/earth","data/defs/bodies/moon"],"word":"placeholder","standing":true,"reason":"PROMPT.txt (expansion): bodies other than Earth and the Moon may use placeholder visuals and simple surfaces for now, and their data may say so; Earth and the Moon are excepted from this permission"},
+  {"path":"data/staged/","except":["data/staged/bodies/earth","data/staged/bodies/moon"],"word":"placeholder","standing":true,"reason":"PROMPT.txt (expansion): the simple bodies' staged definitions and render sections may be marked as placeholder visuals; Earth and the Moon are excepted"},
+  {"path":"tools/bodies/","word":"placeholder","standing":true,"reason":"the generator of the simple bodies' definitions names what PROMPT.txt permits for them"},
+  {"path":"tools/bake/planet/","word":"placeholder","standing":true,"reason":"the bake of the simple bodies names what PROMPT.txt permits for them"},
+  {"path":"src/core/fakes/","word":"placeholder","contains":"placeholder vessel","reason":"the FakeSim's stand-in vessel: a named test double for UI development, never shipped in a flight"},
+  {"path":"labs/integration/","word":"placeholder","contains":"placeholder parts","reason":"the integration lab reports when it had to fall back to the FakeSim's stand-in vessel; a lab page, never shipped"},
+  {"path":"labs/map-view/main.ts","word":"placeholder","contains":"placeholder text next to a finished interface","reason":"a comment that explains why the lab names its vessel (request map-view-7)"},
+  {"path":"src/render/cockpit/cabin/fixtures.ts","word":"stub","contains":"stub","reason":"geometry: the short end of a pipe run in the cabin is called a stub"},
+  {"path":"src/ui/icons.ts","word":"stub","contains":"short downward stubs","reason":"geometry: the short strokes of an icon"}
+]
