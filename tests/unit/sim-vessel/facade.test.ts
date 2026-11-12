@@ -280,7 +280,8 @@ describe('orchestrator facade', () => {
     expect(r.ablatorFraction).toBe(1);
     expect(r.legsDeployed).toBe(false);
     expect(r.lightsOn).toBe(false);
-    expect(r.chuteEnvelope).not.toBeNull();
+    // No air in this environment: the chute light says nothing (request flight-ui-9; in air: chutes-thermal.test.ts).
+    expect(r.chuteEnvelope).toBeNull();
     expect(r.liftVectorUp).toBeNull();
     expect(r.gDoseLimit).toBe(15);
     expect(r.deltaVTotal).toBeGreaterThan(3408 + 3500);

@@ -85,3 +85,73 @@ describe('thrust-to-weight ratio of the stages', () => {
     expect(s2.cheatCounter).toBe(0);
   });
 });
+
+describe('read-outs of a vessel that is not flying through air (request flight-ui-9)', () => {
+  const G0 = 9.80665;
+
+  it('the chute envelope says nothing where there is no air, and what it said under the drogues', async () => {
+    for (const id of ['qa-lunar-orbit', 'qa-lunar-surface', 'qa-translunar', 'qa-leo']) {
+      const sim = await makeSim(defs, id, terrain);
+      for (let i = 0; i < 8; i++) sim.step();
+      const s = sim.peek();
+      expect(active(s).aero.airDensity, id).toBe(0);
+      expect(s.readouts.chuteEnvelope, id).toBeNull();
+    }
+    // In air the light is judged: on the pad, at entry interface speed (not safe) and under the drogues.
+    const pad = await makeSim(defs, 'lunar-direct', flatTerrain(defs, { earth: 0, moon: 0 }));
+    expect(pad.peek().readouts.chuteEnvelope).not.toBeNull();
+    const drogues = await makeSim(defs, 'qa-drogues', terrain);
+    for (let i = 0; i < 8; i++) drogues.step();
+    expect(active(drogues.peek()).aero.airDensity).toBeGreaterThan(0.1);
+    expect(['safe', 'risky', 'unsafe']).toContain(drogues.peek().readouts.chuteEnvelope);
+  });
+
+  it('on the launch clamps: the radar altitude is the height of the vehicle over the ground and goes on through the release; the g load is the local gravity', async () => {
+    const sim = await makeSim(defs, 'lunar-direct', flatTerrain(defs, { earth: 0, moon: 0 }));
+    const site = defs.sites[defs.scenarios['lunar-direct']!.site]!;
+    const s0 = sim.peek();
+    expect(active(s0).situation).toBe('prelaunch');
+    // The vehicle's lowest point stands on the launch mount, the mount height above the pad; the pad
+    // surface is its elevation above the (flat, 0 m) terrain of this test.
+    const expected = site.pads![0]!.mountHeight + (site.location.padElevation as number);
+    // (The lowest contact probe of the stack is within two metres of the point it stands on.)
+    expect(Math.abs(s0.readouts.altitudeRadar - expected)).toBeLessThan(2);
+    // What the simulation's own rules read is unchanged: a held vessel is on the ground.
+    expect((sim as unknown as { radarAltitude(): number }).radarAltitude()).toBe(0);
+    // 1.00 g on the pad (the local gravity at the pad's radius), steady from the first snapshot.
+    const r = v3.len(active(s0).r);
+    expect(s0.readouts.gLoad).toBe(defs.bodies['earth']!.mu / (r * r) / G0);
+    expect(Math.abs(s0.readouts.gLoad - 1)).toBeLessThan(0.01);
+    expect(active(s0).gLoad).toBe(s0.readouts.gLoad);
+    for (let i = 0; i < 240; i++) sim.step();
+    expect(Math.abs(sim.peek().readouts.gLoad - s0.readouts.gLoad)).toBeLessThan(1e-12);
+    // Ignition and release: the number continues (no jump from 0), then grows as the vehicle climbs.
+    sim.setControls({ pitch: 0, yaw: 0, roll: 0, translate: { x: 0, y: 0, z: 0 }, throttle: 1 });
+    sim.commands.stage();
+    let before = sim.peek().readouts.altitudeRadar;
+    let worstJump = 0;
+    let released = false;
+    for (let i = 0; i < 2400 && !(released && sim.peek().readouts.altitudeRadar > expected + 5); i++) {
+      sim.step();
+      const s = sim.peek();
+      if (active(s).situation !== 'prelaunch') released = true;
+      worstJump = Math.max(worstJump, Math.abs(s.readouts.altitudeRadar - before));
+      before = s.readouts.altitudeRadar;
+    }
+    expect(released).toBe(true);
+    // Step to step the altimeter moves by the vehicle's own motion: centimetres, never the 18 m of the mount.
+    expect(worstJump).toBeLessThan(0.3);
+    expect(sim.peek().readouts.altitudeRadar).toBeGreaterThan(expected + 5);
+  });
+
+  it('landed on the Moon: 0.17 g, the feet on the ground, no chute light', async () => {
+    const sim = await makeSim(defs, 'qa-lunar-surface', terrain);
+    const s = sim.peek();
+    expect(active(s).situation).toBe('landed');
+    const r = v3.len(active(s).r);
+    expect(s.readouts.gLoad).toBe(defs.bodies['moon']!.mu / (r * r) / G0);
+    expect(Math.abs(s.readouts.gLoad - 0.1654)).toBeLessThan(0.003);
+    expect(s.readouts.altitudeRadar).toBeLessThan(0.5);
+    expect(s.readouts.chuteEnvelope).toBeNull();
+  });
+});

@@ -66,6 +66,7 @@ import {
   needsIntegration as vesselNeedsIntegration,
   nextLiveStage,
   radarAltitude,
+  shownRadarAltitude,
   reportedMach,
   rideBody,
   setFineControl,
@@ -2291,7 +2292,7 @@ class World implements SimWorld, MilestoneHost {
       verticalSpeed: o.verticalSpeed,
       horizontalSpeed: o.horizontalSpeed,
       mass: v.mp.mass,
-      gLoad: v.gLoad,
+      gLoad: vr.gLoad,
       peakG: this.peakG,
       gDose: v.gDose,
       peakGDose: this.peakGDose,
@@ -2483,7 +2484,7 @@ class World implements SimWorld, MilestoneHost {
     return {
       met: this.liftoffUt === null ? 0 : Math.max(0, this.ut - this.liftoffUt),
       ...orbital,
-      altitudeRadar: radarAltitude(v, env),
+      altitudeRadar: shownRadarAltitude(v, env),
       ...vr,
       sasModesAvailable: this.sasModesAvailable(),
       launchWindow,
@@ -2530,6 +2531,7 @@ class World implements SimWorld, MilestoneHost {
         rRoot: v3.add(b.rRoot, v.r),
         vRoot: v3.add(b.vRoot, v.v),
         sunVisibility: e.env.sunVisibility,
+        gravity: this.localGravity(e),
         stages: (craft: number) => this.stagesOf(e, craft),
         revision: e.revision,
       });

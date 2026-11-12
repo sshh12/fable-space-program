@@ -65,6 +65,8 @@ export interface WorldSideSnapshotFields {
   rRoot: Vec3;
   vRoot: Vec3;
   sunVisibility: number;
+  /** Local gravitational acceleration at the vessel, m/s^2: what a held vessel's g load is shown as. Absent = the filtered g load as it is. */
+  gravity?: number;
   /** Stage figures of craft `craft` of the vessel (an index into its craft list); without it every craft lists no stages. */
   stages?: (craft: number) => StageInfo[];
   /** Counter that changes when the vessel's orbit or plan changes (`VesselSnapshot.revision`). */
@@ -139,7 +141,7 @@ export function toVesselSnapshot(vessel: Vessel, world: WorldSideSnapshotFields)
       heatFlux: a.heatFlux,
       plasmaIntensity: a.plasmaIntensity,
     },
-    gLoad: vessel.gLoad,
+    gLoad: shownGLoad(vessel, world.gravity),
     properAccel: v3.clone(vessel.properAccel),
     contact: { ...vessel.contact },
     sunVisibility: world.sunVisibility,
@@ -557,13 +559,20 @@ export function reportedMach(vessel: Vessel): number {
   return vessel.aero.density > 0 ? vessel.aero.mach : 0;
 }
 
-/** Envelope light of the next parachute stage that has not fired, for the current flight condition. */
+/**
+ * Envelope light of the next parachute stage that has not fired, for the current flight condition; null
+ * when no chute stage remains AND where there is no air (above the simulated atmosphere, on a body without
+ * one): a parachute needs air, and altitude, Mach number and dynamic pressure say nothing about it there
+ * (request flight-ui-9). Inside an atmosphere the light is what it was.
+ */
 export function nextChuteEnvelope(vessel: Vessel, env: VesselEnvironment): ChuteEnvelope | null {
   const craft = vessel.helm.craft;
   const record = helmCraft(vessel);
   const stages = record.vehicle.stages;
   const rl = v3.len(vessel.r);
   const altitude = rl - env.radius;
+  // The air at the vessel now (not the aerodynamic state of its last integrated step: a held vessel has none).
+  if (!(env.atmosphereAt(altitude).density > 0)) return null;
   const speed = v3.len(vessel.aero.airVelocity);
   for (let s = record.nextStage; s < stages.length; s++) {
     let worst: ChuteEnvelope | null = null;
@@ -624,7 +633,7 @@ export function vesselReadouts(vessel: Vessel, env: VesselEnvironment, stages?: 
     thrust: vessel.thrust,
     twr: vessel.mp.mass > 0 ? vessel.thrust / (vessel.mp.mass * g) : 0,
     mass: vessel.mp.mass,
-    gLoad: vessel.gLoad,
+    gLoad: shownGLoad(vessel, rl > 0 ? env.mu / (rl * rl) : undefined),
     gDose: vessel.gDose,
     gDoseLimit: G_DOSE_LIMIT,
     dynamicPressure: vessel.aero.q,
@@ -648,13 +657,39 @@ export function vesselReadouts(vessel: Vessel, env: VesselEnvironment, stages?: 
 }
 
 /**
+ * The g load a read-out shows. A vessel that is held (on the launch clamps, landed at rest, asleep) is
+ * pressed on its support by the local gravity: it shows |g| / g0 (1.00 on the pad, 0.17 on the Moon),
+ * not the filtered proper acceleration, which settles for a moment after the vessel is put down and is not
+ * integrated while it is held (request flight-ui-9). In flight it is the vessel's filtered g load. The
+ * vessel's state (`Vessel.gLoad`, the crew's dose) is not touched.
+ */
+export function shownGLoad(vessel: Vessel, gravity: number | undefined): number {
+  return vessel.hold !== null && gravity !== undefined && Number.isFinite(gravity) ? gravity / G0 : vessel.gLoad;
+}
+
+/**
  * Height of the lowest contact probe above terrain or sea, m (0 while held on the ground). One band-limited
  * terrain query under the vessel; exact per-probe values are in vessel.groundClearance while a step is
- * within contact range.
+ * within contact range. This is what the simulation's own rules read (milestone triggers, the warp clamp,
+ * the records of a milestone): a held vessel is on the ground.
  */
 export function radarAltitude(vessel: Vessel, env: VesselEnvironment): number {
-  if (vessel.hold !== null) return 0;
+  return vessel.hold !== null ? 0 : probeClearance(vessel, env);
+}
+
+/**
+ * The radar altitude a read-out shows: the same quantity held or flying (request flight-ui-9). While the
+ * launch clamps hold the vessel it is the height of the VEHICLE's lowest probe (the clamps are ground
+ * equipment that stays behind), so the number goes on through the release instead of jumping from 0;
+ * landed at rest it is the clearance of the feet, which is zero to the depth they have settled.
+ */
+export function shownRadarAltitude(vessel: Vessel, env: VesselEnvironment): number {
+  return probeClearance(vessel, env);
+}
+
+function probeClearance(vessel: Vessel, env: VesselEnvironment): number {
   const st = structureOf(vessel);
+  const clamped = vessel.hold === 'clamps';
   const rl = v3.len(vessel.r);
   if (!(rl > 0)) return 0;
   const alt = rl - env.radius;
@@ -666,7 +701,10 @@ export function radarAltitude(vessel: Vessel, env: VesselEnvironment): number {
     const p = v3.add(vessel.r, quat.rotate(vessel.q, { x, y, z }));
     lowest = Math.min(lowest, v3.len(p) - radius);
   };
-  for (const pr of st.probes) consider(pr.x, pr.y, pr.z, pr.radius);
+  for (const pr of st.probes) {
+    if (clamped && isGroundFixed(vessel.parts[pr.part]!)) continue;
+    consider(pr.x, pr.y, pr.z, pr.radius);
+  }
   for (const lg of st.legs) for (let l = 0; l < lg.probes.length; l++) if (lg.state.deploy >= 0.999 && !lg.state.broken[l]) consider(lg.probes[l]!.x, lg.probes[l]!.y, lg.probes[l]!.z, lg.probes[l]!.radius);
   return Math.max(0, lowest - env.radius - surface);
 }

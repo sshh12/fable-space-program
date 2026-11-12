@@ -58,7 +58,7 @@ describe('reported Mach number', () => {
     expect(vesselReadouts(v, env).mach).toBe(v.aero.mach);
   });
 
-  it('leaves the parachute envelope as it was: in vacuum it is still judged with the model value, not with 0', () => {
+  it('leaves the judgement of a chute as it was (the model value, not 0); the read-out says nothing where there is no air', () => {
     const env = makeEnv({ atmosphere: earthAir });
     const v = capsuleAt(env, 300000, 7700);
     const part = v.parts.find((p) => p.def.modules.some((m) => m.type === 'parachute' && m.mode === 'drogue'))!;
@@ -67,8 +67,15 @@ describe('reported Mach number', () => {
     const speed = v3.len(v.aero.airVelocity);
     const altitude = v3.len(v.r) - env.radius;
     const withModel = chuteEnvelope(def, altitude, v.aero.mach, speed, v.aero.q);
-    expect(nextChuteEnvelope(v, env)).toBe(withModel);
-    expect(vesselReadouts(v, env).chuteEnvelope).toBe(withModel);
+    // The judgement itself (what the failure rule of a deployed chute uses) is with the model value.
     expect(withModel).toBe('unsafe');
+    // 300 km up there is no air: the read-out carries nothing (request flight-ui-9).
+    expect(env.atmosphereAt(altitude).density).toBe(0);
+    expect(nextChuteEnvelope(v, env)).toBeNull();
+    expect(vesselReadouts(v, env).chuteEnvelope).toBeNull();
+    // In the air the read-out is a judgement again.
+    const low = capsuleAt(env, 9000, 180);
+    expect(env.atmosphereAt(9000).density).toBeGreaterThan(0.1);
+    expect(['safe', 'risky', 'unsafe']).toContain(nextChuteEnvelope(low, env));
   });
 });

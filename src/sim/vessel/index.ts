@@ -54,6 +54,8 @@ export {
 export {
   stagingInfo,
   toVesselSnapshot,
+  shownGLoad,
+  shownRadarAltitude,
   craftSnapshots,
   vesselReadouts,
   nextChuteEnvelope,
