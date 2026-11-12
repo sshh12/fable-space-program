@@ -824,6 +824,9 @@ Also exported from `@/render/core`: `MipGenerator`, `createSolidTexture`, `creat
 `CoreRenderer` (what `createRenderer` returns) adds to the `Renderer` contract: `core`, `resources`
 (`reset(key)`, `isDefault(key)`), `setDeterministic(on, { cycleNoise? })` (with `cycleNoise` the blue-noise offset `frame.misc.zw` keeps cycling from the count of frames since the call, reproducibly, so a jittered march resolves as in the running game: request `vfx-6`; lab query `&deterministic=1&noise=cycle`), `setJitter(enabled)` (identical sub-pixel sampling
 every frame, for A/B readbacks), `setExposureOverride(ev100 | null)`, `exposureInfo()`,
+`setContactShadow(params)` / `contactShadow()` / `contactShader` (the rules of the screen-space contact shadow,
+section 13; for tuning and A/B pictures), `setShadowDebug(flags)` (switches of the sun-shadow filter, only in
+a page opened with `shadowdebug=1`),
 `readHdrPixels(target?, rect?)` and `readHdrStats(target?)` with target `'hdr'` (the scene target before
 TAA, internal resolution) or `'resolved'` (TAA output, display resolution), `readDepth()` (`'scene.depth'`),
 `resetPerf()`, `passStats()`, `featureOrder()`, `frameContext`.
@@ -871,7 +874,19 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   towards the sun, luminance-weighted, over `SUN_AIR_CLEAR` = 0.75, capped at 1; request
   `atmosphere-clouds-10`): unchanged with the sun 35 degrees up and more (0.03 EV at the 31 degrees of the
   mission's launch), 0.8 EV lower at 10 degrees, 1.6 at 1 degree seen from 7 km, five on the ground at
-  sunrise, so a frame of dawn sky is not exposed as noon. `CameraState.exposureCompensation` (EV, positive = brighter),
+  sunrise, so a frame of dawn sky is not exposed as noon. **At twilight the sky counts** (request
+  `atmosphere-clouds-11`): the sun's direct light dies in the last two degrees over the horizon (0.047 of it
+  through the Earth's air at 2.3 degrees, 0.008 at half a degree) while the sky loses a stop, and after
+  sunset the ground is lit by the sky alone, which is ten times brighter than the ground it lights: metered
+  on geometry, the frame went to mid-grey ground under a white sky the moment the disc was gone. So where
+  less than 5 % of the sun's light arrives directly (`SKY_SUN_NONE`; wholly from 0.5 %, `SKY_SUN_FULL`: the
+  sun low, under the horizon, behind a mountain or the Moon) and the camera is inside an atmosphere, an
+  exterior or map view is metered a second time with the sky's pixels counted as lit ones (what is brighter
+  than their 90th percentile, the glow about the sun, at that level) and the rules under the sun let go, and
+  the two targets are mixed by `twilightSkyWeight`; from 6 to 12 degrees under the horizon the sky hands
+  back to the night's metering. The weight is 1 before the disc reaches the horizon: the target has no
+  step there. Frames with the sun 2 degrees up and more, the night and views from above the air are
+  untouched. `CameraState.exposureCompensation` (EV, positive = brighter),
   `minEv100` (lower bound of EV100) and `kind: 'interior'` are honoured. An interior view meters the
   geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range
   (request `cockpit-3`), with two terms on top (requests `cockpit-5`, `cockpit-6`): a night key (the target
@@ -1023,9 +1038,29 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   frame-to-frame change of the resolved image is 0.06 with mask 0, 0.34 with 0.5 and 0.72 with 1. Use the
   smallest value that keeps the detail (0.3-0.5 for resolved waves): a reactive pixel is anti-aliased by
   this frame's 3 x 3 reconstruction alone.
-- Screen-space AO (GTAO, 2 slices x 6 steps per side) and contact shadows (10 steps towards the sun over
+- Screen-space AO (GTAO, 2 slices x 6 steps per side) and contact shadows (a march towards the sun over
   max(0.3 m, 1.5 % of the distance)) are computed at half resolution from `'scene.depthOpaque'` and RT1;
   AO multiplies ambient light only (`Surface.ao`), the contact term multiplies the sun.
+- **The contact shadow near the camera** (requests `cockpit-10`, `vehicle-pad-10`; `lighting/ao.ts`). A depth
+  buffer says what is in front of a point of the ray, not whether the ray goes through it. Beyond 8 m the
+  march keeps its first rule: 10 samples, shadowed where a sample lies behind a surface by less than 0.6 x
+  the march length. Near the camera that rule drew what is not there: a ray that passes behind the
+  SILHOUETTE of a wall counted as inside it for 18 cm of depth, hit or missed by the jittered 3 cm steps (a
+  one-bit stipple beside every cast shadow at arm's length, which is not the cascade filter's noise: with
+  the contact shadow off it is gone, with the filter's turn or cross-fade off it stays), a thin rail shadowed
+  everything within 18 cm behind it, and a face seen at a grazing angle shadowed itself where the depth of
+  the pixel beside it was taken for its own. Within `nearRange` (8 m, dithered into the far rule):
+  a surface point in the receiver's own tangent plane, or under it, is never in the way; where the ray goes
+  behind a surface between two samples the place is found by bisection (4 steps) and the depth by which it
+  is behind THERE decides; an occluder counts as `thicknessTexels` = 2 texels of the finest sun cascade
+  thick (what the cascade cannot draw: 1.2 cm from a cabin, 2.3 cm outside), giving way to the far rule's
+  thickness between 3 and 8 m; 20 samples. `ContactShadowParams` / `CONTACT_SHADOW_DEFAULT`;
+  `CoreRenderer.setContactShadow` switches single rules (`CONTACT_SHADOW_LEGACY` is the first rule
+  everywhere), and `contact=first` in a page's address runs the pass as it was. Rules that exist and are not
+  the game's: `thinOnly` (only occluders that touch the receiver or are thin count: a rail's band becomes a
+  line, but the cascades' light leak along the foot of a wall shows from a cabin), `fade` / `interiorFade`
+  (no contact shadow where a cascade texel covers many pixels), and a candidate, `crossShare` (shader
+  `contact=v5`).
 - Bloom is threshold-free and linear (13-tap downsamples, no Karis average), mixed at 4 %, and shaped as a
   glare spread function (request `atmosphere-clouds-7`): of the energy it spreads, every level twice as
   wide carries `BLOOM_FALLOFF` = half of the one before, the widest included, which is a point spread that
@@ -1543,6 +1578,8 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | Clouds split the sun into beam and cloud-base light: chunk function `cloudLight() -> vec2f` (`cloudShadow()` = its y), `'clouds.shadowMap'.a` = beam optical depth / r, far term with `c (1 + 7 c)` in the beam; deferred lighting: sun x beam, cloud base and a reduced sky as ambient (sections 5, 7, 17.6) | `atmosphere-clouds-6` | atmosphere (publisher of the map: writes a); terrain, ocean (far sheet), vehicle, cockpit (what the deferred pass lights); ocean (near field) and every forward shader that lights with `cloudShadow()` or a copy of it | None in code: `cloudShadow()` keeps its signature and a map with a = 0 behaves as before. Pictures change under cloud: cast shadows fade with the beam, shaded surfaces of every material are lit by the cloud base instead of a dimmed sun, and the blue sky light (table or probe) falls to a third. A forward shader that should match the deferred result switches from `cloudShadow()` to `cloudLight()` (section 17.6) |
 | `'clouds.shadowMap'` is depth-resolved (r, g, b as in section 7); new chunk `cloud_shadow` with the lookup the deferred lighting uses | `atmosphere-clouds-3` | atmosphere (publisher: nothing to change, the map already carries g and b); cockpit and ocean (their forward shaders sample the map themselves) | A publisher of a single-channel map casts no near shadow any more: write g and b. Forward-lit shaders: `#include "cloud_shadow"` and call `cloudShadow()` instead of an own copy of the r-only lookup, or surfaces above a deck stay in its shade |
 | `SharedResourceMap['post.reactive']` and `'post.reactive'` in `RenderFeature.requires`; the TAA history is rescaled by the exposure ratio | `ocean-4` | ocean (near-field waves), later vfx; everyone benefits from the rescale | None. Without a feature that requires it the mask is a 1 x 1 zero and nothing changes |
+| The contact shadow's rules near the camera (within 8 m: the receiver's own plane never occludes, the place where the ray goes behind a surface found by bisection, occluders two texels of the finest cascade thick, 20 samples); `ContactShadowParams`, `CONTACT_SHADOW_DEFAULT` / `_LEGACY`, `CoreRenderer.setContactShadow` / `contactShadow` / `contactShader`, `RendererOptions.contactShader`, `contact=first`; section 13 | `cockpit-10`, `vehicle-pad-10` | every package with pictures at arm's length or of thin fittings (cockpit, vehicle-pad, vfx close-ups) | None. Fewer false shadows near the camera: re-take close-ups; NOTICE-core-6 |
+| At twilight an exterior view counts the sky: `twilightSkyWeight`, `MeterInput.skyInAir` / `sunDirectShare`, `SKY_SUN_NONE` / `_FULL`, `TWILIGHT_SKY_FROM` / `_FULL`; section 13 | `atmosphere-clouds-11` | atmosphere-clouds, sky-lighting, anything pictured at dusk or dawn inside an atmosphere | None. The sun 2 degrees up and more, the night and space are metered as before; NOTICE-core-6 |
 | `CoreApi.addEmissiveHint(luminance, coverage, inside)`: a hint marked `inside` is for an interior view (an emitter the cabin's panes show: its luminance there and the share of the frame the panes cover) and counts as the outside seen through the windows; `EmissiveHint.inside`; section 13 | `cockpit-19` | cockpit (the entry sheath in the panes: it knows the windows and reads `'vfx.plasmaWindow'`) | None: nothing passes the argument yet, and hints without it behave as before |
 | `CoreApi.addEmissiveHint(luminance, coverage)`; `MeterInput.emissive`, `EmissiveHint`, `EMISSIVE_FULL` | `vfx-1` | vfx (plumes, trails, fireballs over sky pixels); sky if it wants its impostors metered | None. Without hints metering is unchanged |
 | `INTERIOR_CASCADE_RADIUS` = 6 m: cascade 0 of an interior camera (vessel-anchored) is 6 m instead of 12 m (0.59 cm texels) | `cockpit-4` | cockpit | None. Receivers farther than 6 m from an interior camera use cascade 1 |
