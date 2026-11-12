@@ -106,6 +106,12 @@ export interface MassProps {
 export interface AeroRuntime {
   /** Dynamic pressure Pa, Mach, angle of attack (nose vs air-relative velocity) rad. */
   q: number;
+  /**
+   * The MODEL's Mach number: air-relative speed over the speed of sound of the atmosphere sample, which the
+   * sample also carries where there is no air (VACUUM). The parachute envelopes are evaluated with it in
+   * every regime. What a vessel REPORTS (VesselSnapshot.aero.mach, Readouts.mach, milestone data) is
+   * `reportedMach`: 0 where the density is 0.
+   */
   mach: number;
   aoa: number;
   density: number;

@@ -26,6 +26,7 @@ export {
   toVesselSnapshot,
   vesselReadouts,
   nextChuteEnvelope,
+  reportedMach,
   radarAltitude,
   needsIntegration,
   vesselStateHash,

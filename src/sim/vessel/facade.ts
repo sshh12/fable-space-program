@@ -89,7 +89,7 @@ export function toVesselSnapshot(vessel: Vessel, world: WorldSideSnapshotFields)
     parts: vesselPartSnapshots(vessel),
     aero: {
       q: a.q,
-      mach: a.mach,
+      mach: reportedMach(vessel),
       aoa: a.aoa,
       airDensity: a.density,
       pressure: a.pressure,
@@ -446,6 +446,15 @@ export type VesselReadouts = Pick<
   | 'tiltFromVertical'
 >;
 
+/**
+ * The Mach number a vessel reports: 0 where there is no air (above an atmosphere's top, on an airless body),
+ * the model's Mach number inside an atmosphere (request flight-ui-6: in vacuum the model's value is the speed
+ * over a nominal speed of sound, which is no reading).
+ */
+export function reportedMach(vessel: Vessel): number {
+  return vessel.aero.density > 0 ? vessel.aero.mach : 0;
+}
+
 /** Envelope light of the next parachute stage that has not fired, for the current flight condition. */
 export function nextChuteEnvelope(vessel: Vessel, env: VesselEnvironment): ChuteEnvelope | null {
   const stages = vessel.vehicle.stages;
@@ -515,7 +524,7 @@ export function vesselReadouts(vessel: Vessel, env: VesselEnvironment, stages?: 
     gDose: vessel.gDose,
     gDoseLimit: G_DOSE_LIMIT,
     dynamicPressure: vessel.aero.q,
-    mach: vessel.aero.mach,
+    mach: reportedMach(vessel),
     angleOfAttack: vessel.aero.aoa,
     heatFlux: vessel.aero.heatFlux,
     ablatorFraction: ablator,

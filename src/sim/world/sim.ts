@@ -61,6 +61,7 @@ import {
   needsIntegration as vesselNeedsIntegration,
   nextLiveStage,
   radarAltitude,
+  reportedMach,
   rideBody,
   setFineControl,
   setLights,
@@ -1024,7 +1025,7 @@ class World implements SimWorld, MilestoneHost {
         worst = Math.max(worst, env === 'safe' ? 0 : env === 'risky' ? 1 : 2);
       }
     }
-    return { chuteEnvelope: worst, deployAltitude: altitude, deployMach: v.aero.mach, deploySpeed: speed, deployDynamicPressure: v.aero.q };
+    return { chuteEnvelope: worst, deployAltitude: altitude, deployMach: reportedMach(v), deploySpeed: speed, deployDynamicPressure: v.aero.q };
   }
 
   private failMission(reason: string): void {
