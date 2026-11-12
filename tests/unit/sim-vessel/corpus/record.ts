@@ -1,18 +1,27 @@
 /**
  * The corpus of vessel blobs (docs/ARCHITECTURE.md 7.2: "CI keeps a corpus of blobs written by every
  * released build and proves each still decodes"). Each entry is a scene of ../codecScenes.ts written by one
- * codec version: `<scene>.v<version>.bin`, listed in corpus.json with the state hash the vessel had when it
- * was written. ../codec.test.ts decodes every entry and compares the hash.
+ * codec version: `<scene>.v<version>.bin`, listed in corpus.json with the state hash of the vessel it was
+ * written from. ../codec.test.ts decodes every entry and compares the hash.
  *
- * This script ADDS entries that are missing (a new scene, or the entries of a new codec version after the
- * version constant was raised); it never rewrites one: a blob in the corpus is what an earlier build wrote.
+ * This script ADDS blobs that are missing (a new scene, or the blobs of a new codec version after the
+ * version constant was raised); it never rewrites one: a blob in the corpus is what an earlier build wrote,
+ * and tools/dev/guard-pins.test.ts holds the bytes of every blob.
  *
- *   npx tsx tests/unit/sim-vessel/codec-corpus/record.ts
+ * The state hash in the list is the hash of the scene's vessel UNDER THE PRESENT HASH DEFINITION (the hash
+ * is the hash of the body the present codec version writes, so it changes with the version). The list is
+ * therefore re-derived on every run, and before it is written every blob in the corpus is decoded and must
+ * give the hash of its scene: the list cannot be brought into agreement with a decode that went wrong.
+ *
+ * Versions 1 and 2 were written by earlier states of the build that introduced the codec, not by a released
+ * build: they prove the version dispatch and the conversions of the reader.
+ *
+ *   npx tsx tests/unit/sim-vessel/corpus/record.ts
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CODEC_VERSION, contentHash, encodeVessel, libraryResolver, stateHash } from '@/sim/vessel';
+import { CODEC_VERSION, contentHash, decodeVessel, encodeVessel, libraryResolver, stateHash } from '@/sim/vessel';
 import { buildScene, SCENE_NAMES } from '../codecScenes';
 import { loadLibrary } from '../helpers';
 
@@ -48,5 +57,16 @@ for (const scene of SCENE_NAMES) {
     list.push({ file, scene, version, defsHash, bytes: bytes.length, parts: s.vessel.parts.length, stateHash: stateHash(s.vessel) });
     console.log(`${file}: ${bytes.length} bytes, ${s.vessel.parts.length} parts, state ${stateHash(s.vessel)}`);
   }
+}
+// Re-derive the hashes under the present hash definition, holding every blob to the scene it was written from.
+const sceneHash = new Map<string, string>();
+for (const scene of SCENE_NAMES) sceneHash.set(scene, stateHash(buildScene(defs, scene).vessel));
+for (const e of list) {
+  const want = sceneHash.get(e.scene);
+  if (want === undefined) throw new Error(`${e.file}: scene "${e.scene}" is not built any more`);
+  const { vessel } = decodeVessel(new Uint8Array(fs.readFileSync(path.join(dir, e.file))), { resolver: refs });
+  const got = stateHash(vessel);
+  if (got !== want) throw new Error(`${e.file}: decodes to ${got}, its scene is ${want}: the blob no longer decodes to the state it was written from`);
+  e.stateHash = want;
 }
 fs.writeFileSync(listFile, `${JSON.stringify(list, null, 1)}\n`);

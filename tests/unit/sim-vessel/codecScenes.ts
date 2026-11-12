@@ -1,6 +1,6 @@
 /**
  * Vessels caught in the regimes the codec must carry exactly (docs/ARCHITECTURE.md 7.2), for the codec
- * tests and for the corpus of blobs (codec-corpus/): a lander 60 and 150 steps into a touchdown, a capsule
+ * tests and for the corpus of blobs (corpus/): a lander 60 and 150 steps into a touchdown, a capsule
  * at peak heating, a stack in the middle of a staging, a coasting vessel, and the 38-part stack in ascent.
  * Each scene gives the vessel at its instant, a way to make the environment of that instant again, and
  * the controls of the flight that follows.

@@ -6,7 +6,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 3022,
   "parts": 9,
-  "stateHash": "14652b2a72f0aaf5"
+  "stateHash": "204726ec8a23d75c"
  },
  {
   "file": "lander-touchdown-60.v2.bin",
@@ -15,7 +15,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 2952,
   "parts": 9,
-  "stateHash": "14652b2a72f0aaf5"
+  "stateHash": "204726ec8a23d75c"
  },
  {
   "file": "lander-touchdown-150.v1.bin",
@@ -24,7 +24,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 3024,
   "parts": 9,
-  "stateHash": "ac36db193ae609c0"
+  "stateHash": "7d929404528edefa"
  },
  {
   "file": "lander-touchdown-150.v2.bin",
@@ -33,7 +33,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 2954,
   "parts": 9,
-  "stateHash": "ac36db193ae609c0"
+  "stateHash": "7d929404528edefa"
  },
  {
   "file": "capsule-peak-heating.v1.bin",
@@ -42,7 +42,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 1703,
   "parts": 2,
-  "stateHash": "eb1ba828662a77eb"
+  "stateHash": "cc530a793459db9f"
  },
  {
   "file": "capsule-peak-heating.v2.bin",
@@ -51,7 +51,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 1692,
   "parts": 2,
-  "stateHash": "eb1ba828662a77eb"
+  "stateHash": "cc530a793459db9f"
  },
  {
   "file": "stack-mid-staging.v1.bin",
@@ -60,7 +60,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 8552,
   "parts": 38,
-  "stateHash": "2560e67ac85b921f"
+  "stateHash": "2267cff4f03f7689"
  },
  {
   "file": "stack-mid-staging.v2.bin",
@@ -69,7 +69,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 8223,
   "parts": 38,
-  "stateHash": "2560e67ac85b921f"
+  "stateHash": "2267cff4f03f7689"
  },
  {
   "file": "coasting.v1.bin",
@@ -78,7 +78,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 2246,
   "parts": 5,
-  "stateHash": "877cac9358afde0b"
+  "stateHash": "9393d84181160780"
  },
  {
   "file": "coasting.v2.bin",
@@ -87,7 +87,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 2209,
   "parts": 5,
-  "stateHash": "877cac9358afde0b"
+  "stateHash": "9393d84181160780"
  },
  {
   "file": "stack-ascent.v1.bin",
@@ -96,7 +96,7 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 8530,
   "parts": 38,
-  "stateHash": "8897e4406d3346be"
+  "stateHash": "f80d69aa18ba6a49"
  },
  {
   "file": "stack-ascent.v2.bin",
@@ -105,6 +105,60 @@
   "defsHash": "9c4352b6417db000",
   "bytes": 8201,
   "parts": 38,
-  "stateHash": "8897e4406d3346be"
+  "stateHash": "f80d69aa18ba6a49"
+ },
+ {
+  "file": "lander-touchdown-60.v3.bin",
+  "scene": "lander-touchdown-60",
+  "version": 3,
+  "defsHash": "552bd1a1a58414f1",
+  "bytes": 2988,
+  "parts": 9,
+  "stateHash": "204726ec8a23d75c"
+ },
+ {
+  "file": "lander-touchdown-150.v3.bin",
+  "scene": "lander-touchdown-150",
+  "version": 3,
+  "defsHash": "552bd1a1a58414f1",
+  "bytes": 2990,
+  "parts": 9,
+  "stateHash": "7d929404528edefa"
+ },
+ {
+  "file": "capsule-peak-heating.v3.bin",
+  "scene": "capsule-peak-heating",
+  "version": 3,
+  "defsHash": "552bd1a1a58414f1",
+  "bytes": 1728,
+  "parts": 2,
+  "stateHash": "cc530a793459db9f"
+ },
+ {
+  "file": "stack-mid-staging.v3.bin",
+  "scene": "stack-mid-staging",
+  "version": 3,
+  "defsHash": "552bd1a1a58414f1",
+  "bytes": 8331,
+  "parts": 38,
+  "stateHash": "2267cff4f03f7689"
+ },
+ {
+  "file": "coasting.v3.bin",
+  "scene": "coasting",
+  "version": 3,
+  "defsHash": "552bd1a1a58414f1",
+  "bytes": 2245,
+  "parts": 5,
+  "stateHash": "9393d84181160780"
+ },
+ {
+  "file": "stack-ascent.v3.bin",
+  "scene": "stack-ascent",
+  "version": 3,
+  "defsHash": "552bd1a1a58414f1",
+  "bytes": 8240,
+  "parts": 38,
+  "stateHash": "f80d69aa18ba6a49"
  }
 ]

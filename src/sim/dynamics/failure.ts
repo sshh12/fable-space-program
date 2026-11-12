@@ -7,6 +7,7 @@ import { v3 } from '@/core/math/vec3';
 import { computeMassProps } from '../vessel/massProps';
 import { eventPartId } from '../vessel/ids';
 import { applyImpulse, separateVessel } from '../vessel/split';
+import { crewAliveOf } from '../vessel/split';
 import { invalidateStructure, partPoint, structureOf } from '../vessel/structure';
 import { G_DOSE_LIMIT, type StepContext, type Vessel } from '../vessel/types';
 
@@ -95,7 +96,7 @@ export function destroyParts(vessel: Vessel, indices: readonly number[], cause: 
     }
   }
   if (crewLost) {
-    vessel.crewAlive = false;
+    vessel.crewAlive = crewAliveOf(vessel.parts);
     ctx.events.push({ type: 'crewLost', ut: ctx.ut, vesselId, cause: cause === 'impact' ? 'Impact' : cause === 'overheat' ? 'Burned up' : 'Vehicle break-up' });
   }
   const hadHold = vessel.hold;
@@ -138,11 +139,26 @@ export function checkLoads(vessel: Vessel, dt: number, ctx: StepContext): void {
   const g = vessel.gLoad;
   // Crew.
   if (st.crew > 0 && vessel.crewAlive) {
-    if (g > G_DOSE_THRESHOLD) vessel.gDose += (g - G_DOSE_THRESHOLD) * dt;
-    else if (g < G_DOSE_RECOVERY_BELOW && vessel.gDose > 0) vessel.gDose = Math.max(0, vessel.gDose - G_DOSE_RECOVERY_RATE * dt);
-    if (vessel.gDose > G_DOSE_LIMIT) {
-      vessel.crewAlive = false;
-      for (const p of vessel.parts) for (const m of p.modules) if (m.type === 'command') m.crewAlive = false;
+    // The dose is the crew's own: every crewed command part accumulates and recovers by itself, and a
+    // crew is lost when ITS dose passes the limit. The vessel shows the largest.
+    let worst = 0;
+    let lost = false;
+    for (const p of vessel.parts) {
+      const c = p.command;
+      if (!c) continue;
+      const m = p.modules[c.module];
+      if (!m || m.type !== 'command' || m.crew <= 0 || !m.crewAlive) continue;
+      if (g > G_DOSE_THRESHOLD) c.gDose += (g - G_DOSE_THRESHOLD) * dt;
+      else if (g < G_DOSE_RECOVERY_BELOW && c.gDose > 0) c.gDose = Math.max(0, c.gDose - G_DOSE_RECOVERY_RATE * dt);
+      if (c.gDose > worst) worst = c.gDose;
+      if (c.gDose > G_DOSE_LIMIT) {
+        m.crewAlive = false;
+        lost = true;
+      }
+    }
+    vessel.gDose = worst;
+    if (lost) {
+      vessel.crewAlive = crewAliveOf(vessel.parts);
       invalidateStructure(vessel);
       ctx.events.push({ type: 'crewLost', ut: ctx.ut, vesselId: vessel.id, cause: 'G-LOC / fatal deceleration' });
     }

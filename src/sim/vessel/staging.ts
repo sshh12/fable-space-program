@@ -68,7 +68,8 @@ function decouplePart(vessel: Vessel, index: number, impulse: number, sepY: numb
   const created = separateVessel(vessel, [index], [], ctx);
   if (created.length === 0) return created;
   const all = [vessel, ...created];
-  const childSide = all.find((v) => v.parts.some((p) => p.instanceId === id && v.crafts[p.craft]!.craftId === craftId))!;
+  // The side that took the part away may be a new craft (a piece of the craft the part was in).
+  const childSide = all.find((v) => v.parts.some((p) => p.instanceId === id && (v.crafts[p.craft]!.craftId === craftId || v.crafts[p.craft]!.parent === craftId)))!;
   const parentSide = childSide === vessel ? created[0]! : vessel;
   for (const v of all) fixHold(v, held);
   if (impulse !== 0) {

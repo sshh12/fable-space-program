@@ -84,6 +84,8 @@ export function craftSnapshots(vessel: Vessel, stages?: (craft: number) => Stage
       // A callsign is the universe's knowledge of an account; a vessel knows the account id only.
       ownerCallsign: null,
       commandPart: command ? command.instanceId : null,
+      // The cockpit of the command part, as the part carries it (ARCHITECTURE 7.2): nothing looks it up in the library.
+      cockpit: command && command.command ? { id: command.command.cockpit, cameraSeat: command.command.cameraSeat, sensorMount: command.command.sensorCamera } : null,
       staging: { nextStage: nextLiveStage(vessel, ci), stages: stages ? stages(ci) : [], lockout: c.stageLockout > 0 },
       chase: { defaultDistance: chase.defaultDistance, minDistance: chase.minDistance, maxDistance: chase.maxDistance },
       policy: { lendAttitude: c.policy.lendAttitude, lendEngines: c.policy.lendEngines, lendPropellant: c.policy.lendPropellant, helm: typeof c.policy.helm === 'string' ? c.policy.helm : c.policy.helm.slice() },

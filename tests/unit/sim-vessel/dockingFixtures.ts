@@ -66,6 +66,24 @@ export function dockingLibrary(defs: DefLibrary): DefLibrary {
     cameras: { cockpit: { part: 'core', seat: 'none' }, chase: CHASE },
     cockpit: null,
   };
+  // A tug whose port is on its flank: off the axis, its face turned 65 degrees from the axis and 20 degrees
+  // out of the plane. Docked by it, the pair has no common axis of symmetry.
+  const offset: VehicleDef = {
+    id: 'test-offset',
+    name: 'Test offset tug',
+    parts: [
+      { id: 'tank', def: 'heron-ascent-stage', parent: null, stageGroup: 'core' },
+      { id: 'engine', def: 'lyra-a', parent: 'tank', parentNode: 'engine', node: 'top', stageGroup: 'core' },
+      { id: 'side-port', def: 'test-port', parent: 'tank', position: [1.9, -0.7, 0.45], rotationDeg: [20, 0, -65], stageGroup: 'core' },
+    ],
+    stageGroups: [{ id: 'core', label: 'Offset tug' }],
+    stages: [],
+    abort: [],
+    actionGroups: {},
+    crew: [],
+    cameras: { cockpit: { part: 'tank', seat: 'none' }, chase: CHASE },
+    cockpit: null,
+  };
   const tandem: VehicleDef = {
     id: 'test-tandem',
     name: 'Test tandem',
@@ -94,12 +112,13 @@ export function dockingLibrary(defs: DefLibrary): DefLibrary {
   return {
     ...defs,
     parts: { ...defs.parts, [port.id]: port },
-    vehicles: { ...defs.vehicles, [ferry.id]: ferry, [hub.id]: hub, [tandem.id]: tandem },
+    vehicles: { ...defs.vehicles, [ferry.id]: ferry, [hub.id]: hub, [tandem.id]: tandem, [offset.id]: offset },
   };
 }
 
 /** A ferry with craft id `craftId`. */
 export const ferry = (lib: DefLibrary, craftId: string): Vessel => assembleVessel(lib, 'test-ferry', { craft: { craftId, ownerId: `owner-of-${craftId}`, name: craftId } });
+export const offsetTug = (lib: DefLibrary, craftId: string): Vessel => assembleVessel(lib, 'test-offset', { craft: { craftId, name: craftId } });
 export const hub = (lib: DefLibrary, craftId: string): Vessel => assembleVessel(lib, 'test-hub', { craft: { craftId, name: craftId } });
 
 export const partIndex = (v: Vessel, key: string): number => v.parts.findIndex((_, i) => partKeyOf(v, i) === key);

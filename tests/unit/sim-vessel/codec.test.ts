@@ -28,12 +28,16 @@ import {
   VesselDecodeError,
   type Vessel,
 } from '@/sim/vessel';
-import type { CorpusEntry } from './codec-corpus/record';
+import type { CorpusEntry } from './corpus/record';
 import { buildScene, flyOn, SCENE_NAMES, type Scene } from './codecScenes';
 import { dockingLibrary, ferry, mate, partIndex } from './dockingFixtures';
-import { loadLibrary } from './helpers';
+import { quat } from '@/core/math/quat';
+import { DEG } from '@/core/math/scalar';
+import { v3 } from '@/core/math/vec3';
+import { assembleVessel, cloneVessel, stepVessel } from '@/sim/vessel';
+import { controls, DT, loadLibrary, makeEnv, STANDARD_DENSITY, VEHICLE } from './helpers';
 
-const corpusDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codec-corpus');
+const corpusDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'corpus');
 let defs: DefLibrary;
 beforeAll(async () => {
   defs = await loadLibrary();
@@ -387,5 +391,198 @@ describe('the cheap copy for a rollback ring', () => {
     expect(stateHash(v)).toBe(at);
     flyOn(scene, v, scene.env(), 600);
     expect(stateHash(v)).toBe(later);
+  });
+});
+
+describe('a capture and the structure cache', () => {
+  /** A capsule entering steeply enough to lose its crew to the g dose. */
+  function steepEntry(angleDeg: number): { v: Vessel; env: ReturnType<typeof makeEnv> } {
+    const env = makeEnv({ densityTable: STANDARD_DENSITY });
+    const v = assembleVessel(defs, VEHICLE, { stagesAlreadyFired: 8 });
+    const gamma = -angleDeg * DEG;
+    v.r = { x: 0, y: env.radius + 100000, z: 0 };
+    v.v = { x: 11000 * Math.cos(gamma), y: 11000 * Math.sin(gamma), z: 0 };
+    v.q = quat.fromTo({ x: 0, y: 1, z: 0 }, v3.neg(v3.normalize(v.v)));
+    return { v, env };
+  }
+  const step = (v: Vessel, env: ReturnType<typeof makeEnv>, n: number): void => {
+    for (let i = 0; i < n && !v.destroyed; i++) {
+      stepVessel(v, env, controls(), DT);
+      env.advance(DT);
+    }
+  };
+
+  it('a capture from before the crew was lost: the cache built since describes a vessel without crew and is dropped', () => {
+    const report: string[] = [];
+    for (const angle of [9, 15, 25]) {
+      const { v, env } = steepEntry(angle);
+      // Fly to a dose of 12 g s: the crew is alive, the limit is 15.
+      let guard = 0;
+      while (v.gDose < 12 && guard++ < 20000) step(v, env, 1);
+      expect(v.crewAlive, `${angle} deg`).toBe(true);
+      expect(v.gDose).toBeGreaterThanOrEqual(12);
+      const capture = captureVessel(v);
+      const copy = cloneVessel(v);
+      const envCopy = makeEnv({ densityTable: STANDARD_DENSITY });
+      envCopy.advance(env.ut - envCopy.ut);
+      const under = structureOf(v);
+      expect(under.crew).toBe(3);
+      // On: the crew is lost, and the structure is rebuilt for a vessel without crew.
+      let toLoss = 0;
+      while (v.crewAlive && toLoss < 2000) {
+        step(v, env, 1);
+        toLoss++;
+      }
+      expect(v.crewAlive).toBe(false);
+      step(v, env, 5);
+      expect(structureOf(v).crew).toBe(0);
+      expect(v.struct).not.toBe(under);
+      // Back: the crew is alive, and the structure the vessel flies with says so.
+      const after = toLoss + 5;
+      restoreVessel(v, capture);
+      env.advance(-after * DT);
+      expect(v.crewAlive).toBe(true);
+      expect(v.struct, 'a structure built after the capture is not kept').toBeNull();
+      expect(structureOf(v).crew).toBe(3);
+      // The flight from the capture is the flight of an independent copy of that state: the dose goes on
+      // accumulating, the crew is lost at the same step, the end state is the same.
+      const N = after + 240;
+      step(v, env, N);
+      step(copy, envCopy, N);
+      expect(v.crewAlive).toBe(false);
+      expect(v.gDose).toBe(copy.gDose);
+      expect(stateHash(v), `${angle} deg`).toBe(stateHash(copy));
+      report.push(`${angle} deg: crew lost ${toLoss} steps after the capture, dose ${v.gDose.toFixed(1)} g s`);
+    }
+    console.log(`restore across a crew loss: ${report.join('; ')}`);
+  });
+
+  it('the cache the capture was taken under is kept; one that was only invalidated since is rebuilt', () => {
+    const scene = buildScene(defs, 'capsule-peak-heating');
+    const v = scene.vessel;
+    const under = structureOf(v);
+    const capture = captureVessel(v);
+    flyOn(scene, v, scene.env(), 50);
+    restoreVessel(v, capture);
+    expect(v.struct).toBe(under);
+    // A capture taken while the vessel had no cache keeps none.
+    v.struct = null;
+    const bare = captureVessel(v);
+    structureOf(v);
+    restoreVessel(v, bare);
+    expect(v.struct).toBeNull();
+  });
+});
+
+describe('what a blob may not say', () => {
+  const coasting = (): Vessel => buildScene(defs, 'coasting').vessel;
+
+  it('a member of an enumeration this build does not have is refused, not read as a neutral value', () => {
+    const hold = coasting();
+    (hold as { hold: unknown }).hold = 'tethered';
+    expect(() => decode(encode(hold))).toThrow(/unknown hold 255/);
+    const surface = coasting();
+    (surface as { surface: unknown }).surface = 'adrift';
+    expect(() => decode(encode(surface))).toThrow(/unknown surface state 255/);
+    const sas = coasting();
+    (sas.sas as { mode: unknown }).mode = 'dance';
+    expect(() => decode(encode(sas))).toThrow(/unknown SAS mode "dance"/);
+    for (const bad of [hold, surface, sas]) {
+      try {
+        decode(encode(bad));
+      } catch (e) {
+        expect(e).toBeInstanceOf(VesselDecodeError);
+        expect((e as VesselDecodeError).problem).toBe('format');
+      }
+    }
+  });
+
+  it('a parent that is not a part of the vessel, is the part itself, belongs to another craft or closes a loop is refused', () => {
+    const outside = coasting();
+    outside.parts[2]!.parent = 99;
+    expect(() => decode(encode(outside))).toThrow(/its parent index 99 is not a part of the vessel/);
+    const self = coasting();
+    self.parts[2]!.parent = 2;
+    expect(() => decode(encode(self))).toThrow(/its parent index 2 is not a part of the vessel/);
+    const loop = coasting();
+    loop.parts[1]!.parent = 2;
+    loop.parts[2]!.parent = 1;
+    expect(() => decode(encode(loop))).toThrow(/its parents form a loop/);
+    // Craft are joined by links: a parent pointer into another craft is not a tree edge.
+    const lib = dockingLibrary(defs);
+    const a = ferry(lib, 'ferry-a');
+    const b = ferry(lib, 'ferry-b');
+    mate(a, partIndex(a, 'ferry-a/port'), b, partIndex(b, 'ferry-b/port'));
+    computeMassProps(a);
+    computeMassProps(b);
+    dockMerge(a, b, partIndex(a, 'ferry-a/port'), partIndex(b, 'ferry-b/port'), 10);
+    a.parts[partIndex(a, 'ferry-b/capsule')]!.parent = partIndex(a, 'ferry-a/port');
+    expect(() => decode(encode(a, lib), lib)).toThrow(/its parent belongs to another craft/);
+  });
+
+  it('an embedded design is held to what the simulation reads of a vehicle before anything is built from it', () => {
+    const lib = dockingLibrary(defs);
+    const embed = (change: (design: Record<string, unknown>) => void): Uint8Array => {
+      const v = ferry(lib, 'ferry-a');
+      const design = JSON.parse(JSON.stringify(v.crafts[0]!.vehicle)) as Record<string, unknown>;
+      change(design);
+      v.crafts[0]!.vehicle = design as unknown as Vessel['crafts'][number]['vehicle'];
+      // Written under a library that does not have the design: it travels in the blob.
+      return encode(v, lib);
+    };
+    const decodeIn = (bytes: Uint8Array) => decode(bytes, lib);
+    // Unchanged, it decodes: the design is read from the blob, not looked up.
+    expect(decodeIn(embed(() => undefined)).vessel.crafts[0]!.vehicle.id).toBe('test-ferry');
+    const parts = (d: Record<string, unknown>) => d['parts'] as Record<string, unknown>[];
+    expect(() => decodeIn(embed((d) => (parts(d)[3]!['parent'] = 'nowhere')))).toThrow(/craft "ferry-a": the embedded design has a part "tank" whose parent "nowhere" it does not have/);
+    expect(() => decodeIn(embed((d) => (parts(d)[1]!['parent'] = null)))).toThrow(/has 2 root parts/);
+    expect(() => decodeIn(embed((d) => (parts(d)[2]!['id'] = 'capsule')))).toThrow(/has two parts "capsule"/);
+    expect(() => decodeIn(embed((d) => (d['stageGroups'] = [{ id: 'capsule', label: 'x' }])))).toThrow(/in a stage group it does not list/);
+    expect(() => decodeIn(embed((d) => (d['stages'] = [{ label: 'x' }])))).toThrow(/needs stages with actions/);
+    expect(() => decodeIn(embed((d) => (d['cameras'] = {})))).toThrow(/needs cameras\.chase with its three distances/);
+    expect(() => decodeIn(embed((d) => (d['parts'] = [])))).toThrow(/has no parts/);
+    try {
+      decodeIn(embed((d) => (d['cameras'] = {})));
+    } catch (e) {
+      expect((e as VesselDecodeError).problem).toBe('vehicle');
+    }
+  });
+
+  it('the bytes do not depend on the order in which the fields of a state object were set', () => {
+    const v = coasting();
+    const shuffled = cloneVessel(v);
+    for (const p of shuffled.parts) {
+      p.modules = p.modules.map((m) => Object.fromEntries(Object.entries(m).reverse()) as typeof m);
+      if (p.command) p.command = Object.fromEntries(Object.entries(p.command).reverse()) as unknown as typeof p.command;
+    }
+    expect(sameBytes(encode(v), encode(shuffled))).toBe(true);
+    expect(stateHash(shuffled)).toBe(stateHash(v));
+    // Version 2 wrote the keys in the order of the object, so there the same state had two encodings.
+    const old = (x: Vessel): Uint8Array => encodeVessel(x, { defsHash: 't', refs: libraryResolver(defs), version: 2 });
+    expect(sameBytes(old(v), old(shuffled))).toBe(false);
+  });
+
+  it('a piece written before pieces were craft becomes a craft of its own on load', () => {
+    // The stack mid-staging sheds its first stage; written in version 2, the piece carried its parent's craft id.
+    const scene = buildScene(defs, 'stack-mid-staging');
+    const v = scene.vessel;
+    const spawned: Vessel[] = [];
+    const env = scene.env();
+    for (let i = 0; i < 600 && spawned.length === 0; i++) {
+      spawned.push(...stepVessel(v, env, controls({ throttle: 1 }), DT).spawned);
+      env.advance(DT);
+    }
+    expect(spawned.length).toBeGreaterThan(0);
+    const piece = spawned[0]!;
+    const now = piece.crafts[0]!;
+    expect(now.parent).toBe(v.crafts[0]!.craftId);
+    // As version 2 had it: the parent's id, no lineage.
+    const before = cloneVessel(piece);
+    before.crafts[0]!.craftId = now.parent!;
+    const blob = encodeVessel(before, { defsHash: 't', refs: libraryResolver(defs), version: 2 });
+    const { vessel: loaded } = decode(blob);
+    expect([loaded.crafts[0]!.craftId, loaded.crafts[0]!.parent, loaded.crafts[0]!.root]).toEqual([now.craftId, now.parent, now.root]);
+    expect(loaded.id).toBe(piece.id);
+    expect(stateHash(loaded)).toBe(stateHash(piece));
   });
 });

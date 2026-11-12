@@ -15,7 +15,7 @@ import { v3, type Vec3 } from '@/core/math/vec3';
 import { linkRoll } from './assemble';
 import { assemblyId, findPartByKey, partKeyOf } from './ids';
 import { computeMassProps } from './massProps';
-import { separateVessel } from './split';
+import { separateVessel, crewAliveOf, gDoseOf } from './split';
 import { invalidateStructure, partDir, partPoint } from './structure';
 import type { PartRuntime, StepContext, Vessel } from './types';
 
@@ -156,8 +156,9 @@ export function dockMerge(base: Vessel, other: Vessel, basePort: number, otherPo
 
   // Identity.
   if (!baseWasAssembly) base.id = otherWasAssembly ? other.id : assemblyId(base.id, other.id, tick);
-  base.crewAlive = base.crewAlive && other.crewAlive;
-  base.gDose = Math.max(base.gDose, other.gDose);
+  // Crew: what the command parts aboard say. A dose stays with its command part and is not shared.
+  base.crewAlive = crewAliveOf(base.parts);
+  base.gDose = gDoseOf(base.parts);
   if (base.hold === 'asleep') {
     base.hold = null;
     base.anchor = null;

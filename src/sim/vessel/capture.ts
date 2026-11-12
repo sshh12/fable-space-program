@@ -1,9 +1,10 @@
 /**
  * The cheap copy of a vessel's complete dynamic state for a rollback ring (docs/ARCHITECTURE.md 7.2): a
  * capture is taken at a tick, the vessel is stepped on, and the capture is put back when the ticks since
- * must be re-run. Unlike the codec there are no bytes, no definition lookups and, while the part set is
- * the one the capture was taken with, no rebuild of the structure cache: the state is written back into
- * the vessel's own objects.
+ * must be re-run. Unlike the codec there are no bytes, no definition lookups and, while the vessel still
+ * has the very structure cache the capture was taken under, no rebuild of it: the state is written back
+ * into the vessel's own objects. The cache is derived from state (the crew alive, the hold of the clamps,
+ * the shielding of parts), so one that was built since the capture describes a later state and is dropped.
  */
 import { cloneVessel } from './assemble';
 import type { Vessel } from './types';
@@ -11,11 +12,13 @@ import type { Vessel } from './types';
 /** A vessel's dynamic state at one instant. Opaque: put it back with `restoreVessel`. */
 export interface VesselCapture {
   readonly state: Vessel;
+  /** The vessel's structure cache when the capture was taken (null when it had none): kept at a restore only when the vessel still has this very object. */
+  readonly struct: unknown;
 }
 
 /** Copy the complete dynamic state of a vessel (definitions are shared, the structure cache is not copied). */
 export function captureVessel(vessel: Vessel): VesselCapture {
-  return { state: cloneVessel(vessel) };
+  return { state: cloneVessel(vessel), struct: vessel.struct };
 }
 
 /** Keys that hold shared definitions or derived caches: set by reference, never walked. */
@@ -71,14 +74,16 @@ function sameStructure(vessel: Vessel, c: Vessel): boolean {
 
 /**
  * Put a capture back into the vessel it was taken from. The capture is not consumed: it can be put back
- * again. While the vessel has the part set of the capture its objects and its structure cache are kept;
- * after a structural change since the capture (a staging, a break-up, a dock) the vessel takes the
- * captured part set and its structure is rebuilt on demand.
+ * again. While the vessel has the part set of the capture its objects are kept, and its structure cache is
+ * kept when it is the one the capture was taken under (every change of what the cache depends on replaces
+ * the cache object: invalidateStructure); a cache built since is dropped and rebuilt on demand from the
+ * restored state. After a structural change since the capture (a staging, a break-up, a dock) the vessel
+ * takes the captured part set and its structure is rebuilt on demand.
  */
 export function restoreVessel(vessel: Vessel, capture: VesselCapture): void {
   const c = capture.state;
   if (sameStructure(vessel, c)) {
-    const struct = vessel.struct;
+    const struct = vessel.struct !== null && vessel.struct === capture.struct ? vessel.struct : null;
     writeInto(vessel as unknown as Record<string, unknown>, c as unknown as Record<string, unknown>);
     vessel.struct = struct;
     return;

@@ -9,8 +9,8 @@
 import { TICKS_PER_SECOND } from '@/core/contracts/net';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
-import { cloneCraft, cloneVessel, createPart, defaultControlPart, emptyVessel } from './assemble';
-import { ASSEMBLY_ID_PREFIX, craftRootInstanceId, singleCraftVesselId } from './ids';
+import { cloneVessel, createPart, defaultControlPart, emptyVessel } from './assemble';
+import { ASSEMBLY_ID_PREFIX, craftRootInstanceId, pieceCraft, singleCraftVesselId } from './ids';
 import { computeMassProps, partMass } from './massProps';
 import { invalidateStructure, panelCentroid, panelRadial } from './structure';
 import type { CraftRuntime, DockLink, PartRuntime, PendingAction, StepContext, Vessel } from './types';
@@ -77,8 +77,37 @@ function pieceName(crafts: readonly CraftRuntime[], parts: PartRuntime[], pieceC
   return crafts[pieceCrafts[best.craft]!]!.vehicle.stageGroups.find((g) => g.id === best.group)?.label ?? root.def.name;
 }
 
-function hasCrew(parts: PartRuntime[]): boolean {
+function hasCrew(parts: readonly PartRuntime[]): boolean {
   return parts.some((p) => p.modules.some((m) => m.type === 'command' && m.crew > 0 && m.crewAlive));
+}
+
+/**
+ * The crew flag of a vessel made of `parts`: true while a crewed command part aboard has its crew alive,
+ * and true when no command part aboard is crewed (nobody to lose). It is derived from the command parts
+ * wherever the part set changes (a separation, a dock, an undock), never carried over from the vessel the
+ * parts came from: a live crew does not die by docking to a wreck, and is itself again after undocking.
+ */
+export function crewAliveOf(parts: readonly PartRuntime[]): boolean {
+  return hasCrew(parts) || !parts.some((p) => p.modules.some((m) => m.type === 'command' && m.crew > 0));
+}
+
+/**
+ * The g dose a vessel made of `parts` shows: the largest among its crewed command parts whose crew is
+ * alive; when no crew aboard is alive, the largest among its crewed command parts (the dose that was
+ * fatal stays readable); 0 without a crewed command part.
+ */
+export function gDoseOf(parts: readonly PartRuntime[]): number {
+  let live = -1;
+  let any = 0;
+  for (const p of parts) {
+    const c = p.command;
+    if (!c) continue;
+    const m = p.modules[c.module];
+    if (!m || m.type !== 'command' || m.crew <= 0) continue;
+    if (c.gDose > any) any = c.gDose;
+    if (m.crewAlive && c.gDose > live) live = c.gDose;
+  }
+  return live >= 0 ? live : any;
 }
 
 function resetTransient(v: Vessel): void {
@@ -151,12 +180,15 @@ function vacantHelm(v: Vessel): Vessel['helm'] {
  * the component that keeps the identity (the one containing the old root; if the root is gone, the crewed
  * one, else the heaviest). Returns the newly created vessels (already appended to ctx.spawned).
  *
- * Craft: every piece lists the craft whose parts it has. The record with the live stage stack stays with the
- * piece that holds the craft's root part (with the identity-keeping piece when no piece holds it); the
- * other pieces carry a copy. Ids follow ARCHITECTURE section 3: a piece of one craft is the craft id when
- * it holds that craft's root part, else `<craftId>~<instance id of its first part>`; of the pieces with two
+ * Craft: a craft stays with the piece that holds its root part (with the identity-keeping piece when no
+ * piece holds it): that piece keeps the craft's id and its live stage stack. Every other piece that takes
+ * parts of the craft away is a NEW craft (ids.ts, pieceCraft: a copy of the stage state, an id derived from
+ * the parent's, the lineage recorded), so a craft id never appears in two vessels. Vessel ids: a piece of
+ * one craft has the craft's own vessel id (the craft id of a launched craft; for a piece craft
+ * `<launched craft>~<instance id of its root part>`, the form a piece always had); of the pieces with two
  * or more craft the one with the most craft (tie: the lowest craft id) keeps the assembly id, the others
- * are `a~<their lowest craft id>~<tick>`. The helm stays with the piece that holds its control part.
+ * are `a~<their lowest craft id>~<tick>`. The helm stays with the piece that holds its control part. The
+ * crew flag and the shown g dose of every piece are derived from the command parts it has.
  */
 export function separateVessel(vessel: Vessel, cut: readonly number[], removed: readonly number[], ctx: StepContext): Vessel[] {
   const parts = vessel.parts;
@@ -201,6 +233,8 @@ export function separateVessel(vessel: Vessel, cut: readonly number[], removed: 
   const oldHelm = vessel.helm;
   const oldId = vessel.id;
   const wasAssembly = oldCrafts.length > 1;
+  const wasCrewAlive = vessel.crewAlive;
+  const keptDose = vessel.gDose;
   const tick = Math.round(ctx.ut * TICKS_PER_SECOND);
   // Craft and parent of every part as they are now (the parts of the identity-keeping piece are edited in place below).
   const craftOf = parts.map((p) => p.craft);
@@ -253,19 +287,18 @@ export function separateVessel(vessel: Vessel, cut: readonly number[], removed: 
     }
     target.parts = newParts;
     target.links = oldLinks.filter((l) => remap.has(l.a) && remap.has(l.b)).map((l) => ({ a: remap.get(l.a)!, b: remap.get(l.b)!, roll: l.roll }));
-    // The live record goes to the piece that holds the craft's root; the others get a copy with an empty queue.
-    target.crafts = crafts.map((ci) => {
+    // The craft goes with the piece that holds its root; what another piece takes away is a new craft.
+    target.crafts = crafts.map((ci, k) => {
       if (recordHolder[ci] === c) return oldCrafts[ci]!;
-      const copy = cloneCraft(oldCrafts[ci]!);
-      copy.pending = [];
-      return copy;
+      const first = newParts.find((p) => p.craft === k)!;
+      return pieceCraft(oldCrafts[ci]!, first.instanceId, tick);
     });
     const root = newParts[0]!;
     if (root.pos.x !== 0 || root.pos.y !== 0 || root.pos.z !== 0 || root.rot.w !== 1) reRoot(target, root);
     resetTransient(target);
     // Identity.
-    if (crafts.length >= 2) target.id = c === assemblyKeeper ? oldId : `${ASSEMBLY_ID_PREFIX}${crafts.map((ci) => oldCrafts[ci]!.craftId).sort()[0]!}~${tick}`;
-    else if (c !== keeper || wasAssembly) target.id = singleCraftVesselId(oldCrafts[crafts[0]!]!, newParts);
+    if (crafts.length >= 2) target.id = c === assemblyKeeper ? oldId : `${ASSEMBLY_ID_PREFIX}${target.crafts.map((x) => x.craftId).sort()[0]!}~${tick}`;
+    else if (c !== keeper || wasAssembly) target.id = singleCraftVesselId(target.crafts[0]!);
     // The helm stays with the piece that holds its control part.
     const control = remap.get(oldHelm.controlPart);
     if (control !== undefined) target.helm = { accountId: oldHelm.accountId, craft: Math.max(0, crafts.indexOf(oldHelm.craft)), controlPart: control };
@@ -283,10 +316,13 @@ export function separateVessel(vessel: Vessel, cut: readonly number[], removed: 
       target.anchor = null;
       target.surface = 'none';
       target.sas.hasTarget = false;
-      target.gDose = 0;
-      target.crewAlive = hasCrew(newParts) || !newParts.some((p) => p.modules.some((m) => m.type === 'command'));
       created.push(target);
     } else if (wasAssembly && crafts.length === 1) target.name = target.crafts[0]!.name;
+    // Crew: what the command parts of this piece say. The identity-keeping piece of a vessel that had
+    // lost its crew stays so unless a live crew is aboard it (a crewed part that was destroyed leaves no
+    // command part behind to say it).
+    target.crewAlive = c === keeper && !wasCrewAlive ? hasCrew(newParts) : crewAliveOf(newParts);
+    target.gDose = c === keeper && newParts.every((p) => p.command === null) ? keptDose : gDoseOf(newParts);
     all.push({ vessel: target, comp: c, crafts });
   }
   // Hand delayed actions to whichever piece now holds their parts.
@@ -317,12 +353,15 @@ export function applyImpulse(vessel: Vessel, jx: number, jy: number, jz: number)
 /**
  * Weld `other` into `base`: the released launch clamps, which stay behind as ONE held ground structure.
  * This is not a dock: the pieces have no ports (the component pass would split them again) and the weld
- * carries no momentum, because the result is held on the ground. Both vessels must be pieces of the same
- * craft; each part of `other` hangs on the base's root.
+ * carries no momentum, because the result is held on the ground. Both vessels must be pieces that left the
+ * SAME craft (siblings of one lineage parent); each part of `other` hangs on the base's root and becomes a
+ * part of the base's craft, and the craft of `other` ends there (its id is not used again).
  */
 export function mergeVessels(base: Vessel, other: Vessel): void {
-  if (base.crafts.length !== 1 || other.crafts.length !== 1 || base.crafts[0]!.craftId !== other.crafts[0]!.craftId) {
-    throw new Error(`mergeVessels welds pieces of one craft (got ${base.crafts.map((c) => c.craftId).join('+')} and ${other.crafts.map((c) => c.craftId).join('+')}); two craft are joined by dockMerge`);
+  const a = base.crafts[0];
+  const b = other.crafts[0];
+  if (base.crafts.length !== 1 || other.crafts.length !== 1 || !a || !b || a.parent === null || a.parent !== b.parent || a.craftId === b.craftId) {
+    throw new Error(`mergeVessels welds pieces that left one craft (got ${base.crafts.map((c) => c.craftId).join('+')} and ${other.crafts.map((c) => c.craftId).join('+')}); two craft are joined by dockMerge`);
   }
   const rel = quat.rotateInv(base.q, v3.sub(other.r, base.r));
   const qRel = quat.normalize(quat.mul(quat.conj(base.q), other.q));
@@ -353,13 +392,13 @@ export function jettisonPanels(vessel: Vessel, index: number, panels: number, im
   const frameQ = quat.normalize(quat.mul(vessel.q, part.rot));
   const frameW = quat.rotateInv(part.rot, vessel.w);
   for (let k = 0; k < panels; k++) {
-    // A panel is a piece of the fairing's craft: it carries a copy of the craft record (no queue of its own).
-    const record = cloneCraft(craft);
-    record.pending = [];
+    // A panel leaves the fairing's craft: it is a craft of its own (no queue of its own).
+    const panelId = `${part.instanceId}#panel${k}`;
+    const record = pieceCraft(craft, panelId, Math.round(ctx.ut * TICKS_PER_SECOND));
     record.stageLockout = 0;
     record.sinceStaging = Infinity;
-    const v = emptyVessel(`${craft.craftId}~${part.instanceId}#panel${k}`, `${part.def.name} panel ${k + 1}`, record);
-    const p = createPart(`${part.instanceId}#panel${k}`, part.def, part.stageGroup);
+    const v = emptyVessel(singleCraftVesselId(record), `${part.def.name} panel ${k + 1}`, record);
+    const p = createPart(panelId, part.def, part.stageGroup);
     p.panel = { index: k, count: panels };
     p.temps = part.temps.slice();
     p.resources = part.resources.map((x) => x / panels);

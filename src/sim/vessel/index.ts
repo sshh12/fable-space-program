@@ -6,7 +6,8 @@ export type { HoldKind, MassProps, PartRuntime, PendingAction, SasState, StepCon
 export { G_DOSE_LIMIT, STAGE_LOCKOUT } from './types';
 export { assembleVessel, vesselPartSnapshots, setModuleStateForLab, splitForStage } from './public';
 export { cloneVessel, cloneCraft, createCraft, defaultControlPart, linkRoll, VesselAssemblyError, type CraftIdentity } from './assemble';
-export { assemblyId, craftRootInstanceId, eventPartId, findCraftPart, findPartByKey, isAssemblyId, partKey, partKeyOf, seededCraftIds, type CraftIdSource } from './ids';
+export { assemblyId, assertIssuedId, craftRootInstanceId, eventPartId, findCraftPart, findPartByKey, ID_SEPARATORS, isAssemblyId, launchedCraftId, partKey, partKeyOf, pieceCraftId, seededCraftIds, singleCraftVesselId, type CraftIdSource } from './ids';
+export { crewAliveOf, gDoseOf } from './split';
 export { addLink, applyImpulseAt, combinedMomentum, dockBase, dockFace, dockMerge, momentumOf, snapPose, undock, type Momentum } from './dock';
 export { mergeVessels, separateVessel } from './split';
 export {

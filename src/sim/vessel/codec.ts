@@ -26,18 +26,32 @@
  * The STATE HASH is the hash of the body: it does not depend on `defsHash` (a change of an unrelated
  * definition does not move it), only on what the vessel is and which definitions its parts and craft use.
  */
+import { SAS_MODES } from '@/core/contracts/controls';
 import type { ControlInputs } from '@/core/contracts/controls';
 import type { DefLibrary, PartDef, VehicleDef } from '@/core/contracts/defs';
 import { hashU32 } from '@/core/math/hash';
 import { cloneModuleState, createCraft, createModuleRt, createModuleState, createPart, emptyVessel } from './assemble';
+import { pieceCraftId } from './ids';
 import { computeMassProps } from './massProps';
 import { MIGRATIONS, type MigrationRegistry, type SavedModule, type SavedPart } from './migrations';
 import type { CarriedState, CraftRuntime, HoldKind, ModuleRt, PartRuntime, PendingAction, SurfaceState, Vessel } from './types';
 
-/** Version this build writes. Version 1 wrote the carried probe states as one flag byte per probe; version 2 writes three bit sets. */
-export const CODEC_VERSION = 2;
+/**
+ * Version this build writes.
+ *   1  the carried probe states as one flag byte per probe;
+ *   2  the carried probe states as three bit sets;
+ *   3  a craft carries its lineage (parent craft id) and the instance id of its root part; the vessel
+ *      carries its sun sample; a command part carries its crew's g dose; the keys of every plain object
+ *      (module states, command data, queued actions) are written in sorted order, so the bytes do not
+ *      depend on the order in which code happened to set the fields.
+ * Versions 1 and 2 were written by earlier states of THIS build during the package that introduced the
+ * codec; no released build wrote them. Reading them proves the version dispatch and the conversions below
+ * (a piece that carried a copy of its parent's craft record becomes a craft of its own), not compatibility
+ * with a blob in the field.
+ */
+export const CODEC_VERSION = 3;
 /** Versions this build reads. */
-export const CODEC_VERSIONS_READ: readonly number[] = [1, 2];
+export const CODEC_VERSIONS_READ: readonly number[] = [1, 2, 3];
 
 const MAGIC = [0x46, 0x53, 0x50, 0x56];
 
@@ -342,6 +356,8 @@ class Reader {
 class Strings {
   private readonly index = new Map<string, number>();
   readonly list: string[] = [];
+  /** Write the keys of plain objects in sorted order (version 3 on). */
+  sorted = false;
   ref(s: string): number {
     let i = this.index.get(s);
     if (i === undefined) {
@@ -381,6 +397,7 @@ function writePlain(w: Writer, st: Strings, x: unknown): void {
   } else {
     const o = x as Record<string, unknown>;
     const keys = Object.keys(o).filter((k) => o[k] !== undefined);
+    if (st.sorted) keys.sort();
     w.u8(PLAIN_OBJECT);
     w.uint(keys.length);
     for (const k of keys) {
@@ -442,6 +459,80 @@ function sameShape(model: unknown, x: unknown): boolean {
   return typeof model === typeof x;
 }
 
+/** The member of an enumeration a byte names; a byte this build has no member for is refused, never mapped to a neutral value. */
+function enumOf<T>(members: readonly T[], byte: number, what: string): T {
+  if (byte >= members.length) throw new VesselDecodeError('format', `unknown ${what} ${byte} (this build knows ${members.length})`);
+  return members[byte]!;
+}
+
+/**
+ * A design that travels inside a blob (a craft whose vehicle the library does not have): parsed and held
+ * to what the simulation reads of a VehicleDef before anything is built from it.
+ */
+function embeddedDesign(json: string, craftId: string): VehicleDef {
+  const bad = (what: string): never => {
+    throw new VesselDecodeError('vehicle', `craft "${craftId}": the embedded design ${what}`);
+  };
+  let d: unknown;
+  try {
+    d = JSON.parse(json);
+  } catch {
+    return bad('is not JSON');
+  }
+  const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+  if (!isObj(d)) return bad('is not an object');
+  if (typeof d['id'] !== 'string' || d['id'] === '' || typeof d['name'] !== 'string') bad('needs a string id and name');
+  const parts = d['parts'];
+  if (!Array.isArray(parts) || parts.length === 0) return bad('has no parts');
+  const ids = new Set<string>();
+  for (const p of parts as unknown[]) {
+    if (!isObj(p) || typeof p['id'] !== 'string' || p['id'] === '' || typeof p['def'] !== 'string' || typeof p['stageGroup'] !== 'string' || !(p['parent'] === null || typeof p['parent'] === 'string')) return bad('has a part without id, def, stageGroup or parent');
+    if (ids.has(p['id'])) bad(`has two parts "${p['id']}"`);
+    ids.add(p['id']);
+  }
+  let roots = 0;
+  for (const p of parts as Record<string, unknown>[]) {
+    if (p['parent'] === null) roots++;
+    else if (!ids.has(p['parent'] as string)) bad(`has a part "${String(p['id'])}" whose parent "${String(p['parent'])}" it does not have`);
+  }
+  if (roots !== 1) bad(`has ${roots} root parts (one is needed)`);
+  const groups = d['stageGroups'];
+  if (!Array.isArray(groups) || !groups.every((g) => isObj(g) && typeof g['id'] === 'string')) return bad('needs stageGroups with ids');
+  const groupIds = new Set((groups as Record<string, unknown>[]).map((g) => g['id']));
+  for (const p of parts as Record<string, unknown>[]) if (!groupIds.has(p['stageGroup'])) bad(`has a part "${String(p['id'])}" in a stage group it does not list`);
+  if (!Array.isArray(d['stages']) || !d['stages'].every((s) => isObj(s) && Array.isArray(s['actions']))) bad('needs stages with actions');
+  if (!Array.isArray(d['crew'])) bad('needs a crew list (it may be empty)');
+  const cameras = d['cameras'];
+  const chase = isObj(cameras) ? cameras['chase'] : undefined;
+  if (!isObj(chase) || !['defaultDistance', 'minDistance', 'maxDistance'].every((k) => typeof chase[k] === 'number' && Number.isFinite(chase[k]))) bad('needs cameras.chase with its three distances');
+  return d as unknown as VehicleDef;
+}
+
+/**
+ * A vessel written before version 3 brought to the present model:
+ *  - a craft without lineage: the craft of a vessel that does not hold its vehicle's root part was a piece
+ *    that carried a copy of its parent's record under the parent's id; it becomes a craft of its own (the
+ *    id a piece gets now, the parent recorded, its first part its root);
+ *  - the g dose was the vessel's: every live crewed command part takes it.
+ */
+function upgradeBeforeLineage(v: Vessel): void {
+  for (let ci = 0; ci < v.crafts.length; ci++) {
+    const c = v.crafts[ci]!;
+    const own = v.parts.filter((p) => p.craft === ci);
+    if (own.length === 0 || own.some((p) => p.instanceId === c.root)) continue;
+    const first = own[0]!;
+    c.parent = c.craftId;
+    c.craftId = pieceCraftId(c.craftId, first.instanceId);
+    c.root = first.instanceId;
+  }
+  for (const p of v.parts) {
+    const c = p.command;
+    if (!c) continue;
+    const m = p.modules[c.module];
+    c.gDose = m && m.type === 'command' && m.crew > 0 && m.crewAlive ? v.gDose : 0;
+  }
+}
+
 // ------------------------------------------------------------------------------------------------ encode
 
 const HOLDS: readonly (HoldKind | null)[] = [null, 'clamps', 'ground', 'asleep'];
@@ -471,11 +562,15 @@ const controlsOut = (w: Writer, c: ControlInputs): void => {
   w.num(c.throttle);
 };
 
-function writeCrafts(st: Strings, crafts: readonly CraftRuntime[], refs: VehicleRefSource): Writer {
+function writeCrafts(st: Strings, crafts: readonly CraftRuntime[], refs: VehicleRefSource, version: number): Writer {
   const w = new Writer();
   w.uint(crafts.length);
   for (const c of crafts) {
     w.uint(st.ref(c.craftId));
+    if (version >= 3) {
+      optStr(w, st, c.parent);
+      w.uint(st.ref(c.root));
+    }
     const ref = refs.refOf(c.vehicle);
     if (ref.kind === 'library') {
       w.u8(0);
@@ -507,7 +602,7 @@ function writeCrafts(st: Strings, crafts: readonly CraftRuntime[], refs: Vehicle
   return w;
 }
 
-function writeVesselCore(st: Strings, v: Vessel): Writer {
+function writeVesselCore(st: Strings, v: Vessel, version: number): Writer {
   const w = new Writer();
   w.uint(st.ref(v.id));
   w.uint(st.ref(v.name));
@@ -576,6 +671,10 @@ function writeVesselCore(st: Strings, v: Vessel): Writer {
   vec(w, v.properAccel);
   w.num(v.gDose);
   w.bool(v.crewAlive);
+  if (version >= 3) {
+    vec(w, v.sun.dir);
+    w.num(v.sun.visibility);
+  }
   w.bool(v.contact.anyContact);
   w.num(v.contact.maxForce);
   w.num(v.contact.waterSubmersion);
@@ -675,6 +774,7 @@ function writeCarried(c: CarriedState | null, version: number): Writer {
 /** The body of a blob (everything after the header) in a given layout version. */
 function writeBody(vessel: Vessel, refs: VehicleRefSource, version: number): Uint8Array {
   const st = new Strings();
+  st.sorted = version >= 3;
   const defIndex = new Map<PartDef, number>();
   const defs = new Writer();
   const defList: PartDef[] = [];
@@ -689,8 +789,8 @@ function writeBody(vessel: Vessel, refs: VehicleRefSource, version: number): Uin
     defs.uint(st.ref(d.id));
     defs.uint(st.ref(partFingerprint(d)));
   }
-  const crafts = writeCrafts(st, vessel.crafts, refs);
-  const core = writeVesselCore(st, vessel);
+  const crafts = writeCrafts(st, vessel.crafts, refs, version);
+  const core = writeVesselCore(st, vessel, version);
   const parts = writeParts(st, vessel, defIndex);
   const carried = writeCarried(vessel.carried, version);
   const strings = new Writer();
@@ -831,6 +931,7 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
   const crafts: CraftRuntime[] = [];
   for (let n = cr.uint(), i = 0; i < n; i++) {
     const craftId = str(strings, cr.uint());
+    const lineage = head.version >= 3 ? { parent: optStrIn(cr, strings), root: str(strings, cr.uint()) } : null;
     const kind = cr.u8();
     let vehicle: VehicleDef;
     if (kind === 0) {
@@ -842,9 +943,13 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
       const current = vehicleHash(found);
       if (current !== hash) report.vehicleChanged.push({ craftId, vehicleId: id, written: hash, current });
     } else if (kind === 1) {
-      vehicle = JSON.parse(utf8Decoder.decode(cr.bytes(cr.uint()))) as VehicleDef;
+      vehicle = embeddedDesign(utf8Decoder.decode(cr.bytes(cr.uint())), craftId);
     } else throw new VesselDecodeError('format', `craft "${craftId}": unknown vehicle reference kind ${kind}`);
     const c = createCraft(vehicle, { craftId });
+    if (lineage) {
+      c.parent = lineage.parent;
+      c.root = lineage.root;
+    }
     c.ownerId = optStrIn(cr, strings);
     c.name = str(strings, cr.uint());
     c.joinedTick = cr.num();
@@ -875,7 +980,9 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
   v.stepCount = vr.num();
   const s = v.sas;
   s.enabled = vr.bool();
-  s.mode = str(strings, vr.uint()) as typeof s.mode;
+  const mode = str(strings, vr.uint());
+  if (!(SAS_MODES as readonly string[]).includes(mode)) throw new VesselDecodeError('format', `unknown SAS mode "${mode}"`);
+  s.mode = mode as typeof s.mode;
   s.holdDir = vr.bool() ? vecIn(vr) : null;
   s.target = quatIn(vr);
   s.hasTarget = vr.bool();
@@ -891,9 +998,9 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
   v.lightsOn = vr.bool();
   v.throttle = vr.num();
   v.appliedControls = { pitch: vr.num(), yaw: vr.num(), roll: vr.num(), translate: { x: vr.num(), y: vr.num(), z: vr.num() }, throttle: vr.num() };
-  v.hold = HOLDS[vr.u8()] ?? null;
+  v.hold = enumOf(HOLDS, vr.u8(), 'hold');
   v.anchor = vr.bool() ? { rFixed: vecIn(vr), qFixed: quatIn(vr) } : null;
-  v.surface = SURFACES[vr.u8()] ?? 'none';
+  v.surface = enumOf(SURFACES, vr.u8(), 'surface state');
   v.mp.mass = vr.f64();
   v.mp.com = vecIn(vr);
   for (let i = 0; i < 6; i++) v.mp.i[i] = vr.f64();
@@ -917,6 +1024,7 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
   v.properAccel = vecIn(vr);
   v.gDose = vr.num();
   v.crewAlive = vr.bool();
+  if (head.version >= 3) v.sun = { dir: vecIn(vr), visibility: vr.num() };
   v.contact = { anyContact: vr.bool(), maxForce: vr.num(), waterSubmersion: vr.num() };
   v.groundClearance = vr.num();
   v.restTimer = vr.num();
@@ -977,6 +1085,18 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
   }
   if (pr.left !== 0) throw new VesselDecodeError('block', `the parts block has ${pr.left} bytes this version does not read`);
   if (v.helm.craft >= crafts.length || (v.parts.length > 0 && v.helm.controlPart >= v.parts.length)) throw new VesselDecodeError('format', 'the helm names a craft or a part the vessel does not have');
+  // The part forest: every parent is a part of the vessel and of the same craft, and no part is its own ancestor.
+  for (let i = 0; i < v.parts.length; i++) {
+    const p = v.parts[i]!;
+    if (p.parent < -1 || p.parent >= v.parts.length || p.parent === i) throw new VesselDecodeError('format', `part "${p.instanceId}": its parent index ${p.parent} is not a part of the vessel`);
+    if (p.parent >= 0 && v.parts[p.parent]!.craft !== p.craft) throw new VesselDecodeError('format', `part "${p.instanceId}": its parent belongs to another craft (craft are joined by links, never by parent pointers)`);
+    let at = p.parent;
+    for (let hops = 0; at >= 0; hops++) {
+      if (hops > v.parts.length) throw new VesselDecodeError('format', `part "${p.instanceId}": its parents form a loop`);
+      at = v.parts[at]!.parent;
+    }
+  }
+  if (head.version < 3) upgradeBeforeLineage(v);
   for (const l of v.links) if (l.a >= v.parts.length || l.b >= v.parts.length) throw new VesselDecodeError('format', 'a dock link names a part the vessel does not have');
 
   // Carried state.

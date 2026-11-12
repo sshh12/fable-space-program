@@ -169,6 +169,8 @@ describe('craft blocks and part keys', () => {
     const craft = v.crafts![0]!;
     expect(craft.id).toBe(v.id);
     expect(craft).toMatchObject({ vehicleId: 'meridian-lunar', name: vehicle.name, ownerId: null, ownerCallsign: null, commandPart: 'capsule', chase: vehicle.cameras.chase });
+    // The cockpit of the command part, resolved: the interior id and the camera seat the vehicle names for it.
+    expect(craft.cockpit).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit.seat, sensorMount: null });
     expect(craft.policy).toEqual({ lendAttitude: true, lendEngines: false, lendPropellant: false, helm: 'crew' });
     expect(craft.staging.nextStage).toBe(s.staging.nextStage);
     expect(craft.staging.lockout).toBe(s.staging.lockout);
@@ -199,10 +201,14 @@ describe('craft blocks and part keys', () => {
     const debris = s.vessels.find((x) => x.id !== v.id)!;
     expect(debris.id.startsWith(`${v.id}~`)).toBe(true);
     expect(debris.crafts).toHaveLength(1);
-    expect(debris.crafts![0]).toMatchObject({ id: v.id, vehicleId: 'meridian-lunar', commandPart: null });
+    // What left is a craft of its own: an id derived from the craft it left, unique in the snapshot.
+    const piece = debris.id.slice(v.id.length + 1);
+    expect(debris.crafts![0]).toMatchObject({ id: `${v.id}.${piece}`, vehicleId: 'meridian-lunar', commandPart: null, cockpit: null });
+    const craftIds = s.vessels.flatMap((x) => x.crafts!.map((c) => c.id));
+    expect(new Set(craftIds).size).toBe(craftIds.length);
     expect(debris.crafts![0]!.staging.stages).toEqual([]);
     expect(debris.controllable).toBe(false);
-    for (const p of debris.parts) expect(p.craftId).toBe(v.id);
+    for (const p of debris.parts) expect(p.craftId).toBe(`${v.id}.${piece}`);
     // The separation pushed the capsule onto another orbit: once it coasts on rails again its revision has moved.
     expect(stepUntil(sim, (x) => active(x).translationMode === 'rails', 60000)).toBeGreaterThan(0);
     expect(active(sim.snapshot()).revision!).toBeGreaterThan(r0);

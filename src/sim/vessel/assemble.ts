@@ -11,6 +11,7 @@ import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { INITIAL_PART_TEMP, type CommandRuntime, type CraftRuntime, type ModuleRt, type PartRuntime, type Vessel } from './types';
+import { assemblyId, assertIssuedId, type CraftIdSource } from './ids';
 
 export class VesselAssemblyError extends Error {
   constructor(vehicleId: string, message: string) {
@@ -129,6 +130,14 @@ export interface CraftIdentity {
   joinedTick?: number;
   /** Default: the default lend policy of the rules document (`docking.defaultLendPolicy` of DEFAULT_UNIVERSE_RULES). */
   policy?: LendPolicy;
+  /** Instance id of the craft's root part. Default: the root part of the vehicle. */
+  root?: string;
+  /**
+   * Where the ids of the vehicle's FURTHER craft come from, when its file mates several trees by docking
+   * ports (each tree is a craft). Default: `<craftId>-2`, `<craftId>-3`, ... (a display vessel that is its
+   * own universe).
+   */
+  ids?: CraftIdSource;
 }
 
 const clonePolicy = (p: LendPolicy): LendPolicy => ({ lendAttitude: p.lendAttitude, lendEngines: p.lendEngines, lendPropellant: p.lendPropellant, helm: typeof p.helm === 'string' ? p.helm : p.helm.slice() });
@@ -141,6 +150,8 @@ export function createCraft(vehicle: VehicleDef, identity: CraftIdentity = {}): 
     ownerId: identity.ownerId ?? null,
     name: identity.name ?? vehicle.name,
     joinedTick: identity.joinedTick ?? 0,
+    parent: null,
+    root: identity.root ?? vehicle.parts.find((p) => p.parent === null)?.id ?? '',
     nextStage: 0,
     stageLockout: 0,
     pending: [],
@@ -209,6 +220,7 @@ export function emptyVessel(id: string, name: string, craft: CraftRuntime): Vess
     properAccel: v3.zero(),
     gDose: 0,
     crewAlive: true,
+    sun: { dir: { x: 1, y: 0, z: 0 }, visibility: 1 },
     contact: { anyContact: false, maxForce: 0, waterSubmersion: 0 },
     groundClearance: Infinity,
     restTimer: 0,
@@ -253,6 +265,7 @@ function commandRuntime(vehicle: VehicleDef, instanceId: string, md: Extract<Mod
     cameraSeat: here ? camera.seat : null,
     sensorCamera: md.sensorCamera ?? null,
     remote: md.remote ?? false,
+    gDose: 0,
   };
 }
 
@@ -272,7 +285,13 @@ export function linkRoll(a: PartRuntime, b: PartRuntime, axis: Vec3): number {
   return Math.atan2(v3.dot(v3.cross(xa, xb), axis), v3.dot(xa, xb));
 }
 
-/** The complete vehicle as it stands on the pad (no stage fired): one craft, its id the id of the vessel. */
+/**
+ * The complete vehicle as it stands on the pad (no stage fired). A vehicle of one tree is one craft and its
+ * id is the id of the vessel. A vehicle whose file mates trees by docking ports is an assembly from the
+ * start: every tree is a craft of its own (the tree of the vehicle's root part takes the given identity,
+ * each further tree an id of its own), with the same vehicle definition and its own stage pointer, and the
+ * vessel has the assembly id of its first two craft.
+ */
 export function buildVehicle(defs: DefLibrary, vehicleId: string, identity: CraftIdentity = {}): Vessel {
   const vehicle = defs.vehicles[vehicleId];
   if (!vehicle) throw new VesselAssemblyError(vehicleId, 'unknown vehicle');
@@ -280,6 +299,8 @@ export function buildVehicle(defs: DefLibrary, vehicleId: string, identity: Craf
   if (roots.length !== 1) throw new VesselAssemblyError(vehicleId, `expected exactly one root part (parent null), found ${roots.length}`);
   const groups = new Set(vehicle.stageGroups.map((g) => g.id));
   const craft = createCraft(vehicle, identity);
+  assertIssuedId(craft.craftId, `craft of vehicle "${vehicleId}"`);
+  for (const pl of vehicle.parts) assertIssuedId(pl.id, `vehicles/${vehicleId}.json: part instance id`);
   const vessel = emptyVessel(craft.craftId, craft.name, craft);
 
   // Order parts so that parents precede children, keeping the file order otherwise.
@@ -342,6 +363,31 @@ export function buildVehicle(defs: DefLibrary, vehicleId: string, identity: Craf
     }
     vessel.parts.push(part);
   }
+  // Every tree that a dock link joins to another is its own craft.
+  const treeRoots: number[] = [];
+  for (let i = 0; i < vessel.parts.length; i++) if (vessel.parts[i]!.parent < 0) treeRoots.push(i);
+  if (treeRoots.length > 1) {
+    let issued = 1;
+    const source: CraftIdSource = identity.ids ?? { next: () => `${craft.craftId}-${++issued}` };
+    const craftOfRoot = new Map<number, number>([[treeRoots[0]!, 0]]);
+    for (let k = 1; k < treeRoots.length; k++) {
+      const mate = createCraft(vehicle, { ...identity, craftId: source.next(vehicle.id), root: vessel.parts[treeRoots[k]!]!.instanceId });
+      assertIssuedId(mate.craftId, `craft of vehicle "${vehicleId}"`);
+      if (vessel.crafts.some((c) => c.craftId === mate.craftId)) throw new VesselAssemblyError(vehicleId, `the id source issued "${mate.craftId}" twice`);
+      craftOfRoot.set(treeRoots[k]!, vessel.crafts.length);
+      vessel.crafts.push(mate);
+    }
+    for (const p of vessel.parts) {
+      let r = p;
+      let at = vessel.parts.indexOf(p);
+      while (r.parent >= 0) {
+        at = r.parent;
+        r = vessel.parts[at]!;
+      }
+      p.craft = craftOfRoot.get(at)!;
+    }
+    vessel.id = assemblyId(vessel.crafts[0]!.craftId, vessel.crafts[1]!.craftId, craft.joinedTick);
+  }
   if (vessel.parts.some((p) => p.modules.some((m) => m.type === 'launchClamp'))) {
     vessel.hold = 'clamps';
     vessel.surface = 'prelaunch';
@@ -380,6 +426,7 @@ export function cloneVessel(src: Vessel): Vessel {
     crafts: src.crafts.map(cloneCraft),
     links: src.links.map((l) => ({ ...l })),
     helm: { ...src.helm },
+    sun: { dir: v3.clone(src.sun.dir), visibility: src.sun.visibility },
     r: v3.clone(src.r),
     v: v3.clone(src.v),
     q: quat.clone(src.q),

@@ -71,6 +71,12 @@ export interface CommandRuntime {
   sensorCamera: { pos: Vec3Tuple; lookDir: Vec3Tuple; upDir: Vec3Tuple } | null;
   /** Command authority with no crew aboard. */
   remote: boolean;
+  /**
+   * Accumulated g dose of the crew of THIS part, g s (0 without crew). The dose belongs to the people in the
+   * seats: it stays with the part through a dock, an undock and a separation. `Vessel.gDose` is the largest
+   * dose among the live crewed command parts aboard.
+   */
+  gDose: number;
 }
 
 /**
@@ -89,6 +95,13 @@ export interface CraftRuntime {
   name: string;
   /** Tick at which the craft became part of this vessel (seniority inside an assembly). */
   joinedTick: number;
+  /**
+   * Lineage: the craft this one separated from. null = it was launched (assembled) as a craft. A piece that
+   * leaves a craft is a craft of its own from that tick on (ids.ts), so no two vessels ever carry one craft.
+   */
+  parent: string | null;
+  /** Instance id of the craft's root part: the part its identity goes with (the piece that holds it keeps the craft). */
+  root: string;
   /** Next stage-stack entry to fire, lockout seconds left, queued delayed actions, seconds since the last staging action. */
   nextStage: number;
   stageLockout: number;
@@ -272,6 +285,12 @@ export interface Vessel {
   properAccel: Vec3;
   gDose: number;
   crewAlive: boolean;
+  /**
+   * The sun sample the vessel flies with: direction to the star (ROOT axes) and the visible fraction of
+   * its disc at the vessel. The orchestrator takes it when the tick is a multiple of the sample period and
+   * at a rails landing; it is state, so that a vessel restored between two samples goes on with the one it had.
+   */
+  sun: { dir: Vec3; visibility: number };
   contact: { anyContact: boolean; maxForce: number; waterSubmersion: number };
   /** Height of the lowest contact probe above terrain or water at the last step, m (Infinity when not evaluated). */
   groundClearance: number;
