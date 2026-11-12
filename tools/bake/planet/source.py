@@ -235,7 +235,9 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
     out = rt.work_dir(body.id) / f"src-{key}"
     out.mkdir(parents=True, exist_ok=True)
     g = georef(path)
-    exact = check_georef(body.id, key, src, g)
+    # an exact grid is sampled as it is only when it has at least two exact mips (a height with an odd factor
+    # such as 7569 = 3 x 2523 has none: it is regridded onto a canonical grid like an inexact one)
+    exact = check_georef(body.id, key, src, g) and _mip_chain_depth(g["height"]) >= 2
     bands = src["bands"][:3]
     c = len(bands)
     nodata = src["nodata"]
@@ -426,7 +428,7 @@ def _upsample_rows(coarse: np.ndarray, r0: int, r1: int, wk: int) -> np.ndarray:
     return top * (1 - fy) + bot * fy
 
 
-PREPARE_VERSION = 2
+PREPARE_VERSION = 3
 
 
 def source_fingerprint(body: config.Body, key: str) -> str:
