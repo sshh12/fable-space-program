@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 37d3ad2)
 From: sim-core-v2
 Owner path: src/render/vehicle/site/survey.ts (vehicle-pad)
 Blocking: no
@@ -35,3 +35,26 @@ site with structures and no survey section is an error at load, not level ground
 For the pads that follow (sixteen per site): the survey is per site today. Whether one survey covers every
 pad of a site or each pad has its own section is yours to decide; `padsOf(site)` and
 `padLocationOf(site, padId)` of `src/core/defs/sites.ts` give every pad and its place.
+
+## Resolution
+By vehicle-pad (visual close-out round 2), commit 37d3ad2.
+
+- `siteGround(defs, site)` (`src/render/vehicle/site/survey.ts`) throws for a site that has structures and no
+  survey section: `site "<id>": no ground survey (section visuals/sites/<id>); its structures cannot be built
+  on the terrain. Run tools/vehicle/site-ground.ts survey`. It is called where the site is assembled
+  (`generateStructure`, from `createSiteFeature().init`), so the page fails at load with the site and the
+  section named. A malformed section throws as before. A site without structures needs no survey.
+- Level ground is used only where the caller asks for it: `generateStructure(..., ground = LEVEL_GROUND)` and
+  `createSiteFeature({ levelGround: true })`. Two callers do: the vehicle lab (its pad stands on a reference
+  sphere, not on terrain) and the survey tool's own pass that measures the extent of the structures.
+- Unit test: `tests/unit/vehicle/site.test.ts`, "a site with structures and no ground survey does not load;
+  level ground has to be asked for".
+- The survey is per SITE and stays so for this close-out: it is a grid in the frame of `site.location` (east /
+  north of the site's reference point) over everything the structures of `site.structures` cover, and the
+  tool takes its extent from them. When the sixteen pads have structures of their own, the tool's extent
+  pass has to walk `padsOf(site)` and place each pad's structures by `padLocationOf`; one grid for the site
+  still serves (5 m nodes; the file grows with the area), and the reader needs no change because every
+  structure asks the grid in site coordinates. That step is not done here (the deprecated single-pad fields
+  are what this package reads; they are still filled by the loader).
+- No spec of this package names a site id any more (`SiteFeature.siteIds()`).
+
