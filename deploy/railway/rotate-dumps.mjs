@@ -6,12 +6,16 @@
  *   2. the dump service's DUMPS_ACCESS_KEY_ID and DUMPS_SECRET_ACCESS_KEY are set to it (no redeploy: the cron
  *      job reads them at its next run), and the secret is sealed;
  *   3. the Modal secret fsp-dumps (environment fsp) is written again from it (deploy/modal/secret-from-bucket.mjs:
- *      through the Modal SDK on stdin, no file, no command line).
+ *      through the Modal SDK on stdin, no file, no command line);
+ *   4. the Modal app fsp-offsite is deployed again: a deployed app holds the secret it was deployed with (by
+ *      object, not by name), so after the secret is replaced its functions cannot start until it is redeployed
+ *      (found 2026-11-12: copy_dump calls queued and never ran).
  * The credential lives in this process's memory only. Nothing else holds the dumps credential (.env has the
  * packs credential alone).
  *
  *   node deploy/railway/rotate-dumps.mjs
  */
+import { spawnSync } from 'node:child_process';
 import { writeModalSecret } from '../modal/secret-from-bucket.mjs';
 import { ENVIRONMENT, gql, rw, sealState, services, setVars } from './provision.mjs';
 
@@ -34,3 +38,6 @@ for (let i = 0; i < 10 && !sealed; i++) {
 console.log(`rotate-dumps: dump service variables set; DUMPS_SECRET_ACCESS_KEY ${sealed ? 'sealed' : 'NOT sealed'}`);
 const keys = writeModalSecret('fsp-dumps', 'DUMPS', c);
 console.log(`rotate-dumps: Modal secret fsp-dumps (environment fsp) written again: ${keys.join(', ')}`);
+const d = spawnSync('modal', ['deploy', '--env', 'fsp', 'deploy/modal/fsp_offsite.py'], { encoding: 'utf8', shell: process.platform === 'win32', env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } });
+if (d.status !== 0) throw new Error(`modal deploy fsp-offsite failed (exit ${d.status}): run it by hand before the next 04:17 UTC copy`);
+console.log('rotate-dumps: Modal app fsp-offsite deployed again with the new secret');

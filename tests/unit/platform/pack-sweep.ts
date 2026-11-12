@@ -164,7 +164,7 @@ async function sweep(): Promise<number> {
     await flush();
     const seconds = (performance.now() - t0) / 1000;
     report[s.set] = { tiles: count, files: files.length, bytes, seconds, modes: Object.fromEntries(modes.map(([n, src]) => [n, src.stats()])) };
-    console.log(`${s.set}: ${count} tiles and ${files.length} files, ${(bytes / 1e9).toFixed(2)} GB, compared in 4 modes in ${seconds.toFixed(0)} s; mismatches so far ${mismatches}`);
+    console.log(`${s.set}: ${count} tiles and ${files.length} files, ${(bytes / 1e9).toFixed(2)} GB, compared in ${modes.length} modes in ${seconds.toFixed(0)} s; mismatches so far ${mismatches}`);
   }
   fs.mkdirSync(path.join(REPO, 'out', 'platform'), { recursive: true });
   fs.writeFileSync(path.join(REPO, 'out', 'platform', 'sweep.json'), JSON.stringify({ at: new Date().toISOString(), mismatches, report }, null, 1));
