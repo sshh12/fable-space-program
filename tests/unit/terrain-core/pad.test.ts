@@ -8,6 +8,10 @@ import type { TerrainAuthority } from '../../../src/terrain/provider';
 import { buildFlattenDiscs, discWeight } from '../../../src/terrain/modifiers';
 import { loadDefs } from '../../../src/core/defs/loader';
 import { fsDefSource } from '../../../src/core/defs/fsSource';
+import { padLocationOf, padsOf, SINGLE_PAD_ID } from '../../../src/core/defs/sites';
+import type { LaunchSiteDef, PadDef } from '../../../src/core/contracts/defs';
+import { latLonToDir } from '../../../src/core/geo/cubeSphere';
+import { DEG } from '../../../src/core/math/scalar';
 import { EARTH_R, FIXTURE_POINTS } from '../../../tools/terrain-core/fixtures';
 import { fixtureProvider, offset, prng } from './helpers';
 
@@ -172,19 +176,74 @@ describe("the repository's launch sites", () => {
       if (!body.terrain) continue;
       const sites = Object.values(defs.sites).filter((s) => s.bodyId === body.id);
       const discs = buildFlattenDiscs(body, sites);
+      // One disc per pad of every site, and no other.
+      expect(discs.length).toBe(body.terrain.modifiers.length + sites.reduce((n, s) => n + padsOf(s).length, 0));
       for (const s of sites) {
-        const disc = discs.find((d) => d.source === `sites/${s.id}.json pad`)!;
-        const at = (east: number, north: number): number => {
-          const c = { x: disc.cx, y: disc.cy, z: disc.cz };
-          const d = offset(c, east, north, body.radius);
-          return discWeight(disc, d.x, d.y, d.z, body.radius);
-        };
-        expect(at(0, 0)).toBe(1);
-        if (!s.pad.shape) continue;
-        expect(at(0.9 * s.pad.shape.coreRadius, 0)).toBe(1);
-        for (const a of s.pad.shape.areas) expect(at(a.east, a.north)).toBe(1);
-        expect(at(s.pad.blendRadius + 1, 0)).toBe(0);
+        for (const p of padsOf(s)) {
+          const disc = discs.find((d) => d.source === `sites/${s.id}.json pad "${p.id}"`)!;
+          const where = padLocationOf(s, p.id);
+          const centre = latLonToDir(where.latDeg * DEG, where.lonDeg * DEG);
+          expect({ x: disc.cx, y: disc.cy, z: disc.cz }).toEqual({ x: centre.x, y: centre.y, z: centre.z });
+          expect(disc.flatRadius).toBe(p.flatRadius);
+          expect(disc.blendRadius).toBe(p.blendRadius);
+          const at = (east: number, north: number): number => {
+            const d = offset(centre, east, north, body.radius);
+            return discWeight(disc, d.x, d.y, d.z, body.radius);
+          };
+          expect(at(0, 0)).toBe(1);
+          if (!p.shape) continue;
+          expect(at(0.9 * p.shape.coreRadius, 0)).toBe(1);
+          for (const a of p.shape.areas) expect(at(a.east, a.north)).toBe(1);
+          expect(at(p.blendRadius + 1, 0)).toBe(0);
+        }
       }
     }
+  });
+});
+
+describe('flatten discs are derived from the pads of a site', () => {
+  const body = { id: 'b', radius: 1_000_000, terrain: { modifiers: [] } } as unknown as Parameters<typeof buildFlattenDiscs>[0];
+  const pad = (id: string, flatRadius: number, blendRadius: number): PadDef => ({
+    id, name: id, offsetEnu: [0, 0], azimuthDeg: 90, class: 'light', maxLiftoffMass: 1, maxDiameter: 1, flatRadius, blendRadius, mountHeight: 2, structures: [],
+  });
+  const single: LaunchSiteDef = {
+    id: 'one', name: 'One', bodyId: 'b', location: { latDeg: 10, lonDeg: 20, padElevation: 30 },
+    padAzimuthDeg: 90, pad: { flatRadius: 100, blendRadius: 250, clampHeight: 3 }, structures: [], recoveryZones: [],
+  };
+  const many: LaunchSiteDef = {
+    ...single,
+    id: 'many',
+    location: { latDeg: 10, lonDeg: 20, padElevation: 30, pads: { north: { latDeg: 10.2, lonDeg: 20.1, padElevation: 44 }, south: { latDeg: 9.7, lonDeg: 20, padElevation: 'terrain' } } },
+    pads: [pad('first', 100, 250), pad('north', 60, 140), pad('south', 80, 200)],
+  };
+
+  it('one disc per pad at the pad location: the first at the reference point, the others at their resolved coordinates', () => {
+    const discs = buildFlattenDiscs(body, [many]);
+    expect(discs.map((d) => d.source)).toEqual(['sites/many.json pad "first"', 'sites/many.json pad "north"', 'sites/many.json pad "south"']);
+    const dirOf = (latDeg: number, lonDeg: number) => { const d = latLonToDir(latDeg * DEG, lonDeg * DEG); return { cx: d.x, cy: d.y, cz: d.z }; };
+    expect(discs[0]).toMatchObject({ ...dirOf(10, 20), flatRadius: 100, blendRadius: 250, elevation: 30, sample: false });
+    expect(discs[1]).toMatchObject({ ...dirOf(10.2, 20.1), flatRadius: 60, blendRadius: 140, elevation: 44, sample: false });
+    expect(discs[2]).toMatchObject({ ...dirOf(9.7, 20), flatRadius: 80, blendRadius: 200, sample: true });
+    // Each disc levels its own pad and nothing at another pad (they are 20 km and more apart here).
+    const centre = (i: number) => ({ x: discs[i]!.cx, y: discs[i]!.cy, z: discs[i]!.cz });
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const c = centre(j);
+        expect(discWeight(discs[i]!, c.x, c.y, c.z, body.radius)).toBe(i === j ? 1 : 0);
+      }
+    }
+  });
+
+  it('a site that states the single pad only has that one disc; sites in id order, pads in their order', () => {
+    const discs = buildFlattenDiscs(body, [single, many]);
+    expect(discs.map((d) => d.source)).toEqual([
+      'sites/many.json pad "first"', 'sites/many.json pad "north"', 'sites/many.json pad "south"', `sites/one.json pad "${SINGLE_PAD_ID}"`,
+    ]);
+    expect(discs[3]).toMatchObject({ flatRadius: 100, blendRadius: 250, elevation: 30 });
+  });
+
+  it('a pad after the first without resolved coordinates is refused by name', () => {
+    const unresolved: LaunchSiteDef = { ...many, location: { latDeg: 10, lonDeg: 20, padElevation: 30, pads: { north: { latDeg: 10.2, lonDeg: 20.1, padElevation: 44 } } } };
+    expect(() => buildFlattenDiscs(body, [unresolved])).toThrow('sites/many.json: pad "south" has no resolved coordinates');
   });
 });

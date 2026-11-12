@@ -1,10 +1,12 @@
 /**
  * Terrain modifiers applied on top of data + amplification: flatten discs from BodyDef.terrain.modifiers and
- * one per LaunchSiteDef on the body (pad.flatRadius / pad.blendRadius / location.padElevation).
+ * one per PAD of every LaunchSiteDef on the body, derived from the site's pads (flatRadius / blendRadius /
+ * shape of the pad at the pad's resolved location; src/core/defs/sites.ts). A site that states the
+ * deprecated single pad only has that one disc.
  *
  *   H = mix(H_natural, elevation, w(d)),  w = 1 for d <= flatRadius, smoothstep back to 0 at blendRadius,
  * d = great-circle distance on the datum sphere. Discs are applied in definition order (body modifiers
- * first, then sites sorted by id). Amplification and rocks are thereby suppressed on the pad, so it is flat
+ * first, then sites sorted by id, the pads of a site in their order). Amplification and rocks are thereby suppressed on the pad, so it is flat
  * for physics and rendering alike. 'sample' / 'terrain' elevation = the natural DATA height at the centre
  * (final data, no procedural detail), resolved once when the provider is created.
  *
@@ -14,6 +16,7 @@
  * weight never reaches beyond blendRadius, so every proximity test by blendRadius stays valid.
  */
 import type { BodyDef, LaunchSiteDef, SitePadShapeDef } from '../core/contracts/defs';
+import { padLocationOf, padsOf } from '../core/defs/sites';
 import { latLonToDir } from '../core/geo/cubeSphere';
 import { DEG } from '../core/math/scalar';
 import { smoothstep01 } from './util';
@@ -113,7 +116,10 @@ export function buildFlattenDiscs(body: BodyDef, sites: readonly LaunchSiteDef[]
     add(m.latDeg, m.lonDeg, m.flatRadius, m.blendRadius, m.elevation, `bodies/${body.id}.json terrain.modifiers[${i}]`);
   });
   for (const s of [...sites].filter((x) => x.bodyId === body.id).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
-    add(s.location.latDeg, s.location.lonDeg, s.pad.flatRadius, s.pad.blendRadius, s.location.padElevation, `sites/${s.id}.json pad`, s.pad.shape);
+    for (const pad of padsOf(s)) {
+      const at = padLocationOf(s, pad.id);
+      add(at.latDeg, at.lonDeg, pad.flatRadius, pad.blendRadius, at.padElevation, `sites/${s.id}.json pad "${pad.id}"`, pad.shape);
+    }
   }
   return out;
 }
