@@ -94,8 +94,28 @@ for (const view of [
     columns.sort((a, b) => a - b);
     const offsets = columns.map((x) => Math.abs(x + 0.5 - plain.width / 2) / discRadius).sort((a, b) => a - b);
     const median = offsets[offsets.length >> 1] ?? 0;
-    console.log(`(c) terminator from ${view.km} km (fov ${view.fovDeg} deg, disc radius ${discRadius.toFixed(0)} px): ${dark} of ${lit} lit pixels are in a terrain shadow (${((100 * dark) / Math.max(1, lit)).toFixed(2)} %), median distance from the terminator ${median.toFixed(2)} disc radii; ${brighter} pixels brighter with shadows; cascades ${[...new Set(cascades)].join(', ')}`);
-    record(`c.terminator.${view.km}km`, { loaded: info.loaded, lit, dark, brighter, medianOffset: median, discRadius, cascades: [...new Set(cascades)] });
+    // The night side: the median over a band of the disc 0.2 to 0.7 radii beyond the terminator (the side of
+    // the two that is darker without the terrain's shadows), against the lit side's bright level. Nothing
+    // lights it but the Earth (a ten-thousandth of the sun). On 2026-11-12 it stood at display level 37
+    // beside the day side's 144 in one page or in both, by whether the environment probe had finished its
+    // first cycle at the vessel (100 km over the day side) before the camera left: regolith took the probe's
+    // light wherever it lay, and this test counted the night side as lit ground "in a terrain shadow".
+    const band = (l: Luma, side: 1 | -1): number => {
+      const values: number[] = [];
+      const cx = l.width / 2;
+      const cy = l.height / 2;
+      for (let y = Math.round(cy - 0.5 * discRadius); y < cy + 0.5 * discRadius; y += 2) {
+        for (let x = Math.round(0.2 * discRadius); x < 0.7 * discRadius; x += 2) values.push(l.data[y * l.width + Math.round(cx + side * x)]!);
+      }
+      values.sort((a, b) => a - b);
+      return values[values.length >> 1] ?? 0;
+    };
+    const nightSide: 1 | -1 = band(plain, 1) < band(plain, -1) ? 1 : -1;
+    const night = { shadowed: band(shadowed, nightSide) / Math.max(bright, 1e-9), plain: band(plain, nightSide) / Math.max(bright, 1e-9) };
+    console.log(`(c) terminator from ${view.km} km (fov ${view.fovDeg} deg, disc radius ${discRadius.toFixed(0)} px): ${dark} of ${lit} lit pixels are in a terrain shadow (${((100 * dark) / Math.max(1, lit)).toFixed(2)} %), median distance from the terminator ${median.toFixed(2)} disc radii; ${brighter} pixels brighter with shadows; the night side against the lit side's bright level: ${(100 * night.shadowed).toFixed(2)} % with the terrain's shadows, ${(100 * night.plain).toFixed(2)} % without; cascades ${[...new Set(cascades)].join(', ')}`);
+    record(`c.terminator.${view.km}km`, { loaded: info.loaded, lit, dark, brighter, medianOffset: median, discRadius, night, cascades: [...new Set(cascades)] });
+    expect.soft(night.shadowed, 'the night side is dark').toBeLessThan(0.01);
+    expect.soft(night.plain, "the night side is dark without the terrain's shadows as well").toBeLessThan(0.01);
     expect(lit).toBeGreaterThan(5_000);
     // Without casters that hold the relief this share was 0.01-0.02 % (a lit peak or two beyond the
     // terminator); with craters of 20 km and more in the body cascade it is 0.3-0.5 %.

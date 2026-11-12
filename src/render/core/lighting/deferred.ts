@@ -283,10 +283,17 @@ fn envIrradiance(n: vec3f) -> vec3f {
   amb.envSpecularCoat = vec3f(0.0);
   amb.skyReflection = vec3f(0.0);
   if (s.materialId == MATERIAL_STANDARD || s.materialId == MATERIAL_CLOTH || (s.materialId == MATERIAL_REGOLITH && !hasSkyTable)) {
-    // The probe is captured at the camera: it does not hold the cloud base over THIS surface. Under cloud
+    // The probe is captured at the vessel: it does not hold the cloud base over THIS surface. Under cloud
     // the surface sees a third of what the probe shows, and the cloud base as a uniform white sky over it
     // (irradiance cloudBase on a horizontal face, luminance cloudBase / pi in a mirror that looks up).
-    amb.envIrradiance = envIrradiance(s.n) * skyShare + cloudBase * (0.5 + 0.5 * dot(s.n, s.up));
+    // On the ground of an airless body the probe (captured at the active vessel, and held while the camera
+    // is far from it) stands for the light of the lit ground around a surface, and that ground is lit only
+    // where the sun is over the LOCAL horizon. Without this the whole night side of the Moon took the fill
+    // of the ground under a vessel over the day side (from 20,000 km at a fixed exposure the night side
+    // stood at display level 37 beside the day side's 144: tests/browser/integration/shadows.spec.ts).
+    var envShare = skyShare;
+    if (s.materialId == MATERIAL_REGOLITH) { envShare *= smoothstep(-0.02, 0.08, muS); }
+    amb.envIrradiance = envIrradiance(s.n) * envShare + cloudBase * (0.5 + 0.5 * dot(s.n, s.up));
     if (s.materialId == MATERIAL_STANDARD) {
       let mips = f32(textureNumLevels(envProbeCube)) - 1.0;
       let base = cloudBase * ((0.5 + 0.5 * dot(refl, s.up)) / PI);
