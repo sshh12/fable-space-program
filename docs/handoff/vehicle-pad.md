@@ -1,12 +1,12 @@
 # Hand-off: vehicle-pad (vehicle models, launch complex, vessel and site render features)
 
-Owner paths: `src/render/vehicle/**`, `data/defs/visuals/parts/**`, `data/defs/sites/ka-lae-lc1.structures.json`,
-`public/assets/vehicle/**`, `tools/vehicle/**`, `labs/vehicle/**`, `tests/browser/vehicle/**`,
-`tests/unit/vehicle/**`. Nothing outside these paths was changed. Requests: section 7.
+Owner paths: `src/render/vehicle/**`, `data/defs/visuals/parts/**`, `data/defs/visuals/sites/**`, the site's
+structures file under `data/defs/sites/`, `public/assets/vehicle/**`, `tools/vehicle/**`, `labs/vehicle/**`,
+`tests/browser/vehicle/**`, `tests/unit/vehicle/**`. Nothing outside these paths was changed. Requests: section 7.
 
-State: built, reviewed, fixed, and reworked once after the first visual critique (section 9, "Visual
-close-out, round 1", 2026-11-11; the round was finished by a second agent after the first hit a spend limit:
-"Round 1, continued"). Sections 1 to 7 describe the package as it is now.
+State: built, reviewed, fixed, and reworked twice after visual critiques (section 9, "Visual close-out, round
+1", 2026-11-11; section 10, "Visual close-out, round 2", 2026-11-12). Sections 1 to 7 describe the package as
+it is now.
 
 ## 1. What exists
 
@@ -15,12 +15,13 @@ Everything is generated in code at start-up from the part and site definitions; 
 | Piece | Where |
 |---|---|
 | Geometry kernel: mesh builder with components and position-based re-masking, lathe / tube / extrude / patch primitives, validation | `src/render/vehicle/geom/{builder,prims,validate}.ts` |
-| Material library (57 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
+| Material library (62 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
 | Decal sheet (content: names, texts, colours, sizes of every marking; `foil: true` for markings painted on metal film) | `data/defs/visuals/parts/livery.json` (section `visuals/parts/livery`), read by `src/render/vehicle/decals.ts`, baked by `tools/vehicle/bake-decals.ts` into `decals.png` and `decals_orm.png` |
 | 14 part generators, registry | `src/render/vehicle/parts/**` |
 | 25 part visual files (parameters only) | `data/defs/visuals/parts/<partId>.json` |
-| 13 launch-complex generators, registry | `src/render/vehicle/site/**` (`ground.ts` is new: earthworks) |
-| Launch complex layout (26 structures, with the names of their markings) | `data/defs/sites/ka-lae-lc1.structures.json` |
+| 16 launch-complex generators, registry | `src/render/vehicle/site/**` (`ground.ts`: earthworks and roads; `fence.ts`; `dressing.ts`: vehicles, camera towers) |
+| Ground survey of a site (the real terrain under the complex) and its reader | section `visuals/sites/<siteId>` (`data/defs/visuals/sites/<siteId>.json`), `src/render/vehicle/site/survey.ts` |
+| Launch complex layout (34 structures, with the names of their markings) | the site's `*.structures.json` under `data/defs/sites/` |
 | Vessel feature (id `vehicle`) and site feature (id `site`), LOD selection | `src/render/vehicle/{vesselFeature,siteFeature,lod}.ts` |
 | Texture bakes (procedural, CPU), decal bake, model report, site ground report | `tools/vehicle/{texlib,bake-textures,bake-decals,model-report,site-ground}.ts` |
 | Lab | `labs/vehicle/` (`/labs/vehicle/`) |
@@ -29,7 +30,8 @@ Part generator ids: `stage.tank`, `engine.liquid`, `stage.interstage`, `stage.ri
 `pad.clamp`, `capsule.mouldline`, `capsule.apexCover`, `lander.descent`, `lander.ascent`, `lander.legs`,
 `fairing.petals`, `les.tower`. Site generator ids: `pad.apron`, `pad.flameTrench`, `pad.launchMount`,
 `pad.umbilicalTower`, `pad.lightningMast`, `pad.catenary`, `pad.waterTower`, `pad.pipeRun`, `pad.tankFarm`,
-`pad.crawlerway`, `pad.building`, `pad.floodlight`, `pad.groundworks`.
+`pad.crawlerway`, `pad.building`, `pad.floodlight`, `pad.groundworks`, `pad.fence`, `pad.vehicle`,
+`pad.cameraTower`.
 
 ## 2. Public API (`import ... from '@/render/vehicle'`)
 
@@ -43,14 +45,19 @@ interface VesselVisualFeature extends RenderFeature {       // id 'vehicle'
 }
 createSiteFeature(options?: { padElevation?: (site: LaunchSiteDef) => number;
                               groundHeight?: (site: LaunchSiteDef, east: number, north: number) => number;
+                              levelGround?: boolean;        // build on level ground, not on the survey (a level stand-in surface only)
                               maxLights?: number; drawDistance?: number }): SiteFeature
-interface SiteFeature extends RenderFeature {               // id 'site'
+interface SiteFeature extends RenderFeature, TemporalFeature {   // id 'site'; resetTemporal() for frame-exact capture
   readonly stats: { sites; instances; triangles; shadowTriangles; fading; movingInstances; lights; updateMs };
+  siteIds(): string[];                                      // the sites it draws
   state(siteId: string): SiteState | undefined;             // { night, arms, crewArm }, each 0..1
   override(siteId: string, patch: Partial<SiteState> | null): void;   // pins a state at once (pictures); null releases
 }
 generatePart(defs, partDef): PartVisual          registerGenerator(id, generator)        generatorIds()
-generateStructure(defs, site, model, params): SiteVisual   registerSiteGenerator(id, g)   siteGeneratorIds()
+generateStructure(defs, site, model, params, placement?: { offsetEnu, headingDeg }, ground?: GroundField): SiteVisual
+registerSiteGenerator(id, g)   siteGeneratorIds()
+// site/survey.ts: siteGround(defs, site): GroundField   siteSurvey(defs, site)   structureGround(ground, offsetEnu, headingDeg)
+//                 LEVEL_GROUND   surveySectionOf(siteId)   interface GroundField { hi(x, z); lo(x, z); surveyed }
 materialDef(id): PbrMaterialDef   MATERIAL_IDS   materialTextureFiles()
 DECAL_SECTION   decalSheetOf(defs): DecalSheet   createDecalSheet(def)   layoutDecals(def)     // sheet.uv(name), .aspect(name), .has(name), .foil(name)
 nozzleEquilibrium(throttle): K     stepNozzleTemp(T, firing, throttle, dt): K
@@ -59,11 +66,22 @@ shieldGlowLuminance(T): cd/m^2                  // hottest point of an ablating 
 ```
 
 Integration: put both features in the app's feature list after the terrain. `createSiteFeature()` without
-options stands every structure on the pad plane at `location.padElevation`, which is right for this site: the
-baked terrain is flat to 2 cm out to `pad.flatRadius` (450 m; `npx tsx tools/vehicle/site-ground.ts radial`).
-A site on unflattened ground passes `groundHeight` (each structure then stands at the height of the ground
-under its own origin) and, when its elevation is `'terrain'`, `padElevation`. Both features use only `src/core`
-and the public API of `src/render/core` (mesh system). The vessel feature reads `SimSnapshot.vessels[].parts`
+options stands every structure's origin on the pad plane at `location.padElevation` and builds everything
+that is not on a level area of the pad shape (roads, stone pads, berms, fence, pipe supports, lamp posts,
+camera towers) ON THE SITE'S GROUND SURVEY: the section `visuals/sites/<siteId>` holds the highest and the
+lowest terrain round every node of a 5 m grid over the complex (cm about the pad plane), written from the
+height authority by `tools/vehicle/site-ground.ts survey`. Earthworks are fill over the upper bound with
+shoulders and feet under the lower one, so nothing is buried and nothing hangs whatever the relief
+(`pad.shape` keeps a quarter of it between the level areas: -2.1 .. +2.8 m here). **A site with structures and
+no survey does not load** (`siteGround` throws); **the survey must be re-run when the terrain inside the site
+changes** (tiles, pad shape, amplification) or the structures' extent grows: `site-ground.ts verify` exits 1
+when the survey in the library no longer bounds the terrain, and `game.spec.ts` checks it against the live
+terrain of the integration lab. Only a caller that draws the site on a level stand-in surface passes
+`levelGround: true` (the vehicle lab). `groundHeight` / `padElevation` are as before (a structure's origin on
+unflattened ground; an elevation of `'terrain'`). Both features use only `src/core` and the public API of
+`src/render/core` (mesh system): neither creates a pipeline of its own, so there is nothing of theirs for
+`shaders.warm()` (NOTICE-core-5) to create ahead; both implement `resetTemporal()` (LODs chosen afresh,
+arms at their targets). The vessel feature reads `SimSnapshot.vessels[].parts`
 and module states only: engine throttle and gimbal (nozzle temperature model, glow of the radiative
 extension), heat shield `surfaceTemp` (the shield's glow) and `ablatorFraction` (char), legs (`deploy`,
 `compression`, `broken`), lights, antenna, fairing panel ids (`<id>#panel<k>`), clamps, and the part's
@@ -80,7 +98,9 @@ LOD. Every LOD of a model is a single-LOD model of the mesh system and the featu
 (`lod.ts`): by projected diameter with 12 % hysteresis, and a switch is a 0.25 s cross-fade in time (the coarser
 LOD solid, the finer dithering in or out); in deterministic captures it is immediate. Nothing is left
 half-dithered by where the camera stands (`stats.fading` is 0 at rest; `screens.spec.ts`, LOD dolly test).
-Switch sizes: engines 110 / 30 px, stages 700 / 110 px, tower 900 / 260, masts 520 / 170, default 220 / 60.
+Switch sizes: engines 420 / 30 px (LOD 0 only where its fasteners cover pixels), stages 700 / 110 px, tower
+900 / 260, lightning masts 1500 / 420 (a lattice only where its braces cover a pixel), fence runs 900 / 200,
+camera towers 420 / 110, default 220 / 60.
 
 Shadows. Every vessel instance is a moving caster; the camera's copies cast nothing, LOD 1 casts into cascades
 with texels up to 0.1 m and the last LOD into coarser ones (`stats.staggeredSubmissions` stays 0). Site: an
@@ -112,6 +132,8 @@ node tools/dev/heavy.mjs --class=bake -- npx tsx tools/vehicle/bake-textures.ts 
 node tools/dev/heavy.mjs --class=gpu  -- npx tsx tools/vehicle/bake-decals.ts                    # canvas text in Chrome
 node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/model-report.ts [partId ...]      # triangle counts, mesh checks
 node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts [radial]           # terrain under every structure
+node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts survey             # writes data/defs/visuals/sites/<siteId>.json (about 25 s)
+node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts verify             # exit 1 if the survey no longer bounds the terrain
 ```
 
 Browser specs: `screens.spec.ts` (8 screenshot tests with 67 views in the vehicle lab, live captures: jitter
