@@ -2,7 +2,7 @@
  * Public API of the render core. Other packages import ONLY from '@/render/core' (this file) and
  * '@/render/core/lab' (lab pages). docs/RENDER_API.md is the manual.
  */
-export { createRenderer, EXACT_METER_FRAMES, SEQUENCE_ALIGN, type CoreRenderer, type ExposureInfo, type HdrPixels, type RendererOptions } from './renderer';
+export { createRenderer, EXACT_METER_FRAMES, EXACT_SETTLE_ROUNDS, SEQUENCE_ALIGN, type CoreRenderer, type ExactInfo, type ExposureInfo, type HdrPixels, type RendererOptions } from './renderer';
 export { coreOf, type CoreApi, type FullscreenPipelineDesc, type ManagedTarget, type TemporalFeature } from './coreApi';
 export { createSceneBindings, type SceneBindings, type SceneBindingSet } from './sceneBindings';
 export type { CoreShaderLibrary, Tracked } from './shaders/library';

@@ -781,6 +781,7 @@ interface CoreApi {
   createTarget(label, format, scale, usage?): ManagedTarget;   // follows the internal resolution
   setCloudShadowParams(params): void;         // section 7
   addEmissiveHint(luminance, coverage): void; // exposure: a bright emitter over sky pixels (section 13)
+  sequenceIndex(): number;                    // the frame's place in the temporal sequences (section 13, "Frame-exact capture")
   createTextureChecked(desc): GPUTexture;     // out-of-memory error scope; use for every large allocation
 }
 ```
@@ -1070,23 +1071,30 @@ anyway). Precondition: deterministic mode, presentation time frozen, `isIdle()`.
 
 What the core does, in this order:
 
-1. **Restart.** `frame.frameIndex` moves to a multiple of `SEQUENCE_ALIGN` (64; a step of 2 to 65 frames): it stays monotonic
-   (caches are stamped with it), a phase taken from it with a power of two (`frameIndex & 3`,
-   `frameIndex % 64`) starts at 0, and a continuity test (`last === frameIndex - 1`) fails once. The frame
-   uniforms' `time.z` / `counts.z` count from 0 (they are the frames since the restart; the same as the frame
-   index until the first restart). The TAA jitter index is 0 and the history is dropped; the blue-noise
-   offset is at its origin; `frame.realTime` is 0; the first frame is its own predecessor (`prevSnapshot`,
-   `prevCamera`); the sun-shadow cascades forget their captures (every cascade is rendered in the first
-   frame, the stagger starts over); the emitter hints of the frame before are dropped. Then every feature's
-   `resetTemporal()` is called (below).
-2. **Exposure.** Metered from nothing over `EXACT_METER_FRAMES` (16) frames of the restarted sequences: each
-   waits for the histogram of the one before and takes its target at once, which is the value the scene
-   settles at (not where the frames before the capture had left the adaptation). The value is then held for
-   the capture. An exposure override (`setExposureOverride`, the labs' `ev=`) stays as it is.
-3. **The frames.** The sequences restart once more (features are told again) and exactly `frames` frames are
-   rendered in ONE task: nothing that arrives meanwhile (a tile, a decoded texture, a compiled module, a
-   read-back) is taken in between them. `idle` in the result is false when the renderer was not idle before
-   or after them: the harness then waits for idle and asks again.
+1. **Restart, with the one step in the frame index.** `frame.frameIndex` steps by 2 to 65 frames, to
+   `EXACT_METER_FRAMES` (16) short of a multiple of `SEQUENCE_ALIGN` (64): it stays monotonic (caches are
+   stamped with it) and a continuity test (`last === frameIndex - 1`) fails once. From here to the last
+   frame of the capture the frames are consecutive. The frame uniforms' `time.z` / `counts.z` count from 0
+   (they are the frames since the last restart; the same as the frame index until the first restart). The
+   TAA jitter index is 0 and the history is dropped; the blue-noise offset is at its origin;
+   `frame.realTime` is 0; the first frame is its own predecessor (`prevSnapshot`, `prevCamera`); the
+   sun-shadow cascades forget their captures (every cascade is rendered in the first frame, the stagger
+   starts over); the emitter hints of the frame before are dropped. Then every feature's `resetTemporal()`
+   is called (below).
+2. **Exposure (the lead-in).** Metered from nothing over `EXACT_METER_FRAMES` frames of the restarted
+   sequences: each waits for the histogram of the one before and takes its target at once, which is the
+   value the scene settles at (not where the frames before the capture had left the adaptation). The value
+   is then held for the capture. An exposure override (`setExposureOverride`, the labs' `ev=`) stays as it
+   is; the lead-in frames are rendered all the same. If a feature is not idle after these frames (the step
+   of 1 is a cut to some: the terrain fades every tile in again), the other 48 frames of the block of 64 are
+   rendered, the sequences restart WITHOUT a step and the exposure is metered again, `EXACT_SETTLE_ROUNDS`
+   (8) times at most. `exactInfo()` says how many rounds it took and who was busy after the first.
+3. **The frames.** The sequences restart once more, without a step (features are told again): the first
+   frame's `frameIndex` is a multiple of 64, so a phase taken from it with a power of two (`frameIndex & 3`,
+   `frameIndex % 64`) starts at 0. Exactly `frames` frames are rendered in ONE task: nothing that arrives
+   meanwhile (a tile, a decoded texture, a compiled module, a read-back) is taken in between them. `idle`
+   in the result is false when the renderer was not idle before or after them: the harness then waits for
+   idle and asks again.
 4. **Hold.** `render` draws nothing until `renderExact` is called again or `setDeterministic(false)`;
    `waitFrames` keeps counting the display's frames. The promise resolves two animation frames after the
    last submit, when the held frame is on screen.
@@ -1099,16 +1107,27 @@ frames since, never on the frames before. Reset there
   map that is refined over frames (shadow or coverage maps updated in rounds, an environment probe that
   converges), temporal filters of your own;
 - every phase: a round robin (`face = n % 6`), a rotation of a noise or sample pattern, a jitter index, a
-  stagger of updates. Take phases from `frame.frameIndex` with a power of two (aligned by the restart) or
-  from a counter you set to 0 in `resetTemporal`; in a shader use `frame.time.z` (0 in the first frame);
+  stagger of updates. Take phases from `frame.frameIndex` with a power of two up to 16 (the sequences only
+  start at frame indices that are multiples of 16), and everything else (a golden-ratio rotation, a round
+  of 48 frames, a seed, an index into a sample table) from `coreOf(ctx).sequenceIndex()`: the frames since
+  the sequences last started, 0 in the first frame of a capture and equal to `frame.frameIndex` until the
+  first capture. The absolute frame index of a capture's first frame is a multiple of 64, a different one
+  every time: a sequence that runs on it stands somewhere else in every capture. In a shader use
+  `frame.time.z` (the same number);
 - smoothed values that approach a target (a level-of-detail factor, an eased brightness): snap them to the
   target.
 
 Nothing needs resetting that is a function of the snapshot and the camera alone, of `frame.realTime` (0 in
 the capture) or of a history the core owns (`'scene.colorCopy'`, the TAA history, the shadow cascades, the
 exposure). A feature whose history is keyed on frame continuity (`valid = last === frameIndex - 1`) and
-whose phases are powers of two of `frame.frameIndex` is restarted by the core's step 1 alone. Work that a
-reset starts (a map that is baked again) makes `isIdle()` false until it is done; the harness waits.
+whose phases are powers of two of `frame.frameIndex` is restarted by the step of 1 alone: its state in the
+capture is that of the lead-in's frames (16, or 16 + 64 per extra round) and the capture's, from nothing.
+`resetTemporal()` is called at every restart (before each metering and before the frames), so it must leave
+the feature idle: what it restarts is a function of the frames since, not work in flight. Work that the
+step itself starts (a fade, a map that is baked again) makes `isIdle()` false until it is done: the core
+repeats the lead-in for it (step 2) and names the feature in `exactInfo().busyLeadIn`; a feature that is
+still busy when the rounds are used up makes the capture `idle: false`, and the harness waits and asks
+again.
 
 Checked by `tests/browser/render-core/exact.spec.ts` (the same picture, to the bit, after another history
 and on a fresh load; the hold) and `tests/unit/render-core/cascades.test.ts` (the scheduler after a reset);
@@ -1493,7 +1512,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | Change | Request | Affects | Migration |
 |---|---|---|---|
 | `CoreShaderLibrary.warm(items)`, `warmed()`, `warming()`; `pendingCompilations()` / `compilations()` count pipelines that are being created ahead; `CoreRenderer.warm()`; `RendererOptions.pipelineWarm` and `warm=0` in a page's address; the core's own pipelines are created ahead (the lighting stage exists from `createRenderer` on), sections 5 and 17.8 | `app-integration-11` | every package that creates pipelines; src/app (the loading screen waits for them through `pendingCompilations()`) | None forced. To adopt: `await coreOf(ctx).shaders.warm([...])` where the forcing `get()`s of `init` stood (17.8) |
-| Frame-exact capture: `CoreRenderer.renderExact(frames, renderFrame)`, `holding`, `exactInfo()`; `window.__test.renderExact` on every `createLabApp` page; `TemporalFeature.resetTemporal?()`; at a restart `frame.frameIndex` moves to a multiple of `SEQUENCE_ALIGN` (64), the frame uniforms' `time.z` / `counts.z` count from 0 and `frame.realTime` is 0; section 13 | `lead-3` | every feature with accumulation of its own (reprojection, progressive maps, round robins); src/app (its test hook) | None without a history of your own. With one: add `resetTemporal()` (what must reset: section 13); a shader that used `frame.time.z` as an absolute frame count now gets frames since the last restart (the same number until a restart) |
+| Frame-exact capture: `CoreRenderer.renderExact(frames, renderFrame)`, `holding`, `exactInfo()`; `window.__test.renderExact` on every `createLabApp` page; `TemporalFeature.resetTemporal?()`; `frame.frameIndex` steps once per capture (before the lead-in) and the capture's first frame stands at a multiple of `SEQUENCE_ALIGN` (64); at a restart the frame uniforms' `time.z` / `counts.z` count from 0 (on the CPU: `CoreApi.sequenceIndex()`) and `frame.realTime` is 0; the lead-in is repeated while a feature is busy (`EXACT_SETTLE_ROUNDS`, `ExactInfo.rounds` / `.busyLeadIn`); section 13 | `lead-3` | every feature with accumulation of its own (reprojection, progressive maps, round robins); src/app (its test hook) | None without a history of your own. With one: add `resetTemporal()` (what must reset: section 13); a shader that used `frame.time.z` as an absolute frame count now gets frames since the last restart (the same number until a restart) |
 | Interior views: a bright outside in the windows keys the cabin up to `INTERIOR_OUTSIDE_KEY_EV` (2.25) lower and is shown at its own exposure (pass `core.interiorFar`: a gain on the pixels beyond `INTERIOR_RANGE`, sky included, before the resolve and the bloom); a third histogram of sky pixels (`MeterInput.histogramSky`, `SKY_METER_MAX`); `MeterResult.farLevel / farWeight`, `interiorFarGain`, `exposureInfo().farGain / farLevel / farWeight`; section 13 | `cockpit-16` | cockpit (the seat's view shows the world in the windows; the cabin is about two stops darker there); anything drawn in `drawTransparent` over far pixels of an interior view is scaled with them | None in code; tests that read the HDR target of an interior view read the scaled values beyond 8 m |
 | Mesh G-buffer shader, `standard` shading: soot is a density (continuous in the weight: a brown veil when thin, near black when thick, streaks of 6 cm x 1.5 m), `layerStreaks`; roughness, metalness and clear coat follow the density; section 10 | `vehicle-pad-7` | vehicle-pad (graded deposits instead of a mask); every `standard` material with a soot weight | None in code; a weight that had an edge at 0.36-0.63 by the old mask is graded (0.25: tan veil, 0.5: brown, 1: near black) |
 | The meter's sun inside an atmosphere: the prior and the bounds under the sun use the sun through the camera's air, less what clear air under a high sun takes (`sunThroughAir`, `SUN_AIR_CLEAR` = 0.75) | `atmosphere-clouds-10` (part 1) | atmosphere, vfx, every daylight view at a low sun | None; unchanged with the sun 35 degrees up and more, up to a stop brighter at 10 degrees, two to five at dawn |

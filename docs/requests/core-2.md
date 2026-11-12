@@ -62,3 +62,30 @@ synchronously in its `init` (the loading screen's "shader modules compiled" row 
    NOTICE to the other packages) the cause goes away.
 
 Must not change: what is drawn; `TerrainDebug`'s existing fields.
+
+## Addition to part 2 (core-support, 2026-11-12 15:10): what the capture's step in the frame index does to the terrain
+
+Measured (integration lab, every package, the low-orbit page of the lead's proof,
+`scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1`; `tests/browser/integration/exact.spec.ts`,
+2026-11-12 14:58): a frame-exact capture steps `frame.frameIndex` once, by 2 to 65 frames, before its
+lead-in (so that features without a `resetTemporal` drop their histories on the failed continuity test). After
+that step the terrain was not idle 16 frames later and not idle 80 frames later, and idle 144 frames later, on
+all three captures (`exactInfo()`: `rounds: 3`, `busyLeadIn: ["terrain"]`). The core now repeats its lead-in
+until nobody is busy, so the capture succeeds; it costs every capture with terrain in view two extra blocks
+of 64 awaited frames. Before this (two steps per capture, no repetition) the page was never idle through a
+capture: five attempts of five, with a step to a multiple of 4096 and with one to a multiple of 64. On the
+translunar page (root tiles only) the terrain is idle throughout (`rounds: 1`).
+
+What I can say from reading, not from a measurement: `quadtree.ts` `visit` restarts a tile's fade-in when
+`n.lastCovered !== p.frameIndex - 1` (and `!== p.frameIndex`), so the first frame after a step fades every
+drawn tile above level 0 in again (`FADE_SECONDS` 0.35 s, 21 frames). That accounts for the first round. What
+keeps the terrain busy between frame 80 and frame 144 I did not find: my per-frame record of the terrain's
+state in that run recorded nothing (it hooked the wrong object).
+
+Asked, with part 2: in `resetTemporal()` (the core calls it right after the step and before the first frame
+of every restart) make the next selection treat the frame before as covered (no fade from the step), next to
+snapping `K`; then find what else a step of up to 65 frames sets off (frame-stamped ages: `deferUntil`,
+`lastTouched`, the demand window of `PREFETCH_EVERY - 1` frames). Done when `exact.spec.ts` reports
+`rounds: 1` for `leo-day`. For CPU-side sequences that are not `frame.frameIndex` modulo a power of two there
+is `coreOf(ctx).sequenceIndex()` now (RENDER_API section 13); I found none in the terrain's pictures (the
+difference between two low-orbit captures is the clouds': request core-4).

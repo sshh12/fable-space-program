@@ -254,6 +254,30 @@ test('on the pad, from the seat, the daylight sky in the windows has its own exp
   await expectClean(page, pageLog, info);
 });
 
+test('the lunar surface scene stands in sunlight when no sun is pinned: a morning sun over the landing site and a daylight exposure (request vfx-10)', async ({ page, pageLog }) => {
+  const info = await openIntegration(page, 'scene=lunarSurface&hud=0&hover=8');
+  requireFeatures(test, info, ['terrain']);
+  const e = await exposure(page, 300);
+  // The sun's elevation over the ground under the camera (the camera stands a few metres from the site).
+  const elevation = await page.evaluate(() => {
+    const f = window.__lab!.renderer.frameContext!;
+    const nearest = [...f.bodies].sort((a, b) => a.cameraAltitude - b.cameraAltitude)[0]!;
+    const c = nearest.centerRelCam;
+    const len = Math.hypot(c.x, c.y, c.z);
+    const s = f.sun.dirRoot;
+    return { body: nearest.id, deg: (Math.asin(-(c.x * s.x + c.y * s.y + c.z * s.z) / len) * 180) / Math.PI };
+  });
+  await save(page, 'exposure-lunar-surface-default-sun');
+  console.log(`lunar surface, no sun pinned [${info.loaded.join(', ')}]: the sun ${elevation.deg.toFixed(1)} degrees over the ground of ${elevation.body}, EV100 ${e.ev100.toFixed(2)} (sunny 16 = ${e.sunny16.toFixed(2)}), brightest ${(e.hdr.maxLuminance / e.exposure).toFixed(0)} cd/m^2`);
+  record('f.lunarSurfaceDefaultSun', { loaded: info.loaded, elevation, ...e });
+  expect(elevation.deg).toBeGreaterThan(10);
+  expect(elevation.deg).toBeLessThan(14);
+  // A day exposure (the scene metered EV100 -0.6 in the dark), and sunlit ground in the frame.
+  expect(e.ev100).toBeGreaterThan(9);
+  expect(e.hdr.maxLuminance / e.exposure, 'brightest pixel of the frame (cd/m^2)').toBeGreaterThan(200);
+  await expectClean(page, pageLog, info);
+});
+
 test('a cut to the cockpit is exposed for the cabin within half a second (request cockpit-14)', async ({ page, pageLog }) => {
   const info = await openIntegration(page, 'scene=lowOrbit&hud=0');
   requireFeatures(test, info, ['vehicle', 'cockpit']);

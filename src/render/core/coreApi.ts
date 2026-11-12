@@ -74,6 +74,17 @@ export interface CoreApi {
    * than half a stop above sunny 16).
    */
   addEmissiveHint(luminance: number, coverage: number): void;
+  /**
+   * The current frame's place in the temporal sequences: `frame.frameIndex` until the first frame-exact
+   * capture, afterwards the frames since the sequences last started (0 in the first frame of a capture and
+   * of each metering of its lead-in; the number the frame uniforms carry in `time.z` / `counts.z`). For a
+   * phase or a sample sequence computed on the CPU that is NOT `frame.frameIndex` modulo a power of two up
+   * to 16: a golden-ratio rotation, a round of 48 frames, a seed. Taken from this it repeats in every
+   * capture; taken from the absolute frame index it does not (the capture's first frame index is a
+   * multiple of 64, a different one each time). The sequences only ever start at frame indices that are
+   * multiples of 16, so `sequenceIndex() & 15` equals `frame.frameIndex & 15`. Call it inside a frame hook.
+   */
+  sequenceIndex(): number;
 }
 
 const registry = new WeakMap<RenderContext, CoreApi>();

@@ -29,7 +29,7 @@ const exact = (page: Page, frames: number) => page.evaluate((n) => window.__test
 const state = (page: Page) =>
   page.evaluate(() => {
     const r = window.__lab!.renderer;
-    return { frameIndex: r.frameContext!.frameIndex, ev100: r.exposureInfo().ev100, holding: r.holding };
+    return { frameIndex: r.frameContext!.frameIndex, ev100: r.exposureInfo().ev100, holding: r.holding, info: r.exactInfo() };
   });
 
 test('renderExact: the same picture after different histories and on a fresh load, and the frame is held', async ({ page, pageLog }) => {
@@ -49,6 +49,8 @@ test('renderExact: the same picture after different histories and on a fresh loa
   expect(s0.holding).toBe(true);
   // The sequences started at a multiple of the alignment (SEQUENCE_ALIGN) and exactly FRAMES frames followed.
   expect((s0.frameIndex - (FRAMES - 1)) % 64).toBe(0);
+  // Nothing of the core's lab is set to work by the restart: one metering, nobody busy at any point.
+  expect.soft(s0.info).toEqual({ busyBefore: [], busyAfter: [], rounds: 1, busyLeadIn: [] });
 
   // Held: the display's frames pass (waitFrames still returns), nothing is rendered, the picture stays.
   await page.evaluate(() => window.__test!.waitFrames(20));

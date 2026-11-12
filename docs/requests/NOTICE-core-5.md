@@ -38,17 +38,26 @@ requests named below.
   (`createLabApp` does it; for src/app it is one line before the frame loop starts, the lead's decision).
 - **Frame-exact capture: `window.__test.renderExact(frames)`** (request lead-3; every `createLabApp` page has it).
   It restarts every temporal sequence, renders exactly `frames` frames and holds the last. What reaches you:
-  - `frame.frameIndex` moves to a multiple of 64 at a restart (a step of 2 to 65 frames, still monotonic): a phase you take
-    from it with a power of two up to 64 starts at 0, and `last === frame.frameIndex - 1` is false once. The frame
-    uniforms' `time.z` / `counts.z` are the frames SINCE the restart (identical to the frame index until one
-    happens). `frame.realTime` is 0 after a restart.
+  - `frame.frameIndex` steps ONCE per capture, before its lead-in (2 to 65 frames, still monotonic):
+    `last === frame.frameIndex - 1` is false once, and from there to the capture's last frame the frames are
+    consecutive. The capture's first frame has a frame index that is a multiple of 64: a phase you take from
+    it with a power of two up to 64 starts at 0. The frame uniforms' `time.z` / `counts.z` are the frames
+    SINCE the last restart (identical to the frame index until one happens); on the CPU the same number is
+    `coreOf(ctx).sequenceIndex()`. Anything that is not `frame.frameIndex` modulo a power of two (a
+    golden-ratio rotation, a round of 48 frames, a seed) must run on that number, not on the absolute frame
+    index, or two captures differ (the clouds on the low-orbit page: request core-4). `frame.realTime` is 0
+    after a restart.
   - Your feature may have `resetTemporal?(): void` (`TemporalFeature` of `@/render/core`): the core calls it
-    at a restart. Drop every history you blend with (reprojection, accumulation, foam, maps refined over
-    frames, probes that converge), restart every phase that is not a power-of-two of `frame.frameIndex`, snap
-    smoothed values to their targets. The rule and the list: RENDER_API section 13, "Frame-exact capture".
-  - If a restart sets you to work (`isIdle()` false after the frames), the capture is not held and the
-    harness asks again: a feature that is busy after EVERY restart can never be captured. Who was busy:
-    `renderer.exactInfo()`; the check with every package: `tests/browser/integration/exact.spec.ts`.
+    at every restart (before each metering of the lead-in and before the frames). Drop every history you
+    blend with (reprojection, accumulation, foam, maps refined over frames, probes that converge), restart
+    every phase that is not a power-of-two of `frame.frameIndex`, snap smoothed values to their targets, and
+    stay idle. The rule and the list: RENDER_API section 13, "Frame-exact capture".
+  - If the step sets you to work (`isIdle()` false after the 16 frames of the lead-in: a fade, a map baked
+    again), the core renders the rest of a block of 64 frames and meters again, up to 8 times, and names
+    you in `renderer.exactInfo().busyLeadIn`; each round costs every capture 64 frames. Busy beyond that,
+    or busy right after `resetTemporal()`: the capture is not held and the harness asks again, and a
+    feature that is busy every time can never be captured. The check with every package:
+    `tests/browser/integration/exact.spec.ts`.
   Migration: none for a feature without accumulation of its own. The app's test hook needs
   `renderExact: (n) => renderer.renderExact(n, () => frameAtFixedStep())` and a loop that skips its frame
   while `renderer.holding` (src/app/testHooks.ts and game.ts: the lead's).

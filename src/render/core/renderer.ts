@@ -118,15 +118,19 @@ export interface CoreRenderer extends Renderer {
    * step: every call must end in exactly one `render`. In this order:
    *  1. every temporal sequence starts again at its origin (the TAA jitter and history, the frame index of
    *     the frame uniforms, the blue-noise offset, the presentation time, the shadow cascades' captures and
-   *     stagger, the emitter hints; `frame.frameIndex` moves to the next multiple of SEQUENCE_ALIGN; every
-   *     feature's `resetTemporal`), and the exposure is metered from nothing over EXACT_METER_FRAMES frames,
-   *     each of which waits for the histogram of the one before, and then held (an exposure override stays);
-   *  2. the sequences start again and exactly `frames` frames are rendered at that exposure in one task, so
-   *     nothing that arrives (a tile, a decoded texture, a compiled module) is taken in between them;
-   *  3. the last frame is held: `render` draws nothing until `renderExact` is called again or deterministic
+   *     stagger, the emitter hints; every feature's `resetTemporal`), and `frame.frameIndex` steps ONCE, to
+   *     EXACT_METER_FRAMES short of a multiple of SEQUENCE_ALIGN; from there on the frames are consecutive;
+   *  2. the exposure is metered from nothing over EXACT_METER_FRAMES frames, each of which waits for the
+   *     histogram of the one before, and then held (an exposure override stays). If the step of 1 has set a
+   *     feature to work (it is not idle after these frames), the frames up to the next such place are
+   *     rendered and the metering is done again, EXACT_SETTLE_ROUNDS times at most;
+   *  3. the sequences start again (no step: the frame index stands at a multiple of SEQUENCE_ALIGN) and
+   *     exactly `frames` frames are rendered at that exposure in one task, so nothing that arrives (a tile,
+   *     a decoded texture, a compiled module) is taken in between them;
+   *  4. the last frame is held: `render` draws nothing until `renderExact` is called again or deterministic
    *     mode is switched off (`holding`). Resolves two animation frames after the last submit, when the held
    *     frame is on screen.
-   * `idle` is false when the renderer was not idle before or after the frames of step 2 (the frames
+   * `idle` is false when the renderer was not idle before or after the frames of step 3 (the frames
    * themselves started work, or work was under way): the frame is then not the reference frame, and it is
    * NOT held: the page renders on, so that the work can finish and the caller can wait for idle and ask
    * again. `exactInfo()` says who was busy.
@@ -136,10 +140,12 @@ export interface CoreRenderer extends Renderer {
   readonly holding: boolean;
   /**
    * Of the last `renderExact`: the ids of the features that were not idle before and after its frames
-   * ('core' = a shader, pipeline or texture of the core's), for finding the feature that a restart of the
-   * temporal sequences sets to work. Null before the first capture.
+   * ('core' = a shader, pipeline or texture of the core's), how many times the exposure was metered
+   * (`rounds`; 1 = the step in the frame index set nobody to work) and who was not idle after the first
+   * metering (`busyLeadIn`): for finding the feature that a restart of the temporal sequences sets to work.
+   * Null before the first capture.
    */
-  exactInfo(): { busyBefore: string[]; busyAfter: string[] } | null;
+  exactInfo(): ExactInfo | null;
   /** Force EV100 (null = automatic). */
   setExposureOverride(ev100: number | null): void;
   exposureInfo(): ExposureInfo;
@@ -212,16 +218,34 @@ struct Out { @location(0) minMax: vec4f }
 `;
 
 /**
- * `frame.frameIndex` moves to a multiple of this when the temporal sequences restart (renderExact): it stays
- * monotonic for the features that stamp caches with it, a phase taken from it by a power of two up to this
- * starts at 0, and "the frame after my last one" is false once (the step is 2 to 65 frames). Not larger: a
- * step is time passing for everything that ages by frames. With 4096 the terrain retried, at every restart,
- * the tiles it had given up for want of room (STALL_RETRY_FRAMES = 900) and was busy for the next 240
- * frames: the low-orbit page could never be captured.
+ * The frames of a frame-exact capture (renderExact) start at a `frame.frameIndex` that is a multiple of this:
+ * a phase a feature takes from the frame index by a power of two up to this starts at 0. The frame index
+ * steps once per capture, before the lead-in (2 to 65 frames, to EXACT_METER_FRAMES short of a multiple): it
+ * stays monotonic for the features that stamp caches with it, and "the frame after my last one" is false
+ * once, which is how a feature without a `resetTemporal` drops its history (the clouds). A step is also
+ * time passing for everything that ages by frames, and work for whoever takes it for a cut (the terrain
+ * fades every tile in again), so there is one step only, the frames after it are consecutive, and the
+ * lead-in is repeated until nobody is busy (EXACT_SETTLE_ROUNDS). Measured with two steps per capture (one
+ * before the metering, one before the frames) on the low-orbit page with every package: the terrain was not
+ * idle before and after the 64 frames at every one of five attempts, with a step to a multiple of 4096 and
+ * with one to a multiple of 64.
  */
 export const SEQUENCE_ALIGN = 64;
 /** Frames over which the exposure of a frame-exact capture is metered before it is held. */
 export const EXACT_METER_FRAMES = 16;
+/** Meterings of a frame-exact capture at most: after one that ends with a feature at work, a block of SEQUENCE_ALIGN frames passes and the exposure is metered again. */
+export const EXACT_SETTLE_ROUNDS = 8;
+
+/** What `CoreRenderer.exactInfo()` reports of the last frame-exact capture. */
+export interface ExactInfo {
+  /** Who was not idle before and after the frames of the capture (feature ids; 'core' = the core's own shaders, pipelines, textures). */
+  busyBefore: string[];
+  busyAfter: string[];
+  /** Meterings it took (1 = the restart set nobody to work). */
+  rounds: number;
+  /** Who was not idle after the first metering: the features that the step in the frame index sets to work. */
+  busyLeadIn: string[];
+}
 /** Time constant with which the gain on the outside of an interior view follows its target, s. */
 const FAR_GAIN_TAU = 0.25;
 
@@ -374,6 +398,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       if (Number.isFinite(luminance) && Number.isFinite(coverage) && luminance > 0 && coverage > 0) emissiveHints.push({ luminance, coverage });
     },
     createTextureChecked: (desc) => createTextureChecked(device, desc, reportError),
+    sequenceIndex: () => frameIndex - sequenceStart,
   };
   registerCore(ctx, core);
 
@@ -531,7 +556,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   let holding = false;
   let inExact = false;
   let exactRun = 0;
-  let exactBusy: { busyBefore: string[]; busyAfter: string[] } | null = null;
+  let exactBusy: ExactInfo | null = null;
   /** Who is not idle: feature ids, and 'core' for the core's own compilations and texture loads. */
   const busy = (): string[] => [...(shaders.pendingCompilations() > 0 || !meshes.isIdle() ? ['core'] : []), ...features.filter((f) => f.isIdle !== undefined && !f.isIdle()).map((f) => f.id)];
 
@@ -635,12 +660,14 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   };
 
   /**
-   * Every temporal sequence of the core back at its origin, and the features told (renderExact). With
-   * `meterToo` false the exposure meter keeps what it has read: the frames of the capture are rendered with
-   * the exposure metered over the lead-in.
+   * Every temporal sequence of the core back at its origin, and the features told (renderExact). With `step`
+   * the frame index moves on by 2 to SEQUENCE_ALIGN + 1 frames, to EXACT_METER_FRAMES short of a multiple of
+   * SEQUENCE_ALIGN (the start of a capture's lead-in; see SEQUENCE_ALIGN); without, the frames stay
+   * consecutive. With `meterToo` false the exposure meter keeps what it has read: the frames of the capture
+   * are rendered with the exposure metered over the lead-in.
    */
-  const restartTemporal = (meterToo: boolean): void => {
-    frameIndex = (Math.floor((frameIndex + 1) / SEQUENCE_ALIGN) + 1) * SEQUENCE_ALIGN;
+  const restartTemporal = (step: boolean, meterToo: boolean): void => {
+    if (step) frameIndex = (Math.floor((frameIndex + 1 + EXACT_METER_FRAMES) / SEQUENCE_ALIGN) + 1) * SEQUENCE_ALIGN - EXACT_METER_FRAMES;
     sequenceStart = frameIndex;
     jitterIndex = 0;
     realTime = 0;
@@ -1176,25 +1203,40 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
         await meter.settled();
         if (run !== exactRun) return taken();
         // 1. The exposure of the capture: from nothing, each frame metered with the histogram of the one
-        // before and applied at once, which is the value the scene settles at; then held.
-        restartTemporal(true);
-        if (evOverride === null) {
+        // before and applied at once, which is the value the scene settles at; then held. The first round
+        // follows the one step in the frame index; a round that ends with a feature at work (the step is a
+        // cut to some: the terrain fades its tiles in again) is followed by the rest of its block of
+        // SEQUENCE_ALIGN frames and another round, the frames consecutive from here on.
+        let rounds = 0;
+        let busyLeadIn: string[] = [];
+        for (;;) {
+          restartTemporal(rounds === 0, true);
           for (let i = 0; i < EXACT_METER_FRAMES; i++) {
             evInitialised = false;
             exact();
             await meter.settled();
             if (run !== exactRun) return taken();
           }
-          holdNext = true;
+          rounds++;
+          const b = busy();
+          if (rounds === 1) busyLeadIn = b;
+          if (b.length === 0 || rounds >= EXACT_SETTLE_ROUNDS) break;
+          while ((frameIndex + EXACT_METER_FRAMES) % SEQUENCE_ALIGN !== 0) {
+            exact();
+            await meter.settled();
+            if (run !== exactRun) return taken();
+          }
         }
-        // 2. Exactly `frames` frames from the origin of every sequence, in this task.
-        restartTemporal(false);
+        if (evOverride === null) holdNext = true;
+        // 2. Exactly `frames` frames from the origin of every sequence, in this task. No step: the frame
+        // index stands at a multiple of SEQUENCE_ALIGN.
+        restartTemporal(false, false);
         const busyBefore = busy();
         const first = frameIndex;
         for (let i = 0; i < frames; i++) exact();
         const rendered = frameIndex - first;
         const busyAfter = busy();
-        exactBusy = { busyBefore, busyAfter };
+        exactBusy = { busyBefore, busyAfter, rounds, busyLeadIn };
         const idle = busyBefore.length === 0 && busyAfter.length === 0;
         if (!idle) {
           // Not the reference frame: the page renders on (held, the work that makes it busy could not finish).
