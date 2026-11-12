@@ -18,8 +18,8 @@ export interface SiteGenContext {
   defs: DefLibrary;
   /**
    * Bounds of the real terrain in the structure's model frame, m above the plane its origin stands on (the
-   * site's ground survey, ./survey.ts): level for a site without a survey. Earthworks, roads, fences and
-   * supports are built on it; structures on the level areas of the pad shape need not look.
+   * site's ground survey, ./survey.ts). Earthworks, roads, fences and supports are built on it; structures
+   * on the level areas of the pad shape need not look.
    */
   ground: GroundField;
 }
@@ -99,8 +99,8 @@ export function siteGeneratorIds(): string[] {
 
 /**
  * Generate a structure where it stands. `ground` is the site's ground in the site frame (default: the
- * site's survey, level without one); a caller that draws the site on a level stand-in surface passes
- * `LEVEL_GROUND`.
+ * site's survey; a site without one throws); a caller that draws the site on a level stand-in surface
+ * passes `LEVEL_GROUND`.
  */
 export function generateStructure(defs: DefLibrary, site: LaunchSiteDef, model: string, params: StructureParams, placement: StructurePlacement = { offsetEnu: [0, 0, 0], headingDeg: 0 }, ground: GroundField = siteGround(defs, site)): SiteVisual {
   const g = generators.get(model);

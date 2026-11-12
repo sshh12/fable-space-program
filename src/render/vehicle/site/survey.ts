@@ -9,7 +9,12 @@
  *
  * `hi` is an upper bound of the terrain and `lo` a lower bound everywhere inside the grid (bilinear between
  * nodes that each carry the extreme of their whole neighbourhood): what is built above `hi` is never buried,
- * and a skirt that reaches below `lo` never shows a gap. A site without a survey is taken as level.
+ * and a skirt that reaches below `lo` never shows a gap.
+ *
+ * A site that has structures and no survey does not load: `siteGround` throws. Level ground is never assumed
+ * (that assumption is what buried the roads); a caller that really draws the site on a level stand-in
+ * surface (the vehicle lab's reference sphere, the survey tool measuring the extent of the structures) says
+ * so by passing `LEVEL_GROUND`.
  */
 import type { DefLibrary, LaunchSiteDef } from '@/core/contracts/defs';
 
@@ -32,10 +37,11 @@ export interface SiteSurveyDef {
 export interface GroundField {
   hi(x: number, z: number): number;
   lo(x: number, z: number): number;
-  /** False for the level stand-in of a site without a survey. */
+  /** False for `LEVEL_GROUND`. */
   surveyed: boolean;
 }
 
+/** Level ground at the pad plane: only for a caller that draws a site on a level stand-in surface. */
 export const LEVEL_GROUND: GroundField = { hi: () => 0, lo: () => 0, surveyed: false };
 
 /** Section key of a site's ground survey. */
@@ -60,10 +66,16 @@ function sample(s: SiteSurveyDef, grid: number[], east: number, north: number): 
   return ((grid[k]! * (1 - u) + grid[k + 1]! * u) * (1 - v) + (grid[k + s.nx]! * (1 - u) + grid[k + s.nx + 1]! * u) * v) / 100;
 }
 
-/** The site's ground in its own frame: x = east, z = SOUTH of the pad centre (a structure frame at heading 0). */
+/**
+ * The site's ground in its own frame: x = east, z = SOUTH of the pad centre (a structure frame at heading 0).
+ * Throws for a site with structures and no survey (run `tools/vehicle/site-ground.ts survey`).
+ */
 export function siteGround(defs: DefLibrary, site: LaunchSiteDef): GroundField {
   const s = siteSurvey(defs, site);
-  if (!s) return LEVEL_GROUND;
+  if (!s) {
+    if (site.structures.length === 0) return LEVEL_GROUND;
+    throw new Error(`site "${site.id}": no ground survey (section ${surveySectionOf(site.id)}); its structures cannot be built on the terrain. Run tools/vehicle/site-ground.ts survey`);
+  }
   return { hi: (x, z) => sample(s, s.hiCm, x, -z), lo: (x, z) => sample(s, s.loCm, x, -z), surveyed: true };
 }
 

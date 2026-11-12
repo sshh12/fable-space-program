@@ -123,7 +123,7 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'site-overview-night', query: 'scene=pad&sun=290,-28&env=night&eye=250,-15,330&at=-40,-112,-20&fov=42', minNonBlack: 0.02 },
       { name: 'site-pad-night', query: 'scene=pad&sun=290,-28&env=night&eye=120,-100,150&at=0,-70,0&fov=40', minNonBlack: 0.02 },
     ]);
-    const site = await page.evaluate(() => ({ ...window.__veh!.site!.stats, night: window.__veh!.site!.state('ka-lae-lc1')!.night }));
+    const site = await page.evaluate(() => ({ ...window.__veh!.site!.stats, night: window.__veh!.site!.state(window.__veh!.site!.siteIds()[0]!)!.night }));
     expect(site.night).toBe(1);
     expect(site.lights).toBeGreaterThan(3);
   });

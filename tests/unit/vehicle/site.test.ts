@@ -11,7 +11,7 @@ import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import { checkMesh } from '@/render/vehicle/geom/validate';
 import { isMatId } from '@/render/vehicle/materials';
 import { generateStructure, siteGeneratorIds, type SiteState, type SiteVisual } from '@/render/vehicle/site';
-import { siteGround, siteSurvey, structureGround } from '@/render/vehicle/site/survey';
+import { LEVEL_GROUND, siteGround, siteSurvey, structureGround, surveySectionOf } from '@/render/vehicle/site/survey';
 import { nozzleEquilibrium, stepNozzleTemp } from '@/render/vehicle/vesselFeature';
 
 let defs: DefLibrary;
@@ -141,7 +141,7 @@ describe('launch complex structures', () => {
     let checked = 0;
     for (const site of Object.values(defs.sites)) {
       const survey = siteSurvey(defs, site);
-      // (A site without a survey is level ground, which the test above covers.)
+      // (Only a site without structures may be without a survey.)
       if (!survey) continue;
       // The survey bounds the terrain: it is not level, and its bounds are ordered.
       expect(Math.max(...survey.hiCm) - Math.min(...survey.loCm)).toBeGreaterThan(50);
@@ -195,6 +195,20 @@ describe('launch complex structures', () => {
       });
     }
     expect(checked).toBeGreaterThan(1000);
+  });
+
+  it('a site with structures and no ground survey does not load; level ground has to be asked for', () => {
+    for (const site of Object.values(defs.sites)) {
+      const s = site.structures[0];
+      if (!s) continue;
+      const bare: DefLibrary = { ...defs, sections: Object.fromEntries(Object.entries(defs.sections).filter(([key]) => key !== surveySectionOf(site.id))) };
+      expect(() => siteGround(bare, site)).toThrow(/no ground survey/);
+      expect(() => generateStructure(bare, site, s.model, s.params ?? {}, s)).toThrow(/no ground survey/);
+      // A caller that draws the site on a level stand-in surface says so.
+      expect(Object.keys(generateStructure(bare, site, s.model, s.params ?? {}, s, LEVEL_GROUND).models).length).toBeGreaterThan(0);
+      // A site without structures has nothing to build and needs no survey.
+      expect(siteGround(bare, { ...site, structures: [] }).surveyed).toBe(false);
+    }
   });
 
   it('swing arms and the crew arm move away from the vehicle when they retract, and nothing else moves', () => {

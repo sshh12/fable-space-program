@@ -99,7 +99,8 @@ test.describe('vehicle staging and shadows', () => {
       const lab = window.__veh!;
       const site = lab.site!;
       await window.__test!.waitFrames(120);
-      const atRest = { vehicle: { ...lab.vehicle.stats }, site: { ...site.stats }, state: { ...site.state('ka-lae-lc1')! } };
+      const siteId = site.siteIds()[0]!;
+      const atRest = { vehicle: { ...lab.vehicle.stats }, site: { ...site.stats }, state: { ...site.state(siteId)! } };
       // Ignition on the pad: the complex retracts its arms, as at lift-off. Watch them swing.
       lab.sim.setEngines(1);
       let movingMax = 0;
@@ -112,7 +113,7 @@ test.describe('vehicle staging and shadows', () => {
         else if (seenMoving) break;
       }
       await window.__test!.waitFrames(20);
-      const retracted = { vehicle: { ...lab.vehicle.stats }, site: { ...site.stats }, state: { ...site.state('ka-lae-lc1')! } };
+      const retracted = { vehicle: { ...lab.vehicle.stats }, site: { ...site.stats }, state: { ...site.state(siteId)! } };
       return { atRest, retracted, movingMax, frames };
     });
     // The core offered staggered cascades to the feature; the feature issued its shadow draw for each of them

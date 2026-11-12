@@ -66,6 +66,8 @@ export interface SiteStats {
 
 export interface SiteFeature extends RenderFeature, TemporalFeature {
   readonly stats: SiteStats;
+  /** Ids of the sites of the definition library this feature draws (empty before init). */
+  siteIds(): string[];
   /** Presentation state of a site (night, arm positions). */
   state(siteId: string): SiteState | undefined;
   /** Pin parts of a site's state (labs and tests); null releases it to the automatic rules. */
@@ -190,6 +192,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     id: 'site',
     order: 0,
     stats,
+    siteIds: () => sites.map((s) => s.site.id),
     state: (id) => sites.find((s) => s.site.id === id)?.state,
     override(id, patch) {
       const rt = sites.find((s) => s.site.id === id);

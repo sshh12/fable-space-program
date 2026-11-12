@@ -24,7 +24,7 @@ import { v3 } from '../../src/core/math';
 import { createFsTileSource } from '../../src/terrain/fsTileSource';
 import { createTerrainProvider } from '../../src/terrain/provider';
 import { generateStructure } from '../../src/render/vehicle/site';
-import { siteGround, siteSurvey, surveySectionOf, type SiteSurveyDef } from '../../src/render/vehicle/site/survey';
+import { LEVEL_GROUND, siteGround, siteSurvey, surveySectionOf, type SiteSurveyDef } from '../../src/render/vehicle/site/survey';
 
 const DEG = Math.PI / 180;
 
@@ -59,7 +59,7 @@ async function main(): Promise<void> {
       let n0 = Infinity;
       let n1 = -Infinity;
       for (const s of site.structures) {
-        const v = generateStructure({ ...defs, sections: { ...defs.sections, [surveySectionOf(site.id)]: {} } }, site, s.model, s.params ?? {}, s);
+        const v = generateStructure(defs, site, s.model, s.params ?? {}, s, LEVEL_GROUND);
         const h = s.headingDeg * DEG;
         for (const m of Object.values(v.models)) {
           const p = m.lods[m.lods.length - 1]!.positions;
