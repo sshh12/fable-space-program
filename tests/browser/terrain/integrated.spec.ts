@@ -33,12 +33,14 @@ const GAME_VIEWS: { name: string; scene: string; extra: string }[] = [
 ];
 
 /**
- * The views of the ground are exposed as a photographer exposes in daylight (EV100 14.5: "sunny 16" less
- * half a stop), not by the lab's meter: a frame filled with lava is metered up two and a half stops, to a
- * grey plain under a blown sky, and a photograph of a lava field is not taken that way. The game's own
- * views (GAME_VIEWS) keep the meter. The far views (10 km and up) keep it too: sea, cloud and land.
+ * The views of the ground are exposed as the reference photographs of this coast are (EV100 13.5: "sunny
+ * 16" less a stop and a half), not by the lab's meter: a frame filled with lava is metered up another stop
+ * and more, to a grey plain under a blown sky, and a photograph of a lava field is not taken that way. At
+ * 14.5 (the first choice) the sky stood at 0.18 to 0.23 of white where the photographs have 0.55, and a
+ * tenth of a frame of broken lava was under 8 of 255. The game's own views (GAME_VIEWS) keep the meter.
+ * The far views (10 km and up) keep it too: sea, cloud and land.
  */
-const DAYLIGHT_EV = 14.5;
+const DAYLIGHT_EV = 13.5;
 
 const VIEWS: IntegratedView[] = [
   { name: 'apron-eye', lat: PAD.lat - 0.0004, lon: PAD.lon + 0.0003, alt: PAD_ELEVATION + 1.7, heading: 2, pitch: -6 },
@@ -93,7 +95,8 @@ test('the ground around the pad with sky, atmosphere and ocean (integration lab)
     console.log(`integrated-${v.name}: loaded ${info.loaded.join(', ')}; mean luma ${s.stats.meanLuma.toFixed(1)}${info.problems.length ? `; lab problems: ${info.problems.join(' | ')}` : ''}`);
     expect(info.loaded).toContain('terrain');
     expect(info.quarantined.filter((x) => x.pkg === 'terrain')).toEqual([]);
-    expect(s.stats.fractionNonBlack).toBeGreaterThan(0.9);
+    // (Soft: a view that fails it must not keep the views after it from being rendered.)
+    expect.soft(s.stats.fractionNonBlack, `integrated-${v.name}: share of the frame that is not black`).toBeGreaterThan(0.9);
   }
 });
 

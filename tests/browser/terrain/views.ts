@@ -23,11 +23,11 @@ export interface View {
 /**
  * Views of the ground by day are exposed as a photographer exposes in daylight ("sunny 16"), not by the
  * lab's meter: it lifts a frame filled with dark lava by two stops and more, to a grey plain, and no
- * photograph of a lava field is taken that way. EV100 15.8 here: the terrain lab has no atmosphere between
- * the sun and the ground and a stand-in sky, and its ground at 15.8 is as bright as the integration lab's
- * (tests/browser/terrain/integrated.spec.ts) at 14.5, the value its own meter finds with the sky in the frame.
+ * photograph of a lava field is taken that way. EV100 14.8 here: the terrain lab has no atmosphere between
+ * the sun and the ground and a stand-in sky, and its ground at 14.8 is as bright as the integration lab's
+ * (tests/browser/terrain/integrated.spec.ts) at 13.5, the exposure of the reference photographs.
  */
-const DAYLIGHT_EV = 15.8;
+const DAYLIGHT_EV = 14.8;
 
 const nadir = (lat: number, lon: number, height: number, heading = 0): View['cam'] => ({ type: 'surface', lat, lon, height, agl: false, heading, pitch: -89.9 });
 
