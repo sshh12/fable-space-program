@@ -75,7 +75,7 @@
    "note": "Cassini ISS RGB global map, 11 Aug 2011; ring-shadow and polar gaps filled zonally"
   },
   {
-   "name": "rings",
+   "name": "saturn-rings",
    "source": "uvis",
    "kind": "radial",
    "width": 2048,
@@ -87,13 +87,13 @@
     "a"
    ],
    "format": "png",
-   "innerKm": 74490,
-   "outerKm": 140220,
-   "note": "Saturn's main rings from the C ring's inner edge to the F ring: alpha = normal opacity from the Cassini UVIS beta Cen occultation (10 km bins), colour = NSSDC ring-region albedo with an approximate tint",
+   "innerKm": 74658,
+   "outerKm": 136780,
+   "note": "Saturn main rings, C ring inner edge to A ring outer edge (NSSDC radii, = the staged RingDef of bodies-ephemeris): alpha = normal opacity from the Cassini UVIS beta Cen occultation (10 km bins), colour = NSSDC ring-region albedo with an approximate tint",
    "albedoRegions": [
     {
      "name": "C ring",
-     "innerKm": 74490,
+     "innerKm": 74658,
      "outerKm": 91975,
      "albedo": 0.2,
      "tint": [
@@ -133,17 +133,6 @@
       1.0,
       0.92,
       0.82
-     ]
-    },
-    {
-     "name": "F ring",
-     "innerKm": 136780,
-     "outerKm": 140220,
-     "albedo": 0.6,
-     "tint": [
-      1.0,
-      1.0,
-      1.0
      ]
     }
    ]

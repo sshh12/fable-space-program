@@ -102,7 +102,7 @@ def _record(body: config.Body, key: str, md5: str, sha: str) -> None:
         raise RuntimeError(f"{body.id}.{key}: config checksums differ from the download")
     s["md5"] = md5
     s["sha256"] = sha
-    body.path.write_text(json.dumps(raw, indent=1) + "\n", encoding="utf-8")
+    body.path.write_text(json.dumps(raw, indent=1) + "\n", encoding="utf-8", newline="\n")
     rt.log(f"{body.id}: recorded md5/sha256 of {key} in {body.path.name}")
 
 
