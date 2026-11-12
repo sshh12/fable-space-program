@@ -112,6 +112,11 @@ export interface TerrainDebug {
   /** Delay every tile by `ms` between the worker and the upload (tests of late streaming). */
   setStreamDelay(ms: number): void;
   /**
+   * Upload budget per frame: tiles and milliseconds (default 8 tiles, 2 ms: StreamerOptions). A loading screen
+   * may raise it while nobody watches the frames (request app-integration-11) and must set it back.
+   */
+  setUploadBudget(tiles: number, ms: number): void;
+  /**
    * Switch geomorphing and fade-ins off (tiles then pop in and out): the control experiment that shows the
    * pop detector of the browser specs is not blind. Never used by the app.
    */
@@ -193,6 +198,8 @@ interface BodyState {
   /** K the smoothed `K` is heading for (full K of the render height times the pool fit). */
   targetK: number;
   pinNear: boolean | null;
+  /** After a cut (and at the start): ask for the whole chain of tiles under the view until one selection wants nothing. */
+  eager: boolean;
   parked: ParkedView | null;
   observers: LodObserverFixed[];
   lists: { full: [number, number]; quad: [number, number]; waterFull: [number, number]; waterQuad: [number, number] };
@@ -440,6 +447,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       K: 0,
       targetK: 0,
       pinNear: null,
+      eager: true,
       parked: null,
       observers: [],
       lists: { full: zero, quad: zero, waterFull: zero, waterQuad: zero },
@@ -573,7 +581,11 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       prefetch: 0,
       relief: b.relief,
     };
-    b.tree.select(base);
+    // After a cut the view is asked for whole, not one level per round trip, until it is complete.
+    if (cut) b.eager = true;
+    const wantedBefore = b.tree.wanted.length;
+    b.tree.select(b.eager ? { ...base, eager: true } : base);
+    if (b.eager && b.tree.wanted.length === wantedBefore) b.eager = false;
 
     // The view a vessel on the surface was last looked at from stays resident while the camera is in the map
     // (request app-integration-6): leaving the map shows the ground as it was left.
@@ -919,7 +931,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         const b = await createBody(def, manifest);
         bodies.push(b);
         streamer.addBody(b.stream);
-        streamer.setResidentLevels(b.stream, 0, 0);
+        // The always-resident levels are on their way from here on: they bake while the other features start.
+        streamer.setResidentLevels(b.stream, pinLevel, pinLevel);
       }
       if (options.rocks !== false) rocks = new RockRenderer(ctx, provider, bodies.map((b) => ({ id: b.id, def: b.def, params: b.params, set: b.set, albedoAt: b.albedoAt })));
       if (options.cover !== false) {
@@ -1145,6 +1158,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       },
       setStreamDelay(ms: number) {
         streamer.setDelay(ms);
+      },
+      setUploadBudget(tiles: number, ms: number) {
+        streamer.setUploadBudget(tiles, ms);
       },
       setMorphEnabled(on: boolean) {
         morphEnabled = on;

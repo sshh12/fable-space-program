@@ -312,6 +312,15 @@ export class TileStreamer {
     this.s.jobs++;
     job.node.state = TILE_UPLOADING;
     this.arrived.push({ result: msg, node: job.node, body: job.body, at: performance.now() + this.delayMs, stalled: 0 });
+    // The next job goes out at once: the bake rate must not depend on the frame rate (at start-up the first
+    // frames take half a second each, and eight workers baked 90 tiles in 11 s; request app-integration-11).
+    this.dispatch();
+  }
+
+  /** Upload budget per frame: tiles and milliseconds (a loading screen that nobody watches frames of may raise it). */
+  setUploadBudget(tiles: number, ms: number): void {
+    this.options.uploadTiles = Math.max(1, Math.floor(tiles));
+    this.options.uploadMs = Math.max(0.1, ms);
   }
 
   /**

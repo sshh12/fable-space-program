@@ -218,6 +218,44 @@ describe('live demand on the pools', () => {
   });
 });
 
+describe('asking for a view whole (eager requests after a cut)', () => {
+  it('one pass wants the whole chain of tiles under the view, coarser tiles first; a plain pass only the next level', () => {
+    const K = lodK(1440, (55 * Math.PI) / 180, 8);
+    const obs = [observer(0.7, 23.4, 300)];
+    const plain = new BodyQuadtree(R, -9130, 10790);
+    for (const root of plain.roots) makeReady(plain, root);
+    plain.select({ ...params(obs, K, 14), frameIndex: 1, time: 10 });
+    expect(plain.wanted.length).toBeGreaterThan(0);
+    expect(Math.max(...plain.wanted.map((n) => n.level))).toBe(1);
+
+    const tree = new BodyQuadtree(R, -9130, 10790);
+    for (const root of tree.roots) makeReady(tree, root);
+    tree.select({ ...params(obs, K, 14), frameIndex: 1, time: 10, eager: true });
+    const levels = new Set(tree.wanted.map((n) => n.level));
+    for (let l = 1; l <= 14; l++) expect(levels.has(l), `level ${l} wanted`).toBe(true);
+    // Under the observer a parent is asked for before its child.
+    const at = (l: number): number => Math.max(...tree.wanted.filter((n) => n.level === l).map((n) => n.priority));
+    expect(at(1)).toBeGreaterThan(0);
+    // What it wants holds everything the converged selection draws near the observer.
+    const wantedIds = new Set(tree.wanted.map((n) => n.id));
+    const full = new BodyQuadtree(R, -9130, 10790);
+    const items = converge(full, params(obs, K, 14));
+    const drawn = items.filter((it) => it.node.level >= 1);
+    const missing = drawn.filter((it) => !wantedIds.has(it.node.id));
+    expect(drawn.length).toBeGreaterThan(50);
+    expect(missing.length).toBe(0);
+    // And not much more: the inherited bounds are wider than the tiles' own.
+    expect(tree.wanted.length).toBeLessThan(4 * (drawn.length + items.length));
+    // Nothing is drawn below what is resident.
+    expect(tree.items.every((it) => it.node.level === 0)).toBe(true);
+    for (const n of tree.wanted) makeReady(tree, n);
+    tree.wanted.length = 0;
+    tree.select({ ...params(obs, K, 14), frameIndex: 2, time: 20, eager: true });
+    expect(tree.wanted.length).toBe(0);
+    expect(Math.max(...tree.items.map((it) => it.node.level))).toBe(14);
+  });
+});
+
 describe('fitting a view into the pools', () => {
   it('leaves the ranges alone inside the band and never grows them past their full size', () => {
     expect(fitLodScale(1, 1, 0.5, DT)).toBe(1);

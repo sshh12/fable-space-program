@@ -302,10 +302,9 @@ test("the mission's entry: the sound follows the aerodynamic load from the heat 
       for (const r of dip) expect(r.masterDb - r.masterDbBefore, `before the fix: ${label(r)}`).toBeGreaterThan(12);
       const fall = rows.filter((r) => r.t >= 510 && r.mach > 1.2);
       expect(fall.length).toBeGreaterThanOrEqual(3);
-      for (const r of fall) {
-        expect(r.masterDbBefore, `before the fix: ${label(r)}`).toBeLessThan(-70);
-        expect(r.masterDb, label(r)).toBeGreaterThan(-40);
-      }
+      for (const r of fall) expect(r.masterDb, label(r)).toBeGreaterThan(-40);
+      // (Where the old rules were not silent in the fall, a thruster pulse of the pilot was in the window.)
+      expect(fall.filter((r) => r.masterDbBefore < -80).length, 'windows of the supersonic fall that were silent before the fix').toBeGreaterThanOrEqual(2);
     }
   }
   record('missionEntry', out);

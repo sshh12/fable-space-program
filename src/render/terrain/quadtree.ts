@@ -177,6 +177,13 @@ export interface SelectParams {
    * selections do, request-only passes do not.
    */
   counted?: boolean;
+  /**
+   * Ask for the whole chain of tiles under the view at once: where a wanted tile is not resident, its own
+   * children are wanted as well, judged by the bounds it inherits from its parent (wider than its own will
+   * be: a few tiles too many near the observer). After a cut and at the start a view is then streamed in the
+   * time its tiles take to bake, not one quadtree level per round trip (request app-integration-11).
+   */
+  eager?: boolean;
 }
 
 export interface DrawItem {
@@ -437,11 +444,11 @@ export class BodyQuadtree {
 
   private counted = false;
 
-  private want(n: TileNode, priority: number, frustumClass: number): void {
+  private want(n: TileNode, priority: number, frustumClass: number, counted = this.counted): void {
     const p = this.p;
     // Given up for want of room (streamer.ts): its parent stands in until the retry time.
     if (n.deferUntil > p.frameIndex) return;
-    if (this.counted) n.neededFrame = p.frameIndex;
+    if (counted) n.neededFrame = p.frameIndex;
     let pr = priority * (frustumClass === 0 ? 1 : 0.25);
     if (p.prefetch > 0) pr *= p.prefetch;
     if (n.wantedFrame !== p.frameIndex) {
@@ -500,6 +507,7 @@ export class BodyQuadtree {
           } else {
             const size = this.faceSize / 2 ** c.level;
             this.want(c, (childRange / Math.max(dc, 0.05 * size)) * (this.nearVessel(c) ? 4 : 1), ccls);
+            if (p.eager && c.deferUntil <= p.frameIndex) this.descend(c, dc, this.capSplit);
           }
         }
         if (ccls !== 0 || hidden) visible = false;
@@ -514,6 +522,35 @@ export class BodyQuadtree {
     if (mask === 15 && (seen === 15 || seen === 0)) this.emit(n, -1, seen === 15);
     else {
       for (let q = 0; q < 4; q++) if ((mask & (1 << q)) !== 0) this.emit(n, q, (seen & (1 << q)) !== 0);
+    }
+  }
+
+  /**
+   * Eager requests below a tile that is not resident yet (SelectParams.eager): its children within their
+   * range, and theirs. Nothing is drawn or activated; coarser tiles keep the higher priority (a fine tile is
+   * of no use before its parents); and they are not counted as demand on the pools (the inherited bounds ask
+   * for more than the view will use, and the fit of the ranges must not answer to that).
+   */
+  private descend(n: TileNode, d: number, capSplit: number): void {
+    const p = this.p;
+    const level = n.level;
+    const childRange = levelRange(level + 1, p.K, this.faceSize, p.relief);
+    if (level >= capMaxLevel(capSplit, p.maxLevel) || d >= childRange) return;
+    const children = this.childrenOf(n);
+    for (let q = 0; q < 4; q++) {
+      const c = children[q]!;
+      const dc = this.distance(c, childRange);
+      if (dc >= childRange) continue;
+      const cap = this.capSplit;
+      const ccls = this.frustumClass(c, dc);
+      if (ccls === 2 || this.belowHorizon(c, dc)) continue;
+      if (c.state !== TILE_READY) {
+        const size = this.faceSize / 2 ** c.level;
+        this.want(c, 0.5 * (childRange / Math.max(dc, 0.05 * size)) * (this.nearVessel(c) ? 4 : 1), ccls, false);
+      } else {
+        c.lastTouched = p.frameIndex;
+      }
+      if (c.deferUntil <= p.frameIndex) this.descend(c, dc, cap);
     }
   }
 

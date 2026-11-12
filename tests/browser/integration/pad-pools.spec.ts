@@ -134,8 +134,12 @@ test('the pad at 1440p fits the tile pools, comes to rest, and a map round trip 
   // The first frame after the blend has the finest level again, and nothing of the view had to be streamed anew.
   expect(back.earth.deepestLevel).toBe(20);
   expect(round.uploadedAfterReturn, 'tiles streamed again after the return').toBeLessThanOrEqual(8);
-  // The picture is the one that was left (the shadows have moved by three seconds of sun; clouds drift).
-  expect(round.firstFrameVsBefore.changed, 'share of pixels that differ in the first frame back').toBeLessThan(0.03);
+  // The picture is the one that was left. In the first frame the temporal resolve is still gathering after the
+  // 0.6 s flight of the camera (lattice towers and markings a little soft: 5 % of the pixels); three quarters of
+  // a second later only the clouds have drifted. (With the ground gone to its coarse parents the first frame
+  // had the land as sea: a third of the pixels.)
+  expect(round.firstFrameVsBefore.changed, 'share of pixels that differ in the first frame back').toBeLessThan(0.09);
+  expect(round.firstFrameVsBefore.mean).toBeLessThan(7);
   expect(round.settledVsBefore.changed).toBeLessThan(0.02);
   await expectNoErrors(page, pageLog);
 });

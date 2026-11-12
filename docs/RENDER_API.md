@@ -628,6 +628,7 @@ interface MeshSystem {
   registerProceduralTexture(id: string, texture: { width: number; height: number; data: Uint8Array }): void;  // rgba8
   createBatch(label: string): MeshBatch;
   isIdle(): boolean;                         // no texture still loading
+  loads(): { pending: number; total: number }; // texture loads started so far / still outstanding (a loading screen's count)
 }
 interface MeshBatch {
   begin(frame: FrameContext): void;          // in prepare
@@ -712,7 +713,8 @@ Primitive builders for labs and props: `boxMesh`, `sphereMesh`, `planeMesh`, `cy
 ```ts
 interface CoreApi {
   meshes: MeshSystem;
-  shaders: CoreShaderLibrary;                 // + has(), chunkVersion(), expand(), tracked(build), pendingCompilations()
+  shaders: CoreShaderLibrary;                 // + has(), chunkVersion(), expand(), tracked(build), pendingCompilations(),
+                                              //   compilations(): { pending, total } (modules created so far / still compiling)
   mips: MipGenerator;                         // mips.generate(texture): render-based mip chain (needs RENDER_ATTACHMENT)
   shadowPassLayout: GPUBindGroupLayout;       // group 1 of drawShadow pipelines
   reportError(message: string): void;         // -> window.__test.errors
@@ -1315,6 +1317,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| `CoreShaderLibrary.compilations(): { pending, total }`, `MeshSystem.loads(): { pending, total }` (sections 10, 11); terrain: `TerrainDebug.residency(bodyId)`, `setUploadBudget(tiles, ms)`, `stats().lodScale / demand`, `StreamStats.stalled / droppedTotal / demandTiles / demandImages / lodScale` | `app-integration-11`, `-7` | the app's loading screen | None |
 | Exposure after a cut: when `CameraState.kind` changes, the exposure follows the target with `CUT_ADAPT_TAU` (0.06 s) for `CUT_ADAPT_SECONDS` (0.75 s) (`adaptEv100Cut`), section 13 | `cockpit-14` | cockpit (the cabin is exposed a third of a second after C, not three to four seconds), map view, every screenshot taken shortly after a view change | None. Inside a view the adaptation rates are unchanged |
 | Exposure under the sun: pixels and emitter hints above `SUNLIT_OVER_WHITE` (1.5) x sunlit white raise the exterior target by at most `SUNLIT_SPOT_MAX_EV` (0.25 EV) over what the rest of the frame asks for, section 13 | `vfx-8` | vfx (daylight lift-off: the flame-lit apron and the flame's hint no longer hold the meter on the +0.5 EV bound), ocean (sun glint), anything brighter than sunlit white by day | None in code. Daylight frames with such pixels are up to 0.25 EV brighter than before; night, twilight below the gate and cabins unchanged |
 | Exposure target bounded from below under the sun: sunny 16 - `SUNLIT_SHADOW_MIN_EV` (0.5) while sunlit surfaces are in the frame (`SUNLIT_SURFACE`, `SUNLIT_EVIDENCE_FROM / _FULL`) and the sun stands 10-25 degrees or more above the ground under the camera (`MeterInput.sunElevationSin`, `SUNLIT_ELEVATION_MIN / _FULL`); `MeterResult.sunlitFloor`, `exposureInfo().sunlitFloor`, section 13 | `vfx-7` | vfx (daylight lift-off: no pumping when the lit pad leaves the frame), every daylight exterior frame of dark ground or sea with a sunlit hull, cloud or beach in it (up to 2.5 EV darker than the meter alone chose: dark things stay dark by day) | None in code. Night, twilight, eclipse, overcast, low sun (under 10 degrees), views without a sunlit surface and cabins are metered as before |
