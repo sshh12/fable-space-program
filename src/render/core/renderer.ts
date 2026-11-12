@@ -285,7 +285,11 @@ export const EXACT_SETTLE_ROUNDS = 8;
 
 /** What `CoreRenderer.exactInfo()` reports of the last frame-exact capture. */
 export interface ExactInfo {
-  /** Who was not idle before and after the frames of the capture (feature ids; 'core' = the core's own shaders, pipelines, textures). */
+  /**
+   * Who was not idle before and after the frames of the capture (feature ids; 'core' = the core's own shaders,
+   * pipelines, textures). "Before" is the end of the lead-in, before the sequences restart for the capture's
+   * frames: a feature is not asked between its `resetTemporal` and its next frame.
+   */
   busyBefore: string[];
   busyAfter: string[];
   /** Meterings it took (1 = the restart set nobody to work). */
@@ -1312,9 +1316,13 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
         }
         if (evOverride === null) holdNext = true;
         // 2. Exactly `frames` frames from the origin of every sequence, in this task. No step: the frame
-        // index stands at a multiple of SEQUENCE_ALIGN.
-        restartTemporal(false, false);
+        // index stands at a multiple of SEQUENCE_ALIGN. Who is at work is asked BEFORE the restart: between
+        // its `resetTemporal` and its next frame a feature may stand at an origin that its own `isIdle`
+        // calls busy (the terrain's level ranges are at 0 until the next selection snaps them), and that is
+        // the restart, not work the capture would cut short. (Seen once the integration lab's wrapper let
+        // `resetTemporal` through, request atmosphere-clouds-12: every capture there was "busy before".)
         const busyBefore = busy();
+        restartTemporal(false, false);
         const first = frameIndex;
         for (let i = 0; i < frames; i++) exact();
         const rendered = frameIndex - first;
