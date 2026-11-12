@@ -870,7 +870,8 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
           var aPrev = 0.0;
           var awayCount = 3;
           if (den.layer > 0.98) { awayCount = 0; }
-          for (var j = 0; j < awayCount; j++) {
+          // (With the quality scale lowered: the same reach in two samples.)
+          for (var j = select(0, 1, atmo.cloudLight.w < 0.85); j < awayCount; j++) {
             let aNext = reach * CLOUD_AWAY[j];
             let am = 0.5 * (aPrev + aNext);
             let qq = am * am - 2.0 * r * muS * am;
@@ -923,9 +924,15 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
             let hSun = hl + muS * dq;
             let dS = cloudDensityAt(col, hSun, ql + sunNoise * dq, fq, dn);
             let dA = cloudDensityAt(col, hl + dot(across, up) * dq, ql + cloudNoiseVec(bi, across) * dq, fq, dn);
-            let dT = cloudDensityAt(col, hl + dot(third, up) * dq, ql + cloudNoiseVec(bi, third) * dq, fq, dn);
             let s0 = d0.sigma * d0.frac;
-            let grad = vec3f(dS.sigma * dS.frac - s0, dA.sigma * dA.frac - s0, dT.sigma * dT.frac - s0);
+            // (And the slope along the sun and across it only: the third direction decides nothing about the
+            // light on the surface, only a share of how the eye meets it.)
+            var slopeThird = 0.0;
+            if (atmo.cloudLight.w >= 0.85) {
+              let dT = cloudDensityAt(col, hl + dot(third, up) * dq, ql + cloudNoiseVec(bi, third) * dq, fq, dn);
+              slopeThird = dT.sigma * dT.frac - s0;
+            }
+            let grad = vec3f(dS.sigma * dS.frac - s0, dA.sigma * dA.frac - s0, slopeThird);
             let gl = length(grad);
             facing = 0.6 * saturate(gl / (0.25 * max(s0, den.sigma) + 1e-7)) * (1.0 - den.layer);
             // (Outward normal = against the gradient; its components are along the sun, across, third.)
