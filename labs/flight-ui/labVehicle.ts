@@ -135,6 +135,8 @@ export function withLabVehicle(defs: DefLibrary): DefLibrary {
       { type: 'command', crewCapacity: 3, sas: true, maxRateDegPerS: 10, seats: mould.seats.map((s) => ({ ...s })) },
       { type: 'heatShield', ablatorResource: 'lab-ablator', area: 12.6, qThreshold: 2e5, heff: 3e7, conductFraction: 0.02 },
       { type: 'light', params: {} },
+      // The mission capsule's drogues and mains (their envelopes are what the chute light is judged against).
+      ...(defs.parts['kestrel-capsule']?.modules.filter((m) => m.type === 'parachute') ?? []),
     ], [{ resource: 'lab-ablator', capacity: 900 }]),
   ];
   const vehicle: VehicleDef = {
@@ -205,6 +207,8 @@ export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<LabGroup,
           return { type: 'heatShield', ablatorFraction: f, surfaceTemp: 290 };
         case 'light':
           return { type: 'light', on: false };
+        case 'parachute':
+          return { type: 'parachute', state: 'stowed', inflation: 0, deployAge: -1, envelope: 'safe', lineDir: v3.new(0, 1, 0) };
         default:
           throw new Error(`lab vehicle: module ${m.type} has no lab state`);
       }

@@ -50,8 +50,8 @@
  */
 import type { ButtonAction, ControlInputs, SasMode } from '@/core/contracts/controls';
 import type { CameraRig, CameraState } from '@/core/contracts/render';
-import type { SimSnapshot } from '@/core/contracts/sim';
-import type { DefLibrary } from '@/core/contracts/defs';
+import type { ChuteEnvelope, SimSnapshot, StageInfo } from '@/core/contracts/sim';
+import type { DefLibrary, ParachuteEnvelope } from '@/core/contracts/defs';
 import type { TerrainProvider, TileManifest } from '@/core/contracts/terrain';
 import type { MfdPage } from '@/core/contracts/ui';
 import { fetchDefSource } from '@/core/defs/fetchSource';
@@ -423,10 +423,11 @@ async function boot(): Promise<void> {
     }
     // Under the mains at a steady sink rate drag equals weight: one g.
     if (setup.chutes) out.gLoad = 1;
-    // The chute envelope is reported while a chute stage remains to be fired (as the sim does), none after the mains.
-    if (!stageInfos.some((x) => !x.fired && x.actionKinds.includes('deployParachute'))) out.chuteEnvelope = null;
     // The Mach number from the standard atmosphere's speed of sound at the vessel's height.
     if (body.atmosphere && out.altitudeAsl < body.atmosphere.simTop) out.mach = out.speedSurface / speedOfSound(out.altitudeAsl);
+    // The chute envelope light of the next chute stage still to fire, judged as the sim judges it (the capsule's
+    // parachute data: outside `destroy` unsafe, inside `safe` safe, risky between); none after the mains.
+    out.chuteEnvelope = labChuteEnvelope(defs, stageInfos, out);
 
     return {
       ...s,
@@ -444,6 +445,20 @@ async function boot(): Promise<void> {
    * interface) point along the track - in an entry where the integrated trajectory ends - whose miss is its
    * distance from the target.
    */
+  /** The sim's nextChuteEnvelope (src/sim/vessel/facade.ts) for the lab vehicle: the next unfired chute stage's light. */
+  const labChuteEnvelope = (library: DefLibrary, stages: readonly StageInfo[], r: SimSnapshot['readouts']): ChuteEnvelope | null => {
+    const vehicle = library.vehicles[LAB_VEHICLE_ID]!;
+    const i = stages.findIndex((x) => !x.fired && x.actionKinds.includes('deployParachute'));
+    const action = i >= 0 ? vehicle.stages[i]?.actions.find((a) => a.kind === 'deployParachute') : undefined;
+    if (!action || action.kind !== 'deployParachute') return null;
+    const def = library.parts[vehicle.parts.find((p) => action.parts.includes(p.id))!.def]!;
+    const md = def.modules.find((m) => m.type === 'parachute' && m.mode === action.mode);
+    if (!md || md.type !== 'parachute') return null;
+    const inside = (e: ParachuteEnvelope): boolean =>
+      !(e.maxAlt !== undefined && r.altitudeAsl > e.maxAlt) && !(e.maxMach !== undefined && r.mach > e.maxMach) && !(e.maxSpeed !== undefined && r.speedSurface > e.maxSpeed) && r.dynamicPressure <= e.maxQ;
+    return !inside(md.destroy) ? 'unsafe' : inside(md.safe) ? 'safe' : 'risky';
+  };
+
   const landingState = (s: SimSnapshot): SimSnapshot => {
     const r = s.readouts;
     const lt = r.landingTarget;

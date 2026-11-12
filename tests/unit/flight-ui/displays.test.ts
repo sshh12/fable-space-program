@@ -718,6 +718,10 @@ describe('round-6 mission read-outs', () => {
     const cap = lines.find((l) => l.id === 'capsule')!;
     expect(n(cap.amount)).toBe('93 %');
     expect(n(cap.detail)).toContain('Ablator 58 %');
+    // A capsule whose only resource is its heat shield (the lab's) has no resource line at all.
+    const shieldOnly = groups.map((g) => (g.id === 'capsule' ? { ...g, bars: g.bars.filter((b) => b.resourceId === 'Ablator') } : g));
+    expect(summarizeResources(shieldOnly).inUse.map((l) => l.id)).toEqual(['m2']);
+    expect(summarizeResources(shieldOnly).full).toEqual([]);
   });
 
   it('names the chutes the envelope light is about: the mains once the drogues are out', () => {

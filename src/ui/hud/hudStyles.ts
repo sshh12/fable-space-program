@@ -254,7 +254,7 @@ export const HUD_CSS = /* css */ `
 .hud .kbcap .sw { position: relative; flex: none; width: 2.1em; height: 1.15em; border-radius: 999px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(170, 198, 235, 0.38); transition: background-color 150ms, border-color 150ms; }
 .hud .kbcap .sw i { position: absolute; top: 50%; left: 0.12em; width: 0.8em; height: 0.8em; border-radius: 50%; background: #9fb0c6; transform: translateY(-50%); transition: transform 150ms, background-color 150ms; }
 .hud .kbcap .kbl { font-weight: 500; letter-spacing: 0.02em; }
-.hud .kbcap .kbs { min-width: 2.3em; font-size: 0.86em; font-weight: 700; letter-spacing: 0.08em; color: var(--label); }
+.hud .kbcap .kbs { min-width: 2.2em; font-size: 0.93em; font-weight: 700; letter-spacing: 0.08em; color: var(--label); }
 .hud .kbcap.on .sw { background: rgba(95, 227, 154, 0.3); border-color: rgba(95, 227, 154, 0.85); }
 .hud .kbcap.on .sw i { background: var(--good); transform: translate(1.04em, -50%); }
 .hud .kbcap.on .kbs { color: var(--good); }
@@ -401,7 +401,9 @@ export const HUD_CSS = /* css */ `
  * narrower tape beside the g tube (amber, red from two thirds of the fatal limit), always there. The gauges share one grid,
  * so tops, bottoms and values line up.
  */
-.hud .gauges { display: grid; grid-template-columns: auto auto auto; justify-content: center; align-content: center; column-gap: calc(var(--u) * 0.55); row-gap: calc(var(--u) * 0.3); justify-items: center; padding: calc(var(--u) * 0.45) calc(var(--u) * 0.5) calc(var(--u) * 0.45) calc(var(--u) * 0.3); }
+/* The three columns are wider than the cell (the THROTTLE caption): they stand on the panel's right edge and reach
+   left into the housing under the roll window (clear of the bezel), with a gap that keeps the captions three words. */
+.hud .gauges { display: grid; grid-template-columns: auto auto auto; justify-content: end; align-content: center; column-gap: calc(var(--u) * 1.15); row-gap: calc(var(--u) * 0.3); justify-items: center; padding: calc(var(--u) * 0.45) calc(var(--u) * 0.5) calc(var(--u) * 0.45) calc(var(--u) * 0.3); }
 .hud .gauge { display: contents; }
 .hud .gauge.thr > * { grid-column: 1; }
 .hud .gauge.g > * { grid-column: 2; }

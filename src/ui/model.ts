@@ -570,7 +570,8 @@ export interface ResourceBarView {
   /**
    * Part of the group's main supply: what its main engines burn (not the solid propellant of ullage or
    * separation motors, which is spent in seconds by design); in a group without main engines every resource but
-   * a heat shield's ablator (the entry panel shows that). The HUD's one line per group reads these.
+   * those, and a group of nothing but fixed-burn motors their propellant. A heat shield's ablator never is (the
+   * entry panel shows it). The HUD's one line per group reads these.
    */
   primary: boolean;
 }
@@ -592,9 +593,10 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
   const groupOf = new Map<string, string>();
   if (vehicle) for (const p of vehicle.parts) groupOf.set(p.id, p.stageGroup);
   const sums = new Map<string, Map<string, { amount: number; capacity: number }>>();
-  /** Per group: what its main engines burn, and what only fixed-burn motors or heat shields use. */
+  /** Per group: what its main engines burn, what its fixed-burn motors burn, and its heat shields' ablator. */
   const mainFeed = new Map<string, Set<string>>();
-  const minor = new Map<string, Set<string>>();
+  const fixedFeed = new Map<string, Set<string>>();
+  const ablators = new Map<string, Set<string>>();
   const add = (m: Map<string, Set<string>>, g: string, rid: string): void => {
     let set = m.get(g);
     if (!set) m.set(g, (set = new Set()));
@@ -605,8 +607,8 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
     if (!def) continue;
     const g = groupOf.get(part.instanceId) ?? v.id;
     for (const md of def.modules) {
-      if (md.type === 'engine') for (const p of md.propellants) add(md.fixedBurn ? minor : mainFeed, g, p.resource);
-      else if (md.type === 'heatShield') add(minor, g, md.ablatorResource);
+      if (md.type === 'engine') for (const p of md.propellants) add(md.fixedBurn ? fixedFeed : mainFeed, g, p.resource);
+      else if (md.type === 'heatShield') add(ablators, g, md.ablatorResource);
     }
     if (!def.resources) continue;
     let m = sums.get(g);
@@ -628,10 +630,11 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
     const entries = [...sums.get(id)!.entries()];
     const main = mainFeed.get(id);
     const held = (rid: string): boolean => main?.has(rid) === true;
-    const notMinor = (rid: string): boolean => !(minor.get(id)?.has(rid) ?? false);
-    // Main engines with a tank of their own in the group: their propellants; otherwise all but the minor ones;
-    // a group of nothing but minor resources (a solid motor alone) keeps them all.
-    const isPrimary = entries.some(([rid]) => held(rid)) ? held : entries.some(([rid]) => notMinor(rid)) ? notMinor : (): boolean => true;
+    const ablator = (rid: string): boolean => ablators.get(id)?.has(rid) ?? false;
+    const other = (rid: string): boolean => !ablator(rid) && !(fixedFeed.get(id)?.has(rid) ?? false);
+    // Main engines with a tank of their own in the group: their propellants; otherwise every other supply (RCS);
+    // a group of nothing but fixed-burn motors (a launch escape motor): their propellant; never the ablator.
+    const isPrimary = entries.some(([rid]) => held(rid)) ? held : entries.some(([rid]) => other(rid)) ? other : (rid: string): boolean => !ablator(rid);
     return {
       id,
       label: vehicle?.stageGroups.find((g) => g.id === id)?.label ?? v.name,
@@ -671,13 +674,14 @@ export interface ResourceSummary {
  * at 100 %. The MFD systems page keeps every resource of every group.
  */
 export function summarizeResources(groups: readonly ResourceGroupView[]): ResourceSummary {
-  const used = groups.filter((g) => g.bars.some((b) => b.fraction < 0.9995));
+  // A group without a supply of its own (a capsule whose only resource is its heat shield) has no line here.
+  const supplied = groups.filter((g) => g.bars.some((b) => b.primary));
+  const used = supplied.filter((g) => g.bars.some((b) => b.fraction < 0.9995));
   const inUse = used.map((g): ResourceGroupLine => {
-    const main = g.bars.filter((b) => b.primary);
-    const low = (main.length > 0 ? main : g.bars).reduce((a, b) => (b.fraction < a.fraction ? b : a));
+    const low = g.bars.filter((b) => b.primary).reduce((a, b) => (b.fraction < a.fraction ? b : a));
     return { id: g.id, label: g.label, fraction: low.fraction, amount: low.amount, detail: g.bars.map((b) => `${b.name} ${b.amount}`).join(' · ') };
   });
-  return { inUse, full: groups.filter((g) => !used.includes(g)).map((g) => g.label) };
+  return { inUse, full: supplied.filter((g) => !used.includes(g)).map((g) => g.label) };
 }
 
 /** Heat-shield redline: below this ablator fraction the shield is in its last margin (HUD and MFD). */
