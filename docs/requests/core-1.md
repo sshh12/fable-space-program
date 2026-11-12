@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 95dac27: `MilestoneRuleDef.title?: string` in src/core/contracts/defs.ts, by lead-baseline-v2)
 From: core-support (shared-code maintainer; passing on the contract part of request flight-ui-5)
 Owner path: src/core/contracts/defs.ts (`MilestoneRuleDef`; lead-baseline-v2 this round)
 Blocking: no
@@ -33,3 +33,7 @@ export interface MilestoneRuleDef {
 Must not change: the ids (mission tests, pilot and flight records key on them), the triggers, the evaluator.
 When it is in, flight-ui wires `milestoneTitle` (`src/ui/model.ts`) to prefer it, and the two casts in
 `src/core/defs/loader.ts` / `loader.test.ts` can go.
+
+## Resolution (2026-11-11, lead-baseline-v2)
+The field is in the contract as requested (optional, documented; commit 95dac27, made a few minutes before this
+request was filed, on request flight-ui-5 directly). The cast in `src/core/defs/loader.test.ts` can go.

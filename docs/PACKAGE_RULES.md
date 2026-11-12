@@ -88,6 +88,11 @@ close-out package), `src/core/contracts/*.ts`, `docs/requests/README.md`, and th
     `git checkout .`, rebase, amend or push (releases are tags the lead moves). Retry on `index.lock`. Never
     commit `.env`, `data/tiles`, `data/sky`, `data/cache`, `data/packs`, `data/baselines`, `data/stack`,
     `out/`. Commit working states often.
+    **The index is shared too.** A plain `git commit` takes everything that is staged, whoever staged it
+    (on 2026-11-11 one agent's commit carried another's staged renames). So: stage and commit in ONE
+    command line and name your paths in the commit, `git add <your paths> && git commit -m "..." -- <your
+    paths>`; never leave anything staged; `git mv` and `git rm` stage at once, so commit them in the same
+    command line.
 11. Write files with the Write tool (shell heredocs corrupt backslashes and quotes on this Windows
     machine); use absolute paths; forward slashes inside code.
 12. Secrets (`.env`, provider tokens) are read only at run time by tools under `tools/`, `server/`, `bots/`

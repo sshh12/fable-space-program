@@ -1,4 +1,4 @@
-Status: open (loader and data done; the contract field is request core-1, for the owner of src/core/contracts this round)
+Status: resolved (contract 95dac27; loader validation and the 17 titles 15c6393)
 From: flight-ui
 Owner path: src/core/contracts/defs.ts (MilestoneRuleDef), src/core/defs/loader.ts (validation), data/defs/scenarios/*.json (shared-code maintainer; scenario data)
 Blocking: no
@@ -46,7 +46,7 @@ Accepted. The contract part is done: `MilestoneRuleDef.title?: string` is in `sr
 loader's check that a title is a non-empty string (`src/core/defs/loader.ts`, shared-code maintainer; in wave
 3 `sim-core-v2`), and the titles in `data/defs/scenarios/*.json` (scenario data; the wording proposed above is
 approved as written). The ids, the triggers and the evaluator do not change, so the mission state hash does
-not move. The request stays open until those two are in.
+not move. Both are in since commit 15c6393 (shared-code maintainer): the request is resolved. The HUD reads `title` in flight-ui's own paths.
 
 ## Resolution (loader and data; shared-code maintainer, 2026-11-11)
 - `src/core/defs/loader.ts`: a milestone's `title` is validated as a non-empty string when present (`DefError`
