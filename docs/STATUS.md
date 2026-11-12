@@ -65,7 +65,18 @@ it holds 95 %, chute envelope "RISKY" while inside it, Mach shown in vacuum).
 2. App integration: requests app-integration-7 (main-thread cost near terrain) and -8 (a real 60 Hz clock for the
    headless mission's rAF lines), attribute the main-thread cost during burns (the spec now records per-feature
    CPU; not yet run), and the boot-time sea around the pad; then the browser mission green on every line.
-3. v2: `MIGRATION_V2.md` section 2 is now met except for the visual sign-off; start with `lead-baseline-v2`
+3. User feedback from playing the build (2026-11-11), for the next batch:
+   - **Loading progress.** Entering the game takes a while (terrain tiles, LODs, the Milky Way cube, the sky probe)
+     and the screen gives no sense of progress; for about 40 s at 1440p the land around the pad is even drawn as
+     sea. Show a clear, honest progress indicator (what is loading, how far along) until the view at the pad is
+     final, and do not show the scene before the ground under the camera is resident. In v2 this belongs to the
+     shell's spawn flow (ARCHITECTURE_V2 section 23) and the boot pack (10.4); until then to `src/app`.
+   - **Keyboard capture and automatic fullscreen are disorienting.** Today the first key or click requests
+     fullscreen and the keyboard lock (`src/app/settings.ts`; `?capture=0` turns it off). Make it opt-in: start
+     windowed and uncaptured, and offer fullscreen / keyboard lock as an explicit control (and a setting), with the
+     key bindings working without it (the bindings already avoid Ctrl/Alt/Meta). Reflect it in the v2 menu and
+     settings design.
+4. v2: `MIGRATION_V2.md` section 2 is now met except for the visual sign-off; start with `lead-baseline-v2`
    (reference images from the signed-off tree), then waves 3-7.
 
 ## The 2026-11-11 15:35 crash and the git recovery
