@@ -26,13 +26,20 @@ RUN node deploy/build/build-server.mjs --out=/out/server \
 FROM ${NODE_IMAGE}
 ARG NODE_IMAGE
 ARG COMMIT=unknown
+# The PGDG signing key is checked by its fingerprint (the key PostgreSQL publishes for apt.postgresql.org), and
+# the client is pinned to one build: to move it, set the version PGDG's bookworm-pgdg index lists now (its pool
+# drops old builds, so a pin that disappears fails the build loudly rather than changing pg_dump silently).
+ARG PGDG_KEY_FPR=B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
+ARG PG_CLIENT_VERSION=18.7-1.pgdg12+2
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
  && install -d /usr/share/postgresql-common/pgdg \
  && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+ && fpr="$(gpg --show-keys --with-colons /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc | awk -F: '/^fpr:/ {print $10; exit}')" \
+ && if [ "$fpr" != "$PGDG_KEY_FPR" ]; then echo "the PGDG signing key has fingerprint $fpr, expected $PGDG_KEY_FPR" >&2; exit 1; fi \
  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
  && apt-get update \
- && apt-get install -y --no-install-recommends postgresql-client-18 \
+ && apt-get install -y --no-install-recommends "postgresql-client-18=$PG_CLIENT_VERSION" "libpq5=$PG_CLIENT_VERSION" \
  && apt-get purge -y gnupg && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /out/server /app/server

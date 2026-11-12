@@ -6,6 +6,12 @@
  *
  * The image writes build-info.json next to the bundle (deploy/build/stamp.mjs). Outside the image (the
  * local stack's host processes) there is no image digest: the id is `host-<bundle hash>`.
+ *
+ * What equal buildIds prove, and what they do not: the same Node base image (by digest) and the same server
+ * bundle, byte for byte. NOT the client build the shell serves (it has its own id, `clientBuild` in
+ * /version.json: the hash of everything the client is built from, tools/dev/build-client.mjs) and not the
+ * Debian packages of the runtime stage (pg_dump: pinned by version in deploy/Dockerfile). A rollout compares
+ * buildId AND clientBuild.
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
