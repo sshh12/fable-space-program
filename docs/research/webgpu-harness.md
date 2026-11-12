@@ -187,6 +187,63 @@ Conclusions:
   (`waitFrames(20)` then `resetStats()`).
 - CPU encode time in uncapped mode shows 8-31 ms spikes: `getCurrentTexture()`/`submit` block when the swap chain is full. Not seen with vsync.
 
+### 3a. The frame clock is the monitor's, and a sleeping monitor gives 57.5 Hz (2026-11-11, Chrome 157; request app-integration-8)
+
+The conclusion above called the headless clock "synthetic 60 Hz". It is not synthetic: headless and headed Chrome on Windows
+both take the frame clock from the primary monitor's vertical blank, and both lose it when the monitor sleeps.
+
+Observed. The browser mission (45 minutes, unattended) ran at a median rAF period of 17.3-17.45 ms in every phase,
+whatever the page did (GPU p50 0.75-7.0 ms). `tests/browser/shell/frame-clock.perf.spec.ts` measures pages that do
+almost nothing, with the harness flags: `raf` (an empty page, nothing presented), `dom` (one text node rewritten per
+frame), `webgpu` (a full-viewport canvas, one clear pass and a present per frame). First run, 22:49 on a machine whose
+display had been idle for about five minutes (the display's power-off timeout is 300 s), rAF timestamp deltas in ms:
+
+| Case | Size | p50 | p95 | p99 | max | mean | Hz |
+|---|---|---|---|---|---|---|---|
+| fixture, `raf` (the first ten seconds of the run) | 1280 x 720 | 16.70 | 16.80 | 16.80 | 16.90 | 16.668 | 60.00 |
+| fixture, `dom` | 1280 x 720 | 17.20 | 17.90 | 18.20 | 80.10 | 17.400 | 57.47 |
+| fixture, `webgpu` | 1280 x 720 | 17.40 | 18.00 | 18.20 | 18.40 | 17.388 | 57.51 |
+| launched headless, `raf` | 1280 x 720 | 17.40 | 18.00 | 18.30 | 18.50 | 17.404 | 57.46 |
+| launched headless, `webgpu` | 1280 x 720 | 17.40 | 18.00 | 18.20 | 18.40 | 17.399 | 57.47 |
+| launched headless, `raf` | 2560 x 1440 | 17.40 | 18.20 | 18.40 | 18.40 | 17.464 | 57.26 |
+| launched headless, `webgpu` | 2560 x 1440 | 17.40 | 18.00 | 18.10 | 18.30 | 17.406 | 57.45 |
+| launched HEADED, `raf` | 1280 x 720 | 17.40 | 18.00 | 18.20 | 18.50 | 17.389 | 57.51 |
+| launched HEADED, `webgpu` | 1280 x 720 | 17.40 | 18.00 | 18.30 | 18.40 | 17.423 | 57.40 |
+
+So the slow clock is not the app's present path, not the canvas size, not WebGPU and not headless mode: a bare page
+on the real monitor shows it too. The first case ran at exactly 60.00 Hz and everything after it at 57.5 Hz; the one
+80 ms frame in the second case is where the clock changed.
+
+Second run, 23:54, same machine, same Chrome, same flags: every case at 60.00 Hz (p50 16.70, p95 16.80, p99 16.80,
+mean 16.668 ms), fixture and launched, 720p and 1440p, headless and headed. So the harness clock has two states, and
+which one a run gets is a state of the machine, not of the page.
+
+Cause (inferred from the numbers and from Chromium's source as the author knows it; the controlled experiment is
+`frame-clock.perf.spec.ts`, "display off", and its result is recorded at the end of this section). Chrome's GPU
+process paces frames from a vsync thread that waits for the primary output's vertical blank
+(`IDXGIOutput::WaitForVBlank`, `ui/gl/vsync_thread_win.cc`). When the monitor is asleep that wait returns at once;
+Chrome detects the early return and sleeps one frame interval instead, rounded UP to a whole millisecond:
+`Sleep(17)`. Seventeen milliseconds plus the scheduling overhead of each wake-up is the steady 17.4 ms: about
+57.5 Hz, with the p95 near 18.0 ms, independent of what the page draws. In the first run the machine had been without
+input for five minutes when the clock changed, which is this machine's display power-off timeout (300 s).
+
+What the harness does about it (`tests/browser/harness.ts`):
+
+- `withGpuLock` keeps the display awake for as long as the lock is held (`keepDisplayAwake`: one PowerShell helper
+  that wakes the display with a pointer movement of +1 and -1 pixel, waits 3 s for the panel when the machine had been
+  idle, and holds `ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED` until released). Every perf measurement is
+  taken inside the lock, so every perf measurement runs on the monitor's real 60 Hz. `E2E_NO_DISPLAY_WAKE=1` turns it
+  off (the probe uses that to measure the display as it finds it).
+- `measureHarnessClock(page)` measures the clock a bare presenting page gets in the same browser context (240 frames),
+  and `expectNominalClock(clock)` fails with the reason when its median period is not within 0.2 ms of 16.667 ms. A
+  spec that asserts a requestAnimationFrame line (ARCHITECTURE 29 and 31.2: "rAF p95 < 16.7 ms", "rAF p99 <= 17.5 ms")
+  calls both and judges the line only on a nominal clock. The budgets are unchanged; a pacing line is never judged
+  against the slower clock with a wider number, and never passed unjudged. On a machine without a monitor (a CI
+  runner) the pacing lines cannot be judged at all, and the GPU and main-thread lines, which do not depend on the
+  clock, carry the 60 fps requirement there.
+- No Chrome flag is involved. `--disable-gpu-vsync` and `--disable-frame-rate-limit` uncap the clock (section 3: not a
+  measurement), and the fallback above cannot be configured.
+
 ## 4. Input + test API
 
 Pattern: the page exposes `window.__harness` (the game should expose `window.__test`), with a `ready` promise, state getters and
