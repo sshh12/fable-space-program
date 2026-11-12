@@ -44,7 +44,7 @@ function railwayBin() {
 }
 const RAILWAY = railwayBin();
 
-function rw(args, input, cwd = REPO) {
+export function rw(args, input, cwd = REPO) {
   const r = spawnSync(RAILWAY, args, { cwd, encoding: 'utf8', input, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
   if (r.status !== 0) throw new Error(`railway ${args.filter((a) => !a.includes('=')).join(' ')}: ${[r.stdout, r.stderr, r.error ? String(r.error) : ""].join(" ").trim().slice(0, 2000)}`);
   return r.stdout;
@@ -58,7 +58,7 @@ export function gql(query, variables = {}) {
   return j.data;
 }
 
-function services() {
+export function services() {
   const d = gql(`query($p:String!){ project(id:$p){ services { edges { node { id name } } } } }`, { p: PROJECT });
   return Object.fromEntries(d.project.services.edges.map((e) => [e.node.name, e.node.id]));
 }
@@ -79,7 +79,7 @@ function limits(serviceId, vCPUs, memoryGB) {
   gql(`mutation($i:ServiceInstanceLimitsUpdateInput!){ serviceInstanceLimitsUpdate(input:$i) }`, { i: { environmentId: ENVIRONMENT, serviceId, vCPUs, memoryGB } });
 }
 
-function setVars(serviceId, variables) {
+export function setVars(serviceId, variables) {
   gql(`mutation($i:VariableCollectionUpsertInput!){ variableCollectionUpsert(input:$i) }`, { i: { projectId: PROJECT, environmentId: ENVIRONMENT, serviceId, variables, skipDeploys: true } });
 }
 
@@ -87,7 +87,7 @@ function varsOf(serviceId) {
   return gql(`query($p:String!,$e:String!,$s:String!){ variables(projectId:$p, environmentId:$e, serviceId:$s) }`, { p: PROJECT, e: ENVIRONMENT, s: serviceId }).variables;
 }
 
-function bucketCreds(name) {
+export function bucketCreds(name) {
   return JSON.parse(rw(['bucket', 'credentials', '--bucket', name, '--json']));
 }
 
@@ -224,6 +224,36 @@ function opsDelete() {
   console.log(`ops: service ${id} deleted`);
 }
 
+/**
+ * The secret variables, sealed (irreversible): a sealed value reaches builds and deployments but never the
+ * UI, the API or the CLI again. POSTGRES_PASSWORD is referenced by postgres's DATABASE_URL, which game, dump
+ * and the ops jobs reference in turn; it is sealed only after a deployment proved that a reference to a sealed
+ * variable resolves (`seal-probe`, platform-delivery hand-off).
+ */
+const SEALED = { game: ['PACKS_SECRET_ACCESS_KEY'], shell: ['PACKS_SECRET_ACCESS_KEY'], dump: ['DUMPS_SECRET_ACCESS_KEY'], postgres: ['POSTGRES_PASSWORD'] };
+
+/** Which secret variables are sealed (names only). */
+export function sealState() {
+  const ids = services();
+  const byId = Object.fromEntries(Object.entries(ids).map(([n, id]) => [id, n]));
+  const d = gql('query($id:String!){ environment(id:$id){ variables(first:500){ edges{ node{ name isSealed serviceId } } } } }', { id: ENVIRONMENT });
+  return d.environment.variables.edges
+    .map((e) => e.node)
+    .filter((n) => /SECRET|PASSWORD/.test(n.name))
+    .map((n) => ({ service: byId[n.serviceId] ?? n.serviceId, name: n.name, sealed: n.isSealed }));
+}
+
+function seal(only) {
+  const ids = services();
+  const patch = {};
+  for (const [svc, names] of Object.entries(SEALED)) {
+    if (only && !only.split(',').includes(svc)) continue;
+    patch[ids[svc]] = { variables: Object.fromEntries(names.map((n) => [n, { isSealed: true }])) };
+  }
+  gql('mutation($e:String!,$p:EnvironmentConfig!){ environmentPatchCommit(environmentId:$e, patch:$p, skipDeploys:true, commitMessage:"seal secret variables") }', { e: ENVIRONMENT, p: { services: patch } });
+  for (const v of sealState()) console.log(`${v.service.padEnd(9)} ${v.name.padEnd(28)} ${v.sealed ? 'sealed' : 'NOT sealed'}`);
+}
+
 /** The three latest deployments of a service: id, status, created, the COMMIT variable it was built with. */
 function deployStatus(service) {
   const ids = services();
@@ -235,12 +265,18 @@ function deployStatus(service) {
   for (const e of d.deployments.edges) console.log(JSON.stringify(e.node));
 }
 
-const [cmd, arg] = process.argv.slice(2);
-if (cmd === 'ops') opsJob(arg ?? 'pgsettings');
+// Run as a program; imported (deploy/railway/rotate-dumps.mjs), it only lends its helpers.
+const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const [cmd, arg] = isMain ? process.argv.slice(2) : ['(imported)'];
+if (!isMain) {
+  // nothing to run
+} else if (cmd === 'ops') opsJob(arg ?? 'pgsettings');
 else if (cmd === 'ops-delete') opsDelete();
 else if (cmd === 'services') provisionServices();
 else if (cmd === 'deploy') deploy(arg);
 else if (cmd === 'status') deployStatus(arg);
+else if (cmd === 'seal') seal(arg);
+else if (cmd === 'seal-state') for (const v of sealState()) console.log(`${v.service.padEnd(9)} ${v.name.padEnd(28)} ${v.sealed ? 'sealed' : 'NOT sealed'}`);
 else if (cmd === 'ids') console.log(JSON.stringify({ project: PROJECT, environment: ENVIRONMENT, services: services() }));
 else {
   console.error('usage: node deploy/railway/provision.mjs services | deploy <service> | status <service> | ids | ops <role> | ops-delete');
