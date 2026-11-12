@@ -272,9 +272,11 @@ export const padApron: SiteGenerator = ({ params, defs }) => {
     const d = Math.abs(x) - gap;
     // Blast staining beside the trench, heaviest by the mount, in streaks that run away from the trench; and
     // rust-brown wash from the deluge water toward the drains at the slab's edge.
-    const blast = 0.8 * Math.exp(-Math.max(0, d) / 13) * Math.exp(-((z / 40) ** 2)) * (0.45 + 0.55 * noise2(x / 9, z / 2.6, 9));
-    const wash = 0.22 * Math.max(0, noise2(x / 23, z / 4.2, 11) - 0.45) * Math.min(1, Math.max(0, d) / 12);
-    return Math.min(0.9, Math.max(0, patches - 0.24) + blast + wash);
+    const blast = 0.8 * Math.exp(-Math.max(0, d) / 18) * Math.exp(-((z / 44) ** 2)) * (0.45 + 0.55 * noise2(x / 9, z / 2.6, 9));
+    const wash = 0.3 * Math.max(0, noise2(x / 23, z / 4.2, 11) - 0.4) * Math.min(1, Math.max(0, d) / 12);
+    // Tyre marks and oil along the ways vehicles take across the slab, and general weathering: no bay is clean.
+    const lanes = 0.16 * Math.exp(-(((Math.abs(z) - 22) / 5) ** 2)) * (0.5 + 0.5 * noise2(x / 6, z / 1.4, 13));
+    return Math.min(0.9, 0.05 + Math.max(0, patches - 0.14) + blast + wash + lanes);
   };
   const body = buildModel('pad.apron', (b) => {
     b.mat('concrete').masks(0, 1, 0, 0);

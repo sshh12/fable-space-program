@@ -98,6 +98,8 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     const wave = 0.11 * (noise2((phi * R) / 0.35, 7.5, 63) - 0.5) + 0.07 * (noise2((phi * R) / 1.3, 3.5, 65) - 0.5);
     let w = 0;
     for (const t of tanks) w = Math.max(w, Math.min(1, (y - t.y0 + 0.2 + wave) / 0.28, (t.y1 + 0.2 + wave - y) / 0.28));
+    // The structure between two tanks is as cold as they are: an intertank frosts from end to end.
+    if (inGap(y)) w = 1;
     return Math.max(0, w) * frostW;
   };
   /**
@@ -118,7 +120,7 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     // Lanes where sheets slid off: each starts somewhere up the tank and runs down to its foot.
     const lane = noise2((phi * R) / 1.1, 2.5, 61);
     const top = 0.25 + 0.9 * noise2((phi * R) / 1.1, 9.5, 67);
-    const shed = Math.max(0, Math.min(1, (lane - 0.62) / 0.1)) * Math.max(0, Math.min(1, (top - (1 - low)) / 0.15 + 1));
+    const shed = Math.max(0, Math.min(1, (lane - 0.57) / 0.1)) * Math.max(0, Math.min(1, (top - (1 - low)) / 0.15 + 1));
     const coat = 0.78 + 0.22 * low + 0.2 * land + 0.3 * (noise2((phi * R) / 0.6, y / 5.5, 61) - 0.5);
     return Math.max(0.12, Math.min(1, coat * (1 - 0.85 * shed)));
   };
@@ -237,8 +239,10 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     // ---- intertank
     for (const g of gaps) {
       if (b.lod === 2) continue;
+      // (Rime on dark structure is what shows a loaded vehicle from afar: the intertank carries a patchy coat.)
+      const rime = frostW * 0.52;
       if (interStyle === 'corrugated' && b.lod === 0) {
-        b.mat(interMat).masks(0, 1, 0.15, 0);
+        b.mat(interMat).masks(0, 1, 0.15, rime);
         const amp = 0.014;
         const cp = Profile.at(R - 0.003, g.y0 + 0.02)
           .to(R + amp + 0.004, g.y0 + 0.07)
@@ -249,10 +253,10 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
         cp.pts[0]!.hard = false;
         lathe(b, cp, { segs: interCount * 6, corr: { n: interCount, amp, span: ['c0', 'c1'] }, closed: false, tag: 'corrugation' });
       } else {
-        b.mat(interMat).masks(0.1, 1, 0.15, 0);
+        b.mat(interMat).masks(0.1, 1, 0.15, rime);
         stringers(b, R, g.y0 + 0.04, R, g.y1 - 0.04, b.pick(interCount, interCount / 2, 0), 0.06, 0.035);
       }
-      b.mat('steel-bare').masks(0.2, 1, 0.15, 0);
+      b.mat('steel-bare').masks(0.2, 1, 0.15, frostW);
       band(b, R, g.y0, 0.07, 0.012, segs, 'frame');
       band(b, R, g.y1, 0.07, 0.012, segs, 'frame');
     }

@@ -758,6 +758,14 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       lathe(b, p, { phis: farPhis(), regions: farGlazing(), closed: false, tag: 'capsule-skin', mask: (y, phi, _r, m) => void (m.soot = scorch(phi, y)) });
     }
     fittings(b);
+    // Everything on the outside of the back shell is as sooted as the shell it stands on: tape strips, frames,
+    // thruster fairings and the forward bay (which carries on what the top of the cone has).
+    b.remask(0, (p, m) => {
+      if (p[1] < yB - 0.02 || p[1] > yTop + 0.02) return;
+      const yy = Math.min(p[1], yT);
+      if (Math.hypot(p[0], p[2]) < shellRadius(ml, yy) - 0.03) return;
+      m.soot = Math.max(m.soot, scorch(Math.atan2(p[0], p[2]), yy));
+    });
   });
   // The far LOD of the glass model is empty (the body carries dark patches there).
   const glass = buildFrom(`${def.id}.glass`, glassLods.map((g) => g.build()));

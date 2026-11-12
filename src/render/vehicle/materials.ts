@@ -50,8 +50,8 @@ const SPECS = {
    * stencils in the albedo, the waviness of the sheet in the normal map. A flown white, not a showroom one;
    * the second is the next ring's batch of paint.
    */
-  'skin-white': { color: [0.77, 0.77, 0.75], metallic: 0, roughness: 0.52, clearcoat: 0.9, clearcoatRoughness: 0.2, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
-  'skin-white-b': { color: [0.72, 0.725, 0.71], metallic: 0, roughness: 0.58, clearcoat: 0.8, clearcoatRoughness: 0.26, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
+  'skin-white': { color: [0.71, 0.71, 0.69], metallic: 0, roughness: 0.52, clearcoat: 0.9, clearcoatRoughness: 0.2, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
+  'skin-white-b': { color: [0.66, 0.665, 0.65], metallic: 0, roughness: 0.58, clearcoat: 0.8, clearcoatRoughness: 0.26, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
   'paint-black': paint([0.022, 0.022, 0.025], 0.42, 0.9, 0.16),
   'paint-navy': paint([0.012, 0.035, 0.11], 0.42, 1, 0.14),
   'paint-red': paint([0.52, 0.035, 0.02], 0.45, 1, 0.16),

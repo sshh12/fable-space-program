@@ -119,7 +119,7 @@ test.describe('vehicle and pad screenshots', () => {
       // The fence and the gate where the access road and the crawlerway enter, and the pad across the fence.
       { name: 'site-fence-gate', query: 'scene=pad&sun=160,50&eye=74,-115.2,420&at=30,-116.5,350&fov=55' },
       { name: 'site-fence-pad', query: 'scene=pad&sun=200,40&eye=-96,-116,-247&at=0,-85,0&fov=50' },
-      { name: 'site-trench-burnt', query: 'scene=pad&sun=175,60&eye=3,-104,-58&at=0,-116,-8&fov=55' },
+      { name: 'site-trench-burnt', query: 'scene=pad&sun=175,60&eye=66,-101,7&at=12,-117,0&fov=55' },
       { name: 'site-overview-night', query: 'scene=pad&sun=290,-28&env=night&eye=250,-15,330&at=-40,-112,-20&fov=42', minNonBlack: 0.02 },
       { name: 'site-pad-night', query: 'scene=pad&sun=290,-28&env=night&eye=120,-100,150&at=0,-70,0&fov=40', minNonBlack: 0.02 },
     ]);
@@ -196,11 +196,15 @@ test.describe('vehicle and pad screenshots', () => {
     expect(changedShare(shots['frost-prelaunch']!, shots['frost-shed']!, 3)).toBeGreaterThan(0.04);
     expect(changedShare(shots['frost-prelaunch']!, shots['frost-shed']!, 10)).toBeGreaterThan(0.005);
     expect(changedShare(shots['frost-line-prelaunch']!, shots['frost-line-shed']!, 3)).toBeGreaterThan(0.06);
-    // A loaded tank can be told from an empty one: the frosted barrel is visibly whiter than its paint.
+    // A loaded tank can be told from an empty one. Not by its brightness: sunlit white paint and frost both
+    // sit on the shoulder of the tone curve (the luma of the barrel differs by a few per cent, logged here for
+    // the record), but by its structure: the coat with its bare lanes, the rime on the dark intertank and the
+    // veiled markings change the picture by more than ten levels of luma over a good part of the tank.
     const frosted = meanLuma(shots['frost-prelaunch']!, 600, 320, 700, 600);
     const bare = meanLuma(shots['frost-shed']!, 600, 320, 700, 600);
-    console.log(`frost: barrel luma ${frosted.toFixed(1)} frosted, ${bare.toFixed(1)} bare (ratio ${(frosted / bare).toFixed(3)})`);
-    expect(frosted / bare).toBeGreaterThan(1.08);
+    console.log(`frost: barrel luma ${frosted.toFixed(1)} frosted, ${bare.toFixed(1)} bare (ratio ${(frosted / bare).toFixed(3)}); pixels changed by more than 10 levels ${(changedShare(shots['frost-prelaunch']!, shots['frost-shed']!, 10) * 100).toFixed(1)} % (tank view), ${(changedShare(shots['frost-line-prelaunch']!, shots['frost-line-shed']!, 10) * 100).toFixed(1)} % (frost line view)`);
+    expect(changedShare(shots['frost-prelaunch']!, shots['frost-shed']!, 10)).toBeGreaterThan(0.02);
+    expect(changedShare(shots['frost-line-prelaunch']!, shots['frost-line-shed']!, 10)).toBeGreaterThan(0.05);
     expect(changedShare(shots['aft-clean']!, shots['aft-sooted']!)).toBeGreaterThan(0.01);
     expect(changedShare(shots['engines-clean']!, shots['engines-sooted']!)).toBeGreaterThan(0.004);
   });

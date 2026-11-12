@@ -620,7 +620,7 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
 };
 
 /** Luminance of a lamp's lens seen from outside its beam, as a share of the lamp material's (the filament's). */
-const LENS_OFF_AXIS = 0.06;
+const LENS_OFF_AXIS = 0.004;
 
 // ---------------------------------------------------------------------------------------------- legs
 

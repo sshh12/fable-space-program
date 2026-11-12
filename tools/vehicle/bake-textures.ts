@@ -199,7 +199,7 @@ const recipes: Record<string, () => void> = {
     const coarse = (u: number, v: number): number => smooth(0.3, 0.7, fbm(u, v, 7, 7, 3, 98));
     /** Overlap of two spray passes: 1 on the line where a swath about 2 m long and 0.5 m wide meets the next. */
     const overlap = (u: number, v: number): number => {
-      const c = worley(u + 0.02 * fbm(u, v, 5, 9, 2, 89), v + 0.006 * fbm(u, v, 9, 5, 2, 90), 5, 20, 91, 0.8);
+      const c = worley(u + 0.02 * fbm(u, v, 5, 9, 2, 89), v + 0.006 * fbm(u, v, 9, 5, 2, 90), 2, 22, 91, 0.8);
       return smooth(0.09, 0.0, c.f2 - c.f1);
     };
     /** A hand-sprayed repair or close-out: a soft-edged patch (-1 = aged dark, +1 = fresh pale), few per tile. */
@@ -210,7 +210,7 @@ const recipes: Record<string, () => void> = {
     };
     const h = Field.from(S, S, (u, v, x, y) => {
       const k = coarse(u, v);
-      return 0.0016 * pop1.at(x, y) * (0.4 + k) + 0.0042 * pop2(u, v) * (0.25 + 0.95 * k) + 0.0075 * lump(u, v) * (0.5 + 0.7 * k) + 0.0035 * overlap(u, v) + 0.005 * fbm(u, v, 80, 80, 3, 83) + 0.012 * fbm(u, v, 9, 9, 2, 84) + 0.004 * Math.abs(repair(u, v));
+      return 0.0016 * pop1.at(x, y) * (0.4 + k) + 0.0042 * pop2(u, v) * (0.25 + 0.95 * k) + 0.0075 * lump(u, v) * (0.5 + 0.7 * k) + 0.0016 * overlap(u, v) + 0.005 * fbm(u, v, 80, 80, 3, 83) + 0.012 * fbm(u, v, 9, 9, 2, 84) + 0.004 * Math.abs(repair(u, v));
     });
     save('foam_n', normalMap(h, T, 0.9));
     const ao = cavity(h, 3, 160);
@@ -224,10 +224,10 @@ const recipes: Record<string, () => void> = {
     save('foamfine_n', normalMap(hFine, T, 0.9));
     /** Age of the foam, 0 = fresh pale ochre .. 1 = dark rust: patches of 1 to 5 m, a slow drift, run marks, repairs. */
     const age = (u: number, v: number): number => {
-      const patch = fbm(u, v, 3, 3, 4, 86) - 0.5;
+      const patch = fbm(u, v, 4, 2, 4, 86) - 0.5;
       const drift = fbm(u, v, 1, 1, 2, 87) - 0.5;
       const run = smooth(0.56, 0.8, fbm(u, v, 56, 2, 3, 95)) * smooth(0.35, 0.6, fbm(u, v, 6, 3, 2, 99));
-      return clamp(0.45 + 1.5 * patch + 0.6 * drift + 0.45 * run - 0.28 * repair(u, v));
+      return clamp(0.42 + 1.0 * patch + 0.7 * drift + 0.45 * run - 0.22 * repair(u, v));
     };
     const fresh = rgb(224, 162, 86);
     const aged = rgb(146, 80, 36);
@@ -528,7 +528,7 @@ const recipes: Record<string, () => void> = {
     });
     const spall = Field.from(S, S, (u, v) => {
       const c = worley(u + 0.003 * fbm(u, v, 40, 40, 2, 420), v + 0.003 * fbm(u, v, 40, 40, 2, 421), 30, 30, 422, 1);
-      return c.id < 0.1 ? smooth(0.46, 0.2, c.f1) * (0.5 + 0.5 * c.id2) : 0;
+      return c.id < 0.035 ? smooth(0.3 + 0.2 * c.id2, 0.16, c.f1) * (0.5 + 0.5 * c.id2) : 0;
     });
     const craze = Field.from(S, S, (u, v) => {
       const c = worley(u + 0.004 * fbm(u, v, 60, 60, 2, 411), v, 260, 260, 412, 1);

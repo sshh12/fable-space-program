@@ -183,7 +183,10 @@ describe('soot, frost and damage', () => {
               continue;
             }
             const inside = tanks.some((k) => y > k.y0 + 0.05 && y < k.y1 - 0.05);
-            const outside = tanks.every((k) => y < k.y0 - 0.2 || y > k.y1 + 0.2);
+            // (The structure between two cryogenic tanks frosts as they do: an intertank is not "beyond the frost lines".)
+            const sorted = [...tanks].sort((p, q) => p.y0 - q.y0);
+            const between = sorted.some((k, n) => n + 1 < sorted.length && y >= k.y1 - 0.2 && y <= sorted[n + 1]!.y0 + 0.2);
+            const outside = !between && tanks.every((k) => y < k.y0 - 0.2 || y > k.y1 + 0.2);
             if (inside) {
               onBarrel++;
               // A coat over the barrel (thinner over markings), except in the lanes where a sheet has slid off.
