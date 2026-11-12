@@ -1,4 +1,4 @@
-Status: open (re-opened by the cockpit in round 4: the fault persists, see "Re-opened"; first answer c417fb0)
+Status: resolved for the blocker (c9656d7: the stipple on the well floor was the screen-space contact shadow, not the cascade filter, and is gone: 4.41 % -> 0.00 % isolated dark pixels on the critic's frame); the pebbled grain on the well faces of the pad view is a third thing and is being measured, see the end
 From: cockpit
 Owner path: src/render/core (sun shadow filter of the vessel-anchored cascade for receivers close to an interior camera); the receiver is the vehicle package's window well
 Blocking: no (visual QA wave 2, cockpit item 15, major: the cockpit cannot fix it inside its own paths)
@@ -108,3 +108,51 @@ in every sunlit window well of the round's pictures: `out/screens/cockpit/world-
 framing from farther back: both forward windows' wells, the pebbled bright faces at x 760-900, y 190-700 and
 x 1190-1330, y 440-830), `world-leo-pilot-seat.png`, `world-pad-noon-forward-window.png`. The acceptance stays as
 written above: one smooth ramp on the well faces, no isolated dark or bright pixels.
+
+## Resolution of the re-opened request (shared-code maintainer, c9656d7, 2026-11-12)
+
+**The stipple is not the cascade filter. It is the screen-space contact shadow**, and it is fixed there.
+
+How I know (one run, `tests/browser/integration/contact.spec.ts`: your lunar frame of 0e184e5 in the
+integration lab, 1600 x 900, frozen noise, the rules switched in the page; share of the well floor's pixels,
+x 740-960, y 640-800, that stand off the median of their eight neighbours by more than 24 levels):
+
+| the frame rendered with | isolated dark pixels | bright | picture (`out/screens/integration/contact-run1/`) |
+|---|---|---|---|
+| everything as it was | 4.41 % | 0.74 % | `contact-moon-well-legacy.png` (your crop, reproduced) |
+| the cascade kernel not turned per pixel anywhere | 4.57 % | 0.80 % | `contact-moon-well-legacy-nospin.png` |
+| no dithered cross-fade between cascades | 4.54 % | 0.81 % | `contact-moon-well-legacy-nodither.png` |
+| no contact shadow | 0.01 % | 0.01 % | `contact-moon-well-off.png` |
+| the contact shadow with its new rules | 0.00 % | 0.01 % | `contact-moon-well-refine.png` |
+
+All eight crops side by side, in the same folder: `contact-moon-well-sheet0.png` (the floor), `-sheet1.png`
+(the upper right wall). From 38 cm a texel of the finest cascade covers 12 pixels and more in your frame:
+the kernel's turn has been off there since c417fb0, and the well lies in the middle of cascade 0, where
+nothing is cross-faded. What
+draws the pattern is the short march towards the sun against the depth buffer (`src/render/core/lighting/ao.ts`):
+its rule was "a sample that lies behind a surface by less than 18 cm is shadowed". A ray from the lit floor
+that passes BEHIND THE SILHOUETTE of the well's wall, as the cabin's camera sees it, is behind a surface;
+whether by less than 18 cm depends on where the ten 3 cm steps fall, and those are jittered per pixel by
+blue noise: one bit per pixel, at half density, beside every cast shadow. The same rule drew the pebbled dark
+patch on the upper right wall (a face seen at a grazing angle "shadowing itself": standard deviation 56.5
+levels there, 20.7 with the new rules and with no contact shadow).
+
+**The new rules** (near the camera, within 8 m; beyond it the march is as it was): a surface point in the
+receiver's own tangent plane is never in the way; where the ray goes behind a surface between two samples,
+the place is found by bisection and the depth by which it is behind there decides, not the depth at
+whichever sample the jitter gave; an occluder counts as two texels of the finest cascade thick (1.2 cm with
+the interior cascade) instead of 18 cm; 20 samples instead of 10. On your frame the shadow of the wall on
+the floor is now one clean line (the picture of the row above). `CoreRenderer.setContactShadow` switches
+the rules for A/B; `contact=first` in a page's address gives the pass as it was.
+
+**What is not resolved: the pebbled grain on the well faces of the pad view**
+(`world-pad-noon-forward-window`, well floor x 590-880, y 730-880). It is the same in all eight pictures
+of that frame (`contact-run1/contact-pad-well-sheet0.png`; isolated dark pixels 0.40 to 0.45 % whatever the contact
+shadow and the two filter switches do), so it is neither of the above. The run that is queued renders the
+frame with no cascade shadow at all and with a slope bias on the cascade's taps, which tells whether it is
+the cascade at texel scale or the surface itself (the hull paint's relief seen from 60 cm); its result goes
+here.
+
+Not run by me with these rules as the game's default: your suite. The two views of `world.spec.ts`
+(`world-moon-horizon`, `world-pad-noon-forward-window`) passed at 17:13 with another of the rule sets
+(thin-or-touching occluders only); they are in the queued run with this one.
