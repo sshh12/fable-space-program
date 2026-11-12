@@ -255,7 +255,7 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
     est = int(h * w * c * vdt.itemsize * (0 if (nodata is None and exact) else 1) + h * w * c * vdt.itemsize / 3)
     rt.check_disk(est)
     meta = {"width": w, "height": h, "channels": c, "mips": K, "lonLeftEdgeDeg": lon_left, "regridded": not exact,
-            "valueDtype": vdt.name,
+            "valueDtype": vdt.name, "fingerprint": source_fingerprint(body, key),
             "georef": {k: v for k, v in g.items() if k != "crs"}, "fileBytes": path.stat().st_size}
     mm = _strip_memmap(path, src) if (nodata is None and exact) else None
     rt.log(f"{body.id}.{key}: {g['width']} x {g['height']} x {c} ({g['dtype']}), lon edge {g['lonLeftEdgeDeg']:.4f}, "
@@ -426,8 +426,20 @@ def _upsample_rows(coarse: np.ndarray, r0: int, r1: int, wk: int) -> np.ndarray:
     return top * (1 - fy) + bot * fy
 
 
+PREPARE_VERSION = 2
+
+
+def source_fingerprint(body: config.Body, key: str) -> str:
+    """What a prepared source depends on: its config entry, the body's radii and the code version."""
+    import hashlib
+    import json
+    h = json.dumps({"src": body.source(key), "radii": body.raw["radii"], "v": PREPARE_VERSION}, sort_keys=True)
+    return hashlib.sha256(h.encode("utf-8")).hexdigest()[:16]
+
+
 def is_prepared(body: config.Body, key: str) -> bool:
-    return (rt.work_dir(body.id) / f"src-{key}" / "meta.json").is_file()
+    m = rt.work_dir(body.id) / f"src-{key}" / "meta.json"
+    return m.is_file() and rt.read_json(m).get("fingerprint") == source_fingerprint(body, key)
 
 
 def delete_prepared(body: config.Body, key: str) -> None:
