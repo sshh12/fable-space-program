@@ -14,7 +14,7 @@ lunar-direct from the pad to splashdown in real Chrome in 44.9 minutes. Every mi
 1.94 m from the target on level 12, splashdown inside the Central Pacific zone at 7.82 m/s, `cheatCounter` 0, no
 error. The frame-time budgets are missed: GPU p99 is met everywhere (worst 8.4 ms); rAF is missed in every phase
 because of the headless clock (`app-integration-8`); the main thread is missed in 24 of 80 phases (renderer hooks).
-See "Browser mission". Thirteen requests filed; ten resolved (open: -11 in part, -12, -13).
+See "Browser mission". Fourteen requests filed; open: -11 in part, -13, -14.
 
 **Added 2026-11-11 night (after the user's feedback):** an honest loading screen (the scene opens when the view
 at the start position is final: 32 s on the pad, land where land is in the first frame); keyboard capture and
@@ -73,7 +73,7 @@ clock since the page opened):
 | Simulation | phase only | `createTerrainProvider`, `createSim` | `sim.ready` (the ground under the vehicle for the physics) |
 | Render pipelines | shader modules compiled / created so far, and in words the feature that is starting ("starting terrain (1 of 9)") | `renderer.addFeature` one by one; `coreOf(ctx).shaders.compilations()` | every feature added and no module compiling |
 | Sky and stars | 3 parts: star catalogue, Milky Way cube (face size), light probe | `SkyFeature.status()`, `.probe().completed` | `sky.isIdle()` |
-| Atmosphere and clouds | phase only (no count exposed: request app-integration-11) | `atmosphere.isIdle()`, `ocean.isIdle()` | both idle |
+| Atmosphere and clouds | phase only. `AtmosphereFeature.status()` (tables, cloud noise, coverage maps loaded / total) exists since `cce44d3` and is not wired yet: one `loading.watch('atmosphere', ...)` in `game.ts` | `atmosphere.isIdle()`, `ocean.isIdle()` | both idle |
 | Vehicle and site models | textures loaded / texture loads started | `coreOf(ctx).meshes.loads()`, `.isIdle()`, the vessel / site / cockpit features | all idle |
 | Sound | assets decoded / total | `audio.probe()` | `audio.init` resolves |
 | Terrain at the start | tiles of the view resident / tiles the view wants, "level R of W" (the deepest level complete / wanted), and what is queued, baking, uploading | `TerrainFeature.debug.residency(body of the active vessel)`, `.stats().stream` | `terrain.isIdle()` |
@@ -264,6 +264,63 @@ cockpit displays' paint split.
 | ` | key-help sheet generated from the binding table |
 
 ## Measured
+
+### 2026-11-12 06:00: the whole app suite after the follow-up round (machine under bake load)
+
+One run of `tests/browser/app` (functional + perf, 13 tests, 14.7 min in the slot, 05:49-06:04), alone on the GPU
+but beside an Earth data bake with ten Python workers and two site-bake jobs on the CPU (`out/sysmon/`): every
+main-thread and pacing number below is provisional (PACKAGE_RULES 16) and well above the quiet run of the night
+before; no line was loosened. The run's console output was lost (another agent's script re-created the log file
+of the same name in the shared scratchpad), so the figures come from `out/app/perf-*.json`, Playwright's
+`.last-run.json` and the pictures.
+
+**Result: 9 of 13 passed.** The four:
+- the loading test failed on its pixel statistic, not on the picture: the first revealed frame has land to the
+  horizon (`loading-revealed-first.png`), but the site bake's fresh lava is blue-grey and 12.7 % of the band
+  was "blue-dominant" (limit 10 %). That statistic never separated the two cases (the frame that showed sea
+  read 15 %). It is replaced by the share of pixels that are smooth AND bluish: 0.49 on the frame with sea, 0.068
+  and 0.057 on this run's first and later frames (limit 0.25; their mean difference 2.2 of 255, limit 6);
+- the low-orbit test failed in the new framing check: `window.__app.bodiesInFrame()` missed a planet whose centre
+  is 76 degrees off the view axis (the Earth fills the lower half of `leo-chase.png`). The geometry is now
+  `src/app/framing.ts` (`discInFrame`), checked against ten cases;
+- the two 1440p perf tests fail on soft budget lines (table below). The harness clock was nominal after each of
+  the three perf runs (p50 16.70 ms, 60.00 Hz), so the requestAnimationFrame lines were judged.
+**The two functional fixes have not run in the browser:** the gate's queue was seven deep after this run and the
+re-run was withdrawn after ten minutes. What stands for them: the new statistic computed on this run's two
+pictures, and the geometry checked by script. Not covered by either: the part of the low-orbit test behind the
+line that failed (turning the chase camera with the arrows, `resetCameraView()`, `leo-chase-reset.png`, then the
+map node as before). Run
+`npx playwright test tests/browser/app/app.spec.ts --project=functional -g "shows real progress|in low orbit"`
+through the gate (about two minutes in the slot) to close it.
+
+| 2560 x 1440 unless noted | GPU p50 / p99 (11 ms) | rAF p99 (17.5) / >= 33 ms | main thread p50 / p99 (6 ms) |
+|---|---|---|---|
+| pad | 7.6 / 8.5 | **18.2** / 0 | 5.55 / **12.66** |
+| climb (0.3-1.0 km) | 8.4 / 9.4 | **18.4** / 0 | 7.11 / **14.75** |
+| 720p pad | 4.0 / 4.5 | 17.9 / 0 | 4.20 / 8.50 |
+| 720p climb | 4.5 / 5.0 | 18.4 / 0 | 4.32 / 10.01 |
+| lunar orbit, coast | 1.0 / 2.9 | **17.7** / **1** (37.6 ms) | 2.03 / 4.82 |
+| lunar orbit, burning | 1.1 / 1.4 | 17.6 / 0 | 1.41 / 3.88 |
+| lunar orbit, burning, no display on the ORB page | 1.2 / 1.4 | 17.7 / 0 | 1.18 / 4.18 |
+| lunar orbit, after the cut-off | 1.0 / 2.9 | 17.4 / 0 | 1.05 / 2.98 |
+
+What changed against the night before, beyond the load:
+- **The burn-time miss is gone.** The cockpit no longer paints its displays in the chase view (0.00 paints per
+  frame at `lod1`; cockpit hooks 0.14 / 0.34 ms p50 / p99 during the burn, they were 0.60 / 5.56), and the burn is
+  3.88 ms p99 even under the bake (it was 7.05 on a quiet machine). Request app-integration-12, items 1-3, done
+  by the cockpit (round 4) and flight-ui (round 7).
+- **The lift-off frame is the simulation's now:** 32.0 ms at 1440p (sim 22.8, terrain 4.0, cockpit 0.4) four
+  frames after a 24.1 ms frame (sim 10.4); 34.1 ms at 720p (sim 14.3, terrain 7.0). The step in which the stack
+  leaves the pad took 5.9-6.4 ms the night before; how much of the rise is the bake's CPU load and how much the
+  simulation's v2 work is not separated here (request app-integration-13, open).
+- Per feature at the pad, p50 / p99: terrain 2.20 / 5.86, core 0.64 / 1.21, site 0.61 / 1.24, vehicle
+  0.57 / 1.32, cockpit 0.30 / 0.66 (it was 0.66 / 0.96), ocean 0.19 / 0.37, atmosphere 0.18 / 0.35; stages sim
+  0.98, HUD 0.43, audio 0.30 ms p99. Everything but the cockpit is 1.5 to 2.5 times the quiet run: load.
+- **Loading under the bake:** 54.9 s to the revealed view at 1440p (943 of 943 tiles of the view, level 20 of
+  20), 47.1 s at 720p (443 tiles), 27.3 s in lunar orbit. The first frame came at 21.4 s (9-12 s the night
+  before), the last shader module at 36-39 s (20 s), the terrain at 46-54 s (28-31 s). To be re-measured on a
+  quiet machine before anything is concluded from it.
+
 
 ### 2026-11-11 night: loading timeline and main-thread attribution
 
@@ -716,13 +773,16 @@ visual gap of the flight. Both cockpit pictures are nearly black.
 | `app-integration-8` | lead harness | resolved (lead-baseline-v2: `870d19e`, `050b2b3`, `37c6668`) | headless rAF clock at ~57.5 Hz (p50 17.4 ms in every mission phase, whatever the load): rAF budgets cannot be judged |
 | `app-integration-9` | flight-ui HUD, src/input | resolved (`cc8e8cb`, `e4d5188`; wired in `1b9f665`) | the capture pill as an explicit switch that also releases, a switch to hide it, `InputSystem.releaseKeyboardCapture` |
 | `app-integration-10` | src/camera (shared code), vehicle data | resolved (`1e5bceb`, NOTICE-core-4) | chase default framing in deep space: distance by the vessel's size after separations, the nearest body in frame, the Sun out of it (pictures 07-14 of the mission). The new default needs no wiring (`createChaseRig({ defs, terrain })` as before); `rig.resetView()` exists and is not bound to a key |
-| `app-integration-11` | render core, terrain-render, atmosphere | open; parts 2-6 done (`189d1e2`, `aea5efa`, `1e5bceb`) and wired here (`TerrainDebug.residency`, `setUploadBudget`, `CoreShaderLibrary.compilations`, `MeshSystem.loads`); not built: asynchronous pipeline creation (the 14 s), the atmosphere's status | load time: synchronous pipeline compiles hold the first 19 frames for 14 s, terrain streams only afterwards and one level per round trip; counts the loading screen lacks (terrain residency by level, shader and texture totals, atmosphere status) |
-| `app-integration-12` | cockpit, flight-ui MFD painter | open, **blocking** for the main-thread line during burns | the cockpit's displays are painted in the chase view; the ORB page costs 5.2-5.7 ms per paint while the orbit changes; 16-26 ms in the lift-off frame |
-| `app-integration-13` | sim-world-pilot, vfx, audio | open | one-off costs in the ignition and lift-off frames: sim 5.9-6.4 ms, first plume frame 1.5-2.8 ms, audio 1.5-1.9 ms |
+| `app-integration-11` | render core, terrain-render, atmosphere | open; parts 2-7 done (`189d1e2`, `aea5efa`, `1e5bceb`, `cce44d3`) and wired here (`TerrainDebug.residency`, `setUploadBudget`, `CoreShaderLibrary.compilations`, `MeshSystem.loads`, `AtmosphereFeature.status`); part 1: the core's `shaders.warm` exists (`038cf6f`), the packages' pipelines are theirs to move; `await renderer.warm()` before the app's loop is the lead's decision and not made | load time: synchronous pipeline compiles hold the first 19 frames for 14 s, terrain streams only afterwards and one level per round trip; counts the loading screen lacks (terrain residency by level, shader and texture totals, atmosphere status) |
+| `app-integration-12` | cockpit, flight-ui MFD painter | answered: items 1-2 by the cockpit (round 4), item 3 by flight-ui (round 7); confirmed by the run of 2026-11-12 (no display paint in the chase view, burn 3.88 ms p99) | the cockpit's displays are painted in the chase view; the ORB page costs 5.2-5.7 ms per paint while the orbit changes; 16-26 ms in the lift-off frame |
+| `app-integration-13` | sim-world-pilot, vfx, audio | open | one-off costs in the ignition and lift-off frames: sim 5.9-6.4 ms (10-23 ms under load on 2026-11-12), first plume frame 1.5-2.8 ms, audio 1.5-1.9 ms |
+| `app-integration-14` | flight-ui (src/input/bindings.ts) | open | a key for the chase rig's `resetView()`: a presentation action `ui:resetCamera` on `Home` |
 
 Also answered: `map-view-5` (the app shell part; its labs/integration part was then resolved by core-support),
 `flight-ui-7` (the capture switch's release and hide option wired, fullscreen state passed on) and the app part of
-`flight-ui-3` (map obstacle selectors of the round-6 HUD), both in `1b9f665`.
+`flight-ui-3` (map obstacle selectors of the round-6 HUD), both in `1b9f665`; `flight-ui-10` (the HUD's obstacle
+list imported from `@/ui`) and `cockpit-15` (the mission spec waits on the exposure read-out after a view
+switch), both in `83c80f1`.
 
 ## Known limits
 
