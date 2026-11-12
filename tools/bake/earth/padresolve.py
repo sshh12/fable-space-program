@@ -378,7 +378,24 @@ class Resolver:
         dry = np.isin(LC, self.allowed)
         frac = signal.fftconvolve(dry.astype(np.float64), disc, mode="same") / nd
         dist = np.hypot(E, N)
+        ocean = np.ones(E.shape, bool)
+        if self.strict:
+            # a necessary condition of LC-1's ocean test (rays): the rays at every 10 deg of the sector reach water
+            # within oceanReachKm. Each ray is a line three cells wide, two cells longer than the reach, correlated
+            # with the water cells (the explicit rays sample at 15 m and 2 deg steps that include these azimuths)
+            reach_c = int(math.ceil(float(c["oceanReachKm"]) * 1000.0 / g)) + 2
+            a0, a1 = c["oceanAzimuthDeg"]
+            for az in np.arange(a0, a1 + 1e-6, 10.0):
+                line = np.zeros((2 * reach_c + 3, 2 * reach_c + 3), np.float32)
+                s = np.arange(0.0, reach_c + 0.5, 0.25)
+                cx = np.round(reach_c + 1 + s * math.sin(math.radians(az))).astype(int)
+                cy = np.round(reach_c + 1 + s * math.cos(math.radians(az))).astype(int)
+                for oy in (-1, 0, 1):
+                    for ox in (-1, 0, 1):
+                        line[cy + oy, cx + ox] = 1.0
+                ocean &= signal.fftconvolve(water.astype(np.float32), line[::-1, ::-1], mode="same") > 0.5
         tests = {
+            "ocean": ocean,
             "height": H >= c["minHeightM"],
             "shore": shore >= c["minShoreDistanceM"] - g,
             "slope": slope < c["maxSlopeDeg"] + 0.5,
