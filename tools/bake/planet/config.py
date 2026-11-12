@@ -209,7 +209,9 @@ def validate(raw: dict, where: str) -> None:
             _keys(h["dem"], f"{where}.height.dem", ("source", "scale", "offset"))
             used.add(h["dem"]["source"])
         if h["craters"] is not None:
-            _keys(h["craters"], f"{where}.height.craters", ("maxDiameterRadii", "named"))
+            _keys(h["craters"], f"{where}.height.craters", ("maxDiameterRadii", "named"), ("complex",))
+            if h["craters"].get("complex") is not None:
+                _keys(h["craters"]["complex"], f"{where}.height.craters.complex", ("transitionDiameterKm", "depthKm", "exponent", "ref"))
             for i, c in enumerate(h["craters"]["named"]):
                 _keys(c, f"{where}.height.craters.named[{i}]", ("name", "latDeg", "lonDegE", "diameterKm", "depthKm", "rimKm", "ref"))
         if h["dem"] is not None and h["craters"] is not None:

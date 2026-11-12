@@ -43,7 +43,8 @@ def run(body: config.Body) -> dict:
     job = {"radius": body.radius, "heightLevel": F, "albedoLevel": A, "amplification": resolved_amplification(body),
            "maxDiameter": cr["maxDiameterRadii"] * body.radius,
            "named": [{k: c[k] for k in ("name", "latDeg", "lonDegE", "diameterKm", "depthKm", "rimKm")} for c in cr["named"]],
-           "outDir": str(out), "height": keys_h, "albedo": keys_a}
+           "outDir": str(out), "height": keys_h, "albedo": keys_a,
+           "complex": ({k: cr["complex"][k] for k in ("transitionDiameterKm", "depthKm", "exponent")} if cr.get("complex") else None)}
     job_path = out / "job.json"
     rt.write_json(job_path, job)
     parts = max(1, min(rt.MAX_WORKERS, (len(keys_h) + len(keys_a) + 15) // 16))

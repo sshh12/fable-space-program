@@ -21,7 +21,7 @@ import path from 'node:path';
 import type { TerrainAmplificationDef } from '../../../src/core/contracts/defs';
 import { tileUvToDir, type FaceId } from '../../../src/core/geo/cubeSphere';
 import { genericCraterParams, runtimeCraterLog2MaxD } from '../../../src/terrain/amplification/generic';
-import { CraterField, profile, type CraterClass } from '../../../src/terrain/craters';
+import { CRATER_O, CRATER_STRIDE, CraterField, profile, type CraterClass } from '../../../src/terrain/craters';
 import { smootherstep01 } from '../../../src/terrain/util';
 
 interface NamedCrater {
@@ -43,6 +43,64 @@ interface Job {
   outDir: string;
   height: [number, number, number][];
   albedo: [number, number, number][];
+  /** Complex craters: above transitionDiameterKm a fresh crater is depthKm (D / 1 km)^exponent deep (km). */
+  complex: { transitionDiameterKm: number; depthKm: number; exponent: number } | null;
+}
+
+/**
+ * Crater relief of one class at P with the complex-crater depth law: every crater whose fresh simple depth
+ * (freshDepthToDiameter D) exceeds the law's fresh depth has its depth and rim scaled by the ratio (the
+ * crater's degradation, the share of its fresh depth, is kept). The records are the class's own (same cells,
+ * same order as CraterClass.heightAt), so the population is unchanged; only large craters are shallower.
+ */
+class ComplexRelief {
+  private bx = 0x7fffffff;
+  private by = 0;
+  private bz = 0;
+  private count = 0;
+  private rec: Float64Array;
+
+  constructor(
+    private readonly c: CraterClass,
+    private readonly freshRatio: number,
+    private readonly law: { transitionDiameterKm: number; depthKm: number; exponent: number },
+  ) {
+    this.rec = new Float64Array(8 * c.slots * CRATER_STRIDE);
+  }
+
+  /** Depth scale of a crater of diameter D (m): 1 up to the transition, then law / simple. */
+  scale(D: number): number {
+    const Dk = D / 1000;
+    if (Dk <= this.law.transitionDiameterKm) return 1;
+    return Math.min(1, (this.law.depthKm * Dk ** this.law.exponent) / (this.freshRatio * Dk));
+  }
+
+  heightAt(px: number, py: number, pz: number, ext: number): number {
+    const c = this.c;
+    const bx = Math.floor(px * c.invCell - 0.5) | 0;
+    const by = Math.floor(py * c.invCell - 0.5) | 0;
+    const bz = Math.floor(pz * c.invCell - 0.5) | 0;
+    if (bx !== this.bx || by !== this.by || bz !== this.bz) {
+      this.bx = bx;
+      this.by = by;
+      this.bz = bz;
+      let n = 0;
+      for (let dx = 0; dx < 2; dx++) for (let dy = 0; dy < 2; dy++) for (let dz = 0; dz < 2; dz++) n = c.cellCratersInto(bx + dx, by + dy, bz + dz, this.rec, n);
+      this.count = n;
+    }
+    const r = this.rec;
+    let sum = 0;
+    for (let i = 0, o = 0; i < this.count; i++, o += CRATER_STRIDE) {
+      const dx = px - r[o + CRATER_O.cx]!;
+      const dy = py - r[o + CRATER_O.cy]!;
+      const dz = pz - r[o + CRATER_O.cz]!;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 >= r[o + CRATER_O.reach2]!) continue;
+      const s = this.scale(r[o + CRATER_O.diameter]!);
+      sum += profile(Math.sqrt(d2) * r[o + CRATER_O.invHalfD]!, r[o + CRATER_O.depth]! * s, r[o + CRATER_O.rim]! * s, r[o + CRATER_O.rounding]! * s, ext);
+    }
+    return sum;
+  }
 }
 
 const HEIGHT_STORED = 259;
@@ -118,6 +176,8 @@ async function main(): Promise<void> {
   const hClasses = weightedClasses(field, log2MaxDRt, Math.log2(postingH));
   const aClasses = weightedClasses(field, log2MaxDRt, Math.log2(texelA));
   const named = namedRecords(job, ext, field.p.rimRoundingFresh);
+  const law = job.complex;
+  const hRelief = hClasses.map(({ c, w }) => ({ w, rel: law ? new ComplexRelief(c, field.p.freshDepthToDiameter, law) : c }));
 
   let done = 0;
   for (let i = part; i < job.height.length; i += parts) {
@@ -131,7 +191,7 @@ async function main(): Promise<void> {
         const py = d.y * R;
         const pz = d.z * R;
         let h = 0;
-        for (const { c, w } of hClasses) h += w * c.heightAt(px, py, pz, ext);
+        for (const { rel, w } of hRelief) h += w * rel.heightAt(px, py, pz, ext);
         for (const n of named) {
           const dx = px - n.cx;
           const dy = py - n.cy;
