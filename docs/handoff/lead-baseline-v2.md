@@ -508,3 +508,59 @@ Suites (03:50, sim-core-v2 not yet at work in the tree): `npm run typecheck` (bo
 the whole tree after each contract change; `src/core/contracts`, `src/core/defs/loader.test.ts`,
 `tools/dev/boundaries.test.ts` 120 tests pass; mission record 16, root configuration 12 pass;
 `check-secrets` OK. No browser run.
+
+## 14. Second round after the review of sim-core-v2 (2026-11-12, 04:45-05:10)
+
+sim-core-v2 finished its review fixes (972c8f8, ac2fb78, a643a8f, 6a08c06, 38cdfce, f757dc9; golden
+`b8221b0fd316207e`). This round aligns the lead's paths with what it built and closes what section 13
+left open.
+
+| Item | What was done | Commit |
+|---|---|---|
+| `CraftSnapshot.parent` (request sim-core-v2-4) | `parent?: string \| null`: the craft this one separated from, null for a launched craft. Filled by `craftSnapshots` (`parent: c.parent`). Test `tests/unit/sim-vessel/craftParent.test.ts` (2). Request resolved | f134f8d |
+| `pads.classLimits` | Required, and a field of `DEFAULT_UNIVERSE_RULES` (the override loader landed). `DEFAULT_PAD_CLASS_LIMITS` stays as the name of the same values for `padLimitsOf(pad)` without a rules document; `net.test.ts` holds the two equal and separate objects | f134f8d |
+| Id rules in the contract | Header of `sim.ts`: three composing characters ('/', '.', '~'), the forms as built (piece craft `<parent>.<root part>`; vessel of a piece `<launched craft>~<root part>`, not its craft id), and "a consumer never takes an id apart". `CraftSnapshot.id`, `PartSnapshot.instanceId`, `VehiclePartPlacement.id` | f134f8d |
+| `tools/dev/guard-pins.test.ts` reviewed | 27 pins checked against the COMMITTED blobs (not only the working copy): all equal, no CR in a committed text file. Text hashed with LF endings and `.gitattributes` sets `* text=auto eol=lf`, `*.bin binary`, so a pin is the same on every checkout. A missing file fails; a corpus blob without a pin fails; the three named files and the six fixtures must be pinned. Added: the pin of `tests/mission/baseline-v1.json` (the ENVELOPE's reference) and a paragraph on what is not pinned and why (`golden.json`, the terrain guard's files). Accepted by the boundary test and the stub scan | c415b7d |
+| ARCHITECTURE | The two corrections (a piece's VESSEL id keeps its derived form; the lineage is the parent craft id, no tick) with the id table rewritten as built; the alphabet; the tick-pure rule as built (day base, `tick % 4`, `tick % 12`); the **launch sequence** (7.2 and 7.5) | 2ea7cf3 |
+| MIGRATION_V2 | The row "during sub-wave 3.1" rewritten as built (four decisions, the re-record, the pins); step 3.11: no consumer takes an id apart, `rootOf` of `vesselFeature.ts` reads `CraftSnapshot.parent`; tighten step after 3.2: `CraftSnapshot.parent` required, the per-chute `envelope` module state nullable where there is no atmosphere with its producer, hand-built states and consumers named | 2ea7cf3 |
+| Briefs | The three notes of section 13 rewritten as built (island-core, contact-docking, fleet-data: with the launch sequence in the last two) and a new one in presentation-sweep (ids, `CraftSnapshot.parent`, the chute envelope) | 857edd2 |
+
+**Outside the lead's paths, and why.**
+
+- `src/sim/vessel/facade.ts`, one line (`parent: c.parent`): the producer of the new snapshot field, by the
+  lead's instruction. The craft snapshot is built there, not under `src/sim/world`.
+- `src/core/defs/loader.ts`, the rules completion: its table of fields with a check of their own
+  (`pads.classLimits`: stated whole, every class, positive) was asked only for fields the default document
+  does not state. With the class limits IN the default, a file stating two of three classes was merged and
+  a zero limit accepted, and `loader.test.ts` failed. The table is now asked first (renamed
+  `RULE_FIELD_CHECKS`), in `completeRules` and in `validateRules`; a file is read exactly as before the
+  move and sim-core-v2's tests pass unchanged. sim-core-v2 had finished and its paths were clean. One
+  comment in `loader.test.ts` ("a field the default does not state yet") is now out of date; the test file
+  was not touched.
+
+**Decided here, for the lead to confirm.** fleet-data's note says that a package which adds a blob to the
+corpus adds its pin line in `tools/dev/guard-pins.test.ts` in the same commit (the pin test fails on a
+blob without a pin, and its header says "adding one is adding a pin"); changing or removing a line stays
+the lead's act.
+
+**Closed from section 13:** the class limits' move; the review of the pin test; the wording from
+sim-core-v2's hand-off; the corpus path (it is `tests/unit/sim-vessel/corpus`: sim-core-v2 moved it);
+the lineage field.
+
+**Still open.**
+
+- `rootOf` in `src/render/vehicle/vesselFeature.ts` parses the vessel id until the presentation sweep.
+- The launch sequence is a rule on paper: the assembler does not compile it and the helm does not walk it
+  (fleet-data, contact-docking). `test-tandem` cannot be flown through a session with `stage()` alone.
+- The envelope at STAGE_SEP_1: the tick-pure flight is 0.042 s off in event time against the checker's
+  0.033 s. The mission test allows the checker's allowance plus the pilot's lead (0.025 s) for a milestone
+  that is outside by event time alone and records that rule as accepted by the lead; the checker in
+  `tools/dev/mission-baseline.ts` is unchanged and still reports that row as outside.
+- The pad class limits are provisional until fleet-data's table.
+- `src/core/fakes/fakeSim.ts`: `advanceRails` lands on the float instant (section 13).
+- The reference images (section 3) and `.wslconfig` (the user's) as before.
+
+Suites (05:00): `npm run typecheck` (both configurations, through the gate) clean on the whole tree.
+`src/core/contracts`, `src/core/defs`, `src/core/fakes`, `tests/unit/sim-vessel`, `tests/unit/sim-world`,
+`tools/dev`, `tests/unit/site-bake/pads.test.ts`: 43 files, 483 tests pass. `npx tsx tools/sim/writeRules.ts
+--check`: the three files as derived. `check-stubs`, `check-secrets` OK. Headless mission (through the gate, 05:02): 35 of 36 pass; the one failure is the determinism test's precondition, not a result of this round: the Earth tile set was re-baked at 04:59 (site-bake's Madrakah region; content hash f70a61d55dca902f, golden.json still says ab20fdfc579d4015), so the test refuses to compare. Flown once more with the recorder: state hash b8221b0fd316207e, 596,933 steps on the new tiles, equal to the golden, so neither this round nor the re-bake changed the flight and only the tiles.earth field of tests/mission/golden.json is out of date (not edited: not the lead-baseline paths; reported to the coordinator). No browser run.
