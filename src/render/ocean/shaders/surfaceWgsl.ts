@@ -243,10 +243,16 @@ fn oceanColumnDepthAt(posRel: vec3f, up: vec3f) -> f32 {
   // The view ray's own depth is a guess only where the pixel shows the seabed; an object in the water says nothing.
   let id = u32(textureLoad(gbufferMaterialTex, px, 0).b * 255.0 + 0.5);
   let along = oceanColumnDepth((vec2f(px) + 0.5) / size, textureLoad(sceneDepthOpaqueTex, px, 0), length(posRel));
+  // (A bed more than 40 m down, or hidden: the waves do not feel it. Profile: the seabed's depth cost the open sea
+  // 0.09 ms of the near pass for nothing.)
+  if (along > 40.0) { return OCEAN_DEEP; }
   if (id == MATERIAL_TERRAIN || id == MATERIAL_REGOLITH) {
+    // The vertical is marched only where the bed is within 4 m (the surf and the swash, where it matters and where
+    // the vertical is short); deeper, the bed's plane stands for it.
     let plane = oceanBedPlaneDepth(px, posRel, up);
-    if (along >= OCEAN_VERTICAL_FROM) { return plane; }
-    let marched = mix(plane, oceanDepthBelow(posRel, up, along, plane), smoothstep(0.25, 0.75, plane));
+    if (along >= OCEAN_VERTICAL_FROM || plane > 4.0) { return plane; }
+    var marched = mix(plane, oceanDepthBelow(posRel, up, along, plane), smoothstep(0.25, 0.75, plane));
+    marched = mix(marched, plane, smoothstep(2.5, 4.0, plane));
     return mix(marched, plane, smoothstep(OCEAN_VERTICAL_FROM - 4.0, OCEAN_VERTICAL_FROM, along));
   }
   // An object hides the vertical: the bed beside it, or a few metres below the object when none is in view.
@@ -395,7 +401,10 @@ struct FsOut {
   // The seabed beside an object in the water (depth, screen uv; x = OCEAN_DEEP: none in view).
   var beside = vec3f(OCEAN_DEEP, 0.0, 0.0);
   if (!sheet && !strayWater && dOpaque > 0.0 && (prof & 16u) == 0u) {
-    if (detail > 0.0) {
+    if (seabedPix && column > 40.0) {
+      // (Deep water: the bed where the eye ray meets it says all that is needed.)
+      seaDepth = column;
+    } else if (detail > 0.0) {
       var guess = column;
       var fallback = column;
       if (seabedPix) {
@@ -406,7 +415,7 @@ struct FsOut {
         guess = select(oceanObjectGuess(column), beside.x, beside.x < 0.5 * OCEAN_DEEP);
         fallback = select(2.0 * guess + 2.0, beside.x, beside.x < 0.5 * OCEAN_DEEP);
       }
-      if (seabedPix && column >= OCEAN_VERTICAL_FROM) {
+      if (seabedPix && (column >= OCEAN_VERTICAL_FROM || fallback > 4.0)) {
         seaDepth = fallback;
       } else {
         seaDepth = oceanDepthBelow(posRel - upR * in.height, upR, guess, fallback);
@@ -414,6 +423,7 @@ struct FsOut {
           // A bed within decimetres of sea level, or above it (the run-up on a beach): its plane, which the eye ray
           // meets right behind the surface there and which may lie above sea level (a negative depth).
           seaDepth = mix(fallback, seaDepth, smoothstep(0.25, 0.75, fallback));
+          seaDepth = mix(seaDepth, fallback, smoothstep(2.5, 4.0, fallback));
           seaDepth = mix(seaDepth, fallback, smoothstep(OCEAN_VERTICAL_FROM - 4.0, OCEAN_VERTICAL_FROM, column));
         }
       }
@@ -565,8 +575,9 @@ struct FsOut {
   // stays inside the Snell cone of that surface (48.6 deg) plus the steepest wave slope.
   var cosPath = 1.0;
   var bedHit = vec2f(0.0);   // horizontal offset (plane axes, m) from the water point to where the refracted ray ends
-  if (seeBottom && (column < 30.0 || !seabedPix)) {
-    // (A bed more than 30 m down is a dim, even colour: its image is not displaced, the straight look does.)
+  if (seeBottom && (column < 10.0 || !seabedPix)) {
+    // (A bed more than 10 m down is a dim, soft colour: its image is not displaced, the straight look does; the
+    // refracted image fades into it from 7 m. Profile: the march cost the shelf 0.19 ms.)
     // March the refracted ray through the depth copy (6 steps, denser near the surface) to the first opaque
     // surface behind the water: a submerged object or the seabed seen through the waves, no screen-space ghosts.
     // Close to the eye the ripples bend the image themselves; further out, where a pixel holds several of them,
@@ -691,6 +702,7 @@ struct FsOut {
       }
       conf = 1.0;
     }
+    if (seabedPix) { conf *= 1.0 - smoothstep(7.0, 10.0, column); }
     uvR = uv + (hitUv - uv) * (oceanU.shore.y * detail);
     let dR = textureLoad(sceneDepthOpaqueTex, vec2i(clamp(uvR * size, vec2f(0.0), size - 1.0)), 0);
     if (dR <= 0.0 || length(positionFromDepth(uvR, dR)) < dist - 0.05) { conf = 0.0; }
@@ -867,8 +879,17 @@ struct FsOut {
     sunE *= atmosphereSunTransmittance(transmittanceLut, u32(bi), r, muS);
     cloudBase = sunE * (max(muS, 0.0) * (cl.y - cl.x));
     sunE *= cl.x;
+    // The sun's shadow on the sea: of the shore and what stands on it (looked up over the shelf), of a thing in
+    // the water (the pixel shows it), of a vessel at the water (within twelve of its radii). With a vessel at the
+    // water and deep water all round, the open sea beyond is in the sun: the lookup's eight taps are saved there
+    // (profile: 0.08 ms at the splashdown). With no vessel at the water it is looked up everywhere.
+    var shaded = objectPix || (seabedPix && column < 60.0) || oceanU.counts.y == 0u;
+    for (var i = 0u; i < min(oceanU.counts.y, OCEAN_MAX_VESSELS); i++) {
+      let v = oceanU.vessels[i];
+      if (distance(in.planeF, v.a.xy) < 12.0 * v.b.z) { shaded = true; }
+    }
     var shadow = 1.0;
-    if ((prof & 128u) == 0u) { shadow = sampleSunShadow(posRel, s.n, pix); }
+    if (shaded && (prof & 128u) == 0u) { shadow = sampleSunShadow(posRel, s.n, pix); }
     if (shadow > 0.0) {
       s.lightAlpha = 0.6 * frame.sunDir.w;
       if ((prof & 1024u) == 0u) { lit += brdfWaterDirect(s, sunDir) * sunE * shadow; }
@@ -959,7 +980,7 @@ struct FsOut {
     // (under a crest) or spread it (under a trough). The bundle's area changes by |det(1 + a H)|, a = (1 - 1/n) x
     // path, H the Hessian of the height: taken from the layers' convergence (curvature = mean wavenumber x
     // convergence / choppiness), as the footprint resolves them.
-    if (bodyDepth < 12.0 && muS > 0.05 && sunEff.g > 0.0) {
+    if (bodyDepth < 8.0 && muS > 0.05 && sunEff.g > 0.0) {
       let sunW = refract(-sunDir, s.up, 1.0 / WATER_IOR);
       let cosW = max(dot(sunW, -s.up), 0.4);
       let hs = oceanRotInv(sunW - s.up * dot(sunW, s.up)) / cosW;
@@ -985,7 +1006,7 @@ struct FsOut {
       let c1 = textureSampleLevel(oceanLace, linearRepeat, cuv + vec2f(112.0, 61.0) * oceanU.time.x, clod).r;
       let c2 = textureSampleLevel(oceanLace, linearRepeat, cuv * 1.37 + vec2f(-83.0, 97.0) * oceanU.time.x + vec2f(0.5, 0.25), clod + 0.45).r;
       let net = 1.0 + 1.5 * (1.0 - smoothstep(1.5, 4.5, clod)) * (smoothstep(0.7, 0.92, c1) + smoothstep(0.7, 0.92, c2) - 0.38);
-      bed *= mix(1.0, focus * net, exp(-bodyDepth / 4.0) * detail * saturate(luminance(sunEff) / max(luminance(sunEff) + luminance(amb.skyIrradiance), 1e-9)));
+      bed *= mix(1.0, focus * net, exp(-bodyDepth / 4.0) * (1.0 - smoothstep(6.0, 8.0, bodyDepth)) * detail * saturate(luminance(sunEff) / max(luminance(sunEff) + luminance(amb.skyIrradiance), 1e-9)));
     }
     lit += (bed - bottomFar) * (1.0 - cov);
   }
@@ -1021,14 +1042,15 @@ struct FsOut {
     let oh = ov - upR * dot(ov, upR);
     let rc = 0.62 * hull.z;
     let top = hull.w + 0.9 * hull.z;
-    // The mirrored ray of the smooth surface passes the middle of the hull at this distance: where that is further
-    // than the hull's size and what the seven slopes can turn the ray by, none of them meets it (most of the water
-    // around a vessel).
-    let m0 = reflect(-s.v, nS);
-    let oc = upR * (0.5 * top) - ov;
-    let tc = max(dot(oc, m0), 0.0);
+    // Where the mirrored ray's way over the water does not pass the hull's outline, none of the seven meets it
+    // (most of the water around a vessel).
+    // (The seven slopes turn the ray up and down, not sideways: the way of all seven over the water is one line.)
+    var mh0 = reflect(-s.v, nS);
+    mh0 = mh0 - upR * dot(mh0, upR);
+    mh0 = mh0 / max(length(mh0), 1e-4);
+    let toAxis = -dot(oh, mh0);
     var taps = 7;
-    if (length(oc - m0 * tc) > 1.2 * hull.z + 0.5 * top + 3.6 * sigV * tc) { taps = 0; }
+    if (toAxis <= 0.0 || length(oh + mh0 * toAxis) > 1.15 * rc) { taps = 0; }
     // (The seven slopes are shifted per pixel by up to half their spacing: the outlines of the seven images blur
     // into one another instead of standing as seven edges.)
     let jit = (blueNoise(pix).x - 0.5) * 0.5;

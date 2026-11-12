@@ -413,6 +413,15 @@ struct WaterPoint {
 }
 var<private> waterPt: WaterPoint;
 
+/// The uniform random number of glitter cell 'idx' of a level at the time 'tk' (in re-draws): each cell is
+/// re-drawn at its own instants.
+fn waterGlintDraw(idx: vec2i, level: i32, tk: f32) -> f32 {
+  let h = waterHash(idx, level + 301);
+  let ti = i32(floor(tk + f32(h & 1023u) / 1024.0));
+  let h2 = waterHash(vec2i(i32(h >> 10u), ti), 977);
+  return (f32(h2 >> 8u) + 0.5) / 16777216.0;
+}
+
 fn waterPoint(s: Surface) -> WaterPoint {
   let key = vec4f(s.pos, f32(s.bodyIndex) + 1.0);
   if (all(key == waterPt.key)) { return waterPt; }
@@ -535,11 +544,23 @@ fn waterPoint(s: Surface) -> WaterPoint {
         let x = (cb - floor(cb)) + ch.d / cs;
         let xf = floor(x);
         let idx = vec2i(floor(cb)) + vec2i(xf);
-        let h = waterHash(idx, i32(level) + 301);
-        // Each cell is re-drawn at its own instants.
-        let ti = i32(floor(tk + f32(h & 1023u) / 1024.0));
-        let h2 = waterHash(vec2i(i32(h >> 10u), ti), 977);
-        pt.glintU[k] = (f32(h2 >> 8u) + 0.5) / 16777216.0;
+        var u = waterGlintDraw(idx, i32(level), tk);
+        // Within a tenth of a cell of its border the draw runs into the neighbours' (half and half on the border
+        // itself): it is CONTINUOUS over the sea. Two shadings of one point place it centimetres apart (the forward
+        // surface and the far sheet do not lie on the same sphere to the last digit); with cells of constant draw
+        // a pixel next to a border then took another cell's sparkle in one of the two (the hand-over's 3-7 % in
+        // single pixels).
+        let fc = x - xf;
+        let edge = smoothstep(vec2f(0.8), vec2f(1.0), abs(2.0 * fc - 1.0)) * 0.5;
+        if (edge.x > 0.0 || edge.y > 0.0) {
+          let sx = select(-1, 1, fc.x > 0.5);
+          let sy = select(-1, 1, fc.y > 0.5);
+          let u10 = waterGlintDraw(idx + vec2i(sx, 0), i32(level), tk);
+          let u01 = waterGlintDraw(idx + vec2i(0, sy), i32(level), tk);
+          let u11 = waterGlintDraw(idx + vec2i(sx, sy), i32(level), tk);
+          u = mix(mix(u, u10, edge.x), mix(u01, u11, edge.x), edge.y);
+        }
+        pt.glintU[k] = u;
         // The facets the pixel integrates: those of its whole footprint on the sea (at a grazing angle many cells
         // long), or of the cell where the pixel is smaller than one. The cell's draw stands for the pixel.
         // (At least four: slopes a pixel does not resolve vary within it.)
@@ -688,11 +709,12 @@ fn waterSkyRadiance(s: Surface, dir: vec3f, alpha: f32) -> vec3f {
   let layer = i32(b.fixedX.w);
   let rb = b.center.w;
   let r = rb + s.altitude;
-  if (layer >= 0 && r < b.prevCenter.w) {
+  // (Within a kilometre the sky itself is the whole of it; the far term comes in from there to 50 km.)
+  let near = saturate((1.0 - s.viewDist / 50000.0) / 0.98);
+  if (near < 1.0 && layer >= 0 && r < b.prevCenter.w) {
     let uv = skyIrradianceUvFromRMuS(max(r, rb), dot(s.up, sunDir), rb, b.prevCenter.w);
     far = textureSampleLevel(skyIrradianceLut, linearClamp, uv, layer, 0.0).rgb / PI;
   }
-  let near = saturate(1.0 - s.viewDist / 50000.0);
   var nearL = vec3f(0.0);
   if (near > 0.0) {
     let c0 = envSh9.c[0].rgb;
