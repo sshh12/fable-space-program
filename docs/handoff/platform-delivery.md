@@ -90,3 +90,28 @@ work lands.
   needed is measured on the recorded session. The origin sees the client's address first in X-Forwarded-For
   and in X-Real-IP behind the CDN (the per-address limit works). Bucket from Node: presigned ranged GET 206
   with CORS (ACAO *), ExposeHeaders honoured (Content-Range readable), preflight 200, a changed date 403.
+- 01:45 first-session trace recorded in real Chrome (dev server, /?scenario=lunar-direct&pilot=1, clean
+  profile): boot 41 s, EARTH_ORBIT reached 237 s after navigation; 26,999 requests and 590 MB, of which tiles
+  26,054 requests and 304 MB, sky 135 MB (8), assets 136 MB (184), definitions 0.22 MB (110), dev-server code
+  15.7 MB (642). Trace: docs/capacity/traces/first-session-2026-11-12.json.
+- 01:47-01:53 the trace replayed through the pack source against whole packs (docs/capacity/
+  trace-replay-2026-11-12.json), with an in-memory stand-in of the OPFS cache (a tile read twice is needed
+  once): 26,023 tile reads, 189.5 MB of unique tile bytes. Bucket ranges (64 KiB coalescing gap): 2,508
+  requests (10.4x fewer than per file), 1.13 bytes per byte needed; without any client cache 6,137 requests
+  (4.2x; 5.5x at a 128 KiB gap). Mirror slices: 2 MiB 3.28, 1 MiB 2.20, 512 KiB 1.66, 256 KiB 1.38,
+  128 KiB 1.25 bytes per byte needed: the mirror's slice size is 256 KiB (MIRROR_SLICE_BYTES=262144 on
+  Railway; deploy/packs/packList.ts MEASURED_SLICE_BYTES).
+- 01:52-01:57 CI on the branch `platform-delivery-ci` (pushed for this; main untouched): green in run
+  43195587786 (checks 1m42s, image 2m21s; about 4 runner-minutes a push) after excluding ten unit files that
+  need baked data (request platform-delivery-1). CI buildId 5c50250b3dab3d80 at 1443a92; Railway's build of
+  game at f624335 (same bundle) reports buildId 5c50250b3dab3d80: the two builds are one.
+- 01:57 Modal: environment `fsp` created; secret `fsp-dumps` (the dumps credential, through a deleted temp
+  file); the bucket probe started (fsp-probe, ephemeral `modal run`). Smoke: 20 fetchers for 30 s, 2,116
+  ranges, 0 errors, first byte p50 243 ms, p95 518 ms.
+- 01:57 pgsettings after the restart: every setting in force, nothing pending; the temporary `ops` service
+  (c1aebc95-55ee-4da2-95c0-90837faa0a2a) deleted.
+- 01:58 retention probe: 240 small objects named like dumps of the last 60 days (marker `retentionprobe`)
+  written to the dumps bucket for the next hourly run of the dump role to prune.
+- 02:00 boot pack budget on the deployed shell (EGRESS_BOOT_BYTES_PER_DAY=1 for one deployment, CDN purged):
+  first request 200 (20 MB, MISS), the next 302 to the presigned bucket copy, which served all 19,969,602
+  bytes; the budget restored to its default (1 GB) and shell redeployed at 02:01.
