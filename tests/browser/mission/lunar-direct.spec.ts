@@ -184,7 +184,8 @@ async function setViewAndWait(page: Page, mode: string): Promise<void> {
   await page.evaluate((m) => window.__test!.setView(m), mode);
   // The view mode, not the camera kind: the cockpit rig's camera is of kind 'interior'.
   await page.waitForFunction((k) => !window.__app!.viewBlending() && window.__app!.viewMode() === k, mode, { polling: 100, timeout: 15_000 });
-  await page.evaluate(() => window.__test!.waitFrames(15));
+  // A change of camera kind is a cut for the exposure, which follows within a third of a second (NOTICE-core-4).
+  await page.evaluate(() => window.__test!.waitFrames(45));
 }
 
 function aggregate(windows: PerfWindow[], phaseLog: { phase: string; wallMs: number }[], endMs: number): PhaseRow[] {

@@ -5,7 +5,7 @@
  */
 import type { TestApi } from '@/core/contracts/testApi';
 import type { TestApiController } from '@/core/testing/testApi';
-import type { ExposureInfo } from '@/render/core';
+import { coreOf, type ExposureInfo } from '@/render/core';
 import type { Game } from './game';
 import type { LoadingReport } from './loading';
 import type { FrameBreakdown, FrameStage, FrameTrace, WindowStats } from './timing';
@@ -27,6 +27,10 @@ export interface AppDebug {
   /** Record every frame's main-thread breakdown from now on (at most `frames`); `takeCpuTrace` returns and ends it. */
   startCpuTrace(frames: number): void;
   takeCpuTrace(): FrameTrace | null;
+  /** What the camera's selection of the active vessel's body wants and has: tiles and levels (null without terrain). */
+  terrainResidency(): { wanted: number; resident: number; wantedLevel: number; residentLevel: number } | null;
+  /** Shader modules created and still compiling; texture loads started and outstanding (the render core's counts). */
+  renderLoads(): { shaders: { pending: number; total: number }; textures: { pending: number; total: number } };
   /** The loading screen: its steps with their counts and times, and what the frame loop found at the reveal. */
   loading(): LoadingReport;
   /** Wall time of every render feature's start-up, ms, by feature id. */
@@ -151,6 +155,17 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     cpuSlowest: () => game.timings.slowest(),
     startCpuTrace: (frames) => game.timings.startTrace(frames),
     takeCpuTrace: () => game.timings.takeTrace(),
+    terrainResidency: () => {
+      const s = game.snapshot();
+      const v = s.vessels.find((x) => x.id === s.activeVesselId);
+      const r = v ? game.features.terrain.debug.residency(v.bodyId) : null;
+      if (!r) return null;
+      return { wanted: r.wanted.reduce((a, n) => a + n, 0), resident: r.resident.reduce((a, n) => a + n, 0), wantedLevel: r.wantedLevel, residentLevel: r.residentLevel };
+    },
+    renderLoads: () => {
+      const core = coreOf(game.renderer.context);
+      return { shaders: core.shaders.compilations(), textures: core.meshes.loads() };
+    },
     loading: () => game.loadingReport(),
     featureInitMs: () => ({ ...game.featureInitMs }),
     exposure: () => game.renderer.exposureInfo(),

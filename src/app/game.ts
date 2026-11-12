@@ -18,9 +18,9 @@
  *
  * Loading (loading.ts shows it): the frame loop starts as soon as every subsystem exists and runs UNDER the
  * loading screen, with the simulation held at the scenario's first instant and the controls ignored, until
- * the view at the start position is final (`viewPending` below is empty): every render feature idle (terrain
- * resident at the levels the camera selects, nothing fading, sky data and probe in place, tables built,
- * textures loaded), no shader module compiling, no terrain load of the simulation outstanding, the exposure at
+ * the view at the start position is final (`viewPending` below is empty): every render feature idle (every tile
+ * the camera's selection wants resident, nothing fading, sky data and probe in place, tables built, textures
+ * loaded), no shader module compiling, no terrain load of the simulation outstanding, the exposure at
  * its target (or no longer adapting quickly), for SETTLE_FRAMES consecutive frames. Then the screen fades and
  * the game begins.
  */
@@ -35,6 +35,7 @@ import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig
 import { createFlightController, createInputSystem, DEFAULT_BINDINGS, installUnloadGuard, keyHelpEntries, keyLabel, type FlightController, type InputSystem } from '@/input';
 import { coreOf, createRenderer, type CoreRenderer } from '@/render/core';
 import { createSim, type SimWorld } from '@/sim';
+import { DEFAULT_STREAMER_OPTIONS } from '@/render/terrain';
 import { createFetchTileSource, createTerrainProvider, type TerrainAuthority } from '@/terrain';
 import { createHud, createMfdPainter, createNavballRenderer, type HudImpl, type NavballRendererImpl } from '@/ui';
 import { timedFeature } from './featureTiming';
@@ -62,6 +63,11 @@ const EXPOSURE_SETTLED_EV = 0.25;
  * and an exposure that stands still (an override, a floor) must never hold the screen.
  */
 const EXPOSURE_MOVING_EV_PER_S = 0.3;
+/**
+ * Tile uploads per frame while the loading screen is up (tiles, ms): nobody sees those frames, so the terrain's
+ * own budget (8 tiles, 2 ms: it protects a frame of the flight) is lifted and put back at the reveal.
+ */
+const LOADING_UPLOAD_BUDGET = { tiles: 64, ms: 12 };
 /** Words for the render packages on the loading screen. */
 const PACKAGE_LABEL: Record<string, string> = { terrain: 'terrain', vehicle: 'vehicle and site', ocean: 'ocean', sky: 'sky', atmosphere: 'atmosphere and clouds', vfx: 'effects', cockpit: 'cockpit', map: 'map view' };
 
@@ -215,18 +221,26 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   // Each one is registered behind a timer of its hooks (featureTiming.ts): the per-feature main-thread numbers.
   const timings = createFrameTimings();
   const steps = 1 + features.list.length;
+  // The row counts shader modules (compiled / created so far: the core's own numbers); its words say which
+  // feature is starting.
+  let pipelinesPhase = 'render core · shader modules compiled';
+  loading.watch('pipelines', () => {
+    const c = core.shaders.compilations();
+    return { detail: pipelinesPhase, done: c.total - c.pending, total: c.total };
+  });
   /** How long each feature's start-up took, ms (the loading timeline of the hand-off). */
   const featureInitMs: Record<string, number> = {};
   const featureInit = (async () => {
     let done = 1;
     for (const f of features.list) {
-      loading.update('pipelines', { detail: PACKAGE_LABEL[features.packageOf[f.id] ?? ''] ?? f.id, done, total: steps });
+      pipelinesPhase = `starting ${PACKAGE_LABEL[features.packageOf[f.id] ?? ''] ?? f.id} (${done} of ${steps - 1}) · shader modules compiled`;
+      loading.refresh();
       const t0 = performance.now();
       await renderer.addFeature(timedFeature(f, timings.hook));
       featureInitMs[f.id] = performance.now() - t0;
       done++;
     }
-    loading.update('pipelines', { detail: 'shader modules compiling', done, total: steps });
+    pipelinesPhase = 'shader modules compiled';
   })();
   loading.begin('audio');
   loading.watch('audio', () => {
@@ -258,41 +272,36 @@ export async function createGame(deps: GameDeps): Promise<Game> {
 
   // ------------------------------------------------------------------------------- loading: what is pending
   let settled = 0;
-  let lastUploaded = -1;
-  let lastStalled = 0;
   let lastEv100 = Number.NaN;
-  /** Terrain numbers of the latest frame under the loading screen. */
-  const ground = { resident: 0, queued: 0, baking: 0, uploading: 0, poolFull: false, deepestLevel: 0, levelUnderVehicle: null as number | null };
+  /**
+   * Terrain numbers of the latest frame under the loading screen: what the camera's selection of the active
+   * vessel's body wants and has (tiles, and the deepest level wanted / complete), the stream's counters, and
+   * the deepest resident tile under the vehicle.
+   */
+  const ground = { wanted: 0, resident: 0, wantedLevel: 0, residentLevel: 0, queued: 0, baking: 0, uploading: 0, deepestLevel: 0, levelUnderVehicle: null as number | null };
   let pending: string[] = [];
 
   const readGround = (): void => {
-    const t = features.terrain.debug.stats();
+    const debug = features.terrain.debug;
+    const t = debug.stats();
     const st = t.stream;
     const active = snapshot.vessels.find((v) => v.id === snapshot.activeVesselId);
-    const body = active ? t.bodies[active.bodyId] : undefined;
-    const fading = Object.values(t.bodies).some((b) => b.fading > 0);
-    // The tile pool is full and nothing can be evicted: every tile that waits for a layer was refused one in this
-    // frame and nothing was uploaded. Those tiles stay drawn by their parents for as long as the camera stays
-    // (request app-integration-7); the view is as final as it gets.
-    ground.poolFull = st.queued === 0 && st.loading === 0 && st.uploading > 0 && !fading && st.uploadedTotal === lastUploaded && st.stalledTotal - lastStalled >= st.uploading;
-    lastUploaded = st.uploadedTotal;
-    lastStalled = st.stalledTotal;
-    ground.resident = st.ready;
+    const res = active ? debug.residency(active.bodyId) : null;
+    ground.wanted = res ? res.wanted.reduce((a, n) => a + n, 0) : 0;
+    ground.resident = res ? res.resident.reduce((a, n) => a + n, 0) : 0;
+    ground.wantedLevel = res?.wantedLevel ?? 0;
+    ground.residentLevel = Math.max(0, res?.residentLevel ?? 0);
     ground.queued = st.queued;
     ground.baking = st.loading;
     ground.uploading = st.uploading;
-    ground.deepestLevel = body?.deepestLevel ?? 0;
+    ground.deepestLevel = (active ? t.bodies[active.bodyId]?.deepestLevel : undefined) ?? 0;
     const r = snapshot.readouts;
-    ground.levelUnderVehicle = active ? (features.terrain.debug.readyTileAt(active.bodyId, (r.latitude * 180) / Math.PI, (r.longitude * 180) / Math.PI)?.level ?? null) : null;
+    ground.levelUnderVehicle = active ? (debug.readyTileAt(active.bodyId, (r.latitude * 180) / Math.PI, (r.longitude * 180) / Math.PI)?.level ?? null) : null;
   };
 
   const groundProgress = (): StepProgress => {
-    const waiting = ground.queued + ground.baking + ground.uploading;
-    // The level of the deepest resident tile under the vehicle (on the ground) or in the view (in flight).
-    const level = ground.levelUnderVehicle !== null ? `level ${ground.levelUnderVehicle} under the vehicle` : `level ${ground.deepestLevel} in view`;
-    if (ground.poolFull) return { detail: `${level} · tile pool full, ${count(ground.uploading)} left to coarser tiles`, done: ground.resident, total: ground.resident };
     const parts = [ground.queued > 0 ? `${count(ground.queued)} queued` : '', ground.baking > 0 ? `${count(ground.baking)} baking` : '', ground.uploading > 0 ? `${count(ground.uploading)} uploading` : ''].filter((x) => x !== '');
-    return { detail: `${level}${parts.length > 0 ? ` · ${parts.join(', ')}` : ' · tiles resident'}`, done: ground.resident, total: ground.resident + waiting };
+    return { detail: `level ${ground.residentLevel} of ${ground.wantedLevel} · ${parts.length > 0 ? parts.join(', ') : 'tiles of the view resident'}`, done: ground.resident, total: ground.wanted };
   };
 
   const skyProgress = (): StepProgress => {
@@ -306,6 +315,11 @@ export async function createGame(deps: GameDeps): Promise<Game> {
 
   loading.watch('sky', skyProgress);
   loading.watch('terrain', groundProgress);
+  loading.watch('models', () => {
+    const l = core.meshes.loads();
+    return { detail: 'textures loaded', done: l.total - l.pending, total: l.total };
+  });
+  features.terrain.debug.setUploadBudget(LOADING_UPLOAD_BUDGET.tiles, LOADING_UPLOAD_BUDGET.ms);
 
   /**
    * One frame under the loading screen (after it was rendered): update the steps from the subsystems and
@@ -317,9 +331,8 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     const idle = (f: { isIdle?(): boolean }): boolean => f.isIdle === undefined || f.isIdle();
     const out: string[] = [];
 
-    if (compiling === 0) loading.finish('pipelines', { detail: `render core and ${steps - 1} features` });
-    else loading.update('pipelines', { detail: `${count(compiling)} shader modules compiling` });
-    if (compiling > 0) out.push('shaders');
+    if (compiling === 0) loading.finish('pipelines', { detail: `render core and ${steps - 1} features · shader modules compiled` });
+    else out.push('shaders');
 
     loading.begin('sky');
     if (idle(features.sky)) loading.finish('sky');
@@ -329,18 +342,18 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     if (idle(features.atmosphere) && idle(features.ocean)) loading.finish('atmosphere', { detail: 'ready' });
     else out.push('atmosphere');
 
-    loading.begin('models', { detail: 'meshes and textures' });
-    if (core.meshes.isIdle() && idle(features.vessels) && idle(features.site) && idle(features.cockpit)) loading.finish('models', { detail: 'ready' });
+    loading.begin('models');
+    if (core.meshes.isIdle() && idle(features.vessels) && idle(features.site) && idle(features.cockpit)) loading.finish('models');
     else out.push('models');
 
     loading.begin('terrain');
-    if (idle(features.terrain) || ground.poolFull) loading.finish('terrain');
+    if (idle(features.terrain)) loading.finish('terrain');
     else out.push('terrain');
     if (sim.terrainPending() !== null) out.push('simulation terrain');
 
     // Anything a step above does not name (effects, map) and anything that became busy again after its step.
     for (const f of features.list) {
-      if (idle(f) || (f === features.terrain && ground.poolFull)) continue;
+      if (idle(f)) continue;
       const name = PACKAGE_LABEL[features.packageOf[f.id] ?? ''] ?? f.id;
       if (!out.some((x) => name.startsWith(x) || (x === 'models' && (name === 'vehicle and site' || name === 'cockpit')))) out.push(name);
     }
@@ -361,6 +374,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     loading.refresh();
     if (settled < SETTLE_FRAMES) return;
     const e = renderer.exposureInfo();
+    features.terrain.debug.setUploadBudget(DEFAULT_STREAMER_OPTIONS.uploadTiles, DEFAULT_STREAMER_OPTIONS.uploadMs);
     loading.finish('view', { detail: 'the view is final' });
     loading.reveal({
       frame: frames,

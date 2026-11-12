@@ -14,7 +14,7 @@ lunar-direct from the pad to splashdown in real Chrome in 44.9 minutes. Every mi
 1.94 m from the target on level 12, splashdown inside the Central Pacific zone at 7.82 m/s, `cheatCounter` 0, no
 error. The frame-time budgets are missed: GPU p99 is met everywhere (worst 8.4 ms); rAF is missed in every phase
 because of the headless clock (`app-integration-8`); the main thread is missed in 24 of 80 phases (renderer hooks).
-See "Browser mission". Thirteen requests filed; six resolved.
+See "Browser mission". Thirteen requests filed; ten resolved (open: -11 in part, -12, -13).
 
 **Added 2026-11-11 night (after the user's feedback):** an honest loading screen (the scene opens when the view
 at the start position is final: 32 s on the pad, land where land is in the first frame); keyboard capture and
@@ -68,12 +68,12 @@ clock since the page opened):
 | Graphics device | the adapter's name | `acquireGpu` | the device exists |
 | Definitions | files read / files listed | a counting `DefSource` around `fetchDefSource` | `loadDefs` returns |
 | Simulation | phase only | `createTerrainProvider`, `createSim` | `sim.ready` (the ground under the vehicle for the physics) |
-| Render pipelines | render core + features initialised / 10, the feature being initialised, then "N shader modules compiling" | `renderer.addFeature` one by one; `coreOf(ctx).shaders.pendingCompilations()` | every feature added and no module compiling |
+| Render pipelines | shader modules compiled / created so far, and in words the feature that is starting ("starting terrain (1 of 9)") | `renderer.addFeature` one by one; `coreOf(ctx).shaders.compilations()` | every feature added and no module compiling |
 | Sky and stars | 3 parts: star catalogue, Milky Way cube (face size), light probe | `SkyFeature.status()`, `.probe().completed` | `sky.isIdle()` |
 | Atmosphere and clouds | phase only (no count exposed: request app-integration-11) | `atmosphere.isIdle()`, `ocean.isIdle()` | both idle |
-| Vehicle and site models | phase only (request app-integration-11) | `coreOf(ctx).meshes.isIdle()`, the vessel / site / cockpit features | all idle |
+| Vehicle and site models | textures loaded / texture loads started | `coreOf(ctx).meshes.loads()`, `.isIdle()`, the vessel / site / cockpit features | all idle |
 | Sound | assets decoded / total | `audio.probe()` | `audio.init` resolves |
-| Terrain at the start | tiles resident / (resident + queued + baking + uploading), the level of the deepest resident tile under the vehicle | `TerrainFeature.debug.stats().stream`, `.readyTileAt(body, lat, lon)` | `terrain.isIdle()`, or the tile pool is full (below) |
+| Terrain at the start | tiles of the view resident / tiles the view wants, "level R of W" (the deepest level complete / wanted), and what is queued, baking, uploading | `TerrainFeature.debug.residency(body of the active vessel)`, `.stats().stream` | `terrain.isIdle()` |
 | First frames | consecutive frames with nothing pending / 12, or "waiting for <what>" | everything above + `renderer.exposureInfo()` | 12 in a row |
 
 The frame loop runs under the screen from the moment every subsystem exists: streaming, the first use of every
@@ -89,16 +89,17 @@ the simulation has no terrain load outstanding (`sim.terrainPending() === null`)
 0.25 EV of the meter's target, or no longer moving towards it faster than 0.3 EV/s (the renderer's slow dark
 adaptation below EV -3 is the camera's behaviour, not loading; an exposure that stands still never holds the
 screen). `SETTLE_FRAMES = 12` consecutive such frames start the fade (450 ms, driven by the
-frame loop); the game begins with the first frame after it. **Tile pool full:** at 1440p the pad view wants more
-tiles than the terrain's pool holds, so the terrain is never idle there (request app-integration-7). The app
-recognises that state from the stream counters (nothing queued or baking, tiles waiting to upload, none uploaded
-and every one of them refused a layer in the frame, nothing fading) and treats it as final: those tiles stay
-drawn by their parents for as long as the camera stays. The row then reads "tile pool full, N left to coarser
-tiles", and the reveal record says `poolFull: true`.
+frame loop); the game begins with the first frame after it. While the screen is up the terrain's
+upload budget is lifted to 64 tiles and 12 ms per frame (`TerrainDebug.setUploadBudget`; nobody sees those
+frames) and put back to the streamer's own 8 tiles and 2 ms at the reveal. The first version of this screen also
+recognised a full tile pool from the stream counters and let go with the parents drawn (the terrain never came to
+rest at 1440p: request app-integration-7); since 189d1e2 the streamer gives such tiles up itself and that branch
+is gone.
 
 `window.__boot()` (from the first moment of the page) and `window.__app.loading()` return the `LoadingReport`:
 every step with state, words, count, total and its start / end time, and the `RevealRecord` (frame, busy
-features, the terrain's counters and levels, EV100 and its target, settled frames, start and end of the fade).
+features, the terrain's tiles wanted / resident, levels wanted / complete, stream counters and the level under
+the vehicle, EV100 and its target, settled frames, start and end of the fade).
 `window.__app.featureInitMs()` gives the start-up time of every feature.
 
 ### Frame (ARCHITECTURE 5)
@@ -180,7 +181,8 @@ stopped).
 hooks per frame, `core` = the render stage minus the hooks), `cpuSlowest()` (the 12 slowest frames since the last
 reset with stages, features, hooks and a note of throttle / thrust / warp / altitude), `startCpuTrace(n)` /
 `takeCpuTrace()` (consecutive frames: total, render, sim, hud, audio and every feature), `loading()`,
-`featureInitMs()`, `exposure()`, `viewMode()`, `viewBlending()`, `hudVisible()`, `keyboardLocked()`,
+`featureInitMs()`, `terrainResidency()`, `renderLoads()` (shader modules and texture loads: pending / total),
+`exposure()`, `viewMode()`, `viewBlending()`, `hudVisible()`, `keyboardLocked()`,
 `toggleKeyboardCapture()`, `heldCodes()`, `paused()`, `frames()`, `lever()`, `simStats()`, `inFlight()`,
 `notifications()`, `pilotReport()`, `mfdPages()`, `mfdPaintStats(reset?)` (the cockpit displays' paints and their
 Canvas 2D / upload / mip time), `cockpitFrame()`, `brief()` (a few numbers of the latest snapshot, cheap to
@@ -205,10 +207,11 @@ longer needed: nothing is captured unless `capture=1`).
 
 Specs (`tests/browser/app/app.spec.ts`, nine tests):
 - the loading screen: polled from the first moment of the page (`window.__boot()`); it covers the page, opaque,
-  in every sample; the simulation's UT does not move under it; its terrain row equals the streamer's counters and
-  its sound row the audio engine's count in the same instant; no count runs past its total; every step finishes;
-  the frame loop's reveal record has no busy feature, nothing queued, baking or uploading, 12 settled frames, the
-  exposure at its target, the ground under the vehicle at level 12 or deeper; the first revealed frame has under
+  in every sample; the simulation's UT does not move under it; its terrain row equals the terrain's residency of the view and
+  its sound row the audio engine's count in the same instant (likewise the shader-module and texture counts); no
+  count runs past its total; every step finishes; the frame loop's reveal record has no busy feature, nothing
+  queued, baking or uploading, every tile the view wants resident down to the deepest level it wants, 12 settled
+  frames, the exposure at its target, the ground under the vehicle at level 12 or deeper; the first revealed frame has under
   10 % sea-coloured pixels in the band between the horizon and the site (0.7 % measured; the same band was open
   sea for 40 s after boot before) and differs from the frame ten seconds later by less than 6 of 255 on average
   (1.6 measured); pictures of the screen at four stages;
@@ -265,7 +268,9 @@ other agents' CPU work ran beside them. The second run had the terrain pool work
 working tree (uncommitted, another agent's); where the two runs differ both are given. Budget lines are not
 loosened. Result of the second run: functional 7 of 7; perf 1 of 3 (the two 1440p tests fail on the soft
 main-thread line, as the table says). A third, short run at 00:04 on the committed tree (the loading test, the
-other-starts test added after the second run, the low-orbit test and the lead's `shell.spec.ts`): 4 of 4.
+other-starts test added after the second run, the low-orbit test and the lead's `shell.spec.ts`): 4 of 4. A
+fourth at 00:32, after the terrain's residency and upload budget and the core's shader and texture counts were
+wired into the screen (the two loading tests, the boot test, `shell.spec.ts`): 4 of 4.
 
 **Loading** (`performance.now()` of the page; the pad, 1280 x 720, second run; 2560 x 1440 is the same within two seconds):
 
@@ -280,7 +285,10 @@ other-starts test added after the second run, the low-orbit test and the lead's 
 
 To the revealed view: **31.9 s** (first run 32.7 s, third run 30.4 s; perf spec at 1440p 31.9 s, at 720p 29.9 s;
 lunar orbit at 1440p 21.0 s; landed on the Moon in the cockpit view 22.2 s with level 18 under the lander;
-trans-Earth coast 17.6 s). Two thirds of it is not loading data: the 14 s in which the first 19 frames wait for synchronous
+trans-Earth coast 17.6 s). Fourth run, with the terrain asked for from `init` on (the shared-code maintainer's
+work for request -11) and the upload budget lifted under the screen: **28.4 s** on the pad (112 of 112 shader
+modules at 19.8 s, 61 of 61 textures, 450 of 450 tiles of the view at level 20 of 20 at 27.8 s; 601 baked tiles
+were waiting at 20.1 s and resident 2 s later), 21.6 s landed on the Moon, 16.9 s on the trans-Earth coast. Two thirds of it is not loading data: the 14 s in which the first 19 frames wait for synchronous
 pipeline compiles, and the terrain that starts streaming only after that and refines one level per round trip (request
 app-integration-11 asks for both). Before this round the game showed its first frame after 25-40 s and the pad's
 surroundings were drawn as sea for another 40 s at 1440p; now the first frame shown is the final one.
@@ -396,8 +404,10 @@ Added 2026-11-11 night (all looked at):
   "Definitions: files read, 44 / 86" with its bar half way.
 - `loading-2-pipelines.png`: "Render pipelines: terrain, 1 / 10" with its bar, "Sound 0 / 38", the rest waiting
   (hollow marks), 0:02 in the footer.
-- `loading-3-terrain.png`: at 0:11: "70 shader modules compiling", "Sky and stars: light probe, 2 / 3",
-  "Terrain at the start: level 0 under the vehicle · 610 queued, 8 baking, 4 uploading, 14 / 636".
+- `loading-3-terrain.png` (fourth run): at 0:19: "Render pipelines: render core and 9 features · shader modules
+  compiled, 112 / 112", "Sky and stars: light probe, 2 / 3", "Vehicle and site models: textures loaded, 61 / 61",
+  "Terrain at the start: level 0 of 1 · 617 uploading, 11 / 26" (the levels and the total grow while the selection
+  refines: they are the terrain's own numbers of the moment).
 - `loading-4-view.png`: everything done in green, "First frames: consecutive frames with nothing pending, 7 / 12",
   0:32.
 - `loading-revealed-first.png` (no HUD): the first frame shown: the stack at the tower, lava plain and scrub to
@@ -691,12 +701,12 @@ visual gap of the flight. Both cockpit pictures are nearly black.
 | `app-integration-3` | camera (flight-ui) | resolved (flight-ui round 5) | chase camera started behind the launch tower on the pad |
 | `app-integration-4` | flight-ui HUD | resolved (`d9f9413`, `2bd0a88`) | ENTRY panel replaces the ORBIT panel during the ascent (1 kW/m^2 heating threshold) |
 | `app-integration-5` | cockpit / core | resolved (cockpit round) | plume local lights lit the cabin interior through the hull |
-| `app-integration-6` | terrain-render | open (work in progress in the tree) | land around the pad drawn as sea for about a second after a map round trip |
-| `app-integration-7` | terrain-render | open (work in progress in the tree; addendum with per-frame numbers) | terrain never idle at 1440p (tile pool full, ~300-430 uploads stalled for ever); terrain `prepare` on the main thread |
-| `app-integration-8` | lead harness | open (blocking for the rAF lines) | headless rAF clock at ~57.5 Hz (p50 17.4 ms in every mission phase, whatever the load): rAF budgets cannot be judged |
+| `app-integration-6` | terrain-render | resolved (`189d1e2`) | land around the pad drawn as sea for about a second after a map round trip |
+| `app-integration-7` | terrain-render | resolved (`189d1e2`; addendum with per-frame numbers) | terrain never idle at 1440p (tile pool full, ~300-430 uploads stalled for ever); terrain `prepare` on the main thread |
+| `app-integration-8` | lead harness | resolved (lead-baseline-v2: `870d19e`, `050b2b3`, `37c6668`) | headless rAF clock at ~57.5 Hz (p50 17.4 ms in every mission phase, whatever the load): rAF budgets cannot be judged |
 | `app-integration-9` | flight-ui HUD, src/input | resolved (`cc8e8cb`, `e4d5188`; wired in `1b9f665`) | the capture pill as an explicit switch that also releases, a switch to hide it, `InputSystem.releaseKeyboardCapture` |
-| `app-integration-10` | src/camera (shared code), vehicle data | open | chase default framing in deep space: distance by the vessel's size after separations, the nearest body in frame, the Sun out of it (pictures 07-14 of the mission) |
-| `app-integration-11` | render core, terrain-render, atmosphere | open | load time: synchronous pipeline compiles hold the first 19 frames for 14 s, terrain streams only afterwards and one level per round trip; counts the loading screen lacks (terrain residency by level, shader and texture totals, atmosphere status) |
+| `app-integration-10` | src/camera (shared code), vehicle data | resolved (`1e5bceb`, NOTICE-core-4) | chase default framing in deep space: distance by the vessel's size after separations, the nearest body in frame, the Sun out of it (pictures 07-14 of the mission). The new default needs no wiring (`createChaseRig({ defs, terrain })` as before); `rig.resetView()` exists and is not bound to a key |
+| `app-integration-11` | render core, terrain-render, atmosphere | open; parts 2-6 done (`189d1e2`, `aea5efa`, `1e5bceb`) and wired here (`TerrainDebug.residency`, `setUploadBudget`, `CoreShaderLibrary.compilations`, `MeshSystem.loads`); not built: asynchronous pipeline creation (the 14 s), the atmosphere's status | load time: synchronous pipeline compiles hold the first 19 frames for 14 s, terrain streams only afterwards and one level per round trip; counts the loading screen lacks (terrain residency by level, shader and texture totals, atmosphere status) |
 | `app-integration-12` | cockpit, flight-ui MFD painter | open, **blocking** for the main-thread line during burns | the cockpit's displays are painted in the chase view; the ORB page costs 5.2-5.7 ms per paint while the orbit changes; 16-26 ms in the lift-off frame |
 | `app-integration-13` | sim-world-pilot, vfx, audio | open | one-off costs in the ignition and lift-off frames: sim 5.9-6.4 ms, first plume frame 1.5-2.8 ms, audio 1.5-1.9 ms |
 
@@ -713,17 +723,16 @@ Also answered: `map-view-5` (the app shell part; its labs/integration part was t
 - The main-thread CPU line is missed in three measured situations at 1440p (pad 6.7, first kilometre 6.5, engine
   burns 7.1 ms p99) and in the lift-off frame (30 ms); every part of it is attributed and requested (-7, -12,
   -13). Nothing in `src/app` contributes more than 0.15 ms.
-- Loading takes 32 s on the pad on this machine; the screen is honest about it but it is long. The two large
-  parts are not the app's (request -11). The loading screen waits for `terrain.isIdle()`; where the terrain's
-  tile pool is full (the state of the tree before the pool work for -7) it lets go with the parents drawn and
-  says so.
-- The chase view's default framing in deep space is unchanged (request -10); nothing was wired because nothing
-  exists yet.
+- Loading takes 30-32 s on the pad on this machine; the screen is honest about it but it is long. The largest
+  part is not the app's: 14 s in which the first 19 frames wait for shader compiles (request -11, open).
+- The chase view's default framing changed in `src/camera` while this round ran (request -10, NOTICE-core-4): the
+  app needs no wiring for it and none was done; the mission's deep-space pictures have not been re-shot with it
+  (`start-trans-earth.png` of the night's third run predates it).
 - The browser mission was not re-flown in this round (by instruction): its spec is updated (no `capture=0`, the
   per-frame feature times and slowest frames per window) and type-checks, but has not run with the loading
   screen. `ready` now resolves 30 s later than before; the spec's `openPage` waits for it without a limit of its
   own.
-- `isIdle()` at 1440p on the pad depends on the pool work for app-integration-7 (idle in the second run of the
-  night, never idle in the first).
+- `isIdle()` at 1440p on the pad: true since the pool work for app-integration-7 (`189d1e2`; idle in the second
+  run of the night, never idle in the first).
 - Not exercised in a browser spec: abort, RCS / gear / lights / fine-control keys, vessel cycling, a node drag in
   the map, the 144 / 240 Hz paths.

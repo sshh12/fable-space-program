@@ -104,7 +104,16 @@ test('the loading screen shows real progress and stays until the view at the pad
     boot: LoadingReport;
     overlay: { opacity: number; covers: boolean } | null;
     /** Once the game exists: what the renderer and the terrain say at the same instant. */
-    game: { idle: boolean; busy: string[]; stream: Record<string, number>; audio: { loaded: number; total: number }; ut: number; frames: number } | null;
+    game: {
+      idle: boolean;
+      busy: string[];
+      stream: Record<string, number>;
+      residency: { wanted: number; resident: number; wantedLevel: number; residentLevel: number } | null;
+      loads: { shaders: { pending: number; total: number }; textures: { pending: number; total: number } };
+      audio: { loaded: number; total: number };
+      ut: number;
+      frames: number;
+    } | null;
   }
   const sample = (): Promise<Sample> =>
     page.evaluate(() => {
@@ -115,7 +124,18 @@ test('the loading screen shows real progress and stays until the view at the pad
       return {
         boot: window.__boot!(),
         overlay: el && r ? { opacity: Number(getComputedStyle(el).opacity), covers: r.left <= 0 && r.top <= 0 && r.right >= innerWidth && r.bottom >= innerHeight } : null,
-        game: app ? { idle: window.__test!.isIdle(), busy: app.busyFeatures(), stream: app.terrainStats().stream, audio: { loaded: audio?.assetsLoaded ?? 0, total: audio?.assetsTotal ?? 0 }, ut: app.brief().ut, frames: app.frames() } : null,
+        game: app
+          ? {
+              idle: window.__test!.isIdle(),
+              busy: app.busyFeatures(),
+              stream: app.terrainStats().stream,
+              residency: app.terrainResidency(),
+              loads: app.renderLoads(),
+              audio: { loaded: audio?.assetsLoaded ?? 0, total: audio?.assetsTotal ?? 0 },
+              ut: app.brief().ut,
+              frames: app.frames(),
+            }
+          : null,
       };
     });
   const step = (s: Sample, id: string): LoadingReport['steps'][number] => s.boot.steps.find((x) => x.id === id)!;
@@ -171,15 +191,17 @@ test('the loading screen shows real progress and stays until the view at the pad
 
   // 2. It was up whenever something was still pending: no sample without the screen (or fading) has work left,
   //    and the frame loop's own record of the moment it let go says the same.
-  const poolFull = report.reveal?.terrain.poolFull ?? false;
   expect(report.reveal).not.toBeNull();
   for (const s of samples.filter((x) => (!x.boot.active || x.boot.fading) && x.game)) {
     expect.soft(s.game!.stream['queued']! + s.game!.stream['loading']!, 'no tile queued or baking in a sample taken while the screen fades or right after').toBe(0);
-    expect.soft(s.game!.busy.filter((id) => !(poolFull && id === 'terrain')), 'no feature busy in a sample taken while the screen fades or right after').toEqual([]);
+    expect.soft(s.game!.busy, 'no feature busy in a sample taken while the screen fades or right after').toEqual([]);
   }
-  expect(report.reveal!.busy.filter((id) => !(poolFull && id === 'terrain'))).toEqual([]);
-  expect(report.reveal!.terrain.queued + report.reveal!.terrain.baking).toBe(0);
-  if (!poolFull) expect(report.reveal!.terrain.uploading).toBe(0);
+  expect(report.reveal!.busy).toEqual([]);
+  expect(report.reveal!.terrain.queued + report.reveal!.terrain.baking + report.reveal!.terrain.uploading).toBe(0);
+  // Residency is final: every tile the view wants is there, down to the deepest level it wants.
+  expect(report.reveal!.terrain.resident).toBe(report.reveal!.terrain.wanted);
+  expect(report.reveal!.terrain.wanted).toBeGreaterThan(100);
+  expect(report.reveal!.terrain.residentLevel).toBe(report.reveal!.terrain.wantedLevel);
   expect(report.reveal!.settledFrames).toBeGreaterThanOrEqual(12);
   expect(Math.abs(report.reveal!.ev100 - report.reveal!.targetEv100)).toBeLessThanOrEqual(0.25);
   expect(report.reveal!.terrain.levelUnderVehicle, 'ground under the vehicle resident').not.toBeNull();
@@ -192,11 +214,19 @@ test('the loading screen shows real progress and stays until the view at the pad
     for (const x of s.boot.steps) if (x.done !== null && x.total !== null) expect(x.done, `${x.id}: count within its total`).toBeLessThanOrEqual(x.total);
     if (!s.game) continue;
     const t = step(s, 'terrain');
-    if (t.state === 'active' && !t.detail.includes('pool full')) {
+    if (t.state === 'active' && s.game.residency) {
       terrainRows++;
-      expect(t.done, 'terrain row: resident tiles').toBe(s.game.stream['ready']);
-      expect(t.total, 'terrain row: resident + pending').toBe(s.game.stream['ready']! + s.game.stream['queued']! + s.game.stream['loading']! + s.game.stream['uploading']!);
+      expect(t.done, 'terrain row: tiles of the view that are resident').toBe(s.game.residency.resident);
+      expect(t.total, 'terrain row: tiles the view wants').toBe(s.game.residency.wanted);
+      expect(t.detail, 'terrain row: levels').toContain(`level ${Math.max(0, s.game.residency.residentLevel)} of ${s.game.residency.wantedLevel}`);
     }
+    const p = step(s, 'pipelines');
+    if (p.state === 'active') {
+      expect(p.done, 'pipelines row: shader modules compiled').toBe(s.game.loads.shaders.total - s.game.loads.shaders.pending);
+      expect(p.total, 'pipelines row: shader modules created').toBe(s.game.loads.shaders.total);
+    }
+    const m = step(s, 'models');
+    if (m.state === 'active') expect(m.total, 'models row: texture loads started').toBe(s.game.loads.textures.total);
     const a = step(s, 'audio');
     if (a.state === 'active') expect(a.done, 'sound row: decoded assets').toBe(s.game.audio.loaded);
   }
@@ -213,8 +243,9 @@ test('the loading screen shows real progress and stays until the view at the pad
   const info = await page.evaluate(() => ({ audio: window.__test!.audio()!, features: window.__app!.features().length }));
   expect(audio.done).toBe(info.audio.assetsTotal);
   expect(audio.total).toBe(info.audio.assetsTotal);
-  expect(pipelines.done).toBe(info.features + 1);
-  expect(pipelines.total).toBe(info.features + 1);
+  expect(pipelines.done).toBe(pipelines.total);
+  expect(pipelines.total!).toBeGreaterThan(20);
+  expect(pipelines.detail).toContain(`${info.features} features`);
   expect(defs.total).toBeGreaterThan(10);
 
   // 4. The first revealed frame has land where land is (it was sea for 40 s after boot at 1440p before), and is
@@ -246,12 +277,13 @@ test('the loading screen lets go in other starts too: a dark cabin on the Moon, 
     const report = await page.evaluate(() => window.__app!.loading());
     const r = report.reveal!;
     console.log(
-      `${name}: ${(report.elapsedMs / 1000).toFixed(1)} s to the revealed view; terrain ${r.terrain.resident} tiles, level ${r.terrain.levelUnderVehicle ?? '-'} under the vehicle, ${r.terrain.deepestLevel} in view; EV100 ${r.ev100.toFixed(2)} (target ${r.targetEv100.toFixed(2)}); busy ${JSON.stringify(r.busy)}`,
+      `${name}: ${(report.elapsedMs / 1000).toFixed(1)} s to the revealed view; terrain ${r.terrain.resident} of ${r.terrain.wanted} tiles, level ${r.terrain.residentLevel} of ${r.terrain.wantedLevel}, level ${r.terrain.levelUnderVehicle ?? '-'} under the vehicle; EV100 ${r.ev100.toFixed(2)} (target ${r.targetEv100.toFixed(2)}); busy ${JSON.stringify(r.busy)}`,
     );
     expect(report.active).toBe(false);
     for (const x of report.steps) expect(x.state, `${name}: ${x.id} finished`).toBe('done');
     expect(r.busy).toEqual([]);
     expect(r.terrain.queued + r.terrain.baking + r.terrain.uploading).toBe(0);
+    expect(r.terrain.resident).toBe(r.terrain.wanted);
     await shoot(page, name, { minNonBlack: 0.02, minStd: 4, minBuckets: 20 });
     await expectNoErrors(page, pageLog);
   }

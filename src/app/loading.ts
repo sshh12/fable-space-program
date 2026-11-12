@@ -4,7 +4,7 @@
  *
  * Every number on it is read from the subsystem that does the work: files of the definitions read, render
  * features initialised, shader modules still compiling, parts of the sky data resident, sound assets decoded,
- * terrain tiles resident / queued / baking / uploading and the deepest level drawn. A step whose subsystem
+ * textures loaded, terrain tiles the view wants and has by level, tiles queued / baking / uploading. A step whose subsystem
  * exposes no count shows its phase only (no percentage is made up), and nothing here runs on a timer: a bar
  * moves when its count moves. The elapsed time in the footer is the wall clock since the page was opened.
  *
@@ -62,10 +62,14 @@ export interface RevealRecord {
   /** performance.now() at the start and the end of the fade, ms (end null while fading). */
   startMs: number;
   endMs: number | null;
-  /** Render features that still reported work (empty, or the terrain when its tile pool is full: see `terrain`). */
+  /** Render features that still reported work (empty). */
   busy: string[];
-  /** The terrain's stream counters and the deepest level drawn at that moment. */
-  terrain: { resident: number; queued: number; baking: number; uploading: number; poolFull: boolean; deepestLevel: number; levelUnderVehicle: number | null };
+  /**
+   * The terrain at that moment: tiles the camera's selection of the vessel's body wants and has, the deepest level
+   * wanted and the deepest level complete, the stream's counters, the deepest level drawn and the level of the
+   * deepest resident tile under the vehicle.
+   */
+  terrain: { wanted: number; resident: number; wantedLevel: number; residentLevel: number; queued: number; baking: number; uploading: number; deepestLevel: number; levelUnderVehicle: number | null };
   /** Exposure: metered EV100 and its target. */
   ev100: number;
   targetEv100: number;

@@ -288,7 +288,7 @@ async function settle(page: Page): Promise<{ idle: boolean; busy: string[]; terr
   const loading = await page.evaluate(() => {
     const r = window.__app!.loading();
     const s = (x: number | null): string => (x === null ? '-' : (x / 1000).toFixed(1));
-    return `${s(r.elapsedMs)} s to the revealed view: ${r.steps.map((x) => `${x.id} ${s(x.startMs)}-${s(x.endMs)}`).join(', ')}; pool full ${r.reveal?.terrain.poolFull}, ${r.reveal?.terrain.uploading} tiles waiting, level ${r.reveal?.terrain.levelUnderVehicle} under the vehicle`;
+    return `${s(r.elapsedMs)} s to the revealed view: ${r.steps.map((x) => `${x.id} ${s(x.startMs)}-${s(x.endMs)}`).join(', ')}; terrain ${r.reveal?.terrain.resident} of ${r.reveal?.terrain.wanted} tiles, level ${r.reveal?.terrain.residentLevel} of ${r.reveal?.terrain.wantedLevel}, level ${r.reveal?.terrain.levelUnderVehicle} under the vehicle`;
   });
   let idle = true;
   try {
