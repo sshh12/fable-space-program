@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (lead, f134f8d: `CraftSnapshot.parent?: string | null`, filled by `craftSnapshots`)
 From: sim-core-v2
 Owner path: src/core/contracts/sim.ts (the lead); consumer: src/render/vehicle/vesselFeature.ts (vehicle-pad, at the presentation sweep)
 Blocking: no
@@ -30,3 +30,27 @@ parent?: string | null;
 The world fills it in `craftSnapshots` (`src/sim/vessel/facade.ts`: `parent: c.parent`), one line, when
 the field exists. Until then the parent of a craft is its id up to the last `.` (the launched craft: up to
 the first), which holds because issued craft ids and instance ids contain no `.`.
+
+## Resolution (2026-11-12, lead)
+
+```ts
+interface CraftSnapshot {
+  id: string;
+  /** v2, optional until the tighten step: lineage. The id of the craft this one separated from; null for a launched craft. */
+  parent?: string | null;
+  ...
+}
+```
+
+- Filled where the request names it: `craftSnapshots` in `src/sim/vessel/facade.ts`, `parent: c.parent`
+  (the producer line, written by the contract's owner in the same commit as the field, f134f8d).
+  Test: `tests/unit/sim-vessel/craftParent.test.ts` (the stack flown through the clamp release and the
+  first separation: null for the launched craft, the parent's id for every piece, and the launched craft of
+  a piece found by following `parent` with no string taken apart).
+- Absent (a hand-built snapshot) reads as null. Required from the tighten step after sub-wave 3.2.
+- The parent may itself be a piece, and need not be in the snapshot any more: a consumer follows `parent`
+  while the parent is there. No separation tick is recorded (the lineage is the parent craft id).
+- **No consumer takes a vessel id or a craft id apart** (the header of `src/core/contracts/sim.ts`, "Ids";
+  ARCHITECTURE section 3). `rootOf` in `src/render/vehicle/vesselFeature.ts` goes in the presentation sweep
+  (MIGRATION_V2 step 3.11 and a LEAD NOTE in that package's brief). The "until then" rule of this request
+  (the id up to a `.`) is not offered to consumers: the field exists now.

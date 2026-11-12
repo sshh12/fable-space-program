@@ -1,4 +1,4 @@
-Status: answered (lead, 2026-11-12: items 1-3 decided, contract side in 537da5f; item 4: storage decided, the numbers of `staging` stay open until `universe-directory` owns the files)
+Status: resolved (lead: 537da5f, f134f8d; sim-core-v2: its review fixes; the tighten step after sub-wave 3.2 makes event part ids one form)
 From: sim-core-v2
 Owner path: src/core/contracts (the lead), docs/ARCHITECTURE.md 9.3
 Blocking: no
@@ -111,3 +111,13 @@ ids; a departing piece is a new craft with lineage).
    `universe-directory` to own. `tools/sim/writeRules.ts` derives the three files.
 
 Details and measurements: docs/handoff/sim-core-v2.md, "After the review".
+
+## Closed (2026-11-12, lead)
+
+With the override loader in (6a08c06) the class limits moved into the default document:
+`UniverseRules.pads.classLimits` is required and `DEFAULT_UNIVERSE_RULES` states it (f134f8d).
+`DEFAULT_PAD_CLASS_LIMITS` stays as the name of the same values for `padLimitsOf(pad)` without a rules
+document. A file that states `pads.classLimits` is read as before: whole, every class, positive (the
+loader asks its table of fields with a check of their own before the default's shape; its tests pass
+unchanged). The numbers of `staging` and `local` are as this package derived them; `universe-directory`
+owns the files from wave 4. What is left is the tighten step's (event part ids in one form).
