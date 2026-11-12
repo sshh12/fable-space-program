@@ -4,6 +4,7 @@
  *
  * Layout (paths relative to data/defs):
  *   bodies/*.json  sites/*.json  parts/*.json  vehicles/*.json  scenarios/*.json   one definition per file
+ *   rules/*.json                                                                    one UniverseRules document per file
  *   resources.json                                                                  array of ResourceDef
  *   audio/**.json  visuals/**.json                                                  sections (DefLibrary.sections)
  * Only files whose name has no extra dot segment are definitions ("earth.json" yes, "earth.atmosphere.json"
@@ -26,6 +27,7 @@ import type {
   ScenarioDef,
   VehicleDef,
 } from '../contracts/defs';
+import { DEFAULT_UNIVERSE_RULES, type UniverseRules } from '../contracts/net';
 
 export interface DefSource {
   /** All JSON file paths under the defs root, relative, forward slashes (e.g. "bodies/earth.json"). */
@@ -138,6 +140,35 @@ async function loadDir<T extends { id: string }>(source: DefSource, files: strin
   return out;
 }
 
+/**
+ * A rules document has exactly the fields of the contract's default document (so a file written before the
+ * contract gained a field fails by the field's name instead of yielding `undefined` somewhere in a
+ * countdown), a finite number wherever the default has a number, and a version from 1.
+ */
+export function validateRules(doc: UniverseRules, file: string): void {
+  const walk = (value: unknown, model: unknown, at: string): void => {
+    if (Array.isArray(model)) {
+      if (!Array.isArray(value)) throw new DefError(file, `"${at}" must be an array`);
+    } else if (isObject(model)) {
+      if (!isObject(value)) throw new DefError(file, `"${at}" must be an object`);
+      const path = (k: string): string => (at === '' ? k : `${at}.${k}`);
+      for (const k of Object.keys(model)) {
+        if (!(k in value)) throw new DefError(file, `"${path(k)}" is missing (every field of UniverseRules is stated in a rules document)`);
+        walk(value[k], model[k], path(k));
+      }
+      for (const k of Object.keys(value)) {
+        if (!(k in model)) throw new DefError(file, `"${path(k)}" is not a field of UniverseRules`);
+      }
+    } else if (typeof model === 'number') {
+      if (typeof value !== 'number' || !Number.isFinite(value)) throw new DefError(file, `"${at}" must be a finite number, got ${JSON.stringify(value)}`);
+    } else if (typeof model === 'boolean') {
+      if (typeof value !== 'boolean') throw new DefError(file, `"${at}" must be true or false, got ${JSON.stringify(value)}`);
+    }
+  };
+  walk(doc, DEFAULT_UNIVERSE_RULES, '');
+  if (!Number.isInteger(doc.version) || doc.version < 1) throw new DefError(file, `"version" must be an integer from 1, got ${String(doc.version)}`);
+}
+
 /** Structural cross-reference checks shared by every consumer. Deeper physical validation lives with each owner. */
 export function validateLibrary(lib: DefLibrary): void {
   const bodyIds = Object.keys(lib.bodies);
@@ -151,6 +182,7 @@ export function validateLibrary(lib: DefLibrary): void {
   for (const s of Object.values(lib.sites)) {
     if (!lib.bodies[s.bodyId]) throw new DefError(`sites/${s.id}.json`, `unknown body "${s.bodyId}"`);
   }
+  for (const r of Object.values(lib.rules ?? {})) validateRules(r, `rules/${r.id}.json`);
   for (const p of Object.values(lib.parts)) {
     for (const r of p.resources ?? []) {
       if (!lib.resources[r.resource]) throw new DefError(`parts/${p.id}.json`, `unknown resource "${r.resource}"`);
@@ -235,6 +267,7 @@ export async function loadDefs(source: DefSource): Promise<DefLibrary> {
   const parts = await loadDir<PartDef>(source, files, 'parts');
   const vehicles = await loadDir<VehicleDef>(source, files, 'vehicles');
   const scenarios = await loadDir<ScenarioDef>(source, files, 'scenarios');
+  const rules = await loadDir<UniverseRules>(source, files, 'rules');
   const resources: Record<string, ResourceDef> = {};
   const resList = await source.read('resources.json');
   if (resList !== undefined) {
@@ -246,7 +279,7 @@ export async function loadDefs(source: DefSource): Promise<DefLibrary> {
     sections[file.slice(0, -5)] = await resolveRefs(await source.read(file), file, source);
   }
   const rootBodyId = Object.values(bodies).find((b) => b.parent === null)?.id ?? '';
-  const lib: DefLibrary = { bodies, rootBodyId, sites, resources, parts, vehicles, scenarios, sections };
+  const lib: DefLibrary = { bodies, rootBodyId, sites, resources, parts, vehicles, rules, scenarios, sections };
   validateLibrary(lib);
   return lib;
 }

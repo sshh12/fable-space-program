@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fsDefSource } from './fsSource';
 import type { CapsuleMouldLineDef } from '../contracts/defs';
+import { DEFAULT_UNIVERSE_RULES, UNIVERSE_RULE_TIMERS } from '../contracts/net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DefError, getSection, listSections, loadDefs, overlayDefSource, resolveRefs, TABLE_FILES, type DefSource } from './loader';
@@ -57,6 +58,60 @@ describe('definition loader', () => {
     const root = { id: 'a', parent: null, mu: 1, radius: 1, orbit: null };
     const child = { id: 'b', parent: 'zzz', mu: 1, radius: 1, orbit: { kind: 'sunLowPrecision' } };
     await expect(loadDefs(memorySource({ 'bodies/a.json': root, 'bodies/b.json': child }))).rejects.toThrow(/unknown parent/);
+  });
+
+  describe('rules documents', () => {
+    const plain = (x: unknown): unknown => JSON.parse(JSON.stringify(x));
+    const body = { id: 'a', name: 'A', parent: null, mu: 1, radius: 1, orbit: null };
+
+    it('the three documents of the repository: default is the contract default, staging has lifetimes of minutes, local is the default', async () => {
+      const lib = await loadDefs(fsDefSource());
+      expect(Object.keys(lib.rules!).sort()).toEqual(['default', 'local', 'staging']);
+      expect(lib.rules!['default']).toEqual(plain(DEFAULT_UNIVERSE_RULES));
+      expect(lib.rules!['local']).toEqual({ ...(plain(DEFAULT_UNIVERSE_RULES) as object), id: 'local' });
+      // Staging differs from the default in its id and in the timers on the wall clock, and in nothing else.
+      const staging = lib.rules!['staging']! as unknown as Record<string, Record<string, number>>;
+      const standard = plain(DEFAULT_UNIVERSE_RULES) as Record<string, Record<string, number>>;
+      const wall = Object.keys(UNIVERSE_RULE_TIMERS).filter((p) => UNIVERSE_RULE_TIMERS[p] === 'wall');
+      expect(wall.length).toBeGreaterThan(5);
+      const restored = plain(staging) as Record<string, Record<string, number>>;
+      (restored as unknown as { id: string }).id = 'default';
+      for (const p of wall) {
+        const [group, field] = p.split('.') as [string, string];
+        const seconds = staging[group]![field]!;
+        // Minutes: from one minute to an hour and a half, never longer than the default.
+        expect(seconds, p).toBeGreaterThanOrEqual(60);
+        expect(seconds, p).toBeLessThanOrEqual(90 * 60);
+        expect(seconds, p).toBeLessThanOrEqual(standard[group]![field]!);
+        restored[group]![field] = standard[group]![field]!;
+      }
+      expect(restored).toEqual(standard);
+      // The order of the lifetimes is kept: a craft outlives an unowned one, which outlives debris.
+      const e = (lib.rules!['staging']!).expiry;
+      expect(e.craftRetention).toBeGreaterThan(e.unownedCraftRetention);
+      expect(e.unownedCraftRetention).toBeGreaterThan(e.debrisRetention);
+      expect(e.pressureFloor).toBeGreaterThan(e.pressureFloorSingleSession);
+      expect(e.accountRetention).toBeGreaterThan(e.craftRetention);
+    });
+
+    it('a document that lacks a field, has an unknown one or a wrong value fails by the name of the field', async () => {
+      const doc = plain(DEFAULT_UNIVERSE_RULES) as Record<string, Record<string, unknown>>;
+      const load = (rules: unknown, name = 'default') => loadDefs(memorySource({ 'bodies/a.json': body, [`rules/${name}.json`]: rules }));
+      expect((await load(doc)).rules!['default']).toEqual(doc);
+      expect((await loadDefs(memorySource({ 'bodies/a.json': body }))).rules).toEqual({});
+      const without = plain(doc) as typeof doc;
+      delete without['expiry']!['wreckRetention'];
+      await expect(load(without)).rejects.toThrow(/rules\/default\.json: "expiry\.wreckRetention" is missing/);
+      const extra = plain(doc) as typeof doc;
+      extra['pads']!['launchFee'] = 3;
+      await expect(load(extra)).rejects.toThrow(/rules\/default\.json: "pads\.launchFee" is not a field of UniverseRules/);
+      const text = plain(doc) as typeof doc;
+      text['pads']!['keepOutRadius'] = { light: 300, medium: '450', heavy: 600 };
+      await expect(load(text)).rejects.toThrow(/"pads\.keepOutRadius\.medium" must be a finite number, got "450"/);
+      const draft = { ...(plain(doc) as object), version: 0 };
+      await expect(load(draft)).rejects.toThrow(/"version" must be an integer from 1/);
+      await expect(load(doc, 'other')).rejects.toThrow(/rules\/other\.json: id "default" must equal the file name "other"/);
+    });
   });
 
   describe('a second root laid over the first', () => {
