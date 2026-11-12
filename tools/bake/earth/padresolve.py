@@ -52,6 +52,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from pathlib import Path
 
 import numpy as np
 from scipy import ndimage, signal
@@ -555,8 +556,12 @@ def run(region_id: str, args) -> dict:
         "tilesetContentHash": content_hash,
         "rule": {**{k: v for k, v in res.cfg.items() if k not in ("nominal", "allowedLandcover")},
                  "searchRadiusKm": res.search_m / 1000.0,
-                 "gates": f"flat (slope, relief over the disc), dry (the centre and minAllowedFraction of the disc bare "
-                          f"ground: {', '.join(BARE)}, i.e. WorldCover 60/100 as LC-1 was placed), clear of the shore "
+                 "gates": ("flat (slope, relief over the disc), dry (the centre and minAllowedFraction of the disc any "
+                           "land cover but water, wetland and built-up: A MEASUREMENT, not the rule that placed LC-1)"
+                           if Resolver.dry_any_land else
+                           f"flat (slope, relief over the disc), dry (the centre and minAllowedFraction of the disc bare "
+                           f"ground: {', '.join(BARE)}, i.e. WorldCover 60/100 as LC-1 was placed)")
+                          + f", clear of the shore "
                           f"(minShoreDistanceM to any water, minHeightM), on the coast (the sea within oceanReachKm), no "
                           f"built-up land within max(blend, keep-out) + {BUILT_MARGIN_M:g} m, a launch corridor "
                           f"({CORRIDOR_AZ[0]:g}-{CORRIDOR_AZ[1]:g} deg to {CORRIDOR_KM:g} km free of built-up land and of "
@@ -564,7 +569,8 @@ def run(region_id: str, args) -> dict:
                           + ("; the open ocean sector (oceanAzimuthDeg, oceanReachKm, openOceanKm): the full rule that "
                              "placed LC-1" if res.strict else ""),
                  "reported": "" if res.strict else "the open ocean sector (oceanAzimuthDeg, oceanReachKm, openOceanKm)",
-                 "strict": res.strict, "padRadii": PAD_RADII, "builtUpMarginM": BUILT_MARGIN_M,
+                 "strict": res.strict, "dry": "anyLand" if Resolver.dry_any_land else "bareGround",
+                 "padRadii": PAD_RADII, "builtUpMarginM": BUILT_MARGIN_M,
                  "corridor": {"azimuthDeg": list(CORRIDOR_AZ), "reachKm": CORRIDOR_KM},
                  "excluded": [{"latDeg": x[0], "lonDeg": x[1], "radiusM": x[2], "reason": x[3]} for x in excludes],
                  "classes": classes, "spacing": "pads of classes a and b at least (spacing_a + spacing_b) / 2 apart"},
@@ -579,6 +585,10 @@ def run(region_id: str, args) -> dict:
         STAGED_SITES.mkdir(parents=True, exist_ok=True)
         write_json(STAGED_SITES / f"{args.site}.pads.json", doc)
     OUT.mkdir(parents=True, exist_ok=True)
+    if getattr(args, "candidate_out", None):
+        cp = Path(args.candidate_out)
+        cp.parent.mkdir(parents=True, exist_ok=True)
+        write_json(cp, {**doc, "candidate": True, "unplaced": tally["unplaced"]})
     write_json(OUT / f"pads-{args.site}{'-dryrun' if dry else ''}.json",
                {**doc, "search": {"grid": grid["stats"], **tally, "seconds": round(time.time() - t0, 1)}})
     log(f"pads: {len(pads)} pads of {args.site} resolved" + (" (dry run: out/ only)" if dry else

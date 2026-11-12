@@ -47,14 +47,14 @@
       "resolutionM": 30,
       "landSurvey": "Copernicus DEM",
       "seaFloorRampKm": 1.5,
-      "nearShoreSlope": 0.04,
-      "seaFloorEtopoMinDepthM": 3,
+      "nearShoreSlope": 0.02,
+      "seaFloorNearShore": "deeper",
       "despikeBelow": true,
       "credit": "Copernicus DEM GLO-30 (1 arc-second, about 30 m) on land and inland water - produced using Copernicus WorldDEM-30 (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved",
       "attribution": [
         "Regional elevation, Oman: Copernicus DEM GLO-30 - produced using Copernicus WorldDEM-30 (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA"
       ],
-      "note": "Land and inland water: Copernicus DEM GLO-30 (TanDEM-X 2011-2015, edited; 1 arc-second, about 30 m; EGM2008 heights like ETOPO), from the public AWS bucket. It replaced Terrarium (SRTM) after a comparison at the pad field (out/bake/earth/site-bake/glo30-vs-srtm-*.png): the SRTM surface carried a pebbly, blocky noise texture that does not follow the imagery (RMS finer than 30 m 0.23-0.28 m, median slope 2.2-2.7 deg on a flat gravel plain), GLO-30 is clean and shows the real channels (0.07-0.16 m, 0.5-1.2 deg). The source is finer than the parent level's vertices at levels 8-11 only (level 11 samples every 18 m), so sourceCoverage lists levels 8-11 and level 12 carries the level-11 procedural detail (ARCHITECTURE 10.2). despikeBelow also removes land vertices more than 30 m below the median of their 9 x 9 neighbourhood (the SRTM source had corrupt rows along 19.0 N). Sea floor of the ocean (WorldCover water connected to the open sea): ETOPO 2022 15 arc-second where ETOPO is itself sea deeper than seaFloorEtopoMinDepthM (blended from 1 m), otherwise a 1:25 ramp from the WorldCover coastline (a sand and gravel shore; below the headland's cliffs ETOPO's coarse coast lies a kilometre offshore and said -1 m there), held at its 1.5 km depth beyond."
+      "note": "Land and inland water: Copernicus DEM GLO-30 (TanDEM-X 2011-2015, edited; 1 arc-second, about 30 m; EGM2008 heights like ETOPO), from the public AWS bucket. It replaced Terrarium (SRTM) after a comparison at the pad field (out/bake/earth/site-bake/glo30-vs-srtm-*.png): the SRTM surface carried a pebbly, blocky noise texture that does not follow the imagery (RMS finer than 30 m 0.23-0.28 m, median slope 2.2-2.7 deg on a flat gravel plain), GLO-30 is clean and shows the real channels (0.07-0.16 m, 0.5-1.2 deg). The source is finer than the parent level's vertices at levels 8-11 only (level 11 samples every 18 m), so sourceCoverage lists levels 8-11 and level 12 carries the level-11 procedural detail (ARCHITECTURE 10.2). despikeBelow also removes land vertices more than 30 m below the median of their 9 x 9 neighbourhood (the SRTM source had corrupt rows along 19.0 N). Sea floor of the ocean (WorldCover water connected to the open sea): within 1.5 km of the WorldCover coastline the deeper of a 1:50 ramp from that coast (a sand and gravel shore; held at its 30 m depth beyond 1.5 km) and ETOPO 2022 15 arc-second (seaFloorNearShore 'deeper', the lead's rule: ETOPO's coarse coast lies up to 1.3 km offshore of the real one along this coast and says -1 m there, so ETOPO counts only where it is itself sea deeper than the ramp), becoming ETOPO between 1.5 and 3 km. The 1:50 slope meets ETOPO's own offshore gradient without a sill (profiles 19.0-19.45 N in docs/handoff/site-bake.md); in the shallow bay south of the headland (ETOPO -10 m) the floor within 3 km of the shore is up to 20 m deeper than ETOPO."
     },
     "albedo": {
       "id": "s2cloudless",
@@ -78,7 +78,8 @@
       ],
       "inlandMaxRangeM": 2.5,
       "inlandMaxSlopeDeg": 5,
-      "note": "Inland water (WorldCover water not connected to the open sea) is kept only where the land source is flat under it: a component whose height spread (5th to 95th percentile) exceeds 2.5 m or whose mean slope exceeds 5 deg is land (dark rock on the headland's hills that WorldCover reads as water)."
+      "note": "Inland water (WorldCover water not connected to the open sea) is kept only where the land source is flat under it and it is a pond, not a speck: a component (20 m cells) whose height spread (5th to 95th percentile) exceeds 2.5 m, whose mean slope exceeds 5 deg, or whose area is under 2,000 m2 is land (dark rock on the headland's hills and dark specks beside roads that WorldCover reads as water).",
+      "inlandMinAreaM2": 2000
     },
     "landcover": {
       "id": "esa-worldcover-2021"

@@ -14,7 +14,10 @@
                                                             than INLAND_MAX_DEV_M (3DEP has corrupt values in a few
                                                             coastal ponds): a lake keeps its surface, it never
                                                             becomes a hole down to sea level
-    ocean:                   s = min(w far + (1 - w) shallower(near, far), -MIN_SEA_M)
+    ocean:                   s = min(w far + (1 - w) shallower(near, far), -MIN_SEA_M)   (seaFloorNearShore
+                                 "shallower", the default); "deeper" (Madrakah): s = min(w2 far + (1 - w2)
+                                 deeper(max(near, -k d1), far), -MIN_SEA_M), w2 = smootherstep((D_ramp - d1) / d1),
+                                 deeper = smooth minimum: ETOPO only where it is itself sea deeper than the ramp
                                  far  = min(g, -1 m)                    (ETOPO sea floor)
                                  near = -k max(D_near, 0)                (k = nearShoreSlope of the region file)
                                  shallower = smooth maximum (1 m soft) of near and far
@@ -89,14 +92,16 @@ class RegionalHeight:
         self.land_source = src["id"]                    # "terrarium" (z15 / z14 tiles) or "copernicus-glo30"
         self.z_land = int(src.get("landZoom", 14))
         self.z_survey = int(src.get("surveyZoom", 12))
-        # sea floor: ETOPO counts only where it is itself sea at least this deep (region option; absent = the
-        # original rule everywhere, as at Ka Lae)
-        self.etopo_min_depth = src.get("seaFloorEtopoMinDepthM")
+        # near-shore sea floor: "shallower" (default, Ka Lae: ETOPO where it is shallower than the ramp: bays and
+        # shelves) or "deeper" (ETOPO only where it is itself sea deeper than the ramp, otherwise the ramp: where
+        # ETOPO's coarse coast lies offshore of the real one it says -1 m for a kilometre below a cliff)
+        self.near_shore_rule = src.get("seaFloorNearShore", "shallower")
         # inland water: WorldCover water that is not the ocean is kept only where the land source is flat under it
         # (region option `sources.watermask.inlandMaxRangeM` / `inlandMaxSlopeDeg`; dark rock on a hillside that
         # WorldCover reads as water becomes land again)
         wm = region["sources"].get("watermask", {})
-        self.inland_filter = ((float(wm["inlandMaxRangeM"]), float(wm["inlandMaxSlopeDeg"]))
+        self.inland_filter = ((float(wm["inlandMaxRangeM"]), float(wm["inlandMaxSlopeDeg"]),
+                               float(wm.get("inlandMinAreaM2", 0.0)))
                               if "inlandMaxRangeM" in wm else None)
         self.d1 = float(src["seaFloorRampKm"]) * 1000.0
         self.k = float(src["nearShoreSlope"])
@@ -379,8 +384,8 @@ class RegionalHeight:
     INLAND_CELL = 2                     # WorldCover pixels per cell edge of the component grid (20 m)
 
     def _inland_path(self):
-        rng, slope = self.inland_filter
-        return paths.WORK / f"inlandbad-v1-{self.wc.key}-{self.land_source}-{rng:g}-{slope:g}.npy"
+        rng, slope, area = self.inland_filter
+        return paths.WORK / f"inlandbad-v2-{self.wc.key}-{self.land_source}-{rng:g}-{slope:g}-{area:g}.npy"
 
     def prepare_inland(self) -> None:
         if self.inland_filter is not None:
@@ -394,7 +399,9 @@ class RegionalHeight:
         p = self._inland_path()
         if not p.is_file():
             from earth.worldcover import PX_PER_DEG
-            max_range, max_slope = self.inland_filter
+            max_range, max_slope, min_area = self.inland_filter
+            cell_m2 = (self.INLAND_CELL * 1852.0 * 60.0 / PX_PER_DEG) ** 2 * math.cos(math.radians(0.5 * (
+                self.bbox[0] + self.bbox[1])))
             a = self.wc.data
             c = self.INLAND_CELL
             H, W = a.shape[0] // c, a.shape[1] // c
@@ -421,6 +428,9 @@ class RegionalHeight:
                 if sl is None:
                     continue
                 rr, cc = np.nonzero(lab[sl] == k)
+                if rr.size * cell_m2 < min_area:          # a speck of a few WorldCover pixels: not a pond
+                    bad[k] = True
+                    continue
                 if rr.size > 2000:
                     pick = rng.choice(rr.size, 2000, replace=False)
                     rr, cc = rr[pick], cc[pick]
@@ -441,7 +451,8 @@ class RegionalHeight:
                 bad[k] = spread > max_range or mean_slope > max_slope
             out = bad[lab]
             log(f"regsrc: {n} inland water components on the 20 m grid, {int(bad.sum())} contradicted by the land "
-                f"source (range > {max_range:g} m or slope > {max_slope:g} deg): {int(out.sum()) * 4e-4:.2f} km2 made land")
+                f"source (range > {max_range:g} m or slope > {max_slope:g} deg) or smaller than {min_area:g} m2: "
+                f"{int(out.sum()) * cell_m2 / 1e6:.2f} km2 made land")
             del lab
             tmp = p.with_name(p.stem + ".partial.npy")
             np.save(tmp, np.packbits(out, axis=1))
@@ -475,16 +486,17 @@ class RegionalHeight:
         near = -self.k * np.maximum(self._grid(self.sd_near, lat, lon), 0.0)
         shallower = 0.5 * (near + far + np.sqrt((near - far) ** 2 + SOFT_M ** 2))
         w = regmod.smootherstep(np.maximum(self._grid(self.sd_ramp, lat, lon), 0.0) / self.d1)
-        if self.etopo_min_depth is None:
-            return np.minimum(w * far + (1.0 - w) * shallower, -MIN_SEA_M)
-        # ETOPO counts only where it is itself sea: its weight c rises from 0 where it is shallower than 1 m (its
-        # coarse coast lies offshore of the WorldCover coast: below a cliff ETOPO says -1 m for a kilometre and
-        # more) to 1 where it is deeper than seaFloorEtopoMinDepthM; elsewhere the ramp, held at its depth at
-        # seaFloorRampKm beyond that distance. Where c = 1 the formula is the original one (bays and shelves keep
-        # ETOPO's shallower floor).
-        c = regmod.smootherstep((-g - 1.0) / max(float(self.etopo_min_depth) - 1.0, 0.1))
-        ramp = np.maximum(near, -self.k * self.d1)
-        return np.minimum(c * (w * far + (1.0 - w) * shallower) + (1.0 - c) * ramp, -MIN_SEA_M)
+        if self.near_shore_rule == "deeper":
+            # the lead's rule (2026-11-12): within d1 of the coast ETOPO counts only where it is itself sea deeper
+            # than the ramp, otherwise the ramp (held at its depth k d1 beyond d1); from d1 to 2 d1 the floor
+            # becomes ETOPO (a blend from the coast as in the default rule would pull the floor up to ETOPO's -1 m
+            # inside d1 where ETOPO's coarse coast lies offshore)
+            held = np.maximum(near, -self.k * self.d1)
+            deeper = 0.5 * (held + far - np.sqrt((held - far) ** 2 + SOFT_M ** 2))
+            d = np.maximum(self._grid(self.sd_ramp, lat, lon), 0.0)
+            w2 = regmod.smootherstep((d - self.d1) / self.d1)
+            return np.minimum(w2 * far + (1.0 - w2) * deeper, -MIN_SEA_M)
+        return np.minimum(w * far + (1.0 - w) * shallower, -MIN_SEA_M)
 
     def local(self, lat, lon) -> np.ndarray:
         """s: Terrarium on land and inland water, the ramped ETOPO sea floor in the ocean, without the

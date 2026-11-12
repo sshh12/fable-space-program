@@ -93,6 +93,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--dry-any-land", action="store_true",
                     help="pads: a measurement (out/ only): 'dry' as any land cover but water, wetland and built-up "
                          "instead of bare ground")
+    ap.add_argument("--candidate-out", help="pads: also write the layout (complete or not) to this file as a candidate "
+                                            "for the lead's decision (data/staged/sites/candidates/)")
     ap.add_argument("--replace", action="store_true",
                     help="stage: bake a region that is already live again (REPLACE mode, stage.py)")
     a = ap.parse_args(argv)
