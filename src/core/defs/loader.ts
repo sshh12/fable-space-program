@@ -153,6 +153,9 @@ export function validateLibrary(lib: DefLibrary): void {
       if (typeof m.id !== 'string' || m.id === '') throw new DefError(file, 'every milestone needs a non-empty string id');
       if (seen.has(m.id)) throw new DefError(file, `duplicate milestone id "${m.id}"`);
       if (!isObject(m.trigger) || typeof m.trigger.kind !== 'string') throw new DefError(file, `milestone "${m.id}" needs a trigger with a kind`);
+      // What the HUD announces (request flight-ui-5): optional, and a real title when it is there.
+      const title = (m as { title?: unknown }).title;
+      if (title !== undefined && (typeof title !== 'string' || title.trim() === '')) throw new DefError(file, `milestone "${m.id}": "title" must be a non-empty string when present`);
       const bodyId = (m.trigger as { bodyId?: unknown }).bodyId;
       if (bodyId !== undefined && (typeof bodyId !== 'string' || !lib.bodies[bodyId])) throw new DefError(file, `milestone "${m.id}" refers to unknown body "${String(bodyId)}"`);
       for (const dep of m.after ?? []) {

@@ -9,48 +9,48 @@
   "target": "moon",
   "suggestedLanding": { "bodyId": "moon", "latDeg": 0.661471, "lonDeg": 23.435999, "name": "Mare Tranquillitatis" },
   "milestones": [
-    { "id": "LIFTOFF", "trigger": { "kind": "liftoff" } },
-    { "id": "MAX_Q", "trigger": { "kind": "maxQ" }, "after": ["LIFTOFF"] },
-    { "id": "STAGE_SEP_1", "trigger": { "kind": "stageFired", "stageIndex": 1 }, "after": ["LIFTOFF"] },
-    { "id": "FAIRING_JETTISON", "trigger": { "kind": "stageFired", "stageIndex": 2 }, "after": ["STAGE_SEP_1"] },
-    { "id": "STAGE_SEP_2", "trigger": { "kind": "stageFired", "stageIndex": 3 }, "after": ["FAIRING_JETTISON"] },
+    { "id": "LIFTOFF", "title": "Lift-off", "trigger": { "kind": "liftoff" } },
+    { "id": "MAX_Q", "title": "Max Q", "trigger": { "kind": "maxQ" }, "after": ["LIFTOFF"] },
+    { "id": "STAGE_SEP_1", "title": "M-1 separation", "trigger": { "kind": "stageFired", "stageIndex": 1 }, "after": ["LIFTOFF"] },
+    { "id": "FAIRING_JETTISON", "title": "Tower and fairing jettisoned", "trigger": { "kind": "stageFired", "stageIndex": 2 }, "after": ["STAGE_SEP_1"] },
+    { "id": "STAGE_SEP_2", "title": "M-2 separation", "trigger": { "kind": "stageFired", "stageIndex": 3 }, "after": ["FAIRING_JETTISON"] },
     {
-      "id": "EARTH_ORBIT",
+      "id": "EARTH_ORBIT", "title": "Earth orbit",
       "trigger": { "kind": "orbit", "bodyId": "earth", "minPeriapsisAltitude": 160000, "maxApoapsisAltitude": 400000 },
       "after": ["STAGE_SEP_2"]
     },
-    { "id": "TLI_COMPLETE", "trigger": { "kind": "encounterPredicted", "bodyId": "moon" }, "after": ["EARTH_ORBIT"] },
-    { "id": "MOON_SOI_ENTER", "trigger": { "kind": "soiEnter", "bodyId": "moon" }, "after": ["TLI_COMPLETE"] },
+    { "id": "TLI_COMPLETE", "title": "TLI complete", "trigger": { "kind": "encounterPredicted", "bodyId": "moon" }, "after": ["EARTH_ORBIT"] },
+    { "id": "MOON_SOI_ENTER", "title": "Entered the Moon's sphere of influence", "trigger": { "kind": "soiEnter", "bodyId": "moon" }, "after": ["TLI_COMPLETE"] },
     {
-      "id": "LUNAR_ORBIT",
+      "id": "LUNAR_ORBIT", "title": "Lunar orbit",
       "trigger": { "kind": "orbit", "bodyId": "moon", "minPeriapsisAltitude": 60000, "maxEccentricity": 0.05 },
       "after": ["MOON_SOI_ENTER"]
     },
     {
-      "id": "LUNAR_TOUCHDOWN",
+      "id": "LUNAR_TOUCHDOWN", "title": "Lunar touchdown",
       "trigger": { "kind": "touchdown", "bodyId": "moon", "surface": "land", "settleTime": 5 },
       "after": ["LUNAR_ORBIT"]
     },
     {
-      "id": "LUNAR_LIFTOFF",
+      "id": "LUNAR_LIFTOFF", "title": "Lunar lift-off",
       "trigger": { "kind": "liftoffFromSurface", "bodyId": "moon", "minAltitude": 50 },
       "after": ["LUNAR_TOUCHDOWN"]
     },
-    { "id": "MOON_SOI_EXIT", "trigger": { "kind": "soiExit", "bodyId": "moon" }, "after": ["LUNAR_LIFTOFF"] },
+    { "id": "MOON_SOI_EXIT", "title": "Left the Moon's sphere of influence", "trigger": { "kind": "soiExit", "bodyId": "moon" }, "after": ["LUNAR_LIFTOFF"] },
     {
-      "id": "EARTH_PERIGEE_TARGETED",
+      "id": "EARTH_PERIGEE_TARGETED", "title": "Entry corridor targeted",
       "trigger": { "kind": "predictedPeriapsis", "bodyId": "earth", "minAltitude": 30000, "maxAltitude": 60000 },
       "after": ["MOON_SOI_EXIT"]
     },
     {
-      "id": "ENTRY_INTERFACE",
+      "id": "ENTRY_INTERFACE", "title": "Entry interface",
       "trigger": { "kind": "altitudeCrossing", "bodyId": "earth", "altitude": 122000, "direction": "descending" },
       "after": ["MOON_SOI_EXIT"]
     },
-    { "id": "DROGUE_DEPLOY", "trigger": { "kind": "chuteDeployed", "mode": "drogue" }, "after": ["ENTRY_INTERFACE"] },
-    { "id": "MAIN_DEPLOY", "trigger": { "kind": "chuteDeployed", "mode": "main" }, "after": ["DROGUE_DEPLOY"] },
+    { "id": "DROGUE_DEPLOY", "title": "Drogues deployed", "trigger": { "kind": "chuteDeployed", "mode": "drogue" }, "after": ["ENTRY_INTERFACE"] },
+    { "id": "MAIN_DEPLOY", "title": "Mains deployed", "trigger": { "kind": "chuteDeployed", "mode": "main" }, "after": ["DROGUE_DEPLOY"] },
     {
-      "id": "SPLASHDOWN",
+      "id": "SPLASHDOWN", "title": "Splashdown",
       "trigger": { "kind": "touchdown", "bodyId": "earth", "surface": "water", "settleTime": 30 },
       "after": ["MAIN_DEPLOY"]
     }

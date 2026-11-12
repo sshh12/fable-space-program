@@ -1,4 +1,4 @@
-Status: open
+Status: open (loader and data done; the contract field is request core-1, for the owner of src/core/contracts this round)
 From: flight-ui
 Owner path: src/core/contracts/defs.ts (MilestoneRuleDef), src/core/defs/loader.ts (validation), data/defs/scenarios/*.json (shared-code maintainer; scenario data)
 Blocking: no
@@ -47,3 +47,17 @@ loader's check that a title is a non-empty string (`src/core/defs/loader.ts`, sh
 3 `sim-core-v2`), and the titles in `data/defs/scenarios/*.json` (scenario data; the wording proposed above is
 approved as written). The ids, the triggers and the evaluator do not change, so the mission state hash does
 not move. The request stays open until those two are in.
+
+## Resolution (loader and data; shared-code maintainer, 2026-11-11)
+- `src/core/defs/loader.ts`: a milestone's `title` is validated as a non-empty string when present (`DefError`
+  naming the scenario file and the milestone id).
+- `data/defs/scenarios/lunar-direct.json`: the 17 titles of your list, word for word (LIFTOFF "Lift-off" ...
+  SPLASHDOWN "Splashdown"). The QA scenarios carry no milestones. Ids, triggers and `after` are unchanged; the
+  simulation ignores the field (the headless mission's state hash does not include the definitions).
+- `src/core/defs/loader.test.ts`: the field passes through, an empty or non-string title is refused, and every
+  milestone of every scenario in `data/defs` has a title without an underscore.
+- **Not done here: `MilestoneRuleDef.title?: string` in `src/core/contracts/defs.ts`.** The contracts belong to
+  the v2-baseline agent this round; request `docs/requests/core-1.md` asks for the field with your wording.
+  Until it is in, the value is in the loaded library and can be read as
+  `(rule as { title?: string }).title` in `milestoneTitle`; with the field, drop the cast.
+
