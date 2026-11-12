@@ -8,7 +8,8 @@
  *   12 normal     snorm16x4   xyz (w unused)
  *   20 tangent    snorm16x4   xyz along +uv0.x, w = bitangent sign
  *   28 uv0        float32x2   surface coordinates in metres (procedural detail)
- *   36 uv1        unorm16x2   label-atlas coordinates (when FLAG_LABEL is set)
+ *   36 uv1        unorm16x2   label-atlas coordinates (when FLAG_LABEL is set); otherwise x = the longest
+ *                             triangle edge at this vertex / EDGE_REACH_MAX
  *   40 misc       uint8x4     material index, cavity (0..255: 255 = open; modelled creases only, the
  *                             occlusion by other geometry is baked separately, occlusion.ts), flags,
  *                             ink colour (labels) or part seed (everything else)
@@ -28,6 +29,10 @@ export const FLAG_EDGE = 2;
  * knows where on the chamfer a pixel lies (paint wears through along its middle first).
  */
 export const EDGE_SPAN = 0.01;
+/** Largest edge length (m) a vertex's stored reach can state (see MeshBuilder.build). */
+export const EDGE_REACH_MAX = 4;
+/** Reach assumed for a label's vertices, whose atlas slot is taken (no label is larger). */
+export const LABEL_REACH = 0.35;
 
 export interface Attr {
   /** Material index into the layout's material list. */
@@ -734,6 +739,24 @@ export class MeshBuilder {
       u8[o + 43] = this.misc[i * 4 + 3]!;
       u16[(o + 44) / 2] = this.ctl[i * 2]!;
       u16[(o + 44) / 2 + 1] = this.ctl[i * 2 + 1]!;
+    }
+    // Every vertex that carries no label keeps, in the label-atlas slot it does not use, the length of the
+    // longest triangle edge that ends at it (EDGE_REACH_MAX at most, rounded up): how far a pixel of any of its
+    // triangles can lie from it. (The interior's vertex stage turns distances taken at vertices into bounds
+    // that hold for the pixels between them: shaders.ts cabinSunReach.)
+    const reach = new Float32Array(count);
+    for (let k = 0; k + 2 < this.idx.length; k += 3) {
+      for (let e = 0; e < 3; e++) {
+        const a = this.idx[k + e]!;
+        const b = this.idx[k + ((e + 1) % 3)]!;
+        const len = Math.hypot(this.pos[a * 3]! - this.pos[b * 3]!, this.pos[a * 3 + 1]! - this.pos[b * 3 + 1]!, this.pos[a * 3 + 2]! - this.pos[b * 3 + 2]!);
+        if (len > reach[a]!) reach[a] = len;
+        if (len > reach[b]!) reach[b] = len;
+      }
+    }
+    for (let i = 0; i < count; i++) {
+      if ((this.misc[i * 4 + 2]! & FLAG_LABEL) !== 0) continue;
+      u16[(i * VERTEX_STRIDE + 36) / 2] = Math.min(65535, Math.ceil((Math.min(reach[i]!, EDGE_REACH_MAX) / EDGE_REACH_MAX) * 65535));
     }
     if (this.rangeStart < this.idx.length) this.mark('rest');
     return { vertices: buf, vertexCount: count, indices: Uint32Array.from(this.idx), ranges: { ...this.ranges }, vertexRanges: { ...this.vertexRanges }, bounds: { min, max }, groupNames: [...this.groupNames], vertexGroup: Uint16Array.from(this.grp) };

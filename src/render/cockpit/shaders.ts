@@ -26,7 +26,7 @@
 import { QUILT, UPHOLSTERY } from './cabin/quilt';
 import { MAX_DISPLAYS, MAX_FLOODS, MAX_WINDOWS } from './layout';
 import { MAX_CABIN_POLYS } from './lighting';
-import { EDGE_SPAN } from './mesh';
+import { EDGE_REACH_MAX, EDGE_SPAN, LABEL_REACH } from './mesh';
 
 /** A flood light's shadow map (lampmap.ts): the half angle of its frustum (the beam is dark beyond it) and its near plane, m. */
 export const LAMP_HALF_ANGLE = Math.acos(0.45);
@@ -278,6 +278,8 @@ const FLOOD_FAR2 = 0.2;
 const DISPLAY_FAR2 = 0.3;
 /// Share of a surface's known irradiance under which a source's largest possible contribution is skipped.
 const CABIN_NEGLIGIBLE = 0.01;
+/// Share of a surface's known irradiance under which a flood light is not looked up in its shadow map.
+const LAMP_SHADOW_MIN = 0.04;
 /// A flood's reflector gathers most of its light into a beam about the lens normal (half power at about 45
 /// degrees): a pool of light where the lamp is aimed. The rest (FLOOD_SKIRT of the lens's own Lambertian
 /// luminance) leaves the diffuser to every side: the wall beside the fixture, a hand's width from the lens,
@@ -632,8 +634,13 @@ fn cabinLampLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, f0: vec4f,
     let cs = side * inv;
     let beam = floodBeam(cs);
     // Inside the beam the lamp's shadow map; in the spill beside it the baked visibility (see cabinLight).
+    // (A lamp that adds under LAMP_SHADOW_MIN of what the surface already receives keeps its baked visibility:
+    // its shadow would be an edge of a few per cent, as in a daylit cabin with the floods at their standby level.)
     let inMap = smoothstep(0.45, 0.55, cs);
-    if (inMap > 0.0) { vis = mix(vis, lampVisibility(index, posPart, nPart, clamp(0.6 / max(cr * inv, 0.05), 1.0, 2.0)), inMap); }
+    let most = luminance(P.radiance.rgb) * beam * P.radiance.w * max(cr, 0.0) * cs * inv * inv * inv * vis;
+    if (inMap > 0.0 && (d2 <= FLOOD_FAR2 || most > LAMP_SHADOW_MIN * (eKnown + luminance(diffuse)))) {
+      vis = mix(vis, lampVisibility(index, posPart, nPart, clamp(0.6 / max(cr * inv, 0.05), 1.0, 2.0)), inMap);
+    }
     if (vis <= 0.0) { continue; }
     if (d2 > FLOOD_FAR2) {
       diffuse += P.radiance.rgb * (beam * P.radiance.w * max(cr, 0.0) * cs * inv * inv * inv * vis);
@@ -841,8 +848,9 @@ fn cabinSunReach(p: vec3f) -> f32 {
   }
   return best;
 }
-/// Longest edge of an interior triangle plus the widest penumbra (m): see cabinSunReach.
-const SUN_REACH = 0.4;
+/// The widest penumbra (m) beyond a beam's edge: a pixel whose bound (the vertices' cabinSunReach less their
+/// longest edge, interpolated) is over this lies in no beam.
+const SUN_REACH = 0.03;
 
 /// Widest penumbra radius the sun map filters (m): the penumbra of a blocker 0.65 m from the receiver.
 const SUN_PENUMBRA_MAX = 0.006;
@@ -985,7 +993,7 @@ struct VOut {
   @location(6) currClip: vec4f,
   @location(7) prevClip: vec4f,
   @location(8) occ0: vec4f,               // x = baked ambient occlusion
-  @location(9) light: vec4f,              // rgb = the windows' and screens' irradiance at the vertex (cabinVertexLight), w = distance to the nearest sun beam (cabinSunReach)
+  @location(9) light: vec4f,              // rgb = the windows' and screens' irradiance at the vertex (cabinVertexLight), w = a lower bound of the distance to the nearest sun beam for the pixels round the vertex (cabinSunReach less the longest edge here)
   @location(10) lightD: vec3f,            // where that light comes from (ROOT, weighted, not normalised)
   @location(11) occ4: vec4f,              // baked visibility of flood lights 0..3
   @location(12) occ5: vec4f,              // ... and 4..7
@@ -1027,7 +1035,10 @@ fn vertexOut(v: VIn, eye: vec3f) -> VOut {
     nlPart = -nlPart;
   }
   let lit = cabinVertexLight(w, nl, p, nlPart, occUnpack(v.occ0, v.occ1, v.occ2, v.occ3, v.occ4, v.occ5));
-  o.light = vec4f(lit.e, cabinSunReach(p));
+  // (Less the longest triangle edge at this vertex: a pixel inside a beam has every vertex of its triangle
+  // within one such edge of the beam, so its interpolated value is at most 0.)
+  let reach = select(v.uv1.x * ${EDGE_REACH_MAX.toFixed(1)}, ${LABEL_REACH}, (v.misc.z & FLAG_LABEL) != 0u);
+  o.light = vec4f(lit.e, cabinSunReach(p) - reach);
   o.lightD = lit.d;
   return o;
 }

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { v3, type Vec3 } from '@/core/math';
 import { seatFrames } from '@/render/cockpit/cabin/context';
-import { VERTEX_STRIDE } from '@/render/cockpit/mesh';
+import { EDGE_REACH_MAX, FLAG_LABEL, LABEL_REACH, VERTEX_STRIDE } from '@/render/cockpit/mesh';
 import { testDefs, testModel } from './helpers';
 
 interface ViewStats {
@@ -83,5 +83,41 @@ describe('cockpit raster load from the seat', () => {
     console.log(`${'TOTAL'.padEnd(16)} ${String(total.triangles).padStart(7)} tris, in view ${String(total.inView).padStart(7)}: <1px ${total.bins[0]}, 1-4 ${total.bins[1]}, 4-16 ${total.bins[2]}, 16-64 ${total.bins[3]}, >64 ${total.bins[4]}; area ${(total.area / 1e6).toFixed(2)} Mpx of ${((WIDTH * HEIGHT) / 1e6).toFixed(2)}`);
     // The brief's budget for the full detail level.
     expect(model.triangles.lod0 + mesh.ranges.labels!.count / 3).toBeLessThan(400_000);
+  });
+});
+
+describe('cockpit triangle edges', () => {
+  it('every vertex states the longest triangle edge that ends at it (the bound the sun gate is built on); no label is larger than the reach assumed for labels', async () => {
+    const model = await testModel();
+    const mesh = model.mesh;
+    const f32 = new Float32Array(mesh.vertices);
+    const u16 = new Uint16Array(mesh.vertices);
+    const u8 = new Uint8Array(mesh.vertices);
+    const at = (i: number): [number, number, number] => [f32[(i * VERTEX_STRIDE) / 4]!, f32[(i * VERTEX_STRIDE) / 4 + 1]!, f32[(i * VERTEX_STRIDE) / 4 + 2]!];
+    const isLabel = (i: number): boolean => (u8[i * VERTEX_STRIDE + 42]! & FLAG_LABEL) !== 0;
+    const reach = (i: number): number => (u16[(i * VERTEX_STRIDE + 36) / 2]! / 65535) * EDGE_REACH_MAX;
+    let longest = 0;
+    let checked = 0;
+    for (const name of ['lod0', 'labels', 'lod1', 'lod2']) {
+      const r = mesh.ranges[name]!;
+      for (let k = r.start; k < r.start + r.count; k += 3) {
+        for (let e = 0; e < 3; e++) {
+          const ia = mesh.indices[k + e]!;
+          const ib = mesh.indices[k + ((e + 1) % 3)]!;
+          const a = at(ia);
+          const b = at(ib);
+          const len = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+          longest = Math.max(longest, len);
+          for (const v of [ia, ib]) {
+            if (isLabel(v)) expect(len).toBeLessThanOrEqual(LABEL_REACH);
+            else expect(reach(v)).toBeGreaterThanOrEqual(Math.min(len, EDGE_REACH_MAX) - 1e-5);
+          }
+          checked++;
+        }
+      }
+    }
+    console.log();
+    expect(checked).toBeGreaterThan(500_000);
+    expect(longest).toBeLessThan(EDGE_REACH_MAX);
   });
 });

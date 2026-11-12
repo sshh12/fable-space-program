@@ -34,15 +34,16 @@ const VIEWS: AppView[] = [
   // Parking orbit, straight from the seat, nothing touched: the picture of the mission run (06-earth-orbit-cockpit).
   { name: 'app-leo-seat', scenario: 'qa-leo' },
   // Along the console to both sides: where its ends meet the hull (request cockpit-lead-1).
-  { name: 'app-leo-console-left', scenario: 'qa-leo', yaw: -30, pitch: -2 },
-  { name: 'app-leo-console-right', scenario: 'qa-leo', yaw: 62, pitch: 4 },
+  // (Angles are drags from the rig's rest view, which is pitched 20 degrees up since request cockpit-18.)
+  { name: 'app-leo-console-left', scenario: 'qa-leo', yaw: -30, pitch: -22 },
+  { name: 'app-leo-console-right', scenario: 'qa-leo', yaw: 62, pitch: -16 },
   // The lights action on: the floods at full.
   { name: 'app-leo-seat-floods', scenario: 'qa-leo', lights: true },
   // On the Moon after touchdown (10-lunar-touchdown-cockpit).
   { name: 'app-lunar-surface-seat', scenario: 'qa-lunar-surface' },
   // Out of the window from the seat in orbit: in this scenario's attitude the Earth's limb stands in the
   // commander's side window (the forward windows look into space).
-  { name: 'app-leo-window-left', scenario: 'qa-leo', yaw: -58, pitch: -12, window: true },
+  { name: 'app-leo-window-left', scenario: 'qa-leo', yaw: -58, pitch: -32, window: true },
 ];
 
 const lum = (r: number, g: number, b: number): number => 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -117,7 +118,8 @@ for (const v of VIEWS) {
     // The cabin reads: a player who has touched nothing sees the panel, the blankets and the couches. A frame
     // from the seat is neither a black frame nor a burnt-out one.
     expect(st.median, `${v.name}: the frame's median (0..255)`).toBeGreaterThan(v.night || v.window ? 10 : 22);
-    expect(st.black, `${v.name}: share of the frame below 4 / 255`).toBeLessThan(0.25);
+    // (A window with black space in it is black where space is: such a view may hold more of it.)
+    expect(st.black, `${v.name}: share of the frame below 4 / 255`).toBeLessThan(v.window ? 0.45 : 0.25);
     expect(st.clipped, `${v.name}: share of the frame above 250 / 255`).toBeLessThan(0.2);
   });
 }
