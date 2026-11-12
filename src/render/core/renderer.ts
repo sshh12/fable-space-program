@@ -24,7 +24,7 @@ import { HASH_WGSL, mat4, v3, type Mat4 } from '@/core/math';
 import { registerCore, type CoreApi, type FullscreenPipelineDesc, type ManagedTarget, type TemporalFeature } from './coreApi';
 import { atmosphereTransmittanceAlong, buildBodyPoses, buildProjection, buildVesselPoses, cameraBasis, jitterSequenceLength, nearestBody, planetshineAt, sunAt, sunVisibilityAt, taaJitter, type ShineLight } from './frame/math';
 import { FRAME_UNIFORM_FLOATS, packFrameUniforms, type CloudShadowParams } from './frame/uniforms';
-import { AmbientOcclusion } from './lighting/ao';
+import { AmbientOcclusion, type ContactShadowParams } from './lighting/ao';
 import { DeferredLighting } from './lighting/deferred';
 import { createMeshSystem, SHADOW_PASS_WGSL } from './mesh/meshSystem';
 import { TextureManager } from './mesh/textures';
@@ -64,6 +64,40 @@ export interface RendererOptions {
    * misbehaves). Default: true, unless the page's address carries `warm=0`.
    */
   pipelineWarm?: boolean;
+  /**
+   * The contact shadow with the rules for the near field (lighting/ao.ts; requests cockpit-10, vehicle-pad-10)
+   * instead of the first rule alone. Default while the rules are being proved: false, unless the page's
+   * address carries `contact=v2` or the page's server was started with VITE_CORE_CONTACT=v2 (a test run
+   * that exercises every suite with them).
+   */
+  contactNear?: boolean;
+}
+
+/** The env of the page's Vite server (undefined where the module is not served by Vite). */
+const VITE_ENV: Record<string, string | undefined> | undefined = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+
+/**
+ * The sun-shadow chunk with two switches for A/B pictures of its filter, read from ShadowUniforms.count.y
+ * (ShadowSystem.debugFlags): 1 = the kernel is not turned per pixel, 2 = no dithered cross-fade between
+ * cascades. Only pages that ask for it (`shadowdebug=1`, VITE_CORE_SHADOW_DEBUG=1) compile this text.
+ */
+function shadowsWithSwitches(wgsl: string, reportError: (m: string) => void): string {
+  const edits: [string, string][] = [
+    [
+      'let phi = noise.x * TWO_PI * (1.0 - smoothstep(SHADOW_SPIN_FULL, SHADOW_SPIN_NONE, perTexel));',
+      'let phi = noise.x * TWO_PI * (1.0 - smoothstep(SHADOW_SPIN_FULL, SHADOW_SPIN_NONE, perTexel)) * select(1.0, 0.0, (shadowU.count.y & 1u) != 0u);',
+    ],
+    ['if (fade < 1.0 && noise.b >= fade) { continue; }', 'if (fade < 1.0 && noise.b >= fade && (shadowU.count.y & 2u) == 0u) { continue; }'],
+  ];
+  let out = wgsl;
+  for (const [from, to] of edits) {
+    if (out.split(from).length !== 2) {
+      reportError(`render core: the shadow chunk's debug switch has nothing to replace ("${from.slice(0, 40)}...")`);
+      return wgsl;
+    }
+    out = out.replace(from, to);
+  }
+  return out;
 }
 
 export interface HdrPixels {
@@ -148,6 +182,17 @@ export interface CoreRenderer extends Renderer {
   exactInfo(): ExactInfo | null;
   /** Force EV100 (null = automatic). */
   setExposureOverride(ev100: number | null): void;
+  /**
+   * The rules of the screen-space contact shadow (lighting/ao.ts: `ContactShadowParams`; what is not given
+   * stays). For tuning and for A/B pictures: `CONTACT_SHADOW_LEGACY` is the march as it was, `{ enabled: false }`
+   * none at all. The game runs with `CONTACT_SHADOW_DEFAULT`.
+   */
+  setContactShadow(params: Partial<ContactShadowParams>): void;
+  contactShadow(): ContactShadowParams;
+  /** Whether the contact shadow runs with the near field's rules (`RendererOptions.contactNear`); false: the first rule alone, and `setContactShadow` changes nothing. */
+  readonly contactNear: boolean;
+  /** Switches of the sun-shadow filter for A/B pictures (ShadowSystem.debugFlags: 1 = no per-pixel turn of the kernel, 2 = no dithered cross-fade between cascades). 0 in the game. */
+  setShadowDebug(flags: number): void;
   exposureInfo(): ExposureInfo;
   /** Read back a rectangle of the HDR scene target ('hdr', before TAA) or of the resolved TAA output ('resolved'). */
   readHdrPixels(target?: 'hdr' | 'resolved', rect?: { x: number; y: number; width: number; height: number }): Promise<HdrPixels>;
@@ -263,7 +308,10 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   context.configure({ device, format: gpu.canvasFormat, alphaMode: 'opaque' });
 
   // ----------------------------------------------------------------------------------- shader library
-  const pipelineWarm = opts.pipelineWarm ?? new URLSearchParams(globalThis.location?.search ?? '').get('warm') !== '0';
+  const pageQuery = new URLSearchParams(globalThis.location?.search ?? '');
+  const pipelineWarm = opts.pipelineWarm ?? pageQuery.get('warm') !== '0';
+  const contactNear = opts.contactNear ?? (pageQuery.get('contact') ?? VITE_ENV?.VITE_CORE_CONTACT) === 'v2';
+  const shadowSwitches = (pageQuery.get('shadowdebug') ?? VITE_ENV?.VITE_CORE_SHADOW_DEBUG) === '1';
   const shaders: CoreShaderLibrary = createShaderLibrary(device, reportError, { warm: pipelineWarm });
   shaders.register('hash', HASH_WGSL);
   shaders.register('frame', FRAME_WGSL);
@@ -277,7 +325,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   shaders.register('eclipse', ECLIPSE_WGSL);
   shaders.register('local_lights', LOCAL_LIGHTS_WGSL);
   shaders.register('atmosphere_common', ATMOSPHERE_COMMON_WGSL);
-  shaders.register('shadows', SHADOWS_WGSL);
+  shaders.register('shadows', shadowSwitches ? shadowsWithSwitches(SHADOWS_WGSL, reportError) : SHADOWS_WGSL);
   shaders.register('shadow_pass', SHADOW_PASS_WGSL);
   shaders.register('cloud_shadow', CLOUD_SHADOW_WGSL);
   shaders.register('transparency', TRANSPARENCY_WGSL);
@@ -407,7 +455,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   let bodiesKnown = false;
   const lighting = new DeferredLighting(ctx, shaders);
   lighting.setSpotShadows(spotShadows.arrayView, spotShadows.uniform);
-  const ao = new AmbientOcclusion(ctx, shaders, core);
+  const ao = new AmbientOcclusion(ctx, shaders, core, contactNear);
   const tonemap = new Tonemap(ctx, shaders);
   const post = new PostProcess(ctx, shaders, core, gpu.hasFeature('rg11b10ufloat-renderable'));
   const meter = new ExposureMeter(ctx, shaders);
@@ -928,7 +976,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     perf.gpuGap('core.copies');
 
     // 4. AO + contact shadows, deferred lighting
-    ao.run(encoder, frame, perf, frameBindGroup, T.views.normal);
+    ao.run(encoder, frame, perf, frameBindGroup, T.views.normal, shadows.current()[0]?.capture.texelSize ?? 0, camera.kind === 'interior');
     {
       const pass = encoder.beginRenderPass({
         label: 'lighting',
@@ -1174,6 +1222,14 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     setExposureOverride(ev) {
       evOverride = ev;
+    },
+    setContactShadow(params) {
+      ao.setContact(params);
+    },
+    contactShadow: () => ({ ...ao.contact }),
+    contactNear,
+    setShadowDebug(flags) {
+      shadows.debugFlags = flags >>> 0;
     },
     setJitter(enabled) {
       jitterEnabled = enabled;

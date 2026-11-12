@@ -28,6 +28,11 @@ export class ShadowSystem {
   private readonly uniformData = new ArrayBuffer(SHADOW_UNIFORM_BYTES);
   private readonly passData = new Float32Array(20);
   private frames: CascadeFrame[] = [];
+  /**
+   * For A/B pictures of the filter (ShadowUniforms.count.y): 1 = the kernel is not turned per pixel anywhere,
+   * 2 = no dithered cross-fade between cascades (the first cascade that covers a point is used). 0 in the game.
+   */
+  debugFlags = 0;
 
   constructor(
     private readonly device: GPUDevice,
@@ -103,6 +108,7 @@ export class ShadowSystem {
     const f = new Float32Array(this.uniformData);
     f.fill(0);
     u32[0] = this.frames.length;
+    u32[1] = this.debugFlags;
     f[4] = 2 * Math.tan(frame.sun.angularRadius);
     f[5] = 1 / this.mapSize;
     f[6] = this.mapSize;
