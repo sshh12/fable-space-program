@@ -432,8 +432,8 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
   });
 
   it('trajectory guard: the attended craft and the launch clamps at 400 ticks are bit-identical to the recording', () => {
-    // tests/mission/trajectory-guard.json, recorded once on the tick-grid tree and never again (MIGRATION_V2
-    // principle 4): body-centred position, velocity, attitude and mass as float64 bit patterns.
+    // tests/mission/trajectory-guard.json (MIGRATION_V2 principle 4): recorded on the tick-grid tree and once
+    // more, by lead decision, with the tick-pure rule; pinned by tools/dev/guard-pins.test.ts. Body-centred position, velocity, attitude and mass as float64 bit patterns.
     const guard = readGuard();
     expect(guard.samples).toHaveLength(400);
     expect(guardSamples).toHaveLength(400);

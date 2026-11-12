@@ -17,7 +17,9 @@
  * stepping tier changes by design when the 25 km bubble becomes islands), a survivor on the same orbit or at
  * the same place within 500 m.
  *
- * The file is never re-recorded. `record` below refuses to overwrite it. What may be adapted when ids or the
+ * The file is not re-recorded by a package: `record` below refuses to overwrite it, and
+ * tools/dev/guard-pins.test.ts holds its content. Only the lead re-records it, for a decided change of the
+ * flight (done once: the tick-pure rule of src/sim/clock.ts). What may be adapted when ids or the
  * snapshot change is how a vessel is FOUND (by role, never by id: "the active vessel", "the first vessel
  * shed"), never the numbers.
  *
