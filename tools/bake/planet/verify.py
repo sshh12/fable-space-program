@@ -262,15 +262,21 @@ def verify_solid(body: config.Body, rep: Report, quick: bool) -> dict:
         d = cap_points(0.0, 0.0, body.radius * 3.0, body.radius, n=4000)
         rel = hr.bicubic(d, F) - heights.reference_term(body, d)
         rep.check(bid, "procedural crater relief present", float(rel.std()) > 1.0, f"std {rel.std():.1f} m over the body")
-    for p in config.radii_crosscheck(body):
-        rep.check(bid, "radii = data/staged/bodies/radii.json", False, p)
+    if (rt.STAGED / "bodies" / "radii.json").is_file():
+        probs = config.radii_crosscheck(body)
+        rep.check(bid, "radii = data/staged/bodies/radii.json (mean and a, b, c)", not probs, "; ".join(probs))
     staged_terrain = rt.STAGED / "terrain" / f"{bid}.terrain.json"
     if staged_terrain.is_file():
         st = rt.read_json(staged_terrain)
         amp = st.get("amplification", {})
         want = procedural.resolved_amplification(body)
-        rep.check(bid, "staged terrain section names this tile set and model", st.get("tileset") == bid and amp.get("model") == want["model"],
-                  f"tileset {st.get('tileset')}, model {amp.get('model')}")
+        rep.check(bid, "staged terrain section names this tile set and the resolved amplification (model, seed, every parameter)",
+                  st.get("tileset") == bid and amp.get("model") == want["model"] and amp.get("seed") == want["seed"]
+                  and amp.get("params") == want["params"], f"tileset {st.get('tileset')}, model {amp.get('model')}, seed {amp.get('seed')}")
+        el = hl.get("elevation", {})
+        rep.check(bid, "staged terrain section's elevation range contains the baked one",
+                  st.get("minElevation", 0) <= el.get("min", 0) and st.get("maxElevation", 0) >= el.get("max", 0),
+                  f"section {st.get('minElevation')}..{st.get('maxElevation')}, baked {el.get('min')}..{el.get('max')}")
     return {"heightBytes": sizes["height"], "albedoBytes": sizes["albedo"],
             "globalsBytes": rt.dir_size(rt.TILES_ROOT / bid / "globals"),
             "heightTiles": len(promised(hl)), "albedoTiles": len(promised(al))}

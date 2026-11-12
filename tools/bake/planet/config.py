@@ -308,4 +308,7 @@ def radii_crosscheck(body: Body) -> list[str]:
     mean = row.get("mean", row.get("meanRadius"))
     if mean is None or abs(float(mean) - body.radius) > 0.5:
         problems.append(f"{body.id}: mean radius {body.radius} m, radii.json {mean}")
+    abc = row.get("radiiAbc")
+    if abc is not None and any(abs(float(x) - y) > 0.5 for x, y in zip(abc, body.abc)):
+        problems.append(f"{body.id}: radii {body.abc} m, radii.json radiiAbc {abc}")
     return problems
