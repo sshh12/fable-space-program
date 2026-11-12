@@ -15,7 +15,9 @@ change behaviour or pictures in your packages, or give you something to use. Eac
   - the reference frame's up is the local vertical in BOTH navball modes (orbit mode: azimuth from the horizontal
     part of the velocity; it was the orbit plane with up perpendicular to the velocity);
   - the elevation is `chaseReferenceElevation(angular radius of the body, fovY)` + the player's pitch: 12 degrees
-    near a body as before, rising with the altitude so that the body stays in the frame;
+    near a body as before, rising with the altitude so that the body stays in the frame; a body that is a small
+    disc stands to the lower left of the vehicle (the default view rolls up to 65 degrees, `chaseReferenceRoll`;
+    the roll eases out when the player turns or tilts the camera);
   - in orbit mode the default azimuth is on the sunward side of the vessel and follows the sun until the player
     turns the camera (`rig.autoAzimuth`);
   - the default distance follows the size of what is left of the vehicle (`chaseAutoDistance`), the player's
@@ -25,7 +27,7 @@ change behaviour or pictures in your packages, or give you something to use. Eac
   Migration: nothing to change for the default behaviour. To pin the old one:
   `createChaseRig({ defs, terrain, frameBody: false, distanceRadii: Infinity, startBehindPreviousView: true })`.
   New on the rig: `resetView()` (bind it to a key if you like: back to the default framing), `offsets`,
-  `autoAzimuth`. `setOrbit(azimuth, elevation, distance)` is unchanged (absolute values; it counts as player
+  `autoAzimuth`, `roll`. `setOrbit(azimuth, elevation, distance)` is unchanged (absolute values; it counts as player
   input). `CHASE_FRAME_BLEND_SECONDS` is deprecated (a navball-mode change no longer moves anything).
   Code that copies the rig's frame (tools/footage/director.js did) must use the local vertical as up.
 - **Vessel LOD observers** (`src/camera/listener.ts` `vesselGroundObserver`, request app-integration-7): a vessel
