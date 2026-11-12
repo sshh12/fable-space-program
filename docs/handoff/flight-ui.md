@@ -1004,3 +1004,97 @@ Own estimate after this round (honest): photo lens about 8, artifact lens about 
 app showed is gone at its causes (and the two further faults found on the way), the r5 major is closed and checked
 in the pictures; what still holds the pictures back is the evidence rather than the HUD: most lab views sit over the
 lab backdrop, and two stills of the real renderer carry the renderer's own faults (the lander's shadow, the streak).
+
+## Visual close-out, round 7
+
+Work list: `docs/qa/wave2/flight-ui.r6.combined.json` (design-and-information 7.3, artifact 7.6; 0 blockers, 6
+majors, 9 minors), read in full. Its point: the lab scenes never reached the values the real flight produces, so
+the faults showed only in the app. This round puts those values through the lab and the specs.
+
+### Real-flight states in the lab and the specs
+
+`labs/flight-ui/main.ts` `VARIANTS` (`?variant=<name>`), each a FakeSim scene with the setup of a moment of the
+browser mission (values from `docs/qa/mission/browser-mission-2026-11-11.json` and `out/screens/mission/`):
+`tli` (300 km, 10.85 km/s on a 185 km x 424 800 km ellipse, T+ 2:57:20), `moonArrival` (64 360 km from the Moon,
+falling toward a 117 km periapsis, RAILS x50, T+ 2d 15:07), `transEarth` (314 Mm out, falling toward a 40 km
+perigee from 506 800 km, RAILS x100, T+ 5d 03:23, the capsule separation next), `lunarReturn` (the entry interface
+at 122 km and 11.0 km/s, PHYSICS x4, T+ 7d 20:33, the zone 5 291 km ahead); plus `scene=lunarSurface&ground=-1902`
+(landed at Tranquility Base, 1.9 km below the Moon's datum). New lab settings: `warp=<index>` (or a variant's own),
+an entry scene opens in the surface navball frame (as the game switches to it), stage figures at the ambient
+pressure (`deltaVNow` below `deltaVVac` on the pad: the Isp falls toward its sea-level value), a maneuver's burn time
+from the active stage's acceleration (not the FakeSim's delta-v / 10), and the lab capsule carries the Kestrel's
+chutes, its light judged as the sim does.
+
+Spec (`tests/browser/flight-ui/screens.spec.ts`): `expectTextInFrames` - every text of the HUD lies inside its frame's
+padding box (panel, tile, window, pill, housing) and no two texts of one row overlap - runs in every screenshot at
+720p and 4K, the real-flight states included (`flight-<name>-720p/4k`); the next tile over every stage of the stack
+(nothing cut, no ellipsis); the stack's rows add up to the header on the pad (where now and vacuum differ); landed off
+the datum the HUD and the MFD FLT / LND pages read under 5 m; no chute light without air (lunar orbit, the Moon, low
+orbit); no down-range / cross-range in a vertical climb.
+
+### The six majors
+
+| Finding | Cause | Fix |
+|---|---|---|
+| Text outside its frame at real values: the warp factor past the clock with days on it, "HDG" past the speed window at 10 km/s, apsis values into their countdowns, long recovery rows | Windows sized for the lab's values | Clock: the warp word over the factor at the panel's right ("RAILS / ×100", "PHYSICS / ×4"; factors from a thousand in thousands, "×100k"); speed window 31u and whole m/s from 10 km/s ("SURFACE 11 001 m/s"); countdowns a day or more away to the hour ("T− 9d 17h"), apsis gap 0.8u, left column 25.5u; the entry prediction row "Entry point". Pictures: `flight-*` |
+| The next tile cut its name and action words ("Capsule separ…", "release drogues · deploy mai…") | `nowrap` + ellipsis | The next tile's name and action line wrap (`flight-transEarth`: "8 Capsule / separation · shut down · separate · RCS on"); the spec walks every stage |
+| Delta-v rows against the total: the rows at the current pressure, the total in vacuum (pad: 11 809 under 20 200) | My display choice: `describeStages` showed `StageInfo.deltaVNow` under the sim's vacuum `deltaVTotal`; the sim's figures are each right | Every figure of the stack in vacuum (`StageTileView.deltaV`), the header saying so ("Δv 12 332 m/s vac"); the current-pressure figure kept apart (`deltaVNow`, the active tile's tooltip). No sim request needed |
+| AUTO altimeter: −1 902 m landed at Tranquility, a jump at lift-off; 75 to 18 m at clamp release; −0.1 m afloat | `altitudeSource` forced sea level / datum whenever landed | AUTO is radar below 2 km, landed included, never below 0 (`altitudeValue`); the title names the state ("ALTITUDE · RADAR · LANDED", "· ON PAD", "· SPLASHED"). The sim reports radar 0 while held on the clamps and the true clearance (about 18 m on the mount) after the release: request flight-ui-9 |
+| The ENT page's drogue light RISKY in lunar orbit, SAFE on the Moon | The sim judges the envelope without an air test, and the HUD passed it on | `describeChuteEnvelope` is null outside an atmosphere (HUD row hidden, MFD "Chutes —"); request flight-ui-9 for the sim |
+| Down-range / cross-range flipping sides in the vertical climb | A ground track from 0.1 m/s of drift | `hasGroundTrack`: 1 m/s and a path no steeper than 75 deg; below that "Ground track · vertical" |
+
+### Minors
+
+- ACTIVE badge on its own line: removed; the active tile is the green one (edge, icon, number), its tooltip names it.
+- MFD wording: STG "1 ACTIVE" (BURNING only under thrust), "Δv total (vac)" / summary "Δv total", SYS "TWR now",
+  mass always in tonnes ("6.1 t"), the warp limiter's reason in sentence case after the colon.
+- Maneuver pane: the title says what the countdown counts to ("BURN IN T− 9:53", "BURNING T+ 0:12"); burns under
+  10 s read to a tenth of a second ("0.3 s").
+- Launch panel without a target: "NO TARGET" in the title, the hint, and explicit "Set Moon as target" buttons; a set
+  target is a lit chip in the title (a click clears it).
+- Navball: a marker the bezel's lip would hide (70-90 deg off the nose, near hemisphere) is held at the window's edge,
+  partly under the lip (the translunar prograde, `translunar-4k`).
+- Key-help backquote lowered into its cap; ORB apsis labels on dark plates.
+- Map obstacles: `HUD_OBSTACLE_SELECTOR` exported from `@/ui` (request flight-ui-10 for the app to import it).
+- Pad g load 0.88 / 1.00 g: the sim's settling on the clamps (request flight-ui-9).
+- Lab evidence: entry views in the surface frame, maneuver burn times from the stage, the SOI milestone shown at the
+  Moon (`variant=moonArrival`).
+
+### Request app-integration-12 item 3 / cockpit-17 (blocking): the ORB page paint
+
+The body graphic is shaded in the view's canonical frame (drawn turned onto the view) at 8 px size buckets, and a
+new one is shaded over several paints within `shadeBudgetMs` (default 0.45 ms), the previous one shown meanwhile.
+Measured while the orbit's periapsis turns 3 deg and its plane 0.4 deg on every paint: **mean 0.52 ms, p99 0.72 ms,
+max 0.77 ms** per 1024 x 768 paint (was 5.2-5.7 ms). Resolved.
+
+### Requests
+
+Filed: flight-ui-9 (sim, sim-core-v2: no chute light without air; radar altitude while held on the clamps; the g
+load while held or at rest), flight-ui-10 (app, the lead: import `HUD_OBSTACLE_SELECTOR`). Resolved: cockpit-17 and
+item 3 of app-integration-12 (above). flight-ui-3 and -7 were answered by the app fixer (1b9f665). No other open
+request names a flight-ui path.
+
+Not fixed, plainly:
+- On the pad the AUTO altimeter reads the sim's radar altitude: 0 while held, the true 18 m clearance after the
+  release (a jump of the vehicle's height on its mount) until flight-ui-9 lands; the lab already shows 18.0 m.
+- The chute light and the pad's g load come from the sim; the HUD and the MFD gate the light without air meanwhile.
+- The lab's ascent still keeps its stage numbers when shown over the later climb still (`real-ascent`).
+- Most lab views are still over the lab backdrop; the real renderer is shown as stills.
+
+Perf (2026-11-12, through the GPU gate at one slot, other agents' jobs running; 2560 x 1440; method of section 4):
+HUD whole main-thread cost **0.14 ms** per frame all-in (0.13 visible minus hidden; low orbit with a node) and
+**0.11 ms** (0.10; powered ascent), JavaScript inside `update()` 0.066 / 0.069 ms; navball 512 texture p99
+**0.0103 / 0.0104 ms** with the 7 ms GPU ballast. ORB page paint while the orbit changes: mean 0.52, p99 0.72,
+max 0.77 ms. Budgets: HUD < 0.5 ms, navball < 0.05 ms p99, a cockpit page paint about 1 ms worst: met. HUD coverage
+(720p): ascent 19.9 %, low orbit 19.8 % (budget 20 %).
+
+Verification: scoped typecheck OK; `npx vitest run src/input src/camera src/ui tests/unit/flight-ui
+tools/dev/boundaries.test.ts` 191 passed; `playwright tests/browser/flight-ui --project=functional --project=perf`:
+run 1 90 of 97 (coverage 20.08 % in the ascent, the maneuver title, a coherence rule too strict for a lunar return,
+the burning tile against its now-vacuum figure: all fixed), run 2 functional 95 of 95 (every picture in
+`out/screens/flight-ui/` from it, looked at: the real-flight states whole at 720p, the clock, the apsis rows and the
+maneuver pane cropped, the navball rim at 4K, the key cap).
+
+Own estimate after this round (honest): design-and-information about 8, artifact about 8. Every finding of the r6
+list was changed at its cause and is now exercised by a lab state at real-flight values with a spec that would catch
+it coming back; what is left is the sim's three readouts (requested) and the lab-backdrop evidence.
