@@ -50,8 +50,23 @@ jobs:
         run: npm run typecheck
       - name: Boundaries
         run: npx vitest run tools/dev/boundaries.test.ts
+      # CI has no baked data (data/tiles, data/sky are not in the repository). These files read it without
+      # skipping when it is absent (run 43194854038: "baked tiles are missing", ENOENT data/sky): request
+      # docs/requests/platform-delivery-1.md asks their owners to skip without the data, as
+      # tests/unit/terrain-core/realData.test.ts does; each entry goes when its file does.
       - name: Unit suites (synthetic terrain)
-        run: npx vitest run
+        run: >-
+          npx vitest run
+          --exclude tests/unit/site-bake/pads.test.ts
+          --exclude tests/unit/sim-world/commands.test.ts
+          --exclude tests/unit/sim-world/protocol.test.ts
+          --exclude tests/unit/sim-world/surface.test.ts
+          --exclude tests/unit/sim-world/milestones.test.ts
+          --exclude tests/unit/sim-world/browserLoop.test.ts
+          --exclude tests/unit/sim-world/scenario.test.ts
+          --exclude tests/unit/sim-vessel/trajectory-fixtures/trajectory-fixtures.test.ts
+          --exclude tests/unit/terrain-render/selection.test.ts
+          --exclude tests/unit/sky/skyData.test.ts
       - name: Production client build
         run: node tools/dev/build-client.mjs --target=ci
 

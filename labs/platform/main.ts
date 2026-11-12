@@ -32,6 +32,10 @@ interface PlatformApi {
   readWorker(packListUrl: string, set: string, tiles: TileReq[], cacheBytes: number | null): Promise<ReadResult>;
   terrainBits(packListUrl: string, bodyId: string, dirs: Vec3[], radius: number): Promise<string>;
   clearCache(): Promise<void>;
+  /** A pack list held in the page (a blob: URL), for lists the spec builds (mirror only, expired URLs). */
+  listUrl(listJson: string): string;
+  /** Time to the first tile's bytes and to it decoded (an image layer through createImageBitmap). */
+  firstTile(packListUrl: string, set: string, req: TileReq): Promise<{ bytesMs: number; decodedMs: number; bytes: number; stats: PackSourceStats }>;
   specFromCreateTileSource(packListUrl: string): Promise<string>;
 }
 
@@ -79,6 +83,19 @@ window.__platform = {
   async clearCache() {
     const root = await navigator.storage.getDirectory();
     await root.removeEntry(OPFS_CACHE_DIR, { recursive: true }).catch(() => undefined);
+  },
+  listUrl(listJson) {
+    return URL.createObjectURL(new Blob([listJson], { type: 'application/json' }));
+  },
+  async firstTile(packListUrl, set, [layer, face, level, x, y]) {
+    const t0 = performance.now();
+    const src = createPackTileSource({ packListUrl });
+    const b = await src.tile(set, layer, { face: face as TileKey['face'], level, x, y });
+    const bytesMs = performance.now() - t0;
+    if (!b) throw new Error('no such tile');
+    const bmp = await createImageBitmap(new Blob([new Uint8Array(b)], { type: 'image/webp' }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+    bmp.close();
+    return { bytesMs, decodedMs: performance.now() - t0, bytes: b.length, stats: src.stats() };
   },
   async specFromCreateTileSource(packListUrl) {
     const src = createTileSource({ kind: 'pack', packListUrl });

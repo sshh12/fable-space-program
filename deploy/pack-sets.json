@@ -1,0 +1,134 @@
+{
+ "v": 1,
+ "uploadedAt": "2026-11-12T09:53:52.508Z",
+ "sets": {
+  "moon": {
+   "type": "tiles",
+   "index": "d0bf71642a10307c08252b60b8ef2ad9",
+   "indexBytes": 1658921,
+   "packs": [
+    {
+     "hash": "f970b7e90663fb06fc92a2f52ef42e49",
+     "bytes": 77090855
+    },
+    {
+     "hash": "999e79b7d3382bf293f1d0e6d07cf6e3",
+     "bytes": 133088816
+    },
+    {
+     "hash": "4925d0a2cfb42a0c5dd7cee82c0d7572",
+     "bytes": 230186826
+    },
+    {
+     "hash": "384e49a69178d86d2a3ca04520ca4b62",
+     "bytes": 268395614
+    },
+    {
+     "hash": "7518139169692730f9762cc2f4c8da19",
+     "bytes": 88616951
+    },
+    {
+     "hash": "3a84a41d7d5b25823bf46a9dd874d6f8",
+     "bytes": 268408954
+    },
+    {
+     "hash": "f44745d80d6532ed2f5f404e398d9a91",
+     "bytes": 268415056
+    },
+    {
+     "hash": "fc505ee08bfad2b18e8f292bba1bafc5",
+     "bytes": 167787760
+    },
+    {
+     "hash": "c4513cebf0ed3124df30b8cc5edd0f3a",
+     "bytes": 268401280
+    },
+    {
+     "hash": "05705ef6cc8da27ad75de022ff7e6795",
+     "bytes": 90532954
+    },
+    {
+     "hash": "18642bd687c5dfd850681d7933b4ed7f",
+     "bytes": 119507735
+    },
+    {
+     "hash": "a40b422731e6a4ef9feaeb44062df8ba",
+     "bytes": 177607824
+    },
+    {
+     "hash": "cf5c25ceeee324004080b38b8356609e",
+     "bytes": 109453824
+    },
+    {
+     "hash": "86064748f4bc51db1d5311a8a69c0272",
+     "bytes": 74269332
+    },
+    {
+     "hash": "e1ccfed3a64ea2550a7a54548ad7d108",
+     "bytes": 183799880
+    },
+    {
+     "hash": "f53738efdc5fff56a52873a447b877e2",
+     "bytes": 75310172
+    },
+    {
+     "hash": "ba562a1d3f864ce8a836db24e90155b6",
+     "bytes": 83664792
+    },
+    {
+     "hash": "8da7338d199f968e7f6bcb9443d69ee6",
+     "bytes": 75912672
+    },
+    {
+     "hash": "fe401ec62054fe167de46780b2660b7c",
+     "bytes": 73733402
+    },
+    {
+     "hash": "7eac66a84f3241ce68edffa180239acd",
+     "bytes": 69954272
+    },
+    {
+     "hash": "ca874cc4d1533f5a98d7eab9084deaf2",
+     "bytes": 104234342
+    },
+    {
+     "hash": "112590f846e8e07be0e1f13f2572f6f0",
+     "bytes": 77350202
+    },
+    {
+     "hash": "8f4a0b2a88324e439eb3015d8e8a1442",
+     "bytes": 97427662
+    },
+    {
+     "hash": "d6a6a0d4fbf07bc6d67bb7728a19e348",
+     "bytes": 122020904
+    },
+    {
+     "hash": "1a4e99ea1e9e8d66ecbb9f42a94a2411",
+     "bytes": 69779640
+    },
+    {
+     "hash": "a65e4c730454d8392e278f5d48d3ebb2",
+     "bytes": 13366168
+    },
+    {
+     "hash": "13abb0ec7d1b93c6b86815553fee73a4",
+     "bytes": 387418
+    }
+   ],
+   "contentHash": "597c5d666b132450"
+  },
+  "sky": {
+   "type": "files",
+   "index": "74b6d629de48622a72f6f4eaae37a7e4",
+   "indexBytes": 869,
+   "packs": [
+    {
+     "hash": "89b9f814026e6070bb1af7c33371a569",
+     "bytes": 134517378
+    }
+   ],
+   "contentHash": null
+  }
+ }
+}
