@@ -409,21 +409,21 @@ export const padGroundworks: SiteGenerator = ({ params, ground }) => {
     b.mat('gravel-fill').masks(0, 1, 0.3, 0);
     for (const m of berms) berm(b, ground, m.x, m.z, m.r, m.a0, m.a1, m.h);
   });
-  // Road lamp posts: a tapered steel pole on a concrete stub, an arm, a luminaire.
+  // Road lamp posts: a tapered steel pole on a concrete plinth, an arm, a luminaire.
   const poleFrame = (p: { x: number; z: number; heading: number }, fn: () => void, b: MeshBuilder): void => void b.at(xf.mul(xf.translate(p.x, ground.lo(p.x, p.z) - 0.3, p.z), xf.rotY(-p.heading)), fn);
   const poleModel = buildModel('pad.groundworks.poles', (b) => {
     for (const p of poles) {
-      const stub = ground.hi(p.x, p.z) - ground.lo(p.x, p.z) + 0.3 + 0.35;
+      const plinth = ground.hi(p.x, p.z) - ground.lo(p.x, p.z) + 0.3 + 0.35;
       poleFrame(
         p,
         () => {
           b.mat('concrete-wall').masks(0, 1, 0.3, 0);
-          box(b, 0.6, stub, 0.6, [0, stub / 2, 0], 'pole-base');
+          box(b, 0.6, plinth, 0.6, [0, plinth / 2, 0], 'pole-base');
           b.mat('galvanised').masks(0.15, 1, 0.25, 0);
-          frustum(b, 0.11, 0.06, stub, stub + POLE_HEIGHT, b.pick(10, 6, 4), 'pole');
-          rod(b, [0, stub + POLE_HEIGHT - 0.1, 0], [0, stub + POLE_HEIGHT + 0.25, -POLE_ARM], 0.035, b.pick(8, 5, 4), 'pole-arm');
+          frustum(b, 0.11, 0.06, plinth, plinth + POLE_HEIGHT, b.pick(10, 6, 4), 'pole');
+          rod(b, [0, plinth + POLE_HEIGHT - 0.1, 0], [0, plinth + POLE_HEIGHT + 0.25, -POLE_ARM], 0.035, b.pick(8, 5, 4), 'pole-arm');
           b.mat('steel-dark');
-          box(b, 0.34, 0.12, 0.8, [0, stub + POLE_HEIGHT + 0.27, -POLE_ARM - 0.25], 'luminaire');
+          box(b, 0.34, 0.12, 0.8, [0, plinth + POLE_HEIGHT + 0.27, -POLE_ARM - 0.25], 'luminaire');
         },
         b,
       );
@@ -432,8 +432,8 @@ export const padGroundworks: SiteGenerator = ({ params, ground }) => {
   const poleLamps = buildModel('pad.groundworks.poleLamps', (b) => {
     b.mat('lamp').masks(0, 1, 0, 0);
     for (const p of poles) {
-      const stub = ground.hi(p.x, p.z) - ground.lo(p.x, p.z) + 0.3 + 0.35;
-      poleFrame(p, () => box(b, 0.26, 0.03, 0.6, [0, stub + POLE_HEIGHT + 0.2, -POLE_ARM - 0.25], 'lens'), b);
+      const plinth = ground.hi(p.x, p.z) - ground.lo(p.x, p.z) + 0.3 + 0.35;
+      poleFrame(p, () => box(b, 0.26, 0.03, 0.6, [0, plinth + POLE_HEIGHT + 0.2, -POLE_ARM - 0.25], 'lens'), b);
     }
   });
   const withBerms = berms.length > 0;
