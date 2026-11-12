@@ -65,3 +65,28 @@ work lands.
   commits, so the id is the same. Game: upload 40 s, build and deploy 2 min 9 s, no build pause.
 - 01:35 coordinator: the launcher keeps its own lock (done: data/stack/.launcher.lock) and writes
   `<build>.use-<pid>` beside the client build it serves (done; removed at teardown, stale ones by `down`).
+- 01:35 ALTER SYSTEM on Railway (ops job `pgsettings`): accepted; shared_buffers 128MB -> 96MB and
+  max_connections 100 -> 40 pending a restart, max_wal_size 1GB -> 256MB and min_wal_size 80MB -> 64MB at
+  once. Postgres restarted with `railway restart` under the connected hello game: the game logged db-lost at
+  09:35:43.855 UTC (2.2 s after the command) and db-back 850 ms later.
+- 01:36-01:39 packed (cpu class; the bake slot stayed with site-bake): moon 164,874 tiles + 3 files, 27 packs,
+  3.39 GB, index 1.66 MB, 7 s; sky 9 files 135 MB, 1 pack; assets 185 files 136 MB, 2 packs; earth 697,346
+  tiles + 3 files, 66 packs, 10.30 GB, index 4.55 MB, 62 s. data/packs 13.96 GB. Tile counts equal the terrain
+  guard's file counts. Upload to the packs bucket started (35-40 Mbit/s, resumable per pack).
+- 01:44 FULL SWEEP green: every promised tile and every plain file of earth and moon through the pack source in
+  four modes (whole packs on disk, bucket presigned ranges, mirror ranges, mirror 2 MiB slices; the mirror is
+  the stack's shell proxying the stand-in), byte-identical to the fs source: 0 mismatches (earth 10.26 GB in
+  123 s, moon 3.39 GB in 39 s). The first attempt hit the shell's own budgets (8 GB a day, 300 MB per address
+  in 10 minutes: correct behaviour; the sweep lifts them through EGRESS_MIRROR_BYTES_PER_DAY and
+  MIRROR_PER_ADDRESS_BYTES), the second a burst of ~1,000 sockets on Windows: the pack source now keeps at
+  most 24 requests in flight.
+- 01:43 DEPLOY OVERLAP on Hobby (redeploy of game, same image): the new deployment was healthy 41 s after the
+  command; SIGTERM reached the old one 1.4 s later; it logged a heartbeat every second up to 46 s after SIGTERM
+  and nothing after: the 45 s drain is honoured.
+- CDN (shell, Railway edge den1): a request with Range is never cached (x-cache DYNAMIC every time, also on an
+  object the CDN holds whole), and the origin answers it with just the range; whole objects are (2 MiB slice:
+  MISS 334 ms first byte, then HIT 40 ms; the 20 MB boot pack MISS then HIT); index.html and endpoints.json
+  DYNAMIC (no-cache honoured). So the mirror's mode is SLICES of 2 MiB (the brief's rule); bytes sent per byte
+  needed is measured on the recorded session. The origin sees the client's address first in X-Forwarded-For
+  and in X-Real-IP behind the CDN (the per-address limit works). Bucket from Node: presigned ranged GET 206
+  with CORS (ACAO *), ExposeHeaders honoured (Content-Range readable), preflight 200, a changed date 403.
