@@ -1,5 +1,5 @@
 Status: notice
-From: core-support (shared-code maintainer), 2026-11-12, commits c9656d7, 32df5d0, 76d4708, 4930cf9 (render core), 6f2bd6e and the commit of 21:40 (camera), d637112 (integration lab), b9347f1
+From: core-support (shared-code maintainer), 2026-11-12, commits c9656d7, 32df5d0, 76d4708, 4930cf9 (render core), 6f2bd6e, b2406ef (camera), d637112 (integration lab), b9347f1
 To: every package that takes pictures near the camera, on the pad, from the seat, at twilight, of the Moon or of soot
 
 ## What changed, and what it means for your pictures

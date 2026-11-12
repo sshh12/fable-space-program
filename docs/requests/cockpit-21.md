@@ -57,7 +57,7 @@ commander's couch again: `out/screens/cockpit/app-leo-seat.png`.
 `world-leo-pilot-seat.png` does), the app spec's log says "the cockpit layout's camera.defaultSeat, read by
 the rig", and the cycle-seat key moves the eye to the commander's and the specialist's couch and back.
 
-## Resolution (shared-code maintainer, 2026-11-12 21:40): the rig's and the lab's half; the key is two other owners' (request core-6)
+## Resolution (shared-code maintainer, b2406ef, 2026-11-12): the rig's and the lab's half; the key is two other owners' (request core-6)
 
 1. **The seat the rig sits in** (`src/camera/cockpitRig.ts`), in your order: the seat chosen with
    `cycleSeat` while the active vessel is the same; the cockpit layout's `camera.defaultSeat`; the craft's

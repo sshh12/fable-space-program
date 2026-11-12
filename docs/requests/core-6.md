@@ -5,7 +5,7 @@ Blocking: no   (the cockpit view sits in the layout's default seat without it; o
 
 ## Problem
 Request cockpit-21 asks for a key that moves the player's eye to the next couch of the cabin. The rig's
-half is in (`src/camera/cockpitRig.ts`, commit of 2026-11-12 21:40): `createCockpitRig` returns a
+half is in (`src/camera/cockpitRig.ts`, b2406ef): `createCockpitRig` returns a
 `CockpitRig` with `cycleSeat(): string | null` (the next seat of the active vessel's cabin in the mould
 line's order, wrapping round, the look back at the rest view; the choice holds while the active vessel
 stays the same) and `seatId` (the seat of the last update). Nothing calls it yet: the action and its key
