@@ -354,14 +354,18 @@ export function ignitionScript(lib: DefLibrary, stack: LabStackId, distance: num
   };
 }
 
-/** Reentry at a constant plasma intensity (cabin or chase listener). */
-export function plasmaScript(lib: DefLibrary, plasma: number, kind: 'interior' | 'external'): Script {
+/**
+ * Reentry at a constant plasma intensity (cabin or chase listener) and dynamic pressure `q`, Pa. The default
+ * is the glow alone (q = 0: the entry voice then follows the plasma and nothing else); with air the roar and
+ * the rumble follow the larger of the glow and the hypersonic load (data/defs/audio/environment.json reentry.load).
+ */
+export function plasmaScript(lib: DefLibrary, plasma: number, kind: 'interior' | 'external', q = 0): Script {
   const base = baseSnapshot(lib, 'reentry');
   const l: ListenerSpec = kind === 'interior' ? { kind: 'interior', mode: 'cockpit', position: seatOf(lib, 'capsule'), pressure: 8 } : externalAt(40, { pressure: 8 });
   return {
-    name: `plasma-${kind}-${plasma}`,
+    name: `plasma-${kind}-${plasma}-${q}`,
     duration: 2.5,
-    frame: frames({ base, listen: () => l, state: () => ({ parts: [], aero: { pressure: 8, q: 9000, mach: 25, plasmaIntensity: plasma }, airVelocityVes: { x: 0, y: -25 * 300, z: 0 }, gLoad: 4, readouts: { altitudeRadar: 75000 }, boundingRadius: 5 }) }),
+    frame: frames({ base, listen: () => l, state: () => ({ parts: [], aero: { pressure: 8, q, mach: 25, plasmaIntensity: plasma }, airVelocityVes: { x: 0, y: -25 * 300, z: 0 }, gLoad: 4, readouts: { altitudeRadar: 75000 }, boundingRadius: 5 }) }),
   };
 }
 

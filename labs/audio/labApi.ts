@@ -33,7 +33,8 @@ export interface AudioLabApi {
   steady(c: SteadyCase, windows: [number, number][], taps: TapName[]): Promise<MeasureResult>;
   /** Onset of the ignition at `at` s in the given taps (relative to each tap's own maximum). */
   ignition(stack: LabStackId, distance: number, taps: TapName[], windows: [number, number][]): Promise<MeasureResult & { onsets: Record<string, number | null>; at: number }>;
-  plasma(level: number, kind: 'interior' | 'external'): Promise<MeasureResult>;
+  /** The entry voice at a constant plasma intensity; `q` = dynamic pressure, Pa (default 0: the glow alone). */
+  plasma(level: number, kind: 'interior' | 'external', q?: number): Promise<MeasureResult>;
   /** Each event type rendered on its own: onset of its one-shot on the events bus. */
   events(): Promise<MeasureResult & { schedule: { type: SimEventType; t: number }[]; onsets: { type: SimEventType; t: number; onset: number | null; silentBefore: boolean }[] }>;
   /** Everything at maximum: true bus peaks, the pre-ceiling master and the master. */
@@ -99,9 +100,9 @@ export function createLabApi(config: AudioConfig, defs: DefLibrary, bank: AssetB
       for (const t of taps) onsets[t] = onset(r, t, { from: 0, fraction: 0.01, win: 0.002 });
       return { ...result(r, taps, windows), onsets, at };
     },
-    async plasma(level, kind) {
+    async plasma(level, kind, q = 0) {
       const taps: TapName[] = ['reentry', 'reentry.air', 'reentry.body', 'master'];
-      return result(await render(plasmaScript(defs, level, kind), taps.filter((t) => t !== 'master')), taps, [[1, 2.5]]);
+      return result(await render(plasmaScript(defs, level, kind, q), taps.filter((t) => t !== 'master')), taps, [[1, 2.5]]);
     },
     async events() {
       // One short render per event type, so no earlier one-shot is still ringing when the next is measured.

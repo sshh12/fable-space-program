@@ -574,11 +574,16 @@ export class SoundModel {
     const m = Math.min(1, Math.max(0, v.aero.mach / a.wind.machForMaxCutoff));
     const rel = this.relative(geom, v, v.comLocal);
     const air = this.airOf(geom, v);
-    const paths = geom.interior
-      ? { air: { ...this.paths(geom, 'aero', rel, air, a.refDistance, v.id, false, 0, a.hullCutoffHz).air, gain: 0 }, body: { gain: w === -Infinity ? 0 : dbToGain(a.hullGainDb), cutoff: a.hullCutoffHz } }
-      : // Outside: through the air where it carries, and through the skin to a camera that rides with the vessel
-        // (the only way while the camera is outside the Mach cone or the air is too thin to carry sound).
-        this.paths(geom, 'aero', rel, air, Math.max(a.refDistance, v.boundingRadius), v.id, true, w === -Infinity ? 0 : dbToGain(a.bodyGainDb), a.hullCutoffHz);
+    let paths: SourcePaths;
+    if (geom.interior) {
+      paths = { air: { ...this.paths(geom, 'aero', rel, air, a.refDistance, v.id, false, 0, a.hullCutoffHz).air, gain: 0 }, body: { gain: w === -Infinity ? 0 : dbToGain(a.hullGainDb), cutoff: a.hullCutoffHz } };
+    } else {
+      // Outside: through the air where it carries, and through the skin to a camera that rides with the vessel
+      // for the part the air does not carry (all of it while the camera is outside the Mach cone or the air is
+      // too thin to carry sound; none of it beside a subsonic vessel at sea level, where the wind is heard as before).
+      paths = this.paths(geom, 'aero', rel, air, Math.max(a.refDistance, v.boundingRadius), v.id, true, w === -Infinity ? 0 : dbToGain(a.bodyGainDb), a.hullCutoffHz);
+      paths.body.gain *= 1 - Math.min(1, paths.air.gain);
+    }
     return {
       wind: { gain: dbToGain(w + a.wind.gainDb), cutoff: lerp(a.wind.cutoffHz[0], a.wind.cutoffHz[1], m) },
       noise: { gain: dbToGain(w + a.noise.gainDb), lowHz: lerp(a.noise.bandHz[0], a.noise.bandAtMachMax[0], m), highHz: lerp(a.noise.bandHz[1], a.noise.bandAtMachMax[1], m) },

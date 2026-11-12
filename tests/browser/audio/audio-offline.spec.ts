@@ -150,6 +150,14 @@ test('reentry bus tracks plasmaIntensity', async ({ page, pageLog }) => {
   }
   // Tracks: level follows 20 log10(plasma) within a few dB over a decade (0.1 -> 1).
   expect(db(cabin[4]!) - db(cabin[1]!)).toBeGreaterThan(14);
+  // With air on the capsule (9 kPa at Mach 25: half of the load's reference) the roar and the rumble do not
+  // wait for the glow: without plasma the bus is 4 to 12 dB under its level at full plasma, not silent.
+  const loaded: number[] = [];
+  for (const p of [0, 1]) loaded.push((await call(page, (l, a: number) => l.plasma(a, 'interior', 9000), p)).taps['reentry']!.windows[0]!.rms);
+  record('reentryUnderLoad', { q: 9000, mach: 25, plasma: [0, 1], cabinRmsDb: loaded.map(db) });
+  expect(loaded[0]!).toBeGreaterThan(0);
+  expect(db(loaded[1]!) - db(loaded[0]!)).toBeGreaterThan(4);
+  expect(db(loaded[1]!) - db(loaded[0]!)).toBeLessThan(12);
   await expectNoErrors(page, pageLog);
 });
 

@@ -13,6 +13,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { ENTRY_PROFILE, entryStateAt, missionEntryScript, type EntryState } from '../../../labs/audio/entry';
+import { baseSnapshot, externalAt, frames, SEA_LEVEL } from '../../../labs/audio/scenes';
 
 let lib: DefLibrary;
 let cfg: AudioConfig;
@@ -113,6 +114,24 @@ describe('sound through the entry', () => {
     expect(o.aero.paths.air.gain).toBe(0);
     expect(o.aero.paths.body.gain).toBeCloseTo(dbToGain(cfg.environment.aero.bodyGainDb + cfg.mix.propagation.attach.gainDb), 6);
     expect(o.aero.wind.gain).toBeGreaterThan(0.1);
+  });
+
+  it('beside a subsonic vessel at sea level the wind is heard through the air alone: the structure carries only what the air does not', () => {
+    const base = baseSnapshot(lib, 'ascent');
+    const frame = frames({ base, listen: () => externalAt(15), state: () => ({ parts: [], aero: { pressure: SEA_LEVEL, q: 6000, mach: 0.3 }, boundingRadius: 5 }) });
+    const m = new SoundModel(cfg, lib);
+    let o = m.update(frame(0, 0));
+    for (let t = 1 / 60; t < 1; t += 1 / 60) o = m.update(frame(t, 1 / 60));
+    expect(o.aero.paths.air.gain).toBe(1);
+    expect(o.aero.paths.body.gain).toBe(0);
+    // Half-way up (the air carries a third): the rest comes through the skin.
+    const high = frames({ base, listen: () => ({ ...externalAt(15), pressure: 16000 }), state: () => ({ parts: [], aero: { pressure: 16000, q: 6000, mach: 0.3 }, boundingRadius: 5 }) });
+    const m2 = new SoundModel(cfg, lib);
+    let h = m2.update(high(0, 0));
+    for (let t = 1 / 60; t < 1; t += 1 / 60) h = m2.update(high(t, 1 / 60));
+    expect(h.aero.paths.air.gain).toBeGreaterThan(0.2);
+    expect(h.aero.paths.air.gain).toBeLessThan(0.5);
+    expect(h.aero.paths.body.gain).toBeCloseTo((1 - h.aero.paths.air.gain) * dbToGain(cfg.environment.aero.bodyGainDb + cfg.mix.propagation.attach.gainDb), 9);
   });
 
   it('the roar and the rumble follow the hypersonic load after the glow has faded; hiss and crackle stay with the plasma', () => {

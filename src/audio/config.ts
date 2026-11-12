@@ -105,7 +105,8 @@ export interface EnvironmentConfig {
     hullGainDb: number;
     /**
      * Structure coupling of the boundary-layer noise for an outside camera attached to the vessel, dB (before
-     * mix.propagation.attach): what the skin carries when the air cannot (thin air, a camera outside the Mach cone).
+     * mix.propagation.attach), applied to the share the air does not carry to it (1 - airborne gain): all of it
+     * in thin air and outside the Mach cone, none beside a subsonic vessel at sea level.
      */
     bodyGainDb: number;
     wind: { asset: string; gainDb: number; cutoffHz: Range; machForMaxCutoff: number };
