@@ -858,6 +858,20 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   sits just under display white there, and anything brighter clips and blooms instead of turning noon
   into dusk. (A frame full of sunlit cloud or snow is therefore shown at half to two thirds of white; the
   mean alone would have put it at a third.) At night, in an eclipse and in a cabin nothing is bounded.
+- **Daylight does not open up either** (request `vfx-7`). While the sun lights what is in the frame, the
+  exterior target is also bounded from below, at sunny 16 minus `SUNLIT_SHADOW_MIN_EV` = 0.5 EV: a frame
+  of dark ground with a sunlit hull in it (the chase view of a lift-off once the lit pad has left the
+  frame) stays at the daylight exposure instead of opening by a stop or two, a sea of albedo 0.06 beside a
+  white hull stays dark blue, and the sky no longer pumps as the lit share of the frame changes. Three
+  gates, all of them needed before a camera would hold its exposure: the solar disc at the camera (the
+  same `sunVisibility` ramp as the upper bound); sunlit surfaces in the frame (pixels at or above
+  `SUNLIT_SURFACE` = 0.25 of a white surface square to the sun on 0.02 % to 0.2 % of the frame,
+  `SUNLIT_EVIDENCE_FROM / _FULL`: an overcast, the shadow side of a hull lit by the planet, the night side
+  under a sunlit orbit hold none and are metered as before); and the sun 10 to 25 degrees or more above
+  the horizon of the ground under the camera (`MeterInput.sunElevationSin`, `SUNLIT_ELEVATION_MIN /
+  _FULL`: a lunar landing under an 8 degree sun and a dawn splashdown are metered as before). The core
+  computes the elevation for the nearest body; `exposureInfo().sunlitFloor` is the weight of the bound
+  (0..1). Interior views are never bounded.
 - **Emitters** (requests `vfx-1`, `vfx-4`). A plume, a reentry trail or a fireball is invisible to the
   meter. A feature that draws one and wants the camera to react calls
   `coreOf(ctx).addEmissiveHint(luminance, coverage)` in `prepare`, every frame it is in view:
@@ -1286,6 +1300,7 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| Exposure target bounded from below under the sun: sunny 16 - `SUNLIT_SHADOW_MIN_EV` (0.5) while sunlit surfaces are in the frame (`SUNLIT_SURFACE`, `SUNLIT_EVIDENCE_FROM / _FULL`) and the sun stands 10-25 degrees or more above the ground under the camera (`MeterInput.sunElevationSin`, `SUNLIT_ELEVATION_MIN / _FULL`); `MeterResult.sunlitFloor`, `exposureInfo().sunlitFloor`, section 13 | `vfx-7` | vfx (daylight lift-off: no pumping when the lit pad leaves the frame), every daylight exterior frame of dark ground or sea with a sunlit hull, cloud or beach in it (up to 2.5 EV darker than the meter alone chose: dark things stay dark by day) | None in code. Night, twilight, eclipse, overcast, low sun (under 10 degrees), views without a sunlit surface and cabins are metered as before |
 | Mesh G-buffer shader, `standard` shading: a frost veil under the cells, `0.55 x smoothstep(0, 0.6, weight)`, clear coat covered by `max(cells, 0.8 x veil)`, section 10 | `vehicle-pad-6` | vehicle-pad (thin frost over markings) | None at frost weight 0 and 1; between, the paint is hazed evenly instead of left bare between the cells |
 | `PbrMaterialDef.alphaCutoff`: alpha-tested materials in the mesh system's G-buffer and shadow passes (second shadow pipeline with uv for models that have one; stochastic coverage where the mips average the alpha), section 10 | `vehicle-pad-4` | vehicle-pad (gratings, perforated plate) | None: materials without it are drawn exactly as before. The material uniform grew to 80 bytes (internal) |
 | Sun-shadow lookup: the kernel stops turning per pixel where a texel covers 2 to 8 pixels or more (`SHADOW_SPIN_FULL` / `_NONE`); `sampleSunShadowSoft(..., softRadius)`; terrain and regolith pixels take a smallest filter radius from RT4.a (`encodeShadowSoftness` / `decodeShadowSoftness`, `SHADOW_SOFTNESS_MIN_M` / `_MAX_M`), the mesh system writes it from `PbrMaterialDef.shadowSoftness`; sections 6 and 8 | `cockpit-10`, `terrain-render-4` | cockpit (window wells at arm's length), vehicle-pad (a hull seen from a metre or two), terrain (writes RT4.a) | None: receivers seen at under 2 pixels per texel and terrain that leaves RT4.a at 0 are unchanged. Close-up shadow edges are smooth instead of stippled |

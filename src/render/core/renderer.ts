@@ -76,6 +76,8 @@ export interface ExposureInfo {
   outsideFraction: number;
   evOutside: number;
   outsideWeight: number;
+  /** Weight of the bound from below under the sun (request vfx-7): 1 = held at sunny 16 - 0.5 EV or above. */
+  sunlitFloor: number;
   sunVisibility: number;
   override: number | null;
 }
@@ -575,12 +577,16 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       sunAtCamera = sun.illuminance * (0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2]);
       if (sunDiscInView) sunInFrame = sunAtCamera * sunVisibility;
     }
+    // Elevation of the sun over the ground under the camera (the bound from below under the sun, request vfx-7).
+    const below = nearestBody(camera.positionRoot, snapshot, defs);
+    const sunElevationSin = below ? v3.dot(v3.normalize(v3.sub(camera.positionRoot, below.body.rRoot)), sun.dirRoot) : undefined;
     const metering = meter.evaluate({
       sunIlluminance: sunAtCamera,
       sunVisibility,
       // The solar disc itself counts: a camera pointed at the unoccluded sun stops down to the daylight exposure.
       litObjectInView: litObjectInView(snapshot, camera, bodies, vessels, rh, rw / rh) || sunDiscInView,
       ...(sunInFrame !== undefined ? { sunInFrame } : {}),
+      ...(sunElevationSin !== undefined ? { sunElevationSin } : {}),
       kind: camera.kind,
       exposureCompensation: camera.exposureCompensation,
       minEv100: camera.minEv100,
@@ -968,7 +974,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     exposureInfo() {
       const m = meter.last();
-      return { ev100, targetEv100: m.targetEv100, exposure: exposureFromEv100(ev100), litFraction: m.litFraction, histogramWeight: m.histogramWeight, evPrior: m.evPrior, evHistogram: m.evHistogram, outsideFraction: m.outsideFraction, evOutside: m.evOutside, outsideWeight: m.outsideWeight, sunVisibility: meter.lastSunVisibility(), override: evOverride };
+      return { ev100, targetEv100: m.targetEv100, exposure: exposureFromEv100(ev100), litFraction: m.litFraction, histogramWeight: m.histogramWeight, evPrior: m.evPrior, evHistogram: m.evHistogram, outsideFraction: m.outsideFraction, evOutside: m.evOutside, outsideWeight: m.outsideWeight, sunlitFloor: m.sunlitFloor, sunVisibility: meter.lastSunVisibility(), override: evOverride };
     },
     resetPerf: () => perf.reset(),
     passStats: () => perf.passStats(),

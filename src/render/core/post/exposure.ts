@@ -64,6 +64,31 @@ export const SUNLIT_HIGHLIGHT_MAX_EV = 0.5;
 export const SUNLIT_VISIBILITY_MIN = 0.05;
 export const SUNLIT_VISIBILITY_FULL = 0.3;
 /**
+ * The same bound from BELOW (request vfx-7): while the sun lights the scene, a daylight exterior frame is
+ * exposed at no less than sunny 16 minus this many EV, whatever the opaque scene holds. When the lit pad
+ * leaves the frame of a lift-off and the camera looks at the vehicle over dark ground, a meter alone opens up
+ * by more than a stop and the sky pumps; a photographer's daylight exposure stays where it is. Dark things
+ * stay dark by day (a sea of albedo 0.06 beside a white hull, a basalt plain, a shaded flank).
+ *
+ * "The sun lights the scene" needs more here than the solar disc at the camera, because opening up is what
+ * a camera rightly does when it does not:
+ *  - sunlit surfaces must be in the frame: pixels at or above SUNLIT_SURFACE times the luminance of a white
+ *    Lambert surface square to the sun, on SUNLIT_EVIDENCE_FROM to SUNLIT_EVIDENCE_FULL of the frame. Under
+ *    an overcast, on the shadow side of a hull, over the night side seen from a sunlit orbit nothing is that
+ *    bright, and the meter exposes for what it sees, as before;
+ *  - the sun must stand well above the horizon of the ground under the camera (MeterInput.sunElevationSin
+ *    from SUNLIT_ELEVATION_MIN to SUNLIT_ELEVATION_FULL, 10 to 25 degrees): at a low sun the ground takes a
+ *    fraction of the light a hull facing the sun takes (a lunar landing under an 8 degree sun, dawn at the
+ *    splashdown), and every exposure guide opens up for it.
+ * Exterior and map views only; never without the elevation (a caller that cannot tell gives none).
+ */
+export const SUNLIT_SHADOW_MIN_EV = 0.5;
+export const SUNLIT_SURFACE = 0.25;
+export const SUNLIT_EVIDENCE_FROM = 0.0002;
+export const SUNLIT_EVIDENCE_FULL = 0.002;
+export const SUNLIT_ELEVATION_MIN = 0.1736;
+export const SUNLIT_ELEVATION_FULL = 0.4226;
+/**
  * Interior metering (requests cockpit-5 and -6). A dim cabin IN THE DARK is displayed dim: the target is
  * this many EV darker than the log-average alone asks for when the near log-mean is at or below
  * INTERIOR_NIGHT_LOW cd/m^2, not at all from INTERIOR_NIGHT_HIGH up, and in proportion to the part of the
@@ -214,6 +239,12 @@ export interface MeterInput {
    * camera is above every atmosphere (request sky-lighting-10); absent otherwise. See SUN_IN_FRAME_MARGIN_EV.
    */
   sunInFrame?: number;
+  /**
+   * Sine of the sun's elevation above the horizon of the point under the camera on the nearest body (the dot
+   * product of the local vertical there and the direction to the sun). Gates the bound from below under the
+   * sun (SUNLIT_SHADOW_MIN_EV, request vfx-7); absent: no such bound.
+   */
+  sunElevationSin?: number;
 }
 
 export interface MeterResult {
@@ -230,6 +261,8 @@ export interface MeterResult {
   outsideFraction: number;
   evOutside: number;
   outsideWeight: number;
+  /** Weight of the bound from below under the sun (SUNLIT_SHADOW_MIN_EV), 0..1; 0 in interior views. */
+  sunlitFloor: number;
 }
 
 /** Scratch: the far histogram of an interior view. */
@@ -265,6 +298,10 @@ const smooth = (a: number, b: number, x: number): number => {
  * covers EMISSIVE_FULL of the frame is exposed so that it stays below the highlight cap, a smaller one in
  * proportion. Without that a trail or a fireball against a night sky is rendered at the dark-adapted
  * exposure, saturates and blooms over the whole frame.
+ *
+ * Under the sun the exterior target is bounded on both sides of sunny 16: from above by
+ * SUNLIT_HIGHLIGHT_MAX_EV (request vfx-4), from below by SUNLIT_SHADOW_MIN_EV while sunlit surfaces are in
+ * the frame and the sun stands well above the horizon (request vfx-7).
  */
 export function meterExposure(m: MeterInput): MeterResult {
   const interior = m.kind === 'interior';
@@ -342,6 +379,20 @@ export function meterExposure(m: MeterInput): MeterResult {
   }
   let ev = evPrior + (evHistogram - evPrior) * w;
 
+  // Bounded from below as well while the sun lights what is in the frame (request vfx-7).
+  let sunlitFloor = 0;
+  if (sunlit > 0 && m.sunElevationSin !== undefined) {
+    const high = smooth(SUNLIT_ELEVATION_MIN, SUNLIT_ELEVATION_FULL, m.sunElevationSin);
+    if (high > 0) {
+      // Geometry only (m.histogram, not the emitters): a flame is not a sunlit surface.
+      let bright = 0;
+      for (let i = luminanceBin((SUNLIT_SURFACE * m.sunIlluminance * m.sunVisibility) / Math.PI); i < HISTOGRAM_BINS; i++) bright += m.histogram[i]!;
+      sunlitFloor = sunlit * high * smooth(SUNLIT_EVIDENCE_FROM, SUNLIT_EVIDENCE_FULL, bright / m.sampleCount);
+      const evMin = evSun - SUNLIT_SHADOW_MIN_EV;
+      if (ev < evMin) ev += (evMin - ev) * sunlitFloor;
+    }
+  }
+
   // What fills the frame through the windows stops the cabin's exposure down (request cockpit-7).
   let outsideFraction = 0;
   let evOutside = ev;
@@ -367,7 +418,7 @@ export function meterExposure(m: MeterInput): MeterResult {
   ev -= m.exposureCompensation;
   ev = Math.max(EV_MIN, Math.min(EV_MAX, ev));
   if (m.minEv100 !== null) ev = Math.max(ev, m.minEv100);
-  return { targetEv100: ev, litFraction: stats.litFraction, histogramWeight: w, evHistogram, evPrior, outsideFraction, evOutside, outsideWeight };
+  return { targetEv100: ev, litFraction: stats.litFraction, histogramWeight: w, evHistogram, evPrior, outsideFraction, evOutside, outsideWeight, sunlitFloor };
 }
 
 /**

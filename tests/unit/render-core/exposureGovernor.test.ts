@@ -21,7 +21,10 @@ import {
   INTERIOR_WINDOW_FULL,
   LUMINANCE_FLOOR,
   luminanceBin,
+  SUNLIT_ELEVATION_FULL,
+  SUNLIT_ELEVATION_MIN,
   SUNLIT_HIGHLIGHT_MAX_EV,
+  SUNLIT_SHADOW_MIN_EV,
   SUN_IN_FRAME_MARGIN_EV,
   meterExposure,
   sunny16Ev,
@@ -371,6 +374,109 @@ describe('highlight protection is bounded while the sun lights the scene (reques
     const tenth = meter(bright, { sunVisibility: 0.1 }).targetEv100;
     expect(tenth).toBeGreaterThan(sunny16Ev(SUN * 0.1) + SUNLIT_HIGHLIGHT_MAX_EV);
     expect(tenth).toBeLessThan(meter(bright, { sunVisibility: 0.03 }).targetEv100);
+  });
+});
+
+describe('the exposure is bounded from below as well while the sun lights the scene (request vfx-7)', () => {
+  const evSun = sunny16Ev(SUN);
+  /** Luminance of a Lambert surface of the given albedo square to the sun, cd/m^2. */
+  const sunlit = (albedo: number): number => (albedo * SUN) / Math.PI;
+  /**
+   * A lift-off seen by the chase camera once the lit pad has left the frame: dark ground, the vehicle's shaded
+   * side and `hull` pixels (of 100,000) of its sunlit side. Under 1 % of the lit pixels the highlight cap does
+   * not see the hull and the meter exposes for the ground.
+   */
+  const chase = (hull: number): Uint32Array => {
+    const h = new Uint32Array(HISTOGRAM_BINS);
+    fill(h, sunlit(0.02), sunlit(0.05), 30000);
+    fill(h, sunlit(0.03), sunlit(0.1), 2000);
+    if (hull > 0) fill(h, sunlit(0.4), sunlit(0.85), hull);
+    return h;
+  };
+  const HIGH = Math.sin((50 * Math.PI) / 180);
+
+  it('a daylight frame of dark ground and a sunlit hull stays within half a stop of sunny 16', () => {
+    const before = meter(chase(250)).targetEv100;
+    const held = meter(chase(250), { sunElevationSin: HIGH });
+    // The meter alone opens up by more than a stop (what the critics measured as 1.3 EV of pumping).
+    expect(before).toBeLessThan(evSun - 1);
+    expect(SUNLIT_SHADOW_MIN_EV).toBe(0.5);
+    expect(held.sunlitFloor).toBe(1);
+    expect(held.targetEv100).toBeCloseTo(evSun - SUNLIT_SHADOW_MIN_EV, 9);
+    // The pad in the frame (a tenth of it sunlit concrete) and the pad gone: half a stop apart at most.
+    const pad = chase(250);
+    fill(pad, sunlit(0.2), sunlit(0.4), 30000);
+    const withPad = meter(pad, { sunElevationSin: HIGH }).targetEv100;
+    expect(Math.abs(withPad - held.targetEv100)).toBeLessThanOrEqual(1);
+    expect(withPad).toBeGreaterThanOrEqual(evSun - SUNLIT_SHADOW_MIN_EV - 1e-9);
+    expect(withPad).toBeLessThanOrEqual(evSun + SUNLIT_HIGHLIGHT_MAX_EV + 1e-9);
+  });
+
+  it('a frame at or above sunny 16 is left alone, and the upper bound still holds', () => {
+    const h = new Uint32Array(HISTOGRAM_BINS);
+    fill(h, sunlit(0.3), sunlit(0.9), 50000);
+    expect(meter(h, { sunElevationSin: HIGH }).targetEv100).toBe(meter(h).targetEv100);
+    fill(h, sunlit(40), sunlit(90), 4000);
+    expect(meter(h, { sunElevationSin: HIGH }).targetEv100).toBeLessThanOrEqual(evSun + SUNLIT_HIGHLIGHT_MAX_EV + 1e-9);
+  });
+
+  it('needs sunlit surfaces in the frame: an overcast, the shadow side of a hull, the night side from a sunlit orbit open up as before', () => {
+    // Overcast: everything at a fifth of the light, a white hull included.
+    const overcast = new Uint32Array(HISTOGRAM_BINS);
+    fill(overcast, sunlit(0.2 * 0.05), sunlit(0.2 * 0.4), 60000);
+    fill(overcast, sunlit(0.2 * 0.5), sunlit(0.2 * 0.85), 2000);
+    const o = meter(overcast, { sunElevationSin: HIGH });
+    expect(o.sunlitFloor).toBe(0);
+    expect(o.targetEv100).toBe(meter(overcast).targetEv100);
+    expect(o.targetEv100).toBeLessThan(evSun - 1.5);
+    // A hull seen from its shadow side, lit by the planet: about three stops under the sun.
+    const shade = new Uint32Array(HISTOGRAM_BINS);
+    fill(shade, sunlit(0.02), sunlit(0.1), 15000);
+    expect(meter(shade, { sunElevationSin: HIGH }).targetEv100).toBe(meter(shade).targetEv100);
+    // City lights under a camera that is itself in the sun: the sun is below the ground's horizon.
+    const night = new Uint32Array(HISTOGRAM_BINS);
+    fill(night, 0.05, 8, 40000);
+    expect(meter(night, { sunElevationSin: -0.4, litObjectInView: false }).targetEv100).toBe(meter(night, { litObjectInView: false }).targetEv100);
+    // A sliver of sunlit hull comes in gradually: no step.
+    let prev = meter(chase(0), { sunElevationSin: HIGH }).targetEv100;
+    expect(prev).toBe(meter(chase(0)).targetEv100);
+    for (let hull = 10; hull <= 300; hull += 10) {
+      const ev = meter(chase(hull), { sunElevationSin: HIGH }).targetEv100;
+      expect(ev).toBeGreaterThanOrEqual(prev - 1e-9);
+      expect(ev - prev, `${hull} px`).toBeLessThan(0.3);
+      prev = ev;
+    }
+    expect(prev).toBeCloseTo(evSun - SUNLIT_SHADOW_MIN_EV, 9);
+  });
+
+  it('needs the sun well above the horizon: a low sun (a lunar landing at 8 degrees, dawn) is metered as before', () => {
+    const h = chase(250);
+    const sin = (deg: number): number => Math.sin((deg * Math.PI) / 180);
+    expect(SUNLIT_ELEVATION_MIN).toBeCloseTo(sin(10), 3);
+    expect(SUNLIT_ELEVATION_FULL).toBeCloseTo(sin(25), 3);
+    expect(meter(h, { sunElevationSin: sin(8) }).targetEv100).toBe(meter(h).targetEv100);
+    expect(meter(h, { sunElevationSin: sin(-5) }).targetEv100).toBe(meter(h).targetEv100);
+    const mid = meter(h, { sunElevationSin: sin(17) }).targetEv100;
+    expect(mid).toBeGreaterThan(meter(h).targetEv100);
+    expect(mid).toBeLessThan(evSun - SUNLIT_SHADOW_MIN_EV);
+    expect(meter(h, { sunElevationSin: sin(25) }).targetEv100).toBeCloseTo(evSun - SUNLIT_SHADOW_MIN_EV, 9);
+    // Without the elevation (a caller that cannot tell) there is no bound.
+    expect(meter(h).sunlitFloor).toBe(0);
+  });
+
+  it('does not touch night, twilight below the gate, an eclipse or a cabin', () => {
+    const h = chase(250);
+    for (const over of [{ sunVisibility: 0 }, { sunVisibility: 0.04 }, { kind: 'interior' as const, histogramNear: h }]) {
+      const a = meter(h, { ...over, sunElevationSin: HIGH });
+      const b = meter(h, over);
+      expect(a.sunlitFloor).toBe(0);
+      expect(a.targetEv100).toBe(b.targetEv100);
+    }
+    // Under a third of the disc the bound is whole and follows the dimmer sun.
+    const third = new Uint32Array(HISTOGRAM_BINS);
+    fill(third, 0.3 * sunlit(0.02), 0.3 * sunlit(0.05), 30000);
+    fill(third, 0.3 * sunlit(0.4), 0.3 * sunlit(0.85), 250);
+    expect(meter(third, { sunVisibility: 0.3, sunElevationSin: HIGH }).targetEv100).toBeCloseTo(sunny16Ev(SUN * 0.3) - SUNLIT_SHADOW_MIN_EV, 9);
   });
 });
 
