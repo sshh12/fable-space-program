@@ -12,6 +12,12 @@ interface Scene {
   view?: Partial<LabView>;
   sun?: { azDeg: number; elDeg: number };
   space?: { distance: number; phaseDeg: number; fovDeg: number };
+  /**
+   * Night scenes: put the view where the moon is under the horizon ('down': the point opposite the one it
+   * stands over) or high in the sky ('up': 35 deg from the point it stands over), instead of at the pad. The
+   * sun's azimuth and elevation are then those at that place.
+   */
+  moon?: 'down' | 'up';
   /** Forced EV100 (space scenes: a camera exposes for the sunlit planet, not for the black around it). */
   ev?: number;
   frames?: number;
@@ -29,6 +35,12 @@ async function render(page: import('@playwright/test').Page, s: Scene): Promise<
         lab.viewFromSpace(sc.space.distance, sc.space.phaseDeg, sc.space.fovDeg);
       } else {
         const v = { ...pad, alt: 2, headingDeg: 40, pitchDeg: 8, ...sc.view };
+        if (sc.moon) {
+          // (viewEclipse reports the point under the body; the view and the sun it sets are replaced below.)
+          const under = lab.viewEclipse('moon', 0);
+          v.latDeg = sc.moon === 'down' ? -under.latDeg : under.latDeg + (under.latDeg > 0 ? -35 : 35);
+          v.lonDeg = sc.moon === 'down' ? under.lonDeg + 180 : under.lonDeg;
+        }
         const sun = sc.sun ?? { azDeg: 135, elDeg: 55 };
         lab.setSun(sun.azDeg, sun.elDeg, { latDeg: v.latDeg, lonDeg: v.lonDeg });
         lab.view(v);
@@ -38,7 +50,7 @@ async function render(page: import('@playwright/test').Page, s: Scene): Promise<
       // (No cloud history from the scene before, cloud clock at zero: the capture repeats from run to run.)
       lab.resetTemporal();
     },
-    { s: { name: s.name, view: s.view, sun: s.sun, space: s.space, ev: s.ev }, pad: PAD },
+    { s: { name: s.name, view: s.view, sun: s.sun, space: s.space, ev: s.ev, moon: s.moon }, pad: PAD },
   );
   await waitIdle(page, s.frames ?? 40);
   const saved = await shot(page, s.name);
@@ -169,12 +181,14 @@ test.describe('acceptance screenshots', () => {
       },
     },
     {
-      // The night side with the sun far under the horizon, at a dark-adapted exposure: the airglow on the
-      // limb (a thin yellow-green band brighter than the Milky Way; ISS photographs give 1e-3 to 1e-2 cd/m^2
-      // edge-on) with the faint red layer above it, and black space beyond.
+      // The night side with the sun far under the horizon and no moon in the sky, at a dark-adapted
+      // exposure: the airglow on the limb (a thin yellow-green band brighter than the Milky Way; ISS
+      // photographs give 1e-3 to 1e-2 cd/m^2 edge-on) with the faint red layer above it, black space beyond,
+      // and under it a planet that is darker than the band: clouds lit by the airglow alone.
       name: 'leo-night-airglow',
       view: { alt: 400000, headingDeg: 270, pitchDeg: -18, fovDeg: 60 },
       sun: { azDeg: 270, elDeg: -40 },
+      moon: 'down',
       ev: -5,
       frames: 30,
       async check(p) {
@@ -197,6 +211,38 @@ test.describe('acceptance screenshots', () => {
         // Yellow-green: green above red above blue.
         expect(band[1]).toBeGreaterThan(band[0]);
         expect(band[0]).toBeGreaterThan(band[2]);
+        // The night side under the band (a grid over the lower third of the frame): nothing there is as
+        // bright as a third of the band. (ISS photographs of a moonless limb: the planet about a tenth of it.)
+        let surface = 0;
+        for (const fx of [0.1, 0.3, 0.5, 0.7, 0.9]) for (const fy of [0.7, 0.8, 0.9]) surface = Math.max(surface, luminance(await p(fx, fy)));
+        console.log(`[leo-night-airglow] brightest of 15 probes of the night side: ${surface.toExponential(2)} cd/m^2 (${(surface / luminance(band)).toFixed(3)} of the band)`);
+        expect(surface).toBeLessThan(0.3 * luminance(band));
+      },
+    },
+    {
+      // The same night side with the moon high over it: clouds lit by moonlight, neutral grey and brighter
+      // than the sea between them (ISS frames of moonlit cloud: rgb 110, 112, 117).
+      name: 'leo-night-moonlit',
+      view: { alt: 400000, headingDeg: 270, pitchDeg: -30, fovDeg: 60 },
+      sun: { azDeg: 270, elDeg: -40 },
+      moon: 'up',
+      ev: -2,
+      frames: 30,
+      async check(p) {
+        let cloud: [number, number, number] = [0, 0, 0];
+        let dark = Infinity;
+        for (let fx = 0.05; fx < 1; fx += 0.06) {
+          for (const fy of [0.6, 0.7, 0.8, 0.9]) {
+            const c = await p(fx, fy);
+            if (luminance(c) > luminance(cloud)) cloud = c;
+            dark = Math.min(dark, luminance(c));
+          }
+        }
+        console.log(`[leo-night-moonlit] brightest probe rgb ${cloud.map((v) => v.toExponential(2)).join(', ')} (L ${luminance(cloud).toExponential(2)} cd/m^2), darkest ${dark.toExponential(2)}`);
+        expect(luminance(cloud), 'moonlit cloud').toBeGreaterThan(2e-3);
+        expect(luminance(cloud), 'moonlit cloud against the darkest probe').toBeGreaterThan(3 * dark);
+        expect(Math.abs(cloud[0] / cloud[1] - 1), 'red against green').toBeLessThan(0.15);
+        expect(Math.abs(cloud[2] / cloud[1] - 1), 'blue against green').toBeLessThan(0.2);
       },
     },
   ]);

@@ -185,14 +185,12 @@ test.describe('transparents through applyAtmosphere', () => {
       const t = seen['t']!;
       const o = seen['o']!;
       rows.push(`${name}: transparent rgb ${t.map((v) => v.toFixed(0)).join(', ')} / opaque rgb ${o.map((v) => v.toFixed(0)).join(', ')} (ratio ${(luminance(t) / luminance(o)).toFixed(4)})`);
-      // Luminance within 5 %. Per channel the in-scatter matches as well; the light of the surface itself is
-      // dimmed by ONE transmittance for the three channels (the alpha of 'atmosphere.aerialPerspective'), so a
-      // white emitter keeps its brightness but not the reddening of the opaque scene (see the hand-off).
+      // Luminance within 5 %, and every channel within 5 %: the in-scatter in front of the quad, and the
+      // light of the quad itself through the per-channel transmittance of 'atmosphere.aerialTransmittance'
+      // (request atmosphere-clouds-4): a white emitter behind 50 km of air is reddened like the opaque scene.
       expect(luminance(t) / luminance(o), name).toBeGreaterThan(0.95);
       expect(luminance(t) / luminance(o), name).toBeLessThan(1.05);
-      if (lum === 0) {
-        for (let c = 0; c < 3; c++) expect(Math.abs(t[c]! / o[c]! - 1), `${name} channel ${c}`).toBeLessThan(0.05);
-      }
+      for (let c = 0; c < 3; c++) expect(Math.abs(t[c]! / o[c]! - 1), `${name} channel ${c}`).toBeLessThan(0.05);
       // And the haze is there at all: 50 km of air adds thousands of cd/m^2 and takes a third of the light.
       if (lum === 0) expect(luminance(o)).toBeGreaterThan(1500);
       else expect(luminance(o)).toBeLessThan(lum * 0.95 + 6000);

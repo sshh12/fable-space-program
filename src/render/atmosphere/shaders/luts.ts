@@ -183,7 +183,12 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
       E += L * (mu * 2.0 * (1.0 / f32(N_MU)) * (PI / f32(N_PHI)));
     }
   }
-  textureStore(outTex, id.xy, id.z, vec4f(E * frame.sunIlluminance.rgb * select(1.0, 2.0, away), 1.0));
+  // The table ends at a sun 11.5 deg under the horizon (mu_s = -0.2), and every reader clamps its lookup
+  // there: whatever the last column holds lights the ground, the sea and the clouds all night. It holds
+  // nothing: the twilight fades out over the last column (10.4 to 11.5 deg) and the night is dark, lit by
+  // what its readers add themselves (airglow on the clouds, the moon, the planet's own lights).
+  let night = select(1.0, 0.0, id.x == 0u);
+  textureStore(outTex, id.xy, id.z, vec4f(E * frame.sunIlluminance.rgb * (select(1.0, 2.0, away) * night), 1.0));
 }
 `;
 
@@ -261,15 +266,17 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
 /**
  * Bindings: 1 = transmittance, 2 = multi-scattering (texture_2d_array), 3 = cloud shadow map, 4 = coverage
- * map (texture_2d), 5 = output (texture_storage_3d rgba16float).
+ * map for wide pixels (texture_2d), 5 = output (texture_storage_3d rgba16float: in-scatter and the luminance-weighted
+ * transmittance), 6 = output (texture_storage_3d rgba16float: the transmittance per channel, a = 1).
  */
 export const AERIAL_COMPUTE_WGSL = /* wgsl */ `
 ${HEADER}
 @group(1) @binding(1) var transLut: texture_2d_array<f32>;
 @group(1) @binding(2) var msLut: texture_2d_array<f32>;
 @group(1) @binding(3) var atmoShadowTex: texture_2d<f32>;
-@group(1) @binding(4) var atmoCoverageTex: texture_2d<f32>;
+@group(1) @binding(4) var atmoCoverageWide: texture_2d<f32>;
 @group(1) @binding(5) var outTex: texture_storage_3d<rgba16float, write>;
+@group(1) @binding(6) var outTransTex: texture_storage_3d<rgba16float, write>;
 #include "atmosphere_cloud_shadow"
 
 const SLICES = ${AERIAL_SIZE};
@@ -320,6 +327,9 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     // One transmittance for three channels (the contract's alpha): the luminance-weighted one, so that what a
     // transparent surface loses in brightness over the path is exact for a white emitter.
     textureStore(outTex, vec3u(id.xy, u32(k)), vec4f(min(L, vec3f(HDR_MAX)), dot(T, vec3f(0.2126, 0.7152, 0.0722))));
+    // The same path per channel ('atmosphere.aerialTransmittance'): a transparent behind 50 km of air is
+    // reddened like the opaque scene beside it. a = 1 marks the volume as published.
+    textureStore(outTransTex, vec3u(id.xy, u32(k)), vec4f(T, 1.0));
     tPrev = tNext;
   }
 }

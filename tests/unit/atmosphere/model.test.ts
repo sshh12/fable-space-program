@@ -5,7 +5,7 @@ import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { quat } from '@/core/math';
 import { airglowTop } from '@/render/atmosphere/airglow';
-import { advanceCloudClock, channelStd, downsampleVolume, equalise } from '@/render/atmosphere/clouds';
+import { advanceCloudClock, channelStd, cloudShadowAxes, downsampleVolume, equalise } from '@/render/atmosphere/clouds';
 import { CLOUD_PARAM_KEYS, resolveCloudParams } from '@/render/atmosphere/params';
 import { distanceToTop, hitsGround, luminanceOf, mediumAt, multiScatter, opticalDepth, referenceAtmosphere, skyRadiance, transmittanceToTop } from '@/render/atmosphere/reference';
 import { atmosphereLayers, FINE_TILE_SIZE, fitsFineTile, scissorOf, selectMarchBodies, sphereScreenBounds, type ViewFrustum } from '@/render/atmosphere/select';
@@ -270,6 +270,61 @@ describe('cloud clock', () => {
     // Paused, or a jump back in time (quickload): the clouds stand still.
     expect(advanceCloudClock(77, 5000, 5000, 1 / 60, 4)).toBe(77);
     expect(advanceCloudClock(77, 5000, 100, 1 / 60, 4)).toBe(77);
+  });
+});
+
+describe('cloud shadow map axes', () => {
+  const DEG = Math.PI / 180;
+  /** East, north, up at a latitude (longitude 0) in body-fixed axes, z = spin axis. */
+  const local = (latDeg: number): { e: [number, number, number]; n: [number, number, number]; u: [number, number, number] } => {
+    const c = Math.cos(latDeg * DEG);
+    const s = Math.sin(latDeg * DEG);
+    return { e: [0, 1, 0], n: [-s, 0, c], u: [c, 0, s] };
+  };
+  const vec = (a: [number, number, number]): { x: number; y: number; z: number } => ({ x: a[0], y: a[1], z: a[2] });
+  const dot = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): number => a.x * b.x + a.y * b.y + a.z * b.z;
+  /** Unit direction at azimuth (clockwise from north) and elevation, deg. */
+  const towards = (f: ReturnType<typeof local>, azDeg: number, elDeg: number): { x: number; y: number; z: number } => {
+    const ce = Math.cos(elDeg * DEG);
+    const k = [Math.sin(azDeg * DEG) * ce, Math.cos(azDeg * DEG) * ce, Math.sin(elDeg * DEG)];
+    return { x: f.e[0] * k[0]! + f.n[0] * k[1]! + f.u[0] * k[2]!, y: f.e[1] * k[0]! + f.n[1] * k[1]! + f.u[1] * k[2]!, z: f.e[2] * k[0]! + f.n[2] * k[1]! + f.u[2] * k[2]! };
+  };
+
+  it('under a low sun u is horizontal and across the azimuth, v upwards in the plane of the sun: at every latitude and azimuth', () => {
+    // (The map is narrower along v by about the sine of the sun's elevation. With u across the spin axis
+    // instead - nearly vertical for a sun in the west at 19 deg north - the narrow axis lay across the
+    // azimuth and a texel was a needle of 175 m x 25 km on the ground: the comb behind every cloud.)
+    for (const lat of [-60, -19, 0, 19, 45, 80]) {
+      const f = local(lat);
+      for (const az of [0, 45, 90, 180, 270, 315]) {
+        for (const el of [3, 4, 10, 30, 55]) {
+          const dir = towards(f, az, el);
+          const { u, v } = cloudShadowAxes(vec(f.u), dir, { x: 0, y: 0, z: 1 });
+          const where = `latitude ${lat}, azimuth ${az}, elevation ${el}`;
+          expect(Math.abs(dot(u, vec(f.u))), `u horizontal: ${where}`).toBeLessThan(1e-9);
+          expect(Math.abs(dot(u, dir)), `u across the sun: ${where}`).toBeLessThan(1e-9);
+          expect(Math.abs(Math.hypot(u.x, u.y, u.z) - 1)).toBeLessThan(1e-9);
+          expect(Math.abs(dot(v, dir)), `v across the sun: ${where}`).toBeLessThan(1e-9);
+          // v points upwards, at the sun's elevation from the vertical: one texel along v is 1 / sin(elevation)
+          // texels along the ground, along the azimuth and nowhere else.
+          expect(dot(v, vec(f.u)), `v upwards: ${where}`).toBeCloseTo(Math.cos(el * DEG), 9);
+        }
+      }
+    }
+  });
+
+  it('under a sun near the zenith the axes stay orthonormal and change over without a jump in direction', () => {
+    const f = local(19);
+    let last: { x: number; y: number; z: number } | null = null;
+    for (let el = 55; el <= 89.5; el += 0.5) {
+      const dir = towards(f, 250, el);
+      const { u, v } = cloudShadowAxes(vec(f.u), dir, { x: 0, y: 0, z: 1 });
+      expect(Math.abs(Math.hypot(u.x, u.y, u.z) - 1)).toBeLessThan(1e-9);
+      expect(Math.abs(dot(u, dir))).toBeLessThan(1e-9);
+      expect(Math.abs(dot(u, v))).toBeLessThan(1e-9);
+      if (last) expect(dot(u, last), `elevation ${el}`).toBeGreaterThan(0.98);
+      last = u;
+    }
   });
 });
 

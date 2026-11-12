@@ -5,6 +5,7 @@
  *   sky irradiance 64 x 16 x layers    'atmosphere.skyIrradianceLut'   (rebuilt when the sun's illuminance changes)
  *   sky view 192 x 108                 'atmosphere.skyViewLut'         (every frame, around the camera)
  *   aerial perspective 32^3            'atmosphere.aerialPerspective'  (every frame, camera frustum)
+ *   aerial transmittance 32^3          'atmosphere.aerialTransmittance' (the same pass: per-channel transmittance of the same paths)
  * One layer per frame body WITH an atmosphere, in frame-body order (the layer index the render core puts in
  * BodyUniform.fixedX.w).
  */
@@ -25,9 +26,13 @@ interface ComputeStage {
 export interface TableInputs {
   /** The feature's uniform buffer (group 1, binding 0 of every pass). */
   uniforms: GPUBuffer;
-  /** Cloud shadow moments and coverage map for the sun term of the aerial volume and the clouds of the sky-view table (neutral textures when there are no clouds). */
+  /**
+   * Cloud shadow moments and the coverage map for wide pixels for the sun term of the aerial volume, the
+   * coverage map for the clouds of the sky-view table (neutral textures when there are no clouds).
+   */
   shadowMap: GPUTextureView;
   coverageMap: GPUTextureView;
+  coverageWide: GPUTextureView;
 }
 
 export class AtmosphereTables {
@@ -38,14 +43,17 @@ export class AtmosphereTables {
   private irradiance: GPUTexture | null = null;
   private readonly skyView: GPUTexture;
   private readonly aerial: GPUTexture;
+  private readonly aerialTrans: GPUTexture;
   transmittanceView: GPUTextureView | null = null;
   multiScatterView: GPUTextureView | null = null;
   irradianceView: GPUTextureView | null = null;
   readonly skyViewView: GPUTextureView;
   readonly aerialView: GPUTextureView;
+  readonly aerialTransView: GPUTextureView;
   /** Neutral stand-ins published while no atmosphere body is in range. */
   readonly neutralSkyView: GPUTextureView;
   readonly neutralAerial: GPUTextureView;
+  readonly neutralAerialTrans: GPUTextureView;
 
   private readonly stages: Record<'transmittance' | 'multiScatter' | 'irradiance' | 'skyView' | 'aerial', ComputeStage>;
   private staticSignature = '';
@@ -64,6 +72,8 @@ export class AtmosphereTables {
     this.skyViewView = this.skyView.createView();
     this.aerial = core.createTextureChecked({ label: 'atmosphere.aerial', format: FORMAT, dimension: '3d', size: [AERIAL_SIZE, AERIAL_SIZE, AERIAL_SIZE], usage: STORAGE });
     this.aerialView = this.aerial.createView();
+    this.aerialTrans = core.createTextureChecked({ label: 'atmosphere.aerialTransmittance', format: FORMAT, dimension: '3d', size: [AERIAL_SIZE, AERIAL_SIZE, AERIAL_SIZE], usage: STORAGE });
+    this.aerialTransView = this.aerialTrans.createView();
 
     const neutral = (label: string, dimension: GPUTextureDimension, texel: number[]): GPUTextureView => {
       const t = device.createTexture({ label, format: FORMAT, dimension, size: [1, 1, 1], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
@@ -73,6 +83,7 @@ export class AtmosphereTables {
     const ONE = 0x3c00;
     this.neutralSkyView = neutral('atmosphere.skyView.neutral', '2d', [0, 0, 0, ONE]);
     this.neutralAerial = neutral('atmosphere.aerial.neutral', '3d', [0, 0, 0, ONE]);
+    this.neutralAerialTrans = neutral('atmosphere.aerialTransmittance.neutral', '3d', [ONE, ONE, ONE, ONE]);
 
     const uniform: GPUBindGroupLayoutEntry = { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } };
     const sampled = (binding: number, viewDimension: GPUTextureViewDimension): GPUBindGroupLayoutEntry => ({ binding, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'float', viewDimension } });
@@ -94,7 +105,7 @@ export class AtmosphereTables {
       multiScatter: stage('atmosphere.multiScatter', MULTISCATTER_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), storage(2, '2d-array')]),
       irradiance: stage('atmosphere.irradiance', SKY_IRRADIANCE_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), storage(3, '2d-array')]),
       skyView: stage('atmosphere.skyView', SKY_VIEW_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), storage(3, '2d'), sampled(4, '2d'), sampled(5, '2d-array')]),
-      aerial: stage('atmosphere.aerial', AERIAL_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), sampled(3, '2d'), sampled(4, '2d'), storage(5, '3d')]),
+      aerial: stage('atmosphere.aerial', AERIAL_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), sampled(3, '2d'), sampled(4, '2d'), storage(5, '3d'), storage(6, '3d')]),
     };
   }
 
@@ -145,7 +156,7 @@ export class AtmosphereTables {
       this.irradianceDirty = true;
     }
     const key = `${this.version}`;
-    if (this.inputs?.uniforms !== inputs.uniforms || this.inputs.shadowMap !== inputs.shadowMap || this.inputs.coverageMap !== inputs.coverageMap || key !== this.inputsKey) {
+    if (this.inputs?.uniforms !== inputs.uniforms || this.inputs.shadowMap !== inputs.shadowMap || this.inputs.coverageMap !== inputs.coverageMap || this.inputs.coverageWide !== inputs.coverageWide || key !== this.inputsKey) {
       this.inputs = inputs;
       this.inputsKey = key;
       for (const s of Object.values(this.stages)) s.group = null;
@@ -164,7 +175,7 @@ export class AtmosphereTables {
       multiScatter: [u, { binding: 1, resource: t }, { binding: 2, resource: m }],
       irradiance: [u, { binding: 1, resource: t }, { binding: 2, resource: m }, { binding: 3, resource: this.irradianceView! }],
       skyView: [u, { binding: 1, resource: t }, { binding: 2, resource: m }, { binding: 3, resource: this.skyViewView }, { binding: 4, resource: i.coverageMap }, { binding: 5, resource: this.irradianceView! }],
-      aerial: [u, { binding: 1, resource: t }, { binding: 2, resource: m }, { binding: 3, resource: i.shadowMap }, { binding: 4, resource: i.coverageMap }, { binding: 5, resource: this.aerialView }],
+      aerial: [u, { binding: 1, resource: t }, { binding: 2, resource: m }, { binding: 3, resource: i.shadowMap }, { binding: 4, resource: i.coverageWide }, { binding: 5, resource: this.aerialView }, { binding: 6, resource: this.aerialTransView }],
     };
     s.group = this.device.createBindGroup({ label: `atmosphere.${name}`, layout: s.layout, entries: entries[name] });
     return s.group;
@@ -214,5 +225,6 @@ export class AtmosphereTables {
     this.irradiance?.destroy();
     this.skyView.destroy();
     this.aerial.destroy();
+    this.aerialTrans.destroy();
   }
 }

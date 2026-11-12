@@ -294,4 +294,19 @@ test.describe('clouds', () => {
     expect(run.metres / run.seconds).toBeCloseTo(run.drift, 0);
     await expectNoErrors(page, pageLog);
   });
+
+  test('status: tables, noise and the coverage map are reported as built once the page is idle', async ({ page, pageLog }) => {
+    // (Request app-integration-11, part 7: what a loading screen shows while the feature starts.)
+    await openLab(page, `relief=0&sky=0&ev=${EV}`);
+    await settle(page, 8);
+    const status = await page.evaluate(() => window.__atmo!.feature.status());
+    console.log(`status with the baked coverage map: ${JSON.stringify(status)}`);
+    expect(status).toEqual({ tablesReady: true, noiseReady: true, coverage: { loaded: 1, total: 1 } });
+    await openLab(page, `clouds=0&relief=0&sky=0&ev=${EV}`);
+    await settle(page, 8);
+    const without = await page.evaluate(() => window.__atmo!.feature.status());
+    console.log(`status without clouds: ${JSON.stringify(without)}`);
+    expect(without).toEqual({ tablesReady: true, noiseReady: true, coverage: { loaded: 0, total: 0 } });
+    await expectNoErrors(page, pageLog);
+  });
 });

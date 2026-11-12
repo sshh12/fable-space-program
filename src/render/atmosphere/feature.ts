@@ -54,9 +54,23 @@ export interface AtmosphereDebug {
   clouds(): CloudSystem | null;
 }
 
+/**
+ * What the feature builds or loads once, for a loading screen (request app-integration-11): the static
+ * scattering tables of the bodies in the frame (false until the first frame with an atmosphere body has
+ * built them, and again while they are rebuilt), the cloud noise volumes, and the cloud coverage maps asked
+ * for so far (0 of 0 before the first frame with a cloud body in range; without clouds: noise ready, 0 of 0).
+ */
+export interface AtmosphereStatus {
+  tablesReady: boolean;
+  noiseReady: boolean;
+  coverage: { loaded: number; total: number };
+}
+
 export interface AtmosphereFeature extends RenderFeature {
   /** Rebuild the static tables on the next frame (after editing atmosphere definitions at run time). */
   invalidate(): void;
+  /** Progress of the one-off work (tables, cloud noise, coverage maps). Does not change `isIdle()`. */
+  status(): AtmosphereStatus;
   readonly debug: AtmosphereDebug;
 }
 
@@ -137,6 +151,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
     }
     r.publish('atmosphere.skyViewLut', active ? tables.skyViewView : tables.neutralSkyView);
     r.publish('atmosphere.aerialPerspective', active ? tables.aerialView : tables.neutralAerial);
+    r.publish('atmosphere.aerialTransmittance', active ? tables.aerialTransView : tables.neutralAerialTrans);
     const cloudsOn = active && clouds !== null && cloudBodyIndex >= 0;
     r.publish('clouds.screen', cloudsOn ? clouds!.screenView : neutralCloudScreen);
     r.publish('clouds.depth', cloudsOn ? clouds!.depthView : neutralCloudDepth);
@@ -174,7 +189,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         { binding: 1, resource: tables.transmittanceView! },
         { binding: 2, resource: tables.multiScatterView! },
         { binding: 3, resource: clouds ? clouds.shadowMomentView : neutralShadow },
-        { binding: 4, resource: clouds ? clouds.coverageView : neutralCoverage },
+        { binding: 4, resource: clouds ? clouds.coverageWideView : neutralCoverage },
         { binding: 5, resource: ctx.resources.get('scene.depthHalf') },
         { binding: 6, resource: cloudsOn ? clouds!.screenView : neutralCloudScreen },
         { binding: 7, resource: cloudsOn ? clouds!.geomView : neutralCloudGeom },
@@ -198,7 +213,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         { binding: 1, resource: tables.transmittanceView! },
         { binding: 2, resource: tables.multiScatterView! },
         { binding: 3, resource: clouds ? clouds.shadowMomentView : neutralShadow },
-        { binding: 4, resource: clouds ? clouds.coverageView : neutralCoverage },
+        { binding: 4, resource: clouds ? clouds.coverageWideView : neutralCoverage },
         { binding: 5, resource: ctx.resources.get('scene.depthHalf') },
         { binding: 6, resource: cloudsOn ? clouds!.fineColorView : neutralCloudScreen },
         { binding: 7, resource: cloudsOn ? clouds!.fineGeomView : neutralCloudGeom },
@@ -380,6 +395,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         uniforms: uniformBuffer,
         shadowMap: clouds ? clouds.shadowMomentView : neutralShadow,
         coverageMap: clouds ? clouds.coverageView : neutralCoverage,
+        coverageWide: clouds ? clouds.coverageWideView : neutralCoverage,
       });
       publish();
     },
@@ -488,6 +504,11 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
 
     invalidate() {
       tables.invalidate();
+    },
+
+    status() {
+      const c = clouds ? clouds.status() : { noiseReady: true, coverage: { loaded: 0, total: 0 } };
+      return { tablesReady: tables.ready, noiseReady: c.noiseReady, coverage: c.coverage };
     },
 
     debug: {

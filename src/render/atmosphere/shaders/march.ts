@@ -19,7 +19,9 @@ import { ATMO_UNIFORM_WGSL } from '../uniforms';
 /**
  * Chunk "atmosphere_cloud_shadow": needs `atmo`, `atmoShadowTex` (the MOMENT map of the cloud shadow pass:
  * r = optical depth of the direct beam along the sun line, g, b = r x mean and mean squared altitude of the
- * extinction, altitudes as fractions of the cloud shell) and `atmoCoverageTex` declared by the includer.
+ * extinction, altitudes as fractions of the cloud shell) and `atmoCoverageWide` (r = the cover that casts
+ * the mean shadow of a block of 8 x 8 texels of the coverage map, with mips: CloudSystem.buildCoverageWide)
+ * declared by the includer.
  */
 export const CLOUD_SHADOW_WGSL = /* wgsl */ `
 /// Optical depth of the cloud between a camera-relative point of body 'bi' and the sun, along the sun line.
@@ -66,9 +68,11 @@ fn atmoCloudTauAt(pos: vec3f, bi: u32, up: vec3f, r: f32, muS: f32, lod: f32) ->
     // Points well below the layer are under all of it; inside the layer the term fades out towards the
     // layer radius instead of switching. (Read at the size of the pixel that asks: from far away one pixel
     // covers many texels of the map. The map's coverage is an opacity: the optical depth of the direct beam
-    // grows steeply with it.)
-    let lod = max(log2(length(pos) * atmo.cloudMarch.w * atmo.noiseRot.w / (TWO_PI * frame.bodies[bi].center.w)), 0.0);
-    let c = textureSampleLevel(atmoCoverageTex, linearClamp, uv, lod).r;
+    // grows steeply with it. The texture holds blocks of eight texels of the map and their mips - this term
+    // only acts tens of kilometres from the camera and more - and in them the cover that casts the block's
+    // mean shadow: clear sky and closed systems averaged first would shade all of the ground between them.)
+    let lod = max(log2(length(pos) * atmo.cloudMarch.w * atmo.noiseRot.w / (TWO_PI * frame.bodies[bi].center.w)) - 3.0, 0.0);
+    let c = textureSampleLevel(atmoCoverageWide, linearClamp, uv, lod).r;
     farTau = c * (1.0 + 7.0 * c) * atmo.far.y / m * saturate((atmo.far.x - r) / 600.0);
   }
   return mix(farTau, nearTau, nearW);
@@ -106,7 +110,7 @@ fn atmoCloudedSource(direct: vec3f, multi: vec3f, passed: vec2f) -> vec3f {
 
 /**
  * The march. Bindings (group 1): 0 = AtmoU, 1 = transmittance, 2 = multi-scattering (texture_2d_array),
- * 3 = cloud shadow map, 4 = coverage map, 5 = 'scene.depthHalf', 6 = cloud radiance / transmittance,
+ * 3 = cloud shadow map, 4 = coverage map for wide pixels, 5 = 'scene.depthHalf', 6 = cloud radiance / transmittance,
  * 7 = cloud geometry (begin, end, mean distance), 8 = 'scene.depth'.
  *
  * `fine` = false: the half-resolution march described above (four targets: far and near candidates).
@@ -124,7 +128,7 @@ ${ATMO_UNIFORM_WGSL}
 @group(1) @binding(1) var transLut: texture_2d_array<f32>;
 @group(1) @binding(2) var msLut: texture_2d_array<f32>;
 @group(1) @binding(3) var atmoShadowTex: texture_2d<f32>;
-@group(1) @binding(4) var atmoCoverageTex: texture_2d<f32>;
+@group(1) @binding(4) var atmoCoverageWide: texture_2d<f32>;
 @group(1) @binding(5) var depthHalfTex: texture_2d<f32>;
 @group(1) @binding(6) var cloudTex: texture_2d<f32>;
 @group(1) @binding(7) var cloudGeomTex: texture_2d<f32>;

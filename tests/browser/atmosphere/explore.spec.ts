@@ -6,7 +6,8 @@
  *
  * scenes.json: [{ "name": "pad", "query": "clouds=0", "view": { "latDeg", "lonDeg", "alt", "headingDeg", "pitchDeg", "fovDeg" },
  *                 "sun": { "azDeg", "elDeg" }, "space": { "distance", "phaseDeg", "fovDeg" }, "ev": 14, "frames": 24,
- *                 "animate": false, "size": [1280, 720], "probes": [[0.5, 0.1]], "eval": "js returning a value" }]
+ *                 "animate": false, "size": [1280, 720], "probes": [[0.5, 0.1]], "before": "js run before the scene settles",
+ *                 "eval": "js returning a value (after the screenshot)" }]
  * Screenshots go to out/screens/atmosphere/explore/<name>.png. Skipped unless ATMO_EXPLORE is set.
  */
 import fs from 'node:fs';
@@ -24,6 +25,7 @@ interface Scene {
   animate?: boolean;
   size?: [number, number];
   probes?: [number, number][];
+  before?: string;
   eval?: string;
 }
 
@@ -61,6 +63,13 @@ test('explore scenes', async ({ page, pageLog }) => {
       },
       { s, pad: PAD },
     );
+    if (s.before) {
+      await page.evaluate(async (code) => {
+        const fn = new Function('lab', `return (async () => { ${code} })();`) as (lab: unknown) => Promise<unknown>;
+        await fn(window.__atmo);
+        window.__atmo!.resetTemporal();
+      }, s.before);
+    }
     await waitIdle(page, s.frames ?? 24);
     const shot = await saveScreenshot(page, 'atmosphere/explore', s.name);
     const info = await page.evaluate(() => {

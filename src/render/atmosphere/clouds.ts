@@ -31,8 +31,14 @@ interface CoverageEntry {
   state: 'loading' | 'ready' | 'absent';
   view: GPUTextureView | null;
   texture: GPUTexture | null;
+  /** The map for pixels larger than its texels: blocks of COVERAGE_WIDE_BLOCK texels (see buildCoverageWide). */
+  wide: GPUTexture | null;
+  wideView: GPUTextureView | null;
   width: number;
 }
+
+/** Texels of the coverage map along one side of a block of its 'wide' texture (a power of two; the shaders skip log2 of it levels). */
+const COVERAGE_WIDE_BLOCK = 8;
 
 export interface CloudShadowPlacement {
   bodyIndex: number;
@@ -127,6 +133,34 @@ export function advanceCloudClock(cloudTime: number, lastUt: number | null, ut: 
   return cloudTime + Math.max(0, Math.min(ut - lastUt, realDt * maxRate));
 }
 
+/**
+ * Axes of the cloud shadow map for a projection direction `dir` (unit, towards the sun) at a place whose
+ * vertical is `up` (unit), on a body whose spin axis is `spin` (unit); all in the same frame.
+ *
+ * u is horizontal at the place and across the sun's azimuth; v = dir x u then lies in the vertical plane of
+ * the sun and points upwards: it is the axis along which a low sun draws a texel out on the ground, the one
+ * the map is made narrower along (see CloudSystem.placeShadow). Any other u - across the spin axis, say, which
+ * is nearly vertical for a sun in the east or west away from the equator - puts the narrow axis across the
+ * azimuth: texels that are needles a hundred times longer than wide along it, and the shadow of every cloud
+ * a comb of hairlines. Under a sun near the zenith the azimuth is undefined and the axis across the spin
+ * axis takes over; there the map is square on the ground whatever its axes.
+ */
+export function cloudShadowAxes(up: Vec3, dir: Vec3, spin: Vec3): { u: Vec3; v: Vec3 } {
+  let spinU = v3.cross(spin, dir);
+  if (v3.lenSq(spinU) < 1e-6) spinU = v3.cross(v3.anyOrthogonal(spin), dir);
+  spinU = v3.normalize(spinU);
+  const across = v3.cross(up, dir);
+  const level = v3.len(across);
+  let u = spinU;
+  if (level > 0.2) {
+    const t = Math.min(Math.max((level - 0.2) / 0.3, 0), 1);
+    const w = t * t * (3 - 2 * t);
+    const sign = v3.dot(across, spinU) < 0 ? -1 : 1;
+    u = v3.normalize(v3.add(v3.scale(across, w / level), v3.scale(spinU, sign * (1 - w))));
+  }
+  return { u, v: v3.cross(dir, u) };
+}
+
 export class CloudSystem {
   private readonly ctx: RenderContext;
   private readonly core: CoreApi;
@@ -143,6 +177,8 @@ export class CloudSystem {
   private readonly coverage = new Map<string, CoverageEntry>();
   private readonly neutralCoverage: GPUTextureView;
   private coverageNow: GPUTextureView;
+  private readonly neutralCoverageWide: GPUTextureView;
+  private coverageWideNow: GPUTextureView;
   private coverageCore: GPUTextureView;
   private coverageCoreKey = '';
   private tilesets: Promise<string[] | null> | null = null;
@@ -255,6 +291,9 @@ export class CloudSystem {
     const cov = device.createTexture({ label: `${id}.coverage.neutral`, format: 'rg8unorm', size: [1, 1], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     device.queue.writeTexture({ texture: cov }, new Uint8Array([0, 0, 0, 0]), {}, [1, 1]);
     this.neutralCoverage = this.coverageNow = this.coverageCore = cov.createView();
+    const covWide = device.createTexture({ label: `${id}.coverage.wide.neutral`, format: 'rgba8unorm', size: [1, 1], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    device.queue.writeTexture({ texture: covWide }, new Uint8Array([0, 0, 0, 0]), {}, [1, 1]);
+    this.neutralCoverageWide = this.coverageWideNow = covWide.createView();
 
     const RT = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
     this.quarterColor = this.core.createTarget(`${id}.cloud.fresh`, 'rgba16float', 0.25);
@@ -277,11 +316,11 @@ export class CloudSystem {
     const uniform: GPUBindGroupLayoutEntry = { binding: 0, visibility: F, buffer: { type: 'uniform' } };
     this.marchLayout = device.createBindGroupLayout({
       label: `${id}.cloudMarch`,
-      entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(4, 'float', '2d-array'), tex(5, 'float', '2d-array'), tex(6), tex(7, 'unfilterable-float')],
+      entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(4, 'float', '2d-array'), tex(5, 'float', '2d-array'), tex(6), tex(7, 'unfilterable-float'), tex(9)],
     });
     this.marchFineLayout = device.createBindGroupLayout({
       label: `${id}.cloudMarchFine`,
-      entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(4, 'float', '2d-array'), tex(5, 'float', '2d-array'), tex(6), tex(7, 'depth')],
+      entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(4, 'float', '2d-array'), tex(5, 'float', '2d-array'), tex(6), tex(7, 'depth'), tex(9)],
     });
     this.resolveLayout = device.createBindGroupLayout({
       label: `${id}.cloudResolve`,
@@ -289,11 +328,11 @@ export class CloudSystem {
     });
     this.shadowLayout = device.createBindGroupLayout({
       label: `${id}.cloudShadow`,
-      entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(4, 'unfilterable-float'), tex(5, 'unfilterable-float')],
+      entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(4, 'unfilterable-float'), tex(5, 'unfilterable-float'), tex(9)],
     });
     this.marchPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudMarch`, fragment: cloudMarchFsWgsl(false), layouts: [this.marchLayout], targets: [{ format: 'rgba16float' }, { format: 'rgba32float' }] });
     this.marchFinePipeline = this.core.fullscreenPipeline({ label: `${id}.cloudMarchFine`, fragment: cloudMarchFsWgsl(true), layouts: [this.marchFineLayout], targets: [{ format: 'rgba16float' }, { format: 'rgba32float' }] });
-    this.shadowInPlaceLayout = device.createBindGroupLayout({ label: `${id}.cloudShadowInPlace`, entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d')] });
+    this.shadowInPlaceLayout = device.createBindGroupLayout({ label: `${id}.cloudShadowInPlace`, entries: [uniform, tex(1), tex(2, 'float', '3d'), tex(3, 'float', '3d'), tex(9)] });
     this.shadowBlitLayout = device.createBindGroupLayout({ label: `${id}.cloudShadowBlit`, entries: [tex(0, 'unfilterable-float'), tex(1, 'unfilterable-float')] });
     this.resolvePipeline = this.core.fullscreenPipeline({
       label: `${id}.cloudResolve`,
@@ -357,6 +396,10 @@ export class CloudSystem {
   }
   get coverageView(): GPUTextureView {
     return this.coverageNow;
+  }
+  /** The coverage map for pixels larger than its texels (see buildCoverageWide): what the far shadow term of this package reads. */
+  get coverageWideView(): GPUTextureView {
+    return this.coverageWideNow;
   }
   /**
    * 'clouds.coverageMap' for the render core's far shadow term, which reads level 0 of what it is given: a
@@ -452,10 +495,10 @@ export class CloudSystem {
     };
 
     const base = await generate(BASE_SIZE, 0);
-    // Equalise the shape (r), cell (g) and smooth (b) channels: a threshold then selects an exact volume fraction.
+    // Equalise every channel (shape, cells, smooth, fine cells): a threshold then selects an exact volume fraction.
     const voxels = BASE_SIZE ** 3;
     const channel = new Float32Array(voxels);
-    for (let c = 0; c < 3; c++) {
+    for (let c = 0; c < 4; c++) {
       for (let i = 0; i < voxels; i++) channel[i] = base[i * 4 + c]!;
       equalise(channel);
       for (let i = 0; i < voxels; i++) base[i * 4 + c] = channel[i]!;
@@ -503,13 +546,15 @@ export class CloudSystem {
   private coverageFor(def: BodyDef, params: CloudParams): CoverageEntry {
     let e = this.coverage.get(def.id);
     if (e) return e;
-    e = { state: 'loading', view: null, texture: null, width: 1 };
+    e = { state: 'loading', view: null, texture: null, wide: null, wideView: null, width: 1 };
     this.coverage.set(def.id, e);
     const entry = e;
     const supplied = this.options.coverageMaps?.[def.id];
     const done = (texture: GPUTexture | null): void => {
       entry.texture = texture;
       entry.view = texture ? texture.createView() : null;
+      entry.wide = texture ? this.buildCoverageWide(def.id, texture, params.farShadowOpticalDepth) : null;
+      entry.wideView = entry.wide ? entry.wide.createView() : null;
       entry.width = texture ? texture.width : 1;
       entry.state = texture ? 'ready' : 'absent';
     };
@@ -532,6 +577,92 @@ export class CloudSystem {
       mipLevelCount: Math.floor(Math.log2(Math.max(width, height))) + 1,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
     });
+  }
+
+  /**
+   * The coverage map for pixels that are larger than its texels ('wide'): per block of COVERAGE_WIDE_BLOCK x
+   * COVERAGE_WIDE_BLOCK texels, with mips, rgba8unorm:
+   *   r = the cover that casts the block's MEAN shadow: -ln(mean of exp(-k cover)) / k, with k = the far
+   *       shadow's optical depth at cover 1 over a typical sun cosine. What the far shadow term reads (the
+   *       render core's, through 'clouds.coverageMap', and this package's own) once a pixel spans blocks;
+   *   g = mean of cover^2,  b = mean of cover x cloud top: their ratios to the mean cover are the cover and
+   *       the cloud top OF THE CLOUDY PART of what a large pixel sees (cloudColumnAt).
+   * The map of a planet is clear skies and closed weather systems. Its mean over hundreds of kilometres is a
+   * middling cover that exists nowhere: clouds made from that mean are thin and grey where the systems they
+   * stand for are thick and white, and a shadow cast by that mean lies on all of the ground, where the real
+   * one leaves the clear half in the sun. Both make a planet that dims by a third as it recedes.
+   */
+  private buildCoverageWide(bodyId: string, map: GPUTexture, farOpticalDepth: number): GPUTexture {
+    const device = this.device;
+    const B = COVERAGE_WIDE_BLOCK;
+    const width = Math.max(1, Math.ceil(map.width / B));
+    const height = Math.max(1, Math.ceil(map.height / B));
+    const levels = Math.floor(Math.log2(Math.max(width, height))) + 1;
+    const wide = this.core.createTextureChecked({
+      label: `${this.id}.coverage.wide.${bodyId}`,
+      format: 'rgba8unorm',
+      size: [width, height],
+      mipLevelCount: levels,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    // k: the optical depth the ground sees under cover 1, along a sun 37 deg from the zenith.
+    const k = (Math.max(farOpticalDepth, 1e-3) / 0.8).toFixed(6);
+    const vertex = /* wgsl */ `
+        @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+          return vec4f(vec2f(f32((i << 1u) & 2u), f32(i & 2u)) * 2.0 - 1.0, 0.0, 1.0);
+        }`;
+    const first = device.createShaderModule({
+      label: `${this.id}.coverage.wide`,
+      code: /* wgsl */ `
+        @group(0) @binding(0) var src: texture_2d<f32>;
+        ${vertex}
+        @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
+          let size = vec2i(textureDimensions(src));
+          let base = vec2i(p.xy) * ${B};
+          var sum = vec3f(0.0);
+          for (var y = 0; y < ${B}; y++) {
+            for (var x = 0; x < ${B}; x++) {
+              let t = textureLoad(src, min(base + vec2i(x, y), size - 1), 0);
+              sum += vec3f(exp(-${k} * t.r), t.r * t.r, t.r * t.g);
+            }
+          }
+          let mean = sum / ${B * B}.0;
+          return vec4f(saturate(-log(max(mean.x, 1e-6)) / ${k}), mean.y, mean.z, 1.0);
+        }`,
+    });
+    const next = device.createShaderModule({
+      label: `${this.id}.coverage.wide.mip`,
+      code: /* wgsl */ `
+        @group(0) @binding(0) var src: texture_2d<f32>;
+        ${vertex}
+        @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f {
+          let size = vec2i(textureDimensions(src));
+          let base = vec2i(p.xy) * 2;
+          var sum = vec3f(0.0);
+          for (var j = 0; j < 4; j++) {
+            let t = textureLoad(src, min(base + vec2i(j & 1, j >> 1), size - 1), 0);
+            sum += vec3f(exp(-${k} * t.r), t.g, t.b);
+          }
+          let mean = sum * 0.25;
+          return vec4f(saturate(-log(max(mean.x, 1e-6)) / ${k}), mean.y, mean.z, 1.0);
+        }`,
+    });
+    const pipeline = (module: GPUShaderModule, label: string): GPURenderPipeline =>
+      device.createRenderPipeline({ label, layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] } });
+    const firstPipeline = pipeline(first, `${this.id}.coverage.wide`);
+    const nextPipeline = pipeline(next, `${this.id}.coverage.wide.mip`);
+    const encoder = device.createCommandEncoder({ label: `${this.id}.coverage.wide` });
+    for (let level = 0; level < levels; level++) {
+      const p = level === 0 ? firstPipeline : nextPipeline;
+      const source = level === 0 ? map.createView({ baseMipLevel: 0, mipLevelCount: 1 }) : wide.createView({ baseMipLevel: level - 1, mipLevelCount: 1 });
+      const pass = encoder.beginRenderPass({ colorAttachments: [{ view: wide.createView({ baseMipLevel: level, mipLevelCount: 1 }), loadOp: 'clear', storeOp: 'store' }] });
+      pass.setPipeline(p);
+      pass.setBindGroup(0, device.createBindGroup({ layout: p.getBindGroupLayout(0), entries: [{ binding: 0, resource: source }] }));
+      pass.draw(3);
+      pass.end();
+    }
+    device.queue.submit([encoder.finish()]);
+    return wide;
   }
 
   private coverageFromBytes(bodyId: string, image: CoverageImage): GPUTexture {
@@ -610,6 +741,17 @@ export class CloudSystem {
     return true;
   }
 
+  /**
+   * What the clouds build or load once, for a loading screen: the noise volumes, and the coverage maps of
+   * the bodies whose clouds a frame has asked for so far (`loaded` counts those that are in or have turned
+   * out not to exist; a map is first asked for in the first frame that has its body in range).
+   */
+  status(): { noiseReady: boolean; coverage: { loaded: number; total: number } } {
+    let loaded = 0;
+    for (const e of this.coverage.values()) if (e.state !== 'loading') loaded++;
+    return { noiseReady: this.noiseReady, coverage: { loaded, total: this.coverage.size } };
+  }
+
   // ------------------------------------------------------------------------------------------- per frame
 
   /**
@@ -673,6 +815,7 @@ export class CloudSystem {
     this.current = params;
     if (this.coverageNow !== entry.view) {
       this.coverageNow = entry.view!;
+      this.coverageWideNow = entry.wideView ?? this.neutralCoverageWide;
       this.resourceVersion++;
     }
     this.allocateShadow(params.shadowMapSize);
@@ -750,7 +893,11 @@ export class CloudSystem {
     const coreKey = `${def.id}:${coreLevel}`;
     if (coreKey !== this.coverageCoreKey) {
       this.coverageCoreKey = coreKey;
-      this.coverageCore = entry.texture!.createView({ baseMipLevel: coreLevel });
+      // (From the level whose texels are as large as a block of the 'wide' texture on: the cover that casts
+      // the block's mean shadow instead of its mean cover.)
+      const skip = Math.log2(COVERAGE_WIDE_BLOCK);
+      this.coverageCore =
+        coreLevel >= skip && entry.wide ? entry.wide.createView({ baseMipLevel: Math.min(coreLevel - skip, entry.wide.mipLevelCount - 1) }) : entry.texture!.createView({ baseMipLevel: coreLevel });
     }
 
     // Cloud shadows for the deferred lighting, the atmosphere march and the clouds themselves.
@@ -822,10 +969,9 @@ export class CloudSystem {
       hor = v3.lenSq(hor) > 1e-12 ? v3.normalize(hor) : v3.anyOrthogonal(upA);
       dir = v3.normalize(v3.add(v3.scale(hor, Math.cos(SHADOW_MIN_ELEVATION)), v3.scale(upA, Math.sin(SHADOW_MIN_ELEVATION))));
     }
-    let axisU = v3.cross(quat.rotate(q, { x: 0, y: 0, z: 1 }), dir);
-    if (v3.lenSq(axisU) < 1e-6) axisU = v3.cross(quat.rotate(q, { x: 1, y: 0, z: 0 }), dir);
-    axisU = v3.normalize(axisU);
-    const axisV = v3.cross(dir, axisU);
+    // (u horizontal and across the sun's azimuth, v upwards in the sun's vertical plane: v is the axis the
+    // map is narrower along under a low sun.)
+    const { u: axisU, v: axisV } = cloudShadowAxes(upA, dir, quat.rotate(q, { x: 0, y: 0, z: 1 }));
     // Under a low sun the map's plane stands nearly upright, and a square texel in it is drawn out along
     // the ground by 1 / sin(elevation): a shadow's edge would show the texel rows as saw teeth. The map is
     // therefore narrower along v than along u: just the band of the plane that the ground window and the
@@ -941,6 +1087,7 @@ export class CloudSystem {
         { binding: 5, resource: tables.irradiance },
         { binding: 6, resource: this.momentTexView },
         { binding: 7, resource: this.ctx.resources.get('scene.depthHalf') },
+        { binding: 9, resource: this.coverageWideNow },
       ],
     });
     this.marchFineGroup = this.device.createBindGroup({
@@ -955,6 +1102,7 @@ export class CloudSystem {
         { binding: 5, resource: tables.irradiance },
         { binding: 6, resource: this.momentTexView },
         { binding: 7, resource: this.ctx.resources.get('scene.depth') },
+        { binding: 9, resource: this.coverageWideNow },
       ],
     });
     // The frame that writes history / geometry target i reads the other one.
@@ -965,7 +1113,7 @@ export class CloudSystem {
         entries: [u, { binding: 1, resource: this.quarterColor.view }, { binding: 2, resource: this.quarterGeom.view }, { binding: 3, resource: this.histories[1 - i]!.view }, { binding: 4, resource: this.geoms[1 - i]!.view }],
       }),
     );
-    const shadowInputs: GPUBindGroupEntry[] = [u, { binding: 1, resource: this.coverageNow }, { binding: 2, resource: this.baseNoise }, { binding: 3, resource: this.detailNoise }];
+    const shadowInputs: GPUBindGroupEntry[] = [u, { binding: 1, resource: this.coverageNow }, { binding: 2, resource: this.baseNoise }, { binding: 3, resource: this.detailNoise }, { binding: 9, resource: this.coverageWideNow }];
     this.shadowGroup = this.device.createBindGroup({
       label: `${this.id}.cloudShadow`,
       layout: this.shadowLayout,
@@ -1150,6 +1298,9 @@ export class CloudSystem {
     this.shadowPub.destroy();
     this.momentTex.destroy();
     this.momentScratch.destroy();
-    for (const e of this.coverage.values()) e.texture?.destroy();
+    for (const e of this.coverage.values()) {
+      e.texture?.destroy();
+      e.wide?.destroy();
+    }
   }
 }

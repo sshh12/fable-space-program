@@ -10,7 +10,7 @@
  *   &fine=0                   half-resolution march at every distance (A/B against the full-resolution tile of small shells)
  *   &cover=c[,topKm]          replace the baked coverage map by a uniform one (c in 0..1, cloud top in km)
  *   &cp=key:value;key:value   override cloud tunables of the root body (CloudRenderDef.params) for this page
- *   &ap=key:value;...         override scalar atmosphere tunables of the root body (AtmosphereRenderDef)
+ *   &ap=key:value;...         override atmosphere tunables of the root body (AtmosphereRenderDef); key.i = component i of a vector
  *   &planet=0  &sky=0  &relief=0   switch the LabPlanet, the sun disc + stars, the mountain backdrop off
  *   &maps=synthetic           LabPlanet albedo from a procedural map instead of the baked albedoLowRes
  *   &hud=0                    no text overlay
@@ -163,7 +163,12 @@ async function boot(): Promise<void> {
       }
       for (const pair of (query.get('ap') ?? '').split(';').filter(Boolean)) {
         const [k, v] = pair.split(':');
-        if (render.atmosphere && k) (render.atmosphere as unknown as Record<string, number>)[k] = Number(v);
+        if (!render.atmosphere || !k) continue;
+        // (`key.i` = component i of a vector tunable, e.g. ozoneAbsorption.0.)
+        const [name, index] = k.split('.');
+        const target = render.atmosphere as unknown as Record<string, number | number[]>;
+        if (index === undefined) target[name!] = Number(v);
+        else (target[name!] as number[])[Number(index)] = Number(v);
       }
       if (query.get('planet') !== '0') {
         const maps: NonNullable<Parameters<typeof createLabPlanetFeature>[0]>['maps'] = {};

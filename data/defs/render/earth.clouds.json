@@ -12,7 +12,7 @@
     "lowEdgeSoftness": 0.05,
     "lowCoverageGain": 1,
     "fairWeatherCoverage": 0.2,
-    "mesoscaleAmplitude": 0.7,
+    "mesoscaleAmplitude": 0.3,
     "detailErosion": 0.3,
     "detailFadeFootprintM": 400,
     "lowThinDensity": 0.2,
