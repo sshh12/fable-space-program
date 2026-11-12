@@ -9,9 +9,12 @@ this file wins.** Where this file is silent, the research document for that area
 `fleet-docking.md`, `solar-system.md`, `frontend-ux.md`, `hosting.md` and, for the small stage, the idle
 floor and the local stack, `hosting-small.md`).
 
-This file replaces `docs/ARCHITECTURE.md` (v1) when wave 2 ends. Until the lead swaps it in, v1 stays binding
-for wave 2. `docs/MIGRATION_V2.md` says how the code moves from v1 to this design; the remaining work is in
-`docs/WORK_PACKAGES_V2.json`; decisions that are the user's are in `docs/OPEN_QUESTIONS_V2.md`.
+This file replaced the v1 architecture on 2026-11-11 (lead step `lead-baseline-v2`). v1 is kept as
+`docs/research/ARCHITECTURE_V1.md` with its work packages in `docs/research/WORK_PACKAGES_V1.json`; it stays
+binding for the packages that are still closing out wave 2 (the visual close-out and app integration v1), and
+section numbers in code comments written before the swap refer to it. `docs/MIGRATION_V2.md` says how the
+code moves from v1 to this design; the remaining work is in `docs/WORK_PACKAGES_V2.json`; decisions that are
+the user's are in `docs/OPEN_QUESTIONS_V2.md`.
 
 How numbers are marked: **measured** = taken from `docs/research/v2/codebase-audit.md`, a hand-off or
 `frontend-ux.md` (one Ryzen 9950X3D core, Node 24); **derived** = arithmetic on measured numbers and list

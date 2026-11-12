@@ -7,13 +7,14 @@ Last updated: 2026-11-11, 16:45 Pacific: end of the week's budget. Checkpoint: t
 
 | Stage | State |
 |---|---|
-| Design v1 (`docs/ARCHITECTURE.md`, `docs/WORK_PACKAGES.json`) | Done; binding for everything built so far |
+| Design v1 (`docs/research/ARCHITECTURE_V1.md`, `docs/research/WORK_PACKAGES_V1.json`; moved there on 2026-11-11) | Done; binding for everything built so far and for the wave-2 close-out |
 | Wave 1 (9 packages: render-core, terrain-core, bake-earth, bake-moon-sky, sim-orbits, sim-vessel, audio, flight-ui, map-view) | Done: built, independently reviewed, fixed. Hand-offs in `docs/handoff/` |
 | Wave 2 (8 feature packages + core-support) | Built, reviewed and fixed. The headless mission flies pad to splashdown under real physics (`npm run test:mission`, about 77 s wall; touchdown 1.19 m from the lunar target, splashdown inside the recovery zone; `docs/handoff/sim-world-pilot.md`) |
 | Visual close-out of wave 2 | **In progress** (see below). First critique scored every rendering package 3-5/10 against real photographs |
 | App integration v1 (`src/app` wired against `createSim`, browser mission in real Chrome) | **Wired: the game is playable in the browser** (`npm run dev`, then `/`; the scripted test pilot flies inside the page at `/?pilot=1`). `docs/handoff/app-integration-v1.md` has the keys, the frame-time table and the pictures. **Browser mission flown** (commit 4917a66): the in-page test pilot flew lunar-direct pad to splashdown in real Chrome on the RTX 5090 through the player's controls in 44.9 minutes, all 17 milestones in order, every milestone gate met, `cheatCounter` 0, no page errors (touchdown 1.94 m from the target on level 12 of 12, 1.00 m/s down, tilt 0.35 deg; entry 11.0 km/s, peak 5.93 g; splashdown on water inside the Central Pacific zone, upright). GPU frame time within the 11 ms line in every phase (worst window 8.4 ms at lift-off, 2560x1440). The spec is still red on soft budget lines: rAF (the headless clock runs at about 57.5 Hz: request app-integration-8, blocking for those lines), main-thread p99 above 6 ms in 24 of 80 phase rows (near terrain: app-integration-7; during burns: not yet attributed), 2 frames of 33 ms or more in 153,167. Record: `docs/qa/mission/browser-mission-2026-11-11.json`; pictures in `out/screens/mission/` |
 | Lead data change: eight-component swell (requests ocean-5/6) | Done: `docs/handoff/lead-swell.md`; headless mission re-passes, new golden `3f3a131cdd88eba7` |
-| Design v2 for the expanded scope (`docs/ARCHITECTURE_V2.md`, `MIGRATION_V2.md`, `WORK_PACKAGES_V2.json`, `OPEN_QUESTIONS_V2.md`) | Done, critiqued and revised twice (cost floor, local stack). Not started: 29 packages in waves 3-7 |
+| Design v2 for the expanded scope (`docs/ARCHITECTURE.md` since the swap of 2026-11-11, `MIGRATION_V2.md`, `WORK_PACKAGES_V2.json`, `OPEN_QUESTIONS_V2.md`, `PACKAGE_RULES.md` with the v2 rules) | Done, critiqued and revised twice (cost floor, local stack); swapped in. 28 packages in waves 3-7 not started |
+| v2 lead step `lead-baseline-v2` (MIGRATION_V2 step 3.0) | **Done except the reference images** (`docs/handoff/lead-baseline-v2.md`). The v2 contracts are in, additive (`session.ts`, `net.ts` with `UniverseRules`, `vehicle.ts`, `src/core/math/frame.ts`, optional fields everywhere else); the root configuration, the dependencies, the boundary rules, the stub scan, the `stack` class of the gate, the terrain guard and the mission baseline (`tests/mission/baseline-v1.json`, state hash `3f3a131cdd88eba7`) exist; typecheck (two configurations), the unit suite and the headless mission give the results they gave before. **Still to do by the lead:** record the reference images on the visually signed-off tree immediately before sub-wave 3.2 (the tooling is complete and proven; all 25 checkpoints are `pending` in `tests/browser/baselines.manifest.json`); the contract items that cannot be additive (hand-off section 2: union members, `setTarget(TargetRef)`, nullable active vessel, the two warp levels) at the start of 3.2 and before wave 4; `%UserProfile%\.wslconfig` by hand before wave 5 (the agent's permission system refused it; OPEN_QUESTIONS, "Small things") |
 
 User decisions that bind v2 are in `docs/research/v2/user-decisions.md` (anonymous identity, Railway Hobby at
 about 50 USD/month for 5 players and about 30 USD idle, local end-to-end stack, Docker allowed, no alerts, GitHub
@@ -70,7 +71,7 @@ it holds 95 %, chute envelope "RISKY" while inside it, Mach shown in vacuum).
      and the screen gives no sense of progress; for about 40 s at 1440p the land around the pad is even drawn as
      sea. Show a clear, honest progress indicator (what is loading, how far along) until the view at the pad is
      final, and do not show the scene before the ground under the camera is resident. In v2 this belongs to the
-     shell's spawn flow (ARCHITECTURE_V2 section 23) and the boot pack (10.4); until then to `src/app`.
+     shell's spawn flow (ARCHITECTURE section 23) and the boot pack (10.4); until then to `src/app`.
    - **Keyboard capture and automatic fullscreen are disorienting.** Today the first key or click requests
      fullscreen and the keyboard lock (`src/app/settings.ts`; `?capture=0` turns it off). Make it opt-in: start
      windowed and uncaptured, and offer fullscreen / keyboard lock as an explicit control (and a setting), with the
@@ -82,14 +83,26 @@ it holds 95 %, chute envelope "RISKY" while inside it, Mach shown in vacuum).
    - **From the mission video** (`tools/footage/`, video on the user's desktop): the sound drops to near silence
      during entry from about 66 km and Mach 16 right after the plasma (audio package); "TEST PILOT" and "Capture
      keyboard" labels should be hideable for footage; the headless 57.5 Hz clock causes slight judder.
-4. v2: `MIGRATION_V2.md` section 2 is now met except for the visual sign-off; start with `lead-baseline-v2`
-   (reference images from the signed-off tree), then waves 3-7.
+4. v2: the lead step `lead-baseline-v2` is done except for the reference images
+   (`docs/handoff/lead-baseline-v2.md`). In order:
+   a. Review that step, then start sub-wave 3.1 (`sim-core-v2`, `bodies-ephemeris`, `planet-bake`,
+      `site-bake`, `platform-delivery`): they need nothing that is still open. They compile against the
+      working tree, so the wave-2 fixers and the wave-3 packages must both keep it compiling.
+   b. When the visual close-out is signed off: record the reference images
+      (`BASELINE_RECORD="<note>" node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional`;
+      frame the fourteen checkpoints whose `page` is null first), LOOK at every PNG, commit the manifest.
+   c. At the start of sub-wave 3.2: join the v2 union members, change `setTarget` to `TargetRef`, add the
+      `'ui.scrimRects'` key (hand-off section 2, "what is therefore still to do"), and hand the sweep the list
+      of deprecated fields.
+   d. Then waves 4-7 as in `MIGRATION_V2.md` section 3.
 
 ## The 2026-11-11 15:35 crash and the git recovery
 
 Bugcheck 0x119 (VIDEO_SCHEDULER_INTERNAL_ERROR, GPU scheduler/driver) while four WebGPU Chrome test runs ran at
-once (373 W; memory was fine). The heavy gate is back to **two GPU slots** (`tools/dev/heavy.mjs`); keep it there
-or update the NVIDIA driver (610.88) before raising it. The crash zeroed `.git/refs/heads/main`, the index and two
+once (373 W; memory was fine). The heavy gate went back to two GPU slots then, and to **ONE GPU slot** after
+the third crash (2026-11-11 22:16, the same bugcheck with only two WebGPU runs at once; commit 23fdeb7): keep it
+at one, or update the NVIDIA driver (610.88) before raising it. Waiters of a class are now served first come,
+first served (050b2b3), and the gate has the class `stack` (one slot) for the local stack. The crash zeroed `.git/refs/heads/main`, the index and two
 working files; main was restored to the last intact commit from the reflog (3762197), `git fsck --full` passed,
 the index was rebuilt, and the two files were restored from HEAD. A copy of the damaged `.git` is in the session
 scratchpad. Uncommitted work of the interrupted agents (atmosphere, vfx, flight-ui, app tests, two hand-offs) is
@@ -111,8 +124,8 @@ package takes it over.
 4. **Finish app integration v1** if it is not done: `docs/handoff/app-integration-v1.md` says where it stands.
    Done means: a human can fly the original mission in the browser, and the Playwright `mission` project flies it
    end to end through the controls API (about 45 minutes).
-5. **Then v2.** `MIGRATION_V2.md` section 2 is the starting point (wave 2 committed and reviewed, `src/app` wired,
-   browser mission run); then the lead step `lead-baseline-v2` of `docs/WORK_PACKAGES_V2.json`, then waves 3-7.
+5. **Then v2.** The lead step `lead-baseline-v2` of `docs/WORK_PACKAGES_V2.json` is done except for the
+   reference images (next steps, item 4); then waves 3-7.
    The design-critical v2 packages (`suggestedModel: fable`) were written for the strongest model: keep the
    designs as written; do not simplify them to fit a weaker model.
 

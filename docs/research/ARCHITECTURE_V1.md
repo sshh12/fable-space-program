@@ -1,4 +1,10 @@
-# Architecture
+# Architecture (v1)
+
+> Superseded on 2026-11-11 by `docs/ARCHITECTURE.md` (v2). This file is kept because it is what waves 1 and 2
+> were built against: it stays binding for the packages that are still closing out wave 2 (the visual
+> close-out, app integration v1), and section numbers in code comments written before the swap refer to it.
+> Its work packages are in `docs/research/WORK_PACKAGES_V1.json`. Where it says `docs/ARCHITECTURE.md` or
+> `docs/WORK_PACKAGES.json`, read this file and that one.
 
 Definitive architecture for the true-scale Earth/Moon spaceflight simulator. `PROMPT.txt` is the binding
 requirement; the documents in `docs/research/` are the detailed designs this file builds on. **Where a

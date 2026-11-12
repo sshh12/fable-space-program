@@ -1,6 +1,6 @@
 # Migration to architecture v2
 
-The refactor map from the code as it stands at the end of wave 2 to `docs/ARCHITECTURE_V2.md`: per contract
+The refactor map from the code as it stands at the end of wave 2 to `docs/ARCHITECTURE.md` (v2): per contract
 file and per module, what is kept, what is changed in place and how, what is restructured, in which order
 so the tree stays green, who owns every step, and which wave-2 output is at risk. Package ids refer to
 `docs/WORK_PACKAGES_V2.json`.
@@ -55,7 +55,9 @@ tree as read on 2026-11-10. Nothing in this file has been executed.
 - Wave 2 is finished, committed and reviewed; the lead has wired `src/app` against `createSim` and run the
   browser mission. Uncommitted wave-2 work (the tree showed about 30 modified and 10 untracked files while
   this was written) is either committed or discarded before wave 3 starts.
-- `docs/ARCHITECTURE.md` is v1. The lead swaps `docs/ARCHITECTURE_V2.md` in (renaming it to
+- DONE on 2026-11-11 (`docs/handoff/lead-baseline-v2.md`): `docs/ARCHITECTURE.md` is v2 and v1 is
+  `docs/research/ARCHITECTURE_V1.md`; `docs/WORK_PACKAGES.json` is `docs/research/WORK_PACKAGES_V1.json`.
+  What the step was: the lead swaps the v2 architecture in (renaming it to
   `docs/ARCHITECTURE.md`, keeping v1 as `docs/research/ARCHITECTURE_V1.md`), replaces the scope note in
   `docs/PACKAGE_RULES.md`, updates its rule 13d to the v2 data cap (22 GB baked, 20 GB of packs in their own
   directory, 25 GB of the disk kept free) and its rule 8 to the new test projects, replaces its
