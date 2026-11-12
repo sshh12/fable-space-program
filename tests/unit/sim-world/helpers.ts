@@ -9,8 +9,7 @@ import type { Sim, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider, TerrainResidency } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { createSim, type SimWorld } from '@/sim';
-import { createRealTerrain, loadLibrary } from '../../../tools/sim/realWorld';
+import { createRealTerrain, loadLibrary, openSession, type DiagnosedSession } from '../../../tools/sim/realWorld';
 
 export { loadLibrary, createRealTerrain };
 
@@ -47,9 +46,9 @@ export function withScenario(defs: DefLibrary, scenario: ScenarioDef): DefLibrar
   return { ...defs, scenarios: { ...defs.scenarios, [scenario.id]: scenario } };
 }
 
-export async function makeSim(defs: DefLibrary, scenario: ScenarioDef | string, terrain: TerrainProvider): Promise<SimWorld> {
+export async function makeSim(defs: DefLibrary, scenario: ScenarioDef | string, terrain: TerrainProvider): Promise<DiagnosedSession> {
   const lib = typeof scenario === 'string' ? defs : withScenario(defs, scenario);
-  const sim = createSim(lib, typeof scenario === 'string' ? scenario : scenario.id, { terrain });
+  const sim = openSession(lib, typeof scenario === 'string' ? scenario : scenario.id, { terrain });
   await sim.ready;
   return sim;
 }

@@ -4,7 +4,7 @@
  * recorded input log), and an observer that measures at every control tick what the gates of
  * docs/ARCHITECTURE.md 18.1 need beyond the milestone records:
  *
- *  - clearance between vessels after every separation (the vessel facade's query, through SimWorld);
+ *  - clearance between vessels after every separation (the vessel facade's query, through the session's diagnostics);
  *  - terrain residency under the vessel for the whole final descent to the lunar surface;
  *  - one revolution of the parking orbit on rails against Kepler;
  *  - the Moon SOI entry time as it was predicted an hour and more before;
@@ -13,7 +13,7 @@
  *  - the wall time of every simulation step in the last 60 s before the lunar touchdown and the splashdown;
  *  - the delta-v left in each stage when it was dropped.
  *
- * The observer only reads `peek()` snapshots, `SimWorld.clearance` and `TerrainProvider.residency`.
+ * The observer only reads `peek()` snapshots, the diagnostics' `clearance` and `TerrainProvider.residency`.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,10 +23,10 @@ import type { TerrainProvider, TileSource } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { createMissionPilot, replayHeadless, runHeadless, SLOPPY_PITCH_PROGRAMME, type InputLogEntry, type MissionPilotOptions, type PilotLogEntry, type RunContext, type RunResult } from '@/pilot';
-import { createSim, type DebrisFate, type SimWorld, type WorldStats } from '@/sim';
+import type { DebrisFate, WorldStats } from '@/session';
 import { makeOrbit, propagate, type Orbit } from '@/sim/orbit';
 import { scaleEngineThrust } from '../../tools/sim/flyMission';
-import { createRealTerrain, delayedSource, loadLibrary, repoRoot, tilesRoot } from '../../tools/sim/realWorld';
+import { createRealTerrain, delayedSource, loadLibrary, openSession, repoRoot, tilesRoot, type DiagnosedSession } from '../../tools/sim/realWorld';
 
 export { delayedSource, loadLibrary, repoRoot };
 
@@ -157,7 +157,7 @@ class FlightObserver {
   constructor(
     private readonly defs: DefLibrary,
     private readonly scenario: ScenarioDef,
-    private readonly sim: SimWorld,
+    private readonly sim: DiagnosedSession,
     private readonly terrain: TerrainProvider,
   ) {}
 
@@ -410,7 +410,7 @@ export interface FlightSetup {
 export interface Flight {
   defs: DefLibrary;
   scenario: ScenarioDef;
-  sim: SimWorld;
+  sim: DiagnosedSession;
   run: RunResult;
   milestones: MilestoneRecord[];
   /** The pilot's own notes (empty for a replay). */
@@ -429,7 +429,7 @@ export async function fly(setup: FlightSetup = {}): Promise<Flight> {
   let defs = await loadLibrary();
   if (setup.thrustScale !== undefined && setup.thrustScale !== 1) defs = scaleEngineThrust(defs, setup.thrustScale);
   const terrain = await createRealTerrain(defs, setup.wrapSource ? { wrapSource: setup.wrapSource } : {});
-  const sim = createSim(defs, setup.scenario ?? 'lunar-direct', { terrain });
+  const sim = openSession(defs, setup.scenario ?? 'lunar-direct', { terrain });
   const scenario = sim.scenario;
   const observer = new FlightObserver(defs, scenario, sim, terrain);
   const common = {

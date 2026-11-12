@@ -14,7 +14,7 @@ import type { Sim, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
-import type { SimWorld } from '@/sim';
+import type { DiagnosedSession } from '../../../tools/sim/realWorld';
 import { BUBBLE_EXIT_RADIUS, FRAGMENT_LIFETIME, FRAGMENT_MASS, MAX_DEBRIS } from '@/sim/world/sim';
 import { active, controls, flatTerrain, loadLibrary, makeSim, orbitScenario } from './helpers';
 
@@ -172,7 +172,7 @@ describe('small-fragment expiry', () => {
         { def: CHIP, count: 4 },
         { def: COVER, count: 2 },
       ]);
-      const sim: SimWorld = await makeSim(lib, inOrbit(lib, 't-shed', 't-expiry'), terrain);
+      const sim: DiagnosedSession = await makeSim(lib, inOrbit(lib, 't-shed', 't-expiry'), terrain);
       expect(sim.commands.stage().ok).toBe(true);
       steps(sim, 1);
       expect(sim.commands.stage().ok).toBe(true);
@@ -221,7 +221,7 @@ describe('debris cap', () => {
       { def: COVER, count: 10 },
       { def: COVER, count: 6 },
     ]);
-    const sim: SimWorld = await makeSim(lib, inOrbit(lib, 't-shed', 't-cap'), terrain);
+    const sim: DiagnosedSession = await makeSim(lib, inOrbit(lib, 't-shed', 't-cap'), terrain);
     // First batch, left behind at once (it spends the rest of the test outside the bubble).
     expect(sim.commands.stage().ok).toBe(true);
     steps(sim, 2);
@@ -267,7 +267,7 @@ describe('debris cap', () => {
       { def: COVER, count: 14 },
       { def: COVER, count: 14 },
     ]);
-    const sim: SimWorld = await makeSim(lib, inOrbit(lib, 't-shed', 't-cap-near'), terrain);
+    const sim: DiagnosedSession = await makeSim(lib, inOrbit(lib, 't-shed', 't-cap-near'), terrain);
     sim.commands.stage();
     steps(sim, 1);
     sim.commands.stage();

@@ -19,7 +19,7 @@ import { PHYSICS_DT } from '@/core/contracts/defs';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import type { SimWorld } from '@/sim';
+import type { DiagnosedSession } from '../../../tools/sim/realWorld';
 import { active, controls, flatTerrain, loadLibrary, makeSim } from './helpers';
 
 let defs: DefLibrary;
@@ -32,7 +32,7 @@ beforeAll(async () => {
 const RATES = [60, 144, 240];
 
 /** The third-stage stack in the parking orbit, burning: a vessel in powered flight. */
-async function burningStack(): Promise<SimWorld> {
+async function burningStack(): Promise<DiagnosedSession> {
   const sim = await makeSim(defs, 'qa-leo', terrain);
   sim.commands.setSasEnabled(true);
   sim.setControls(controls({ throttle: 1, pitch: 0.3 }));

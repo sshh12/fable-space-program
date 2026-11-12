@@ -12,7 +12,7 @@ import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { DEG, RAD } from '@/core/math/scalar';
 import { createMissionPilot, runHeadless } from '@/pilot';
-import { createSim } from '@/sim';
+import { createSession } from '@/session';
 import { createRealTerrain, loadLibrary } from './realWorld';
 
 export type EntryOutcome = 'landed' | 'skipped' | 'crewLost' | 'destroyed' | 'timeout';
@@ -94,7 +94,7 @@ export async function flyEntry(defs: DefLibrary, terrain: TerrainProvider, perig
   const base = defs.scenarios['lunar-direct']!;
   const sc = entryScenario(defs, base, perigeeAltitude, opts);
   const lib: DefLibrary = { ...defs, scenarios: { ...defs.scenarios, [sc.id]: sc } };
-  const sim = createSim(lib, sc.id, { terrain });
+  const sim = createSession(lib, sc.id, { terrain });
   const pilot = createMissionPilot(lib, sc);
   await sim.ready;
   const first = sim.peek();

@@ -11,7 +11,7 @@ import { RAD } from '@/core/math/scalar';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { createMissionPilot, runHeadless } from '@/pilot';
-import { createSim, type SimWorld } from '@/sim';
+import { openSession, type DiagnosedSession } from '../../../tools/sim/realWorld';
 import { active, controls, createRealTerrain, loadLibrary, makeSim, settleTerrain, stepUntil } from './helpers';
 
 let defs: DefLibrary;
@@ -36,7 +36,7 @@ const legsOf = (s: SimSnapshot) => {
 
 describe('landed on real lunar terrain', () => {
   let terrain: TerrainProvider;
-  let sim: SimWorld;
+  let sim: DiagnosedSession;
   beforeAll(async () => {
     terrain = await createRealTerrain(defs);
     sim = await makeSim(defs, 'qa-lunar-surface', terrain);
@@ -123,7 +123,7 @@ describe('landed on real lunar terrain', () => {
 describe('splashdown and flotation', () => {
   it('the capsule comes down under its mains, cuts them in the water and rides the swell upright', async () => {
     const terrain = await createRealTerrain(defs);
-    const sim = createSim(defs, 'qa-drogues', { terrain });
+    const sim = openSession(defs, 'qa-drogues', { terrain });
     const pilot = createMissionPilot(defs, sim.scenario);
     // Sink rate over the last five seconds before the water (steady under the mains).
     const recent: number[] = [];

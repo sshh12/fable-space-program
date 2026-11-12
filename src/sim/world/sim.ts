@@ -32,6 +32,7 @@ import {
   type VesselSnapshot,
 } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
+import { FRAME_HISTORY_EPOCHS, type FrameEpochOrigin, type FrameRebase } from '@/core/math/frame';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG, G0, RAD } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
@@ -157,6 +158,14 @@ export interface CreateSimOptions {
    * (`seededCraftIds()`), so a session is reproducible.
    */
   ids?: CraftIdSource;
+  /**
+   * The render root of the snapshots (ARCHITECTURE section 3). 'soiBody' (the default, what `createSession`
+   * gives): the origin of every `...Root` field is the centre of the active vessel's SOI body, replaced
+   * with a new frame epoch and a rebase when that body changes. 'rootBody': the origin is the library's root
+   * body and is never replaced, as in v1; this is what the deprecated `createSim` gives, so that
+   * presentation code that does not apply rebases yet sees no origin change. It goes with that alias.
+   */
+  renderRoot?: 'soiBody' | 'rootBody';
 }
 
 /** What became of a vessel the world removed. */
@@ -217,6 +226,8 @@ interface Entry {
   prevValid: boolean;
   /** Tick the reduced-tier state refers to. */
   reducedTick: number;
+  /** Counter that changes when the vessel's orbit or plan changes (VesselSnapshot.revision). */
+  revision: number;
   sunStep: number;
   /** Attitude follows the SAS hold direction during rails warp. */
   trackHold: boolean;
@@ -272,6 +283,21 @@ class World implements SimWorld, MilestoneHost {
   private readonly orient: OrientationCache;
   private readonly surfaceTargets: SurfaceTarget[];
   private readonly milestones: MilestoneEvaluator;
+
+  // render root (SimSnapshot.frame)
+  private readonly renderRoot: 'soiBody' | 'rootBody';
+  private frameEpoch = 0;
+  /** Body whose centre is the origin now, and the origins of earlier epochs, newest first. */
+  private frameBody: string;
+  private frameHistory: { epoch: number; bodyId: string }[] = [];
+  /** Epoch and origin the last snapshot() carried: the rebase of the next one starts there. */
+  private frameSeenEpoch = 0;
+  private frameSeenBody: string;
+  /** SOI body an event's ROOT position was produced in (the vessel package works in the BCI frame of its body). */
+  private readonly eventBody = new WeakMap<SimEvent, string>();
+  private shiftedPatches: { source: { current: Patch[]; planned: Patch[] }; bodyId: string; out: { current: Patch[]; planned: Patch[] } } | null = null;
+  /** Stage figures of craft that are not the active vessel's helm craft, by craft record. */
+  private readonly craftStages = new WeakMap<object, { step: number; parts: number; infos: StageInfo[]; acceleration: number[] }>();
 
   /** The id of the scenario's craft, issued once by the id source (the start vessel is built twice: before and after its terrain is resident). */
   private readonly startCraftId: string;
@@ -381,6 +407,9 @@ class World implements SimWorld, MilestoneHost {
     this.ut = utOfTick(this.clockTick);
     this.utBase = this.ut;
     this.startCraftId = (opts.ids ?? seededCraftIds()).next(scenario.vehicle);
+    this.renderRoot = opts.renderRoot ?? 'soiBody';
+    this.frameBody = this.system.rootId;
+    this.frameSeenBody = this.system.rootId;
     this.commands = this.makeCommands();
     this.debug = this.makeDebug();
     this.placeStartVessel(false);
@@ -475,6 +504,7 @@ class World implements SimWorld, MilestoneHost {
       prevQ: quat.clone(vessel.q),
       prevValid: false,
       reducedTick: this.clockTick,
+      revision: 0,
       sunStep: -1000000,
       trackHold: false,
       regime: false,
@@ -543,6 +573,27 @@ class World implements SimWorld, MilestoneHost {
     this.prevNavAltitude = alt;
     if (start.kind !== 'pad') this.liftoffUt = ut;
     this.refreshSun(e, ut);
+    // The first frame of a session has its origin at the start vessel's SOI body: no epoch before it.
+    this.frameBody = this.renderRoot === 'soiBody' ? bodyId : this.system.rootId;
+    this.frameSeenBody = this.frameBody;
+    this.frameEpoch = 0;
+    this.frameSeenEpoch = 0;
+    this.frameHistory = [];
+  }
+
+  /**
+   * Keep the render root at the active vessel's SOI body: when that body is another one than the origin, a
+   * new frame epoch starts and the old origin goes into the history that every snapshot describes.
+   */
+  private updateRenderRoot(): void {
+    if (this.renderRoot !== 'soiBody') return;
+    const want = this.active.bodyId;
+    if (want === this.frameBody) return;
+    this.frameHistory.unshift({ epoch: this.frameEpoch, bodyId: this.frameBody });
+    if (this.frameHistory.length > FRAME_HISTORY_EPOCHS) this.frameHistory.length = FRAME_HISTORY_EPOCHS;
+    this.frameEpoch++;
+    this.frameBody = want;
+    this.touch();
   }
 
   private async initialise(): Promise<void> {
@@ -642,6 +693,7 @@ class World implements SimWorld, MilestoneHost {
     e.coastTime = 0;
     e.forceIntegrate = false;
     e.railsEvent = this.computeRailsEvent(e, this.ut);
+    e.revision++;
     if (e === this.active) this.patchesDirty = true;
   }
 
@@ -784,7 +836,9 @@ class World implements SimWorld, MilestoneHost {
 
   private onSoiChange(e: Entry, from: string, to: string, ut: number): void {
     this.pushEvent({ type: 'soiChange', ut, vesselId: e.vessel.id, fromBodyId: from, toBodyId: to });
+    e.revision++;
     if (e !== this.active) return;
+    this.updateRenderRoot();
     const pred = this.soiPrediction && this.soiPrediction.from === from && this.soiPrediction.to === to ? this.soiPrediction.ut : null;
     this.milestones.noteSoiChange(from, to, this.info(to).parentId === from, ut, pred);
     this.soiPrediction = null;
@@ -995,6 +1049,7 @@ class World implements SimWorld, MilestoneHost {
   }
 
   private handleVesselEvent(e: Entry, ev: SimEvent): void {
+    if (ev.type === 'explosion') this.eventBody.set(ev, e.bodyId);
     this.pushEvent(ev);
     const isActive = e === this.active;
     switch (ev.type) {
@@ -1321,6 +1376,7 @@ class World implements SimWorld, MilestoneHost {
       if (next) {
         this.pushEvent({ type: 'activeVesselChanged', ut: this.ut, vesselId: next.vessel.id, previousVesselId: a.vessel.id });
         this.active = next;
+        this.updateRenderRoot();
         next.tier = 'full';
         if (next.vessel.hold !== null) next.mode = 'landed';
         else if (next.orbit === null) next.mode = 'integrated';
@@ -2093,6 +2149,7 @@ class World implements SimWorld, MilestoneHost {
         const next = list[(i + (direction === -1 ? list.length - 1 : 1)) % list.length]!;
         const prev = this.active;
         this.active = next;
+        this.updateRenderRoot();
         this.nodes = [];
         this.burn = null;
         this.patchesDirty = true;
@@ -2141,6 +2198,8 @@ class World implements SimWorld, MilestoneHost {
         e.coastTime = 0;
         e.prevValid = false;
         if (e.tier !== 'full') e.tier = 'full';
+        e.revision++;
+        if (e === this.active) this.updateRenderRoot();
         this.patchesDirty = true;
         this.warpStamp = -1;
         this.touch();
@@ -2427,10 +2486,19 @@ class World implements SimWorld, MilestoneHost {
     const alpha = 1 - lag / PHYSICS_DT;
     const bodies = this.system.buildBodySnapshots(utP);
     const bodyIndex = new Map<string, number>();
+    // The render root: every ROOT position and velocity below is relative to the centre of `frameBody`.
+    const shifted = this.frameBody !== this.system.rootId;
+    const origin = shifted ? bodies.find((b) => b.id === this.frameBody)! : null;
+    const originR = origin ? v3.clone(origin.rRoot) : null;
+    const originV = origin ? v3.clone(origin.vRoot) : null;
     bodies.forEach((b, i) => {
       bodyIndex.set(b.id, i);
       // Orientation on the world clock (base + offset): the same rotation the physics and landed vessels use.
       b.qFixedToRoot = this.orient.at(b.id, this.utBase, this.stepsSinceBase * PHYSICS_DT - lag);
+      if (originR && originV) {
+        b.rRoot = v3.sub(b.rRoot, originR);
+        b.vRoot = v3.sub(b.vRoot, originV);
+      }
     });
     const a = this.active;
     const vessels: VesselSnapshot[] = [];
@@ -2448,6 +2516,8 @@ class World implements SimWorld, MilestoneHost {
         rRoot: v3.add(b.rRoot, v.r),
         vRoot: v3.add(b.vRoot, v.v),
         sunVisibility: e.env.sunVisibility,
+        stages: (craft: number) => this.stagesOf(e, craft),
+        revision: e.revision,
       });
       if (lag > 0) {
         this.present(e, snap, utP, lag, alpha, b.rRoot, b.vRoot);
@@ -2455,7 +2525,10 @@ class World implements SimWorld, MilestoneHost {
       }
       vessels.push(snap);
     }
-    if (this.wreck && a.removed) vessels.push(this.wreck);
+    if (this.wreck && a.removed) {
+      // The wreck's ROOT state is kept with the system's root body as origin: express it in this frame.
+      vessels.push(originR && originV ? { ...this.wreck, rRoot: v3.sub(this.wreck.rRoot, originR), vRoot: v3.sub(this.wreck.vRoot, originV) } : this.wreck);
+    }
     const env = this.envAt(a, this.ut);
     let readouts: Readouts;
     let navball;
@@ -2485,12 +2558,38 @@ class World implements SimWorld, MilestoneHost {
         complete = this.policy.isFinalAt(a.bodyId, quat.rotateInv(env.qFixedToInertial, v3.normalize(v.r)));
       }
     }
-    if (!this.eventsView) this.eventsView = this.events.slice();
+    if (!this.eventsView) this.eventsView = this.events.map((ev) => this.eventInFrame(ev));
     const events = this.eventsView;
+    // The frame: a rebase from the origin of the previous snapshot() while that is another epoch, and the
+    // origins of the earlier epochs in this frame at this snapshot's time.
+    const relative = (bodyId: string): FrameRebase => {
+      const s = this.system.stateRelative(bodyId, this.frameBody, utP);
+      return { offset: s.r, velocity: s.v };
+    };
+    const rebase = this.frameEpoch !== this.frameSeenEpoch ? relative(this.frameSeenBody) : null;
+    const previous: FrameEpochOrigin[] = this.frameHistory.map((h) => ({ epoch: h.epoch, ...relative(h.bodyId) }));
+    const rate = warpFactor(this.warpIndex);
     return {
       ut: utP,
       simUt: this.ut,
       tick: this.revision,
+      revision: this.revision,
+      frame: { epoch: this.frameEpoch, origin: { kind: 'body', bodyId: this.frameBody }, rebase, previous },
+      // One private clock nobody else is on: the pilot's tick is the live tick.
+      time: {
+        myTick: this.clockTick,
+        liveTick: this.clockTick,
+        rate,
+        maxRate: warpFactor(this.warpMax),
+        limitedBy: this.warpLimitedBy === null ? null : { kind: this.warpLimitedBy.startsWith('Altitude') ? 'altitude' : this.warpMax <= MAX_PHYSICS_WARP_INDEX ? 'physics' : 'event', text: this.warpLimitedBy, vesselIds: [], accountIds: [] },
+        relation: 'live',
+        offset: 0,
+        clockId: null,
+        clockKind: 'private',
+        members: [],
+        proposals: [],
+        offers: [],
+      },
       warp: { index: this.warpIndex, factor: warpFactor(this.warpIndex), maxIndex: this.warpMax, limitedBy: this.warpLimitedBy, onRails: this.lastAdvanceOnRails },
       scenario: { id: this.scenario.id, startKind: this.scenario.start.kind, stagesAlreadyFired: this.scenario.stagesAlreadyFired },
       surfaceTargets: this.surfaceTargets.map((t) => ({ ...t })),
@@ -2503,13 +2602,57 @@ class World implements SimWorld, MilestoneHost {
       navball,
       readouts,
       staging: { nextStage, stages, lockout },
-      patches: { current: this.patches.current, planned: this.patches.planned },
+      patches: this.patchesInFrame(),
       nodes: this.sortedNodes().map((n) => ({ id: n.id, ut: n.ut, dv: { ...n.dv } })),
       events,
       milestones: this.milestones.records.slice(),
       mission: { failed: this.missionFailed, failureReason: this.failureReason, crewAlive: this.crewAlive },
       cheatCounter: this.cheats,
     };
+  }
+
+  /** An event as the snapshot shows it: a ROOT position the vessel package produced in the BCI frame of its body is moved to the render root. */
+  private eventInFrame(ev: SimEvent): SimEvent {
+    if (ev.type !== 'explosion') return ev;
+    const bodyId = this.eventBody.get(ev);
+    if (bodyId === undefined || bodyId === this.frameBody) return ev;
+    return { ...ev, posRoot: v3.add(ev.posRoot, this.system.stateRelative(bodyId, this.frameBody, ev.ut).r) };
+  }
+
+  /**
+   * The predicted patches in the render root: `bodyPosAtEnd` is the position of the patch's body at the end
+   * of the patch relative to where the frame's origin body is then (zero for a patch about the origin body).
+   */
+  private patchesInFrame(): { current: Patch[]; planned: Patch[] } {
+    if (this.frameBody === this.system.rootId) return { current: this.patches.current, planned: this.patches.planned };
+    const cache = this.shiftedPatches;
+    if (cache && cache.source === this.patches && cache.bodyId === this.frameBody) return { current: cache.out.current, planned: cache.out.planned };
+    const move = (p: Patch): Patch => ({ ...p, bodyPosAtEnd: p.bodyId === this.frameBody ? v3.zero() : this.system.stateRelative(p.bodyId, this.frameBody, p.tEnd).r });
+    const out = { current: this.patches.current.map(move), planned: this.patches.planned.map(move) };
+    this.shiftedPatches = { source: this.patches, bodyId: this.frameBody, out };
+    return { current: out.current, planned: out.planned };
+  }
+
+  /**
+   * Stage figures of one craft of a vessel for its craft block. The active vessel's helm craft has the
+   * figures of the staging panel; any other craft with a command part aboard has its own, refreshed at the
+   * same cadence; a craft nobody can fire (debris) lists none.
+   */
+  private stagesOf(e: Entry, craft: number): StageInfo[] {
+    const v = e.vessel;
+    if (e === this.active && craft === v.helm.craft) return this.stageInfos().map((s) => ({ ...s, actionKinds: s.actionKinds.slice() }));
+    if (!v.parts.some((p) => p.craft === craft && p.command !== null)) return [];
+    const record = v.crafts[craft]!;
+    const bucket = this.stepCount - (this.stepCount % PATCH_REFRESH_STEPS);
+    let c = this.craftStages.get(record);
+    if (!c || c.step !== bucket || c.parts !== v.parts.length) {
+      const infos = stagingInfo(v, this.envAt(e, this.ut), craft);
+      const g = this.localGravity(e);
+      c = { step: bucket, parts: v.parts.length, infos, acceleration: infos.map((s) => s.twr * g) };
+      this.craftStages.set(record, c);
+    }
+    const g = this.localGravity(e);
+    return c.infos.map((s, i) => ({ ...s, twr: c!.acceleration[i]! / g, actionKinds: s.actionKinds.slice() }));
   }
 
   /** Place a vessel snapshot at the presentation time utP = simUt - lag (alpha = fraction of the last step). */
@@ -2550,6 +2693,9 @@ class World implements SimWorld, MilestoneHost {
 
   snapshot(): SimSnapshot {
     const s = this.build(true);
+    // The rebase is drained like the events: the next snapshot starts from this frame.
+    this.frameSeenEpoch = this.frameEpoch;
+    this.frameSeenBody = this.frameBody;
     this.events = [];
     this.eventsView = null;
     this.peekCache = null;
@@ -2655,7 +2801,21 @@ const EMPTY_READOUTS = (targetBodyId: string | null): Readouts => ({
   landingTarget: null,
 });
 
-/** Create the simulation of scenario `scenarioId` of the definition library, on the given terrain authority. */
-export function createSim(defs: DefLibrary, scenarioId: string, opts: CreateSimOptions): SimWorld {
+/**
+ * Create the session of scenario `scenarioId` of the definition library, on the given terrain authority:
+ * the world orchestrator, which is the in-process session until `LocalSession` replaces it (MIGRATION_V2
+ * step 4.3). `createSession` of src/session is this.
+ */
+export function createWorld(defs: DefLibrary, scenarioId: string, opts: CreateSimOptions): SimWorld {
   return new World(defs, scenarioId, opts);
+}
+
+/**
+ * @deprecated Use `createSession` of src/session. The same session with the v1 render root: the origin of
+ * every `...Root` field is the library's root body and never changes (`renderRoot: 'rootBody'`), so
+ * presentation code that does not yet apply `SimSnapshot.frame.rebase` keeps working. The lead removes it
+ * after the presentation sweep.
+ */
+export function createSim(defs: DefLibrary, scenarioId: string, opts: CreateSimOptions): SimWorld {
+  return new World(defs, scenarioId, { renderRoot: 'rootBody', ...opts });
 }

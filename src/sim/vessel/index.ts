@@ -53,6 +53,7 @@ export {
 export {
   stagingInfo,
   toVesselSnapshot,
+  craftSnapshots,
   vesselReadouts,
   nextChuteEnvelope,
   reportedMach,

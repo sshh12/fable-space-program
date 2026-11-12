@@ -1,6 +1,7 @@
 /**
  * Node-side construction of the real simulation for tools and tests: the definition library from
- * data/defs, the terrain authority on the baked tiles under data/tiles (fs tile source), and createSim.
+ * data/defs, the terrain authority on the baked tiles under data/tiles (fs tile source), and the session
+ * (`createSession` of src/session) together with its diagnostics.
  *
  * The tiles are required: `loadRealWorld` throws (it never falls back to synthetic terrain) when a tile
  * set is missing, so that a mission test fails instead of passing on made-up ground.
@@ -12,9 +13,25 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { TerrainProvider, TileSource } from '@/core/contracts/terrain';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
-import { createSim, type SimWorld } from '@/sim';
+import { createSession, diagnosticsOf, type SessionDiagnostics, type SessionOptions } from '@/session';
+import type { LocalSession } from '@/core/contracts/session';
 import { createTerrainProvider, type TerrainAuthority } from '@/terrain';
 import { createFsTileSource } from '@/terrain/fsTileSource';
+
+/** A session and its diagnostics read through one object (tools and tests). */
+export type DiagnosedSession = LocalSession & SessionDiagnostics;
+
+/**
+ * Open the session of a scenario (`createSession`) and hand it out together with its diagnostics. The two
+ * are one object while the session is the world orchestrator; should they ever be two, this says so
+ * instead of handing out half of what was asked for.
+ */
+export function openSession(defs: DefLibrary, scenarioId: string, options: SessionOptions): DiagnosedSession {
+  const session = createSession(defs, scenarioId, options);
+  const d: unknown = diagnosticsOf(session);
+  if (d !== session) throw new Error('openSession: the session and its diagnostics are two objects; read the diagnostics with diagnosticsOf(session)');
+  return session as DiagnosedSession;
+}
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const tilesRoot = path.join(repoRoot, 'data', 'tiles');
@@ -80,14 +97,14 @@ export function delayedSource(source: TileSource): TileSource & { reads: number 
 export interface RealWorld {
   defs: DefLibrary;
   terrain: TerrainProvider;
-  sim: SimWorld;
+  sim: DiagnosedSession;
 }
 
 /** The real Sim of a scenario on the real baked terrain; `sim.ready` is awaited. */
 export async function loadRealWorld(scenarioId: string, opts: RealTerrainOptions & { terrain?: TerrainProvider } = {}): Promise<RealWorld> {
   const defs = await loadLibrary();
   const terrain = opts.terrain ?? (await createRealTerrain(defs, opts));
-  const sim = createSim(defs, scenarioId, { terrain });
+  const sim = openSession(defs, scenarioId, { terrain });
   await sim.ready;
   return { defs, terrain, sim };
 }

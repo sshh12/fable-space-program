@@ -15,7 +15,7 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { createMissionPilot, entryDownRange, type MissionPilot } from '@/pilot';
 import { predictSplash, zoneMisses } from '@/pilot/targets';
-import { createSim, type SimWorld } from '@/sim';
+import { openSession, type DiagnosedSession } from '../../../tools/sim/realWorld';
 import { active, flatTerrain, loadLibrary, settleTerrain } from './helpers';
 
 let defs: DefLibrary;
@@ -28,13 +28,13 @@ beforeAll(async () => {
 const PERIGEE = 45000;
 
 interface Flight {
-  sim: SimWorld;
+  sim: DiagnosedSession;
   pilot: MissionPilot;
   drive(until: (s: SimSnapshot) => boolean, maxFrames: number): Promise<number>;
 }
 
 async function start(): Promise<Flight> {
-  const sim = createSim(defs, 'qa-trans-earth', { terrain });
+  const sim = openSession(defs, 'qa-trans-earth', { terrain });
   const pilot = createMissionPilot(defs, sim.scenario);
   await sim.ready;
   let prevUt = sim.peek().simUt;

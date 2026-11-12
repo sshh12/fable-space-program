@@ -7,7 +7,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import { createMissionPilot, runHeadless } from '@/pilot';
-import { createSim, type SimWorld } from '@/sim';
+import { openSession, type DiagnosedSession } from '../../../tools/sim/realWorld';
 import { active, createRealTerrain, loadLibrary, settleTerrain } from './helpers';
 
 let defs: DefLibrary;
@@ -18,7 +18,7 @@ beforeAll(async () => {
 const FRAME = 1 / 60;
 
 interface FramesResult {
-  sim: SimWorld;
+  sim: DiagnosedSession;
   /** State hash when the pilot's control tick number `stopTick` came up (before it acted). */
   hashAtStop: string | null;
   ticks: number;
@@ -28,7 +28,7 @@ interface FramesResult {
 
 /** Drive the pilot through advance() in 60 Hz frames. `awaitTerrain` = the reproducible protocol; false = a browser. */
 async function flyFrames(scenario: string, opts: { stopTick?: number; awaitTerrain: boolean; maxFrames: number }): Promise<FramesResult> {
-  const sim = createSim(defs, scenario, { terrain: await createRealTerrain(defs) });
+  const sim = openSession(defs, scenario, { terrain: await createRealTerrain(defs) });
   const pilot = createMissionPilot(defs, sim.scenario);
   await sim.ready;
   let ticks = 0;
@@ -64,7 +64,7 @@ async function flyFrames(scenario: string, opts: { stopTick?: number; awaitTerra
 describe('the pilot through Sim.advance', () => {
   it('under drogues to the water: the same state as the headless loop after the same control ticks', async () => {
     const TICKS = 9000;
-    const headless = createSim(defs, 'qa-drogues', { terrain: await createRealTerrain(defs) });
+    const headless = openSession(defs, 'qa-drogues', { terrain: await createRealTerrain(defs) });
     const run = await runHeadless(headless, createMissionPilot(defs, headless.scenario), { maxTicks: TICKS });
     expect(run.reason).toBe('tickLimit');
     expect(run.stats.steps).toBe(TICKS * 4);
@@ -78,7 +78,7 @@ describe('the pilot through Sim.advance', () => {
   it('from the entry coast (rails warp, then the atmosphere) to the water: the same flight as the headless loop', async () => {
     // On rails the two loops cut time into different pieces (a frame of real time times the warp factor here,
     // the runner's own quantum there), so the states are no longer bit-identical - the flight is the same.
-    const headless = createSim(defs, 'qa-entry', { terrain: await createRealTerrain(defs) });
+    const headless = openSession(defs, 'qa-entry', { terrain: await createRealTerrain(defs) });
     const run = await runHeadless(headless, createMissionPilot(defs, headless.scenario), {});
     expect(run.reason).toBe('done');
     expect(run.stats.railsAdvances).toBeGreaterThan(100);

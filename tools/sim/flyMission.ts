@@ -14,8 +14,7 @@ import path from 'node:path';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { MilestoneRecord, SimSnapshot } from '@/core/contracts/sim';
 import { createMissionPilot, runHeadless, SLOPPY_PITCH_PROGRAMME, type MissionPilotOptions, type RunResult } from '@/pilot';
-import { createSim, type SimWorld } from '@/sim';
-import { createRealTerrain, loadLibrary, repoRoot } from './realWorld';
+import { createRealTerrain, loadLibrary, openSession, repoRoot, type DiagnosedSession } from './realWorld';
 
 export interface FlightOptions {
   scenario?: string;
@@ -29,14 +28,14 @@ export interface FlightOptions {
   tiltDeg?: number;
   quiet?: boolean;
   /** Observer at every control tick. */
-  onTick?: (snapshot: SimSnapshot, sim: SimWorld) => void;
+  onTick?: (snapshot: SimSnapshot, sim: DiagnosedSession) => void;
   /** Told the pilot's phase at every control tick (before onTick). */
   phaseProbe?: (phase: string) => void;
 }
 
 export interface FlightResult {
   run: RunResult;
-  sim: SimWorld;
+  sim: DiagnosedSession;
   milestones: MilestoneRecord[];
   report: Record<string, number>;
   log: { ut: number; met: number; phase: string; note: string }[];
@@ -69,7 +68,7 @@ export async function flyMission(opts: FlightOptions = {}): Promise<FlightResult
   let defs = await loadLibrary();
   if (opts.thrustScale !== undefined && opts.thrustScale !== 1) defs = scaleEngineThrust(defs, opts.thrustScale);
   const terrain = await createRealTerrain(defs);
-  const sim = createSim(defs, scenarioId, { terrain });
+  const sim = openSession(defs, scenarioId, { terrain });
   const pilotOptions: MissionPilotOptions = {};
   if (opts.launchDelay) pilotOptions.launchDelay = opts.launchDelay;
   if (opts.sloppy) pilotOptions.pitchProgramme = SLOPPY_PITCH_PROGRAMME;

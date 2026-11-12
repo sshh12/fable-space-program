@@ -4,5 +4,5 @@
  * internal to the simulation; presentation code talks to the contract only (the vehicle, cockpit and vfx
  * labs may additionally use the frozen facade src/sim/vessel/public.ts).
  */
-export { createSim, type CreateSimOptions, type DebrisFate, type SimWorld, type WorldStats } from './world/sim';
+export { createSim, createWorld, type CreateSimOptions, type DebrisFate, type SimWorld, type WorldStats } from './world/sim';
 export { seededCraftIds, type CraftIdSource } from './vessel/ids';

@@ -3,7 +3,7 @@
  * readouts, the integration predicate and the state hash.
  */
 import type { TimedStageAction } from '@/core/contracts/defs';
-import type { ChuteEnvelope, FidelityTier, PartSnapshot, Readouts, StageInfo, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
+import type { ChuteEnvelope, CraftSnapshot, FidelityTier, PartSnapshot, Readouts, StageInfo, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import { quat } from '@/core/math/quat';
 import { G0 } from '@/core/math/scalar';
@@ -12,6 +12,7 @@ import { rcsTranslationActive } from '../control/allocation';
 import { partSkinTemperature } from '../dynamics/thermal';
 import { cloneModuleState } from './assemble';
 import { stateHash } from './codec';
+import { partKeyOf } from './ids';
 import { computeMassProps, isGroundFixed, partDryMass } from './massProps';
 import { anyEngineBurning, ispAt } from './modules/engine';
 import { anyChuteDeployed, chuteEnvelope } from './modules/parachute';
@@ -29,8 +30,12 @@ export function vesselPartSnapshots(vessel: Vessel): PartSnapshot[] {
     const resources: Record<string, number> = {};
     const defs = p.def.resources ?? [];
     for (let k = 0; k < defs.length; k++) resources[defs[k]!.resource] = p.resources[k]!;
+    const craft = vessel.crafts[p.craft]!;
     return {
       instanceId: p.instanceId,
+      craftId: craft.craftId,
+      stageGroup: p.stageGroup,
+      stageLabel: craft.vehicle.stageGroups.find((g) => g.id === p.stageGroup)?.label ?? p.stageGroup,
       def: p.def.id,
       localPos: v3.clone(p.pos),
       localRot: quat.clone(p.rot),
@@ -60,6 +65,30 @@ export interface WorldSideSnapshotFields {
   rRoot: Vec3;
   vRoot: Vec3;
   sunVisibility: number;
+  /** Stage figures of craft `craft` of the vessel (an index into its craft list); without it every craft lists no stages. */
+  stages?: (craft: number) => StageInfo[];
+  /** Counter that changes when the vessel's orbit or plan changes (`VesselSnapshot.revision`). */
+  revision?: number;
+}
+
+/** The craft of a vessel as the snapshot shows them, base craft first. */
+export function craftSnapshots(vessel: Vessel, stages?: (craft: number) => StageInfo[]): CraftSnapshot[] {
+  return vessel.crafts.map((c, ci) => {
+    const command = vessel.parts.find((p) => p.craft === ci && p.command !== null);
+    const chase = c.vehicle.cameras.chase;
+    return {
+      id: c.craftId,
+      vehicleId: c.vehicleId,
+      name: c.name,
+      ownerId: c.ownerId,
+      // A callsign is the universe's knowledge of an account; a vessel knows the account id only.
+      ownerCallsign: null,
+      commandPart: command ? command.instanceId : null,
+      staging: { nextStage: nextLiveStage(vessel, ci), stages: stages ? stages(ci) : [], lockout: c.stageLockout > 0 },
+      chase: { defaultDistance: chase.defaultDistance, minDistance: chase.minDistance, maxDistance: chase.maxDistance },
+      policy: { lendAttitude: c.policy.lendAttitude, lendEngines: c.policy.lendEngines, lendPropellant: c.policy.lendPropellant, helm: typeof c.policy.helm === 'string' ? c.policy.helm : c.policy.helm.slice() },
+    };
+  });
 }
 
 /** Immutable snapshot of a vessel; the orchestrator supplies the fields only it knows. */
@@ -71,6 +100,17 @@ export function toVesselSnapshot(vessel: Vessel, world: WorldSideSnapshotFields)
     id: vessel.id,
     name: vessel.name,
     vehicleId: vessel.crafts[0]!.vehicleId,
+    crafts: craftSnapshots(vessel, world.stages),
+    links: vessel.links.map((l) => ({ a: partKeyOf(vessel, l.a), b: partKeyOf(vessel, l.b), roll: l.roll })),
+    helm: {
+      accountId: vessel.helm.accountId,
+      callsign: null,
+      craftId: vessel.crafts[vessel.helm.craft]!.craftId,
+      controlPart: vessel.parts.length > 0 ? partKeyOf(vessel, Math.min(vessel.helm.controlPart, vessel.parts.length - 1)) : '',
+    },
+    presence: 'solid',
+    timeOffset: 0,
+    revision: world.revision ?? 0,
     controllable: isControllable(vessel),
     tier: world.tier,
     situation: world.situation,

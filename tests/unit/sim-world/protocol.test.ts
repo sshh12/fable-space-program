@@ -11,7 +11,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import { createMissionPilot, replayHeadless, runHeadless, type RunResult } from '@/pilot';
-import { createSim, type SimWorld } from '@/sim';
+import { openSession, type DiagnosedSession } from '../../../tools/sim/realWorld';
 import { createRealTerrain, delayedSource } from '../../../tools/sim/realWorld';
 import { active, controls, loadLibrary, stepUntil } from './helpers';
 
@@ -21,7 +21,7 @@ beforeAll(async () => {
 });
 
 interface Leg {
-  sim: SimWorld;
+  sim: DiagnosedSession;
   run: RunResult;
   hash: string;
   reads: number;
@@ -31,7 +31,7 @@ interface Leg {
 async function flyLeg(scenario: string, until: (s: SimSnapshot) => boolean, opts: { delayed?: boolean; awaitTerrain?: boolean; maxSimTime?: number } = {}): Promise<Leg> {
   let delayed: ReturnType<typeof delayedSource> | null = null;
   const terrain = await createRealTerrain(defs, opts.delayed ? { wrapSource: (source) => (delayed = delayedSource(source)) } : {});
-  const sim = createSim(defs, scenario, { terrain });
+  const sim = openSession(defs, scenario, { terrain });
   const pilot = createMissionPilot(defs, sim.scenario);
   const run = await runHeadless(sim, pilot, { until, maxSimTime: opts.maxSimTime ?? 3 * 3600, ...(opts.awaitTerrain === false ? { awaitTerrain: false } : {}) });
   // (TypeScript cannot see the assignment inside the callback.)
@@ -134,7 +134,7 @@ describe('terrain protocol', () => {
 describe('replay', () => {
   it('the recorded input log of a flown leg reproduces the state hash on a fresh Sim', async () => {
     const terrain = await createRealTerrain(defs);
-    const sim = createSim(defs, 'qa-entry', { terrain });
+    const sim = openSession(defs, 'qa-entry', { terrain });
     const pilot = createMissionPilot(defs, sim.scenario);
     const flown = await runHeadless(sim, pilot, { maxSimTime: 3 * 3600 });
     expect(flown.reason).toBe('done');
@@ -143,7 +143,7 @@ describe('replay', () => {
     expect(flown.inputLog.some((e) => e.controls !== undefined && e.controls.roll !== 0)).toBe(true);
     // The log is plain data: it survives a round trip through JSON.
     const log = JSON.parse(JSON.stringify(flown.inputLog)) as typeof flown.inputLog;
-    const again = createSim(defs, 'qa-entry', { terrain: await createRealTerrain(defs) });
+    const again = openSession(defs, 'qa-entry', { terrain: await createRealTerrain(defs) });
     const replayed = await replayHeadless(again, log, { ticks: flown.stats.ticks, maxSimTime: 3 * 3600 });
     expect(replayed.reason).toBe('logEnd');
     expect(replayed.stats.steps).toBe(flown.stats.steps);
@@ -154,7 +154,7 @@ describe('replay', () => {
     const changed = log.map((e) => ({ ...e, commands: e.commands.slice() }));
     const firstRoll = changed.find((e) => e.controls !== undefined && e.controls.roll !== 0)!;
     firstRoll.controls = { ...firstRoll.controls!, roll: -firstRoll.controls!.roll };
-    const other = createSim(defs, 'qa-entry', { terrain: await createRealTerrain(defs) });
+    const other = openSession(defs, 'qa-entry', { terrain: await createRealTerrain(defs) });
     await replayHeadless(other, changed, { ticks: flown.stats.ticks, maxSimTime: 3 * 3600 });
     expect(other.stateHash()).not.toBe(sim.stateHash());
   }, 120_000);

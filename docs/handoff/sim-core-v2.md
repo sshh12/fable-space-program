@@ -31,6 +31,9 @@ This file is a running log first; the sections below it are filled as each step 
 - 03:00 step 4 complete: the state is whole and versioned; golden re-baseline 2 of this package:
   `7da3ffe86c85228d` (reproduced on a second run; guard and fixtures bit-identical before and after).
 
+- 03:40 step 5 complete: the world speaks the v2 snapshot; `createSession` in `src/session`. Guard
+  bit-identical, golden unchanged (`7da3ffe86c85228d`).
+
 ## Step 1: the tick grid (MIGRATION_V2 3.1)
 
 ### What changed
@@ -443,3 +446,68 @@ round-trips; a version this build does not read, missing magic bytes and truncat
 name; an unknown part or vehicle is refused by name; a vehicle whose content changed is reported; the
 capture put back gives the following flight again bit for bit with the structure cache kept, and brings
 dropped parts back when taken before a staging.
+
+## Step 5: the world speaks v2 (MIGRATION_V2 3.5)
+
+### API
+
+```ts
+// src/session/index.ts
+createSession(defs: DefLibrary, scenarioId: string, options: { terrain: TerrainProvider; ids?: CraftIdSource }): LocalSession
+diagnosticsOf(session: LocalSession): SessionDiagnostics        // debrisLog(), stats(), clearance(a, b)
+// src/sim/index.ts
+createWorld(defs, scenarioId, { terrain, ids?, renderRoot? }): SimWorld      // what createSession calls
+/** @deprecated */ createSim(defs, scenarioId, { terrain }): SimWorld         // the same with renderRoot: 'rootBody'
+// tools/sim/realWorld.ts (tools and tests)
+openSession(defs, scenarioId, options): DiagnosedSession       // = LocalSession & SessionDiagnostics, one object
+```
+
+`tests/mission`, `tools/sim` and the unit tests of the world use `createSession` (through `openSession`).
+`src/app`, `labs/integration` and `tools/audio/entryProfile.ts` still call `createSim`.
+
+### What the snapshot carries now
+
+| Field | Content |
+|---|---|
+| `frame` | `{ epoch, origin: { kind: 'body', bodyId }, rebase, previous }`. Origin = the centre of the ACTIVE VESSEL'S SOI BODY. Every `...Root` position and velocity (bodies, vessels, the wreck, `Patch.bodyPosAtEnd`, `explosion.posRoot`) is relative to it: the origin body is at exactly (0, 0, 0) and the active vessel's `rRoot` equals its body-centred `r`. The epoch starts at 0 with the start vessel's body and increases when the active vessel's SOI body changes (an SOI change, a change of the active vessel, `debug.setVesselState`). `rebase` = the origin of the previous `snapshot()` in this frame at this snapshot's time (position and velocity), pending until `snapshot()` drains it (`peek()` shows it). `previous` = the origins of the last eight earlier epochs in this frame, newest first, in every snapshot |
+| `time` | the trivial `TimeView`: `myTick = liveTick` = the clock tick, `rate` = the warp factor, `maxRate`, `limitedBy` (kind `physics`, `altitude` or `event` with the warp limit's sentence), `relation: 'live'`, `clockKind: 'private'`, no members, proposals or offers |
+| `revision` | the count of steps and rails advances (`tick`, deprecated, holds the same) |
+| `vessels[].crafts` | per craft: id, vehicle id, name, owner (callsign null: a vessel knows the account id only), command part instance id (null for debris), `staging { nextStage, stages, lockout }`, chase distances from the craft's vehicle, lend policy. Stage figures: the active vessel's helm craft has the staging panel's; another craft with a command part aboard has its own (cached like the panel's, thrust-to-weight restated at the local gravity); a craft nobody can fire lists none |
+| `vessels[].links`, `.helm` | part keys `craftId/instanceId`; `helm { accountId, callsign: null, craftId, controlPart }` |
+| `vessels[].presence`, `.timeOffset`, `.revision` | `'solid'`, 0, and a counter that moves when the vessel goes on rails, changes its SOI body or is moved by the debug API |
+| `vessels[].parts[]` | `craftId`, `stageGroup`, `stageLabel` (the label of the group in the craft's vehicle) beside `instanceId` |
+| deprecated, still filled | `tick`, `Readouts.targetBodyId`, `Readouts.targetClosestApproach`, `staging` and the other singleton blocks |
+
+`Patch.bodyPosAtEnd` is the position of the patch's body at the end of the patch relative to where the
+origin body is THEN (zero for a patch about the origin body). An `explosion` of a vessel in another SOI
+than the origin's is moved into the frame (the vessel package produces it in the BCI frame of its body).
+
+### The one deliberate difference between `createSession` and the deprecated `createSim`
+
+`createSim` keeps the v1 render root: origin = the library's root body, epoch 0 for ever, `rebase` null,
+`previous` empty (`renderRoot: 'rootBody'`). Reason: no presentation code applies `frame.rebase` yet (the
+sweep does that), the v1 fixers fly the browser mission on this tree, and an origin that jumps 384,000 km
+at the Moon's sphere of influence would throw every held ROOT position (camera rigs, previous-frame state,
+world-anchored effects). Everything else the alias returns is the v2 snapshot. **For `presentation-sweep`:
+moving a consumer to `createSession` is what turns the moving origin on for it; `FrameEpochTracker` of
+`src/core/math/frame.ts` is tested against the session's frames (also for a consumer that skipped the
+snapshot of the change). The option goes with the alias.**
+
+The render root is presentation only: the same coast into the Moon's SOI through `createSim` and through
+`createSession` ends in the same state hash (tested), and the pilot reads no ROOT position, so the
+mission is bit-identical under both.
+
+### Acceptance
+
+- `npm run test:mission`: 36 of 36 on `createSession`; state hash `7da3ffe86c85228d` unchanged; cheatCounter 0;
+  no incomplete terrain query. Trajectory guard: 400 of 400 samples bit-identical, debris 0 s and 0 m.
+- `tests/unit/sim-world/snapshotV2.test.ts` (7): the origin body at (0, 0, 0) and the vessel at its
+  body-centred state; the rebase at the Moon's SOI entry (peek shows it, snapshot drains it, a held
+  position carried over to 1e-6 m and a held velocity to 1e-9 m/s, the history in every later snapshot,
+  the tracker for a consumer that slept through the change); `createSim` with one epoch through the same
+  change and the same state hash; the time block and its limit kinds; `revision`; the craft block of the
+  active vessel against the staging panel; debris with its craft and no command part; the vessel
+  revision; `createSession` and `diagnosticsOf`.
+- Unit suites: `src/sim src/session src/core/defs src/terrain tests/unit/sim-vessel tests/unit/sim-world
+  tests/unit/sim-orbits tests/unit/terrain-core tools/dev` plus the presentation unit tests that read part
+  snapshots (`tests/unit/vehicle`, `cockpit`, `vfx`, `fakes`): 69 files, 735 tests, all pass.

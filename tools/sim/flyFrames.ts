@@ -13,7 +13,7 @@
 import path from 'node:path';
 import type { MilestoneRecord, SimSnapshot } from '@/core/contracts/sim';
 import { createMissionPilot, type MissionPilotOptions } from '@/pilot';
-import { createSim, type SimWorld } from '@/sim';
+import { openSession, type DiagnosedSession } from './realWorld';
 import { createRealTerrain, loadLibrary } from './realWorld';
 
 export const FRAME_SECONDS = 1 / 60;
@@ -28,7 +28,7 @@ export interface PhasePacing {
 }
 
 export interface FramesFlight {
-  sim: SimWorld;
+  sim: DiagnosedSession;
   done: boolean;
   failure: string | null;
   frames: number;
@@ -53,7 +53,7 @@ export interface FramesOptions {
 
 export async function flyFrames(opts: FramesOptions = {}): Promise<FramesFlight> {
   const defs = await loadLibrary();
-  const sim = createSim(defs, opts.scenario ?? 'lunar-direct', { terrain: await createRealTerrain(defs) });
+  const sim = openSession(defs, opts.scenario ?? 'lunar-direct', { terrain: await createRealTerrain(defs) });
   const pilot = createMissionPilot(defs, sim.scenario, opts.pilot ?? {});
   await sim.ready;
   const awaitTerrain = opts.awaitTerrain !== false;
