@@ -9,6 +9,11 @@ session is at the end of this file.
 
 ## 0. In five lines
 
+**First line, as the brief asks: the packs bucket FAILS at 2,000 concurrent fetchers** (2.74 % errors, p95
+first byte 553 ms, 1.40 Gbit/s against 0.5 %, 400 ms and 1.5 Gbit/s); it passes at 20 and 500. Stage 0 is
+unaffected; the escalation of OPEN_QUESTIONS ("Outside the three providers") is the lead's to raise before any
+launch is announced. Caveats and the rerun command: `docs/capacity/2026-11-12-platform.md` section 6.
+
 - **Local: done and proven.** Packs of every baked tile set (13.96 GB in 96 packs), the pack source with the
   tile-source seam, byte-identical to the plain files for all 862,220 tiles in four modes; the boot pack (22.4 MB
   boot set); the program entry and the static roles; the local stack on host processes with an embedded
@@ -203,7 +208,8 @@ Details and tables: `docs/capacity/2026-11-12-platform.md`.
   0 bytes; the origin sees the client address in X-Forwarded-For; boot redirect works; slice MISS 334 ms, HIT
   40 ms to first byte; bucket CORS and ExposeHeaders honoured. Chrome under COEP against the deployed
   services: see the running log.
-- D6 bucket from Modal at 20, 500, 2,000 fetchers: see the running log.
+- D6 bucket from Modal, 15 minutes per level: 20 fetchers pass (p95 378 ms, 0 errors); 500 pass (p95 233 ms,
+  0.018 % errors, 1.07 Gbit/s); **2,000 FAIL** (p95 553 ms, 2.74 % errors, 1.40 Gbit/s).
 - D7 derating: not measured.
 - D8 first session: 577 MB as the browser loads today (tiles 304, sky 135, assets 136), 461 MB with the OPFS
   cache; per-visitor and front-page figures recomputed in the capacity report (23-29 TB and $1,590-1,990 for
@@ -408,3 +414,10 @@ was re-recorded in format 2 during this work; the browser terrain check reads it
   20 fetchers (1 container): 71,126 requests, 0 errors, first byte p50 223 ms / p95 378 ms / p99 733 ms,
   16.5 Mbit/s: PASS. 500 fetchers (10 containers): 4,688,661 requests, 0.018 % errors (714 truncated bodies,
   111 timeouts), first byte p50 48 / p95 233 / p99 388 ms, 1.07 Gbit/s sustained: PASS. 2,000 running.
+- 02:50 bucket probe at 2,000 fetchers (40 containers): 6,897,002 requests, 2.74 % errors (174,605 truncated
+  bodies, 14,451 timeouts), first byte p50 173 / p95 553 / p99 728 ms, 162.5 GB, 1.40 Gbit/s: FAIL on all three
+  thresholds (first line of this hand-off and of the capacity report).
+- 02:50 `copy_packs` on Modal: all 100 objects of the deployed pack list (13.96 GB) are on the volume `fsp-packs`,
+  each verified by SHA-256 against its content address, in about 12 minutes (10:37-10:50 UTC). That is the copy
+  outside the production bucket that makes data/packs deletable when the lead says so (the boot pack is not in
+  the pack list: it is in the bucket and rebuilt deterministically by `tools/pack/cli.ts boot`).

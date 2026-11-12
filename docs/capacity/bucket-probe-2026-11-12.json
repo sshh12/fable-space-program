@@ -1,0 +1,62 @@
+{
+ "seconds": 900.0,
+ "levels": [
+  {
+   "fetchers": 20,
+   "containers": 1,
+   "requests": 71126,
+   "ok": 71126,
+   "errorRate": 0.0,
+   "errors": {},
+   "firstByteMs": {
+    "p50": 222.5,
+    "p95": 377.5,
+    "p99": 732.5
+   },
+   "bytes": 1860146806,
+   "gbitPerS": 0.016528220651413076,
+   "wallS": 905.3339161872864,
+   "pass": true
+  },
+  {
+   "fetchers": 500,
+   "containers": 10,
+   "requests": 4688661,
+   "ok": 4687836,
+   "errorRate": 0.0001759564191141138,
+   "errors": {
+    "ClientPayloadError": 714,
+    "TimeoutError": 111
+   },
+   "firstByteMs": {
+    "p50": 47.5,
+    "p95": 232.5,
+    "p99": 387.5
+   },
+   "bytes": 123006034787,
+   "gbitPerS": 1.0651542105730982,
+   "wallS": 929.8533298969269,
+   "pass": true
+  },
+  {
+   "fetchers": 2000,
+   "containers": 40,
+   "requests": 6897002,
+   "ok": 6707946,
+   "errorRate": 0.02741133031424378,
+   "errors": {
+    "ClientPayloadError": 174605,
+    "TimeoutError": 14451
+   },
+   "firstByteMs": {
+    "p50": 172.5,
+    "p95": 552.5,
+    "p99": 727.5
+   },
+   "bytes": 162472195091,
+   "gbitPerS": 1.3965703939757645,
+   "wallS": 1476.639232158661,
+   "pass": false
+  }
+ ]
+}
