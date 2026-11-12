@@ -732,12 +732,17 @@ function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | nu
 - Culling: view frustum per instance for the G-buffer; cascade footprint and half-texel size for shadows.
 - Specular anti-aliasing: Kaplanyan-Hill roughness widening from the screen-space normal derivatives.
 - Wear / soot / frost / wetness are applied for `standard` and `terrain` shading. On `standard` materials
-  (request `vehicle-pad-1`) soot and frost lie ON the paint. Frost: the layer's weight (instance value x
-  vertex mask) is broken up in texture space, so it arrives as streaks and patches along v with a soft edge
-  (value noise of the mesh UV before `uvScale`, cells 3 cm in u and 25 cm in v plus an octave four times
-  that: author UVs in metres, u round the part and v along it; where a cell is smaller than a pixel the
-  pattern gives way to a plain blend), 0 at weight 0 and complete at weight 1, white (0.93, 0.95, 0.97) at
-  roughness 0.85. Soot is a DENSITY, continuous in the weight (request `vehicle-pad-7`):
+  (request `vehicle-pad-1`) soot and frost lie ON the paint, each as a DENSITY that is continuous in the
+  layer's weight (instance value x vertex mask) and modulated by streaks in texture space (a noise of the
+  mesh UV before `uvScale`: author UVs in metres, u round the part and v along it; where a cell is smaller
+  than a pixel the pattern gives way to its mean). Frost is a coat with a thickness (request
+  `vehicle-pad-11`): `density = saturate(weight x (0.75 + 0.5 x streaks))`, runnels of 8 cm x 1.2 m; the
+  coat covers by `smoothstep(0, 0.6, density)`: a thin one is a translucent haze through which paint and
+  markings show, greyed, from a weight of about 0.6 it is opaque rime, cool white (0.90, 0.94, 1.0) at
+  roughness 0.95, no metal. Measured on the layers panel: at weight 0.35 every pixel between 1.96 and 2.72
+  of the clean paint's level (the full coat: 3.16) and 99 % of the steps between neighbours under 0.05 of
+  the way from paint to coat; the coverage mask it replaced had bare-ish and full-white pixels side by
+  side there (1.72 to 3.23, steps to 0.47: dashes). Soot (request `vehicle-pad-7`):
   `density = saturate(weight x (0.67 + 0.66 x streaks))`, the streaks a noise in [0, 1] of cells 6 cm x 1.5 m
   (and 24 cm x 6 m) along v that gives way to its mean under a pixel. A thin deposit is a brown veil (the
   albedo is multiplied towards (0.50, 0.38, 0.26) by `smoothstep(0, 0.5, density)`: tiles, seams and
@@ -746,12 +751,8 @@ function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | nu
   metalness out by `smoothstep(0.15, 0.9, density)`. Weight 0.25 is a tan veil (about two thirds of the
   paint's luminance), 0.5 brown, 1 near black; nothing has an edge unless the weight has one. The clear
   coat and the anisotropy written to RT4 are multiplied by
-  `(1 - smoothstep(0, 0.35, soot density)) x (1 - frost)`: a sooted or frosted tank has no mirror on top.
-  Under the frost cells lies a veil that follows the weight itself (request
-  `vehicle-pad-6`): `0.55 x smoothstep(0, 0.6, weight)` of the way to frost everywhere (0.34 at weight
-  0.35), and the coat is covered by `max(cells, 0.8 x veil)`: a thin coat is an even matte haze in which a
-  marking keeps its edges and loses contrast; weight 0 is bare paint and weight 1 the solid coat as before.
-  `terrain` shading keeps plain blends of the masks (grime on site structures).
+  `(1 - smoothstep(0, 0.35, soot density)) x (1 - frost cover)`: a sooted or frosted tank has no mirror on
+  top. `terrain` shading keeps plain blends of the masks (grime on site structures).
 - **Wet line.** The mesh system reads `'ocean.wetness'` (published by the ocean feature: the physics swell
   plane, an influence radius and the wet line for up to 8 vessels at the water). A `standard` / `terrain`
   fragment within `plane.w` of a slot's plane point whose height above the plane is below the wet line
@@ -1054,13 +1055,17 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   behind a surface between two samples the place is found by bisection (4 steps) and the depth by which it
   is behind THERE decides; an occluder counts as `thicknessTexels` = 2 texels of the finest sun cascade
   thick (what the cascade cannot draw: 1.2 cm from a cabin, 2.3 cm outside), giving way to the far rule's
-  thickness between 3 and 8 m; 20 samples. `ContactShadowParams` / `CONTACT_SHADOW_DEFAULT`;
-  `CoreRenderer.setContactShadow` switches single rules (`CONTACT_SHADOW_LEGACY` is the first rule
-  everywhere), and `contact=first` in a page's address runs the pass as it was. Rules that exist and are not
-  the game's: `thinOnly` (only occluders that touch the receiver or are thin count: a rail's band becomes a
-  line, but the cascades' light leak along the foot of a wall shows from a cabin), `fade` / `interiorFade`
-  (no contact shadow where a cascade texel covers many pixels), and a candidate, `crossShare` (shader
-  `contact=v5`).
+  thickness between 3 and 8 m; 20 samples; and an occluder only counts if it touches the receiver (the ray
+  is behind it within one thickness of its start: a contact line), is thin (the ray is seen again within
+  two thicknesses: a rail, a cable, a handle) or is entered through its visible face (`thinOnly`,
+  `crossShare` = 0.3: the foot of a wall, where the cascades leak light): the cascade draws the shadows of
+  the rest. Measured on the two requests' frames (`tests/browser/integration/contact.spec.ts`): isolated
+  dark pixels on a window well's floor from the cabin 4.41 % -> 0.00 %; the band beside a grab bar from
+  2.5 m 28.5 px wide and ragged -> a line of 15.3 px that stands off the bar. `ContactShadowParams` /
+  `CONTACT_SHADOW_DEFAULT`; `CoreRenderer.setContactShadow` switches single rules (`CONTACT_SHADOW_LEGACY`
+  is the first rule everywhere), and `contact=first` in a page's address runs the pass as it was. A rule
+  that exists and is not the game's: `fade` / `interiorFade` (no contact shadow where a cascade texel covers
+  many pixels).
 - Bloom is threshold-free and linear (13-tap downsamples, no Karis average), mixed at 4 %, and shaped as a
   glare spread function (request `atmosphere-clouds-7`): of the energy it spreads, every level twice as
   wide carries `BLOOM_FALLOFF` = half of the one before, the widest included, which is a point spread that
@@ -1578,7 +1583,8 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | Clouds split the sun into beam and cloud-base light: chunk function `cloudLight() -> vec2f` (`cloudShadow()` = its y), `'clouds.shadowMap'.a` = beam optical depth / r, far term with `c (1 + 7 c)` in the beam; deferred lighting: sun x beam, cloud base and a reduced sky as ambient (sections 5, 7, 17.6) | `atmosphere-clouds-6` | atmosphere (publisher of the map: writes a); terrain, ocean (far sheet), vehicle, cockpit (what the deferred pass lights); ocean (near field) and every forward shader that lights with `cloudShadow()` or a copy of it | None in code: `cloudShadow()` keeps its signature and a map with a = 0 behaves as before. Pictures change under cloud: cast shadows fade with the beam, shaded surfaces of every material are lit by the cloud base instead of a dimmed sun, and the blue sky light (table or probe) falls to a third. A forward shader that should match the deferred result switches from `cloudShadow()` to `cloudLight()` (section 17.6) |
 | `'clouds.shadowMap'` is depth-resolved (r, g, b as in section 7); new chunk `cloud_shadow` with the lookup the deferred lighting uses | `atmosphere-clouds-3` | atmosphere (publisher: nothing to change, the map already carries g and b); cockpit and ocean (their forward shaders sample the map themselves) | A publisher of a single-channel map casts no near shadow any more: write g and b. Forward-lit shaders: `#include "cloud_shadow"` and call `cloudShadow()` instead of an own copy of the r-only lookup, or surfaces above a deck stay in its shade |
 | `SharedResourceMap['post.reactive']` and `'post.reactive'` in `RenderFeature.requires`; the TAA history is rescaled by the exposure ratio | `ocean-4` | ocean (near-field waves), later vfx; everyone benefits from the rescale | None. Without a feature that requires it the mask is a 1 x 1 zero and nothing changes |
-| The contact shadow's rules near the camera (within 8 m: the receiver's own plane never occludes, the place where the ray goes behind a surface found by bisection, occluders two texels of the finest cascade thick, 20 samples); `ContactShadowParams`, `CONTACT_SHADOW_DEFAULT` / `_LEGACY`, `CoreRenderer.setContactShadow` / `contactShadow` / `contactShader`, `RendererOptions.contactShader`, `contact=first`; section 13 | `cockpit-10`, `vehicle-pad-10` | every package with pictures at arm's length or of thin fittings (cockpit, vehicle-pad, vfx close-ups) | None. Fewer false shadows near the camera: re-take close-ups; NOTICE-core-6 |
+| Mesh G-buffer shader, `standard` shading: frost is a coat with a thickness (density = weight x runnels, cover `smoothstep(0, 0.6, density)`, cool white, roughness 0.95); the coverage cells and the veil under them are gone; section 10 | `vehicle-pad-11` | vehicle-pad (frost on the tanks) | None: `MeshInstance.frost` and mask a mean what they meant; in-between weights are a haze now, not dashes, so weights kept out of that range can come back |
+| The contact shadow's rules near the camera (within 8 m: the receiver's own plane never occludes, the place where the ray goes behind a surface found by bisection, occluders two texels of the finest cascade thick that touch the receiver, are thin or are entered through their visible face, 20 samples); `ContactShadowParams`, `CONTACT_SHADOW_DEFAULT` / `_LEGACY`, `CoreRenderer.setContactShadow` / `contactShadow` / `contactShader`, `RendererOptions.contactShader`, `contact=first`; section 13 | `cockpit-10`, `vehicle-pad-10` | every package with pictures at arm's length or of thin fittings (cockpit, vehicle-pad, vfx close-ups) | None. Fewer false shadows near the camera: re-take close-ups; NOTICE-core-6 |
 | At twilight an exterior view counts the sky: `twilightSkyWeight`, `MeterInput.skyInAir` / `sunDirectShare`, `SKY_SUN_NONE` / `_FULL`, `TWILIGHT_SKY_FROM` / `_FULL`; section 13 | `atmosphere-clouds-11` | atmosphere-clouds, sky-lighting, anything pictured at dusk or dawn inside an atmosphere | None. The sun 2 degrees up and more, the night and space are metered as before; NOTICE-core-6 |
 | `CoreApi.addEmissiveHint(luminance, coverage, inside)`: a hint marked `inside` is for an interior view (an emitter the cabin's panes show: its luminance there and the share of the frame the panes cover) and counts as the outside seen through the windows; `EmissiveHint.inside`; section 13 | `cockpit-19` | cockpit (the entry sheath in the panes: it knows the windows and reads `'vfx.plasmaWindow'`) | None: nothing passes the argument yet, and hints without it behave as before |
 | `CoreApi.addEmissiveHint(luminance, coverage)`; `MeterInput.emissive`, `EmissiveHint`, `EMISSIVE_FULL` | `vfx-1` | vfx (plumes, trails, fireballs over sky pixels); sky if it wants its impostors metered | None. Without hints metering is unchanged |

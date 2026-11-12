@@ -1,5 +1,5 @@
 Status: notice
-From: core-support (shared-code maintainer), 2026-11-12, commits c9656d7 (render core), 6f2bd6e (camera), b9347f1
+From: core-support (shared-code maintainer), 2026-11-12, commits c9656d7, 32df5d0 (render core), 6f2bd6e (camera), b9347f1
 To: every package that takes pictures near the camera, on the pad, from the seat or at twilight
 
 ## What changed, and what it means for your pictures
@@ -7,10 +7,12 @@ To: every package that takes pictures near the camera, on the pad, from the seat
 - **The screen-space contact shadow has rules for the near field** (requests cockpit-10, vehicle-pad-10;
   `src/render/core/lighting/ao.ts`). Within 8 m of the camera a surface point in the receiver's own plane no
   longer shadows it, the place where the march's ray goes behind a surface is found by bisection, an
-  occluder counts as two texels of the finest sun cascade thick (1.2 to 2.3 cm) instead of 18 cm, and the
-  march takes 20 samples. What you will see: no one-bit stipple beside a cast shadow at arm's length (it was
-  the contact shadow, not the cascade filter), no dark grain on faces seen at a grazing angle, a narrower
-  band beside a thin fitting that stands off a surface. Beyond 8 m nothing changes. Migration: none. For
+  occluder counts as two texels of the finest sun cascade thick (1.2 to 2.3 cm) instead of 18 cm and only
+  if it touches the receiver, is thin, or is entered through its visible face (the cascade draws the
+  shadows of the rest), and the march takes 20 samples. What you will see: no one-bit stipple beside a cast
+  shadow at arm's length (it was the contact shadow, not the cascade filter), no dark grain on faces seen at
+  a grazing angle, a line beside a thin fitting that stands off a surface instead of a ragged band.
+  Beyond 8 m nothing changes. Migration: none. For
   A/B: `contact=first` in a page's address is the pass as it was; `renderer.setContactShadow({...})` switches
   single rules (`ContactShadowParams`, `CONTACT_SHADOW_LEGACY`).
 - **The chase view's default on a launch pad** (request vfx-11; `src/camera/chaseRig.ts`): at a pad with a
@@ -32,11 +34,16 @@ To: every package that takes pictures near the camera, on the pad, from the seat
   under a sky that is no longer white.
 - **`coreOf(ctx).addEmissiveHint(luminance, coverage, true)`** (request cockpit-19): a hint marked for an
   interior view (an emitter the cabin's panes show). Additive; nothing passes it yet.
+- **Frost is a coat with a thickness** (request vehicle-pad-11; the mesh G-buffer shader, `standard`
+  shading). The weight (instance `frost` x mask a) is a density: a thin coat is a translucent haze, from
+  about 0.6 it is opaque rime, cool white and dead matte, and nothing has an edge unless the weight has one.
+  The coverage cells (3 cm x 25 cm dashes at in-between weights) and the veil under them are gone.
+  Migration: none; weights that were kept out of the in-between range to avoid the dashes can come back.
 
-## Not defaults: candidates behind a switch
-`frost=v2` (frost as a coat with a thickness, request vehicle-pad-11), `contact=v5` (one more contact rule),
-`shadowdebug=1` (switches of the sun-shadow filter for A/B pictures). Only a page that asks compiles them;
-they are announced here when one becomes the default.
+## Not a default: a switch for A/B pictures
+`shadowdebug=1` in a page's address compiles the sun-shadow chunk with three switches
+(`renderer.setShadowDebug`: 1 the kernel is not turned per pixel, 2 no dithered cross-fade between
+cascades, 8 no cascade shadow at all).
 
 ## Resolution
 Notice only.
