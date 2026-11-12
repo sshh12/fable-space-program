@@ -220,9 +220,12 @@ describe('site-bake: resolved pads', () => {
         expect(covered).toHaveLength(16);
         const r = d.rule;
         const problems: string[] = [];
+        let worstHeight = 0;
+        let worstSlope = 0;
         for (const p of d.pads) {
           await terrain.ensureLoaded('earth', dirOf(p.latDeg, p.lonDeg), r.minShoreDistanceM + 100, 'site-bake-test');
           const h0 = terrain.heightAt('earth', dirOf(p.latDeg, p.lonDeg), LAMBDA_MIN);
+          worstHeight = Math.max(worstHeight, Math.abs(h0 - p.padElevation));
           if (Math.abs(h0 - p.padElevation) > 2) problems.push(`${p.id}: height ${h0.toFixed(2)} vs padElevation ${p.padElevation}`);
           // plane through the disc (20 m grid)
           let n = 0, se = 0, sn = 0, sh = 0, see = 0, snn = 0, sen = 0, seh = 0, snh = 0;
@@ -241,9 +244,11 @@ describe('site-bake: resolved pads', () => {
           const a = (seh - (se * sh) / n) / (see - (se * se) / n);
           const b = (snh - (sn * sh) / n) / (snn - (sn * sn) / n);
           const slope = Math.atan(Math.hypot(a, b)) / DEG;
+          if (!p.fixed) worstSlope = Math.max(worstSlope, slope);
           if (!p.fixed && slope >= r.maxSlopeDeg) problems.push(`${p.id}: slope ${slope.toFixed(2)} deg`);
           if (!p.fixed && sea > 0) problems.push(`${p.id}: ${sea} points below sea level within ${r.minShoreDistanceM} m`);
         }
+        console.log(`[site-bake] ${site}: height authority vs padElevation within ${worstHeight.toFixed(2)} m, steepest disc ${worstSlope.toFixed(2)} deg`);
         expect(problems).toEqual([]);
       }, 600_000);
     }
