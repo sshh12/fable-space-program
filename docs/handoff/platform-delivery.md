@@ -176,7 +176,7 @@ inside it dumps the compose Postgres to MinIO.
 |---|---|
 | Every tile through `createTileSource({kind:'pack'})` byte-identical to fs, earth and moon, whole-pack mode and both mirror modes | **Met.** Full sweep (`pack-sweep.ts sweep`, inside the stack): earth 697,346 tiles + 3 files (10.26 GB) and moon 164,874 tiles + 3 files (3.39 GB), every one in four modes (whole packs on disk; bucket presigned ranges; mirror ranges; mirror slices), **0 mismatches**, 162 s. Unit tests do the same on the synthetic fixtures in CI. No small-body tile set exists yet; the sweep iterates whatever is packed |
 | Request count of a recorded flight trace at least 5x lower than per-file fetching | **Met with the client cache, not without it.** The recorded session (4 minutes to orbit, not 10: section 7) has 26,023 tile reads; through the packs with the cache the design puts in front (OPFS; emulated in memory): 2,508 requests, 10.4x fewer. With no client cache at all: 4.2x at the default 64 KiB coalescing gap (5.5x at 128 KiB, at 1.32 bytes per byte needed) |
-| Browser: main thread and worker through the pack source against the local stack (CORS, COEP, no Content-Range), OPFS hit on reload, failover on 429, on a 404 for an indexed object, after one refresh on a 403; terrain hash equals the guard | Written (`tests/browser/platform/packs.spec.ts`, lab `labs/platform`); first run failed to open the lab (it lacked the harness's test API; fixed); the rerun's result is in the running log. The same behaviours are proven in Node (unit tests: 429, 500, 503, 404, expired 403 with one refresh, persistent 403, all mirrors failing, a wrong body length) |
+| Browser: main thread and worker through the pack source against the local stack (CORS, COEP, no Content-Range), OPFS hit on reload, failover on 429, on a 404 for an indexed object, after one refresh on a 403; terrain hash equals the guard | **Main thread and worker: met** (276 Moon tiles byte-identical in both, cross-origin isolated, Content-Range unreadable to the page and not needed). **OPFS reload: failed on the first browser run** (8 of the reads went to the network: entries written after the cache's last ledger save were dropped at the next open; fixed: they are adopted) and **the failover and terrain-hash tests did not run** (serial suite). The rerun is queued in the GPU slot: its result is the last line of the running log. In Node the same behaviours are proven (unit tests: 429, 500, 503, 404, expired 403 with one refresh, persistent 403, all mirrors failing, a wrong body length) |
 | Boot set at most 25 MB, cold over 50 Mbit/s in under 8 s with `--page=build`; shell refuses a missing pack or a wrong hash; boot manifest matches the uploaded object | **25 MB: met** (22.4 MB: pack 19.97, first paint 2.22, definitions 0.23). Shell's health stays failing for a missing pack and a wrong size (unit test), and it verifies the SHA-256 (the deployed shell loaded and verified 5b7c3d4f... in one attempt). The manifest's hash is the bucket object's (`upload --boot` writes it only after the upload). **Cold load over 50 Mbit/s: 22.56 MB in 4.05 s: met** (`coldstart.spec.ts`, real Chrome, clean context, cache off) |
 | Egress budgets: each route stops at its budget and answers as specified; query string 404 no body; per-address limit; reset at 00:00 UTC; /endpoints.json no-cache with candidates in order | **Met** (unit tests against the stand-in: client 503 with Retry-After to midnight, boot 302 to a presigned URL that serves the bytes, mirror 429; per-address window; reset at 00:00 UTC; and on the deployed shell: 404 with 0 bytes for four query variants, the boot redirect with a 1-byte budget) |
 | CI green on a branch under 8 minutes, builds the client and the image, fails on a planted secret, TODO and boundary violation | **Met**: runs 43195587786 and 43196339349 green (checks 1m42s, image 2m21s in parallel); planted runs 43196693530 (secret, caught by the credential-shape scan), 43196699082 (TODO), 43196739442 (boundary) all failed at the right step. Ten unit files that need baked data are excluded on CI (request platform-delivery-1) |
@@ -206,8 +206,10 @@ Details and tables: `docs/capacity/2026-11-12-platform.md`.
 - D5 CDN and mirror: ranged responses never cached (DYNAMIC); whole objects are; mirror mode = slices of
   256 KiB (1.38 bytes per byte needed over the first session; 2 MiB 3.28, 1 MiB 2.20); query strings 404 with
   0 bytes; the origin sees the client address in X-Forwarded-For; boot redirect works; slice MISS 334 ms, HIT
-  40 ms to first byte; bucket CORS and ExposeHeaders honoured. Chrome under COEP against the deployed
-  services: see the running log.
+  40 ms to first byte; bucket CORS and ExposeHeaders honoured. From Chrome under COEP against the deployed
+  services: bucket first tile decoded 1,262 ms cold, 96 tiles in 582 ms in 4 requests; mirror 2,512 ms, 1,109 ms,
+  8 requests; identical bytes. **The bucket's 403 for an expired URL has no CORS headers** (a page sees a network
+  error): the pack source now refreshes the list once on a network error from presigned URLs.
 - D6 bucket from Modal, 15 minutes per level: 20 fetchers pass (p95 378 ms, 0 errors); 500 pass (p95 233 ms,
   0.018 % errors, 1.07 Gbit/s); **2,000 FAIL** (p95 553 ms, 2.74 % errors, 1.40 Gbit/s).
 - D7 derating (job role `derating`, six real regimes of createSim with real terrain, 1/2/4/8 synchronised
@@ -443,3 +445,10 @@ was re-recorded in format 2 during this work; the browser terrain check reads it
   stopped it; the launcher now stops a Postgres of its own stack name that a dead launcher left running before
   it checks the ports (c.f. the 01:12 lesson: leftovers of one's own name are the launcher's to clean). Queued
   a third time.
+- 08:00 the browser suites ran (GPU slot after a 63-minute queue): deployed paths PASS (numbers in section 6);
+  main thread and worker PASS; the deployed failover test found that the bucket's 403 "Request has expired"
+  carries no CORS headers (the page sees a network error, so the pack source never refreshed the list and fell
+  over to the mirror at once) and the OPFS test found entries lost after a reload (the ledger was saved every
+  64 puts and unknown files were deleted at open). Both fixed (the pack source refreshes once on a network
+  error from presigned URLs; the cache adopts unknown complete entries), unit tests green, the stand-in now
+  answers its 403s without CORS like the bucket; the suites are queued again.

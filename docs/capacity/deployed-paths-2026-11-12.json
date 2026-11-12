@@ -1,0 +1,25 @@
+{
+ "at": "2026-11-12T15:59:06.795Z",
+ "rows": {
+  "bucket": {
+   "firstDecodedMs": 1262,
+   "firstBytesMs": 1260,
+   "secondDecodedMs": 4,
+   "tiles": 96,
+   "readMs": 582,
+   "requests": 4,
+   "bytesReceived": 1036325,
+   "bytesNeeded": 1036325
+  },
+  "mirror": {
+   "firstDecodedMs": 2512,
+   "firstBytesMs": 2511,
+   "secondDecodedMs": 5,
+   "tiles": 96,
+   "readMs": 1109,
+   "requests": 8,
+   "bytesReceived": 1960282,
+   "bytesNeeded": 1036325
+  }
+ }
+}
