@@ -2,7 +2,8 @@
   "id": "qa-trans-earth",
   "name": "QA: trans-Earth coast (ascent stage and capsule)",
   "vehicle": "meridian-lunar",
-  "site": "ka-lae-lc1",
+  "site": "ka-lae",
+  "pad": "lc-1",
   "startUt": 938729006.7416667,
   "start": {
     "kind": "state",

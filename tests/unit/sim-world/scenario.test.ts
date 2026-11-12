@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { MilestoneId, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
+import { padLocationOf } from '@/core/defs/sites';
 import { DEG, RAD } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
 import { createBodySystem } from '@/sim/bodies';
@@ -17,7 +18,7 @@ import { active, createRealTerrain, loadLibrary, makeSim, orbitScenario, settleT
 
 interface StartTimeFile {
   startUt: number;
-  site: { id: string; bodyId: string; latDeg: number; lonDeg: number; padElevation: number };
+  site: { id: string; pad: string; bodyId: string; latDeg: number; lonDeg: number; padElevation: number };
   targetBodyId: string;
   landing: { bodyId: string; latDeg: number; lonDeg: number };
   launch: { launchAzimuthDeg: number; ascending: boolean };
@@ -48,11 +49,17 @@ describe('lunar-direct', () => {
     expect(sc.stagesAlreadyFired).toBe(0);
     expect(sc.startUt).toBe(st.startUt);
     const site = defs.sites[sc.site]!;
+    expect(sc.site).toBe('ka-lae');
+    expect(sc.pad).toBe('lc-1');
     expect(st.site.id).toBe(sc.site);
+    expect(st.site.pad).toBe(sc.pad);
     expect(st.site.bodyId).toBe(site.bodyId);
-    expect(st.site.latDeg).toBe(site.location.latDeg);
-    expect(st.site.lonDeg).toBe(site.location.lonDeg);
-    expect(st.site.padElevation).toBe(site.location.padElevation);
+    // The record is of the pad the scenario stands on; the first pad stands at the site's reference point.
+    const where = padLocationOf(site, sc.pad);
+    expect(st.site.latDeg).toBe(where.latDeg);
+    expect(st.site.lonDeg).toBe(where.lonDeg);
+    expect(st.site.padElevation).toBe(where.padElevation);
+    expect(where).toEqual({ latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, padElevation: site.location.padElevation });
     expect(st.targetBodyId).toBe(sc.target);
     expect(sc.suggestedLanding).not.toBeNull();
     expect(st.landing.bodyId).toBe(sc.suggestedLanding!.bodyId);
@@ -121,7 +128,7 @@ describe('lunar-direct', () => {
   it('the pad start: standing on the pad of the site, held by the clamps, terrain resident', async () => {
     const sim = await makeSim(defs, 'lunar-direct', terrain);
     const s = sim.peek();
-    const site = defs.sites['ka-lae-lc1']!;
+    const site = defs.sites['ka-lae']!;
     const v = active(s);
     expect(s.scenario).toEqual({ id: 'lunar-direct', startKind: 'pad', stagesAlreadyFired: 0 });
     expect(v.situation).toBe('prelaunch');

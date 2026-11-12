@@ -2,7 +2,8 @@
   "id": "qa-drogues",
   "name": "QA: capsule under drogues at 7 km over the recovery zone",
   "vehicle": "meridian-lunar",
-  "site": "ka-lae-lc1",
+  "site": "ka-lae",
+  "pad": "lc-1",
   "startUt": 938920866.7083334,
   "start": {
     "kind": "state",

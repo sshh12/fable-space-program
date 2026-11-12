@@ -2,7 +2,8 @@
   "id": "qa-translunar",
   "name": "QA: translunar coast (lander stack)",
   "vehicle": "meridian-lunar",
-  "site": "ka-lae-lc1",
+  "site": "ka-lae",
+  "pad": "lc-1",
   "startUt": 938274713.9416667,
   "start": {
     "kind": "state",

@@ -8,7 +8,7 @@
  *   resources.json                                                                  array of ResourceDef
  *   audio/**.json  visuals/**.json                                                  sections (DefLibrary.sections)
  * Only files whose name has no extra dot segment are definitions ("earth.json" yes, "earth.atmosphere.json"
- * and "ka-lae-lc1.location.json" no): dotted files are sections pulled in through { "$ref": ... }.
+ * and "ka-lae.location.json" no): dotted files are sections pulled in through { "$ref": ... }.
  * A data table that lives beside the definitions of a directory is declared in TABLE_FILES
  * ("bodies/radii.json") and is never read as a definition; any other file of a definition directory that is
  * not a definition is an error that names the file.

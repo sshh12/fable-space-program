@@ -2,7 +2,8 @@
   "id": "qa-powered-descent",
   "name": "QA: descent orbit, 15 km perilune up-range of the landing target",
   "vehicle": "meridian-lunar",
-  "site": "ka-lae-lc1",
+  "site": "ka-lae",
+  "pad": "lc-1",
   "startUt": 938533643.375,
   "start": {
     "kind": "state",

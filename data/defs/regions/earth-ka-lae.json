@@ -2,7 +2,7 @@
   "id": "earth-ka-lae",
   "tileset": "earth",
   "name": "Ka Lae Pacific Spaceport region, Ka'u coast, Hawai'i",
-  "site": "ka-lae-lc1",
+  "site": "ka-lae",
   "shape": {
     "kind": "disc",
     "centre": {

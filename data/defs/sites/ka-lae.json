@@ -1,10 +1,8 @@
 {
-  "id": "ka-lae-lc1",
+  "id": "ka-lae",
   "name": "Ka Lae Pacific Spaceport",
   "bodyId": "earth",
-  "location": {
-    "$ref": "ka-lae-lc1.location.json"
-  },
+  "location": { "$ref": "ka-lae.location.json" },
   "pads": [
     {
       "id": "lc-1",
@@ -30,9 +28,7 @@
         "edgeNoise": { "amplitude": 0.6, "wavelength": 60 }
       },
       "mountHeight": 18,
-      "structures": {
-        "$ref": "ka-lae-lc1.structures.json"
-      }
+      "structures": { "$ref": "ka-lae.structures.json" }
     }
   ],
   "recoveryZones": [

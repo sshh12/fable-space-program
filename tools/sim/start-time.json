@@ -10,12 +10,13 @@
     "selection": "first solution with >= 1 deg margin on every elevation bound (else the first solution)"
   },
   "site": {
-    "id": "ka-lae-lc1",
+    "id": "ka-lae",
+    "pad": "lc-1",
     "bodyId": "earth",
     "latDeg": 18.987556,
     "lonDeg": -155.603239,
     "padElevation": 21.62,
-    "padElevationSource": "data/defs/sites (ka-lae-lc1.location)"
+    "padElevationSource": "data/defs/sites (ka-lae.location, pad lc-1)"
   },
   "targetBodyId": "moon",
   "landing": {

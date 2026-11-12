@@ -174,6 +174,7 @@ export class ScenarioCapturer {
         name: c.name,
         vehicle: base.vehicle,
         site: base.site,
+        ...(base.pad !== undefined ? { pad: base.pad } : {}),
         startUt,
         start,
         stagesAlreadyFired: c.stagesAlreadyFired,

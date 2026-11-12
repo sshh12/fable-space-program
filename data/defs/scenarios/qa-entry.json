@@ -2,7 +2,8 @@
   "id": "qa-entry",
   "name": "QA: capsule five minutes before the entry interface",
   "vehicle": "meridian-lunar",
-  "site": "ka-lae-lc1",
+  "site": "ka-lae",
+  "pad": "lc-1",
   "startUt": 938919959.6583333,
   "start": {
     "kind": "state",

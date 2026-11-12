@@ -2,7 +2,8 @@
   "id": "qa-leo",
   "name": "QA: parking orbit (third stage and lander stack)",
   "vehicle": "meridian-lunar",
-  "site": "ka-lae-lc1",
+  "site": "ka-lae",
+  "pad": "lc-1",
   "startUt": 938242599.1416667,
   "start": {
     "kind": "state",

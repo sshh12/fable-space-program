@@ -2,7 +2,8 @@
   "id": "qa-lunar-orbit",
   "name": "QA: 100 km lunar orbit (lander stack)",
   "vehicle": "meridian-lunar",
-  "site": "ka-lae-lc1",
+  "site": "ka-lae",
+  "pad": "lc-1",
   "startUt": 938524755.775,
   "start": {
     "kind": "state",

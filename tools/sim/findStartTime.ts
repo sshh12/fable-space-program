@@ -1,7 +1,7 @@
 /**
  * Deterministic search for a scenario start time (docs/research/sim-design.md 15.3).
  *
- *   npx tsx tools/sim/findStartTime.ts [--site <id>] [--pad-elevation <m>] [--target <bodyId>]
+ *   npx tsx tools/sim/findStartTime.ts [--site <id>] [--pad <id>] [--pad-elevation <m>] [--target <bodyId>]
  *        [--landing-body <bodyId>] [--landing-lat <deg>] [--landing-lon <deg>]
  *        [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--extend-years <n>] [--out <path>]
  *        [--pad-sun-min <deg>] [--pad-sun-max <deg>] [--landing-sun-min <deg>] [--landing-sun-max <deg>]
@@ -26,7 +26,7 @@
  * `otherLaunchKinds`, what the requested range holds for each other launch kind (same (b) and (c)).
  *
  * Defaults come from data/defs: the site of the first scenario with a suggested landing (else the only
- * site), its numeric padElevation (0 m when the definition says 'terrain' - the pad elevation does not
+ * site) and the pad that scenario stands on (--pad; else the site's first pad), its numeric padElevation (0 m when the definition says 'terrain' - the pad elevation does not
  * change geocentric angles measurably; recorded in the output), the scenario's target (else the first
  * attractor orbiting the site's body), and the scenario's suggested landing (else 0.674 N, 23.473 E on the
  * target body). Result: tools/sim/start-time.json (or --out).
@@ -37,6 +37,7 @@ import { fileURLToPath } from 'node:url';
 import type { DefLibrary, ScenarioDef } from '../../src/core/contracts/defs';
 import { fsDefSource } from '../../src/core/defs/fsSource';
 import { loadDefs } from '../../src/core/defs/loader';
+import { padLocationOf, padOf } from '../../src/core/defs/sites';
 import { DEG } from '../../src/core/math/scalar';
 import { createBodySystem } from '../../src/sim/bodies/bodySystem';
 import { nearestTick, snapToTick } from '../../src/sim/clock';
@@ -101,13 +102,16 @@ async function main(): Promise<void> {
   const siteId = args['site'] ?? scenario?.site ?? (siteIds.length === 1 ? siteIds[0] : undefined);
   if (!siteId || !defs.sites[siteId]) throw new Error(`choose a site with --site (known: ${siteIds.join(', ')})`);
   const site = defs.sites[siteId]!;
+  // The pad: the argument, else the pad of the scenario when it is the scenario's site, else the first pad.
+  const pad = padOf(site, args['pad'] ?? (scenario?.site === site.id ? scenario.pad : undefined));
+  const where = padLocationOf(site, pad.id);
 
   let padElevation = num(args, 'pad-elevation');
   let padElevationSource = 'argument';
   if (padElevation === undefined) {
-    if (typeof site.location.padElevation === 'number') {
-      padElevation = site.location.padElevation;
-      padElevationSource = `data/defs/sites (${site.id}.location)`;
+    if (typeof where.padElevation === 'number') {
+      padElevation = where.padElevation;
+      padElevationSource = `data/defs/sites (${site.id}.location, pad ${pad.id})`;
     } else {
       padElevation = 0;
       padElevationSource = "definition says 'terrain': 0 m assumed (geocentric angles do not depend on it)";
@@ -132,7 +136,7 @@ async function main(): Promise<void> {
   const toUt = utFromDate(args['to'] ?? '2031-01-01');
   const outPath = path.resolve(repoRoot, args['out'] ?? 'tools/sim/start-time.json');
 
-  const sitePoint: SurfacePoint = { bodyId: site.bodyId, latitude: site.location.latDeg * DEG, longitude: site.location.lonDeg * DEG, elevation: padElevation };
+  const sitePoint: SurfacePoint = { bodyId: site.bodyId, latitude: where.latDeg * DEG, longitude: where.lonDeg * DEG, elevation: padElevation };
   const landingPoint = { bodyId: landing.bodyId, latitude: landing.latDeg * DEG, longitude: landing.lonDeg * DEG };
   // Constraint values: the defaults of src/sim/nav/startWindow.ts unless overridden on the command line.
   const D = START_CONSTRAINT_DEFAULTS;
@@ -266,7 +270,7 @@ async function main(): Promise<void> {
         : {}),
       selection: 'first solution with >= 1 deg margin on every elevation bound (else the first solution)',
     },
-    site: { id: site.id, bodyId: site.bodyId, latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, padElevation, padElevationSource },
+    site: { id: site.id, pad: pad.id, bodyId: site.bodyId, latDeg: where.latDeg, lonDeg: where.lonDeg, padElevation, padElevationSource },
     targetBodyId,
     landing: { ...landing, source: landingSource },
     constraints: {

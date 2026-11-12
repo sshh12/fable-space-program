@@ -46,7 +46,7 @@ describe('definition loader', () => {
     expect(lib.bodies['moon']!.parent).toBe('earth');
     expect(lib.bodies['moon']!.render.surface?.brdf).toBe('hapke');
     expect(lib.bodies['sun']!.emission?.illuminance).toBe(128000);
-    const site = lib.sites['ka-lae-lc1']!;
+    const site = lib.sites['ka-lae']!;
     expect(site.location.latDeg).toBeGreaterThan(18);
     expect(site.location.latDeg).toBeLessThan(20.9);
     expect(site.structures.length).toBeGreaterThan(0);
