@@ -1,0 +1,53 @@
+{
+  "id": "europa",
+  "name": "Europa",
+  "parent": "jupiter",
+  "mu": 3202712100000,
+  "radius": 1560800,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 268.1,
+        "decDeg": 64.5
+      }
+    },
+    "a": 671100000,
+    "e": 0.009,
+    "iDeg": 0.5,
+    "lanDeg": 184,
+    "argPeDeg": 45,
+    "meanAnomalyDeg": 345.4,
+    "epochUt": 0,
+    "rates": {
+      "argPeDeg": -25824.9641319943,
+      "lanDeg": -1191.97404145421
+    },
+    "meanMotionDegPerDay": 102.114247121584
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 267.853133768,
+    "poleDecDeg": 64.9463790035,
+    "w0Deg": 11.5892536544707,
+    "rateDegPerDay": 101.3747235,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/europa.terrain.json"
+  },
+  "navballSwitchAltitude": 17967.1,
+  "render": {
+    "meanColor": [0.67, 0.67, 0.67],
+    "geometricAlbedo": 0.67,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

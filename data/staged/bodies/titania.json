@@ -1,0 +1,53 @@
+{
+  "id": "titania",
+  "name": "Titania",
+  "parent": "uranus",
+  "mu": 226900000000,
+  "radius": 788900,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 77.311,
+        "decDeg": 15.175
+      }
+    },
+    "a": 436298000,
+    "e": 0.002,
+    "iDeg": 0.1,
+    "lanDeg": 29.5,
+    "argPeDeg": 184,
+    "meanAnomalyDeg": 68.1,
+    "epochUt": 0,
+    "rates": {
+      "argPeDeg": 62.0766715868177,
+      "lanDeg": 21.889169056741
+    },
+    "meanMotionDegPerDay": 41.3491159160518
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 257.237561976,
+    "poleDecDeg": -14.8905303573,
+    "w0Deg": 311.378929215076,
+    "rateDegPerDay": -41.3514316,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/titania.terrain.json"
+  },
+  "navballSwitchAltitude": 9081.39,
+  "render": {
+    "meanColor": [0.2782, 0.2688, 0.2575],
+    "geometricAlbedo": 0.27,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

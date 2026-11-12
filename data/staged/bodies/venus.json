@@ -1,0 +1,176 @@
+{
+  "id": "venus",
+  "name": "Venus",
+  "parent": "sun",
+  "mu": 324858592000000,
+  "radius": 6051800,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": "ecliptic",
+    "a": 108209474537.379,
+    "e": 0.00677672,
+    "iDeg": 3.39467605,
+    "lanDeg": 76.67984255,
+    "argPeDeg": 54.92262463,
+    "meanAnomalyDeg": 50.37663232,
+    "epochUt": 0,
+    "rates": {
+      "a": 583431.69573,
+      "e": -0.00004107,
+      "iDeg": -0.0007889,
+      "lanDeg": -0.27769418,
+      "argPeDeg": 0.28037747
+    },
+    "meanMotionDegPerDay": 1.60213039572895
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 272.76,
+    "poleDecDeg": 67.16,
+    "w0Deg": 273.618117225946,
+    "rateDegPerDay": -1.4813688,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": {
+    "model": "table",
+    "table": [
+      {
+        "hKm": 0,
+        "rho": 64.79,
+        "p": 9209000,
+        "T": 735.3
+      },
+      {
+        "hKm": 10,
+        "rho": 37.72,
+        "p": 4739000,
+        "T": 658.2
+      },
+      {
+        "hKm": 20,
+        "rho": 20.39,
+        "p": 2252000,
+        "T": 580.7
+      },
+      {
+        "hKm": 30,
+        "rho": 10.15,
+        "p": 958500,
+        "T": 496.9
+      },
+      {
+        "hKm": 40,
+        "rho": 4.404,
+        "p": 350100,
+        "T": 417.6
+      },
+      {
+        "hKm": 50,
+        "rho": 1.594,
+        "p": 106600,
+        "T": 350.5
+      },
+      {
+        "hKm": 60,
+        "rho": 0.4694,
+        "p": 23570,
+        "T": 262.8
+      },
+      {
+        "hKm": 70,
+        "rho": 0.08393,
+        "p": 3690,
+        "T": 229.8
+      },
+      {
+        "hKm": 80,
+        "rho": 0.01186,
+        "p": 447.4,
+        "T": 197.1
+      },
+      {
+        "hKm": 90,
+        "rho": 0.001151,
+        "p": 37.35,
+        "T": 169.4
+      },
+      {
+        "hKm": 100,
+        "rho": 0.00007972,
+        "p": 2.652,
+        "T": 173.3
+      },
+      {
+        "hKm": 110,
+        "rho": 0.00000558,
+        "p": 0.1586,
+        "T": 147.5
+      },
+      {
+        "hKm": 120,
+        "rho": 2.481e-7,
+        "p": 0.007061,
+        "T": 143.3
+      },
+      {
+        "hKm": 130,
+        "rho": 1.073e-8,
+        "p": 0.000337,
+        "T": 146.3
+      },
+      {
+        "hKm": 140,
+        "rho": 6.102e-10,
+        "p": 0.00002538,
+        "T": 150.7
+      },
+      {
+        "hKm": 150,
+        "rho": 5.791e-11,
+        "p": 0.000003607,
+        "T": 146.4
+      },
+      {
+        "hKm": 160,
+        "rho": 1.114e-11,
+        "p": 9.578e-7,
+        "T": 138.3
+      },
+      {
+        "hKm": 180,
+        "rho": 1.263e-12,
+        "p": 2.389e-7,
+        "T": 139.1
+      },
+      {
+        "hKm": 200,
+        "rho": 3.227e-13,
+        "p": 1.31e-7,
+        "T": 139.3
+      }
+    ],
+    "simTop": 133592,
+    "gamma": 1.286,
+    "gasConstant": 191.357022,
+    "heating": {
+      "kConv": 0.00018894,
+      "radiative": null
+    }
+  },
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/venus.terrain.json"
+  },
+  "navballSwitchAltitude": 57253.7,
+  "render": {
+    "meanColor": [0.651, 0.6523, 0.6246],
+    "geometricAlbedo": 0.65,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

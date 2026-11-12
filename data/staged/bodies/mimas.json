@@ -1,0 +1,53 @@
+{
+  "id": "mimas",
+  "name": "Mimas",
+  "parent": "saturn",
+  "mu": 2503490000,
+  "radius": 198200,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 40.6,
+        "decDeg": 83.5
+      }
+    },
+    "a": 186000000,
+    "e": 0.02,
+    "iDeg": 1.59168315268357,
+    "lanDeg": 120.613692203782,
+    "argPeDeg": 94.1039596826672,
+    "meanAnomalyDeg": 166.442852232238,
+    "epochUt": 938240818,
+    "rates": {
+      "argPeDeg": -73022.3123732251,
+      "lanDeg": -36511.1561866126
+    },
+    "meanMotionDegPerDay": 384.993340988739
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 51.9004565165,
+    "poleDecDeg": 84.3727996477,
+    "w0Deg": 180.898146326188,
+    "rateDegPerDay": 381.994555,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/mimas.terrain.json"
+  },
+  "navballSwitchAltitude": 2281.57,
+  "render": {
+    "meanColor": [0.6, 0.6, 0.6],
+    "geometricAlbedo": 0.6,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

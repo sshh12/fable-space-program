@@ -1,0 +1,42 @@
+{
+  "tileset": "dione",
+  "maxElevation": 2069,
+  "minElevation": -2145,
+  "maxRenderLevel": 16,
+  "modifiers": [],
+  "surfaceFriction": 0.7,
+  "amplification": {
+    "model": "icy-generic",
+    "seed": 4113,
+    "params": {
+      "hurstMaria": 0.9,
+      "hurstHighlands": 0.7,
+      "hurstRoughnessRange": 2,
+      "regolithSlope1m": 0.016,
+      "regolithInnerScaleM": 1,
+      "multifractalGain": 0.8,
+      "multifractalMax": 3,
+      "craterEquilibriumFraction": 0.02,
+      "craterMaxDiameterInPostings": 4,
+      "craterMinDiameterM": 0.6,
+      "craterEjectaExtentRadii": 2.5,
+      "freshDepthToDiameter": 0.2,
+      "degradedDepthToDiameter": 0.03,
+      "rimHeightToDiameter": 0.04,
+      "degradedRimFraction": 0.2,
+      "craterFreshnessExponent": 4,
+      "rimRoundingFresh": 0.08,
+      "rimRoundingDegraded": 0.9,
+      "rockAreaFractionMare": 0.01,
+      "rockAreaFractionFreshEjecta": 0.15,
+      "rockSourceMinCraterDiameterM": 20,
+      "rockAbundanceGridM": 10,
+      "rockMinDiameterM": 0.1,
+      "rockMaxDiameterM": 4,
+      "rockCollisionMinDiameterM": 0.5,
+      "rockHeightRatioMin": 0.35,
+      "rockHeightRatioMax": 0.8,
+      "rockVariants": 6
+    }
+  }
+}

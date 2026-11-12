@@ -1,0 +1,53 @@
+{
+  "id": "ganymede",
+  "name": "Ganymede",
+  "parent": "jupiter",
+  "mu": 9887832750000,
+  "radius": 2631200,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 268.2,
+        "decDeg": 64.6
+      }
+    },
+    "a": 1070400000,
+    "e": 0.001,
+    "iDeg": 0.2,
+    "lanDeg": 58.5,
+    "argPeDeg": 198.3,
+    "meanAnomalyDeg": 324.8,
+    "epochUt": 0,
+    "rates": {
+      "argPeDeg": 527.078666490974,
+      "lanDeg": -261.225437552608
+    },
+    "meanMotionDegPerDay": 50.3103308910463
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 267.98691506,
+    "poleDecDeg": 64.3640355083,
+    "w0Deg": 336.681900743977,
+    "rateDegPerDay": 50.3176081,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/ganymede.terrain.json"
+  },
+  "navballSwitchAltitude": 30288.9,
+  "render": {
+    "meanColor": [0.43, 0.43, 0.43],
+    "geometricAlbedo": 0.43,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

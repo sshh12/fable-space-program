@@ -1,0 +1,2903 @@
+{
+  "generatedBy": "tools/bodies/generate.mjs",
+  "lobbyEpochUt": 938240818,
+  "paths": {
+    "mercury": {
+      "path": "approx-pos",
+      "note": "JPL Table 1 row \"Mercury\""
+    },
+    "venus": {
+      "path": "approx-pos",
+      "note": "JPL Table 1 row \"Venus\""
+    },
+    "mars": {
+      "path": "approx-pos",
+      "note": "JPL Table 1 row \"Mars\""
+    },
+    "jupiter": {
+      "path": "approx-pos",
+      "note": "JPL Table 1 row \"Jupiter\""
+    },
+    "saturn": {
+      "path": "approx-pos",
+      "note": "JPL Table 1 row \"Saturn\""
+    },
+    "uranus": {
+      "path": "approx-pos",
+      "note": "JPL Table 1 row \"Uranus\""
+    },
+    "neptune": {
+      "path": "approx-pos",
+      "note": "JPL Table 1 row \"Neptune\""
+    },
+    "phobos": {
+      "path": "sat-table",
+      "reading": "P=anomalistic, apsis advancing, node regressing",
+      "calibrationMaxDeg": 166.3
+    },
+    "deimos": {
+      "path": "sat-table",
+      "reading": "P=anomalistic, apsis advancing, node advancing",
+      "calibrationMaxDeg": 44.98
+    },
+    "io": {
+      "path": "sat-table",
+      "reading": "P=anomalistic, apsis regressing, node regressing",
+      "calibrationMaxDeg": 0.8939
+    },
+    "europa": {
+      "path": "sat-table",
+      "reading": "P=anomalistic, apsis regressing, node regressing",
+      "calibrationMaxDeg": 1.883
+    },
+    "ganymede": {
+      "path": "sat-table",
+      "reading": "P=anomalistic, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.1981
+    },
+    "callisto": {
+      "path": "sat-table",
+      "reading": "P=anomalistic, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.1654
+    },
+    "mimas": {
+      "path": "sat-fit",
+      "reading": "P=sidereal, apsis regressing, node regressing",
+      "calibrationMaxDeg": 28.79,
+      "tablePathCalibrationMaxDeg": 24.93,
+      "fit": {
+        "rmsKm": 837.7237201779966,
+        "maxKm": 1618.6895403187941,
+        "samples": 143
+      }
+    },
+    "enceladus": {
+      "path": "sat-fit",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.6151,
+      "tablePathCalibrationMaxDeg": 6.031,
+      "fit": {
+        "rmsKm": 369.2572242051863,
+        "maxKm": 411.2775548848724,
+        "samples": 145
+      }
+    },
+    "tethys": {
+      "path": "sat-fit",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 1.046,
+      "tablePathCalibrationMaxDeg": 59.54,
+      "fit": {
+        "rmsKm": 531.7988377512869,
+        "maxKm": 674.5713183615313,
+        "samples": 145
+      }
+    },
+    "dione": {
+      "path": "sat-fit",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.1825,
+      "tablePathCalibrationMaxDeg": 151.3,
+      "fit": {
+        "rmsKm": 287.6997724469817,
+        "maxKm": 325.95320048881865,
+        "samples": 145
+      }
+    },
+    "rhea": {
+      "path": "sat-fit",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.1202,
+      "tablePathCalibrationMaxDeg": 151.8,
+      "fit": {
+        "rmsKm": 163.57981375092703,
+        "maxKm": 245.16026316023093,
+        "samples": 145
+      }
+    },
+    "titan": {
+      "path": "sat-fit",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.05718,
+      "tablePathCalibrationMaxDeg": 143.2,
+      "fit": {
+        "rmsKm": 688.9127684437864,
+        "maxKm": 877.1886276969435,
+        "samples": 144
+      }
+    },
+    "iapetus": {
+      "path": "sat-fit",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.2106,
+      "tablePathCalibrationMaxDeg": 140.6,
+      "fit": {
+        "rmsKm": 3284.674315300698,
+        "maxKm": 5170.856467745634,
+        "samples": 144
+      }
+    },
+    "miranda": {
+      "path": "sat-table",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 2.038
+    },
+    "ariel": {
+      "path": "sat-table",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.1744
+    },
+    "umbriel": {
+      "path": "sat-table",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.1196
+    },
+    "titania": {
+      "path": "sat-table",
+      "reading": "P=sidereal, apsis advancing, node advancing",
+      "calibrationMaxDeg": 0.2607
+    },
+    "oberon": {
+      "path": "sat-table",
+      "reading": "P=sidereal, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.2068
+    },
+    "triton": {
+      "path": "sat-table",
+      "reading": "P=sidereal, apsis regressing, node regressing",
+      "calibrationMaxDeg": 165.2
+    },
+    "ceres": {
+      "path": "sbdb",
+      "note": "1 Ceres (A801 AA), osculating at JD 2461200.5 TDB (JPL solution 2021-04-13 11:04:44)"
+    },
+    "pluto": {
+      "path": "sbdb",
+      "note": "134340 Pluto (1930 BM), osculating at JD 2457588.5 TDB (JPL solution )"
+    },
+    "charon": {
+      "path": "sat-table",
+      "reading": "P=anomalistic, apsis advancing, node regressing",
+      "calibrationMaxDeg": 0.08206
+    },
+    "sun": {
+      "path": "root",
+      "note": "root attractor; emission block of data/defs/bodies/sun.json"
+    },
+    "earth": {
+      "path": "sun-v1",
+      "note": "the v1 Almanac low-precision Sun, inverted; every other field is data/defs/bodies/earth.json"
+    },
+    "moon": {
+      "path": "frozen-v1",
+      "note": "data/defs/bodies/moon.json copied byte for byte (ARCHITECTURE 8.2: the Moon keeps its frozen ellipse)"
+    }
+  },
+  "provenance": {
+    "sun": {
+      "mu": {
+        "value": 132712440041279420000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.077Z"
+        },
+        "note": "heliocentric gravitational constant (DE440)"
+      },
+      "radius": {
+        "value": 695700000,
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "BODY10_RADII (IAU 2015 nominal solar radius)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 286.13,
+          "poleDecDeg": 63.87,
+          "w0Deg": 36.3873291574128,
+          "rateDegPerDay": 14.1844,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY10 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      }
+    },
+    "mercury": {
+      "mu": {
+        "value": 22031868551000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.077Z"
+        },
+        "note": "DE440 GM (no satellites)"
+      },
+      "radius": {
+        "value": 2439400,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.106,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL planetary physical parameters (Horizons header: Geometric Albedo      =     0.106       Surface emissivity    = 0.77+-0.06)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 281.000548213,
+          "poleDecDeg": 61.4140431782,
+          "w0Deg": 29.3335828190902,
+          "rateDegPerDay": 6.1385108,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY199 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL Table 1",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+          "retrievedAt": "2026-11-12T08:44:59.810Z"
+        },
+        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+      },
+      "shape": {
+        "value": {
+          "equatorialRadius": 2440530,
+          "polarRadius": 2438260
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY199_RADII (a = b > c: an oblate spheroid)"
+      },
+      "navballSwitchAltitude": {
+        "value": 28081,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.1216, 0.1042, 0.07781],
+        "source": {
+          "url": "https://arxiv.org/pdf/1609.05048v1",
+          "retrievedAt": "2026-11-12T09:34:14.309Z",
+          "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+        },
+        "note": "B-V 0.97, V-R 0.52 (Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.106 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 19,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-16751, 16451],
+        "source": {
+          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mercury_Messenger_USGS_DEM_Global_665m_v2.tif",
+          "retrievedAt": "2026-11-12T09:37:58.767Z",
+          "sha256": "94f228fa7afc0007f6e06f92ffbcfda76be97af0bda3a0a6e2c8368c5c43297b"
+        },
+        "note": "DEM sphere 2439400 m (0 m); DEM -32767..32767 (x 0.5 + 0); run-time craters to 1871 m"
+      },
+      "terrain.amplification": {
+        "value": "rocky-generic seed 4101 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/mercury.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "venus": {
+      "mu": {
+        "value": 324858592000000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.077Z"
+        },
+        "note": "DE440 GM (no satellites)"
+      },
+      "radius": {
+        "value": 6051800,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.65,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL planetary physical parameters (Horizons header: Geometric Albedo      =     0.65       Potential Love # k2   = ~0.25)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 272.76,
+          "poleDecDeg": 67.16,
+          "w0Deg": 273.618117225946,
+          "rateDegPerDay": -1.4813688,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY299 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL Table 1",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+          "retrievedAt": "2026-11-12T08:44:59.810Z"
+        },
+        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+      },
+      "atmosphere": {
+        "value": "19 rows, 0-200 km",
+        "source": {
+          "url": "https://raw.githubusercontent.com/athulpg007/AMAT/master/atmdata/Venus/venus-gram-avg.dat",
+          "retrievedAt": "2026-11-12T09:34:15.582Z",
+          "sha256": "08080c50c39583f22aa2b8ded05e236aaf53efd9654843ebfdde3377d8ebcb70"
+        },
+        "note": "Venus-GRAM (Justus et al., NASA; VIRA, Kliore et al. 1986) average profile as distributed with AMAT (Girija et al. 2021, JOSS 6(67) 3710, doi:10.21105/joss.03710); rows at 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 180, 200 km; densities within 0.5 % of VIRA as tabulated by Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693, Table 3.1.1, from 0 to 100 km; above 100 km VIRA depends on local time and the two differ by up to 64 % (the table is the Venus-GRAM average)"
+      },
+      "atmosphere.simTop": {
+        "value": 133592,
+        "note": "altitude where the table density (log-linear) falls to 3.831e-9 kg/m^3, Earth's density at its simTop"
+      },
+      "atmosphere.gamma": {
+        "value": 1.286,
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/20070032693/downloads/20070032693.pdf",
+          "retrievedAt": "2026-11-12T09:32:46.746Z",
+          "sha256": "8eac0427514aea70ce729602697eef8867abe95896f6bbced8fd39064b07038a"
+        },
+        "note": "Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693: \"the ratio of specific heats Cp/Cv\" for venus"
+      },
+      "atmosphere.gasConstant": {
+        "value": 191.357022,
+        "source": {
+          "url": "https://raw.githubusercontent.com/athulpg007/AMAT/master/atmdata/Venus/venus-gram-avg.dat",
+          "retrievedAt": "2026-11-12T09:34:15.582Z",
+          "sha256": "08080c50c39583f22aa2b8ded05e236aaf53efd9654843ebfdde3377d8ebcb70"
+        },
+        "note": "8.314462618 / mean molecular weight 43.45 g/mol"
+      },
+      "atmosphere.heating": {
+        "value": {
+          "kConv": 0.00018894,
+          "radiative": null
+        },
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+          "retrievedAt": "2026-11-12T09:32:48.768Z"
+        },
+        "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"CO2\":0.965,\"N2\":0.035}): K = 0.12075, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+      },
+      "navballSwitchAltitude": {
+        "value": 57253.7,
+        "note": "simTop x 60000/140000 (the Earth precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.651, 0.6523, 0.6246],
+        "source": {
+          "url": "https://arxiv.org/pdf/1609.05048v1",
+          "retrievedAt": "2026-11-12T09:34:14.309Z",
+          "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+        },
+        "note": "B-V 0.7, V-R 0.35 (Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.65 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 20,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-5571, 11222],
+        "source": {
+          "url": "https://astrogeology.usgs.gov/search/map/venus_magellan_global_topography_4641m",
+          "retrievedAt": "2026-11-12T09:37:59.292Z",
+          "sha256": "0aa146262e68c0feda8adf07a48c7ba85aeb962522c1c6fd27e29d3e77881936"
+        },
+        "note": "DEM sphere 6051000 m (-800 m); DEM -2951..11687 (x 1 + 0); run-time craters to 9283 m"
+      },
+      "terrain.amplification": {
+        "value": "rocky-generic seed 4102 overrides {\"craterEquilibriumFraction\":0.0002}",
+        "note": "planet-bake: tools/bake/planet/bodies/venus.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "mars": {
+      "mu": {
+        "value": 42828375011100,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.077Z"
+        },
+        "note": "DE440 system GM 42828.375816 km^3/s^2 minus the 2 satellites with a GM in the JPL satellite table (0.0008049000000 km^3/s^2, https://ssd.jpl.nasa.gov/sats/phys_par/); planet-only GM of the satellite ephemeris for comparison: 42828.37362 (MAR097)"
+      },
+      "radius": {
+        "value": 3389500,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.15,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL planetary physical parameters (Horizons header: Geometric Albedo      =    0.150)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 317.649140876,
+          "poleDecDeg": 52.8680276327,
+          "w0Deg": 6.9630765854381,
+          "rateDegPerDay": 350.891982443297,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY499 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL Table 1",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+          "retrievedAt": "2026-11-12T08:44:59.810Z"
+        },
+        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+      },
+      "atmosphere": {
+        "value": {
+          "rho0": 0.016,
+          "p0": 636,
+          "scaleHeightKm": 11,
+          "temperature": 214
+        },
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html",
+          "retrievedAt": "2026-11-12T08:45:01.487Z",
+          "sha256": "366b0ce9b69cbee370be904956748af954468a41b93dc71a796a986519aa8d74",
+          "bytes": 13261
+        },
+        "note": "NASA NSSDC fact sheet, surface (mean radius)"
+      },
+      "atmosphere.simTop": {
+        "value": 167695,
+        "note": "H ln(rho0 / 3.831e-9): where the model density falls to Earth's density at its simTop (USSA-76, 140 km)"
+      },
+      "atmosphere.gamma": {
+        "value": 1.33,
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/20070032693/downloads/20070032693.pdf",
+          "retrievedAt": "2026-11-12T09:32:46.746Z",
+          "sha256": "8eac0427514aea70ce729602697eef8867abe95896f6bbced8fd39064b07038a"
+        },
+        "note": "Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693: \"the ratio of specific heats Cp/Cv\" for mars"
+      },
+      "atmosphere.gasConstant": {
+        "value": 191.181021,
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html",
+          "retrievedAt": "2026-11-12T08:45:01.487Z",
+          "sha256": "366b0ce9b69cbee370be904956748af954468a41b93dc71a796a986519aa8d74",
+          "bytes": 13261
+        },
+        "note": "8.314462618 / mean molecular weight 43.49 g/mol"
+      },
+      "atmosphere.heating": {
+        "value": {
+          "kConv": 0.00018962,
+          "radiative": null
+        },
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+          "retrievedAt": "2026-11-12T09:32:48.768Z"
+        },
+        "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"CO2\":0.951,\"N2\":0.0259,\"Ar\":0.0194}): K = 0.12119, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+      },
+      "shape": {
+        "value": {
+          "equatorialRadius": 3396190,
+          "polarRadius": 3376200
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY499_RADII (a = b > c: an oblate spheroid)"
+      },
+      "navballSwitchAltitude": {
+        "value": 71869.3,
+        "note": "simTop x 60000/140000 (the Earth precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.2137, 0.1389, 0.07242],
+        "source": {
+          "url": "https://arxiv.org/pdf/1609.05048v1",
+          "retrievedAt": "2026-11-12T09:34:14.309Z",
+          "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+        },
+        "note": "B-V 1.36, V-R 0.82 (Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.15 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 19,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-22011, 28025],
+        "source": {
+          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mars_MGS_MOLA_DEM_mosaic_global_463m.tif.aux.xml",
+          "retrievedAt": "2026-11-12T09:37:58.615Z",
+          "sha256": "aa498f1470e0666354955c2bee3edb60eb3ea39e9725e870b35ef196d8eadd96"
+        },
+        "note": "ellipsoid -13300..6690 m; DEM -8201..21241 (x 1 + 0); run-time craters to 2600 m"
+      },
+      "terrain.amplification": {
+        "value": "rocky-generic seed 4103 overrides {\"craterEquilibriumFraction\":0.004}",
+        "note": "planet-bake: tools/bake/planet/bodies/mars.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "jupiter": {
+      "mu": {
+        "value": 126686534007380000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.077Z"
+        },
+        "note": "DE440 system GM 126712764.1 km^3/s^2 minus the 9 satellites with a GM in the JPL satellite table (26230.09262 km^3/s^2, https://ssd.jpl.nasa.gov/sats/phys_par/); planet-only GM of the satellite ephemeris for comparison: 126686531.9 (JUP365)"
+      },
+      "radius": {
+        "value": 69911000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.52,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL planetary physical parameters (Horizons header: Geometric Albedo      = 0.52              Rocky core mass (Mc/M)= 0.0261)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 268.057415879,
+          "poleDecDeg": 64.4965415226,
+          "w0Deg": 69.3103987015784,
+          "rateDegPerDay": 870.536,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY599 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL Table 1",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+          "retrievedAt": "2026-11-12T08:44:59.810Z"
+        },
+        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+      },
+      "atmosphere": {
+        "value": {
+          "rho0": 0.16,
+          "p0": 100000,
+          "scaleHeightKm": 27,
+          "temperature": 165
+        },
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/jupiterfact.html",
+          "retrievedAt": "2026-11-12T08:45:01.569Z",
+          "sha256": "9ac7835ae5387261bc02019a641bbfc8450122ffebebffea5678c3de6c54d0cb",
+          "bytes": 11195
+        },
+        "note": "NASA NSSDC fact sheet, 1 bar level"
+      },
+      "atmosphere.simTop": {
+        "value": 473784,
+        "note": "H ln(rho0 / 3.831e-9): where the model density falls to Earth's density at its simTop (USSA-76, 140 km)"
+      },
+      "atmosphere.floorAltitude": {
+        "value": -62169.8,
+        "note": "the 10-bar level of the exponential model, -H ln 10 (ARCHITECTURE 8.3: about the 10 bar level)"
+      },
+      "atmosphere.gamma": {
+        "value": 1.4839,
+        "source": {
+          "url": "https://webbook.nist.gov/chemistry/fluid/",
+          "retrievedAt": "2026-11-12T09:30:24.696Z"
+        },
+        "note": "NIST Chemistry WebBook fluid tables (normal hydrogen): ideal mixture of H2 89.8 % (cp 26.0799, cv 17.7494 J/(mol K) at 165 K, 0.0898 MPa), He 10.2 % (cp 20.7864, cv 12.4719 J/(mol K) at 165 K, 0.0102 MPa); Justus & Braun state none for this planet"
+      },
+      "atmosphere.gasConstant": {
+        "value": 3745.25343,
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/jupiterfact.html",
+          "retrievedAt": "2026-11-12T08:45:01.569Z",
+          "sha256": "9ac7835ae5387261bc02019a641bbfc8450122ffebebffea5678c3de6c54d0cb",
+          "bytes": 11195
+        },
+        "note": "8.314462618 / mean molecular weight 2.22 g/mol"
+      },
+      "atmosphere.heating": {
+        "value": {
+          "kConv": 0.000066601,
+          "radiative": null
+        },
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+          "retrievedAt": "2026-11-12T09:32:48.768Z"
+        },
+        "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"H2\":0.898,\"He\":0.102}): K = 0.04256, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+      },
+      "shape": {
+        "value": {
+          "equatorialRadius": 71492000,
+          "polarRadius": 66854000
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY599_RADII (a = b > c: an oblate spheroid)"
+      },
+      "navballSwitchAltitude": {
+        "value": 203050,
+        "note": "simTop x 60000/140000 (the Earth precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.5258, 0.5268, 0.4354],
+        "source": {
+          "url": "https://arxiv.org/pdf/1609.05048v1",
+          "retrievedAt": "2026-11-12T09:34:14.309Z",
+          "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+        },
+        "note": "B-V 0.86, V-R 0.35 (Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.52 (tools/bodies/lib/colour.mjs)"
+      }
+    },
+    "saturn": {
+      "mu": {
+        "value": 37931207096240000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.077Z"
+        },
+        "note": "DE440 system GM 37940584.8418 km^3/s^2 minus the 16 satellites with a GM in the JPL satellite table (9377.745560 km^3/s^2, https://ssd.jpl.nasa.gov/sats/phys_par/); planet-only GM of the satellite ephemeris for comparison: 37931206.23 (SAT441)"
+      },
+      "radius": {
+        "value": 58232000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.47,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL planetary physical parameters (Horizons header: Geometric Albedo      = 0.47            Rocky core mass (Mc/M) =  0.1027)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 40.5782968193,
+          "poleDecDeg": 83.5358107577,
+          "w0Deg": 147.768254492432,
+          "rateDegPerDay": 810.7939024,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY699 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL Table 1",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+          "retrievedAt": "2026-11-12T08:44:59.810Z"
+        },
+        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+      },
+      "atmosphere": {
+        "value": {
+          "rho0": 0.19,
+          "p0": 100000,
+          "scaleHeightKm": 59.5,
+          "temperature": 134
+        },
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturnfact.html",
+          "retrievedAt": "2026-11-12T08:45:01.648Z",
+          "sha256": "6d09ba010cacef61c8ae1a1ff137b06e5464e99461faf8f32c107419c474d06d",
+          "bytes": 11257
+        },
+        "note": "NASA NSSDC fact sheet, 1 bar level"
+      },
+      "atmosphere.simTop": {
+        "value": 1054305,
+        "note": "H ln(rho0 / 3.831e-9): where the model density falls to Earth's density at its simTop (USSA-76, 140 km)"
+      },
+      "atmosphere.floorAltitude": {
+        "value": -137004,
+        "note": "the 10-bar level of the exponential model, -H ln 10 (ARCHITECTURE 8.3: about the 10 bar level)"
+      },
+      "atmosphere.gamma": {
+        "value": 1.45,
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/20070032693/downloads/20070032693.pdf",
+          "retrievedAt": "2026-11-12T09:32:46.746Z",
+          "sha256": "8eac0427514aea70ce729602697eef8867abe95896f6bbced8fd39064b07038a"
+        },
+        "note": "Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693: \"the ratio of specific heats Cp/Cv\" for saturn"
+      },
+      "atmosphere.gasConstant": {
+        "value": 4016.64861,
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturnfact.html",
+          "retrievedAt": "2026-11-12T08:45:01.648Z",
+          "sha256": "6d09ba010cacef61c8ae1a1ff137b06e5464e99461faf8f32c107419c474d06d",
+          "bytes": 11257
+        },
+        "note": "8.314462618 / mean molecular weight 2.07 g/mol"
+      },
+      "atmosphere.heating": {
+        "value": {
+          "kConv": 0.000063323,
+          "radiative": null
+        },
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+          "retrievedAt": "2026-11-12T09:32:48.768Z"
+        },
+        "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"H2\":0.963,\"He\":0.0325}): K = 0.04047, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+      },
+      "shape": {
+        "value": {
+          "equatorialRadius": 60268000,
+          "polarRadius": 54364000
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY699_RADII (a = b > c: an oblate spheroid)"
+      },
+      "rings": {
+        "value": [
+          {
+            "innerRadius": 74658000,
+            "outerRadius": 136780000,
+            "texture": "saturn-rings",
+            "opticalDepthScale": 1
+          }
+        ],
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/satringfact.html",
+          "retrievedAt": "2026-11-12T08:45:02.045Z"
+        },
+        "note": "C ring inner edge to A ring outer edge (NSSDC Saturnian rings fact sheet); texture = the asset id of the ring strip that planet-bake stages; opticalDepthScale 1 (the strip carries the optical depth)"
+      },
+      "navballSwitchAltitude": {
+        "value": 451845,
+        "note": "simTop x 60000/140000 (the Earth precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.6044, 0.4468, 0.3043],
+        "source": {
+          "url": "https://arxiv.org/pdf/1609.05048v1",
+          "retrievedAt": "2026-11-12T09:34:14.309Z",
+          "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+        },
+        "note": "B-V 1.07, V-R 0.68 (Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.47 (tools/bodies/lib/colour.mjs)"
+      }
+    },
+    "uranus": {
+      "mu": {
+        "value": 5793951300000001,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.077Z"
+        },
+        "note": "DE440 system GM 5794556.4 km^3/s^2 minus the 5 satellites with a GM in the JPL satellite table (605.1000000 km^3/s^2, https://ssd.jpl.nasa.gov/sats/phys_par/); planet-only GM of the satellite ephemeris for comparison: 5793951.3 (URA111)"
+      },
+      "radius": {
+        "value": 25362000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.51,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL planetary physical parameters (Horizons header: Geometric Albedo      = 0.51)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 257.311,
+          "poleDecDeg": -15.175,
+          "w0Deg": 91.6871107881889,
+          "rateDegPerDay": -501.1600928,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY799 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL Table 1",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+          "retrievedAt": "2026-11-12T08:44:59.810Z"
+        },
+        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+      },
+      "atmosphere": {
+        "value": {
+          "rho0": 0.42,
+          "p0": 100000,
+          "scaleHeightKm": 27.7,
+          "temperature": 76
+        },
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uranusfact.html",
+          "retrievedAt": "2026-11-12T08:45:01.728Z",
+          "sha256": "02389139f8345a4328fc8f8956012cb72f691c6c7c2854c03c0b2512a063de81",
+          "bytes": 10941
+        },
+        "note": "NASA NSSDC fact sheet, 1 bar level"
+      },
+      "atmosphere.simTop": {
+        "value": 512800,
+        "note": "H ln(rho0 / 3.831e-9): where the model density falls to Earth's density at its simTop (USSA-76, 140 km)"
+      },
+      "atmosphere.floorAltitude": {
+        "value": -63781.6,
+        "note": "the 10-bar level of the exponential model, -H ln 10 (ARCHITECTURE 8.3: about the 10 bar level)"
+      },
+      "atmosphere.gamma": {
+        "value": 1.6327,
+        "source": {
+          "url": "https://webbook.nist.gov/chemistry/fluid/",
+          "retrievedAt": "2026-11-12T09:30:25.262Z"
+        },
+        "note": "NIST Chemistry WebBook fluid tables (normal hydrogen): ideal mixture of H2 82.5 % (cp 21.4732, cv 13.0722 J/(mol K) at 76 K, 0.0825 MPa), He 15.2 % (cp 20.7882, cv 12.4722 J/(mol K) at 76 K, 0.0152 MPa), CH4 2.3 % (cp 33.3794, cv 25.0106 J/(mol K) at 90.7 K, 0.0023 MPa); Justus & Braun state none for this planet"
+      },
+      "atmosphere.gasConstant": {
+        "value": 3149.41766,
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uranusfact.html",
+          "retrievedAt": "2026-11-12T08:45:01.728Z",
+          "sha256": "02389139f8345a4328fc8f8956012cb72f691c6c7c2854c03c0b2512a063de81",
+          "bytes": 10941
+        },
+        "note": "8.314462618 / mean molecular weight 2.64 g/mol"
+      },
+      "atmosphere.heating": {
+        "value": {
+          "kConv": 0.000072842,
+          "radiative": null
+        },
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+          "retrievedAt": "2026-11-12T09:32:48.768Z"
+        },
+        "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"H2\":0.825,\"He\":0.152,\"CH4\":0.023}): K = 0.04655, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+      },
+      "shape": {
+        "value": {
+          "equatorialRadius": 25559000,
+          "polarRadius": 24973000
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY799_RADII (a = b > c: an oblate spheroid)"
+      },
+      "navballSwitchAltitude": {
+        "value": 219771,
+        "note": "simTop x 60000/140000 (the Earth precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.3132, 0.5554, 0.6395],
+        "source": {
+          "url": "https://arxiv.org/pdf/1609.05048v1",
+          "retrievedAt": "2026-11-12T09:34:14.309Z",
+          "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+        },
+        "note": "B-V 0.5, V-R -0.27 (Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.51 (tools/bodies/lib/colour.mjs)"
+      }
+    },
+    "neptune": {
+      "mu": {
+        "value": 6835095428110001,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.077Z"
+        },
+        "note": "DE440 system GM 6836527.10058 km^3/s^2 minus the 8 satellites with a GM in the JPL satellite table (1431.672470 km^3/s^2, https://ssd.jpl.nasa.gov/sats/phys_par/); planet-only GM of the satellite ephemeris for comparison: 6835099.97 (NEP097)"
+      },
+      "radius": {
+        "value": 24622000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.41,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL planetary physical parameters (Horizons header: Geometric Albedo      = 0.41            Flattening             =  0.0171)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 299.522272259,
+          "poleDecDeg": 42.963892761,
+          "w0Deg": 352.109842228703,
+          "rateDegPerDay": 541.1397757,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY899 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL Table 1",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
+          "retrievedAt": "2026-11-12T08:44:59.810Z"
+        },
+        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+      },
+      "atmosphere": {
+        "value": {
+          "rho0": 0.45,
+          "p0": 100000,
+          "scaleHeightKm": 19.700000000000003,
+          "temperature": 72
+        },
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/neptunefact.html",
+          "retrievedAt": "2026-11-12T08:45:01.808Z",
+          "sha256": "4b9166f959be2b507eea77a9eef56f4e5679b693ba75151072a28bb228f44328",
+          "bytes": 11071
+        },
+        "note": "NASA NSSDC fact sheet, 1 bar level; scale height: midpoint of the range 19.1-20.3; mean molecular weight: midpoint of the range 2.53-2.69"
+      },
+      "atmosphere.simTop": {
+        "value": 366058,
+        "note": "H ln(rho0 / 3.831e-9): where the model density falls to Earth's density at its simTop (USSA-76, 140 km)"
+      },
+      "atmosphere.floorAltitude": {
+        "value": -45360.9,
+        "note": "the 10-bar level of the exponential model, -H ln 10 (ARCHITECTURE 8.3: about the 10 bar level)"
+      },
+      "atmosphere.gamma": {
+        "value": 1.6442,
+        "source": {
+          "url": "https://webbook.nist.gov/chemistry/fluid/",
+          "retrievedAt": "2026-11-12T09:30:25.664Z"
+        },
+        "note": "NIST Chemistry WebBook fluid tables (normal hydrogen): ideal mixture of H2 79.6 % (cp 21.3395, cv 12.9307 J/(mol K) at 72 K, 0.0796 MPa), He 18.9 % (cp 20.789, cv 12.4724 J/(mol K) at 72 K, 0.01891 MPa), CH4 1.5 % (cp 33.342, cv 24.9925 J/(mol K) at 90.7 K, 0.001493 MPa); Justus & Braun state none for this planet"
+      },
+      "atmosphere.gasConstant": {
+        "value": 3185.61786,
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/neptunefact.html",
+          "retrievedAt": "2026-11-12T08:45:01.808Z",
+          "sha256": "4b9166f959be2b507eea77a9eef56f4e5679b693ba75151072a28bb228f44328",
+          "bytes": 11071
+        },
+        "note": "8.314462618 / mean molecular weight 2.61 g/mol"
+      },
+      "atmosphere.heating": {
+        "value": {
+          "kConv": 0.000073323,
+          "radiative": null
+        },
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+          "retrievedAt": "2026-11-12T09:32:48.768Z"
+        },
+        "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"H2\":0.8,\"He\":0.19,\"CH4\":0.015}): K = 0.04686, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+      },
+      "shape": {
+        "value": {
+          "equatorialRadius": 24764000,
+          "polarRadius": 24341000
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY899_RADII (a = b > c: an oblate spheroid)"
+      },
+      "navballSwitchAltitude": {
+        "value": 156882,
+        "note": "simTop x 60000/140000 (the Earth precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.2376, 0.4453, 0.5674],
+        "source": {
+          "url": "https://arxiv.org/pdf/1609.05048v1",
+          "retrievedAt": "2026-11-12T09:34:14.309Z",
+          "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+        },
+        "note": "B-V 0.39, V-R -0.33 (Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.41 (tools/bodies/lib/colour.mjs)"
+      }
+    },
+    "phobos": {
+      "mu": {
+        "value": 708700,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (MAR097)"
+      },
+      "radius": {
+        "value": 11080,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.06,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='401'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:43.948Z",
+          "sha256": "07c84d6e58572dedb3a6bc70ab906729feb5ad3d4fef556135e348ca0348fdef",
+          "bytes": 762
+        },
+        "note": "JPL Horizons object data: Mass (10^20 kg )        =  1.08 (10^-4)   Geometric Albedo    =  0.06"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 319.261708399,
+          "poleDecDeg": 53.3514317417,
+          "w0Deg": 104.23036243394,
+          "rateDegPerDay": 1128.84496639095,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY401 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (MAR099), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 317.7 Dec 52.9; reading: P=anomalistic, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 127.547,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.05784, 0.06031, 0.06332],
+        "source": {
+          "url": "https://open.uapress.arizona.edu/system/actioncallout/f/c/8/fc8e6b81-8b9a-4138-b2da-0d2698521f31/attachment/f80a804bf9ccb6af095cdc9c2cb4deef.pdf",
+          "retrievedAt": "2026-11-12T09:34:15.232Z",
+          "sha256": "51bcae5e80eaa7ff3a242b2f1aac95944f9d0c96dc496381bd2567b717570bea"
+        },
+        "note": "B-V 0.6, red from the B-V slope (Burns, J. A. (ed.) (1977), Planetary Satellites, University of Arizona Press (open access): Tables 9.2, 9.9, 22.3: Table 9.2, Kuiper (Harris 1961)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.06 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 11,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-1987, 1922],
+        "note": "ellipsoid -1980..1920 m; run-time craters to 34 m"
+      },
+      "terrain.amplification": {
+        "value": "rocky-generic seed 4104 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/phobos.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "deimos": {
+      "mu": {
+        "value": 96200,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (MAR097)"
+      },
+      "radius": {
+        "value": 6200,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.06,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='402'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.008Z",
+          "sha256": "ca04de40b4574406be212058d327eee8a02abc23496edab8b50c3df0646f2578",
+          "bytes": 764
+        },
+        "note": "JPL Horizons object data: Mass (10^20 kg )        = 1.80 (10^-5)    Geometric Albedo    =  0.06"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 314.728428145,
+          "poleDecDeg": 54.9092261648,
+          "w0Deg": 10.5033695679158,
+          "rateDegPerDay": 285.16188899,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY402 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (MAR099), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 316.6 Dec 53.5; reading: P=anomalistic, apsis advancing, node advancing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 71.371,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.05988, 0.06002, 0.06018],
+        "source": {
+          "url": "https://open.uapress.arizona.edu/system/actioncallout/f/c/8/fc8e6b81-8b9a-4138-b2da-0d2698521f31/attachment/f80a804bf9ccb6af095cdc9c2cb4deef.pdf",
+          "retrievedAt": "2026-11-12T09:34:15.232Z",
+          "sha256": "51bcae5e80eaa7ff3a242b2f1aac95944f9d0c96dc496381bd2567b717570bea"
+        },
+        "note": "B-V 0.65, red from the B-V slope (Burns, J. A. (ed.) (1977), Planetary Satellites, University of Arizona Press (open access): Tables 9.2, 9.9, 22.3: Table 9.2, Zellner and Capen (1974), photoelectric); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.06 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 10,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-1594, 1691],
+        "note": "ellipsoid -1100..1600 m; procedural craters to 2.5 km (depth 0.196 D, rim 0.036 D); run-time craters to 38 m"
+      },
+      "terrain.amplification": {
+        "value": "rocky-generic seed 4105 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/deimos.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "io": {
+      "mu": {
+        "value": 5959915470000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (JUP365)"
+      },
+      "radius": {
+        "value": 1821490,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.63,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='501'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.061Z",
+          "sha256": "535a3f99e992efd4c31fe6f0b1503f6fbd42b6d4ee23a2db22ac6e35456855ed",
+          "bytes": 790
+        },
+        "note": "JPL Horizons object data: GM (km^3/s^2)          = 5959.9155+- 0.004 Geometric Albedo  = 0.63  +- 0.02"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 267.952821491,
+          "poleDecDeg": 64.52279306,
+          "w0Deg": 261.707766518928,
+          "rateDegPerDay": 203.4889538,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY501 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (JUP365), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 268.1 Dec 64.5; reading: P=anomalistic, apsis regressing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 20968,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.63, 0.63, 0.63],
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.63 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 18,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-6886, 8112],
+        "note": "ellipsoid -5790..7910 m; run-time craters to 5588 m"
+      },
+      "terrain.amplification": {
+        "value": "rocky-generic seed 4106 overrides {\"craterEquilibriumFraction\":0.000001}",
+        "note": "planet-bake: tools/bake/planet/bodies/io.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "europa": {
+      "mu": {
+        "value": 3202712100000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (JUP365)"
+      },
+      "radius": {
+        "value": 1560800,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.67,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='502'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.118Z",
+          "sha256": "c4589205d21b9e0d71d1599d3e3b37fbee4af4a7a4ab776eb56b22502cc18a71",
+          "bytes": 792
+        },
+        "note": "JPL Horizons object data: GM   (km^3/s^2)        = 3202.7121+- 0.0054 Geometric Albedo = 0.67 +/- 0.03"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 267.853133768,
+          "poleDecDeg": 64.9463790035,
+          "w0Deg": 11.5892536544707,
+          "rateDegPerDay": 101.3747235,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY502 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (JUP365), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 268.1 Dec 64.5; reading: P=anomalistic, apsis regressing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 17967.1,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.67, 0.67, 0.67],
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.67 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 18,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-2258, 1992],
+        "note": "ellipsoid -1300..1800 m; run-time craters to 4788 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4107 overrides {\"craterEquilibriumFraction\":0.0005}",
+        "note": "planet-bake: tools/bake/planet/bodies/europa.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "ganymede": {
+      "mu": {
+        "value": 9887832750000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (JUP365)"
+      },
+      "radius": {
+        "value": 2631200,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.43,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='503'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.169Z",
+          "sha256": "f1b4be537f7232cabb584bd5fbf7c74b5bd5c42a9fc75f12ae19ab997f694aa9",
+          "bytes": 792
+        },
+        "note": "JPL Horizons object data: GM (km^3/s^2)          = 9887.8328+- 0.0074 Geometric Albedo = 0.43  +- 0.02"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 267.98691506,
+          "poleDecDeg": 64.3640355083,
+          "w0Deg": 336.681900743977,
+          "rateDegPerDay": 50.3176081,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY503 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (JUP365), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 268.2 Dec 64.6; reading: P=anomalistic, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 30288.9,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.43, 0.43, 0.43],
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.43 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 19,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-1615, 323],
+        "note": "ellipsoid 0..0 m; run-time craters to 8072 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4108 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/ganymede.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "callisto": {
+      "mu": {
+        "value": 7179283400000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (JUP365)"
+      },
+      "radius": {
+        "value": 2410300,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.17,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='504'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.230Z",
+          "sha256": "0d250edfdf55ff39c83e7cc03c7894003a844ca90ba1eecfb30ac7def5582fb6",
+          "bytes": 795
+        },
+        "note": "JPL Horizons object data: GM (km^3/s^2)         = 7179.2834 +- 0.0097 Geometric Albedo = 0.17  +- 0.02"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 268.19646142,
+          "poleDecDeg": 64.7690106507,
+          "w0Deg": 146.042848485784,
+          "rateDegPerDay": 21.5710715,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY504 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (JUP365), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 268.7 Dec 64.8; reading: P=anomalistic, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 27746.1,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.17, 0.17, 0.17],
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.17 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 19,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-1479, 296],
+        "note": "ellipsoid 0..0 m; run-time craters to 7395 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4109 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/callisto.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "mimas": {
+      "mu": {
+        "value": 2503490000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (SAT441)"
+      },
+      "radius": {
+        "value": 198200,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.6,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='601'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.282Z",
+          "sha256": "7ba7ebcfb0776faebb6a0c136b5ad8d281e982df7aaecec5883f8b7a562d1b43",
+          "bytes": 928
+        },
+        "note": "JPL Horizons object data: Mass (10^19 kg)         =   3.75           Geometric Albedo  = 0.6"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 51.9004565165,
+          "poleDecDeg": 84.3727996477,
+          "w0Deg": 180.898146326188,
+          "rateDegPerDay": 381.994555,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY601 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (SAT441), sat-fit",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis regressing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 143 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462401.441461%27&STOP_TIME=%27JD+2462407.095993%27&STEP_SIZE=%2757+m%27), rms 837.7 km"
+      },
+      "navballSwitchAltitude": {
+        "value": 2281.57,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.6, 0.6, 0.6],
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 15,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-23578, 12796],
+        "note": "ellipsoid -7600..9600 m; procedural craters to 79.3 km (depth 0.2 D, rim 0.04 D); run-time craters to 608 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4110 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/mimas.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "enceladus": {
+      "mu": {
+        "value": 7210370000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (SAT441)"
+      },
+      "radius": {
+        "value": 252100,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 1.04,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='602'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.331Z",
+          "sha256": "cbfc5bd1da2b3b18c367087e6f0c1db9704e79508aaaeaf13434b59e0d2e98eb",
+          "bytes": 932
+        },
+        "note": "JPL Horizons object data: Mass (10^19 kg)         =  10.805          Geometric Albedo =  1.04"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 40.6492968193,
+          "poleDecDeg": 83.5188107577,
+          "w0Deg": 82.62087266054,
+          "rateDegPerDay": 262.7318996,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY602 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (SAT441), sat-fit",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 145 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.158073%27&STOP_TIME=%27JD+2462408.379381%27&STEP_SIZE=%2782+m%27), rms 369.3 km"
+      },
+      "navballSwitchAltitude": {
+        "value": 2902.04,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [1.017, 1.043, 1.075],
+        "source": {
+          "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+          "retrievedAt": "2026-11-12T09:34:14.607Z",
+          "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+        },
+        "note": "B-V 0.62, red from the B-V slope (PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 1.04 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 15,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-3955, 4531],
+        "note": "ellipsoid -3800..4500 m; run-time craters to 773 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4111 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/enceladus.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "tethys": {
+      "mu": {
+        "value": 41213530000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (SAT441)"
+      },
+      "radius": {
+        "value": 531100,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.8,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='603'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.381Z",
+          "sha256": "a3be917c6f990417501b68d8ba3815adce096893028ce6dcd736fb93ed78f20d",
+          "bytes": 936
+        },
+        "note": "JPL Horizons object data: Mass (10^19 kg)        =  61.76 +- 0.11    Geometric Albedo  =  0.80"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 33.4326820703,
+          "poleDecDeg": 82.794227969,
+          "w0Deg": 138.0889846629,
+          "rateDegPerDay": 190.6979085,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY603 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (SAT441), sat-fit",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 145 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.605321%27&STOP_TIME=%27JD+2462409.932133%27&STEP_SIZE=%27113+m%27), rms 531.8 km"
+      },
+      "navballSwitchAltitude": {
+        "value": 6113.73,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.8438, 0.7938, 0.7327],
+        "source": {
+          "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+          "retrievedAt": "2026-11-12T09:34:14.607Z",
+          "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+        },
+        "note": "B-V 0.74, red from the B-V slope (PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.8 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 16,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-5126, 7366],
+        "note": "ellipsoid -4800..7300 m; run-time craters to 1629 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4112 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/tethys.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "dione": {
+      "mu": {
+        "value": 73116070000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (SAT441)"
+      },
+      "radius": {
+        "value": 561400,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.6,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='604'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.430Z",
+          "sha256": "5aa01951f85cded046094b91ecbb6b73b03599e2b4c0a584182a253adf3af307",
+          "bytes": 922
+        },
+        "note": "JPL Horizons object data: Mass (10^19 kg)         = 109.572          Geometric Albedo =  0.6"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 40.6492968193,
+          "poleDecDeg": 83.5188107577,
+          "w0Deg": 250.769212477375,
+          "rateDegPerDay": 131.5349316,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY604 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (SAT441), sat-fit",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 145 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.057979%27&STOP_TIME=%27JD+2462412.479475%27&STEP_SIZE=%27164+m%27), rms 287.7 km"
+      },
+      "navballSwitchAltitude": {
+        "value": 6462.53,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.64, 0.5943, 0.5385],
+        "source": {
+          "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+          "retrievedAt": "2026-11-12T09:34:14.607Z",
+          "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+        },
+        "note": "B-V 0.76, red from the B-V slope (PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 16,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-2145, 2069],
+        "note": "ellipsoid -1800..2000 m; run-time craters to 1722 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4113 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/dione.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "rhea": {
+      "mu": {
+        "value": 153941750000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (SAT441)"
+      },
+      "radius": {
+        "value": 763500,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.6,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='605'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.479Z",
+          "sha256": "c035623bb65cf35d409b3110045432129800cab489e05c203aca634979f839cd",
+          "bytes": 918
+        },
+        "note": "JPL Horizons object data: Mass (10^19 kg)         = 230.9           Geometric Albedo  =  0.6"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 42.4852030642,
+          "poleDecDeg": 83.293017274,
+          "w0Deg": 168.701660632272,
+          "rateDegPerDay": 79.6900478,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY605 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (SAT441), sat-fit",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 145 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462390.716218%27&STOP_TIME=%27JD+2462417.821236%27&STEP_SIZE=%27271+m%27), rms 163.6 km"
+      },
+      "navballSwitchAltitude": {
+        "value": 8789,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.64, 0.5943, 0.5385],
+        "source": {
+          "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+          "retrievedAt": "2026-11-12T09:34:14.607Z",
+          "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+        },
+        "note": "B-V 0.76, red from the B-V slope (PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 17,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-1569, 1594],
+        "note": "ellipsoid -1100..1500 m; run-time craters to 2342 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4114 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/rhea.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "titan": {
+      "mu": {
+        "value": 8978137100000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (SAT441)"
+      },
+      "radius": {
+        "value": 2574760,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.2,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='606'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.531Z",
+          "sha256": "169e22d87be57c81ccb93c0c72682105be1357e4e2d39be756c27eb03e0e938e",
+          "bytes": 869
+        },
+        "note": "JPL Horizons object data: Mass (10^19 kg)        = 13455.3           Geometric Albedo =  0.2"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 39.4827,
+          "poleDecDeg": 83.4279,
+          "w0Deg": 196.043611099769,
+          "rateDegPerDay": 22.5769768,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY606 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (SAT441), sat-fit",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 36.4 Dec 84; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 144 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462356.432383%27&STOP_TIME=%27JD+2462452.105071%27&STEP_SIZE=%27957+m%27), rms 688.9 km"
+      },
+      "atmosphere": {
+        "value": "40 rows, 0-1300 km",
+        "source": {
+          "url": "https://atmos.nmsu.edu/PDS/data/hphasi_0001/DATA/PROFILES/HASI_L4_ATMO_PROFILE_ENTRY.TAB",
+          "retrievedAt": "2026-11-12T09:30:44.034Z",
+          "sha256": "172759400c9f8b1e39ca5461c94baa2b7321bec36995dbe9259dda80ed93a197"
+        },
+        "note": "Huygens HASI (Fulchignoni et al. 2005, Nature 438, 785), PDS data set HP-SSA-HASI-2-3-4-MISSION-V1.1: descent profile (0-147 km) and entry profile (157-1,380 km; density = p M / (R T) with M = 28.557 g/mol, the descent file's own value over its top 10 km); rows averaged over windows of +-0.5 km below 150 km and +-5 km above"
+      },
+      "atmosphere.simTop": {
+        "value": 909456,
+        "note": "altitude where the table density (log-linear) falls to 3.831e-9 kg/m^3, Earth's density at its simTop"
+      },
+      "atmosphere.gamma": {
+        "value": 1.4,
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/20070032693/downloads/20070032693.pdf",
+          "retrievedAt": "2026-11-12T09:32:46.746Z",
+          "sha256": "8eac0427514aea70ce729602697eef8867abe95896f6bbced8fd39064b07038a"
+        },
+        "note": "Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693: \"the ratio of specific heats Cp/Cv\" for titan"
+      },
+      "atmosphere.gasConstant": {
+        "value": 291.153224,
+        "source": {
+          "url": "https://atmos.nmsu.edu/PDS/data/hphasi_0001/DATA/PROFILES/HASI_L4_ATMO_PROFILE_ENTRY.TAB",
+          "retrievedAt": "2026-11-12T09:30:44.034Z",
+          "sha256": "172759400c9f8b1e39ca5461c94baa2b7321bec36995dbe9259dda80ed93a197"
+        },
+        "note": "8.314462618 / mean molecular weight 28.557 g/mol"
+      },
+      "atmosphere.heating": {
+        "value": {
+          "kConv": 0.00017175,
+          "radiative": null
+        },
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+          "retrievedAt": "2026-11-12T09:32:48.768Z"
+        },
+        "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"N2\":0.95,\"CH4\":0.05}): K = 0.10977, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+      },
+      "navballSwitchAltitude": {
+        "value": 389767,
+        "note": "simTop x 60000/140000 (the Earth precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.2592, 0.1916, 0.1089],
+        "source": {
+          "url": "https://open.uapress.arizona.edu/system/actioncallout/f/c/8/fc8e6b81-8b9a-4138-b2da-0d2698521f31/attachment/f80a804bf9ccb6af095cdc9c2cb4deef.pdf",
+          "retrievedAt": "2026-11-12T09:34:15.232Z",
+          "sha256": "51bcae5e80eaa7ff3a242b2f1aac95944f9d0c96dc496381bd2567b717570bea"
+        },
+        "note": "B-V 1.266, red from the B-V slope (Burns, J. A. (ed.) (1977), Planetary Satellites, University of Arizona Press (open access): Tables 9.2, 9.9, 22.3: Table 22.3, mean of 8 B-V at zero phase (1.295, 1.266, 1.26, 1.27, 1.274, 1.258, 1.251, 1.254)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.2 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 19,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-1080, 548],
+        "note": "ellipsoid -290..390 m; run-time craters to 3950 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4115 overrides {\"craterEquilibriumFraction\":0.0005}",
+        "note": "planet-bake: tools/bake/planet/bodies/titan.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "iapetus": {
+      "mu": {
+        "value": 120515110000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (SAT441)"
+      },
+      "radius": {
+        "value": 734300,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.6,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='608'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.582Z",
+          "sha256": "fbf4b6914f984255af8e9c2c737bd037a3eca527ec8b987539521b6cdf97dbd5",
+          "bytes": 946
+        },
+        "note": "JPL Horizons object data: Mass (10^19 kg)        = 180.59             Geometric Albedo=  0.6"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 316.985920542,
+          "poleDecDeg": 74.6901740136,
+          "w0Deg": 314.096705752192,
+          "rateDegPerDay": 4.5379572,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY608 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (SAT441), sat-fit",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "Laplace frame -> pole RA 288.7 Dec 78.9; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 144 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462166.275721%27&STOP_TIME=%27JD+2462642.261733%27&STEP_SIZE=%274760+m%27), rms 3284.7 km"
+      },
+      "shape": {
+        "value": {
+          "equatorialRadius": 745700,
+          "polarRadius": 712100
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY608_RADII (a = b > c: an oblate spheroid)"
+      },
+      "navballSwitchAltitude": {
+        "value": 8452.86,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.6, 0.6, 0.6],
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 17,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-22651, 11491],
+        "note": "ellipsoid -22200..11400 m; run-time craters to 2253 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4116 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/iapetus.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "miranda": {
+      "mu": {
+        "value": 4300000000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (URA111)"
+      },
+      "radius": {
+        "value": 235800,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.27,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='705'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.640Z",
+          "sha256": "73f095b72182abc085dda2ef9b6a1152b6fd36c412a41bc3475ce4a4ef5d1495",
+          "bytes": 819
+        },
+        "note": "JPL Horizons object data: GM (km^3/s^2)         =  4.3   +- 0.2     Geometric Albedo    =  0.27"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 254.531835742,
+          "poleDecDeg": -18.3193458076,
+          "w0Deg": 153.971309096552,
+          "rateDegPerDay": -254.6906892,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY705 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (URA182), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 2714.4,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.27, 0.27, 0.27],
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.27 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 15,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-21909, 8402],
+        "note": "ellipsoid -2900..4600 m; procedural craters to 94.3 km (depth 0.2 D, rim 0.04 D); run-time craters to 723 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4117 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/miranda.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "ariel": {
+      "mu": {
+        "value": 83500000000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (URA111)"
+      },
+      "radius": {
+        "value": 578900,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.34,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='701'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.691Z",
+          "sha256": "16865ffa874b079a6fcb54840a5dda736d42734338c2426a99c01a5fd3af027f",
+          "bytes": 818
+        },
+        "note": "JPL Horizons object data: GM (km^3/s^2)         =   83.43 +- 1.40   Geometric Albedo    =  0.34"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 257.155095042,
+          "poleDecDeg": -15.0108410626,
+          "w0Deg": 305.290453107329,
+          "rateDegPerDay": -142.8356681,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY701 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (URA182), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 6663.98,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.34, 0.34, 0.34],
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.34 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 16,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-47868, 11534],
+        "note": "ellipsoid -1200..2200 m; procedural craters to 231.6 km (depth 0.2 D, rim 0.04 D); run-time craters to 1776 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4118 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/ariel.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "umbriel": {
+      "mu": {
+        "value": 85100000000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (URA111)"
+      },
+      "radius": {
+        "value": 584700,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.18,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='702'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.749Z",
+          "sha256": "d9b5c18b287dc1378b27e1c7c3d8773a9b6c69e318c68ab664b863fb8cbc0c49",
+          "bytes": 820
+        },
+        "note": "JPL Horizons object data: GM (km^3/s^2)         =  85.40 +- 1.9     Geometric Albedo    =  0.18"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 257.22386499,
+          "poleDecDeg": -15.0618053966,
+          "w0Deg": 335.255675329827,
+          "rateDegPerDay": -86.8688923,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY702 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (URA182), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 6730.75,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.18, 0.18, 0.18],
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.18 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 16,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-47135, 9427],
+        "note": "ellipsoid 0..0 m; procedural craters to 233.9 km (depth 0.2 D, rim 0.04 D); run-time craters to 1794 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4119 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/umbriel.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "titania": {
+      "mu": {
+        "value": 226900000000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (URA111)"
+      },
+      "radius": {
+        "value": 788900,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.27,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='703'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.803Z",
+          "sha256": "74e6bb12efd1dd0250326407f80101a1b626e1a5999f18ef83c62c4076100d6e",
+          "bytes": 818
+        },
+        "note": "JPL Horizons object data: GM (km^3/s^2)         = 222.8  +- 4.1     Geometric Albedo    =  0.27"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 257.237561976,
+          "poleDecDeg": -14.8905303573,
+          "w0Deg": 311.378929215076,
+          "rateDegPerDay": -41.3514316,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY703 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (URA182), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node advancing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 9081.39,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.2782, 0.2688, 0.2575],
+        "source": {
+          "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+          "retrievedAt": "2026-11-12T09:34:14.607Z",
+          "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+        },
+        "note": "B-V 0.7, red from the B-V slope (PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.27 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 17,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-63597, 12720],
+        "note": "ellipsoid 0..0 m; procedural craters to 315.6 km (depth 0.2 D, rim 0.04 D); run-time craters to 2420 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4120 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/titania.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "oberon": {
+      "mu": {
+        "value": 205300000000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (URA111)"
+      },
+      "radius": {
+        "value": 761400,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.24,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='704'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.917Z",
+          "sha256": "f677ccebf6437eebe43d4ad3bf232e8eaa80ba3a553ce4acaa31cd82f0eb8903",
+          "bytes": 819
+        },
+        "note": "JPL Horizons object data: GM (km^3/s^2)         = 205.34 +- 5.8     Geometric Albedo    =  0.24"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 257.581233219,
+          "poleDecDeg": -15.1522351754,
+          "w0Deg": 155.465529676992,
+          "rateDegPerDay": -26.7394932,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY704 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (URA182), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 8764.82,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.2442, 0.2394, 0.2335],
+        "source": {
+          "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+          "retrievedAt": "2026-11-12T09:34:14.607Z",
+          "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+        },
+        "note": "B-V 0.68, red from the B-V slope (PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.24 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 17,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-61380, 12276],
+        "note": "ellipsoid 0..0 m; procedural craters to 304.6 km (depth 0.2 D, rim 0.04 D); run-time craters to 2336 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4121 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/oberon.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "triton": {
+      "mu": {
+        "value": 1428495460000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (NEP097)"
+      },
+      "radius": {
+        "value": 1352600,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.7,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='801'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+          "retrievedAt": "2026-11-12T08:48:44.972Z",
+          "sha256": "94aac193c2e0c13beb26903bcb65a50324a86b8cd229266ad04e76daa948407a",
+          "bytes": 860
+        },
+        "note": "JPL Horizons object data: GM (km^3/s^2)           = 1428.495 +- 0.62 Geometric Albedo   = 0.7"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 304.982788119,
+          "poleDecDeg": 20.767945769,
+          "w0Deg": 4.4028552272357,
+          "rateDegPerDay": -61.2572637,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY801 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (NEP098), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "equatorial frame -> parentEquator (the parent's pole); reading: P=sidereal, apsis regressing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 15570.4,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.7507, 0.6928, 0.622],
+        "source": {
+          "url": "https://open.uapress.arizona.edu/system/actioncallout/f/c/8/fc8e6b81-8b9a-4138-b2da-0d2698521f31/attachment/f80a804bf9ccb6af095cdc9c2cb4deef.pdf",
+          "retrievedAt": "2026-11-12T09:34:15.232Z",
+          "sha256": "51bcae5e80eaa7ff3a242b2f1aac95944f9d0c96dc496381bd2567b717570bea"
+        },
+        "note": "B-V 0.77, red from the B-V slope (Burns, J. A. (ed.) (1977), Planetary Satellites, University of Arizona Press (open access): Tables 9.2, 9.9, 22.3: Table 9.9 (Harris 1961)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.7 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 18,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-830, 166],
+        "note": "ellipsoid 0..0 m; run-time craters to 4150 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4122 overrides {\"craterEquilibriumFraction\":0.002}",
+        "note": "planet-bake: tools/bake/planet/bodies/triton.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "ceres": {
+      "mu": {
+        "value": 62628400000,
+        "source": {
+          "url": "https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=1&full-prec=true&phys-par=true",
+          "retrievedAt": "2026-11-12T08:45:00.427Z"
+        },
+        "note": "SBDB GM (Nature vol. 537, pp515-517 (22 September 2016))"
+      },
+      "radius": {
+        "value": 469700,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.09,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL planetary physical parameters (Horizons header: ALBEDO= .090            STYP= C)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 291.418,
+          "poleDecDeg": 66.764,
+          "w0Deg": 298.117931915447,
+          "rateDegPerDay": 952.1532,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY2000001 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "SBDB osculating elements at JD 2461200.5",
+        "source": {
+          "url": "https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=1&full-prec=true&phys-par=true",
+          "retrievedAt": "2026-11-12T08:45:00.427Z"
+        },
+        "note": "heliocentric ecliptic J2000 osculating elements and mean motion"
+      },
+      "shape": {
+        "value": {
+          "equatorialRadius": 487300,
+          "polarRadius": 446000
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY2000001_RADII (a = b > c: an oblate spheroid)"
+      },
+      "navballSwitchAltitude": {
+        "value": 5406.93,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.09345, 0.08951, 0.0847],
+        "source": {
+          "url": "https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=1&full-prec=true&phys-par=true",
+          "retrievedAt": "2026-11-12T08:45:00.427Z",
+          "sha256": "023919aa9b95625ec15635d6f815abfba5c41ef578ea4f44e551127f3c80bb37"
+        },
+        "note": "B-V 0.713, red from the B-V slope (JPL SBDB B-V (EAR-A-5-DDR-UBV-MEAN-VALUES-V1.2)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.09 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 16,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-32609, 33093],
+        "source": {
+          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Dawn_FC_HAMO_DTM_DLR_Global_60ppd_Oct2016.tif",
+          "retrievedAt": "2026-11-12T09:37:58.310Z",
+          "sha256": "eea77b5388c72545a3212008e5329faf256f8be9a73b81c09c12dbd3894c13e5"
+        },
+        "note": "DEM sphere 470000 m (300 m); DEM -32767..32767 (x 1 + 0); run-time craters to 721 m"
+      },
+      "terrain.amplification": {
+        "value": "rocky-generic seed 4125 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/ceres.json over data/defs/terrain/rocky-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "pluto": {
+      "mu": {
+        "value": 869396500000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.077Z"
+        },
+        "note": "DE440 system GM 975.5 km^3/s^2 minus the 3 satellites with a GM in the JPL satellite table (106.1035000 km^3/s^2, https://ssd.jpl.nasa.gov/sats/phys_par/); planet-only GM of the satellite ephemeris for comparison: 869.3 (PLU060)"
+      },
+      "radius": {
+        "value": 1188300,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.3,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+          "retrievedAt": "2026-11-12T08:45:00.055Z"
+        },
+        "note": "JPL planetary physical parameters (Horizons header: none)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 132.993,
+          "poleDecDeg": -6.163,
+          "w0Deg": 358.472950733732,
+          "rateDegPerDay": 56.3625225,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY999 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "SBDB osculating elements at JD 2457588.5",
+        "source": {
+          "url": "https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=134340&full-prec=true&phys-par=true",
+          "retrievedAt": "2026-11-12T08:45:00.577Z"
+        },
+        "note": "heliocentric ecliptic J2000 osculating elements and mean motion"
+      },
+      "navballSwitchAltitude": {
+        "value": 13679.1,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.3379, 0.2946, 0.2417],
+        "source": {
+          "url": "https://arxiv.org/pdf/astro-ph/0512491v2",
+          "retrievedAt": "2026-11-12T09:34:44.577Z",
+          "sha256": "fe2a7ad5dd9cdc6c25be99bb1d288ed8aa473207bd778fc46782bfec2eedf181"
+        },
+        "note": "B-V 0.868, red from the B-V slope (Buie, M. W. et al. (2006), Orbits and photometry of Pluto's satellites, AJ 132, 290 (arXiv:astro-ph/0512491), Table 4); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.3 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 18,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-32950, 32804],
+        "source": {
+          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Pluto_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif",
+          "retrievedAt": "2026-11-12T09:37:58.881Z",
+          "sha256": "18e915283e74abeac14a1317a060814c05b19428c00c0f89f3fea2d32f08cf42"
+        },
+        "note": "DEM sphere 1188300 m (0 m); DEM -32767..32767 (x 1 + 0); run-time craters to 911 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4123 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/pluto.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "charon": {
+      "mu": {
+        "value": 106100000000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite GM (PLU060)"
+      },
+      "radius": {
+        "value": 606000,
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+          "retrievedAt": "2026-11-12T08:45:00.032Z"
+        },
+        "note": "JPL satellite mean radius"
+      },
+      "render.geometricAlbedo": {
+        "value": 0.42,
+        "source": {
+          "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/plutofact.html",
+          "retrievedAt": "2026-11-12T08:45:01.887Z"
+        },
+        "note": "NASA NSSDC fact sheet (the JPL Horizons header leaves it blank)"
+      },
+      "rotation": {
+        "value": {
+          "mode": "fixedRate",
+          "poleRaDeg": 132.993,
+          "poleDecDeg": -6.163,
+          "w0Deg": 178.472950733732,
+          "rateDegPerDay": 56.3625225,
+          "epochUt": 938240818
+        },
+        "source": {
+          "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+          "retrievedAt": "2026-11-12T08:45:00.256Z"
+        },
+        "note": "pck00011 BODY901 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
+      },
+      "orbit": {
+        "value": "JPL satellite mean elements (PLU060), sat-table",
+        "source": {
+          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
+          "retrievedAt": "2026-11-12T08:44:59.991Z"
+        },
+        "note": "equatorial frame -> parentEquator (the parent's pole); reading: P=anomalistic, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+      },
+      "navballSwitchAltitude": {
+        "value": 6975.94,
+        "note": "radius x 20000/1737400 (the Moon precedent)"
+      },
+      "render.meanColor": {
+        "value": [0.4353, 0.4178, 0.3965],
+        "source": {
+          "url": "https://arxiv.org/pdf/astro-ph/0512491v2",
+          "retrievedAt": "2026-11-12T09:34:44.577Z",
+          "sha256": "fe2a7ad5dd9cdc6c25be99bb1d288ed8aa473207bd778fc46782bfec2eedf181"
+        },
+        "note": "B-V 0.71, red from the B-V slope (Buie, M. W. et al. (2006), Orbits and photometry of Pluto's satellites, AJ 132, 290 (arXiv:astro-ph/0512491), Table 4 (Charon's value adopted there from Buie et al. 1997)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.42 (tools/bodies/lib/colour.mjs)"
+      },
+      "terrain.maxRenderLevel": {
+        "value": 17,
+        "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
+      },
+      "terrain.elevation": {
+        "value": [-32953, 32805],
+        "source": {
+          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Charon_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif",
+          "retrievedAt": "2026-11-12T09:37:58.560Z",
+          "sha256": "7802f313846f4e950d287d9090d66454e1706d10a790f25ad07bb235a9428e31"
+        },
+        "note": "DEM sphere 606000 m (0 m); DEM -32767..32767 (x 1 + 0); run-time craters to 930 m"
+      },
+      "terrain.amplification": {
+        "value": "icy-generic seed 4124 overrides {}",
+        "note": "planet-bake: tools/bake/planet/bodies/charon.json over data/defs/terrain/icy-generic.amplification.json"
+      },
+      "terrain.surfaceFriction": {
+        "value": 0.7,
+        "note": "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces"
+      }
+    },
+    "earth": {
+      "soiRadius": {
+        "value": 924776246,
+        "note": "min(Hill, max(a (m/M)^0.4, 2.5 R)) with a = 1.00014 au (the mean distance of the Almanac formula), m = the v1 Earth mu, M = the DE440 Sun GM; a number because the sunLowPrecision orbit has no semi-major axis for \"auto\""
+      }
+    }
+  }
+}

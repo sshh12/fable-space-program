@@ -1,0 +1,269 @@
+{
+  "description": "Broadband colour indices (Johnson B-V; V-R in the Cousins system) of the Sun and the bodies, for the mean colour of the far-field disc",
+  "sun": {
+    "bv": 0.653,
+    "vr": 0.352,
+    "source": {
+      "url": "https://arxiv.org/abs/1204.0828",
+      "retrievedAt": "2026-11-12T09:34:44.485Z",
+      "sha256": "7c78489a6520cc41c28d7956e1bf27e5ded676099ee67d1531216141e69ec7fd"
+    },
+    "note": "Ramirez, I. et al. (2012), The UBV(RI)c colors of the Sun, ApJ 752, 5 (arXiv:1204.0828) (V-R in the Cousins system)"
+  },
+  "bodies": {
+    "mercury": {
+      "bv": 0.97,
+      "vr": 0.52,
+      "source": {
+        "url": "https://arxiv.org/pdf/1609.05048v1",
+        "retrievedAt": "2026-11-12T09:34:14.309Z",
+        "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+      },
+      "note": "Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes"
+    },
+    "venus": {
+      "bv": 0.7,
+      "vr": 0.35,
+      "source": {
+        "url": "https://arxiv.org/pdf/1609.05048v1",
+        "retrievedAt": "2026-11-12T09:34:14.309Z",
+        "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+      },
+      "note": "Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes"
+    },
+    "mars": {
+      "bv": 1.36,
+      "vr": 0.82,
+      "source": {
+        "url": "https://arxiv.org/pdf/1609.05048v1",
+        "retrievedAt": "2026-11-12T09:34:14.309Z",
+        "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+      },
+      "note": "Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes"
+    },
+    "jupiter": {
+      "bv": 0.86,
+      "vr": 0.35,
+      "source": {
+        "url": "https://arxiv.org/pdf/1609.05048v1",
+        "retrievedAt": "2026-11-12T09:34:14.309Z",
+        "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+      },
+      "note": "Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes"
+    },
+    "saturn": {
+      "bv": 1.07,
+      "vr": 0.68,
+      "source": {
+        "url": "https://arxiv.org/pdf/1609.05048v1",
+        "retrievedAt": "2026-11-12T09:34:14.309Z",
+        "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+      },
+      "note": "Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes"
+    },
+    "uranus": {
+      "bv": 0.5,
+      "vr": -0.27,
+      "source": {
+        "url": "https://arxiv.org/pdf/1609.05048v1",
+        "retrievedAt": "2026-11-12T09:34:14.309Z",
+        "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+      },
+      "note": "Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes"
+    },
+    "neptune": {
+      "bv": 0.39,
+      "vr": -0.33,
+      "source": {
+        "url": "https://arxiv.org/pdf/1609.05048v1",
+        "retrievedAt": "2026-11-12T09:34:14.309Z",
+        "sha256": "7feb8edb372502cee5dc9c6a7656205e3279353bb38f9a98cbecbe8e8d733f91"
+      },
+      "note": "Mallama, A., Krobusek, B. & Pavlov, H. (2017), Comprehensive wide-band magnitudes and albedos for the planets, Icarus 282, 19 (arXiv:1609.05048), Table 3: B-V and V-Rc of the Reference magnitudes"
+    },
+    "enceladus": {
+      "bv": 0.62,
+      "vr": null,
+      "source": {
+        "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+        "retrievedAt": "2026-11-12T09:34:14.607Z",
+        "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+      },
+      "note": "PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry"
+    },
+    "tethys": {
+      "bv": 0.74,
+      "vr": null,
+      "source": {
+        "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+        "retrievedAt": "2026-11-12T09:34:14.607Z",
+        "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+      },
+      "note": "PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry"
+    },
+    "dione": {
+      "bv": 0.76,
+      "vr": null,
+      "source": {
+        "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+        "retrievedAt": "2026-11-12T09:34:14.607Z",
+        "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+      },
+      "note": "PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry"
+    },
+    "rhea": {
+      "bv": 0.76,
+      "vr": null,
+      "source": {
+        "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+        "retrievedAt": "2026-11-12T09:34:14.607Z",
+        "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+      },
+      "note": "PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry"
+    },
+    "titania": {
+      "bv": 0.7,
+      "vr": null,
+      "source": {
+        "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+        "retrievedAt": "2026-11-12T09:34:14.607Z",
+        "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+      },
+      "note": "PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry"
+    },
+    "oberon": {
+      "bv": 0.68,
+      "vr": null,
+      "source": {
+        "url": "https://sbnarchive.psi.edu/pds4/non_mission/compil.satellite.colors/data/satcol.tab",
+        "retrievedAt": "2026-11-12T09:34:14.607Z",
+        "sha256": "3bb038b7ca946cb6bbd08ccc27ecf52492699fe77d5e9b5bb15654118e0d89a2"
+      },
+      "note": "PDS Small Bodies Node, Small Planetary Satellite Colors V1.0 (Cruikshank 1980 values): B-V = -(V-B), 1 entry"
+    },
+    "phobos": {
+      "bv": 0.6,
+      "vr": null,
+      "source": {
+        "url": "https://open.uapress.arizona.edu/system/actioncallout/f/c/8/fc8e6b81-8b9a-4138-b2da-0d2698521f31/attachment/f80a804bf9ccb6af095cdc9c2cb4deef.pdf",
+        "retrievedAt": "2026-11-12T09:34:15.232Z",
+        "sha256": "51bcae5e80eaa7ff3a242b2f1aac95944f9d0c96dc496381bd2567b717570bea"
+      },
+      "note": "Burns, J. A. (ed.) (1977), Planetary Satellites, University of Arizona Press (open access): Tables 9.2, 9.9, 22.3: Table 9.2, Kuiper (Harris 1961)"
+    },
+    "deimos": {
+      "bv": 0.65,
+      "vr": null,
+      "source": {
+        "url": "https://open.uapress.arizona.edu/system/actioncallout/f/c/8/fc8e6b81-8b9a-4138-b2da-0d2698521f31/attachment/f80a804bf9ccb6af095cdc9c2cb4deef.pdf",
+        "retrievedAt": "2026-11-12T09:34:15.232Z",
+        "sha256": "51bcae5e80eaa7ff3a242b2f1aac95944f9d0c96dc496381bd2567b717570bea"
+      },
+      "note": "Burns, J. A. (ed.) (1977), Planetary Satellites, University of Arizona Press (open access): Tables 9.2, 9.9, 22.3: Table 9.2, Zellner and Capen (1974), photoelectric"
+    },
+    "triton": {
+      "bv": 0.77,
+      "vr": null,
+      "source": {
+        "url": "https://open.uapress.arizona.edu/system/actioncallout/f/c/8/fc8e6b81-8b9a-4138-b2da-0d2698521f31/attachment/f80a804bf9ccb6af095cdc9c2cb4deef.pdf",
+        "retrievedAt": "2026-11-12T09:34:15.232Z",
+        "sha256": "51bcae5e80eaa7ff3a242b2f1aac95944f9d0c96dc496381bd2567b717570bea"
+      },
+      "note": "Burns, J. A. (ed.) (1977), Planetary Satellites, University of Arizona Press (open access): Tables 9.2, 9.9, 22.3: Table 9.9 (Harris 1961)"
+    },
+    "titan": {
+      "bv": 1.266,
+      "vr": null,
+      "source": {
+        "url": "https://open.uapress.arizona.edu/system/actioncallout/f/c/8/fc8e6b81-8b9a-4138-b2da-0d2698521f31/attachment/f80a804bf9ccb6af095cdc9c2cb4deef.pdf",
+        "retrievedAt": "2026-11-12T09:34:15.232Z",
+        "sha256": "51bcae5e80eaa7ff3a242b2f1aac95944f9d0c96dc496381bd2567b717570bea"
+      },
+      "note": "Burns, J. A. (ed.) (1977), Planetary Satellites, University of Arizona Press (open access): Tables 9.2, 9.9, 22.3: Table 22.3, mean of 8 B-V at zero phase (1.295, 1.266, 1.26, 1.27, 1.274, 1.258, 1.251, 1.254)"
+    },
+    "pluto": {
+      "bv": 0.868,
+      "vr": null,
+      "source": {
+        "url": "https://arxiv.org/pdf/astro-ph/0512491v2",
+        "retrievedAt": "2026-11-12T09:34:44.577Z",
+        "sha256": "fe2a7ad5dd9cdc6c25be99bb1d288ed8aa473207bd778fc46782bfec2eedf181"
+      },
+      "note": "Buie, M. W. et al. (2006), Orbits and photometry of Pluto's satellites, AJ 132, 290 (arXiv:astro-ph/0512491), Table 4"
+    },
+    "charon": {
+      "bv": 0.71,
+      "vr": null,
+      "source": {
+        "url": "https://arxiv.org/pdf/astro-ph/0512491v2",
+        "retrievedAt": "2026-11-12T09:34:44.577Z",
+        "sha256": "fe2a7ad5dd9cdc6c25be99bb1d288ed8aa473207bd778fc46782bfec2eedf181"
+      },
+      "note": "Buie, M. W. et al. (2006), Orbits and photometry of Pluto's satellites, AJ 132, 290 (arXiv:astro-ph/0512491), Table 4 (Charon's value adopted there from Buie et al. 1997)"
+    },
+    "ceres": {
+      "bv": 0.713,
+      "vr": null,
+      "source": {
+        "url": "https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=1&full-prec=true&phys-par=true",
+        "retrievedAt": "2026-11-12T08:45:00.427Z",
+        "sha256": "023919aa9b95625ec15635d6f815abfba5c41ef578ea4f44e551127f3c80bb37"
+      },
+      "note": "JPL SBDB B-V (EAR-A-5-DDR-UBV-MEAN-VALUES-V1.2)"
+    },
+    "io": {
+      "bv": 0.653,
+      "vr": 0.352,
+      "source": null,
+      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+    },
+    "europa": {
+      "bv": 0.653,
+      "vr": 0.352,
+      "source": null,
+      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+    },
+    "ganymede": {
+      "bv": 0.653,
+      "vr": 0.352,
+      "source": null,
+      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+    },
+    "callisto": {
+      "bv": 0.653,
+      "vr": 0.352,
+      "source": null,
+      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+    },
+    "mimas": {
+      "bv": 0.653,
+      "vr": 0.352,
+      "source": null,
+      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+    },
+    "iapetus": {
+      "bv": 0.653,
+      "vr": 0.352,
+      "source": null,
+      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+    },
+    "miranda": {
+      "bv": 0.653,
+      "vr": 0.352,
+      "source": null,
+      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+    },
+    "ariel": {
+      "bv": 0.653,
+      "vr": 0.352,
+      "source": null,
+      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+    },
+    "umbriel": {
+      "bv": 0.653,
+      "vr": 0.352,
+      "source": null,
+      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+    }
+  }
+}

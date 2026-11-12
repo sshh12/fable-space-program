@@ -1,0 +1,867 @@
+{
+  "description": "Physical atmospheres of the staged bodies: models, rows, ratios of specific heats, the heating set of the gas of each body",
+  "bodies": {
+    "mars": {
+      "model": "exponential",
+      "rho0": 0.016,
+      "p0": 636,
+      "scaleHeightKm": 11,
+      "temperature": 214,
+      "meanMolecularWeight": 43.49,
+      "composition": {
+        "CO2": 0.951,
+        "N2": 0.0259,
+        "Ar": 0.0194
+      },
+      "gasClass": "co2",
+      "floor": null,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.487Z",
+        "sha256": "366b0ce9b69cbee370be904956748af954468a41b93dc71a796a986519aa8d74",
+        "bytes": 13261
+      },
+      "note": "NASA NSSDC fact sheet, surface (mean radius)",
+      "gamma": {
+        "value": 1.33,
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/20070032693/downloads/20070032693.pdf",
+          "retrievedAt": "2026-11-12T09:32:46.746Z",
+          "sha256": "8eac0427514aea70ce729602697eef8867abe95896f6bbced8fd39064b07038a"
+        },
+        "note": "Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693: \"the ratio of specific heats Cp/Cv\" for mars"
+      }
+    },
+    "jupiter": {
+      "model": "exponential",
+      "rho0": 0.16,
+      "p0": 100000,
+      "scaleHeightKm": 27,
+      "temperature": 165,
+      "meanMolecularWeight": 2.22,
+      "composition": {
+        "H2": 0.898,
+        "He": 0.102
+      },
+      "gasClass": "h2he",
+      "floor": {
+        "pressureRatio": 10
+      },
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/jupiterfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.569Z",
+        "sha256": "9ac7835ae5387261bc02019a641bbfc8450122ffebebffea5678c3de6c54d0cb",
+        "bytes": 11195
+      },
+      "note": "NASA NSSDC fact sheet, 1 bar level",
+      "gamma": {
+        "value": 1.4839,
+        "source": {
+          "url": "https://webbook.nist.gov/chemistry/fluid/",
+          "retrievedAt": "2026-11-12T09:30:24.696Z"
+        },
+        "note": "NIST Chemistry WebBook fluid tables (normal hydrogen): ideal mixture of H2 89.8 % (cp 26.0799, cv 17.7494 J/(mol K) at 165 K, 0.0898 MPa), He 10.2 % (cp 20.7864, cv 12.4719 J/(mol K) at 165 K, 0.0102 MPa); Justus & Braun state none for this planet",
+        "parts": [
+          {
+            "gas": "H2",
+            "x": 0.898,
+            "T": 165,
+            "pMPa": 0.0898,
+            "cp": 26.0799,
+            "cv": 17.7494,
+            "url": "https://webbook.nist.gov/cgi/fluid.cgi?Action=Load&ID=C1333740&Type=IsoTherm&Digits=6&PLow=0.0898&PHigh=0.0898&PInc=0.01&T=165&RefState=DEF&TUnit=K&PUnit=MPa&DUnit=mol%2Fl&HUnit=kJ%2Fmol&WUnit=m%2Fs&VisUnit=uPa*s&STUnit=N%2Fm"
+          },
+          {
+            "gas": "He",
+            "x": 0.102,
+            "T": 165,
+            "pMPa": 0.0102,
+            "cp": 20.7864,
+            "cv": 12.4719,
+            "url": "https://webbook.nist.gov/cgi/fluid.cgi?Action=Load&ID=C7440597&Type=IsoTherm&Digits=6&PLow=0.0102&PHigh=0.0102&PInc=0.01&T=165&RefState=DEF&TUnit=K&PUnit=MPa&DUnit=mol%2Fl&HUnit=kJ%2Fmol&WUnit=m%2Fs&VisUnit=uPa*s&STUnit=N%2Fm"
+          }
+        ]
+      }
+    },
+    "saturn": {
+      "model": "exponential",
+      "rho0": 0.19,
+      "p0": 100000,
+      "scaleHeightKm": 59.5,
+      "temperature": 134,
+      "meanMolecularWeight": 2.07,
+      "composition": {
+        "H2": 0.963,
+        "He": 0.0325
+      },
+      "gasClass": "h2he",
+      "floor": {
+        "pressureRatio": 10
+      },
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturnfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.648Z",
+        "sha256": "6d09ba010cacef61c8ae1a1ff137b06e5464e99461faf8f32c107419c474d06d",
+        "bytes": 11257
+      },
+      "note": "NASA NSSDC fact sheet, 1 bar level",
+      "gamma": {
+        "value": 1.45,
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/20070032693/downloads/20070032693.pdf",
+          "retrievedAt": "2026-11-12T09:32:46.746Z",
+          "sha256": "8eac0427514aea70ce729602697eef8867abe95896f6bbced8fd39064b07038a"
+        },
+        "note": "Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693: \"the ratio of specific heats Cp/Cv\" for saturn"
+      }
+    },
+    "uranus": {
+      "model": "exponential",
+      "rho0": 0.42,
+      "p0": 100000,
+      "scaleHeightKm": 27.7,
+      "temperature": 76,
+      "meanMolecularWeight": 2.64,
+      "composition": {
+        "H2": 0.825,
+        "He": 0.152,
+        "CH4": 0.023
+      },
+      "gasClass": "h2he",
+      "floor": {
+        "pressureRatio": 10
+      },
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uranusfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.728Z",
+        "sha256": "02389139f8345a4328fc8f8956012cb72f691c6c7c2854c03c0b2512a063de81",
+        "bytes": 10941
+      },
+      "note": "NASA NSSDC fact sheet, 1 bar level",
+      "gamma": {
+        "value": 1.6327,
+        "source": {
+          "url": "https://webbook.nist.gov/chemistry/fluid/",
+          "retrievedAt": "2026-11-12T09:30:25.262Z"
+        },
+        "note": "NIST Chemistry WebBook fluid tables (normal hydrogen): ideal mixture of H2 82.5 % (cp 21.4732, cv 13.0722 J/(mol K) at 76 K, 0.0825 MPa), He 15.2 % (cp 20.7882, cv 12.4722 J/(mol K) at 76 K, 0.0152 MPa), CH4 2.3 % (cp 33.3794, cv 25.0106 J/(mol K) at 90.7 K, 0.0023 MPa); Justus & Braun state none for this planet",
+        "parts": [
+          {
+            "gas": "H2",
+            "x": 0.825,
+            "T": 76,
+            "pMPa": 0.0825,
+            "cp": 21.4732,
+            "cv": 13.0722,
+            "url": "https://webbook.nist.gov/cgi/fluid.cgi?Action=Load&ID=C1333740&Type=IsoTherm&Digits=6&PLow=0.0825&PHigh=0.0825&PInc=0.01&T=76&RefState=DEF&TUnit=K&PUnit=MPa&DUnit=mol%2Fl&HUnit=kJ%2Fmol&WUnit=m%2Fs&VisUnit=uPa*s&STUnit=N%2Fm"
+          },
+          {
+            "gas": "He",
+            "x": 0.152,
+            "T": 76,
+            "pMPa": 0.0152,
+            "cp": 20.7882,
+            "cv": 12.4722,
+            "url": "https://webbook.nist.gov/cgi/fluid.cgi?Action=Load&ID=C7440597&Type=IsoTherm&Digits=6&PLow=0.0152&PHigh=0.0152&PInc=0.01&T=76&RefState=DEF&TUnit=K&PUnit=MPa&DUnit=mol%2Fl&HUnit=kJ%2Fmol&WUnit=m%2Fs&VisUnit=uPa*s&STUnit=N%2Fm"
+          },
+          {
+            "gas": "CH4",
+            "x": 0.023,
+            "T": 90.7,
+            "pMPa": 0.0023,
+            "cp": 33.3794,
+            "cv": 25.0106,
+            "url": "https://webbook.nist.gov/cgi/fluid.cgi?Action=Load&ID=C74828&Type=IsoTherm&Digits=6&PLow=0.0023&PHigh=0.0023&PInc=0.01&T=90.7&RefState=DEF&TUnit=K&PUnit=MPa&DUnit=mol%2Fl&HUnit=kJ%2Fmol&WUnit=m%2Fs&VisUnit=uPa*s&STUnit=N%2Fm"
+          }
+        ]
+      }
+    },
+    "neptune": {
+      "model": "exponential",
+      "rho0": 0.45,
+      "p0": 100000,
+      "scaleHeightKm": 19.700000000000003,
+      "temperature": 72,
+      "meanMolecularWeight": 2.61,
+      "composition": {
+        "H2": 0.8,
+        "He": 0.19,
+        "CH4": 0.015
+      },
+      "gasClass": "h2he",
+      "floor": {
+        "pressureRatio": 10
+      },
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/neptunefact.html",
+        "retrievedAt": "2026-11-12T08:45:01.808Z",
+        "sha256": "4b9166f959be2b507eea77a9eef56f4e5679b693ba75151072a28bb228f44328",
+        "bytes": 11071
+      },
+      "note": "NASA NSSDC fact sheet, 1 bar level; scale height: midpoint of the range 19.1-20.3; mean molecular weight: midpoint of the range 2.53-2.69",
+      "gamma": {
+        "value": 1.6442,
+        "source": {
+          "url": "https://webbook.nist.gov/chemistry/fluid/",
+          "retrievedAt": "2026-11-12T09:30:25.664Z"
+        },
+        "note": "NIST Chemistry WebBook fluid tables (normal hydrogen): ideal mixture of H2 79.6 % (cp 21.3395, cv 12.9307 J/(mol K) at 72 K, 0.0796 MPa), He 18.9 % (cp 20.789, cv 12.4724 J/(mol K) at 72 K, 0.01891 MPa), CH4 1.5 % (cp 33.342, cv 24.9925 J/(mol K) at 90.7 K, 0.001493 MPa); Justus & Braun state none for this planet",
+        "parts": [
+          {
+            "gas": "H2",
+            "x": 0.7960199004975126,
+            "T": 72,
+            "pMPa": 0.0796,
+            "cp": 21.3395,
+            "cv": 12.9307,
+            "url": "https://webbook.nist.gov/cgi/fluid.cgi?Action=Load&ID=C1333740&Type=IsoTherm&Digits=6&PLow=0.0796&PHigh=0.0796&PInc=0.01&T=72&RefState=DEF&TUnit=K&PUnit=MPa&DUnit=mol%2Fl&HUnit=kJ%2Fmol&WUnit=m%2Fs&VisUnit=uPa*s&STUnit=N%2Fm"
+          },
+          {
+            "gas": "He",
+            "x": 0.18905472636815923,
+            "T": 72,
+            "pMPa": 0.01891,
+            "cp": 20.789,
+            "cv": 12.4724,
+            "url": "https://webbook.nist.gov/cgi/fluid.cgi?Action=Load&ID=C7440597&Type=IsoTherm&Digits=6&PLow=0.01891&PHigh=0.01891&PInc=0.01&T=72&RefState=DEF&TUnit=K&PUnit=MPa&DUnit=mol%2Fl&HUnit=kJ%2Fmol&WUnit=m%2Fs&VisUnit=uPa*s&STUnit=N%2Fm"
+          },
+          {
+            "gas": "CH4",
+            "x": 0.01492537313432836,
+            "T": 90.7,
+            "pMPa": 0.001493,
+            "cp": 33.342,
+            "cv": 24.9925,
+            "url": "https://webbook.nist.gov/cgi/fluid.cgi?Action=Load&ID=C74828&Type=IsoTherm&Digits=6&PLow=0.001493&PHigh=0.001493&PInc=0.01&T=90.7&RefState=DEF&TUnit=K&PUnit=MPa&DUnit=mol%2Fl&HUnit=kJ%2Fmol&WUnit=m%2Fs&VisUnit=uPa*s&STUnit=N%2Fm"
+          }
+        ]
+      }
+    },
+    "venus": {
+      "model": "table",
+      "rows": [
+        {
+          "hKm": 0,
+          "rho": 64.79,
+          "p": 9209000,
+          "T": 735.3
+        },
+        {
+          "hKm": 10,
+          "rho": 37.72,
+          "p": 4739000,
+          "T": 658.2
+        },
+        {
+          "hKm": 20,
+          "rho": 20.39,
+          "p": 2252000,
+          "T": 580.7
+        },
+        {
+          "hKm": 30,
+          "rho": 10.15,
+          "p": 958500,
+          "T": 496.9
+        },
+        {
+          "hKm": 40,
+          "rho": 4.404,
+          "p": 350100,
+          "T": 417.6
+        },
+        {
+          "hKm": 50,
+          "rho": 1.594,
+          "p": 106600,
+          "T": 350.5
+        },
+        {
+          "hKm": 60,
+          "rho": 0.4694,
+          "p": 23570,
+          "T": 262.8
+        },
+        {
+          "hKm": 70,
+          "rho": 0.08393,
+          "p": 3690,
+          "T": 229.8
+        },
+        {
+          "hKm": 80,
+          "rho": 0.01186,
+          "p": 447.4,
+          "T": 197.1
+        },
+        {
+          "hKm": 90,
+          "rho": 0.001151,
+          "p": 37.35,
+          "T": 169.4
+        },
+        {
+          "hKm": 100,
+          "rho": 0.00007972,
+          "p": 2.652,
+          "T": 173.3
+        },
+        {
+          "hKm": 110,
+          "rho": 0.00000558,
+          "p": 0.1586,
+          "T": 147.5
+        },
+        {
+          "hKm": 120,
+          "rho": 2.481e-7,
+          "p": 0.007061,
+          "T": 143.3
+        },
+        {
+          "hKm": 130,
+          "rho": 1.073e-8,
+          "p": 0.000337,
+          "T": 146.3
+        },
+        {
+          "hKm": 140,
+          "rho": 6.102e-10,
+          "p": 0.00002538,
+          "T": 150.7
+        },
+        {
+          "hKm": 150,
+          "rho": 5.791e-11,
+          "p": 0.000003607,
+          "T": 146.4
+        },
+        {
+          "hKm": 160,
+          "rho": 1.114e-11,
+          "p": 9.578e-7,
+          "T": 138.3
+        },
+        {
+          "hKm": 180,
+          "rho": 1.263e-12,
+          "p": 2.389e-7,
+          "T": 139.1
+        },
+        {
+          "hKm": 200,
+          "rho": 3.227e-13,
+          "p": 1.31e-7,
+          "T": 139.3
+        }
+      ],
+      "meanMolecularWeight": 43.45,
+      "composition": {
+        "CO2": 0.965,
+        "N2": 0.035
+      },
+      "gasClass": "co2",
+      "source": {
+        "url": "https://raw.githubusercontent.com/athulpg007/AMAT/master/atmdata/Venus/venus-gram-avg.dat",
+        "retrievedAt": "2026-11-12T09:34:15.582Z",
+        "sha256": "08080c50c39583f22aa2b8ded05e236aaf53efd9654843ebfdde3377d8ebcb70"
+      },
+      "note": "Venus-GRAM (Justus et al., NASA; VIRA, Kliore et al. 1986) average profile as distributed with AMAT (Girija et al. 2021, JOSS 6(67) 3710, doi:10.21105/joss.03710); rows at 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 180, 200 km; densities within 0.5 % of VIRA as tabulated by Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693, Table 3.1.1, from 0 to 100 km; above 100 km VIRA depends on local time and the two differ by up to 64 % (the table is the Venus-GRAM average)",
+      "crossCheck": [
+        {
+          "hKm": 0,
+          "viraJustusBraun": 64.8,
+          "table": 64.79,
+          "ratio": 0.9998
+        },
+        {
+          "hKm": 10,
+          "viraJustusBraun": 37.7,
+          "table": 37.72,
+          "ratio": 1.0005
+        },
+        {
+          "hKm": 20,
+          "viraJustusBraun": 20.4,
+          "table": 20.39,
+          "ratio": 0.9995
+        },
+        {
+          "hKm": 30,
+          "viraJustusBraun": 10.2,
+          "table": 10.15,
+          "ratio": 0.9951
+        },
+        {
+          "hKm": 40,
+          "viraJustusBraun": 4.4,
+          "table": 4.404,
+          "ratio": 1.0009
+        },
+        {
+          "hKm": 50,
+          "viraJustusBraun": 1.59,
+          "table": 1.594,
+          "ratio": 1.0025
+        },
+        {
+          "hKm": 60,
+          "viraJustusBraun": 0.469,
+          "table": 0.4694,
+          "ratio": 1.0009
+        },
+        {
+          "hKm": 70,
+          "viraJustusBraun": 0.0839,
+          "table": 0.08393,
+          "ratio": 1.0004
+        },
+        {
+          "hKm": 80,
+          "viraJustusBraun": 0.0119,
+          "table": 0.01186,
+          "ratio": 0.9966
+        },
+        {
+          "hKm": 90,
+          "viraJustusBraun": 0.00115,
+          "table": 0.001151,
+          "ratio": 1.0009
+        },
+        {
+          "hKm": 100,
+          "viraJustusBraun": 0.0000799,
+          "table": 0.00007972,
+          "ratio": 0.9977
+        },
+        {
+          "hKm": 110,
+          "viraJustusBraun": 0.00000581,
+          "table": 0.00000558,
+          "ratio": 0.9604
+        },
+        {
+          "hKm": 120,
+          "viraJustusBraun": 3.2e-7,
+          "table": 2.481e-7,
+          "ratio": 0.7753
+        },
+        {
+          "hKm": 130,
+          "viraJustusBraun": 1.85e-8,
+          "table": 1.073e-8,
+          "ratio": 0.58
+        },
+        {
+          "hKm": 140,
+          "viraJustusBraun": 1.39e-9,
+          "table": 6.102e-10,
+          "ratio": 0.439
+        },
+        {
+          "hKm": 150,
+          "viraJustusBraun": 1.61e-10,
+          "table": 5.791e-11,
+          "ratio": 0.3597
+        }
+      ],
+      "gamma": {
+        "value": 1.286,
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/20070032693/downloads/20070032693.pdf",
+          "retrievedAt": "2026-11-12T09:32:46.746Z",
+          "sha256": "8eac0427514aea70ce729602697eef8867abe95896f6bbced8fd39064b07038a"
+        },
+        "note": "Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693: \"the ratio of specific heats Cp/Cv\" for venus"
+      }
+    },
+    "titan": {
+      "model": "table",
+      "rows": [
+        {
+          "hKm": 0,
+          "rho": 5.296,
+          "p": 144960,
+          "T": 93.17
+        },
+        {
+          "hKm": 2,
+          "rho": 4.9572,
+          "p": 132880,
+          "T": 91.12
+        },
+        {
+          "hKm": 5,
+          "rho": 4.3868,
+          "p": 114180,
+          "T": 88.2
+        },
+        {
+          "hKm": 10,
+          "rho": 3.5249,
+          "p": 87493,
+          "T": 83.91
+        },
+        {
+          "hKm": 15,
+          "rho": 2.7971,
+          "p": 66364,
+          "T": 80.34
+        },
+        {
+          "hKm": 20,
+          "rho": 2.1792,
+          "p": 49676,
+          "T": 77.17
+        },
+        {
+          "hKm": 25,
+          "rho": 1.6741,
+          "p": 36892,
+          "T": 74.43
+        },
+        {
+          "hKm": 30,
+          "rho": 1.2662,
+          "p": 27224,
+          "T": 72.34
+        },
+        {
+          "hKm": 40,
+          "rho": 0.69259,
+          "p": 14534,
+          "T": 70.53
+        },
+        {
+          "hKm": 50,
+          "rho": 0.36636,
+          "p": 7751.2,
+          "T": 70.86
+        },
+        {
+          "hKm": 60,
+          "rho": 0.18517,
+          "p": 4206.8,
+          "T": 75.95
+        },
+        {
+          "hKm": 70,
+          "rho": 0.082485,
+          "p": 2574.3,
+          "T": 105.29
+        },
+        {
+          "hKm": 80,
+          "rho": 0.047701,
+          "p": 1780.5,
+          "T": 125.73
+        },
+        {
+          "hKm": 90,
+          "rho": 0.031701,
+          "p": 1286.3,
+          "T": 136.84
+        },
+        {
+          "hKm": 100,
+          "rho": 0.02263,
+          "p": 950.63,
+          "T": 142
+        },
+        {
+          "hKm": 110,
+          "rho": 0.016592,
+          "p": 712.73,
+          "T": 147.02
+        },
+        {
+          "hKm": 120,
+          "rho": 0.011889,
+          "p": 540.48,
+          "T": 155.73
+        },
+        {
+          "hKm": 130,
+          "rho": 0.0090577,
+          "p": 414.59,
+          "T": 157.21
+        },
+        {
+          "hKm": 140,
+          "rho": 0.0068204,
+          "p": 321.79,
+          "T": 161.49
+        },
+        {
+          "hKm": 150,
+          "rho": 0.0057963,
+          "p": 279.13,
+          "T": 165.66
+        },
+        {
+          "hKm": 160,
+          "rho": 0.0038129,
+          "p": 189.96,
+          "T": 171.12
+        },
+        {
+          "hKm": 180,
+          "rho": 0.0023992,
+          "p": 122.9,
+          "T": 175.94
+        },
+        {
+          "hKm": 200,
+          "rho": 0.0015121,
+          "p": 78.932,
+          "T": 179.28
+        },
+        {
+          "hKm": 225,
+          "rho": 0.00085484,
+          "p": 45.895,
+          "T": 184.4
+        },
+        {
+          "hKm": 250,
+          "rho": 0.00050678,
+          "p": 27.571,
+          "T": 186.86
+        },
+        {
+          "hKm": 300,
+          "rho": 0.00018644,
+          "p": 10.055,
+          "T": 185.23
+        },
+        {
+          "hKm": 350,
+          "rho": 0.000069899,
+          "p": 3.6933,
+          "T": 181.47
+        },
+        {
+          "hKm": 400,
+          "rho": 0.000027575,
+          "p": 1.3673,
+          "T": 170.31
+        },
+        {
+          "hKm": 450,
+          "rho": 0.000010577,
+          "p": 0.49732,
+          "T": 161.49
+        },
+        {
+          "hKm": 500,
+          "rho": 0.0000038035,
+          "p": 0.17384,
+          "T": 157.01
+        },
+        {
+          "hKm": 550,
+          "rho": 0.0000013275,
+          "p": 0.067902,
+          "T": 175.68
+        },
+        {
+          "hKm": 600,
+          "rho": 5.4799e-7,
+          "p": 0.028282,
+          "T": 177.26
+        },
+        {
+          "hKm": 650,
+          "rho": 2.4016e-7,
+          "p": 0.011638,
+          "T": 166.44
+        },
+        {
+          "hKm": 700,
+          "rho": 9.9027e-8,
+          "p": 0.0051157,
+          "T": 177.43
+        },
+        {
+          "hKm": 800,
+          "rho": 1.8648e-8,
+          "p": 0.00096014,
+          "T": 176.9
+        },
+        {
+          "hKm": 900,
+          "rho": 4.4104e-9,
+          "p": 0.00021217,
+          "T": 165.25
+        },
+        {
+          "hKm": 1000,
+          "rho": 9.9455e-10,
+          "p": 0.000057455,
+          "T": 198.43
+        },
+        {
+          "hKm": 1100,
+          "rho": 3.2515e-10,
+          "p": 0.000016696,
+          "T": 176.36
+        },
+        {
+          "hKm": 1200,
+          "rho": 9.4625e-11,
+          "p": 0.0000047012,
+          "T": 170.64
+        },
+        {
+          "hKm": 1300,
+          "rho": 2.8391e-11,
+          "p": 0.0000013906,
+          "T": 168.23
+        }
+      ],
+      "meanMolecularWeight": 28.557,
+      "composition": {
+        "N2": 0.95,
+        "CH4": 0.05
+      },
+      "gasClass": "n2ch4",
+      "source": {
+        "url": "https://atmos.nmsu.edu/PDS/data/hphasi_0001/DATA/PROFILES/HASI_L4_ATMO_PROFILE_ENTRY.TAB",
+        "retrievedAt": "2026-11-12T09:30:44.034Z",
+        "sha256": "172759400c9f8b1e39ca5461c94baa2b7321bec36995dbe9259dda80ed93a197"
+      },
+      "sources": [
+        {
+          "url": "https://atmos.nmsu.edu/PDS/data/hphasi_0001/DATA/PROFILES/HASI_L4_ATMO_PROFILE_ENTRY.TAB",
+          "retrievedAt": "2026-11-12T09:30:44.034Z",
+          "sha256": "172759400c9f8b1e39ca5461c94baa2b7321bec36995dbe9259dda80ed93a197"
+        },
+        {
+          "url": "https://atmos.nmsu.edu/PDS/data/hphasi_0001/DATA/PROFILES/HASI_L4_ATMO_PROFILE_DESCEN.TAB",
+          "retrievedAt": "2026-11-12T09:30:44.238Z",
+          "sha256": "86273ac14f3ec3a7a52ffa1272a5c0a38f45f70456144c62bdb2a1ce4f9c091f"
+        }
+      ],
+      "note": "Huygens HASI (Fulchignoni et al. 2005, Nature 438, 785), PDS data set HP-SSA-HASI-2-3-4-MISSION-V1.1: descent profile (0-147 km) and entry profile (157-1,380 km; density = p M / (R T) with M = 28.557 g/mol, the descent file's own value over its top 10 km); rows averaged over windows of +-0.5 km below 150 km and +-5 km above",
+      "gamma": {
+        "value": 1.4,
+        "source": {
+          "url": "https://ntrs.nasa.gov/api/citations/20070032693/downloads/20070032693.pdf",
+          "retrievedAt": "2026-11-12T09:32:46.746Z",
+          "sha256": "8eac0427514aea70ce729602697eef8867abe95896f6bbced8fd39064b07038a"
+        },
+        "note": "Justus, C. G. & Braun, R. D. (2007), Atmospheric Environments for Entry, Descent and Landing (EDL), NASA NTRS 20070032693: \"the ratio of specific heats Cp/Cv\" for titan"
+      }
+    }
+  },
+  "heating": {
+    "mars": {
+      "set": {
+        "kConv": 0.00018962,
+        "radiative": null
+      },
+      "source": {
+        "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+        "retrievedAt": "2026-11-12T09:32:48.768Z",
+        "sha256": "bdc8c4241db8a665623a0c5466a55d7bbf738208f5c634543a8ef851a7718479"
+      },
+      "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"CO2\":0.951,\"N2\":0.0259,\"Ar\":0.0194}): K = 0.12119, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+    },
+    "jupiter": {
+      "set": {
+        "kConv": 0.000066601,
+        "radiative": null
+      },
+      "source": {
+        "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+        "retrievedAt": "2026-11-12T09:32:48.768Z",
+        "sha256": "bdc8c4241db8a665623a0c5466a55d7bbf738208f5c634543a8ef851a7718479"
+      },
+      "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"H2\":0.898,\"He\":0.102}): K = 0.04256, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+    },
+    "saturn": {
+      "set": {
+        "kConv": 0.000063323,
+        "radiative": null
+      },
+      "source": {
+        "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+        "retrievedAt": "2026-11-12T09:32:48.768Z",
+        "sha256": "bdc8c4241db8a665623a0c5466a55d7bbf738208f5c634543a8ef851a7718479"
+      },
+      "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"H2\":0.963,\"He\":0.0325}): K = 0.04047, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+    },
+    "uranus": {
+      "set": {
+        "kConv": 0.000072842,
+        "radiative": null
+      },
+      "source": {
+        "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+        "retrievedAt": "2026-11-12T09:32:48.768Z",
+        "sha256": "bdc8c4241db8a665623a0c5466a55d7bbf738208f5c634543a8ef851a7718479"
+      },
+      "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"H2\":0.825,\"He\":0.152,\"CH4\":0.023}): K = 0.04655, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+    },
+    "neptune": {
+      "set": {
+        "kConv": 0.000073323,
+        "radiative": null
+      },
+      "source": {
+        "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+        "retrievedAt": "2026-11-12T09:32:48.768Z",
+        "sha256": "bdc8c4241db8a665623a0c5466a55d7bbf738208f5c634543a8ef851a7718479"
+      },
+      "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"H2\":0.8,\"He\":0.19,\"CH4\":0.015}): K = 0.04686, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+    },
+    "venus": {
+      "set": {
+        "kConv": 0.00018894,
+        "radiative": null
+      },
+      "source": {
+        "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+        "retrievedAt": "2026-11-12T09:32:48.768Z",
+        "sha256": "bdc8c4241db8a665623a0c5466a55d7bbf738208f5c634543a8ef851a7718479"
+      },
+      "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"CO2\":0.965,\"N2\":0.035}): K = 0.12075, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+    },
+    "titan": {
+      "set": {
+        "kConv": 0.00017175,
+        "radiative": null
+      },
+      "source": {
+        "url": "https://ntrs.nasa.gov/api/citations/19720003329/downloads/19720003329.pdf",
+        "retrievedAt": "2026-11-12T09:32:48.768Z",
+        "sha256": "bdc8c4241db8a665623a0c5466a55d7bbf738208f5c634543a8ef851a7718479"
+      },
+      "note": "Sutton, K. & Graves, R. A. (1971), A General Stagnation-Point Convective-Heating Equation for Arbitrary Gas Mixtures, NASA TR R-376, Table II K and eq. 44 mixing (mass fractions of the mole fractions {\"N2\":0.95,\"CH4\":0.05}): K = 0.10977, kConv = Earth's 0.00017415 x K / K(air 0.1113); radiative heating not modelled for this gas (no public correlation with its velocity table found)"
+    }
+  },
+  "suttonGravesK": {
+    "N2": 0.1112,
+    "O2": 0.1201,
+    "H2": 0.0395,
+    "He": 0.0797,
+    "Ne": 0.1474,
+    "Ar": 0.1495,
+    "CO2": 0.121,
+    "NH3": 0.099,
+    "CH4": 0.0807,
+    "air": 0.1113
+  },
+  "justusBraunGamma": {
+    "venus": 1.286,
+    "earth": 1.4,
+    "mars": 1.33,
+    "titan": 1.4,
+    "saturn": 1.45
+  },
+  "justusBraunSource": {
+    "url": "https://ntrs.nasa.gov/api/citations/20070032693/downloads/20070032693.pdf",
+    "retrievedAt": "2026-11-12T09:32:46.746Z",
+    "sha256": "8eac0427514aea70ce729602697eef8867abe95896f6bbced8fd39064b07038a"
+  }
+}

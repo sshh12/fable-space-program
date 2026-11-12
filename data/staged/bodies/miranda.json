@@ -1,0 +1,53 @@
+{
+  "id": "miranda",
+  "name": "Miranda",
+  "parent": "uranus",
+  "mu": 4300000000,
+  "radius": 235800,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 77.311,
+        "decDeg": 15.175
+      }
+    },
+    "a": 129846000,
+    "e": 0.001,
+    "iDeg": 4.4,
+    "lanDeg": 100.9,
+    "argPeDeg": 154.8,
+    "meanAnomalyDeg": 73,
+    "epochUt": 0,
+    "rates": {
+      "argPeDeg": 4027.29611813402,
+      "lanDeg": -2023.95007589813
+    },
+    "meanMotionDegPerDay": 254.63588254218
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 254.531835742,
+    "poleDecDeg": -18.3193458076,
+    "w0Deg": 153.971309096552,
+    "rateDegPerDay": -254.6906892,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/miranda.terrain.json"
+  },
+  "navballSwitchAltitude": 2714.4,
+  "render": {
+    "meanColor": [0.27, 0.27, 0.27],
+    "geometricAlbedo": 0.27,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

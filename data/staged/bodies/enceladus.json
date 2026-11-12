@@ -1,0 +1,53 @@
+{
+  "id": "enceladus",
+  "name": "Enceladus",
+  "parent": "saturn",
+  "mu": 7210370000,
+  "radius": 252100,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 40.6,
+        "decDeg": 83.5
+      }
+    },
+    "a": 238400000,
+    "e": 0.005,
+    "iDeg": 0.0422745526314109,
+    "lanDeg": 182.401034209986,
+    "argPeDeg": 58.4158480655849,
+    "meanAnomalyDeg": 17.5200345096021,
+    "epochUt": 938240818,
+    "rates": {
+      "argPeDeg": 12345.6790123457,
+      "lanDeg": 0
+    },
+    "meanMotionDegPerDay": 262.393909381362
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 40.6492968193,
+    "poleDecDeg": 83.5188107577,
+    "w0Deg": 82.62087266054,
+    "rateDegPerDay": 262.7318996,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/enceladus.terrain.json"
+  },
+  "navballSwitchAltitude": 2902.04,
+  "render": {
+    "meanColor": [1.017, 1.043, 1.075],
+    "geometricAlbedo": 1.04,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

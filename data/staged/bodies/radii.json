@@ -1,0 +1,229 @@
+{
+  "description": "Radii of the staged bodies, m: meanRadius = BodyDef.radius (the datum sphere), equatorialRadius and polarRadius = pck00011 a and c, radiiAbc = the pck00011 triaxial radii. Cross-checked by planet-bake and bodies-activation.",
+  "bodies": [
+    {
+      "id": "sun",
+      "meanRadius": 695700000,
+      "equatorialRadius": 695700000,
+      "polarRadius": 695700000,
+      "radiiAbc": [695700000, 695700000, 695700000]
+    },
+    {
+      "id": "mercury",
+      "meanRadius": 2439400,
+      "equatorialRadius": 2440530,
+      "polarRadius": 2438260,
+      "radiiAbc": [2440530, 2440530, 2438260]
+    },
+    {
+      "id": "venus",
+      "meanRadius": 6051800,
+      "equatorialRadius": 6051800,
+      "polarRadius": 6051800,
+      "radiiAbc": [6051800, 6051800, 6051800]
+    },
+    {
+      "id": "earth",
+      "meanRadius": 6371000,
+      "equatorialRadius": 6378136.6,
+      "polarRadius": 6356751.9,
+      "radiiAbc": [6378136.6, 6378136.6, 6356751.9]
+    },
+    {
+      "id": "mars",
+      "meanRadius": 3389500,
+      "equatorialRadius": 3396190,
+      "polarRadius": 3376200,
+      "radiiAbc": [3396190, 3396190, 3376200]
+    },
+    {
+      "id": "jupiter",
+      "meanRadius": 69911000,
+      "equatorialRadius": 71492000,
+      "polarRadius": 66854000,
+      "radiiAbc": [71492000, 71492000, 66854000]
+    },
+    {
+      "id": "saturn",
+      "meanRadius": 58232000,
+      "equatorialRadius": 60268000,
+      "polarRadius": 54364000,
+      "radiiAbc": [60268000, 60268000, 54364000]
+    },
+    {
+      "id": "uranus",
+      "meanRadius": 25362000,
+      "equatorialRadius": 25559000,
+      "polarRadius": 24973000,
+      "radiiAbc": [25559000, 25559000, 24973000]
+    },
+    {
+      "id": "neptune",
+      "meanRadius": 24622000,
+      "equatorialRadius": 24764000,
+      "polarRadius": 24341000,
+      "radiiAbc": [24764000, 24764000, 24341000]
+    },
+    {
+      "id": "moon",
+      "meanRadius": 1737400,
+      "equatorialRadius": 1737400,
+      "polarRadius": 1737400,
+      "radiiAbc": [1737400, 1737400, 1737400]
+    },
+    {
+      "id": "phobos",
+      "meanRadius": 11080,
+      "equatorialRadius": 13000,
+      "polarRadius": 9100,
+      "radiiAbc": [13000, 11400, 9100]
+    },
+    {
+      "id": "deimos",
+      "meanRadius": 6200,
+      "equatorialRadius": 7800,
+      "polarRadius": 5100,
+      "radiiAbc": [7800, 6000, 5100]
+    },
+    {
+      "id": "io",
+      "meanRadius": 1821490,
+      "equatorialRadius": 1829400,
+      "polarRadius": 1815700,
+      "radiiAbc": [1829400, 1819400, 1815700]
+    },
+    {
+      "id": "europa",
+      "meanRadius": 1560800,
+      "equatorialRadius": 1562600,
+      "polarRadius": 1559500,
+      "radiiAbc": [1562600, 1560300, 1559500]
+    },
+    {
+      "id": "ganymede",
+      "meanRadius": 2631200,
+      "equatorialRadius": 2631200,
+      "polarRadius": 2631200,
+      "radiiAbc": [2631200, 2631200, 2631200]
+    },
+    {
+      "id": "callisto",
+      "meanRadius": 2410300,
+      "equatorialRadius": 2410300,
+      "polarRadius": 2410300,
+      "radiiAbc": [2410300, 2410300, 2410300]
+    },
+    {
+      "id": "mimas",
+      "meanRadius": 198200,
+      "equatorialRadius": 207800,
+      "polarRadius": 190600,
+      "radiiAbc": [207800, 196700, 190600]
+    },
+    {
+      "id": "enceladus",
+      "meanRadius": 252100,
+      "equatorialRadius": 256600,
+      "polarRadius": 248300,
+      "radiiAbc": [256600, 251400, 248300]
+    },
+    {
+      "id": "tethys",
+      "meanRadius": 531100,
+      "equatorialRadius": 538400,
+      "polarRadius": 526300,
+      "radiiAbc": [538400, 528300, 526300]
+    },
+    {
+      "id": "dione",
+      "meanRadius": 561400,
+      "equatorialRadius": 563400,
+      "polarRadius": 559600,
+      "radiiAbc": [563400, 561300, 559600]
+    },
+    {
+      "id": "rhea",
+      "meanRadius": 763500,
+      "equatorialRadius": 765000,
+      "polarRadius": 762400,
+      "radiiAbc": [765000, 763100, 762400]
+    },
+    {
+      "id": "titan",
+      "meanRadius": 2574760,
+      "equatorialRadius": 2575150,
+      "polarRadius": 2574470,
+      "radiiAbc": [2575150, 2574780, 2574470]
+    },
+    {
+      "id": "iapetus",
+      "meanRadius": 734300,
+      "equatorialRadius": 745700,
+      "polarRadius": 712100,
+      "radiiAbc": [745700, 745700, 712100]
+    },
+    {
+      "id": "miranda",
+      "meanRadius": 235800,
+      "equatorialRadius": 240400,
+      "polarRadius": 232900,
+      "radiiAbc": [240400, 234200, 232900]
+    },
+    {
+      "id": "ariel",
+      "meanRadius": 578900,
+      "equatorialRadius": 581100,
+      "polarRadius": 577700,
+      "radiiAbc": [581100, 577900, 577700]
+    },
+    {
+      "id": "umbriel",
+      "meanRadius": 584700,
+      "equatorialRadius": 584700,
+      "polarRadius": 584700,
+      "radiiAbc": [584700, 584700, 584700]
+    },
+    {
+      "id": "titania",
+      "meanRadius": 788900,
+      "equatorialRadius": 788900,
+      "polarRadius": 788900,
+      "radiiAbc": [788900, 788900, 788900]
+    },
+    {
+      "id": "oberon",
+      "meanRadius": 761400,
+      "equatorialRadius": 761400,
+      "polarRadius": 761400,
+      "radiiAbc": [761400, 761400, 761400]
+    },
+    {
+      "id": "triton",
+      "meanRadius": 1352600,
+      "equatorialRadius": 1352600,
+      "polarRadius": 1352600,
+      "radiiAbc": [1352600, 1352600, 1352600]
+    },
+    {
+      "id": "ceres",
+      "meanRadius": 469700,
+      "equatorialRadius": 487300,
+      "polarRadius": 446000,
+      "radiiAbc": [487300, 487300, 446000]
+    },
+    {
+      "id": "pluto",
+      "meanRadius": 1188300,
+      "equatorialRadius": 1188300,
+      "polarRadius": 1188300,
+      "radiiAbc": [1188300, 1188300, 1188300]
+    },
+    {
+      "id": "charon",
+      "meanRadius": 606000,
+      "equatorialRadius": 606000,
+      "polarRadius": 606000,
+      "radiiAbc": [606000, 606000, 606000]
+    }
+  ]
+}

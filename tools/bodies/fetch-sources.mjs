@@ -46,6 +46,45 @@ for (const id of BODY_ORDER) {
 }
 write('horizons-objdata', { description: 'JPL Horizons object-data headers (OBJ_DATA): the geometric albedo line of each body', bodies: objdata });
 
+// Horizons states the generator needs (committed so generation never goes to the network):
+//  - calibration: every satellite at ten epochs from 2010-01-01 to 2029-09-01 TDB (before the validation
+//    window), to choose the reading of each satellite-table row (lib/orbits.mjs);
+//  - fitSpans: the Saturnian satellites over +-3 periods about the lobby epoch at a 24th of a period, for the
+//    brief's fit path.
+{
+  const { vectorsAt, vectorsRange } = await import('./lib/horizons.mjs');
+  const { horizonsCenter } = await import('./lib/catalogue.mjs');
+  const { LOBBY_EPOCH_UT } = await import('./lib/orbits.mjs');
+  const { utToJd } = await import('./lib/kepler.mjs');
+  const satElem = JSON.parse((await import('node:fs')).readFileSync(join(OUT, 'jpl-sat-elem.json'), 'utf8')).rows;
+  const C0 = 2455197.5; // 2010-01-01 TDB
+  const C1 = 2462380.5; // 2029-09-01 TDB
+  const calJds = Array.from({ length: 10 }, (_, k) => C0 + (k * (C1 - C0)) / 9);
+  const calibration = {};
+  const fitSpans = {};
+  const jdL = utToJd(LOBBY_EPOCH_UT);
+  for (const id of BODY_ORDER) {
+    const c = CATALOGUE[id];
+    if (c.kind !== 'moon' || id === 'moon') continue;
+    const center = horizonsCenter(id);
+    const cal = await vectorsAt(c.horizons, center, calJds, `cal-${id}`);
+    calibration[id] = { command: c.horizons, center, source: src(cal.meta), rows: cal.rows };
+    if (c.parent === 'saturn') {
+      const P = satElem[c.satName].periodDays;
+      const stepMin = Math.max(1, Math.round((P * 1440) / 24));
+      const span = await vectorsRange(c.horizons, center, (jdL - 3 * P).toFixed(6), (jdL + 3 * P).toFixed(6), `${stepMin} m`, `fit-${id}`);
+      fitSpans[id] = { command: c.horizons, center, stepMinutes: stepMin, source: src(span.meta), rows: span.rows };
+    }
+  }
+  write('horizons-states', {
+    description: 'JPL Horizons state vectors (ICRF axes, geometric, TDB; position m, velocity m/s, relative to the parent body centre) used by the generator: calibration epochs of every satellite and the fit spans of the Saturnian satellites about the lobby epoch',
+    lobbyEpochUt: LOBBY_EPOCH_UT,
+    calibrationJds: calJds,
+    calibration,
+    fitSpans,
+  });
+}
+
 // NASA NSSDC fact sheets: geometric albedos (cross-check and the values JPL does not list), the atmosphere
 // lines of the planets with atmospheres, Saturn's ring table.
 const nssdc = {};
@@ -54,11 +93,26 @@ for (const sheet of NSSDC_SHEETS) {
   const r = await fetchCached(s.id, s.file, s.url, { refresh });
   nssdc[sheet] = { source: src(r.meta), html: r.text };
 }
+const sheetLines = (sheet) =>
+  nssdc[sheet].html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .split('\n')
+    .map((x) => x.replace(/\s+/g, ' ').trim())
+    .filter((x) => x.length > 0);
 const lineOf = (sheet, re) => {
-  const html = nssdc[sheet].html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&gt;/g, '>').replace(/&lt;/g, '<');
-  const l = html.split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).find((x) => re.test(x));
+  const l = sheetLines(sheet).find((x) => re.test(x));
   if (!l) throw new Error(`nssdc ${sheet}: no line matching ${re}`);
   return l;
+};
+/** The line after the one matching `re` (the composition continues on it: methane, argon). */
+const lineAfter = (sheet, re) => {
+  const ls = sheetLines(sheet);
+  const i = ls.findIndex((x) => re.test(x));
+  if (i < 0 || i + 1 >= ls.length) throw new Error(`nssdc ${sheet}: no line after ${re}`);
+  return ls[i + 1];
 };
 const firstNumber = (s) => Number(/(-?[\d,]*\.?\d+)/.exec(s.replace(/,/g, ''))[1]);
 const albedoRow = (sheet) => {
@@ -89,7 +143,7 @@ for (const [sheet, labels] of Object.entries({
   uranusfact: [/^Density at 1 bar:/, /^Temperature at 1 bar:/, /^Scale height:/, /^Mean molecular weight:/, /^Major:/],
   neptunefact: [/^Density at 1 bar:/, /^Temperature at 1 bar:/, /^Scale height:/, /^Mean molecular weight:/, /^Major:/],
 })) {
-  atmo[sheet] = { source: src(nssdc[sheet].source), lines: labels.map((re) => lineOf(sheet, re)) };
+  atmo[sheet] = { source: src(nssdc[sheet].source), lines: [...labels.map((re) => lineOf(sheet, re)), lineAfter(sheet, /^Major/)] };
 }
 const ringRows = tableRows(nssdc.satringfact.html).filter((r) => r.length >= 3);
 write('nssdc', {
@@ -128,3 +182,15 @@ write('nssdc', {
   saturnRings: { source: src(nssdc.satringfact.source), rows: ringRows },
 });
 void firstNumber;
+
+// Atmosphere profiles, heating constants, ratios of specific heats; colour indices; DEM ranges.
+{
+  const { readFileSync } = await import('node:fs');
+  const { buildAtmosphereSources, buildColourSources, buildDemRelief } = await import('./lib/derivedSources.mjs');
+  const { loadBake } = await import('./lib/sources.mjs');
+  const nssdcJson = JSON.parse(readFileSync(join(OUT, 'nssdc.json'), 'utf8'));
+  const earthLive = JSON.parse(readFileSync(join(REPO_ROOT, 'data/defs/bodies/earth.json'), 'utf8'));
+  write('atmospheres', await buildAtmosphereSources(nssdcJson, earthLive));
+  write('colours', await buildColourSources(JSON.parse(readFileSync(join(OUT, 'sbdb-ceres.json'), 'utf8'))));
+  write('dem-relief', await buildDemRelief(loadBake().configs));
+}

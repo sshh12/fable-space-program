@@ -1,0 +1,37 @@
+{
+  "id": "sun",
+  "name": "Sun",
+  "parent": null,
+  "mu": 132712440041279000000,
+  "radius": 695700000,
+  "soiRadius": null,
+  "orbit": null,
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 286.13,
+    "poleDecDeg": 63.87,
+    "w0Deg": 36.3873291574128,
+    "rateDegPerDay": 14.1844,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": {
+    "radius": 695700000,
+    "illuminance": 128000,
+    "refDistance": 149597870700,
+    "color": [1.0356, 0.9942, 0.9528],
+    "limbDarkening": [0.45, 0.6, 0.78]
+  },
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": null,
+  "navballSwitchAltitude": 0,
+  "render": {
+    "meanColor": [1, 1, 1],
+    "geometricAlbedo": 0,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

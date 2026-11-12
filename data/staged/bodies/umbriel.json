@@ -1,0 +1,53 @@
+{
+  "id": "umbriel",
+  "name": "Umbriel",
+  "parent": "uranus",
+  "mu": 85100000000,
+  "radius": 584700,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 77.311,
+        "decDeg": 15.175
+      }
+    },
+    "a": 265986000,
+    "e": 0.004,
+    "iDeg": 0.1,
+    "lanDeg": 174.8,
+    "argPeDeg": 183.4,
+    "meanAnomalyDeg": 253,
+    "epochUt": 0,
+    "rates": {
+      "argPeDeg": 561.394754077909,
+      "lanDeg": -277.040286274963
+    },
+    "meanMotionDegPerDay": 86.861091297242
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 257.22386499,
+    "poleDecDeg": -15.0618053966,
+    "w0Deg": 335.255675329827,
+    "rateDegPerDay": -86.8688923,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/umbriel.terrain.json"
+  },
+  "navballSwitchAltitude": 6730.75,
+  "render": {
+    "meanColor": [0.18, 0.18, 0.18],
+    "geometricAlbedo": 0.18,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

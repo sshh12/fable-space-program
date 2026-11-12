@@ -1,0 +1,42 @@
+{
+  "tileset": "phobos",
+  "maxElevation": 1922,
+  "minElevation": -1987,
+  "maxRenderLevel": 11,
+  "modifiers": [],
+  "surfaceFriction": 0.7,
+  "amplification": {
+    "model": "rocky-generic",
+    "seed": 4104,
+    "params": {
+      "hurstMaria": 0.95,
+      "hurstHighlands": 0.65,
+      "hurstRoughnessRange": 2,
+      "regolithSlope1m": 0.0186,
+      "regolithInnerScaleM": 1,
+      "multifractalGain": 0.8,
+      "multifractalMax": 3,
+      "craterEquilibriumFraction": 0.0125,
+      "craterMaxDiameterInPostings": 4,
+      "craterMinDiameterM": 0.6,
+      "craterEjectaExtentRadii": 2.5,
+      "freshDepthToDiameter": 0.196,
+      "degradedDepthToDiameter": 0.02,
+      "rimHeightToDiameter": 0.036,
+      "degradedRimFraction": 0.15,
+      "craterFreshnessExponent": 5,
+      "rimRoundingFresh": 0.08,
+      "rimRoundingDegraded": 0.9,
+      "rockAreaFractionMare": 0.02,
+      "rockAreaFractionFreshEjecta": 0.25,
+      "rockSourceMinCraterDiameterM": 20,
+      "rockAbundanceGridM": 10,
+      "rockMinDiameterM": 0.1,
+      "rockMaxDiameterM": 4,
+      "rockCollisionMinDiameterM": 0.5,
+      "rockHeightRatioMin": 0.35,
+      "rockHeightRatioMax": 0.8,
+      "rockVariants": 6
+    }
+  }
+}

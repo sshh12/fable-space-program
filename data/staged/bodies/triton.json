@@ -1,0 +1,48 @@
+{
+  "id": "triton",
+  "name": "Triton",
+  "parent": "neptune",
+  "mu": 1428495460000,
+  "radius": 1352600,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": "parentEquator",
+    "a": 354800000,
+    "e": 0,
+    "iDeg": 157.3,
+    "lanDeg": 177.7,
+    "argPeDeg": 0,
+    "meanAnomalyDeg": 63,
+    "epochUt": 0,
+    "rates": {
+      "argPeDeg": -53.3175355450237,
+      "lanDeg": -120.240480961924
+    },
+    "meanMotionDegPerDay": 61.2375725514655
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 304.982788119,
+    "poleDecDeg": 20.767945769,
+    "w0Deg": 4.4028552272357,
+    "rateDegPerDay": -61.2572637,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/triton.terrain.json"
+  },
+  "navballSwitchAltitude": 15570.4,
+  "render": {
+    "meanColor": [0.7507, 0.6928, 0.622],
+    "geometricAlbedo": 0.7,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

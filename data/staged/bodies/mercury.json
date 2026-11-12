@@ -1,0 +1,55 @@
+{
+  "id": "mercury",
+  "name": "Mercury",
+  "parent": "sun",
+  "mu": 22031868551000,
+  "radius": 2439400,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": "ecliptic",
+    "a": 57909226541.5244,
+    "e": 0.20563593,
+    "iDeg": 7.00497902,
+    "lanDeg": 48.33076593,
+    "argPeDeg": 29.12703035,
+    "meanAnomalyDeg": 174.79252722,
+    "epochUt": 0,
+    "rates": {
+      "a": 55351.212159,
+      "e": 0.00001906,
+      "iDeg": -0.00594749,
+      "lanDeg": -0.12534081,
+      "argPeDeg": 0.2858177
+    },
+    "meanMotionDegPerDay": 4.09233439109815
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 281.000548213,
+    "poleDecDeg": 61.4140431782,
+    "w0Deg": 29.3335828190902,
+    "rateDegPerDay": 6.1385108,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "shape": {
+    "equatorialRadius": 2440530,
+    "polarRadius": 2438260
+  },
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/mercury.terrain.json"
+  },
+  "navballSwitchAltitude": 28081,
+  "render": {
+    "meanColor": [0.1216, 0.1042, 0.07781],
+    "geometricAlbedo": 0.106,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

@@ -19,7 +19,7 @@ export const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
  * Download `url` into data/cache/bodies/<id>/<name> unless it is already there (or `refresh`).
  * Returns { path, text, meta } with meta = { url, retrievedAt, bytes, sha256 }.
  */
-export async function fetchCached(id, name, url, { refresh = false, retries = 3 } = {}) {
+export async function fetchCached(id, name, url, { refresh = false, retries = 3, headers = {} } = {}) {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error(`bad cache id "${id}"`);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) throw new Error(`bad cache file name "${name}"`);
   const dir = join(CACHE_ROOT, id);
@@ -35,10 +35,10 @@ export async function fetchCached(id, name, url, { refresh = false, retries = 3 
   let lastError = null;
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT, Accept: '*/*' } });
+      const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT, Accept: '*/*', ...headers } });
       if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
       const buf = Buffer.from(await res.arrayBuffer());
-      const meta = { url, retrievedAt: new Date().toISOString(), bytes: buf.length, sha256: sha256(buf) };
+      const meta = { url, retrievedAt: new Date().toISOString(), bytes: buf.length, sha256: sha256(buf), ...(headers.Range ? { range: headers.Range } : {}) };
       writeFileSync(path, buf);
       writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
       return { path, text: buf.toString('utf8'), meta };

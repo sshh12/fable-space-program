@@ -268,7 +268,8 @@
         "Scale height: 15.9 km",
         "Average temperature: 737 K (464 C)",
         "Mean molecular weight: 43.45",
-        "Major: 96.5% Carbon Dioxide (CO 2 ), 3.5% Nitrogen (N 2 )"
+        "Major: 96.5% Carbon Dioxide (CO 2 ), 3.5% Nitrogen (N 2 )",
+        "Minor (ppm): Sulfur Dioxide (SO 2 ) - 150; Argon (Ar) - 70; Water (H 2 O) - 20;"
       ]
     },
     "marsfact": {
@@ -284,7 +285,8 @@
         "Scale height: 11.0 km",
         "Average temperature: ~214 K (-59 C)",
         "Mean molecular weight: 43.49",
-        "Major : Carbon Dioxide (CO 2 ) - 95.1% ; Nitrogen (N 2 ) - 2.59%"
+        "Major : Carbon Dioxide (CO 2 ) - 95.1% ; Nitrogen (N 2 ) - 2.59%",
+        "Argon (Ar) - 1.94%; Oxygen (O 2 ) - 0.16%; Carbon Monoxide (CO) - 0.06%"
       ]
     },
     "jupiterfact": {
@@ -299,7 +301,8 @@
         "Temperature at 1 bar: 165 K (-108 C)",
         "Scale height: 27 km",
         "Mean molecular weight: 2.22",
-        "Major: Molecular hydrogen (H 2 ) - 89.8% (2.0%); Helium (He) - 10.2% (2.0%)"
+        "Major: Molecular hydrogen (H 2 ) - 89.8% (2.0%); Helium (He) - 10.2% (2.0%)",
+        "Minor (ppm): Methane (CH 4 ) - 3000 (1000); Ammonia (NH 3 ) - 260 (40);"
       ]
     },
     "saturnfact": {
@@ -314,7 +317,8 @@
         "Temperature at 1 bar: 134 K (-139 C)",
         "Scale height: 59.5 km",
         "Mean molecular weight: 2.07",
-        "Major: Molecular hydrogen (H 2 ) - 96.3% (2.4%); Helium (He) - 3.25% (2.4%)"
+        "Major: Molecular hydrogen (H 2 ) - 96.3% (2.4%); Helium (He) - 3.25% (2.4%)",
+        "Minor (ppm): Methane (CH 4 ) - 4500 (2000); Ammonia"
       ]
     },
     "uranusfact": {
@@ -329,7 +333,8 @@
         "Temperature at 1 bar: 76 K (-197 C)",
         "Scale height: 27.7 km",
         "Mean molecular weight: 2.64",
-        "Major: Molecular hydrogen (H 2 ) - 82.5% (3.3%); Helium (He) - 15.2% (3.3%)"
+        "Major: Molecular hydrogen (H 2 ) - 82.5% (3.3%); Helium (He) - 15.2% (3.3%)",
+        "Methane (CH 4 ) - 2.3%"
       ]
     },
     "neptunefact": {
@@ -344,7 +349,8 @@
         "Temperature at 1 bar: 72 K (-201 C)",
         "Scale height: 19.1 - 20.3 km",
         "Mean molecular weight: 2.53 - 2.69",
-        "Major: Molecular hydrogen (H 2 ) - 80.0% (3.2%); Helium (He) - 19.0% (3.2%);"
+        "Major: Molecular hydrogen (H 2 ) - 80.0% (3.2%); Helium (He) - 19.0% (3.2%);",
+        "Methane (CH 4 ) 1.5% (0.5%)"
       ]
     }
   },

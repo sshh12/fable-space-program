@@ -1,0 +1,53 @@
+{
+  "id": "oberon",
+  "name": "Oberon",
+  "parent": "uranus",
+  "mu": 205300000000,
+  "radius": 761400,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 77.311,
+        "decDeg": 15.175
+      }
+    },
+    "a": 583511000,
+    "e": 0.002,
+    "iDeg": 0.1,
+    "lanDeg": 76.8,
+    "argPeDeg": 132.2,
+    "meanAnomalyDeg": 143.6,
+    "epochUt": 0,
+    "rates": {
+      "argPeDeg": 226.980404025119,
+      "lanDeg": -186.723928671459
+    },
+    "meanMotionDegPerDay": 26.7383810690342
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 257.581233219,
+    "poleDecDeg": -15.1522351754,
+    "w0Deg": 155.465529676992,
+    "rateDegPerDay": -26.7394932,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/oberon.terrain.json"
+  },
+  "navballSwitchAltitude": 8764.82,
+  "render": {
+    "meanColor": [0.2442, 0.2394, 0.2335],
+    "geometricAlbedo": 0.24,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

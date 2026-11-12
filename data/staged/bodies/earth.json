@@ -1,0 +1,142 @@
+{
+  "id": "earth",
+  "name": "Earth",
+  "parent": "sun",
+  "mu": 398600441800000,
+  "radius": 6371000,
+  "soiRadius": 924776246,
+  "orbit": {
+    "kind": "sunLowPrecision",
+    "inverted": true
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 0,
+    "poleDecDeg": 90,
+    "w0Deg": 190.46061837,
+    "rateDegPerDay": 360.98564736629,
+    "epochUt": 0
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": {
+    "model": "ussa76",
+    "simTop": 140000,
+    "gamma": 1.4,
+    "gasConstant": 287.053,
+    "heating": {
+      "kConv": 0.00017415,
+      "radiative": {
+        "c": 473600000,
+        "rhoExp": 1.22,
+        "kRad": 0.5,
+        "vMin": 9000,
+        "aCoef": 1072000,
+        "aVExp": -1.88,
+        "aRhoExp": -0.325,
+        "aMax": 1,
+        "fTable": [
+          [9000, 1.5],
+          [9250, 4.3],
+          [9500, 9.7],
+          [9750, 19.5],
+          [10000, 35],
+          [10250, 55],
+          [10500, 81],
+          [10750, 115],
+          [11000, 151],
+          [11500, 238],
+          [12000, 359],
+          [12500, 495],
+          [13000, 660],
+          [14000, 1065],
+          [15000, 1550],
+          [16000, 2040]
+        ]
+      }
+    }
+  },
+  "ocean": {
+    "density": 1025,
+    "seaLevel": 0,
+    "swell": [
+      {
+        "dir": [0.176164367263, -0.574250460737, -0.799501422169],
+        "wavelength": 200,
+        "amplitude": 0.3526,
+        "phase": 0.691
+      },
+      {
+        "dir": [-0.027623465092, -0.374006041893, -0.927014792117],
+        "wavelength": 150,
+        "amplitude": 0.2842,
+        "phase": 4.574
+      },
+      {
+        "dir": [0.390797901856, -0.735738649651, -0.553141608736],
+        "wavelength": 115,
+        "amplitude": 0.2329,
+        "phase": 2.174
+      },
+      {
+        "dir": [0.644520007107, -0.604981687241, 0.467537291071],
+        "wavelength": 90,
+        "amplitude": 0.1937,
+        "phase": 6.058
+      },
+      {
+        "dir": [0.564454678751, -0.389444163872, 0.727821515801],
+        "wavelength": 70,
+        "amplitude": 0.1605,
+        "phase": 3.658
+      },
+      {
+        "dir": [0.648620027813, -0.742461224147, 0.167461608011],
+        "wavelength": 54,
+        "amplitude": 0.1321,
+        "phase": 1.258
+      },
+      {
+        "dir": [0.416307785673, -0.126933926756, 0.900319724224],
+        "wavelength": 42,
+        "amplitude": 0.1094,
+        "phase": 5.141
+      },
+      {
+        "dir": [0.571154154174, -0.799951792643, -0.184011036672],
+        "wavelength": 32,
+        "amplitude": 0.0892,
+        "phase": 2.741
+      }
+    ]
+  },
+  "terrain": {
+    "tileset": "earth",
+    "maxElevation": 8850,
+    "minElevation": -10930,
+    "maxRenderLevel": 20,
+    "modifiers": [],
+    "surfaceFriction": 0.8,
+    "amplification": {
+      "$ref": "../terrain/earth.amplification.json"
+    }
+  },
+  "warpAltitudeLimits": [140000, 140000, 160000, 250000, 600000, 6000000, 30000000],
+  "navballSwitchAltitude": 60000,
+  "render": {
+    "meanColor": [0.2, 0.27, 0.4],
+    "geometricAlbedo": 0.434,
+    "surface": {
+      "$ref": "../render/earth.surface.json"
+    },
+    "atmosphere": {
+      "$ref": "../render/earth.atmosphere.json"
+    },
+    "clouds": {
+      "$ref": "../render/earth.clouds.json"
+    },
+    "ocean": {
+      "$ref": "../render/earth.ocean.json"
+    }
+  }
+}

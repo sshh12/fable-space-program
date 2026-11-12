@@ -1,0 +1,76 @@
+{
+  "id": "saturn",
+  "name": "Saturn",
+  "parent": "sun",
+  "mu": 37931207096240000,
+  "radius": 58232000,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": "ecliptic",
+    "a": 1426666414179.92,
+    "e": 0.05386179,
+    "iDeg": 2.48599187,
+    "lanDeg": 113.66242448,
+    "argPeDeg": -21.06354617,
+    "meanAnomalyDeg": -42.64463408,
+    "epochUt": 0,
+    "rates": {
+      "a": -187087097.09742,
+      "e": -0.00050991,
+      "iDeg": 0.00193609,
+      "lanDeg": -0.28867794,
+      "argPeDeg": -0.13029422
+    },
+    "meanMotionDegPerDay": 0.0334815220854209
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 40.5782968193,
+    "poleDecDeg": 83.5358107577,
+    "w0Deg": 147.768254492432,
+    "rateDegPerDay": 810.7939024,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "shape": {
+    "equatorialRadius": 60268000,
+    "polarRadius": 54364000
+  },
+  "surface": "none",
+  "rings": [
+    {
+      "innerRadius": 74658000,
+      "outerRadius": 136780000,
+      "texture": "saturn-rings",
+      "opticalDepthScale": 1
+    }
+  ],
+  "emission": null,
+  "atmosphere": {
+    "model": "exponential",
+    "rho0": 0.19,
+    "p0": 100000,
+    "scaleHeight": 59500,
+    "temperature": 134,
+    "simTop": 1054305,
+    "floorAltitude": -137004,
+    "gamma": 1.45,
+    "gasConstant": 4016.64861,
+    "heating": {
+      "kConv": 0.000063323,
+      "radiative": null
+    }
+  },
+  "ocean": null,
+  "terrain": null,
+  "navballSwitchAltitude": 451845,
+  "render": {
+    "meanColor": [0.6044, 0.4468, 0.3043],
+    "geometricAlbedo": 0.47,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

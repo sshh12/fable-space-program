@@ -1,0 +1,53 @@
+{
+  "id": "io",
+  "name": "Io",
+  "parent": "jupiter",
+  "mu": 5959915470000,
+  "radius": 1821490,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 268.1,
+        "decDeg": 64.5
+      }
+    },
+    "a": 421800000,
+    "e": 0.004,
+    "iDeg": 0,
+    "lanDeg": 0,
+    "argPeDeg": 49.1,
+    "meanAnomalyDeg": 330.9,
+    "epochUt": 0,
+    "rates": {
+      "argPeDeg": -27006.751687922,
+      "lanDeg": 0
+    },
+    "meanMotionDegPerDay": 204.228436313631
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 267.952821491,
+    "poleDecDeg": 64.52279306,
+    "w0Deg": 261.707766518928,
+    "rateDegPerDay": 203.4889538,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/io.terrain.json"
+  },
+  "navballSwitchAltitude": 20968,
+  "render": {
+    "meanColor": [0.63, 0.63, 0.63],
+    "geometricAlbedo": 0.63,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

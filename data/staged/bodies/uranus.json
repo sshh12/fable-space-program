@@ -1,0 +1,68 @@
+{
+  "id": "uranus",
+  "name": "Uranus",
+  "parent": "sun",
+  "mu": 5793951300000000,
+  "radius": 25362000,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": "ecliptic",
+    "a": 2870658170655.73,
+    "e": 0.04725744,
+    "iDeg": 0.77263783,
+    "lanDeg": 74.01692503,
+    "argPeDeg": 96.93735127,
+    "meanAnomalyDeg": 142.28382821,
+    "epochUt": 0,
+    "rates": {
+      "a": -293475118.824432,
+      "e": -0.00004397,
+      "iDeg": -0.00242939,
+      "lanDeg": 0.04240589,
+      "argPeDeg": 0.36564692
+    },
+    "meanMotionDegPerDay": 0.0117200266951403
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 257.311,
+    "poleDecDeg": -15.175,
+    "w0Deg": 91.6871107881889,
+    "rateDegPerDay": -501.1600928,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "shape": {
+    "equatorialRadius": 25559000,
+    "polarRadius": 24973000
+  },
+  "surface": "none",
+  "emission": null,
+  "atmosphere": {
+    "model": "exponential",
+    "rho0": 0.42,
+    "p0": 100000,
+    "scaleHeight": 27700,
+    "temperature": 76,
+    "simTop": 512800,
+    "floorAltitude": -63781.6,
+    "gamma": 1.6327,
+    "gasConstant": 3149.41766,
+    "heating": {
+      "kConv": 0.000072842,
+      "radiative": null
+    }
+  },
+  "ocean": null,
+  "terrain": null,
+  "navballSwitchAltitude": 219771,
+  "render": {
+    "meanColor": [0.3132, 0.5554, 0.6395],
+    "geometricAlbedo": 0.51,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

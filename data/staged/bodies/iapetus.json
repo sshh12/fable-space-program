@@ -1,0 +1,57 @@
+{
+  "id": "iapetus",
+  "name": "Iapetus",
+  "parent": "saturn",
+  "mu": 120515110000,
+  "radius": 734300,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 288.7,
+        "decDeg": 78.9
+      }
+    },
+    "a": 3561700000,
+    "e": 0.028,
+    "iDeg": 7.5482971629397,
+    "lanDeg": 71.1615940654902,
+    "argPeDeg": 283.972805666582,
+    "meanAnomalyDeg": 163.947085487176,
+    "epochUt": 938240818,
+    "rates": {
+      "argPeDeg": 21.6489265740574,
+      "lanDeg": -11.500487812358
+    },
+    "meanMotionDegPerDay": 4.5376706316108
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 316.985920542,
+    "poleDecDeg": 74.6901740136,
+    "w0Deg": 314.096705752192,
+    "rateDegPerDay": 4.5379572,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "shape": {
+    "equatorialRadius": 745700,
+    "polarRadius": 712100
+  },
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/iapetus.terrain.json"
+  },
+  "navballSwitchAltitude": 8452.86,
+  "render": {
+    "meanColor": [0.6, 0.6, 0.6],
+    "geometricAlbedo": 0.6,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

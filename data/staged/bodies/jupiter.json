@@ -1,0 +1,68 @@
+{
+  "id": "jupiter",
+  "name": "Jupiter",
+  "parent": "sun",
+  "mu": 126686534007380000,
+  "radius": 69911000,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": "ecliptic",
+    "a": 778340816692.711,
+    "e": 0.04838624,
+    "iDeg": 1.30439695,
+    "lanDeg": 100.47390909,
+    "argPeDeg": -85.74542926,
+    "meanAnomalyDeg": 19.66796068,
+    "epochUt": 0,
+    "rates": {
+      "a": -17363824.852149,
+      "e": -0.00013253,
+      "iDeg": -0.00183714,
+      "lanDeg": 0.20469106,
+      "argPeDeg": 0.00783561999999999
+    },
+    "meanMotionDegPerDay": 0.0830810020826831
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 268.057415879,
+    "poleDecDeg": 64.4965415226,
+    "w0Deg": 69.3103987015784,
+    "rateDegPerDay": 870.536,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "shape": {
+    "equatorialRadius": 71492000,
+    "polarRadius": 66854000
+  },
+  "surface": "none",
+  "emission": null,
+  "atmosphere": {
+    "model": "exponential",
+    "rho0": 0.16,
+    "p0": 100000,
+    "scaleHeight": 27000,
+    "temperature": 165,
+    "simTop": 473784,
+    "floorAltitude": -62169.8,
+    "gamma": 1.4839,
+    "gasConstant": 3745.25343,
+    "heating": {
+      "kConv": 0.000066601,
+      "radiative": null
+    }
+  },
+  "ocean": null,
+  "terrain": null,
+  "navballSwitchAltitude": 203050,
+  "render": {
+    "meanColor": [0.5258, 0.5268, 0.4354],
+    "geometricAlbedo": 0.52,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}

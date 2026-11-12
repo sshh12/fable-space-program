@@ -1,0 +1,53 @@
+{
+  "id": "callisto",
+  "name": "Callisto",
+  "parent": "jupiter",
+  "mu": 7179283400000,
+  "radius": 2410300,
+  "soiRadius": "auto",
+  "orbit": {
+    "kind": "kepler",
+    "frame": {
+      "pole": {
+        "raDeg": 268.7,
+        "decDeg": 64.8
+      }
+    },
+    "a": 1882700000,
+    "e": 0.007,
+    "iDeg": 0.3,
+    "lanDeg": 309.1,
+    "argPeDeg": 43.8,
+    "meanAnomalyDeg": 87.4,
+    "epochUt": 0,
+    "rates": {
+      "argPeDeg": 129.533212675544,
+      "lanDeg": -62.3631475373486
+    },
+    "meanMotionDegPerDay": 21.5692336451286
+  },
+  "rotation": {
+    "mode": "fixedRate",
+    "poleRaDeg": 268.19646142,
+    "poleDecDeg": 64.7690106507,
+    "w0Deg": 146.042848485784,
+    "rateDegPerDay": 21.5710715,
+    "epochUt": 938240818
+  },
+  "gravityRole": "attractor",
+  "emission": null,
+  "atmosphere": null,
+  "ocean": null,
+  "terrain": {
+    "$ref": "../terrain/callisto.terrain.json"
+  },
+  "navballSwitchAltitude": 27746.1,
+  "render": {
+    "meanColor": [0.17, 0.17, 0.17],
+    "geometricAlbedo": 0.17,
+    "surface": null,
+    "atmosphere": null,
+    "clouds": null,
+    "ocean": null
+  }
+}
