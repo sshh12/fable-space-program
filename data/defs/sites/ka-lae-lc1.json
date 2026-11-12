@@ -1,31 +1,43 @@
 {
   "id": "ka-lae-lc1",
-  "name": "Ka Lae Pacific Spaceport, Launch Complex 1",
+  "name": "Ka Lae Pacific Spaceport",
   "bodyId": "earth",
-  "location": { "$ref": "ka-lae-lc1.location.json" },
-  "padAzimuthDeg": 90,
-  "pad": {
-    "flatRadius": 450,
-    "blendRadius": 900,
-    "clampHeight": 18,
-    "shape": {
-      "coreRadius": 115,
-      "coreBlend": 40,
-      "reliefShare": 0.25,
-      "areas": [
-        { "east": -120, "north": 110, "halfEast": 20, "halfNorth": 20, "headingDeg": 0, "blend": 20 },
-        { "east": -260, "north": -190, "halfEast": 44, "halfNorth": 36, "headingDeg": 30, "blend": 25 },
-        { "east": -300, "north": 160, "halfEast": 44, "halfNorth": 36, "headingDeg": -20, "blend": 25 },
-        { "east": -228, "north": 0, "halfEast": 24, "halfNorth": 170, "headingDeg": 90, "blend": 25 },
-        { "east": -150, "north": -62, "halfEast": 26, "halfNorth": 17, "headingDeg": 0, "blend": 20 }
-      ],
-      "edgeNoise": { "amplitude": 0.6, "wavelength": 60 }
-    }
+  "location": {
+    "$ref": "ka-lae-lc1.location.json"
   },
-  "structures": { "$ref": "ka-lae-lc1.structures.json" },
+  "pads": [
+    {
+      "id": "lc-1",
+      "name": "Launch Complex 1",
+      "offsetEnu": [0, 0],
+      "azimuthDeg": 90,
+      "class": "heavy",
+      "maxLiftoffMass": 3000000,
+      "maxDiameter": 9.5,
+      "flatRadius": 450,
+      "blendRadius": 900,
+      "shape": {
+        "coreRadius": 115,
+        "coreBlend": 40,
+        "reliefShare": 0.25,
+        "areas": [
+          { "east": -120, "north": 110, "halfEast": 20, "halfNorth": 20, "headingDeg": 0, "blend": 20 },
+          { "east": -260, "north": -190, "halfEast": 44, "halfNorth": 36, "headingDeg": 30, "blend": 25 },
+          { "east": -300, "north": 160, "halfEast": 44, "halfNorth": 36, "headingDeg": -20, "blend": 25 },
+          { "east": -228, "north": 0, "halfEast": 24, "halfNorth": 170, "headingDeg": 90, "blend": 25 },
+          { "east": -150, "north": -62, "halfEast": 26, "halfNorth": 17, "headingDeg": 0, "blend": 20 }
+        ],
+        "edgeNoise": { "amplitude": 0.6, "wavelength": 60 }
+      },
+      "mountHeight": 18,
+      "structures": {
+        "$ref": "ka-lae-lc1.structures.json"
+      }
+    }
+  ],
   "recoveryZones": [
-    { "name": "Central Pacific", "latDeg": 5.0, "lonDeg": -140.0, "radiusKm": 2000 },
-    { "name": "South Pacific", "latDeg": -20.0, "lonDeg": -122.0, "radiusKm": 1800 },
-    { "name": "Central Atlantic", "latDeg": -8.0, "lonDeg": -22.0, "radiusKm": 1300 }
+    { "name": "Central Pacific", "latDeg": 5, "lonDeg": -140, "radiusKm": 2000 },
+    { "name": "South Pacific", "latDeg": -20, "lonDeg": -122, "radiusKm": 1800 },
+    { "name": "Central Atlantic", "latDeg": -8, "lonDeg": -22, "radiusKm": 1300 }
   ]
 }

@@ -17,17 +17,23 @@
  * Every JSON file under the section directories is additionally exposed, with its $refs resolved, in
  * DefLibrary.sections under its path without the extension ("visuals/plumes", "audio/engines", ...).
  * `regions/` (bake manifests) is not loaded: only the Python bake tools read it.
+ *
+ * Sites (MIGRATION_V2 step 3.6): a site file states its pads in `pads`; the loader fills the deprecated
+ * single pad (`pad`, `padAzimuthDeg`, `structures`) from the first pad, and `location.pads` with the
+ * first pad at the reference point, so a loaded site always has both forms (normaliseSite below).
  */
 import type {
   BodyDef,
   DefLibrary,
   LaunchSiteDef,
+  PadDef,
   PartDef,
   ResourceDef,
   ScenarioDef,
   VehicleDef,
 } from '../contracts/defs';
-import { DEFAULT_UNIVERSE_RULES, type UniverseRules } from '../contracts/net';
+import { DEFAULT_UNIVERSE_RULES, type PadClass, type UniverseRules } from '../contracts/net';
+import { padsOf, singlePadOf } from './sites';
 
 export interface DefSource {
   /** All JSON file paths under the defs root, relative, forward slashes (e.g. "bodies/earth.json"). */
@@ -140,6 +146,91 @@ async function loadDir<T extends { id: string }>(source: DefSource, files: strin
   return out;
 }
 
+const PAD_CLASSES: readonly PadClass[] = ['light', 'medium', 'heavy'];
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isPlace = (v: unknown): v is { latDeg: number; lonDeg: number; padElevation: number | 'terrain' } =>
+  isObject(v) && isFiniteNumber(v['latDeg']) && isFiniteNumber(v['lonDeg']) && (isFiniteNumber(v['padElevation']) || v['padElevation'] === 'terrain');
+
+function checkPad(pad: unknown, index: number, file: string, seen: Set<string>): void {
+  const at = `pads[${index}]`;
+  if (!isObject(pad) || typeof pad['id'] !== 'string' || pad['id'] === '') throw new DefError(file, `${at} must be an object with a non-empty string "id"`);
+  const id = pad['id'];
+  const bad = (what: string): never => {
+    throw new DefError(file, `pad "${id}" (${at}): ${what}`);
+  };
+  if (seen.has(id)) bad('duplicate pad id');
+  seen.add(id);
+  if (typeof pad['name'] !== 'string' || pad['name'].trim() === '') bad('"name" must be a non-empty string');
+  const offset = pad['offsetEnu'];
+  if (!Array.isArray(offset) || offset.length !== 2 || !offset.every(isFiniteNumber)) bad('"offsetEnu" must be [east, north] in metres');
+  if (!isFiniteNumber(pad['azimuthDeg'])) bad('"azimuthDeg" must be a number of degrees');
+  if (!PAD_CLASSES.includes(pad['class'] as PadClass)) bad(`"class" must be one of ${PAD_CLASSES.join(', ')}`);
+  for (const k of ['maxLiftoffMass', 'maxDiameter']) {
+    if (!(isFiniteNumber(pad[k]) && pad[k] > 0)) bad(`"${k}" must be a positive number`);
+  }
+  const flat = pad['flatRadius'];
+  const blend = pad['blendRadius'];
+  if (!(isFiniteNumber(flat) && isFiniteNumber(blend) && flat >= 0 && blend > flat)) bad('needs 0 <= flatRadius < blendRadius');
+  if (!(isFiniteNumber(pad['mountHeight']) && pad['mountHeight'] >= 0)) bad('"mountHeight" must be a number of metres from 0');
+  if (pad['keepOutRadius'] !== undefined && !(isFiniteNumber(pad['keepOutRadius']) && pad['keepOutRadius'] > 0)) bad('"keepOutRadius" must be a positive number when present');
+  if (!Array.isArray(pad['structures'])) bad('"structures" must be an array (it may be empty)');
+}
+
+/**
+ * A site as the library holds it (MIGRATION_V2 step 3.6): its pad list and the deprecated single pad filled
+ * from each other, and a location for every pad.
+ *
+ * - A file with `pads` states its pads THERE ONLY. `pad`, `padAzimuthDeg` and `structures` are then
+ *   written from the first pad (the deprecated single pad IS `pads[0]`), so code that still reads them
+ *   sees the first pad; a file that states them as well is refused, because two statements of one pad can
+ *   disagree.
+ * - A file with the deprecated single pad and no list gets that pad as its one pad (`singlePadOf`).
+ * - `location.pads` holds every pad afterwards: the first pad at the reference point (an entry for it in
+ *   the file must equal the reference point), every other pad at the resolved coordinates the file states
+ *   (the site-resolve bake tool writes them; an elevation cannot be derived from an offset).
+ */
+export function normaliseSite(site: LaunchSiteDef, file: string): void {
+  const raw = site as unknown as Record<string, unknown>;
+  if (!isPlace(raw['location'])) throw new DefError(file, '"location" needs latDeg, lonDeg and padElevation (metres, or "terrain")');
+  if (raw['pads'] !== undefined) {
+    const list = raw['pads'];
+    if (!Array.isArray(list) || list.length === 0) throw new DefError(file, '"pads" must be a non-empty array');
+    for (const k of ['pad', 'padAzimuthDeg', 'structures']) {
+      if (raw[k] !== undefined) throw new DefError(file, `"${k}" is the deprecated single pad: a site with "pads" states its pads in the list only`);
+    }
+    const seen = new Set<string>();
+    list.forEach((p, i) => checkPad(p, i, file, seen));
+    const first = (list as PadDef[])[0]!;
+    site.padAzimuthDeg = first.azimuthDeg;
+    site.pad = { flatRadius: first.flatRadius, blendRadius: first.blendRadius, clampHeight: first.mountHeight, ...(first.shape ? { shape: first.shape } : {}) };
+    site.structures = first.structures;
+  } else {
+    const single = raw['pad'];
+    if (!isObject(single) || !isFiniteNumber(single['flatRadius']) || !isFiniteNumber(single['blendRadius']) || !isFiniteNumber(single['clampHeight']) || !isFiniteNumber(raw['padAzimuthDeg']) || !Array.isArray(raw['structures'])) {
+      throw new DefError(file, 'a site needs "pads" (or the deprecated single pad: "pad" with flatRadius, blendRadius and clampHeight, "padAzimuthDeg" and "structures")');
+    }
+    site.pads = [singlePadOf(site)];
+  }
+  const pads = padsOf(site);
+  const stated = (raw['location'] as Record<string, unknown>)['pads'];
+  if (stated !== undefined && !isObject(stated)) throw new DefError(file, '"location.pads" must be an object: pad id -> latDeg, lonDeg, padElevation');
+  const resolved = (site.location.pads ??= {});
+  for (const id of Object.keys(resolved)) {
+    if (!pads.some((p) => p.id === id)) throw new DefError(file, `location.pads names "${id}", which is not a pad of the site (pads: ${pads.map((p) => p.id).join(', ')})`);
+    if (!isPlace(resolved[id])) throw new DefError(file, `location.pads["${id}"] needs latDeg, lonDeg and padElevation (metres, or "terrain")`);
+  }
+  const reference = { latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, padElevation: site.location.padElevation };
+  const firstId = pads[0]!.id;
+  const firstAt = resolved[firstId];
+  if (firstAt === undefined) resolved[firstId] = reference;
+  else if (firstAt.latDeg !== reference.latDeg || firstAt.lonDeg !== reference.lonDeg || firstAt.padElevation !== reference.padElevation) {
+    throw new DefError(file, `location.pads["${firstId}"] differs from the reference point: the reference point of a site is the location of its first pad`);
+  }
+  for (const p of pads.slice(1)) {
+    if (resolved[p.id] === undefined) throw new DefError(file, `pad "${p.id}" has no resolved coordinates (location.pads["${p.id}"]: latDeg, lonDeg, padElevation, written by the site-resolve bake tool)`);
+  }
+}
+
 /**
  * A rules document has exactly the fields of the contract's default document (so a file written before the
  * contract gained a field fails by the field's name instead of yielding `undefined` somewhere in a
@@ -202,7 +293,12 @@ export function validateLibrary(lib: DefLibrary): void {
   for (const s of Object.values(lib.scenarios)) {
     const file = `scenarios/${s.id}.json`;
     if (!lib.vehicles[s.vehicle]) throw new DefError(file, `unknown vehicle "${s.vehicle}"`);
-    if (!lib.sites[s.site]) throw new DefError(file, `unknown site "${s.site}"`);
+    const site = lib.sites[s.site];
+    if (!site) throw new DefError(file, `unknown site "${s.site}"`);
+    const pad: unknown = s.pad;
+    if (pad !== undefined && (typeof pad !== 'string' || !padsOf(site).some((p) => p.id === pad))) {
+      throw new DefError(file, `unknown pad ${JSON.stringify(pad)} of site "${s.site}" (pads: ${padsOf(site).map((p) => p.id).join(', ')})`);
+    }
     if (s.target !== null && !lib.bodies[s.target]) throw new DefError(file, `unknown target "${s.target}"`);
     if (s.suggestedLanding && !lib.bodies[s.suggestedLanding.bodyId]) throw new DefError(file, `unknown landing body "${s.suggestedLanding.bodyId}"`);
     if (s.resources !== undefined) {
@@ -264,6 +360,7 @@ export async function loadDefs(source: DefSource): Promise<DefLibrary> {
   const files = await source.list();
   const bodies = await loadDir<BodyDef>(source, files, 'bodies');
   const sites = await loadDir<LaunchSiteDef>(source, files, 'sites');
+  for (const s of Object.values(sites)) normaliseSite(s, `sites/${s.id}.json`);
   const parts = await loadDir<PartDef>(source, files, 'parts');
   const vehicles = await loadDir<VehicleDef>(source, files, 'vehicles');
   const scenarios = await loadDir<ScenarioDef>(source, files, 'scenarios');

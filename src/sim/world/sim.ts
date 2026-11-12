@@ -32,6 +32,7 @@ import {
   type VesselSnapshot,
 } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
+import { padLocationOf, padOf } from '@/core/defs/sites';
 import { FRAME_HISTORY_EPOCHS, type FrameEpochOrigin, type FrameRebase } from '@/core/math/frame';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG, G0, RAD } from '@/core/math/scalar';
@@ -284,6 +285,9 @@ class World implements SimWorld, MilestoneHost {
   private readonly surfaceTargets: SurfaceTarget[];
   private readonly milestones: MilestoneEvaluator;
 
+  /** Id of the pad of the scenario's site that the scenario stands on. */
+  private readonly startPad: string;
+
   // render root (SimSnapshot.frame)
   private readonly renderRoot: 'soiBody' | 'rootBody';
   private frameEpoch = 0;
@@ -391,7 +395,10 @@ class World implements SimWorld, MilestoneHost {
     const scenario = defs.scenarios[scenarioId];
     if (!scenario) throw new Error(`createSim: unknown scenario "${scenarioId}"`);
     if (!defs.vehicles[scenario.vehicle]) throw new Error(`scenarios/${scenarioId}.json: unknown vehicle "${scenario.vehicle}"`);
-    if (!defs.sites[scenario.site]) throw new Error(`scenarios/${scenarioId}.json: unknown site "${scenario.site}"`);
+    const startSite = defs.sites[scenario.site];
+    if (!startSite) throw new Error(`scenarios/${scenarioId}.json: unknown site "${scenario.site}"`);
+    // The pad the scenario stands on (absent = the site's first pad); an unknown pad is refused here by name.
+    this.startPad = padOf(startSite, scenario.pad).id;
     this.defs = defs;
     this.scenario = scenario;
     this.terrain = opts.terrain;
@@ -534,9 +541,10 @@ class World implements SimWorld, MilestoneHost {
       case 'pad': {
         const site = this.defs.sites[sc.site]!;
         bodyId = site.bodyId;
-        const dir = dirFromLatLon(site.location.latDeg * DEG, site.location.lonDeg * DEG);
-        const elevation = resolvePadElevation(site, this.bases.get(bodyId)!.hasTerrain ? this.terrain.heightAt(bodyId, dir, final ? undefined : IMPACT_PREDICTION_LAMBDA) : 0);
-        applyPose(vessel, padPose(this.system, site, vessel, ut, elevation));
+        const where = padLocationOf(site, this.startPad);
+        const dir = dirFromLatLon(where.latDeg * DEG, where.lonDeg * DEG);
+        const elevation = resolvePadElevation(site, this.bases.get(bodyId)!.hasTerrain ? this.terrain.heightAt(bodyId, dir, final ? undefined : IMPACT_PREDICTION_LAMBDA) : 0, this.startPad);
+        applyPose(vessel, padPose(this.system, site, vessel, ut, elevation, this.startPad));
         break;
       }
       case 'orbit': {
@@ -605,7 +613,7 @@ class World implements SimWorld, MilestoneHost {
       const alt = v3.len(e.vessel.r) - base.info.radius;
       if (sc.start.kind === 'pad') {
         const site = this.defs.sites[sc.site]!;
-        await this.policy.request('pad', e.bodyId, base.info.radius, dirFixed, site.pad.blendRadius + 600);
+        await this.policy.request('pad', e.bodyId, base.info.radius, dirFixed, padOf(site, this.startPad).blendRadius + 600);
       } else if (sc.start.kind === 'landed' || alt < SLOW_ALTITUDE) {
         await this.policy.request(`vessel:${e.vessel.id}`, e.bodyId, base.info.radius, dirFixed, VESSEL_DISC_RADIUS);
       }
@@ -1109,7 +1117,8 @@ class World implements SimWorld, MilestoneHost {
     const body = this.info(e.bodyId);
     const dirFixed = quat.rotateInv(this.orientAt(e.bodyId, ut), v3.normalize(e.vessel.r));
     const site = this.defs.sites[this.scenario.site]!;
-    const siteDir = dirFromLatLon(site.location.latDeg * DEG, site.location.lonDeg * DEG);
+    const launchedFrom = padLocationOf(site, this.startPad);
+    const siteDir = dirFromLatLon(launchedFrom.latDeg * DEG, launchedFrom.lonDeg * DEG);
     this.fates.push({
       vesselId: e.vessel.id,
       name: e.vessel.name,

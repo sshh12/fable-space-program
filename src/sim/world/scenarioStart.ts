@@ -16,6 +16,7 @@
  * These functions only compute poses; the world owns the vessel list, terrain loading and modes.
  */
 import type { LaunchSiteDef, ScenarioStart } from '@/core/contracts/defs';
+import { padOf } from '@/core/defs/sites';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
@@ -43,9 +44,9 @@ export function attitudeAlong(nose: Vec3, dorsalHint: Vec3): Quat {
   return quat.fromBasis(x, y, z);
 }
 
-/** Pose of a vessel on the launch mount: the lowest point of the vessel on pad elevation + clamp height. */
-export function padPose(system: BodySystem, site: LaunchSiteDef, vessel: Vessel, ut: number, padElevation: number): StartPose {
-  const ps = padState(system, site, ut, padElevation, site.pad.clampHeight - vesselBaseY(vessel));
+/** Pose of a vessel on the launch mount of a pad of the site (absent = the first): the lowest point of the vessel on pad elevation + mount height. */
+export function padPose(system: BodySystem, site: LaunchSiteDef, vessel: Vessel, ut: number, padElevation: number, padId?: string): StartPose {
+  const ps = padState(system, site, ut, padElevation, padOf(site, padId).mountHeight - vesselBaseY(vessel), padId);
   return { bodyId: site.bodyId, r: ps.r, v: ps.v, q: ps.q, w: quat.rotateInv(ps.q, system.spin(site.bodyId)) };
 }
 

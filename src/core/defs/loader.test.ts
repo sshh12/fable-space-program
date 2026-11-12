@@ -6,6 +6,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DefError, getSection, listSections, loadDefs, overlayDefSource, resolveRefs, TABLE_FILES, type DefSource } from './loader';
 
+/** A site file with one pad, as small as a valid one gets. */
+const siteFile = (id: string, bodyId: string, more: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id,
+  name: id,
+  bodyId,
+  location: { latDeg: 1, lonDeg: 2, padElevation: 3 },
+  pads: [{ id: 'p1', name: 'Pad 1', offsetEnu: [0, 0], azimuthDeg: 90, class: 'light', maxLiftoffMass: 1000, maxDiameter: 2, flatRadius: 10, blendRadius: 20, mountHeight: 1, structures: [] }],
+  recoveryZones: [],
+  ...more,
+});
+
 function memorySource(files: Record<string, unknown>): DefSource {
   return {
     list: async () => Object.keys(files).sort(),
@@ -58,6 +69,99 @@ describe('definition loader', () => {
     const root = { id: 'a', parent: null, mu: 1, radius: 1, orbit: null };
     const child = { id: 'b', parent: 'zzz', mu: 1, radius: 1, orbit: { kind: 'sunLowPrecision' } };
     await expect(loadDefs(memorySource({ 'bodies/a.json': root, 'bodies/b.json': child }))).rejects.toThrow(/unknown parent/);
+  });
+
+  describe('launch sites and their pads', () => {
+    const body = { id: 'a', name: 'A', parent: null, mu: 1, radius: 1, orbit: null };
+    const pad = (id: string, more: Record<string, unknown> = {}): Record<string, unknown> => ({
+      id, name: `Pad ${id}`, offsetEnu: [0, 0], azimuthDeg: 90, class: 'heavy', maxLiftoffMass: 5000, maxDiameter: 4, flatRadius: 100, blendRadius: 250, mountHeight: 6, structures: [{ model: 'm', offsetEnu: [0, 0, 0], headingDeg: 0 }], ...more,
+    });
+    const load = (site: Record<string, unknown>, more: Record<string, unknown> = {}) => loadDefs(memorySource({ 'bodies/a.json': body, 'sites/k.json': site, ...more }));
+    const scenario = (padId?: unknown): Record<string, unknown> => ({
+      'vehicles/v.json': { id: 'v', parts: [] },
+      'scenarios/s.json': { id: 's', name: 's', vehicle: 'v', site: 'k', startUt: 0, start: { kind: 'pad' }, stagesAlreadyFired: 0, target: null, suggestedLanding: null, milestones: [], ...(padId === undefined ? {} : { pad: padId }) },
+    });
+
+    it('the repository site: a pad list, and the deprecated single pad is its first pad', async () => {
+      const lib = await loadDefs(fsDefSource());
+      for (const site of Object.values(lib.sites)) {
+        const pads = site.pads!;
+        expect(pads.length, site.id).toBeGreaterThan(0);
+        const first = pads[0]!;
+        expect(site.padAzimuthDeg).toBe(first.azimuthDeg);
+        expect(site.pad.flatRadius).toBe(first.flatRadius);
+        expect(site.pad.blendRadius).toBe(first.blendRadius);
+        expect(site.pad.clampHeight).toBe(first.mountHeight);
+        expect(site.pad.shape).toBe(first.shape);
+        expect(site.structures).toBe(first.structures);
+        expect(first.structures.length).toBeGreaterThan(0);
+        // Every pad has its location; the first pad stands at the reference point.
+        expect(Object.keys(site.location.pads!).sort()).toEqual(pads.map((p) => p.id).sort());
+        expect(site.location.pads![first.id]).toEqual({ latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, padElevation: site.location.padElevation });
+        expect(new Set(pads.map((p) => p.id)).size).toBe(pads.length);
+      }
+      // Every scenario stands on a pad of its site.
+      for (const sc of Object.values(lib.scenarios)) {
+        if (sc.pad !== undefined) expect(lib.sites[sc.site]!.pads!.map((p) => p.id), sc.id).toContain(sc.pad);
+      }
+    });
+
+    it('a file with pads: the single pad is written from the first pad; the other pads need resolved coordinates', async () => {
+      const shape = { coreRadius: 10, coreBlend: 5, reliefShare: 0.2, areas: [], edgeNoise: { amplitude: 0.1, wavelength: 10 } };
+      const site = {
+        id: 'k', name: 'K', bodyId: 'a', recoveryZones: [],
+        location: { latDeg: 10, lonDeg: 20, padElevation: 30, pads: { n: { latDeg: 10.1, lonDeg: 20.2, padElevation: 'terrain' } } },
+        pads: [pad('m', { azimuthDeg: 72, shape }), pad('n', { class: 'light', flatRadius: 50, blendRadius: 120, mountHeight: 2 })],
+      };
+      const k = (await load(site)).sites['k']!;
+      expect(k.pads!.map((p) => p.id)).toEqual(['m', 'n']);
+      expect(k.padAzimuthDeg).toBe(72);
+      expect(k.pad).toEqual({ flatRadius: 100, blendRadius: 250, clampHeight: 6, shape });
+      expect(k.structures).toBe(k.pads![0]!.structures);
+      expect(k.location.pads).toEqual({ m: { latDeg: 10, lonDeg: 20, padElevation: 30 }, n: { latDeg: 10.1, lonDeg: 20.2, padElevation: 'terrain' } });
+      // The first pad may be stated in location.pads when it equals the reference point, and only then.
+      const same = { ...site, location: { ...site.location, pads: { ...site.location.pads, m: { latDeg: 10, lonDeg: 20, padElevation: 30 } } } };
+      expect((await load(same)).sites['k']!.location.pads!['m']).toEqual({ latDeg: 10, lonDeg: 20, padElevation: 30 });
+      const moved = { ...site, location: { ...site.location, pads: { ...site.location.pads, m: { latDeg: 10, lonDeg: 20.5, padElevation: 30 } } } };
+      await expect(load(moved)).rejects.toThrow(/sites\/k\.json: location\.pads\["m"\] differs from the reference point/);
+      const unresolved = { ...site, location: { latDeg: 10, lonDeg: 20, padElevation: 30 } };
+      await expect(load(unresolved)).rejects.toThrow(/sites\/k\.json: pad "n" has no resolved coordinates/);
+      const stray = { ...site, location: { ...site.location, pads: { ...site.location.pads, zz: { latDeg: 1, lonDeg: 1, padElevation: 1 } } } };
+      await expect(load(stray)).rejects.toThrow(/location\.pads names "zz", which is not a pad of the site \(pads: m, n\)/);
+    });
+
+    it('a file with the deprecated single pad only gets it as its one pad', async () => {
+      const site = { id: 'k', name: 'K', bodyId: 'a', recoveryZones: [], location: { latDeg: 10, lonDeg: 20, padElevation: 'terrain' }, padAzimuthDeg: 45, pad: { flatRadius: 30, blendRadius: 90, clampHeight: 4 }, structures: [] };
+      const k = (await load(site)).sites['k']!;
+      expect(k.pads).toHaveLength(1);
+      expect(k.pads![0]).toMatchObject({ id: 'pad', name: 'K', offsetEnu: [0, 0], azimuthDeg: 45, class: 'heavy', flatRadius: 30, blendRadius: 90, mountHeight: 4, structures: [] });
+      expect(k.pads![0]!.maxLiftoffMass).toBe(Number.POSITIVE_INFINITY);
+      expect(k.location.pads).toEqual({ pad: { latDeg: 10, lonDeg: 20, padElevation: 'terrain' } });
+      expect(k.pad.clampHeight).toBe(4);
+    });
+
+    it('refuses a site without a pad, two statements of one pad, and a malformed pad, by file and pad', async () => {
+      const base = { id: 'k', name: 'K', bodyId: 'a', recoveryZones: [], location: { latDeg: 10, lonDeg: 20, padElevation: 30 } };
+      await expect(load(base)).rejects.toThrow(/sites\/k\.json: a site needs "pads"/);
+      await expect(load({ ...base, pads: [] })).rejects.toThrow(/"pads" must be a non-empty array/);
+      await expect(load({ ...base, pads: [pad('m')], padAzimuthDeg: 90 })).rejects.toThrow(/"padAzimuthDeg" is the deprecated single pad: a site with "pads" states its pads in the list only/);
+      await expect(load({ ...base, pads: [pad('m')], structures: [] })).rejects.toThrow(/"structures" is the deprecated single pad/);
+      await expect(load({ ...base, location: { latDeg: 10, lonDeg: 20 }, pads: [pad('m')] })).rejects.toThrow(/"location" needs latDeg, lonDeg and padElevation/);
+      await expect(load({ ...base, pads: [pad('m'), pad('m')] })).rejects.toThrow(/pad "m" \(pads\[1\]\): duplicate pad id/);
+      await expect(load({ ...base, pads: [pad('m', { class: 'huge' })] })).rejects.toThrow(/pad "m" \(pads\[0\]\): "class" must be one of light, medium, heavy/);
+      await expect(load({ ...base, pads: [pad('m', { blendRadius: 100 })] })).rejects.toThrow(/needs 0 <= flatRadius < blendRadius/);
+      await expect(load({ ...base, pads: [pad('m', { maxLiftoffMass: 0 })] })).rejects.toThrow(/"maxLiftoffMass" must be a positive number/);
+      await expect(load({ ...base, pads: [pad('m', { structures: undefined })] })).rejects.toThrow(/"structures" must be an array/);
+      await expect(load({ ...base, pads: [{ name: 'nameless' }] })).rejects.toThrow(/pads\[0\] must be an object with a non-empty string "id"/);
+    });
+
+    it('a scenario names a pad of its site, or none (the first pad)', async () => {
+      const site = { id: 'k', name: 'K', bodyId: 'a', recoveryZones: [], location: { latDeg: 10, lonDeg: 20, padElevation: 30, pads: { n: { latDeg: 10.1, lonDeg: 20.2, padElevation: 31 } } }, pads: [pad('m'), pad('n')] };
+      expect((await load(site, scenario())).scenarios['s']!.pad).toBeUndefined();
+      expect((await load(site, scenario('n'))).scenarios['s']!.pad).toBe('n');
+      await expect(load(site, scenario('x'))).rejects.toThrow(/scenarios\/s\.json: unknown pad "x" of site "k" \(pads: m, n\)/);
+      await expect(load(site, scenario(2))).rejects.toThrow(/unknown pad 2 of site "k"/);
+    });
   });
 
   describe('rules documents', () => {
@@ -120,7 +224,7 @@ describe('definition loader', () => {
       'bodies/a.json': root,
       'bodies/b.json': { id: 'b', name: 'B of the base', parent: 'a', mu: 1, radius: 1, orbit: { kind: 'x' } },
       'render/a.surface.json': { from: 'base' },
-      'sites/s.json': { id: 's', bodyId: 'a', from: 'base' },
+      'sites/s.json': siteFile('s', 'a', { from: 'base' }),
       'visuals/v.json': { from: 'base' },
     };
     const staged = {
@@ -129,8 +233,8 @@ describe('definition loader', () => {
       'bodies/c.json': { id: 'c', name: 'C', parent: 'b', mu: 1, radius: 1, orbit: { kind: 'x' }, terrain: { $ref: '../terrain/c.terrain.json' }, look: { $ref: '../render/a.surface.json' } },
       'terrain/c.terrain.json': { from: 'staged' },
       // Not laid over: a site and a section of the second root are not definitions of the library.
-      'sites/s.json': { id: 's', bodyId: 'a', from: 'staged' },
-      'sites/t.json': { id: 't', bodyId: 'a', from: 'staged' },
+      'sites/s.json': siteFile('s', 'a', { from: 'staged' }),
+      'sites/t.json': siteFile('t', 'a', { from: 'staged' }),
       'visuals/v.json': { from: 'staged' },
       'visuals/w.json': { from: 'staged' },
     };
@@ -248,7 +352,7 @@ describe('definition loader', () => {
     const base = { id: 's', name: 's', vehicle: 'v', site: 'k', startUt: 0, start: { kind: 'pad' }, stagesAlreadyFired: 0, target: null, suggestedLanding: null };
     const files = (milestones: unknown): Record<string, unknown> => ({
       'bodies/a.json': root,
-      'sites/k.json': { id: 'k', bodyId: 'a' },
+      'sites/k.json': siteFile('k', 'a'),
       'vehicles/v.json': { id: 'v', parts: [] },
       'scenarios/s.json': { ...base, milestones },
     });
@@ -287,7 +391,7 @@ describe('definition loader', () => {
   it('validates the resource amounts a scenario starts with', async () => {
     const files = (resources: unknown): Record<string, unknown> => ({
       'bodies/a.json': { id: 'a', parent: null, mu: 1, radius: 1, orbit: null },
-      'sites/k.json': { id: 'k', bodyId: 'a' },
+      'sites/k.json': siteFile('k', 'a'),
       'resources.json': [{ id: 'LOX' }, { id: 'CH4' }],
       'parts/tank.json': { id: 'tank', resources: [{ resource: 'LOX', capacity: 1000, tankBottomY: 0, tankHeight: 1 }] },
       'parts/strut.json': { id: 'strut' },

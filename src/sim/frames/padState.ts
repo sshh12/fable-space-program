@@ -1,9 +1,12 @@
 /**
- * State of a vessel standing on a launch pad (LaunchSiteDef): position, co-rotating velocity and the
- * pad attitude. On the pad the nose (+Y) points up (geocentric vertical) and the ventral side (-Z) faces
- * `padAzimuthDeg`, so pitching down tips the nose down-range (ARCHITECTURE section 3, control signs).
+ * State of a vessel standing on a launch pad (a pad of a LaunchSiteDef; src/core/defs/sites.ts): position,
+ * co-rotating velocity and the pad attitude. On the pad the nose (+Y) points up (geocentric vertical) and
+ * the ventral side (-Z) faces the pad's `azimuthDeg`, so pitching down tips the nose down-range
+ * (ARCHITECTURE section 3, control signs). Without a pad id the pad is the site's first pad, which stands
+ * at the site's reference point.
  */
 import type { LaunchSiteDef } from '../../core/contracts/defs';
+import { padLocationOf, padOf } from '../../core/defs/sites';
 import { quat, type Quat } from '../../core/math/quat';
 import { DEG } from '../../core/math/scalar';
 import { v3, type Vec3 } from '../../core/math/vec3';
@@ -13,13 +16,13 @@ import { corotationVelocity, directionOfAzimuth, enuBasis, fixedPosition, type E
 /**
  * Pad elevation above the reference radius: the definition's number, or - when the definition says
  * 'terrain' - the caller-supplied natural terrain height at the pad centre (from the TerrainProvider).
- * Throws when the definition says 'terrain' and no value is supplied.
+ * Throws when the definition says 'terrain' and no value is supplied. `padId`: the pad (absent = the first).
  */
-export function resolvePadElevation(site: LaunchSiteDef, terrainElevation?: number): number {
-  const e = site.location.padElevation;
+export function resolvePadElevation(site: LaunchSiteDef, terrainElevation?: number, padId?: string): number {
+  const e = padLocationOf(site, padId).padElevation;
   if (typeof e === 'number') return e;
   if (terrainElevation === undefined || !Number.isFinite(terrainElevation)) {
-    throw new Error(`sites/${site.id}.json: padElevation is 'terrain'; the caller must supply the terrain height at the pad`);
+    throw new Error(`sites/${site.id}.json: padElevation of pad "${padOf(site, padId).id}" is 'terrain'; the caller must supply the terrain height at the pad`);
   }
   return terrainElevation;
 }
@@ -36,7 +39,7 @@ export interface PadState {
   /** Same point in BCI(bodyId) and its co-rotating inertial velocity. */
   r: Vec3;
   v: Vec3;
-  /** VES -> BCI attitude (nose up, ventral toward padAzimuthDeg) and VES -> BCBF. */
+  /** VES -> BCI attitude (nose up, ventral toward the pad's azimuth) and VES -> BCBF. */
   q: Quat;
   qFixed: Quat;
   /** Local horizon basis in BCI axes. */
@@ -47,18 +50,20 @@ export interface PadState {
 
 /**
  * Pad state at `ut`. `padElevation` comes from resolvePadElevation; `heightAbovePad` lifts the reference
- * point (e.g. the vessel root part origin) above the pad surface.
+ * point (e.g. the vessel root part origin) above the pad surface. `padId`: the pad (absent = the first).
  */
-export function padState(system: BodySystem, site: LaunchSiteDef, ut: number, padElevation: number, heightAbovePad = 0): PadState {
+export function padState(system: BodySystem, site: LaunchSiteDef, ut: number, padElevation: number, heightAbovePad = 0, padId?: string): PadState {
   const body = system.body(site.bodyId);
-  const latitude = site.location.latDeg * DEG;
-  const longitude = site.location.lonDeg * DEG;
+  const pad = padOf(site, padId);
+  const where = padLocationOf(site, pad.id);
+  const latitude = where.latDeg * DEG;
+  const longitude = where.lonDeg * DEG;
   const rFixed = fixedPosition(latitude, longitude, body.radius + padElevation + heightAbovePad);
   const qFixedToInertial = system.orientation(site.bodyId, ut);
   const r = quat.rotate(qFixedToInertial, rFixed);
   const v = corotationVelocity(r, system.spin(site.bodyId));
   const enu = enuBasis(qFixedToInertial, r);
-  const azimuth = site.padAzimuthDeg * DEG;
+  const azimuth = pad.azimuthDeg * DEG;
   const yAxis = enu.up;
   const zAxis = v3.neg(directionOfAzimuth(azimuth, enu));
   const xAxis = v3.cross(yAxis, zAxis);

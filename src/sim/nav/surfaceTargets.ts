@@ -7,6 +7,7 @@
 import type { DefLibrary, ScenarioDef } from '../../core/contracts/defs';
 import type { SurfaceTarget } from '../../core/contracts/sim';
 import { DEG } from '../../core/math/scalar';
+import { padLocationOf, padOf, padTitle } from '../../core/defs/sites';
 
 export function buildSurfaceTargets(defs: DefLibrary, scenario: ScenarioDef): SurfaceTarget[] {
   const out: SurfaceTarget[] = [];
@@ -17,14 +18,17 @@ export function buildSurfaceTargets(defs: DefLibrary, scenario: ScenarioDef): Su
   }
   const site = defs.sites[scenario.site];
   if (!site) throw new Error(`scenarios/${scenario.id}.json: unknown site "${scenario.site}"`);
+  // The launch site as a target is the pad the scenario stands on: its place, its flat ground, its full name.
+  const pad = padOf(site, scenario.pad);
+  const where = padLocationOf(site, pad.id);
   out.push({
     id: `site:${site.id}`,
-    name: site.name,
+    name: padTitle(site, pad.id),
     bodyId: site.bodyId,
     kind: 'site',
-    latitude: site.location.latDeg * DEG,
-    longitude: site.location.lonDeg * DEG,
-    radius: site.pad.flatRadius,
+    latitude: where.latDeg * DEG,
+    longitude: where.lonDeg * DEG,
+    radius: pad.flatRadius,
   });
   site.recoveryZones.forEach((z, i) => {
     out.push({ id: `recovery:${i}`, name: z.name, bodyId: site.bodyId, kind: 'recovery', latitude: z.latDeg * DEG, longitude: z.lonDeg * DEG, radius: z.radiusKm * 1000 });
