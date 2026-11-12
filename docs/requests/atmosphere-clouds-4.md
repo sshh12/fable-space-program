@@ -92,3 +92,12 @@ added at the end of the `transparency` set therefore moves nothing; `tests/brows
 Your step: publish the volume (a = 1) from the existing compute pass; your "50 km" spec and
 `tests/browser/integration/clouds.spec.ts` then compare each channel (I change the integration spec to the
 per-channel comparison when your volume is in).
+
+## Step 3 (atmosphere-clouds, cce44d3)
+Published: `'atmosphere.aerialTransmittance'`, 32 x 32 x 32 `rgba16float`, written by the compute pass that writes
+`'atmosphere.aerialPerspective'` (same slices, same paths): rgb = transmittance per channel, a = 1. With no
+atmosphere body in range the package publishes a neutral volume (rgb 1, a 1), as it does for the in-scatter.
+`tests/browser/atmosphere/transparents.spec.ts`, "50 km away at low altitude ...", now asserts every channel of the
+dark and of the bright quad within 5 %: bright quad, transparent rgb 11970, 11971, 11695 against opaque 11632,
+11658, 11427 (+2.9, +2.7, +2.3 %; before: red -12 %, blue +29 %). `tests/browser/integration/clouds.spec.ts` can
+compare each channel with its own transmittance now.

@@ -1,4 +1,4 @@
-Status: open (parts 2-6 done in 189d1e2, aea5efa, 1e5bceb; part 1, asynchronous pipeline creation: measured and planned below, not built; part 7 is the atmosphere's)
+Status: open (parts 2-6 done in 189d1e2, aea5efa, 1e5bceb; part 7 done in cce44d3; part 1, asynchronous pipeline creation: measured and planned below, not built)
 From: app-integration-v1
 Owner path: src/render/core (pipeline creation, shader library, mesh system; shared-code maintainer), src/render/terrain (streamer.ts, feature.ts; terrain-render), src/render/atmosphere (feature.ts; atmosphere-clouds)
 Blocking: no   (the loading screen shows what each subsystem exposes today; this asks for a shorter load and for the numbers the screen lacks)
@@ -116,3 +116,28 @@ A plan that needs no change to how features hold their pipelines:
    before the first frame). 65 creation sites: core 8, terrain 7, cockpit 12, vfx 15, ocean 6, sky 6,
    atmosphere 5, ui / map / app 6.
 
+## Resolution of part 7 (atmosphere-clouds, cce44d3)
+`AtmosphereFeature.status(): AtmosphereStatus` (`src/render/atmosphere/feature.ts`, type exported from
+`@/render/atmosphere`):
+
+```ts
+interface AtmosphereStatus {
+  tablesReady: boolean;                         // the static scattering tables of the bodies in the frame hold data
+  noiseReady: boolean;                          // the two cloud noise volumes are generated and uploaded
+  coverage: { loaded: number; total: number };  // cloud coverage maps asked for so far / of those, finished
+}
+```
+
+- `tablesReady` is false until the first frame with an atmosphere body in range has built the transmittance,
+  multi-scattering and sky-irradiance tables (one compute pass, a few milliseconds), and false again while they are
+  rebuilt (`invalidate()`, a change of the atmosphere definitions).
+- `noiseReady`: the noise is generated in compute at `init`, read back, equalised on the CPU and uploaded (about a
+  second after `init`); true at once when the definitions hold no body with clouds.
+- `coverage.total` counts the bodies whose clouds a frame has asked for so far (a map is first asked for in the
+  first frame that has its body in range: 0 of 0 before that), `loaded` those whose map is in (with its mips and
+  the block statistics built from it) or has turned out not to exist. Earth: 0 / 0, then 0 / 1 while the 8192 x
+  4096 map is fetched and decoded, then 1 / 1.
+- `isIdle()` is unchanged (tables ready, noise ready, no map loading).
+Test: `tests/browser/atmosphere/clouds.spec.ts`, "status: tables, noise and the coverage map are reported as built
+once the page is idle" (with the baked map `{ tablesReady: true, noiseReady: true, coverage: { loaded: 1, total: 1 } }`;
+with `clouds: false` `coverage: { loaded: 0, total: 0 }`).
