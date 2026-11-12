@@ -355,7 +355,8 @@ struct VOut {
   // Streak length = relative speed x exposure time: long for the fast, fine stuff, none for puffs.
   var stretch = 1.0;
   if (kind == KIND_DUST) { stretch = 1.5; }
-  if (kind == KIND_DROPLET) { stretch = 2.0; }
+  // (Spray is seen as streaks: a drop thrown at ten metres a second and frozen as a dot is confetti.)
+  if (kind == KIND_DROPLET) { stretch = 3.5; }
   if (kind == KIND_GAS || kind == KIND_MIST) { stretch = 0.0; }
   if (kind == KIND_ICE || kind == KIND_CHIP) { stretch = 0.35; }
   var axis = frame.cameraRight.xyz;

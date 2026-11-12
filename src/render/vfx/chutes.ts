@@ -113,7 +113,8 @@ struct VOut {
   o.clip = frame.viewProj * vec4f(world, 1.0);
   o.currClip = frame.viewProjUnjittered * vec4f(world, 1.0);
   o.prevClip = frame.prevViewProj * vec4f(I.prevOrigin.xyz + I.prevX.xyz * p.x + I.prevY.xyz * p.y + I.prevZ.xyz * p.z, 1.0);
-  o.n = I.axisX.xyz * nl.x + I.axisY.xyz * nl.y + I.axisZ.xyz * nl.z;
+  // (The axis of a canopy that lies on the water is shorter than a unit: normals take the inverse scale.)
+  o.n = I.axisX.xyz * nl.x + I.axisY.xyz * (nl.y / max(dot(I.axisY.xyz, I.axisY.xyz), 1e-4)) + I.axisZ.xyz * nl.z;
   o.coord = a;
   o.inst = ii;
   return o;
@@ -266,6 +267,8 @@ interface CanopyPlacement {
   flutter: number;
   /** A canopy that has been cut away: unit direction its loose lines hang in (ROOT axes). */
   slackDown?: Vec3;
+  /** Opacity of its lines relative to the cloth (a canopy on the water: its lines have sunk). */
+  lineFade?: number;
   /** For the hand-over to a drifting canopy: velocity in domain axes, and who it belongs to. */
   velDom: Vec3;
   owner: { vesselId: string; partId: string; module: number };
@@ -275,6 +278,8 @@ interface Drifting {
   placement: CanopyPlacement;
   mode: 'cut' | 'failed';
   start: number;
+  /** Effect time at which it came down on the ground or the water (-1: still in the air). */
+  downAt: number;
   /** Skirt centre, axes and velocity in domain coordinates. */
   pos: Vec3;
   X: Vec3;
@@ -506,7 +511,7 @@ export class ChuteSystem {
       const module = vessel?.parts.find((p) => p.instanceId === old.owner.partId)?.modules[old.owner.module];
       if (module?.type !== 'parachute' || (module.state !== 'cut' && module.state !== 'failed')) continue;
       if (this.drifting.length >= MAX_CANOPIES) this.drifting.shift();
-      this.drifting.push({ placement: old, mode: module.state, start: effectTime, pos: toDom(old.origin), X: dirDom(old.X), Y: dirDom(old.Y), Z: dirDom(old.Z), vel: old.velDom, inflation0: old.inflation, down: false });
+      this.drifting.push({ placement: old, mode: module.state, start: effectTime, pos: toDom(old.origin), X: dirDom(old.X), Y: dirDom(old.Y), Z: dirDom(old.Z), vel: old.velDom, inflation0: old.inflation, down: false, downAt: -1 });
       if (module.state === 'failed') {
         const S = this.data.parachutes.shred;
         const style = this.data.parachutes[old.style];
@@ -543,7 +548,9 @@ export class ChuteSystem {
         d.vel = v3.add(d.vel, v3.scale(v3.sub(target, d.vel), 1 - Math.exp(-dt / 1.2)));
         // Tip over about a horizontal axis: the released canopy keels over within a second or two and streams.
         const axis = v3.normalize(v3.cross(dom.up, v3.lenSq(v3.reject(d.X, dom.up)) > 1e-6 ? d.X : d.Z));
-        const rot = quat.fromAxisAngle(axis, v3.dot(d.Y, dom.up) > 0.2 ? 0.9 * dt * Math.min(1, 2 * age) : 0);
+        // (A canopy that was cut away settles nearly upright, rocking; one that failed streams and keels over.)
+        const keel = d.mode === 'failed' ? 0.2 : 0.8;
+        const rot = quat.fromAxisAngle(axis, v3.dot(d.Y, dom.up) > keel ? (d.mode === 'failed' ? 0.9 : 0.25) * dt * Math.min(1, 2 * age) : 0);
         d.X = quat.rotate(rot, d.X);
         d.Y = quat.rotate(rot, d.Y);
         d.Z = quat.rotate(rot, d.Z);
@@ -552,15 +559,23 @@ export class ChuteSystem {
       if (floor !== null && v3.dot(dom.up, d.pos) < floor + 0.3) {
         d.pos = v3.addScaled(d.pos, dom.up, floor + 0.3 - v3.dot(dom.up, d.pos));
         d.vel = v3.zero();
+        if (!d.down) d.downAt = effectTime;
         d.down = true;
       }
       const p = d.placement;
       const origin = v3.add(domOriginRel, quat.rotate(dom.q, d.pos));
       const X = quat.rotate(dom.q, d.X);
-      const Y = quat.rotate(dom.q, d.Y);
+      const Yunit = quat.rotate(dom.q, d.Y);
       const Z = quat.rotate(dom.q, d.Z);
+      // A canopy that is cut away with nothing hanging from it does not shut into a tube: the air it falls
+      // through keeps it half open, a slack, pleated dome that sinks slowly and rocks. On the water it spreads
+      // and lies flat (its axis shrinks to a few per cent: a rumpled sheet on the swell), and its lines sink.
       const collapse = Math.exp(-age / C.collapseTime);
-      const inflation = d.mode === 'failed' ? Math.max(0.004, d.inflation0 * Math.exp(-age / (0.3 * S.time))) : Math.max(0.03, d.inflation0 * collapse);
+      const settled = d.downAt >= 0 ? Math.min(1, (effectTime - d.downAt) / 2.5) : 0;
+      const flat = settled * settled * (3 - 2 * settled);
+      const adrift = Math.max(0.03, d.inflation0 * (0.3 + 0.7 * collapse));
+      const inflation = d.mode === 'failed' ? Math.max(0.004, d.inflation0 * Math.exp(-age / (0.3 * S.time))) : adrift + (Math.max(adrift, 0.7 * d.inflation0) - adrift) * flat;
+      const Y = v3.scale(Yunit, d.mode === 'failed' ? 1 : 1 - 0.93 * flat);
       // One frame ago: it has moved with the domain and by its own velocity, the eye by prevEyeOffset.
       const prevOrigin = v3.sub(v3.addScaled(origin, v3.add(dom.velocityRoot, quat.rotate(dom.q, d.vel)), -dt), frame.prevEyeOffset);
       drawn.push({
@@ -576,14 +591,15 @@ export class ChuteSystem {
         prevZ: Z,
         // The lines carry nothing any more: they hang from the skirt in a loose bundle that swings a little.
         confluence: v3.add(
-          v3.addScaled(v3.addScaled(origin, Y, -0.2 * p.suspension), quat.rotate(dom.q, dom.up), -0.7 * p.suspension),
+          v3.addScaled(v3.addScaled(origin, Yunit, -0.2 * p.suspension), quat.rotate(dom.q, dom.up), -0.7 * p.suspension * (1 - flat)),
           v3.scale(X, 0.12 * p.suspension * Math.sin(0.9 * age + 7 * p.seed)),
         ),
         attach: null,
         slackDown: v3.neg(quat.rotate(dom.q, dom.up)),
         shred: d.mode === 'failed' ? Math.min(0.92, 0.25 + 0.7 * (age / S.time)) : 0,
         fade: 1 - Math.min(1, Math.max(0, (age - 0.7 * C.fadeTime) / (0.3 * C.fadeTime))),
-        flutter: d.down ? 0.15 : 3.2,
+        lineFade: 1 - flat,
+        flutter: d.down ? 0.15 + 1.6 * (1 - flat) : 2.2,
       });
     }
 
@@ -616,7 +632,7 @@ export class ChuteSystem {
       const lineColor = s.def.lineColor;
       const gores = s.def.gores;
       const step = p.shred > 0 || p.slackDown ? 2 : 1;
-      for (let g = 0; g < gores; g += step) {
+      for (let g = 0; g < gores && (p.lineFade ?? 1) > 0.01; g += step) {
         const th = (g / gores) * 2 * Math.PI;
         const at = v3.add(p.origin, v3.add(v3.scale(p.X, Math.cos(th) * mouth), v3.scale(p.Z, Math.sin(th) * mouth)));
         if (p.slackDown) {
@@ -634,7 +650,7 @@ export class ChuteSystem {
           let prevPt = at;
           for (let k = 1; k <= 4; k++) {
             const pt = curve(k / 4);
-            addLine(prevPt, pt, s.def.lineWidth, p.fade, lineColor);
+            addLine(prevPt, pt, s.def.lineWidth, p.fade * (p.lineFade ?? 1), lineColor);
             prevPt = pt;
           }
         } else addLine(p.confluence, at, s.def.lineWidth, p.fade, lineColor);

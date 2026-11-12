@@ -157,14 +157,14 @@
     "maxSpawnPerFrame": 32768,
     "dust": {
       "maxHeightRe": 110,
-      "rate": 2500,
-      "speed": [30, 800],
-      "elevationDeg": [0.4, 6],
-      "life": [0.3, 1.3],
-      "size": [0.03, 0.12],
+      "rate": 2000,
+      "speed": [30, 500],
+      "elevationDeg": [0.4, 4],
+      "life": [0.3, 1.0],
+      "size": [0.03, 0.1],
       "albedo": [0.62, 0.6, 0.57],
-      "opacity": 0.2,
-      "sheetDepth": 2.2,
+      "opacity": 0.12,
+      "sheetDepth": 4.5,
       "sheetMinReach": 160,
       "sheetReachRadii": 40,
       "sheetSpeed": 55,
@@ -174,7 +174,7 @@
     "gas": { "count": 240, "speed": [140, 360], "size": [0.3, 0.9], "life": [0.12, 0.36], "color": [0.86, 0.88, 0.92], "opacity": 0.05 },
     "sparks": { "count": 180, "speed": [8, 70], "size": [0.015, 0.05], "life": [0.25, 1.2], "temperature": [1500, 2500] },
     "debris": { "count": 160, "speed": [4, 55], "size": [0.03, 0.9], "life": [4, 14], "albedo": [0.4, 0.4, 0.42] },
-    "spray": { "count": 1800, "mistCount": 160, "size": [0.004, 0.17], "mistSize": [0.6, 2.2], "life": [1.2, 3.4], "albedo": [0.92, 0.95, 0.97], "opacity": 0.06 },
+    "spray": { "count": 1800, "mistCount": 160, "size": [0.004, 0.09], "mistSize": [0.6, 2.2], "life": [1.2, 3.4], "albedo": [0.92, 0.95, 0.97], "opacity": 0.06 },
     "ablation": { "rate": 450, "speed": [15, 120], "size": [0.012, 0.04], "life": [0.25, 0.9], "temperature": [2200, 3400] }
   },
   "frost": { "resources": ["LOX", "LH2", "CH4"], "vibrationThrottle": 0.2 },
@@ -256,7 +256,7 @@
       "clusterGap": 1.04,
       "streamRadius": 0.045
     },
-    "cutDrift": { "fadeTime": 22, "collapseTime": 0.45, "sinkSpeed": 11 },
+    "cutDrift": { "fadeTime": 40, "collapseTime": 0.9, "sinkSpeed": 6.5 },
     "shred": { "time": 1.4, "pieces": 520 }
   },
   "splash": {

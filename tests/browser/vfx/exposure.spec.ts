@@ -54,6 +54,40 @@ test('by day the sky of the pad scene keeps its exposure when nine engines are l
   await expectNoErrors(page, pageLog);
 });
 
+test('by day the chase camera keeps its exposure through the lift-off, from T+0 to T+10 s (within half a stop)', async ({ page, pageLog }) => {
+  // The sequence of the review matrix (liftoff-chase): the plume-lit pad and the cloud fill the bottom of the
+  // frame for the first seconds and leave it as the vehicle climbs. A daylight exposure does not follow them
+  // (requests vfx-4 and vfx-7): the sky, which nothing in the scene lights, keeps its value.
+  await openLab(page, 'scene=pad&dist=150&pitch=4');
+  const sky = await skyPixel(page);
+  const rows: { T: number; value: number; ev100: number }[] = [];
+  for (const [T, drop] of [
+    [0, -8],
+    [3, -14],
+    [6, -20],
+    [10, -30],
+  ] as const) {
+    await page.evaluate((t) => window.__vfx!.runTo(t), 4 + T);
+    await page.evaluate((dz) => {
+      const lab = window.__vfx!;
+      const n = lab.nozzleEnu('stack');
+      const base = lab.camera.follow ? lab.vesselEnu(lab.camera.follow) : { x: 0, y: 0, z: 0 };
+      lab.setCamera({ target: { x: n.x - base.x, y: n.y - base.y, z: n.z - base.z + dz } });
+    }, drop);
+    await waitIdle(page, 120);
+    rows.push({ T, ...(await patch(page, sky)) });
+  }
+  console.log(`lift-off by day from the chase camera: ${rows.map((r) => `T+${r.T} s: sky ${r.value.toFixed(4)} at EV ${r.ev100.toFixed(2)}`).join(', ')}`);
+  const evs = rows.map((r) => r.ev100);
+  expect(Math.max(...evs) - Math.min(...evs)).toBeLessThan(0.5);
+  for (const r of rows) {
+    expect(Math.abs(Math.log2(r.value / rows[0]!.value)), `sky at T+${r.T} s against T+0`).toBeLessThan(0.5);
+    expect(r.ev100).toBeGreaterThan(13.2);
+    expect(r.ev100).toBeLessThan(16.2);
+  }
+  await expectNoErrors(page, pageLog);
+});
+
 test('the sky keeps its value through the splash sequence (within 5 % once the capsule is in the water)', async ({ page, pageLog }) => {
   // (The lab holds the camera of a sea scene at the exposure of a real sea; here the meter is left to itself.)
   await openLab(page, 'scene=splash&minev=-10');

@@ -374,11 +374,13 @@ export class TrailSystem {
       fed.add(key);
     }
 
+    // (A burning fragment is a bright head on a line of smoke: its glow is gone a few metres behind it. A glow
+    // that lasted a tenth of a second drew every fragment as a pale rod twenty metres long, a sea urchin.)
     for (const f of fragments) {
       if (f.smoke <= 0 && f.glow <= 0) continue;
       this.feed(
         this.trail(f.key, f.bodyId, 2 * f.radius),
-        { pos: toFixed(f.bodyId, f.rel), born: effectTime, radius0: f.radius, spread: 0.02 * D.expansionSpeed, diffusivity: 0.025 * D.diffusivity, smoke0: f.smoke, contrail0: 0, glow0: f.glow, glowLife: 0.09, glowColor: f.color },
+        { pos: toFixed(f.bodyId, f.rel), born: effectTime, radius0: f.radius, spread: 0.02 * D.expansionSpeed, diffusivity: 0.025 * D.diffusivity, smoke0: f.smoke, contrail0: 0, glow0: f.glow, glowLife: 0.03, glowColor: f.color },
         effectTime,
       );
       fed.add(f.key);
