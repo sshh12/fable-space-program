@@ -6,8 +6,8 @@ Blocking: no   (the loading screen shows what each subsystem exposes today; this
 ## Problem
 The app now shows an honest loading screen until the view at the start position is final (`src/app/loading.ts`,
 docs/handoff/app-integration-v1.md "Loading"). Measured on the pad it takes 32 s, and two thirds of that is not
-loading data: (A) 11 s in which the first 19 frames cannot be presented because the GPU process is still compiling
-the pipelines created synchronously during start-up, and (B) 11 s of terrain streaming that only starts after
+loading data: (A) 14 s in which only 19 frames are presented while 70 shader modules of the pipelines created
+during start-up are still compiling (`pendingCompilations()`; the frame rate recovers the moment it reaches 0), and (B) 11 s of terrain streaming that only starts after
 that and proceeds one quadtree level per round trip. And (C) three subsystems expose no count the screen could
 show.
 
@@ -19,14 +19,14 @@ on the GPU, 2026-11-11 23:10; times are `performance.now()` of the page):
 |---|---|---|
 | Graphics device, definitions | 0.4 -> 0.7 | 84 of 86 definition files |
 | Simulation (`sim.ready`), sound (38 assets) | 0.7 -> 2.6 | |
-| `createRenderer` | 2.1 -> 5.8 | the core's own pipelines |
-| Feature start-up, one by one | 5.8 -> 9.3 | terrain 1.6 s, cockpit 1.0, ocean 0.5, vehicle 0.3, site 0.1, the rest < 0.05 |
-| First frames | 9.3 -> 20.1 | **19 frames in 10.8 s**; `pendingCompilations()` 70 at the start, 0 at 20.1 s; sky probe and atmosphere tables done at 20.3 s |
+| `createRenderer`, then the features' `init` one by one | 2.1 -> about 5.7 | the features take 3.5 s of it: terrain 1.6 s, cockpit 1.0, ocean 0.5, vehicle 0.3, site 0.1, the rest < 0.05 |
+| First frame | about 5.7 -> 9.3 | one frame in 3.6 s |
+| Frames 2-19 | 9.3 -> 20.1 | **18 frames in 10.8 s**; `pendingCompilations()` 70 at 9.3 s, 0 at 20.1 s; sky probe and atmosphere tables done at 20.3 s |
 | Terrain | 20.4 -> 31.3 | frame 19: 32 tiles resident, 546 queued, 8 baking, 50 uploading; 24.5 s: 636 resident (the pinned and preloaded levels), nothing queued; then 719 (26.6 s), 867 (28.6 s), 1,050 (30.6 s), 1,079 at level 20 (31.3 s), with the queue empty in every second sample |
 | Fade | 31.5 -> 31.9 | 12 settled frames, exposure at its target |
 
-So: (A) between 9.3 s and 20.1 s nothing the player waits for is being loaded; the frame loop delivers a frame
-every 0.57 s. (B) In those 11 s the eight tile workers did 90 tiles (the streamer hands out jobs once per frame,
+So: (A) between 5.7 s and 20.1 s nothing the player waits for is being loaded; the frame loop delivers a frame
+every 0.6 s and more. (B) In those 14 s the eight tile workers did 90 tiles (the streamer hands out jobs once per frame,
 in `update()`); after it they bake the 636 pinned tiles in 4 s and then need 7 s for the 440 tiles of the pad view,
 level after level, with idle workers in between (bake 25 ms + image 6 ms per tile: `stream.bakeMs`, `imageMs`).
 The first run of the evening (before the pool fix under way for app-integration-7) showed the same shape: loop
