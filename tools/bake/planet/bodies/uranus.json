@@ -17,8 +17,8 @@
   "opal": {
    "url": "https://archive.stsci.edu/hlsps/opal/cycle22/uranus/hlsp_opal_hst_wfc3-uvis_uranus-2014a_f467m-f547m-f658n_v1_globalmap.tif",
    "bytes": 262448,
-   "md5": null,
-   "sha256": null,
+   "md5": "e9beeddc52696891ceb6b1ceaa52b2eb",
+   "sha256": "1e7944240bb74b2e84703b7c63dcb3d95cda62e6a4a8928522b3cc28d8b927a6",
    "format": "image",
    "latitude": "planetographic",
    "lonPositive": "east",
@@ -32,7 +32,11 @@
    ],
    "nodata": 0,
    "credit": "hst-opal-uranus-2014a",
-   "registration": "point"
+   "registration": "point",
+   "validLatDeg": [
+    -25.0,
+    90.0
+   ]
   }
  },
  "globals": [
@@ -48,7 +52,7 @@
     "b"
    ],
    "format": "png",
-   "note": "Hubble OPAL 2014 (F467M, F547M, F658N); the south beyond about 65 S is outside the observation and filled zonally"
+   "note": "Hubble OPAL 2014 (F467M, F547M, F658N); outside -25.0..90.0 deg the observation is smeared at the limb and is replaced by a zonal fill from the nearest clean latitude"
   }
  ]
 }

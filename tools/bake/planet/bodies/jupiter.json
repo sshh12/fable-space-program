@@ -17,8 +17,8 @@
   "cassini": {
    "url": "https://assets.science.nasa.gov/content/dam/science/psd/photojournal/pia/pia07/pia07782/PIA07782.tif",
    "bytes": 19456427,
-   "md5": null,
-   "sha256": null,
+   "md5": "2c91426d1a9e0aac650b117c93198cde",
+   "sha256": "f92ffc7a2fa0235c47ec8f1f168dd36bffeb6acc318292b237878a00a48cf7d9",
    "format": "image",
    "latitude": "planetocentric",
    "lonPositive": "east",

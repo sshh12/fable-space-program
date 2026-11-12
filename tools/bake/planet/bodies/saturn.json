@@ -19,8 +19,8 @@
   "cassini": {
    "url": "https://atmos.nmsu.edu/PDS/data/PDS4/co_iss_global-maps/data_derived/Cassini_ISS_RGB_Saturn_global_color_map_original.fits",
    "bytes": 77829120,
-   "md5": null,
-   "sha256": null,
+   "md5": "b53148235635298ccdfb8f9d1fceea44",
+   "sha256": "32a62eca9b82255c7dd763ba0752cee1664ae73d5ec4d5d5260227deecd422af",
    "format": "fits",
    "latitude": "planetocentric",
    "lonPositive": "east",
@@ -32,15 +32,15 @@
     2,
     3
    ],
-   "nodata": null,
+   "nodata": 0,
    "credit": "pds-cassini-iss-saturn-map",
    "registration": "point"
   },
   "uvis": {
    "url": "https://pds-rings.seti.org/holdings/volumes/COUVIS_8xxx/COUVIS_8001/data/UVIS_HSP_2008_231_BETCEN_I_TAU10KM.TAB",
    "bytes": 953964,
-   "md5": null,
-   "sha256": null,
+   "md5": "e1dab7974f45cbdd1501c8d6720bf5ae",
+   "sha256": "6ddd74930ec7cabd8cfd7c782bcd1bc553c3c20e1e957626431667ef71faec00",
    "format": "table",
    "latitude": "planetocentric",
    "lonPositive": "east",

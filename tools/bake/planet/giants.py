@@ -76,8 +76,16 @@ def _load(path, src: dict) -> tuple[np.ndarray, np.ndarray]:
         valid = np.ones(a.shape[:2], bool)
     a = a[..., :3]
     if src["nodata"] is not None:
-        nd = float(src["nodata"]) / (255.0 if src["format"] != "fits" else 255.0)
-        valid &= ~np.all(np.abs(a - nd) < 1e-9, axis=-1)
+        valid &= ~np.all(np.abs(a - float(src["nodata"]) / 255.0) < 1e-9, axis=-1)
+    if "validLatDeg" in src:
+        # rows outside the observation's clean latitude range (limb smear, polar night) count as uncovered
+        H = a.shape[0]
+        if src.get("registration", "cell") == "point":
+            lat = 90.0 - np.arange(H) * 180.0 / (H - 1)
+        else:
+            lat = 90.0 - (np.arange(H) + 0.5) * 180.0 / H
+        lo, hi = src["validLatDeg"]
+        valid &= ((lat >= lo) & (lat <= hi))[:, None]
     return a, valid
 
 
