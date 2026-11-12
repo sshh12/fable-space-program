@@ -86,8 +86,18 @@ class RegionalHeight:
     def __init__(self, region: dict, slack_km: float = 50.0):
         self.region = region
         src = region["sources"]["height"]
-        self.z_land = int(src["landZoom"])
-        self.z_survey = int(src["surveyZoom"])
+        self.land_source = src["id"]                    # "terrarium" (z15 / z14 tiles) or "copernicus-glo30"
+        self.z_land = int(src.get("landZoom", 14))
+        self.z_survey = int(src.get("surveyZoom", 12))
+        # sea floor: ETOPO counts only where it is itself sea at least this deep (region option; absent = the
+        # original rule everywhere, as at Ka Lae)
+        self.etopo_min_depth = src.get("seaFloorEtopoMinDepthM")
+        # inland water: WorldCover water that is not the ocean is kept only where the land source is flat under it
+        # (region option `sources.watermask.inlandMaxRangeM` / `inlandMaxSlopeDeg`; dark rock on a hillside that
+        # WorldCover reads as water becomes land again)
+        wm = region["sources"].get("watermask", {})
+        self.inland_filter = ((float(wm["inlandMaxRangeM"]), float(wm["inlandMaxSlopeDeg"]))
+                              if "inlandMaxRangeM" in wm else None)
         self.d1 = float(src["seaFloorRampKm"]) * 1000.0
         self.k = float(src["nearShoreSlope"])
         self.slack_km = slack_km
@@ -100,11 +110,17 @@ class RegionalHeight:
 
     # -- data -----------------------------------------------------------------------------------------
     @property
-    def t(self) -> TileStack:
-        """The Terrarium z15 stack, built (downloading as needed) on first use: steps that only need the
+    def t(self):
+        """The land source (anything with .bicubic(lat, lon), NaN where it has no data): the Terrarium stack or
+        the Copernicus GLO-30 grid, built (downloading as needed) on first use: steps that only need the
         coastline (regional imagery, water mask) never touch it."""
         if self._t is None:
-            self._ensure_terrarium()
+            if self.land_source == "copernicus-glo30":
+                from earth.glo30 import Glo30Grid
+                lat0, lat1, lon0, lon1 = self.bbox
+                self._t = Glo30Grid(lat0 - 0.02, lat1 + 0.02, lon0 - 0.02, lon1 + 0.02)
+            else:
+                self._ensure_terrarium()
         return self._t
 
     def _ensure_terrarium(self) -> None:
@@ -144,8 +160,9 @@ class RegionalHeight:
 
     def prepare(self) -> None:
         """Build every cached input in the calling process (the coast grid is built by the constructor; this adds
-        the Terrarium stack), so that worker processes only memory-map them."""
+        the land source and the inland-water filter), so that worker processes only memory-map them."""
         _ = self.t
+        self.prepare_inland()
 
     def _stack(self, tiles: list) -> TileStack:
         """Fetch (resumably) and stack the z15 tiles; a cached stack is reused without touching the network."""
@@ -351,7 +368,101 @@ class RegionalHeight:
         """(land, ocean) boolean arrays; points that are neither are inland water."""
         land = self.land_fraction(lat, lon) >= 0.5
         ocean = ~land & self.ocean_near(lat, lon)
+        if self.inland_filter is not None:
+            inland = ~land & ~ocean
+            if inland.any():
+                idx = np.flatnonzero(inland)
+                land[idx[self.implausible_inland(np.ravel(lat)[idx], np.ravel(lon)[idx])]] = True
         return land, ocean
+
+    # -- inland water that the land source contradicts ------------------------------------------------------
+    INLAND_CELL = 2                     # WorldCover pixels per cell edge of the component grid (20 m)
+
+    def _inland_path(self):
+        rng, slope = self.inland_filter
+        return paths.WORK / f"inlandbad-v1-{self.wc.key}-{self.land_source}-{rng:g}-{slope:g}.npy"
+
+    def prepare_inland(self) -> None:
+        if self.inland_filter is not None:
+            self._ensure_inland()
+
+    def _ensure_inland(self) -> None:
+        """Packed bits on a 20 m grid (2 x 2 WorldCover pixels): 1 where inland water (WorldCover water that is not
+        the ocean) belongs to a component the land source contradicts: height range (5th to 95th percentile) above
+        inlandMaxRangeM or mean slope above inlandMaxSlopeDeg. A lake, a khawr or a wet sabkha is flat; dark rock on
+        a hillside that WorldCover reads as water is not."""
+        p = self._inland_path()
+        if not p.is_file():
+            from earth.worldcover import PX_PER_DEG
+            max_range, max_slope = self.inland_filter
+            a = self.wc.data
+            c = self.INLAND_CELL
+            H, W = a.shape[0] // c, a.shape[1] // c
+            inl = np.zeros((H, W), bool)
+            for r0 in range(0, H, 1024):
+                r1 = min(r0 + 1024, H)
+                water = self._water_rows(a, r0 * c, r1 * c)[:, :W * c]
+                ii, jj = np.nonzero(water)
+                ocean = self._ocean_px(ii + r0 * c, jj)
+                w = np.zeros(water.shape, bool)
+                w[ii[~ocean], jj[~ocean]] = True
+                inl[r0:r1] = w.reshape(r1 - r0, c, W, c).any(axis=(1, 3))
+            try:
+                lab = np.empty(inl.shape, np.uint16)
+                n = ndimage.label(inl, structure=np.ones((3, 3), int), output=lab)
+            except RuntimeError:
+                lab, n = ndimage.label(inl, structure=np.ones((3, 3), int))
+            del inl
+            bad = np.zeros(n + 1, bool)
+            rng = np.random.default_rng(0)
+            step = 15.0
+            dlat = step / (math.pi * paths.RADIUS / 180.0)
+            for k, sl in enumerate(ndimage.find_objects(lab), start=1):
+                if sl is None:
+                    continue
+                rr, cc = np.nonzero(lab[sl] == k)
+                if rr.size > 2000:
+                    pick = rng.choice(rr.size, 2000, replace=False)
+                    rr, cc = rr[pick], cc[pick]
+                rr = (rr + sl[0].start) * c + 0.5 * c
+                cc = (cc + sl[1].start) * c + 0.5 * c
+                la = (self.wc.r_top - rr) / PX_PER_DEG
+                lo = (self.wc.c_left + cc) / PX_PER_DEG
+                h = self.t.bicubic(la, lo)
+                ok = ~np.isnan(h)
+                if not ok.any():
+                    continue
+                spread = float(np.percentile(h[ok], 95) - np.percentile(h[ok], 5)) if ok.sum() > 1 else 0.0
+                dlon = dlat / max(0.1, math.cos(math.radians(float(np.mean(la)))))
+                ge = (self.t.bicubic(la, lo + dlon) - self.t.bicubic(la, lo - dlon)) / (2 * step)
+                gn = (self.t.bicubic(la + dlat, lo) - self.t.bicubic(la - dlat, lo)) / (2 * step)
+                sl_deg = np.degrees(np.arctan(np.hypot(ge, gn)))
+                mean_slope = float(np.nanmean(sl_deg)) if np.isfinite(sl_deg).any() else 0.0
+                bad[k] = spread > max_range or mean_slope > max_slope
+            out = bad[lab]
+            log(f"regsrc: {n} inland water components on the 20 m grid, {int(bad.sum())} contradicted by the land "
+                f"source (range > {max_range:g} m or slope > {max_slope:g} deg): {int(out.sum()) * 4e-4:.2f} km2 made land")
+            del lab
+            tmp = p.with_name(p.stem + ".partial.npy")
+            np.save(tmp, np.packbits(out, axis=1))
+            del out
+            tmp.replace(p)
+        self._inlandbad = np.load(p, mmap_mode="r")
+
+    def implausible_inland(self, lat, lon) -> np.ndarray:
+        """True where a point of inland water lies in a component the land source contradicts."""
+        if not hasattr(self, "_inlandbad"):
+            self._ensure_inland()
+        cx, cy = self.wc.px(np.ravel(lat), np.ravel(lon))
+        c = self.INLAND_CELL
+        iy = np.floor((cy + 0.5) / c).astype(np.int64)
+        ix = np.floor((cx + 0.5) / c).astype(np.int64)
+        h, w8 = self._inlandbad.shape
+        out = np.zeros(iy.size, bool)
+        inside = (iy >= 0) & (iy < h) & (ix >= 0) & (ix < w8 * 8)
+        r, cc = iy[inside], ix[inside]
+        out[inside] = (np.asarray(self._inlandbad[r, cc >> 3]) >> (7 - (cc & 7))) & 1 == 1
+        return out
 
     def inland_water(self, lat, lon) -> np.ndarray:
         """WorldCover water points that are not the ocean (lakes, ponds, reservoirs, rivers)."""
@@ -364,7 +475,16 @@ class RegionalHeight:
         near = -self.k * np.maximum(self._grid(self.sd_near, lat, lon), 0.0)
         shallower = 0.5 * (near + far + np.sqrt((near - far) ** 2 + SOFT_M ** 2))
         w = regmod.smootherstep(np.maximum(self._grid(self.sd_ramp, lat, lon), 0.0) / self.d1)
-        return np.minimum(w * far + (1.0 - w) * shallower, -MIN_SEA_M)
+        if self.etopo_min_depth is None:
+            return np.minimum(w * far + (1.0 - w) * shallower, -MIN_SEA_M)
+        # ETOPO counts only where it is itself sea: its weight c rises from 0 where it is shallower than 1 m (its
+        # coarse coast lies offshore of the WorldCover coast: below a cliff ETOPO says -1 m for a kilometre and
+        # more) to 1 where it is deeper than seaFloorEtopoMinDepthM; elsewhere the ramp, held at its depth at
+        # seaFloorRampKm beyond that distance. Where c = 1 the formula is the original one (bays and shelves keep
+        # ETOPO's shallower floor).
+        c = regmod.smootherstep((-g - 1.0) / max(float(self.etopo_min_depth) - 1.0, 0.1))
+        ramp = np.maximum(near, -self.k * self.d1)
+        return np.minimum(c * (w * far + (1.0 - w) * shallower) + (1.0 - c) * ramp, -MIN_SEA_M)
 
     def local(self, lat, lon) -> np.ndarray:
         """s: Terrarium on land and inland water, the ramped ETOPO sea floor in the ocean, without the

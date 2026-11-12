@@ -48,9 +48,17 @@ RESULTS: list[dict] = []
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 
 
+WAIVERS: dict[str, str] = {}     # check-name prefix -> the lead's waiver (region file `verifyWaivers`)
+
+
 def check(name: str, ok: bool, detail: str, data=None) -> bool:
-    RESULTS.append({"check": name, "pass": bool(ok), "detail": detail, "data": data})
-    print(f"{'PASS' if ok else 'FAIL'}  {name}: {detail}", flush=True)
+    """A gate. A failing check whose name starts with a key of WAIVERS is reported as WAIVED BY THE LEAD with its
+    measured numbers and the waiver's text; it does not fail the run (the lead decides on it)."""
+    waiver = next((w for k, w in WAIVERS.items() if name.startswith(k)), None) if not ok else None
+    RESULTS.append({"check": name, "pass": bool(ok) or waiver is not None, "waived": waiver, "detail": detail,
+                    "data": data})
+    status = "PASS" if ok else ("WAIVED BY THE LEAD" if waiver else "FAIL")
+    print(f"{status}  {name}: {detail}" + (f" [waiver: {waiver}]" if waiver else ""), flush=True)
     return ok
 
 
@@ -1115,6 +1123,10 @@ def main_region(region_id: str, quick: bool) -> int:
     from earth import stage
     from earth.util import dir_size
     reg = regmod.load(region_id)
+    WAIVERS.update(reg.get("verifyWaivers", {}))
+    if stage.is_replace(region_id) and stage.state(region_id) == "staging":
+        os.environ[stage.REPLACE_ENV] = region_id      # read the staged replacement (and so do the workers)
+        stage.reset()
     hidden = stage.state(region_id) in stage.HIDDEN_STATES
     m = stage.prospective_manifest(region_id) if hidden else layout.read_manifest(paths.TILESET)
     if not hidden and not all(r in m["layers"]["height"].get("coverage", {}).get(str(lv), [])
@@ -1139,9 +1151,11 @@ def main_region(region_id: str, quick: bool) -> int:
     b, n = dir_size(stage.tiles_root(region_id)) if hidden else (None, None)
     info("size", f"{region_id}: " + (f"{b / 1e9:.2f} GB in {n} files staged" if hidden else "swapped into data/tiles/earth"))
     failed = [r for r in RESULTS if not r["pass"]]
+    waived = [r for r in RESULTS if r.get("waived")]
     write_json(paths.OUT / f"verify-{region_id}.json", {"results": RESULTS, "info": INFO, "seconds": time.time() - t0,
                                                         "quick": quick, "staged": hidden})
-    print(f"{len(RESULTS) - len(failed)} of {len(RESULTS)} checks passed in {time.time() - t0:.0f} s")
+    print(f"{len(RESULTS) - len(failed) - len(waived)} of {len(RESULTS)} checks passed, {len(waived)} waived by the "
+          f"lead, {len(failed)} failed in {time.time() - t0:.0f} s")
     return 1 if failed else 0
 
 

@@ -82,8 +82,14 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--classes", default="heavy=4:2500,medium=6:1500,light=6:1000",
                     help="pads: class=count:spacingM,... (ARCHITECTURE 9.3)")
     ap.add_argument("--strict", action="store_true",
-                    help="pads: also gate LC-1's site-selection tests (bare ground, open ocean sector); a measurement "
-                         "of how far they reach, written to out/ only")
+                    help="pads: the FULL rule that placed LC-1, the open-ocean sector gated too (Madrakah)")
+    ap.add_argument("--exclude", action="append", default=[],
+                    help="pads: 'latDeg:lonDeg:radiusM:reason' - ground rejected after LOOKING at the imagery (a wadi "
+                         "bed, a road, a borrow pit); repeatable, recorded in the pads file")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="pads: write the result to out/bake/earth/site-bake only (e.g. the Q8 fall-back trial)")
+    ap.add_argument("--replace", action="store_true",
+                    help="stage: bake a region that is already live again (REPLACE mode, stage.py)")
     a = ap.parse_args(argv)
     set_below_normal()
     regions = [a.region] if a.region else regmod.list_regions()

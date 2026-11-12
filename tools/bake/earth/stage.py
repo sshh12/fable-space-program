@@ -11,6 +11,14 @@ While "staging" or "moved" the region is HIDDEN: region.list_regions() leaves it
 the manifest, the contact sheets and verify.py do not see it), manifest.build_hash() leaves its records out, and no
 manifest written meanwhile promises one of its tiles.
 
+REPLACE mode (`begin(region, replace=True)`, `bake.py stage --replace`): a region that is already live is baked
+again into its stage while the live tiles and the live manifest stay as they are for every other process: the
+region is not hidden, and the routing to the stage applies only in processes whose environment names the region in
+EARTH_STAGE_REPLACE (the bake and the swap set it; their worker processes inherit it). The replace swap checks that
+the stage holds exactly the region's tiles and nothing outside its rectangles, replaces them file by file (each
+os.replace is atomic: a reader gets the old or the new tile, never a missing one) and then writes the manifest
+once, atomically; entries of other regions are checked unchanged.
+
 swap(region): the prospective manifest (the live one with the region added) is built and checked to be purely
 additive; the staged tiles are moved into data/tiles/earth (swaptree.swap_tree: new directories by one rename each,
 never replacing a live file); then the manifest is written ONCE, atomically (swaptree.write_manifest_atomic). Every
@@ -40,16 +48,31 @@ def tiles_root(region_id: str) -> Path:
     return STAGE / region_id / "tiles"
 
 
-def state(region_id: str) -> str | None:
+def _marker_doc(region_id: str) -> dict:
     p = marker(region_id)
-    if not p.is_file():
-        return None
-    return json.loads(p.read_text(encoding="utf-8"))["state"]
+    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
 
 
-def _set_state(region_id: str, st: str) -> None:
-    write_json(marker(region_id), {"region": region_id, "state": st, "at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+def state(region_id: str) -> str | None:
+    return _marker_doc(region_id).get("state")
+
+
+def is_replace(region_id: str) -> bool:
+    return bool(_marker_doc(region_id).get("replace"))
+
+
+def _set_state(region_id: str, st: str, **extra) -> None:
+    doc = {"region": region_id, "state": st, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    old = _marker_doc(region_id)
+    for k in ("replace", "previousAttribution"):
+        if k in old and st != "swapped":
+            doc[k] = old[k]
+    doc.update(extra)
+    write_json(marker(region_id), doc)
     reset()
+
+
+REPLACE_ENV = "EARTH_STAGE_REPLACE"
 
 
 _HIDDEN: set[str] | None = None
@@ -69,20 +92,24 @@ def hidden_regions() -> set[str]:
         out = set()
         if STAGE.is_dir():
             for d in STAGE.iterdir():
-                if d.is_dir() and state(d.name) in HIDDEN_STATES:
+                if d.is_dir() and state(d.name) in HIDDEN_STATES and not is_replace(d.name):
                     out.add(d.name)
         _HIDDEN = out
     return _HIDDEN
 
 
 def _routes() -> dict:
-    """level -> [(rect, tiles root)] of every region in state "staging"."""
+    """level -> [(rect, tiles root)] of every region in state "staging" (a region staged for replacement only in
+    the processes whose environment names it in EARTH_STAGE_REPLACE)."""
     global _ROUTES
     if _ROUTES is None:
+        import os
         from earth import region as regmod
         out: dict = {}
-        for r in sorted(hidden_regions()):
-            if state(r) != "staging":
+        mine = os.environ.get(REPLACE_ENV, "")
+        cands = set(hidden_regions()) | ({mine} if mine else set())
+        for r in sorted(cands):
+            if state(r) != "staging" or (is_replace(r) and r != mine):
                 continue
             reg = regmod.load(r)
             for lv in regmod.levels(reg):
@@ -114,13 +141,39 @@ def _overlap(a: dict, b: dict) -> bool:
     return a["face"] == b["face"] and a["x0"] <= b["x1"] and b["x0"] <= a["x1"] and a["y0"] <= b["y1"] and b["y0"] <= a["y1"]
 
 
-def begin(region_id: str) -> None:
-    """Mark a region as staged before anything of it is baked. Refuses a region whose coverage overlaps the live
-    coverage (regions must not overlap, and a staged tile must never shadow a live one)."""
-    from earth import region as regmod
+def begin(region_id: str, replace: bool = False) -> None:
+    """Mark a region as staged before anything of it is baked. A new region: refuses a coverage that overlaps the
+    live coverage (regions must not overlap, and a staged tile must never shadow a live one). replace=True: the
+    region must be live (in the manifest, state "swapped" or never staged); its stage must be empty."""
+    import os
+    from earth import manifest, region as regmod
     st = state(region_id)
+    if replace:
+        os.environ[REPLACE_ENV] = region_id
+        if st == "staging" and is_replace(region_id):
+            reset()
+            log(f"stage: {region_id} is staged for replacement under {tiles_root(region_id)}")
+            return
+        if st in HIDDEN_STATES:
+            raise RuntimeError(f"{region_id} is staged as a new region, not live: no replacement")
+        reg = regmod.load(region_id)
+        live = layout.read_manifest(paths.TILESET)
+        if not all(r in live["layers"]["height"].get("coverage", {}).get(str(lv), [])
+                   for lv in regmod.levels(reg) for r in regmod.coverage_rects(reg, lv)):
+            raise RuntimeError(f"{region_id}: its coverage is not in the live manifest: nothing to replace")
+        root = tiles_root(region_id)
+        if root.is_dir() and any(p.is_file() for p in root.rglob("*")):
+            raise RuntimeError(f"{root} is not empty")
+        root.mkdir(parents=True, exist_ok=True)
+        others = [regmod.load(r) for r in regmod.list_regions() if r != region_id]
+        keep = set(a for L in manifest.ATTRIBUTION.values() for a in L)
+        keep |= {a for o in others for a in manifest.region_attribution(o)}
+        previous = [a for a in live["attribution"] if a not in keep]
+        _set_state(region_id, "staging", replace=True, previousAttribution=previous)
+        log(f"stage: {region_id} is staged for replacement under {root} (live tiles stay readable)")
+        return
     if st == "swapped":
-        raise RuntimeError(f"{region_id} is already swapped into the live tile set")
+        raise RuntimeError(f"{region_id} is already swapped into the live tile set (use replace=True)")
     if st == "moved":
         return
     reg = regmod.load(region_id)
@@ -150,6 +203,7 @@ def prospective_manifest(region_id: str) -> dict:
     m = copy.deepcopy(live)
     m.pop("contentHash", None)
     others = [r for r in regmod.list_regions() if r != region_id]
+    replace = is_replace(region_id)
     for layer in manifest.REGIONAL_LAYERS:
         if layer not in reg["layers"]:
             continue
@@ -158,12 +212,45 @@ def prospective_manifest(region_id: str) -> dict:
         regs = [regmod.load(r) for r in others if manifest.is_marked(layer, r)] + [reg]
         entry = manifest.layer_dict(layer, regs)
         entry["build"] = manifest.build_hash(layer, include={region_id})
-        _check_additive(layer, live["layers"][layer], entry, reg, in_live)
+        if replace:
+            _check_replace(layer, live["layers"][layer], entry, reg,
+                           manifest.layer_dict(layer, [regmod.load(r) for r in others if manifest.is_marked(layer, r)]))
+        else:
+            _check_additive(layer, live["layers"][layer], entry, reg, in_live)
         m["layers"][layer] = entry
+    if replace:
+        prev = set(_marker_doc(region_id).get("previousAttribution", []))
+        m["attribution"] = [a for a in m["attribution"] if a not in prev]
     for a in manifest.region_attribution(reg):
         if a not in m["attribution"]:
             m["attribution"].append(a)
     return m
+
+
+def _check_replace(layer: str, old: dict, new: dict, reg: dict, others_only: dict) -> None:
+    """Replace mode: every key but coverage, sourceCoverage, sources and build is unchanged; the rectangles of
+    other regions (those outside this region's coverage) are unchanged and in order, the region's own lie inside its
+    coverage; every source line other regions and the global levels produce is still there."""
+    from earth import region as regmod
+    problems = []
+    for k in set(old) | set(new):
+        if k in ("coverage", "sourceCoverage", "sources", "build"):
+            continue
+        if old.get(k) != new.get(k):
+            problems.append(f"{k}: {old.get(k)} -> {new.get(k)}")
+    for key in ("coverage", "sourceCoverage"):
+        o, n = old.get(key, {}), new.get(key, {})
+        for lv in set(o) | set(n):
+            own = regmod.coverage_rects(reg, int(lv)) if str(lv) in reg["levels"] else []
+            mine = lambda r: any(_inside(r, q) for q in own)   # noqa: E731
+            if [r for r in o.get(lv, []) if not mine(r)] != [r for r in n.get(lv, []) if not mine(r)]:
+                problems.append(f"{key} level {lv}: rectangles of other regions changed")
+            if key == "coverage" and [r for r in n.get(lv, []) if mine(r)] != own:
+                problems.append(f"coverage level {lv}: the region's rectangles changed")
+    if not set(others_only.get("sources", [])) <= set(new.get("sources", [])):
+        problems.append("sources: a line of another region or the global levels is gone")
+    if problems:
+        raise RuntimeError(f"manifest layer {layer}: the replacement touches more than the region: {problems[:6]}")
 
 
 def _contains(cov: dict, rects: list[dict], lv: int) -> bool:
@@ -213,11 +300,19 @@ def swap(region_id: str) -> dict:
         return {"state": st}
     if st not in HIDDEN_STATES:
         raise RuntimeError(f"{region_id} is not staged")
+    replace = is_replace(region_id)
+    if replace:
+        import os
+        os.environ[REPLACE_ENV] = region_id
+        reset()
     m = prospective_manifest(region_id)         # built and checked while the tiles are still routed to the stage
     layout.validate_manifest(json.loads(json.dumps(m)))
     root = tiles_root(region_id)
     res: dict = {}
-    if st == "staging":
+    if st == "staging" and replace:
+        res = swaptree.replace_tree(root, paths.TILES, _region_paths(region_id), log=log)
+        _set_state(region_id, "moved")
+    elif st == "staging":
         res = swaptree.swap_tree(root, paths.TILES, log=log)
         _set_state(region_id, "moved")
     missing = layout.verify_files_exist(m)          # every tile the new manifest promises is now live
@@ -226,6 +321,9 @@ def swap(region_id: str) -> dict:
     m["contentHash"] = hashlib.sha256(json.dumps(body, sort_keys=True).encode("utf-8")).hexdigest()[:16]
     swaptree.write_manifest_atomic(paths.TILES, json.dumps(m, indent=1).encode("utf-8"))
     _set_state(region_id, "swapped")
+    if replace:
+        import os
+        os.environ.pop(REPLACE_ENV, None)
     left = [p for p in root.rglob("*") if p.is_file()] if root.is_dir() else []
     if left:
         raise RuntimeError(f"stage: {len(left)} files left under {root} after the swap, e.g. {left[:3]}")
@@ -234,3 +332,16 @@ def swap(region_id: str) -> dict:
     log(f"stage: {region_id} swapped in; {missing} promised tiles checked present; manifest contentHash {m['contentHash']}")
     res.update({"state": "swapped", "contentHash": m["contentHash"], "promisedTilesChecked": missing})
     return res
+
+
+def _region_paths(region_id: str) -> set[str]:
+    """Every tile path (relative to the tile set, forward slashes) of the region's coverage, all its layers."""
+    from earth import region as regmod, tiles
+    reg = regmod.load(region_id)
+    out = set()
+    for layer in reg["layers"]:
+        ext = tiles.EXT[layer]
+        for lv in regmod.levels(reg):
+            for f, x, y in regmod.rect_tiles(regmod.coverage_rects(reg, lv)):
+                out.add(f"{layer}/{f}/{lv}/{x}/{y}.{ext}")
+    return out

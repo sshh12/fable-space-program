@@ -13,7 +13,7 @@ def run(step: str, regions: list[str], region_given: bool = False, args=None) ->
         from earth import albedo, heights, landcover, stage, watermask
         from earth.util import dir_size
         for r in regions:
-            stage.begin(r)
+            stage.begin(r, replace=bool(getattr(args, "replace", False)))
             heights.bake_region(r)
             watermask.bake_region(r)
             albedo.bake_region(r)

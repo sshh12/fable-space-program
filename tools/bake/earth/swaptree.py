@@ -88,6 +88,38 @@ def swap_tree(stage: Path, live: Path, *, delay_s: float = 0.0, log=print) -> di
     return {"dirs": moved_dirs, "files": moved_files, "identical": same}
 
 
+def replace_tree(stage: Path, live: Path, allowed: set[str], *, delay_s: float = 0.0, log=print) -> dict:
+    """REPLACE mode: the staged tree must hold exactly the paths in `allowed` (relative, forward slashes: every
+    tile of the region's rectangles, all its layers) and nothing else; each live file is then replaced by its
+    staged version with os.replace (atomic per file: a reader opens the old or the new tile, never a missing one).
+    Nothing outside `allowed` is touched. Raises before moving anything when the stage is incomplete or holds a
+    path outside the region."""
+    stage, live = Path(stage), Path(live)
+    staged = set()
+    for root, _dirs, files in os.walk(stage):
+        rel = Path(root).relative_to(stage)
+        for name in files:
+            staged.add((rel / name).as_posix())
+    outside = sorted(staged - allowed)
+    missing = sorted(allowed - staged)
+    if outside or missing:
+        raise FileExistsError(f"replace refused: {len(outside)} staged files outside the region (e.g. {outside[:3]}), "
+                              f"{len(missing)} of the region's tiles not staged (e.g. {missing[:3]})")
+    replaced = added = 0
+    for n, rel in enumerate(sorted(staged)):
+        dst = live / rel
+        if dst.exists():
+            replaced += 1
+        else:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            added += 1
+        _retry(os.replace, stage / rel, dst)
+        if delay_s and n % 1000 == 0:
+            time.sleep(delay_s)
+    log(f"replace: {replaced} live files replaced, {added} added (all inside the region)")
+    return {"replaced": replaced, "added": added}
+
+
 def write_manifest_atomic(live: Path, data: bytes) -> Path:
     """Write live/manifest.json through a temporary file in the same directory and os.replace."""
     live = Path(live)
