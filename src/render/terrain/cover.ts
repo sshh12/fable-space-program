@@ -76,6 +76,17 @@ export interface CoverOptions {
   kinds: string[] | null;
   shadows: boolean;
   leafTest: boolean;
+  /**
+   * Levels of detail: an instance casts into a cascade from its finest mesh when its radius is
+   * `shadowFineTexels` texels, from the middle one from `shadowMiddleTexels`, and not at all below
+   * `shadowMinTexels`; in the G-buffer it takes the finest mesh when its radius spans `finePixels` pixels and
+   * the middle one from `middlePixels`.
+   */
+  shadowFineTexels: number;
+  shadowMiddleTexels: number;
+  shadowMinTexels: number;
+  finePixels: number;
+  middlePixels: number;
 }
 
 export interface CoverSite {
@@ -182,6 +193,9 @@ const SHAPE_LEAFY: Record<CoverShape, boolean> = { tuft: false, bush: true, tree
 const SHADOW_FINE_TEXELS = 48;
 const SHADOW_MIDDLE_TEXELS = 8;
 const SHADOW_MIN_TEXELS = 1;
+/** An instance takes its finest mesh in the G-buffer when its radius spans this many pixels, the middle one from this many. */
+const FINE_PIXELS = 55;
+const MIDDLE_PIXELS = 14;
 
 const COVER_WGSL = /* wgsl */ `
 struct CoverBody {
@@ -581,6 +595,14 @@ interface CoverBody {
    * costs the uniform only.
    */
   rest: { eye: Vec3; planes: Vec3[]; pixelAngle: number; empty: boolean } | null;
+  /** This frame was not worked through (the view rests): the lists are those of `rest`. */
+  resting: boolean;
+  /**
+   * The shadow lists of the cascades as they were last built while the view rested, by cascade index: kept
+   * while `rest` is the same, the same chunks lie inside the cascade and its texel is the same (at rest the
+   * lists were built again for every cascade that rendered, every frame: 0.4 ms on the pad).
+   */
+  shadowLists: Map<number, { rest: object; sig: number; chunks: number; texel: number; data: Uint32Array; ranges: Int32Array }>;
 }
 
 /** Land-cover classes of a body's deepest baked level around the camera, decoded on the main thread. */
@@ -857,6 +879,8 @@ export class CoverRenderer {
         observer: null,
         ground: 0,
         rest: null,
+        resting: false,
+        shadowLists: new Map(),
       });
     }
   }
@@ -867,7 +891,10 @@ export class CoverRenderer {
   }
 
   /** Switches for measurements (TerrainDebug.setCoverOptions): what each part of the cover costs. Never used by the app. */
-  private options: CoverOptions = { kinds: null, shadows: true, leafTest: true };
+  private options: CoverOptions = { kinds: null, shadows: true, leafTest: true, shadowFineTexels: SHADOW_FINE_TEXELS, shadowMiddleTexels: SHADOW_MIDDLE_TEXELS, shadowMinTexels: SHADOW_MIN_TEXELS, finePixels: FINE_PIXELS, middlePixels: MIDDLE_PIXELS };
+  /** Scratch of drawShadow: the chunks inside the cascade and their tiers. */
+  private readonly shadowChunks: Chunk[] = [];
+  private readonly shadowTiers: Tier[] = [];
 
   setOptions(o: Partial<CoverOptions>): void {
     this.options = { ...this.options, ...o };
@@ -1154,12 +1181,14 @@ export class CoverRenderer {
       const rest = b.rest;
       if (rest && b.list) {
         // Nothing has changed since the last frame that was worked through.
+        b.resting = true;
         b.active = true;
         b.empty = rest.empty;
         this.instanceCount += b.list.count;
         this.triangles += b.list.triangles;
       } else {
         const unbuiltBefore = this.unbuilt;
+        b.resting = false;
         this.refresh(b, o, t0, pixelAngle);
         if (!b.active) continue;
         const fadingBefore = this.fading;
@@ -1387,8 +1416,8 @@ export class CoverRenderer {
         if (!c.listed || !c.visible) continue;
         const g = c.origin;
         // An instance spans 110 pixels (finest mesh) or 28 (middle) where its radius is this share of its distance.
-        const fineShare = 55 * pixelAngle;
-        const middleShare = 14 * pixelAngle;
+        const fineShare = this.options.finePixels * pixelAngle;
+        const middleShare = this.options.middlePixels * pixelAngle;
         if (c.near < c.reach) {
           // The camera is in or beside the chunk: distances differ by more than the chunk's own size.
           const ex = b.eye.x - g.x;
@@ -1467,13 +1496,19 @@ export class CoverRenderer {
     if (!b || !b.active || b.empty || !this.options.shadows) return;
     const m = cascade.viewProj;
     const rot = b.rot;
-    const texelRadius = SHADOW_MIN_TEXELS * cascade.texelSize;
+    const opt = this.options;
+    const texelRadius = opt.shadowMinTexels * cascade.texelSize;
     const ndcPerMetre = 1 / (cascade.texelSize * 1024);
     const start0 = this.instanceCount;
-    this.bucketCount.fill(0);
+    const ranges = this.shadowRanges;
+    // The chunks inside the cascade (a few multiplications each), and a signature of them.
+    const chunks = this.shadowChunks;
+    const tiers = this.shadowTiers;
+    chunks.length = 0;
+    tiers.length = 0;
+    let sig = 0x811c9dc5;
     for (const tier of b.tiers) {
       if (tier.kind.radiusM[1] < texelRadius) continue;
-      const base = tier.shape * COVER_VARIANTS * COVER_LODS;
       for (const c of tier.wanted) {
         if (!c.listed || c.maxRadius < texelRadius) continue;
         // The chunk relative to the camera (ROOT axes), from its anchor-relative row.
@@ -1486,21 +1521,47 @@ export class CoverRenderer {
         const pz = rot[6] * ox + rot[7] * oy + rot[8] * oz + b.anchorRel.z;
         const margin = 1 + (c.reach + 8) * ndcPerMetre;
         if (Math.abs(m[0]! * px + m[4]! * py + m[8]! * pz + m[12]!) > margin || Math.abs(m[1]! * px + m[5]! * py + m[9]! * pz + m[13]!) > margin) continue;
+        chunks.push(c);
+        tiers.push(tier);
+        sig = Math.imul(sig ^ c.slot, 0x01000193);
+      }
+    }
+    const rest = b.resting ? b.rest : null;
+    const kept = rest ? b.shadowLists.get(cascade.index) : undefined;
+    if (kept && kept.rest === rest && kept.sig === sig && kept.chunks === chunks.length && kept.texel === cascade.texelSize && start0 + kept.data.length <= MAX_INSTANCES) {
+      this.instances.set(kept.data, start0);
+      for (let k = 0; k < BUCKETS; k++) {
+        ranges[k * 2] = start0 + kept.ranges[k * 2]!;
+        ranges[k * 2 + 1] = kept.ranges[k * 2 + 1]!;
+      }
+      this.instanceCount = start0 + kept.data.length;
+    } else {
+      this.bucketCount.fill(0);
+      for (let i = 0; i < chunks.length; i++) {
+        const c = chunks[i]!;
+        const base = tiers[i]!.shape * COVER_VARIANTS * COVER_LODS;
         for (let v = 0; v < COVER_VARIANTS; v++) {
           const start = c.variantStart[v]!;
           const end = CoverRenderer.prefixEnd(c.radii, start, c.listEnd[v]!, texelRadius);
-          // A crown that spans a hundred texels and more casts from its finest mesh: the coarser ones draw its
-          // shadow as a few large polygons on the ground beside the eye.
-          const fine = CoverRenderer.prefixEnd(c.radii, start, end, SHADOW_FINE_TEXELS * cascade.texelSize);
-          const middle = CoverRenderer.prefixEnd(c.radii, fine, end, SHADOW_MIDDLE_TEXELS * cascade.texelSize);
+          // A crown that spans many texels casts from a finer mesh: the coarsest one draws its shadow as a
+          // few large sprays on the ground beside the eye.
+          const fine = CoverRenderer.prefixEnd(c.radii, start, end, opt.shadowFineTexels * cascade.texelSize);
+          const middle = CoverRenderer.prefixEnd(c.radii, fine, end, opt.shadowMiddleTexels * cascade.texelSize);
           this.pushRange(base + v * COVER_LODS, c.base + start, c.base + fine);
           this.pushRange(base + v * COVER_LODS + 1, c.base + fine, c.base + middle);
           this.pushRange(base + v * COVER_LODS + 2, c.base + middle, c.base + end);
         }
       }
+      this.flushBuckets(ranges);
+      if (rest) {
+        const rel = new Int32Array(BUCKETS * 2);
+        for (let k = 0; k < BUCKETS; k++) {
+          rel[k * 2] = ranges[k * 2]! - start0;
+          rel[k * 2 + 1] = ranges[k * 2 + 1]!;
+        }
+        b.shadowLists.set(cascade.index, { rest, sig, chunks: chunks.length, texel: cascade.texelSize, data: this.instances.slice(start0, this.instanceCount), ranges: rel });
+      }
     }
-    const ranges = this.shadowRanges;
-    this.flushBuckets(ranges);
     if (this.instanceCount === start0) return;
     this.device.queue.writeBuffer(this.instanceBuffer, start0 * 4, this.instances, start0, this.instanceCount - start0);
     pass.setBindGroup(2, b.group);

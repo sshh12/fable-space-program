@@ -166,6 +166,11 @@ async function boot(): Promise<void> {
   if (query.get('covershadow') === '0') terrain.debug.setCoverOptions({ shadows: false });
   if (query.get('leaftest') === '0') terrain.debug.setCoverOptions({ leafTest: false });
   if (query.get('casters') === '0') terrain.debug.setShadowCasting(false);
+  if (query.has('coverlod')) {
+    // coverlod=<shadow fine texels>,<shadow middle texels>,<shadow least texels>,<G-buffer fine pixels>
+    const [shadowFineTexels, shadowMiddleTexels, shadowMinTexels, finePixels] = query.get('coverlod')!.split(',').map(Number);
+    if ([shadowFineTexels, shadowMiddleTexels, shadowMinTexels, finePixels].every((x) => Number.isFinite(x))) terrain.debug.setCoverOptions({ shadowFineTexels, shadowMiddleTexels, shadowMinTexels, finePixels });
+  }
 
   const cameraBody = (): string => {
     const s = app.camera.spec;
