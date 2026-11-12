@@ -78,6 +78,17 @@ export function stripCommentsAndStrings(text: string, keepStrings = false): stri
         if (text[i] === '\\') {
           if (keepStrings) out += text.slice(i, i + 2);
           i++;
+        } else if (quote === '`' && text[i] === '$' && text[i + 1] === '{') {
+          // An interpolation is code, not string: keep it (to its matching brace) so the scans see it.
+          let depth = 1;
+          let j = i + 2;
+          while (j < n && depth > 0) {
+            if (text[j] === '{') depth++;
+            else if (text[j] === '}') depth--;
+            j++;
+          }
+          out += `\${${stripCommentsAndStrings(text.slice(i + 2, j - 1), keepStrings)}}`;
+          i = j - 1;
         } else if (keepStrings || text[i] === '\n') out += text[i];
         i++;
       }
@@ -93,7 +104,9 @@ export function stripCommentsAndStrings(text: string, keepStrings = false): stri
 
 function parseImports(text: string): string[] {
   const specs: string[] = [];
-  const re = /(?:\bimport\s+(?:type\s+)?(?:[^'"()]*?\sfrom\s+)?|\bexport\s+(?:type\s+)?[^'"()]*?\sfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)(['"])([^'"\n]+)\1/g;
+  // The specifier may be quoted with ', " or a backtick (a template literal in a dynamic import: what is
+  // captured then includes any ${...}, and the path in front of it still says where the import points).
+  const re = /(?:\bimport\s+(?:type\s+)?(?:[^'"`()]*?\sfrom\s+)?|\bexport\s+(?:type\s+)?[^'"`()]*?\sfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)(['"`])([^'"`\n]+)\1/g;
   for (const m of text.matchAll(re)) specs.push(m[2]!);
   return specs;
 }
@@ -229,8 +242,15 @@ const BANNED_HEADLESS: [RegExp, string][] = [
   [/\bnew\s+Date\b/, 'new Date'],
   [/\bperformance\s*\.\s*(now|mark|measure|timeOrigin)\b/, 'performance.*'],
   [/\b(window|document|navigator|localStorage|requestAnimationFrame)\b\s*[.([]/, 'DOM global'],
-  [/\b(setTimeout|setInterval)\s*\(/, 'timer'],
+  [/\b(setTimeout|setInterval|setImmediate|queueMicrotask)\s*\(/, 'timer'],
   [/\bGPU[A-Z]\w+\b/, 'WebGPU type'],
+  // A bare Date() is the wall clock as a string; `new Date` is caught above.
+  [/(?<!\bnew\s)(?<![.\w$])Date\s*\(/, 'Date()'],
+  // crypto.randomUUID / getRandomValues are randomness; process.hrtime, process.env, process.memoryUsage are
+  // the host; a Worker is a thread: none of them is a function of the tick and the inputs.
+  [/\bcrypto\s*\.\s*\w+/, 'crypto.*'],
+  [/\bprocess\s*\.\s*\w+/, 'process.*'],
+  [/\bnew\s+(Shared)?Worker\b/, 'Worker'],
 ];
 /** Sockets and storage: banned in headless code except the tile I/O modules of src/terrain. */
 const BANNED_IO: [RegExp, string][] = [
@@ -263,21 +283,42 @@ function headlessViolations(list: SourceFile[]): string[] {
   return violations;
 }
 
-const NODE_BUILTIN = /^(node:|fs$|fs\/|path$|os$|child_process$|crypto$|url$|zlib$|worker_threads$|stream$|util$|net$|http$|https$|dgram$|tls$|cluster$)/;
+const NODE_BUILTIN = /^(node:|(fs|path|os|child_process|crypto|url|zlib|worker_threads|stream|util|net|http|https|http2|dgram|tls|cluster|events|buffer|readline|perf_hooks|timers|vm|async_hooks|process)(\/|$))/;
+/** Node networking and threads: only server/ and bots/, whatever the file is called. */
+const NODE_NETWORK = /^(node:)?(net|http|https|http2|tls|dgram|worker_threads|cluster)(\/|$)/;
 /** Packages that only server/ and bots/ may import: Node networking and the database driver. */
 const SERVER_ONLY_PACKAGE = /^(pg|pg-[\w-]+|ws|embedded-postgres|@aws-sdk\/.+)$/;
 const isServerSide = (rel: string): boolean => under(rel, 'server') || under(rel, 'bots');
+/** The file-system tile and definition sources that exist today: the only Node modules of the headless directories. */
+const HEADLESS_FS_MODULE = /^src\/terrain\/fs[A-Z]\w*\.ts$/;
+/** Directories in which the name of a file (`*.node.ts`, `node/`) does not make a Node import acceptable. */
+const NO_NODE_DIRS = [...HEADLESS, 'src/net'];
 
-/** Node rule: under src/, Node builtins stay in fs*.ts, *.node.ts or node/; server-only packages stay in server/ and bots/. */
+/**
+ * Node rule. server/ and bots/ may import anything of Node. Elsewhere:
+ *  - Node networking and threads (net, http, https, http2, tls, dgram, worker_threads, cluster) are never
+ *    imported, whatever the file is called;
+ *  - in the headless directories and in src/net no Node builtin is imported at all, except by the
+ *    file-system modules of src/terrain (`fs*.ts`); a `*.node.ts` name or a `node/` directory is no excuse
+ *    there (a headless module receives time, storage and I/O as arguments; src/net runs in the browser);
+ *  - in the rest of src/, Node builtins stay in fs*.ts, *.node.ts or node/;
+ *  - the server-only packages are imported nowhere.
+ * Test files may import Node (they run in Node), except the server-only packages.
+ */
 function nodeViolations(list: SourceFile[]): string[] {
   const violations: string[] = [];
   for (const f of list) {
     if (isServerSide(f.rel)) continue;
     for (const spec of f.imports) {
-      if (SERVER_ONLY_PACKAGE.test(spec)) violations.push(`${f.rel} imports ${spec}: only server/ and bots/ import Node networking and the database driver`);
-      else if (!isTest(f.rel) && !NODE_ONLY_FILE.test(f.rel) && NODE_BUILTIN.test(spec)) {
-        violations.push(`${f.rel} imports ${spec}: move it into a *.node.ts / fs*.ts module that browser code never imports`);
+      if (SERVER_ONLY_PACKAGE.test(spec)) {
+        violations.push(`${f.rel} imports ${spec}: only server/ and bots/ import Node networking and the database driver`);
+        continue;
       }
+      if (isTest(f.rel) || !NODE_BUILTIN.test(spec)) continue;
+      if (NODE_NETWORK.test(spec)) violations.push(`${f.rel} imports ${spec}: Node networking and threads belong to server/ and bots/ only`);
+      else if (NO_NODE_DIRS.some((d) => under(f.rel, d))) {
+        if (!HEADLESS_FS_MODULE.test(f.rel)) violations.push(`${f.rel} imports ${spec}: no Node builtin in a headless directory or in src/net (time, storage and I/O are injected)`);
+      } else if (!NODE_ONLY_FILE.test(f.rel)) violations.push(`${f.rel} imports ${spec}: move it into a *.node.ts / fs*.ts module that browser code never imports`);
     }
   }
   return violations;
@@ -473,6 +514,17 @@ describe('each rule fails on a planted violation', () => {
     ['src/sim fetches', code('src/sim/orbit/ephemeris.ts', 'const r = await fetch(url);')],
     ['src/pilot opens a socket', code('src/pilot/generic/common.ts', 'new WebSocket(u);')],
     ['src/terrain provider uses a socket', code('src/terrain/provider.ts', 'new WebSocket(u);')],
+    ['src/universe draws a random id', code('src/universe/ids.ts', 'const id = crypto.randomUUID();')],
+    ['src/universe draws random bytes', code('src/universe/ids.ts', 'crypto.getRandomValues(buf);')],
+    ['src/session reads the high-resolution clock', code('src/session/local.ts', 'const t = process.hrtime.bigint();')],
+    ['src/session reads the environment', code('src/session/local.ts', "const debug = process.env.DEBUG === '1';")],
+    ['src/universe defers with setImmediate', code('src/universe/scheduler.ts', 'setImmediate(() => step());')],
+    ['src/universe defers with queueMicrotask', code('src/universe/scheduler.ts', 'queueMicrotask(flush);')],
+    ['src/session starts a worker', code('src/session/local.ts', 'const w = new Worker(url);')],
+    ['src/universe calls Date()', code('src/universe/expiry.ts', 'const stamp = Date();')],
+    ['src/sim calls Date() in an expression', code('src/sim/world/log.ts', 'log(`at ${Date()}`, x);')],
+    ['src/sim reads process.memoryUsage', code('src/sim/island/stats.ts', 'const m = process.memoryUsage();')],
+    ['src/pilot uses crypto', code('src/pilot/generic/common.ts', 'const k = crypto.subtle;')],
   ];
   it.each(headlessCases)('determinism rule: %s', (_name, planted) => {
     expect(headlessViolations([planted]).length).toBeGreaterThan(0);
@@ -493,9 +545,52 @@ describe('each rule fails on a planted violation', () => {
     ['src/session imports worker_threads', importing('src/session/local.ts', 'node:worker_threads')],
     ['src/net imports node:net', importing('src/net/transport.ts', 'node:net')],
     ['src/core imports the S3 client', importing('src/core/defs/loader.ts', '@aws-sdk/client-s3')],
+    // A file name is no excuse in the headless directories and in src/net.
+    ['src/universe/*.node.ts imports node:fs', importing('src/universe/storage.node.ts', 'node:fs')],
+    ['src/universe/node/ imports node:fs', importing('src/universe/node/storage.ts', 'node:fs')],
+    ['src/universe/fsStore.ts imports node:fs', importing('src/universe/fsStore.ts', 'node:fs')],
+    ['src/session/*.node.ts imports node:worker_threads', importing('src/session/pool.node.ts', 'node:worker_threads')],
+    ['src/session/*.node.ts imports node:fs', importing('src/session/save.node.ts', 'node:fs')],
+    ['src/net/*.node.ts imports node:net', importing('src/net/tcp.node.ts', 'node:net')],
+    ['src/net/*.node.ts imports node:http', importing('src/net/upgrade.node.ts', 'node:http')],
+    ['src/net/*.node.ts imports node:fs', importing('src/net/fixtures.node.ts', 'node:fs')],
+    ['src/sim imports node:crypto', importing('src/sim/vessel/ids.node.ts', 'node:crypto')],
+    ['src/pilot imports node:path', importing('src/pilot/node/log.ts', 'node:path')],
+    // Networking and threads: nowhere outside server/ and bots/, whatever the file is called.
+    ['src/terrain fs module imports node:worker_threads', importing('src/terrain/fsTileSource.ts', 'node:worker_threads')],
+    ['src/core *.node.ts imports node:http', importing('src/core/defs/remote.node.ts', 'node:http')],
+    ['src/app node/ imports node:net', importing('src/app/node/probe.ts', 'node:net')],
+    ['src/client imports node:https', importing('src/client/net/fetch.node.ts', 'node:https')],
+    ['src/render imports node:tls', importing('src/render/core/x.node.ts', 'node:tls')],
+    ['src/core imports dgram', importing('src/core/gpu/udp.node.ts', 'dgram')],
+    ['src/core imports cluster', importing('src/core/defs/fork.node.ts', 'node:cluster')],
+    ['src/ui imports node:fs outside a node-only module', importing('src/ui/format.ts', 'node:fs')],
   ];
   it.each(nodeCases)('node rule: %s', (_name, planted) => {
     expect(nodeViolations([planted]).length).toBeGreaterThan(0);
+  });
+
+  it('node rule: what is allowed stays allowed', () => {
+    expect(
+      nodeViolations([
+        importing('src/terrain/fsTileSource.ts', 'node:fs', 'node:path'),
+        importing('src/terrain/fsPackSource.ts', 'node:fs'),
+        importing('src/core/defs/fsSource.ts', 'node:fs', 'node:path'),
+        importing('src/core/geo/dump.node.ts', 'node:fs', 'node:zlib'),
+        importing('src/universe/expiry.test.ts', 'node:fs'),
+        importing('server/roles/shard.ts', 'node:worker_threads', 'node:net', 'pg'),
+        importing('bots/fleet/bot.ts', 'node:http', 'ws'),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('a dynamic import written as a template literal is an import', () => {
+    expect(parseImports(stripCommentsAndStrings('const m = await import(`../universe/rules`);', true))).toEqual(['../universe/rules']);
+    const planted = code('src/sim/island/api.ts', 'export const load = async (name: string) => import(`../../universe/${name}`);');
+    expect(planted.imports).toEqual(['../../universe/${name}']);
+    expect(layerViolations([planted]).length + banViolations([planted]).length).toBeGreaterThan(0);
+    expect(layerViolations([code('src/client/replica.ts', 'const s = await import(`@/session/index`);')]).length).toBeGreaterThan(0);
+    expect(nodeViolations([code('src/universe/storage.ts', 'const fs = await import(`node:fs`);')]).length).toBeGreaterThan(0);
   });
 
   it('bundle rule: the client entry reaching server/, bots/ or src/universe outside src/session is caught', () => {
