@@ -1,0 +1,120 @@
+# CI (ARCHITECTURE 16.2, "Mechanics shared by the stages"): on every push, within 8 minutes.
+#   checks  the secrets check, the stub scan (TODO / FIXME / stub / placeholder), typecheck (browser and Node
+#           configurations), the boundary rules, the unit suites on synthetic terrain (CI has no baked tiles
+#           and no GPU: real-data tests skip themselves), and the production client build
+#   image   the ONE image from deploy/Dockerfile, a smoke test of a role in it, and its buildId (the hash of the
+#           Node image digest and the server bundle) recorded in the job summary and as an artefact; at
+#           stage 0 Railway builds the same Dockerfile at the same commit, and the rollout compares the ids
+#   publish (written, used from stage 1 only: repository variable PUBLISH_IMAGE=true) pushes the image to
+#           GHCR and records its digest; Railway's Hobby plan cannot pull a private registry image
+# The repository is private, so Actions minutes are finite: path filters skip pushes that touch only
+# documents, and every job has a hard time budget.
+name: ci
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'out/**'
+      - '.claude/**'
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24.16.0
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund --ignore-scripts && npm rebuild esbuild
+      - name: Secrets check
+        run: node tools/dev/check-secrets.mjs
+      - name: Stub scan
+        run: node tools/dev/check-stubs.mjs
+      - name: Typecheck (browser and Node configurations)
+        run: npm run typecheck
+      - name: Boundaries
+        run: npx vitest run tools/dev/boundaries.test.ts
+      - name: Unit suites (synthetic terrain)
+        run: npx vitest run
+      - name: Production client build
+        run: node tools/dev/build-client.mjs --target=ci
+
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          build-args: COMMIT=${{ github.sha }}
+          tags: fsp:ci
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test (a role in the pinned image) and buildId
+        run: |
+          set -euo pipefail
+          docker run --rm fsp:ci node --version
+          docker run --rm fsp:ci /usr/lib/postgresql/18/bin/pg_dump --version
+          info=$(docker run --rm fsp:ci cat /app/server/build-info.json)
+          echo "$info" | tee build-info.json
+          id=$(echo "$info" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).buildId))")
+          cid=$(docker run -d -e ROLES=game -e PORT=8080 -p 8080:8080 fsp:ci)
+          for i in $(seq 1 30); do curl -sf localhost:8080/healthz > health.json && break; sleep 1; done
+          cat health.json
+          docker logs "$cid" | tee role.log
+          docker rm -f "$cid"
+          grep -q "\"buildId\":\"$id\"" health.json
+          grep -q "\"buildId\":\"$id\"" role.log
+          echo "buildId \`$id\` (commit ${{ github.sha }})" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-info
+          path: build-info.json
+
+  publish:
+    if: vars.PUBLISH_IMAGE == 'true' && github.ref_type == 'tag'
+    needs: [checks, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          build-args: COMMIT=${{ github.sha }}
+          tags: ghcr.io/${{ github.repository }}/roles:${{ github.ref_name }}
+          push: true
+          cache-from: type=gha
+      - run: echo "image digest ${{ steps.push.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"

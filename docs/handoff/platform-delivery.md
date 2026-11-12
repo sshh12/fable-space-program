@@ -9,7 +9,7 @@ work lands.
 
 ## Running log
 
-- 2026-11-12 09:10 (Pacific) start. Tree at 6f012fe plus other agents' uncommitted work (cockpit,
+- 2026-11-12 00:40 (Pacific; 08:40 UTC) start. Tree at 6f012fe plus other agents' uncommitted work (cockpit,
   atmosphere, sky-lighting files: not mine). Nothing of this package existed. Disk: 61 GB free on C:.
   Read: STATUS, the brief, PACKAGE_RULES, user-decisions, lead-baseline-v2 hand-off, ARCHITECTURE 6.2, 10,
   13.1, 15.2-15.3, 16, 27, 29.2, 30, hosting-small (all), OPEN_QUESTIONS_V2, PROMPT.
@@ -18,3 +18,18 @@ work lands.
   albedo 4.7). ARCHITECTURE 10.4 puts them in a 25 MB boot pack together with the bundle and the
   definitions; they do not fit five times over. The boot pack is therefore filled by priority inside the
   byte budget and `deploy/boot-manifest.json` lists what is deferred (the brief's own provision).
+- 01:01 c01da51: pack format, packer, pack source, createTileSource, bucket stand-in, pack-list service, boot
+  builder, upload tools; 18 + 4 unit tests green on synthetic terrain.
+- 01:02 the full tile packing (`tools/pack/cli.ts tiles`, bake class) queued; the bake slot is held by
+  site-bake (`site-bake-stage`), so it waits.
+- 01:08 boot pack built against the stack client build 7bc21a26da2aba3d: 19.97 MB pack + 2.22 MB first-paint
+  JS/HTML + 0.23 MB definitions = 22.4 MB of the 25 MB budget. Deferred (do not fit): Earth height level 2
+  (9.4 MB) and 3 (35.5 MB), Earth albedo level 3 (10.6 MB), Moon height 2-3 and albedo 3; no low-resolution
+  cloud map is baked; no menu yet.
+- 01:12 coordinator: no Docker and no `--compose` run this round (no `.wslconfig` cap); the launcher takes
+  its own lock under data/stack. The compose form is built and refuses to run without a 6 GB cap.
+- 01:12 first stack run hung: `pg_ctl start` under spawnSync on Windows (the server inherits the pipe).
+  Fixed (output to a file); `down` cleaned the hung run (launcher, Postgres, ports, slot).
+- 01:17 58d520c: roles, entry, launcher; the in-stack suite (9 tests) green: Postgres 18.0 (180006) UTF8 /
+  builtin C.UTF-8 ready in 172-393 ms, production settings, advisory lock, fenced write, hard kill of
+  Postgres, citext, non-1252 text, endpoint document, boot pack served and verified.
