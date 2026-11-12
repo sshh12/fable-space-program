@@ -28,12 +28,19 @@
  *    from the exposure, not a time); a chase picture is taken in the
  *    rig's default framing (nobody turns the camera in this spec), which keeps the Earth or the Moon in the
  *    frame (request app-integration-10): both are asserted.
+ *    Every picture is taken at a PICTURE STOP (src/app/pictureStops.ts): the spec hands the game the moments it
+ *    wants (each milestone, and the ones a critic needs to judge the effects: the stages just apart, the last
+ *    30 m of the lunar descent and the contact, the entry just past its peak heating from outside and from the
+ *    couch, the chutes open, the splash at +0.2 / 1 / 3 / 10 s); in the frame such a moment is reached the game
+ *    holds the simulation, as its pause key does, the spec takes the pictures and lets it run on. Nothing is
+ *    written to the simulation: the pilot acts in the simulation's control ticks, which stand still with it.
  *
  * Output: out/screens/mission/*.png, out/mission/browser-mission.json (gates, windows, per-phase table, phase log).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
+import type { PictureStop, PictureStopHit } from '../../../src/app/pictureStops';
 import type { AppBrief } from '../../../src/app/testHooks';
 import type { FrameBreakdown } from '../../../src/app/timing';
 import type { MilestoneRecord } from '../../../src/core/contracts/sim';
@@ -51,6 +58,40 @@ const SURFACE_STAY_SECONDS = 600;
 const COCKPIT_AT = new Set(['EARTH_ORBIT', 'LUNAR_TOUCHDOWN']);
 /** Milestones whose chase picture is mostly black space around the vehicle (relaxed image statistics). */
 const SPACE = new Set(['EARTH_ORBIT', 'TLI_COMPLETE', 'MOON_SOI_ENTER', 'LUNAR_ORBIT', 'LUNAR_LIFTOFF', 'MOON_SOI_EXIT', 'EARTH_PERIGEE_TARGETED', 'ENTRY_INTERFACE']);
+
+/** A moment of the flight the game holds at for pictures. */
+interface StopSpec {
+  stop: PictureStop;
+  /** The milestone the pictures belong to: their file names begin with its number and name. */
+  milestone: string;
+  /** What follows the milestone in the file name ('' = the milestone's own picture). */
+  suffix: string;
+  views: ('chase' | 'cockpit')[];
+}
+
+/**
+ * The moments besides the milestones themselves. Triggers are the simulation's own events and read-outs
+ * (pictureStops.ts); `after` keeps a trigger from an earlier part of the flight (the ascent pulls 3 g as well).
+ * Heat flux in W/m^2: the entry peaks at about 3.2 MW/m^2 (docs/handoff/sim-vessel.md).
+ */
+const EXTRA_STOPS: StopSpec[] = [
+  // Staging: the stages half a second and two seconds apart.
+  ...['STAGE_SEP_1', 'FAIRING_JETTISON', 'STAGE_SEP_2'].flatMap((m) =>
+    [0.5, 2].map((t): StopSpec => ({ milestone: m, suffix: `plus-${t}s`, views: ['chase'], stop: { id: `${m}+${t}s`, trigger: { milestone: m }, seconds: t } })),
+  ),
+  // Lunar descent: the dust of the last 30 m, the contact and a second after it.
+  ...[30, 10, 3].map((h): StopSpec => ({ milestone: 'LUNAR_TOUCHDOWN', suffix: `descent-${h}m`, views: ['chase'], stop: { id: `descent-${h}m`, trigger: { radarBelow: h, bodyId: 'moon' }, after: 'LUNAR_ORBIT' } })),
+  { milestone: 'LUNAR_TOUCHDOWN', suffix: 'contact', views: ['chase'], stop: { id: 'contact', trigger: { event: 'touchdown', active: true, match: { surface: 'land' } }, after: 'LUNAR_ORBIT' } },
+  { milestone: 'LUNAR_TOUCHDOWN', suffix: 'contact-plus-1s', views: ['chase'], stop: { id: 'contact+1s', trigger: { event: 'touchdown', active: true, match: { surface: 'land' } }, seconds: 1, after: 'LUNAR_ORBIT' } },
+  // Reentry: just past the peak of the heating, from outside and from the couch; just past the peak of the load.
+  { milestone: 'ENTRY_INTERFACE', suffix: 'peak-heating', views: ['chase', 'cockpit'], stop: { id: 'peak-heating', trigger: { peak: 'heatFlux', floor: 1e6, drop: 0.03 }, after: 'ENTRY_INTERFACE' } },
+  { milestone: 'ENTRY_INTERFACE', suffix: 'peak-g', views: ['chase'], stop: { id: 'peak-g', trigger: { peak: 'gLoad', floor: 3, drop: 0.05 }, after: 'ENTRY_INTERFACE' } },
+  // Chutes: the drogues and the mains open.
+  { milestone: 'DROGUE_DEPLOY', suffix: 'plus-3s', views: ['chase'], stop: { id: 'DROGUE_DEPLOY+3s', trigger: { milestone: 'DROGUE_DEPLOY' }, seconds: 3 } },
+  { milestone: 'MAIN_DEPLOY', suffix: 'plus-8s', views: ['chase'], stop: { id: 'MAIN_DEPLOY+8s', trigger: { milestone: 'MAIN_DEPLOY' }, seconds: 8 } },
+  // The splash of the capsule itself (spent stages have splashes of their own).
+  ...[0.2, 1, 3, 10].map((t): StopSpec => ({ milestone: 'SPLASHDOWN', suffix: `splash-plus-${t}s`, views: ['chase'], stop: { id: `splash+${t}s`, trigger: { event: 'splash', active: true }, seconds: t, after: 'MAIN_DEPLOY' } })),
+];
 
 test.use({ viewport: { width: 2560, height: 1440 }, deviceScaleFactor: 1 });
 
@@ -109,6 +150,8 @@ interface PhaseRow {
 
 interface Shot {
   milestone: string;
+  /** The picture stop the frame was held at (null for the picture on the pad before the flight), with its times. */
+  stop: PictureStopHit | null;
   view: string;
   file: string;
   phase: string | null;
@@ -284,15 +327,30 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'browser-mission.json');
     const rows = windows.length > 0 ? aggregate(windows, phaseLog, flightEndMs || Date.now()) : [];
-    fs.writeFileSync(file, JSON.stringify({ when: new Date().toISOString(), realMinutes: ((flightEndMs || Date.now()) - t0) / 60_000, clock, ...record, phases: rows, atMilestone, shots, errors: [...errorsSeen], console: pageLog.messages.slice(0, 50), phaseLog, windows }, null, 2));
+    fs.writeFileSync(file, JSON.stringify({ when: new Date().toISOString(), realMinutes: ((flightEndMs || Date.now()) - t0) / 60_000, heldAtPictureStopsMinutes: heldMs / 60_000, clock, ...record, phases: rows, atMilestone, shots, errors: [...errorsSeen], console: pageLog.messages.slice(0, 50), phaseLog, windows }, null, 2));
     return file;
   };
 
-  const shoot = async (milestone: string, index: number, phase: string | null): Promise<void> => {
-    const views = COCKPIT_AT.has(milestone) ? ['chase', 'cockpit'] : ['chase'];
+  /** Every stop of the flight by its id: one per milestone, and the extra ones. */
+  const stops = new Map<string, StopSpec>();
+  for (const id of scenarioMilestones) stops.set(id, { milestone: id, suffix: '', views: COCKPIT_AT.has(id) ? ['chase', 'cockpit'] : ['chase'], stop: { id, trigger: { milestone: id } } });
+  for (const st of EXTRA_STOPS) {
+    expect(scenarioMilestones, `stop ${st.stop.id} belongs to a milestone of the scenario`).toContain(st.milestone);
+    stops.set(st.stop.id, st);
+  }
+  /** Seconds of real time the simulation stood at picture stops. */
+  let heldMs = 0;
+
+  /**
+   * The pictures of one moment: `views` in turn (the chase view is the one the flight is watched in; the cockpit
+   * is switched to and, unless `stay`, back). With `cockpitWindow` the cabin's frame-time window of ARCHITECTURE
+   * 17.1 follows the cockpit picture with the flight running again (`resume` is called before it).
+   */
+  const shoot = async (milestone: string, suffix: string, views: readonly string[], phase: string | null, stop: PictureStopHit | null, resume: () => Promise<void>): Promise<void> => {
+    const index = milestone === 'PAD' ? 0 : scenarioMilestones.indexOf(milestone) + 1;
     for (const view of views) {
       if (view !== 'chase') await setViewAndWait(page, view);
-      const name = `${String(index).padStart(2, '0')}-${milestone.toLowerCase().replace(/_/g, '-')}-${view}`;
+      const name = `${String(index).padStart(2, '0')}-${milestone.toLowerCase().replace(/_/g, '-')}${suffix ? `-${suffix}` : ''}-${view}`;
       const shot = await saveScreenshot(page, SHOTS, name);
       const info = await page.evaluate(async () => ({
         hdr: await window.__test!.hdrStats(),
@@ -317,6 +375,7 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
       const s = shot.stats;
       shots.push({
         milestone,
+        stop,
         view,
         file: path.relative(repoRoot, shot.file).replace(/\\/g, '/'),
         phase,
@@ -332,13 +391,35 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
         `[${((Date.now() - t0) / 60_000).toFixed(1)} min] shot ${name}: alt ${km(info.b.altitudeAsl)}, luma ${s.meanLuma.toFixed(1)} +/- ${s.stdLuma.toFixed(1)}, non-black ${(s.fractionNonBlack * 100).toFixed(0)} %, EV100 ${info.exposure.ev100.toFixed(2)} (target ${info.exposure.targetEv100.toFixed(2)}), in frame: ${info.bodies.map((x) => `${x.id}${x.x !== null && x.y !== null ? ` at ${x.x.toFixed(2)},${x.y.toFixed(2)}` : ' (limb)'}`).join(', ') || 'no body'}`,
       );
       if (view === 'cockpit') {
-        // The cockpit column of ARCHITECTURE 17.1: one window in the cabin, then back to the chase view.
-        await resetPerf(page);
-        await page.evaluate((n) => window.__test!.waitFrames(n), WINDOW_FRAMES);
-        windows.push(await closeWindow(page, `${phase ?? '?'} (cockpit)`));
+        if (suffix === '' && COCKPIT_AT.has(milestone)) {
+          // The cockpit column of ARCHITECTURE 17.1: one window in the cabin with the flight running again.
+          await resume();
+          await resetPerf(page);
+          await page.evaluate((n) => window.__test!.waitFrames(n), WINDOW_FRAMES);
+          windows.push(await closeWindow(page, `${phase ?? '?'} (cockpit)`));
+        }
         await setViewAndWait(page, 'chase');
       }
     }
+    await resume();
+  };
+
+  /** The stop the game holds at now (null = the flight is running). */
+  const heldStop = (): Promise<PictureStopHit | null> => page.evaluate(() => window.__app!.pictureStop());
+  /** Take the pictures of the stop the game holds at and let the flight run on. */
+  const shootStop = async (hit: PictureStopHit, phase: string | null): Promise<void> => {
+    const spec = stops.get(hit.id);
+    if (!spec) throw new Error(`the game holds at a stop this spec did not set: ${hit.id}`);
+    const t = Date.now();
+    let resumed = false;
+    const resume = async (): Promise<void> => {
+      if (resumed) return;
+      resumed = true;
+      heldMs += Date.now() - t;
+      await page.evaluate(() => window.__app!.resumeFromPictureStop());
+    };
+    console.log(`[${((Date.now() - t0) / 60_000).toFixed(1)} min] stop ${hit.id} at UT ${hit.ut.toFixed(2)} (${(hit.ut - hit.triggerUt).toFixed(2)} s after its trigger)`);
+    await shoot(spec.milestone, spec.suffix, spec.views, phase, hit, resume);
   };
 
   await withGpuLock(async () => {
@@ -358,8 +439,9 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
     // A key the game does not bind: the first gesture resumes the AudioContext (the engines are heard), nothing else.
     await page.keyboard.press('F9');
 
+    await page.evaluate((list) => window.__app!.setPictureStops(list), [...stops.values()].map((s) => s.stop));
     let p = await poll(page);
-    await shoot('PAD', 0, p.phase);
+    await shoot('PAD', '', ['chase'], p.phase, null, async () => undefined);
     let phase = p.phase ?? 'prelaunch';
     phaseLog.push({ phase, wallMs: Date.now(), met: p.b.met, ut: p.b.ut, warp: p.b.warpFactor, altitudeAsl: p.b.altitudeAsl });
     const handled = new Set<string>();
@@ -390,7 +472,8 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
       const phaseNow = p.phase ?? phase;
       const phaseChanged = phaseNow !== phase;
       const full = p.frames - windowFrames0 >= WINDOW_FRAMES;
-      if (fresh.length > 0 || phaseChanged || full) {
+      const held = await heldStop();
+      if (fresh.length > 0 || phaseChanged || full || held) {
         if (p.frames - windowFrames0 >= MIN_WINDOW_FRAMES) windows.push(await closeWindow(page, phase));
         if (phaseChanged) {
           console.log(`[${((now - t0) / 60_000).toFixed(1)} min] phase ${phase} -> ${phaseNow} (MET ${(p.b.met / 3600).toFixed(2)} h, ${km(p.b.altitudeAsl)}, warp ${p.b.warpFactor}x)`);
@@ -402,13 +485,20 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
           const facts = await stateFacts(page);
           atMilestone[id] = { wallMs: now - t0, phase: p.phase, cheatCounter: facts.cheatCounter, failed: facts.mission.failed };
           console.log(`[${((now - t0) / 60_000).toFixed(1)} min] milestone ${id} in phase ${p.phase} (MET ${(p.b.met / 3600).toFixed(2)} h)`);
-          await shoot(id, scenarioMilestones.indexOf(id) + 1, p.phase);
         }
+        // The pictures: the game holds at one stop at a time (a milestone's own stop is due in the frame the
+        // milestone is recorded, so it is the one held when the milestone is first seen here).
+        if (held) await shootStop(held, p.phase);
         windowFrames0 = await resetPerf(page);
       }
       if (p.done && scenarioMilestones.every((id) => handled.has(id))) break;
       // Done but a milestone never came: two minutes of grace, then the gates say which one is missing.
       if (p.done && now - phaseLog[phaseLog.length - 1]!.wallMs > 120_000) break;
+    }
+    // A stop that became due in the last frames (the last milestone's own): its pictures, then the end.
+    for (let held = await heldStop(); held; held = await heldStop()) {
+      await shootStop(held, p.phase);
+      await page.evaluate(() => window.__test!.waitFrames(4));
     }
     flightEndMs = Date.now();
     clock.end = await measureHarnessClock(page);
@@ -422,6 +512,10 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   });
 
   // ------------------------------------------------------------------------------------- the record
+  // Every moment the spec asked for was reached and has its pictures.
+  const reached = new Set((await page.evaluate(() => window.__app!.pictureStopsFired())).map((x) => x.id));
+  expect.soft([...stops.keys()].filter((id) => !reached.has(id)), 'picture stops that were never reached').toEqual([]);
+  console.log(`picture stops: ${reached.size} of ${stops.size} reached; the simulation was held for ${(heldMs / 1000).toFixed(0)} s of real time in all`);
   const milestones: MilestoneRecord[] = await page.evaluate(() => window.__test!.milestones());
   const last = await stateFacts(page);
   const rows = aggregate(windows, phaseLog, flightEndMs);

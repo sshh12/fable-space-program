@@ -14,6 +14,15 @@ export interface DiscInFrame {
   heightShare: number;
 }
 
+/**
+ * Where a point at view-space position `d` falls in the frame: normalised device coordinates (x right, y up,
+ * -1..1 inside), or null when it is behind the image plane.
+ */
+export function projectToFrame(d: { x: number; y: number; z: number }, tanX: number, tanY: number): { x: number; y: number } | null {
+  if (!(d.z < 0)) return null;
+  return { x: d.x / (-d.z * tanX), y: d.y / (-d.z * tanY) };
+}
+
 /** Sample directions per axis for discs too large for the small-disc test (their limb crosses the frame). */
 const GRID = 9;
 
@@ -29,9 +38,10 @@ const GRID = 9;
 export function discInFrame(d: { x: number; y: number; z: number }, angularRadius: number, tanX: number, tanY: number): DiscInFrame {
   const len = Math.hypot(d.x, d.y, d.z);
   const heightShare = angularRadius / Math.atan(tanY);
-  const front = d.z < 0;
-  const x = front ? d.x / (-d.z * tanX) : null;
-  const y = front ? d.y / (-d.z * tanY) : null;
+  const p = projectToFrame(d, tanX, tanY);
+  const front = p !== null;
+  const x = p ? p.x : null;
+  const y = p ? p.y : null;
   if (len === 0) return { inFrame: false, x: null, y: null, heightShare };
   // Small disc: circle about the projected centre.
   if (front && angularRadius < 0.35) {

@@ -12,7 +12,7 @@ import { PNG } from 'pngjs';
 import type { Page } from '@playwright/test';
 import type { LoadingReport } from '../../../src/app/loading';
 import type { AppBrief } from '../../../src/app/testHooks';
-import { appUrl, assertDiscreteGpu, assertRealImage, expect, expectNoErrors, openPage, pngDiff, saveScreenshot, test, waitIdle } from '../harness';
+import { appUrl, assertDiscreteGpu, assertRealImage, captureDeterministic, expect, expectNoErrors, openPage, pngDiff, saveScreenshot, test, waitIdle } from '../harness';
 
 test.setTimeout(12 * 60_000);
 
@@ -72,34 +72,50 @@ async function openGame(page: Page, query = ''): Promise<void> {
 }
 
 /**
- * Share of water-like pixels in the band of the pad view between the horizon and the site, left and right of
- * the stack and the tower, where lava plain and scrub are and never sea. Open water under a daylight sky is
- * both smooth (luminance within 2 of 255 of its right and lower neighbours together) and bluish (blue at least
- * 3 above red); the ground is textured and neutral to brown. Measured on the pictures of this spec and of the
- * browser mission: 0.49 on the frame in which the land around the pad was drawn as sea
- * (out/screens/mission/00-pad-chase.png of 2026-11-11), 0.06-0.07 on the land (the colour alone does not tell
- * them apart: the fresh lava of the site bake is blue-grey in places).
+ * How water-like the picture is around a point: the share of the pixels of a 13 x 13 patch that are both smooth
+ * (luminance within 2 of 255 of the right and lower neighbours together) and bluish (blue at least 3 above red).
+ * Open water under a daylight sky is both; lava plain and scrub are textured and neutral to brown. Measured on
+ * this spec's and the browser mission's pictures: 0.40-0.49 on sea (the frame of 2026-11-11 in which the land
+ * around the pad was drawn as sea, and the real sea off the pad's coast outside the sun's glitter), 0.00-0.07 on
+ * land in three different looks of the ground. Colour alone does not tell them apart (fresh lava is blue-grey).
  */
-function seaShare(png: Buffer): number {
-  const img = PNG.sync.read(png);
+function waterLikeAt(img: PNG, cx: number, cy: number): number {
   const lum = (i: number): number => 0.2126 * img.data[i]! + 0.7152 * img.data[i + 1]! + 0.0722 * img.data[i + 2]!;
-  let sea = 0;
+  let water = 0;
   let n = 0;
-  for (const [x0, x1] of [
-    [0.3, 0.45],
-    [0.69, 0.98],
-  ] as const) {
-    for (let y = Math.floor(0.36 * img.height); y < Math.floor(0.5 * img.height); y++) {
-      for (let x = Math.floor(x0 * img.width); x < Math.floor(x1 * img.width); x++) {
-        const i = (y * img.width + x) * 4;
-        const l = lum(i);
-        const smooth = Math.abs(l - lum(i + 4)) + Math.abs(l - lum(i + img.width * 4)) <= 2;
-        if (smooth && img.data[i + 2]! - img.data[i]! >= 3) sea++;
-        n++;
-      }
+  for (let y = Math.max(0, Math.round(cy) - 6); y <= Math.min(img.height - 2, Math.round(cy) + 6); y++) {
+    for (let x = Math.max(0, Math.round(cx) - 6); x <= Math.min(img.width - 2, Math.round(cx) + 6); x++) {
+      const i = (y * img.width + x) * 4;
+      const l = lum(i);
+      if (Math.abs(l - lum(i + 4)) + Math.abs(l - lum(i + img.width * 4)) <= 2 && img.data[i + 2]! - img.data[i]! >= 3) water++;
+      n++;
     }
   }
-  return sea / n;
+  return n === 0 ? 0 : water / n;
+}
+
+interface GroundSample {
+  distance: number;
+  bearingDeg: number;
+  kind: string;
+  heightAboveSea: number | null;
+  x: number | null;
+  y: number | null;
+}
+
+/**
+ * "Land where land is", whatever the camera shows: of the ground points around the pad that the height authority
+ * calls land at least 3 m above the sea and that fall into the frame, the share whose patch of the picture looks
+ * like water (waterLikeAt at 0.25 or more). The same for the points the authority calls water, as a reading of
+ * the statistic on real sea when the view has some.
+ */
+function landAsWater(png: Buffer, samples: GroundSample[]): { land: number; landAsWater: number; water: number; waterAsWater: number } {
+  const img = PNG.sync.read(png);
+  const inFrame = samples.filter((p) => p.x !== null && p.y !== null);
+  const land = inFrame.filter((p) => p.kind === 'land' && (p.heightAboveSea === null || p.heightAboveSea >= 3));
+  const water = inFrame.filter((p) => p.kind === 'water');
+  const share = (list: GroundSample[]): number => (list.length === 0 ? 0 : list.filter((p) => waterLikeAt(img, p.x!, p.y!) >= 0.25).length / list.length);
+  return { land: land.length, landAsWater: share(land), water: water.length, waterAsWater: share(water) };
 }
 
 test('the loading screen shows real progress and stays until the view at the pad is final; the first frame has land', async ({ page, pageLog }) => {
@@ -117,7 +133,7 @@ test('the loading screen shows real progress and stays until the view at the pad
       busy: string[];
       stream: Record<string, number>;
       residency: { wanted: number; resident: number; wantedLevel: number; residentLevel: number } | null;
-      loads: { shaders: { pending: number; total: number }; textures: { pending: number; total: number } };
+      loads: { shaders: { pending: number; total: number }; textures: { pending: number; total: number }; atmosphere: { done: number; total: number } };
       audio: { loaded: number; total: number };
       ut: number;
       frames: number;
@@ -178,8 +194,8 @@ test('the loading screen shows real progress and stays until the view at the pad
   console.log(`loading: ${sec(report.elapsedMs)} s to the revealed view; ${samples.length} samples; pictures of ${[...shot].join(', ')}`);
   for (const x of report.steps) console.log(`  ${x.label.padEnd(24)} ${sec(x.startMs).padStart(6)} -> ${sec(x.endMs).padStart(6)} s  ${x.done ?? ''}${x.total !== null ? ` / ${x.total}` : ''}  ${x.detail}`);
   console.log(`  reveal: ${JSON.stringify(report.reveal)}`);
-  const inits = await page.evaluate(() => window.__app!.featureInitMs());
-  console.log(`  feature start-up, s: ${Object.entries(inits).map(([id, t]) => `${id} ${sec(t)}`).join(', ')}`);
+  const inits = await page.evaluate(() => ({ features: window.__app!.featureInitMs(), warm: window.__app!.warmMs() }));
+  console.log(`  feature start-up, s: ${Object.entries(inits.features).map(([id, t]) => `${id} ${sec(t)}`).join(', ')}; pipelines created ahead (renderer.warm) ${sec(inits.warm)} s`);
   // The terrain under the screen, about every two seconds: resident / queued / baking / uploading tiles and frames.
   let lastPrinted = -1e9;
   for (const s of samples) {
@@ -235,6 +251,8 @@ test('the loading screen shows real progress and stays until the view at the pad
     }
     const m = step(s, 'models');
     if (m.state === 'active') expect(m.total, 'models row: texture loads started').toBe(s.game.loads.textures.total);
+    const at = step(s, 'atmosphere');
+    if (at.state === 'active') expect({ done: at.done, total: at.total }, 'atmosphere row: tables, cloud noise and coverage maps, done / in all').toEqual(s.game.loads.atmosphere);
     const a = step(s, 'audio');
     if (a.state === 'active') expect(a.done, 'sound row: decoded assets').toBe(s.game.audio.loaded);
   }
@@ -257,19 +275,24 @@ test('the loading screen shows real progress and stays until the view at the pad
   expect(defs.total).toBeGreaterThan(10);
 
   // 4. The first revealed frame has land where land is (it was sea for 40 s after boot at 1440p before), and is
-  //    the picture the view keeps: ten seconds later, idle again, the same ground.
-  const seaFirst = seaShare(first.buffer);
+  //    the picture the view keeps: ten seconds later, idle again, the same ground. The land is asked of the
+  //    height authority at 120 points between 300 m and 1.8 km from the pad (beyond the site's concrete) and
+  //    looked for where those points fall in the frame, so the check holds whichever way the default view looks
+  //    (it has turned twice since it was written).
+  const ground: GroundSample[] = await page.evaluate(() => window.__app!.groundSamples([300, 500, 800, 1200, 1800], 24));
+  const seaFirst = landAsWater(first.buffer, ground);
   assertRealImage(first.stats, 'loading-revealed-first');
   await page.evaluate(() => window.__test!.waitFrames(600));
   const later = await saveScreenshot(page, 'app', 'loading-revealed-later');
-  const seaLater = seaShare(later.buffer);
+  const seaLater = landAsWater(later.buffer, ground);
   const diff = pngDiff(first.buffer, later.buffer);
   const after = await page.evaluate(() => ({ stream: window.__app!.terrainStats().stream, busy: window.__app!.busyFeatures(), ut: window.__app!.brief().ut }));
   console.log(
-    `first revealed frame: water-like share ${seaFirst.toFixed(4)} of the land band (10 s later ${seaLater.toFixed(4)}); mean abs difference to the later frame ${diff.meanAbsDiff.toFixed(2)} of 255, differing ${diff.differingFraction.toFixed(3)}; uploaded since the reveal ${after.stream['uploadedTotal']! - samples[samples.length - 1]!.game!.stream['uploadedTotal']!} tiles; busy ${JSON.stringify(after.busy)}`,
+    `first revealed frame: ${seaFirst.land} land points in the frame, ${(seaFirst.landAsWater * 100).toFixed(1)} % of them look like water (10 s later ${(seaLater.landAsWater * 100).toFixed(1)} %); ${seaFirst.water} water points in the frame, ${(seaFirst.waterAsWater * 100).toFixed(1)} % of them look like water; mean abs difference to the later frame ${diff.meanAbsDiff.toFixed(2)} of 255, differing ${diff.differingFraction.toFixed(3)}; uploaded since the reveal ${after.stream['uploadedTotal']! - samples[samples.length - 1]!.game!.stream['uploadedTotal']!} tiles; busy ${JSON.stringify(after.busy)}`,
   );
-  expect(seaFirst, 'water-like share of the land band in the first revealed frame (0.49 when it was sea, 0.06 on land)').toBeLessThan(0.25);
-  expect(Math.abs(seaLater - seaFirst), 'the land band does not change after the reveal').toBeLessThan(0.05);
+  expect(seaFirst.land, 'land points of the pad surroundings in the first revealed frame').toBeGreaterThanOrEqual(15);
+  expect(seaFirst.landAsWater, 'share of the land points that look like water in the first revealed frame').toBeLessThan(0.15);
+  expect(Math.abs(seaLater.landAsWater - seaFirst.landAsWater), 'the land does not change after the reveal').toBeLessThan(0.1);
   expect(diff.meanAbsDiff, 'first revealed frame against the frame ten seconds later').toBeLessThan(6);
   expect(after.ut, 'the simulation runs once the screen has gone').toBeGreaterThan([...uts][0] ?? 0);
   await expectNoErrors(page, pageLog);
@@ -423,15 +446,54 @@ test('a short real flight: ignite, lift off and climb a few kilometres, in every
   await press(page, 'KeyZ');
   await press(page, 'KeyT');
   await until(page, 'b.throttle === 1 && b.sasEnabled', 5_000);
+  // Picture stops (what the browser mission takes its pictures at): the game holds the simulation in the frame
+  // a named moment is reached and runs on when told.
+  await page.evaluate(() =>
+    window.__app!.setPictureStops([
+      { id: 'stage', trigger: { event: 'stageFired', active: true } },
+      { id: 'liftoff', trigger: { milestone: 'LIFTOFF' } },
+      { id: 'liftoff+1s', trigger: { milestone: 'LIFTOFF' }, seconds: 1 },
+      { id: 'never', trigger: { peak: 'gLoad', floor: 3, drop: 0.05 }, after: 'A_MILESTONE_THIS_FLIGHT_HAS_NOT' },
+    ]),
+  );
+  const heldAt = async (id: string): Promise<{ id: string; ut: number; triggerUt: number }> => {
+    await page.waitForFunction((want) => window.__app!.pictureStop()?.id === want, id, { polling: 50, timeout: 60_000 });
+    const stop = (await page.evaluate(() => window.__app!.pictureStop()))!;
+    const frames0 = await page.evaluate(() => window.__app!.frames());
+    await page.evaluate(() => window.__test!.waitFrames(20));
+    const after = await page.evaluate(() => ({ ut: window.__app!.brief().ut, frames: window.__app!.frames(), paused: window.__app!.paused() }));
+    expect(after.ut, `${id}: the simulation stands still at the stop`).toBe(stop.ut);
+    expect(after.frames, `${id}: the picture keeps rendering at the stop`).toBeGreaterThan(frames0);
+    expect(after.paused, `${id}: a stop is not the pause (no PAUSED line in the picture)`).toBe(false);
+    return stop;
+  };
+  const runOn = (): Promise<void> => page.evaluate(() => window.__app!.resumeFromPictureStop());
+
   await press(page, 'Space');
   let b = await until(page, 'b.nextStage === 1', 5_000);
   expect(await page.evaluate(() => window.__app!.inFlight())).toBe(true);
-  b = await until(page, `b.milestones.includes('LIFTOFF')`, 30_000);
-  // The engines are heard (the key press resumed the audio context).
+  const stage = await heldAt('stage');
+  expect(stage.ut - stage.triggerUt, 'held in the frame the stage fired').toBeLessThan(0.1);
+  await shoot(page, 'stop-stage-fired');
+  await runOn();
+  const liftoff = await heldAt('liftoff');
+  expect(liftoff.ut - liftoff.triggerUt, 'held in the frame of the lift-off').toBeLessThan(0.1);
+  b = await brief(page);
+  expect(b.milestones).toContain('LIFTOFF');
+  // The engines are heard (the key press resumed the audio context), also while the simulation is held.
   const audio = await page.evaluate(() => window.__test!.audio()!);
   expect(audio.state).toBe('running');
   expect(audio.buses.engines.rms).toBeGreaterThan(0);
+  await shoot(page, 'stop-liftoff');
+  await runOn();
+  const later = await heldAt('liftoff+1s');
+  expect(later.ut - later.triggerUt).toBeGreaterThanOrEqual(1);
+  expect(later.ut - later.triggerUt, 'the first frame at or past one second after the lift-off').toBeLessThan(1.1);
+  await shoot(page, 'stop-liftoff-plus-1s');
+  await runOn();
+  expect((await page.evaluate(() => window.__app!.pictureStopsFired())).map((x) => x.id)).toEqual(['stage', 'liftoff', 'liftoff+1s']);
   await page.evaluate(() => window.__test!.waitFrames(60));
+  expect(await page.evaluate(() => window.__app!.pictureStop()), 'the flight runs on after the last stop').toBeNull();
   await shoot(page, 'liftoff-chase');
 
   await until(page, `b.altitudeAsl > ${pad.altitudeAsl + 150}`, 60_000);
@@ -495,7 +557,8 @@ test('in low orbit: the map takes the pointer, a node is added and Shift-dragged
   const turned = await framing();
   expect(turned.auto).toBe(false);
   expect(Math.abs(turned.pitch)).toBeGreaterThan(0.01);
-  await page.evaluate(() => window.__app!.resetCameraView());
+  // Home: the binding of `ui:resetCamera` (request app-integration-14).
+  await press(page, 'Home');
   await page.waitForFunction(() => window.__app!.chaseFraming().auto, undefined, { polling: 100, timeout: 10_000 });
   // The swing back takes a second and a half.
   await page.evaluate(() => window.__test!.waitFrames(120));
@@ -508,6 +571,29 @@ test('in low orbit: the map takes the pointer, a node is added and Shift-dragged
   const e = await page.evaluate(() => window.__app!.exposure());
   console.log(`leo cockpit: EV100 ${e.ev100.toFixed(2)} (target ${e.targetEv100.toFixed(2)}), sun visibility ${e.sunVisibility.toFixed(2)}, outside ${e.outsideFraction.toFixed(3)}`);
   await shoot(page, 'leo-cockpit', { minNonBlack: 0.03 });
+  // V: the next couch (`ui:nextSeat`, request core-6). The view starts in the cockpit layout's default seat; the
+  // key moves the eye, the HUD names the seat, and as many presses as there are seats bring it back.
+  const seat0 = await page.evaluate(() => window.__app!.seat());
+  expect(seat0, 'the cockpit view sits in a seat').not.toBeNull();
+  const seats = [seat0];
+  for (let i = 0; i < 8; i++) {
+    await press(page, 'KeyV');
+    await page.evaluate(() => window.__test!.waitFrames(6));
+    const now = await page.evaluate(() => window.__app!.seat());
+    if (now === seat0) break;
+    seats.push(now);
+    expect(await page.evaluate(() => window.__app!.notifications()), `the HUD names the seat ${now}`).toEqual(expect.arrayContaining([expect.stringMatching(/^Seat: /)]));
+    if (seats.length === 2) await shoot(page, 'leo-cockpit-next-seat', { minNonBlack: 0.03 });
+  }
+  console.log(`cockpit seats, in the order of the V key: ${seats.join(' -> ')} -> ${seat0}`);
+  expect(seats.length, 'the cabin has more than one seat to sit in').toBeGreaterThan(1);
+  expect(new Set(seats).size).toBe(seats.length);
+  expect(await page.evaluate(() => window.__app!.seat()), 'the key wraps round to the first seat').toBe(seat0);
+  // In the chase view the key does nothing.
+  await viewKey(page, 'KeyC', 'external');
+  await press(page, 'KeyV');
+  await viewKey(page, 'KeyC', 'interior');
+  expect(await page.evaluate(() => window.__app!.seat())).toBe(seat0);
   await viewKey(page, 'KeyC', 'external');
   await viewKey(page, 'KeyM', 'map');
   const marker = async (kind: string, id: string): Promise<{ x: number; y: number; visible: boolean }> => {
@@ -565,6 +651,45 @@ test('in low orbit: the map takes the pointer, a node is added and Shift-dragged
   await shoot(page, 'leo-map-node', { minNonBlack: 0.05 });
   expect(s.scenario.startKind).toBe('state');
   expect(s.cheatCounter).toBe(0);
+  await expectNoErrors(page, pageLog);
+});
+
+test('frame-exact capture: renderExact renders the frames asked for and holds the last (request lead-3)', async ({ page, pageLog }) => {
+  // No HUD: its clock and read-outs are not part of a reference image of the scene.
+  await openGame(page, '?hud=0');
+  await waitIdle(page, 8, BOOT_MS);
+  // The precondition of TestApi.renderExact: deterministic mode, presentation time frozen.
+  await page.evaluate(() => {
+    window.__test!.setPaused(true);
+    window.__test!.setDeterministic(true);
+  });
+  expect(await page.evaluate(() => typeof window.__test!.renderExact)).toBe('function');
+  const held = await page.evaluate(() => window.__test!.renderExact!(8));
+  expect(held.frames).toBe(8);
+  // The harness's capture (waits for idle, asks for 64 frames, takes the picture only of an idle capture).
+  const first = await captureDeterministic(page, 64);
+  // The hold: the display's frames go on counting, the game renders none and the picture does not change.
+  const before = await page.evaluate(() => ({ game: window.__app!.frames(), ut: window.__app!.brief().ut }));
+  await page.evaluate(() => window.__test!.waitFrames(40));
+  const after = await page.evaluate(() => ({ game: window.__app!.frames(), ut: window.__app!.brief().ut }));
+  expect(after.game, 'the game renders no frame of its own while the core holds').toBe(before.game);
+  expect(after.ut).toBe(before.ut);
+  const still = await page.screenshot();
+  expect(pngDiff(first, still).maxAbsDiff, 'the held frame stays on screen').toBe(0);
+  // A second capture of the same state. How far it is from the first is recorded, not asserted: the features'
+  // `resetTemporal` make it the same picture, and the clouds' sequence is still open (request core-4).
+  const second = await captureDeterministic(page, 64);
+  const d = pngDiff(first, second);
+  console.log(`renderExact at the pad: two captures of 64 frames differ by max ${d.maxAbsDiff}, mean ${d.meanAbsDiff.toFixed(4)} of 255 (${(d.differingFraction * 100).toFixed(2)} % of the values)`);
+  const dir = await saveScreenshot(page, 'app', 'exact-pad');
+  assertRealImage(dir.stats, 'exact-pad');
+  // Leaving deterministic mode ends the hold: the game runs again.
+  await page.evaluate(() => {
+    window.__test!.setDeterministic(false);
+    window.__test!.setPaused(false);
+  });
+  await page.waitForFunction((ut) => window.__app!.brief().ut > ut, after.ut, { polling: 100, timeout: 10_000 });
+  expect(await page.evaluate(() => window.__app!.frames())).toBeGreaterThan(after.game);
   await expectNoErrors(page, pageLog);
 });
 

@@ -8,7 +8,8 @@ import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import type { TestApiController } from '@/core/testing/testApi';
 import { coreOf, type ExposureInfo } from '@/render/core';
-import { discInFrame } from './framing';
+import { discInFrame, projectToFrame } from './framing';
+import type { PictureStop, PictureStopHit } from './pictureStops';
 import type { Game } from './game';
 import type { LoadingReport } from './loading';
 import type { FrameBreakdown, FrameStage, FrameTrace, WindowStats } from './timing';
@@ -32,11 +33,29 @@ export interface AppDebug {
   takeCpuTrace(): FrameTrace | null;
   /**
    * The chase rig's framing: `auto` = the default azimuth (the player has not turned the camera), the player's
-   * pitch offset (rad) and zoom factor, the roll of the default view (rad) and the distance (m).
+   * pitch offset (rad) and zoom factor, the roll of the default view (rad) and the distance (m). The Home key
+   * (`ui:resetCamera`) returns to the default.
    */
   chaseFraming(): { auto: boolean; pitch: number; zoom: number; roll: number; distance: number };
-  /** Back to the chase rig's default framing (what a reset key does). */
-  resetCameraView(): void;
+  /** The cabin seat the cockpit rig's eye is in (null before the cockpit view has been shown). */
+  seat(): string | null;
+  /**
+   * Picture stops (src/app/pictureStops.ts): hand the game the moments of the flight to hold at; `pictureStop()`
+   * is the stop the simulation is held at now (null = running); `resumeFromPictureStop()` lets it run on.
+   */
+  setPictureStops(stops: PictureStop[]): void;
+  pictureStop(): PictureStopHit | null;
+  resumeFromPictureStop(): void;
+  pictureStopsFired(): PictureStopHit[];
+  /**
+   * Points of the ground on rings around the active vessel (metres from its sub-point, `bearings` per ring, from
+   * north eastwards), each with what the height authority says is there (land or water, height above the sea
+   * level, null on a body without a sea) and where it falls in the presented frame, in CSS pixels of the canvas
+   * (null when it is outside the frame or behind the eye). Loads the height data of the rings first.
+   */
+  groundSamples(distances: number[], bearings: number): Promise<{ distance: number; bearingDeg: number; kind: string; heightAboveSea: number | null; x: number | null; y: number | null }[]>;
+  /** Wall time of `renderer.warm()` before the first frame, ms. */
+  warmMs(): number;
   /**
    * Bodies whose disc is at least partly inside the presented frame (framing.ts): id, whether it is the star,
    * angular radius (rad), centre in normalised device coordinates (x right, y up, -1..1 inside; null when the
@@ -46,8 +65,12 @@ export interface AppDebug {
   bodiesInFrame(): { id: string; star: boolean; angularRadius: number; x: number | null; y: number | null; heightShare: number }[];
   /** What the camera's selection of the active vessel's body wants and has: tiles and levels (null without terrain). */
   terrainResidency(): { wanted: number; resident: number; wantedLevel: number; residentLevel: number } | null;
-  /** Shader modules created and still compiling; texture loads started and outstanding (the render core's counts). */
-  renderLoads(): { shaders: { pending: number; total: number }; textures: { pending: number; total: number } };
+  /**
+   * Shader modules (and pipelines created ahead) created and still compiling; texture loads started and
+   * outstanding (the render core's counts); the atmosphere's one-off work: parts done and in all (the tables,
+   * the cloud noise, each cloud coverage map).
+   */
+  renderLoads(): { shaders: { pending: number; total: number }; textures: { pending: number; total: number }; atmosphere: { done: number; total: number } };
   /** The loading screen: its steps with their counts and times, and what the frame loop found at the reveal. */
   loading(): LoadingReport;
   /** Wall time of every render feature's start-up, ms, by feature id. */
@@ -158,6 +181,9 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     camera: () => structuredClone(game.camera()),
     setCameraOrbit: (yaw, pitch, distance) => game.setCameraOrbit(yaw, pitch, distance),
     setDeterministic: (on) => game.setDeterministic(on),
+    // Frame-exact capture for the reference images (request lead-3): exactly `frames` of the game's frames at
+    // the fixed step, the last one held (RENDER_API section 13).
+    renderExact: (frames) => game.renderExact(frames),
     setPaused: (p) => game.setPaused(p),
     hdrStats: () => game.renderer.readHdrStats(),
     audio: () => game.audio.probe(),
@@ -176,7 +202,55 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
       const c = game.chase;
       return { auto: c.autoAzimuth, pitch: c.offsets.pitch, zoom: c.offsets.zoom, roll: c.roll, distance: c.distance };
     },
-    resetCameraView: () => game.chase.resetView(),
+    seat: () => game.cockpitRig.seatId,
+    setPictureStops: (stops) => game.setPictureStops(stops),
+    pictureStop: () => game.pictureStop(),
+    resumeFromPictureStop: () => game.resumeFromPictureStop(),
+    pictureStopsFired: () => game.pictureStopsFired(),
+    warmMs: () => game.warmMs,
+    groundSamples: async (distances, bearings) => {
+      const s = game.snapshot();
+      const cam = game.camera();
+      const vessel = s.vessels.find((x) => x.id === s.activeVesselId);
+      const body = vessel ? s.bodies.find((b) => b.id === vessel.bodyId) : undefined;
+      const def = vessel ? game.defs.bodies[vessel.bodyId] : undefined;
+      if (!vessel || !body || !def) return [];
+      // Local frame at the vessel's sub-point (ROOT axes): up, north along the body's pole, east.
+      const up = v3.normalize(vessel.r);
+      const pole = quat.rotate(body.qFixedToRoot, v3.unitZ());
+      const eastRaw = v3.cross(pole, up);
+      const east = v3.normalize(v3.len(eastRaw) < 1e-9 ? v3.anyOrthogonal(up) : eastRaw);
+      const north = v3.cross(up, east);
+      const fixed = (dirRoot: { x: number; y: number; z: number }): { x: number; y: number; z: number } => quat.rotateInv(body.qFixedToRoot, dirRoot);
+      await game.terrain.ensureLoaded(vessel.bodyId, fixed(up), Math.max(...distances) + 100, 'app:ground-samples');
+      const canvas = game.renderer.canvas;
+      const tanY = Math.tan(cam.fovY / 2);
+      const tanX = tanY * (canvas.width / Math.max(1, canvas.height));
+      const seaLevel = def.ocean ? def.ocean.seaLevel : null;
+      const out: { distance: number; bearingDeg: number; kind: string; heightAboveSea: number | null; x: number | null; y: number | null }[] = [];
+      for (const distance of distances) {
+        for (let k = 0; k < bearings; k++) {
+          const a = distance / def.radius;
+          const b = (2 * Math.PI * k) / bearings;
+          const horizontal = v3.add(v3.scale(north, Math.cos(b)), v3.scale(east, Math.sin(b)));
+          const dirRoot = v3.normalize(v3.add(v3.scale(up, Math.cos(a)), v3.scale(horizontal, Math.sin(a))));
+          const dirFixed = fixed(dirRoot);
+          const height = game.terrain.heightAt(vessel.bodyId, dirFixed);
+          const posRoot = v3.add(body.rRoot, v3.scale(dirRoot, def.radius + height));
+          const p = projectToFrame(quat.rotateInv(cam.qViewToRoot, v3.sub(posRoot, cam.positionRoot)), tanX, tanY);
+          const inside = p !== null && Math.abs(p.x) < 1 && Math.abs(p.y) < 1;
+          out.push({
+            distance,
+            bearingDeg: (360 * k) / bearings,
+            kind: game.terrain.surfaceKind(vessel.bodyId, dirFixed),
+            heightAboveSea: seaLevel === null ? null : height - seaLevel,
+            x: inside ? (p.x * 0.5 + 0.5) * canvas.clientWidth : null,
+            y: inside ? (0.5 - p.y * 0.5) * canvas.clientHeight : null,
+          });
+        }
+      }
+      return out;
+    },
     bodiesInFrame: () => {
       const s = game.snapshot();
       const cam = game.camera();
@@ -206,7 +280,12 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     },
     renderLoads: () => {
       const core = coreOf(game.renderer.context);
-      return { shaders: core.shaders.compilations(), textures: core.meshes.loads() };
+      const a = game.features.atmosphere.status();
+      return {
+        shaders: core.shaders.compilations(),
+        textures: core.meshes.loads(),
+        atmosphere: { done: (a.tablesReady ? 1 : 0) + (a.noiseReady ? 1 : 0) + a.coverage.loaded, total: 2 + a.coverage.total },
+      };
     },
     loading: () => game.loadingReport(),
     featureInitMs: () => ({ ...game.featureInitMs }),

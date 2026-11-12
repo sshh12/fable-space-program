@@ -22,7 +22,13 @@
  * the camera's selection wants resident, nothing fading, sky data and probe in place, tables built, textures
  * loaded), no shader module compiling, no terrain load of the simulation outstanding, the exposure at
  * its target (or no longer adapting quickly), for SETTLE_FRAMES consecutive frames. Then the screen fades and
- * the game begins.
+ * the game begins. Before the first frame the loop waits for `renderer.warm()`: the pipelines the core and the
+ * features started ahead exist by then (the loading screen counts them), so the first frames compile none.
+ *
+ * Two test facilities live in the loop and write no simulation state: picture stops (pictureStops.ts: the
+ * simulation is held in the frame a named moment of the flight is reached, until the spec has its pictures)
+ * and frame-exact capture (`renderExact`: the render core renders exactly N of this file's frames at the fixed
+ * step and holds the last; the loop skips its frame while the core holds).
  */
 import type { ButtonAction, ControlInputs } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -31,7 +37,8 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MapUpdateResult } from '@/core/contracts/ui';
 import type { GpuHandle } from '@/core/gpu/device';
 import { createAudioEngine, type FableAudioEngine } from '@/audio';
-import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig, createViewManager, type ChaseRig, type ViewFrame, type ViewManager } from '@/camera';
+import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig, createViewManager, type ChaseRig, type CockpitRig, type ViewFrame, type ViewManager } from '@/camera';
+import type { ExactFrame } from '@/core/contracts/testApi';
 import { createFlightController, createInputSystem, DEFAULT_BINDINGS, installUnloadGuard, keyHelpEntries, keyLabel, type FlightController, type InputSystem } from '@/input';
 import { coreOf, createRenderer, type CoreRenderer } from '@/render/core';
 import { createSim, type SimWorld } from '@/sim';
@@ -41,6 +48,8 @@ import { createHud, createMfdPainter, createNavballRenderer, HUD_OBSTACLE_SELECT
 import { timedFeature } from './featureTiming';
 import { createGameFeatures, type GameFeatures } from './features';
 import type { LoadingReport, LoadingScreen, StepProgress } from './loading';
+import { createPictureStops, type PictureStop, type PictureStopHit } from './pictureStops';
+import { seatName } from './seat';
 import { createPilotDriver, type PilotDriver } from './pilot';
 import type { AppSettings } from './settings';
 import { createStatusLine } from './statusLine';
@@ -99,6 +108,8 @@ export interface Game {
   readonly views: ViewManager;
   /** The chase rig (its framing: `offsets`, `autoAzimuth`, `roll`, `resetView()`). */
   readonly chase: ChaseRig;
+  /** The cockpit rig (the seat the eye is in: `seatId`, `cycleSeat()`). */
+  readonly cockpitRig: CockpitRig;
   readonly hud: HudImpl;
   readonly navball: NavballRendererImpl;
   readonly input: InputSystem;
@@ -126,6 +137,19 @@ export interface Game {
   loadingReport(): LoadingReport;
   /** Wall time of every render feature's start-up (`init`), ms, by feature id. */
   readonly featureInitMs: Readonly<Record<string, number>>;
+  /** Wall time of `renderer.warm()` after the last feature's start-up, ms. */
+  readonly warmMs: number;
+  /**
+   * Frame-exact capture (TestApi.renderExact, RENDER_API section 13): the render core restarts its temporal
+   * sequences, renders exactly `frames` of this game's frames at the fixed 1/60 s step and holds the last one.
+   * Needs deterministic mode (`setDeterministic(true)`) and a paused simulation.
+   */
+  renderExact(frames: number): Promise<ExactFrame>;
+  /** Picture stops (pictureStops.ts): the list, the stop the simulation is held at (null = running), resume. */
+  setPictureStops(stops: readonly PictureStop[]): void;
+  pictureStop(): PictureStopHit | null;
+  resumeFromPictureStop(): void;
+  pictureStopsFired(): PictureStopHit[];
   /** Fullscreen + keyboard lock on (needs a user gesture) / off: what a click on the HUD's capture switch does. */
   toggleKeyboardCapture(): void;
   /** True while the stage stack has been touched and the mission is neither failed nor over (beforeunload guard). */
@@ -206,7 +230,9 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   // The chase rig's defaults frame the nearest body and follow the size of what is left of the vehicle
   // (request app-integration-10); `resetView()` returns to them after the player has turned the camera.
   const chase = createChaseRig({ defs, terrain });
-  const views = createViewManager([chase, createCockpitRig({ defs }), createMapRig({ defs })], { defs, terrain, initialMode: settings.view });
+  // The cockpit rig sits in the cockpit layout's default seat; the `ui:nextSeat` key steps through the couches.
+  const cockpitRig = createCockpitRig({ defs });
+  const views = createViewManager([chase, cockpitRig, createMapRig({ defs })], { defs, terrain, initialMode: settings.view });
   const mapper = createCameraInputMapper();
 
   // ------------------------------------------------------------------------------------- render features
@@ -252,6 +278,16 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   });
   const audioInit = audio.init(defs, '/assets/audio').then(() => loading.finish('audio'));
   await Promise.all([featureInit, audioInit, simReady]);
+  // Everything the core and the features started ahead (`shaders.warm`: created on the browser's worker threads,
+  // several at a time) exists before the first frame, which then compiles none of it: the wait for the
+  // pipelines is here, counted on the loading screen's row, not in frames that stand still (NOTICE-core-5,
+  // request app-integration-11 part 1). A pipeline that fails to build rejects here and the boot fails with it.
+  pipelinesPhase = 'pipelines created ahead of the first frame · shader modules compiled';
+  loading.refresh();
+  const warmStart = performance.now();
+  await renderer.warm();
+  const warmMs = performance.now() - warmStart;
+  pipelinesPhase = 'first frames · shader modules compiled';
 
   // ------------------------------------------------------------------------------------------ frame state
   const pilot = createPilotDriver(defs, sim);
@@ -259,6 +295,9 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   let view: ViewFrame = views.update(snapshot, { yaw: 0, pitch: 0, zoom: 1 }, 0);
   let paused = false;
   let deterministic = false;
+  /** Picture stops: the list, and the stop the simulation is held at for the spec's pictures (null = running). */
+  const pictureStops = createPictureStops();
+  let pictureStop: PictureStopHit | null = null;
   let frames = 0;
   let running = true;
   let last = performance.now();
@@ -317,6 +356,16 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   };
 
   loading.watch('sky', skyProgress);
+  // What the atmosphere feature exposes of its one-off work (request app-integration-11, part 7): the scattering
+  // tables and the cloud noise as one flag each, the cloud coverage maps as loaded / total. It has no count
+  // inside the tables or the noise, and the ocean (the row's other feature) exposes nothing: its only one-off
+  // work is its pipelines, which the row above counts.
+  loading.watch('atmosphere', () => {
+    const a = features.atmosphere.status();
+    const done = (a.tablesReady ? 1 : 0) + (a.noiseReady ? 1 : 0) + a.coverage.loaded;
+    const detail = !a.tablesReady ? 'scattering tables' : !a.noiseReady ? 'cloud noise' : a.coverage.loaded < a.coverage.total ? 'cloud coverage maps' : 'scattering tables, cloud noise, coverage maps';
+    return { detail, done, total: 2 + a.coverage.total };
+  });
   loading.watch('terrain', groundProgress);
   loading.watch('models', () => {
     const l = core.meshes.loads();
@@ -341,8 +390,8 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     if (idle(features.sky)) loading.finish('sky');
     else out.push('sky');
 
-    loading.begin('atmosphere', { detail: 'scattering tables, cloud maps' });
-    if (idle(features.atmosphere) && idle(features.ocean)) loading.finish('atmosphere', { detail: 'ready' });
+    loading.begin('atmosphere');
+    if (idle(features.atmosphere) && idle(features.ocean)) loading.finish('atmosphere');
     else out.push('atmosphere');
 
     loading.begin('models');
@@ -413,6 +462,14 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     const sampled = input.sample();
     const f = held ? { ...sampled, pressed: new Set<ButtonAction>(), ui: new Set<never>() } : sampled;
     if (f.ui.has('ui:keyHelp')) hud.toggleKeyHelp();
+    // Home: the chase view back to its default framing (request app-integration-14).
+    if (f.ui.has('ui:resetCamera') && views.mode === 'chase') chase.resetView();
+    // V: the next couch of the cabin, in the cockpit view (request core-6); the HUD names the seat.
+    if (f.ui.has('ui:nextSeat') && views.mode === 'cockpit') {
+      const seat = cockpitRig.cycleSeat();
+      const vessel = snapshot.vessels.find((v) => v.id === snapshot.activeVesselId);
+      if (seat !== null && vessel) hud.notify(`Seat: ${seatName(defs, vessel, seat)}`, 'info');
+    }
     if (f.pressed.has('toggleHud')) hud.setVisible(!hud.visible);
     if (f.pressed.has('pause')) setPaused(!paused);
     timings.mark('input');
@@ -436,8 +493,11 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     for (const a of f.pressed) if (a.startsWith('mfdCycle:')) features.cockpitControls.cyclePage(Number(a.slice('mfdCycle:'.length)));
     timings.mark('controls');
 
-    if (!paused && !held) sim.advance(realDt, pilot.onControlTick);
+    const advancing = !paused && !held && pictureStop === null;
+    if (advancing) sim.advance(realDt, pilot.onControlTick);
     snapshot = sim.snapshot();
+    // A picture stop that is due in this frame holds the simulation from the next one on.
+    if (advancing) pictureStop = pictureStops.check(snapshot);
     if (pilot.afterFrame().finished) {
       // Back to the keyboard: the lever starts where the pilot left the throttle.
       controller.setThrottle(snapshot.appliedControls.throttle);
@@ -475,6 +535,14 @@ export async function createGame(deps: GameDeps): Promise<Game> {
 
   const loop = (now: number): void => {
     if (!running) return;
+    if (renderer.holding) {
+      // A frame-exact capture is being made or is on screen: nothing of the game moves (the core calls `frame`
+      // itself for the frames of the capture); the display's frames still count for `waitFrames`.
+      last = now;
+      deps.onFrameDone();
+      requestAnimationFrame(loop);
+      return;
+    }
     try {
       frame(now);
     } catch (e) {
@@ -497,6 +565,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     features,
     views,
     chase,
+    cockpitRig,
     hud,
     navball,
     input,
@@ -535,6 +604,17 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     revealed: loading.revealed,
     loadingReport: () => loading.report(),
     featureInitMs,
+    warmMs,
+    renderExact(frames) {
+      if (loading.active) return Promise.reject(new Error('renderExact: the loading screen is still up (wait for window.__test.ready)'));
+      return renderer.renderExact(frames, () => frame(performance.now()));
+    },
+    setPictureStops: (stops) => pictureStops.set(stops),
+    pictureStop: () => (pictureStop ? { ...pictureStop } : null),
+    resumeFromPictureStop() {
+      pictureStop = null;
+    },
+    pictureStopsFired: () => pictureStops.fired(),
     toggleKeyboardCapture,
     inFlight,
     stop() {
