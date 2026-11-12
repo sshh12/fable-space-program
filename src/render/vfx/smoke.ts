@@ -470,7 +470,11 @@ struct MarchOut {
       // (Droplets scatter forwards: gas that lies between the eye and the flame glows more than gas beside it.
       // An eye inside the cloud at night sees where the flame is, not one flat fill.)
       let towardsFlame = saturate(dot(rd, toL) * inverseSqrt(max(dot(toL, toL), 1e-4)));
-      let plume = su.lightColor.rgb * ((lt.g + 0.25 * pow(lt.g, 0.55)) * mix(0.7 + 0.9 * towardsFlame * towardsFlame, 0.45 + 1.4 * towardsFlame * towardsFlame, eyeIn) / (dl2 * PI));
+      // (For an eye inside the cloud the gas all round it is lit by the flame: a peaked forward lobe, so that
+      // the glow is brightest towards the flame and falls to half of that at the edge of the view, and dimmer
+      // overall, so that it is a glow and not one orange fill pegged at the top of the tone curve.)
+      let tf2 = towardsFlame * towardsFlame;
+      let plume = su.lightColor.rgb * ((lt.g + 0.25 * pow(lt.g, 0.55)) * mix(0.7 + 0.9 * tf2, 0.12 + 0.9 * tf2 * tf2, eyeIn) / (dl2 * PI));
       let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) * fromLight / PI);
       // Gas fresh from the plume still glows, faintly and smoothly (what lights the cloud at the jet is the jet).
       let h2 = cell.b * cell.b;
