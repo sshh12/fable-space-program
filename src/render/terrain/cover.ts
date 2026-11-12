@@ -22,12 +22,13 @@ import { deepestAvailable, LANDCOVER_CLASS, TILE_LAYER, type TileLayerManifest, 
 import { dirToTile, tileUvToDir, type TileKey } from '@/core/geo/cubeSphere';
 import { decodeFrt1 } from '@/core/geo/tileCodec';
 import { DEG, hash4, hashToUnit, mat3, quat, v3, type Mat3, type Vec3 } from '@/core/math';
-import { coreOf, type Tracked } from '@/render/core';
+import { coreOf, mipCount, type Tracked } from '@/render/core';
 import type { TerrainAuthority } from '@/terrain';
-import { buildCoverMesh, COVER_LODS, COVER_SHAPES, COVER_VARIANTS, COVER_VERTEX_FLOATS, type CoverShape } from './coverMesh';
+import { buildCoverMesh, COVER_LODS, COVER_SHAPES, COVER_VARIANTS, COVER_VERTEX_FLOATS, FOLIAGE_CELLS, type CoverShape } from './coverMesh';
 import type { ViewFrustum } from './quadtree';
 import { siteGround, type SitePlan } from './sitePlan';
 import { tileId } from './tileMath';
+import { IMAGE_DECODE_OPTIONS } from './workerProtocol';
 
 /** One kind of cover (set.json `cover.kinds`). */
 export interface CoverKindDef {
@@ -63,6 +64,11 @@ export interface CoverDef {
   /** Direction the prevailing wind blows towards (deg clockwise from north) and how far it bends grass (share of its height). */
   windToDeg: number;
   windLean: number;
+  /**
+   * The leaf atlas of the set's shrubs and trees (a file beside set.json: 2 x 2 cells, tools/terrain/gen_foliage.py),
+   * or null when no kind of the set has leaves.
+   */
+  foliage: string | null;
 }
 
 export interface CoverSite {
@@ -82,6 +88,36 @@ export interface CoverBodyInfo {
   sites: CoverSite[];
   /** Sea level above the reference radius, m, or null without an ocean. */
   seaLevel: number | null;
+  /** The set's leaf atlas (loadLeafAtlas). */
+  leaves: GPUTextureView;
+}
+
+/**
+ * The leaf atlas of a material set as a texture array of its FOLIAGE_CELLS cells (sRGB, mip chain; alpha =
+ * coverage, which the mips average: a spray seen small keeps its share of leaf). Without a file: one texel,
+ * opaque, of the plant's own tint.
+ */
+export async function loadLeafAtlas(ctx: RenderContext, setId: string, file: string | null): Promise<GPUTextureView> {
+  const core = coreOf(ctx);
+  const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT;
+  if (!file) {
+    const texture = core.createTextureChecked({ label: `terrain.leaves.${setId}`, format: 'rgba8unorm-srgb', size: [1, 1, FOLIAGE_CELLS], usage });
+    for (let layer = 0; layer < FOLIAGE_CELLS; layer++) ctx.device.queue.writeTexture({ texture, origin: [0, 0, layer] }, new Uint8Array([137, 137, 137, 255]), {}, [1, 1, 1]);
+    return texture.createView({ dimension: '2d-array' });
+  }
+  const res = await fetch(`${ctx.assetsUrl}/terrain/${setId}/${file}`);
+  if (!res.ok) throw new Error(`terrain material set "${setId}": ${file} HTTP ${res.status}`);
+  const bitmap = await createImageBitmap(await res.blob(), IMAGE_DECODE_OPTIONS);
+  const side = Math.round(Math.sqrt(FOLIAGE_CELLS));
+  const cell = bitmap.width / side;
+  if (bitmap.width !== bitmap.height || !Number.isInteger(cell) || (cell & (cell - 1)) !== 0) throw new Error(`terrain material set "${setId}": ${file} is ${bitmap.width} x ${bitmap.height}, expected ${side} x ${side} square cells of a power of two`);
+  const texture = core.createTextureChecked({ label: `terrain.leaves.${setId}`, format: 'rgba8unorm-srgb', size: [cell, cell, FOLIAGE_CELLS], mipLevelCount: mipCount(cell, cell), usage });
+  for (let layer = 0; layer < FOLIAGE_CELLS; layer++) {
+    ctx.device.queue.copyExternalImageToTexture({ source: bitmap, origin: [(layer % side) * cell, Math.floor(layer / side) * cell] }, { texture, origin: [0, 0, layer], premultipliedAlpha: false }, [cell, cell]);
+  }
+  bitmap.close();
+  core.mips.generate(texture);
+  return texture.createView({ dimension: '2d-array' });
 }
 
 export interface CoverObserver {
@@ -114,6 +150,16 @@ const FADE_SECONDS = 0.5;
 const LIST_TOLERANCE_M = 0.02;
 /** Shading modes of the fragment shader, by shape. */
 const SHAPE_MODE: Record<CoverShape, number> = { tuft: 0, bush: 1, tree: 1, grove: 1, stone: 2 };
+/** Shapes whose leaves are sprays of the leaf atlas: their shadows are cast through its coverage. */
+const SHAPE_LEAFY: Record<CoverShape, boolean> = { tuft: false, bush: true, tree: true, grove: false, stone: false };
+/**
+ * An instance casts into a cascade from its finest mesh when its radius is this many texels, from the middle
+ * one from this many, and not at all below the last: the shadow of a crown beside the eye is then drawn by
+ * its sprays, not by the few large ones of a coarser level, and a tussock under two texels across is left out.
+ */
+const SHADOW_FINE_TEXELS = 20;
+const SHADOW_MIDDLE_TEXELS = 6;
+const SHADOW_MIN_TEXELS = 1;
 
 const COVER_WGSL = /* wgsl */ `
 struct CoverBody {
@@ -173,10 +219,68 @@ fn coverVertex(position: vec3f, normal: vec3f, instance: u32) -> CoverVertex {
 }
 `;
 
+/**
+ * Leaf sprays: the cards of shrubs and trees carry a cell of the set's leaf atlas (layer = cell; rgb = colour
+ * relative to the plant's tint, linear 0.25 = the tint; a = coverage). Near the eye, where a texel spans a
+ * pixel or more, a fragment shows where the coverage is above a half: the outline of every leaflet. Further
+ * away a leaflet is smaller than a pixel and the coverage is a share: the fragment shows with that
+ * probability, by a threshold that is fixed to the surface in cells of about a pixel (Wyman and McGuire,
+ * "Hashed Alpha Testing", 2017), so the crown is a fine speckle of leaf and sky that neither swims with the
+ * camera nor thins out with distance. The coarser levels of detail have fewer, larger sprays: their coverage
+ * is raised, for a crown is as closed from afar as from near.
+ */
+const COVER_LEAF_WGSL = /* wgsl */ `
+@group(2) @binding(5) var coverLeaves: texture_2d_array<f32>;
+
+fn coverHash(cell: vec3i) -> f32 {
+  let u = bitcast<vec3u>(cell);
+  var h = (u.x * 0x9E3779B1u) ^ (u.y * 0x85EBCA77u) ^ (u.z * 0xC2B2AE3Du);
+  h ^= h >> 15u;
+  h *= 0x2C1B3C6Du;
+  h ^= h >> 12u;
+  h *= 0x297A2D39u;
+  h ^= h >> 15u;
+  return f32(h >> 8u) / 16777216.0;
+}
+
+/// A threshold in 0..1 that is uniformly distributed and fixed to the surface: 'p' = position on it (m),
+/// 'dpx' / 'dpy' its screen derivatives. Two hash lattices of the powers of two around the pixel's size are
+/// blended, and the blend is mapped back to a uniform distribution.
+fn coverThreshold(p: vec3f, dpx: vec3f, dpy: vec3f) -> f32 {
+  let rate = max(max(length(dpx), length(dpy)), 1e-6);
+  let l = log2(1.0 / rate);
+  let s0 = exp2(floor(l));
+  let f = fract(l);
+  let x = mix(coverHash(vec3i(floor(p * s0))), coverHash(vec3i(floor(p * (2.0 * s0)))), f);
+  let a = min(f, 1.0 - f);
+  var t = x;
+  if (a > 1e-3) {
+    if (x < a) { t = x * x / (2.0 * a * (1.0 - a)); }
+    else if (x < 1.0 - a) { t = (x - 0.5 * a) / (1.0 - a); }
+    else { t = 1.0 - (1.0 - x) * (1.0 - x) / (2.0 * a * (1.0 - a)); }
+  }
+  return clamp(t, 0.02, 0.98);
+}
+
+/// A fragment of a leaf spray: rgb = colour relative to the plant's tint, a = 1 where it shows, 0 where it
+/// does not. 'uv' on the card (v = 0 at the foot of the spray), 'duvx' / 'duvy' its screen derivatives,
+/// 'cell' of the atlas, 'lod' = level of detail of the mesh (0 finest), 'threshold' from coverThreshold.
+fn coverLeaf(uv: vec2f, duvx: vec2f, duvy: vec2f, cell: f32, lod: f32, threshold: f32) -> vec4f {
+  let at = vec2f(clamp(uv.x, 0.004, 0.996), 1.0 - clamp(uv.y, 0.004, 0.996));
+  let t = textureSampleGrad(coverLeaves, anisoRepeat, at, i32(cell + 0.5), duvx, duvy);
+  let size = f32(textureDimensions(coverLeaves).x);
+  let level = 0.5 * log2(max(max(dot(duvx, duvx), dot(duvy, duvy)) * size * size, 1e-12));
+  let cover = saturate(t.a * (1.0 + 0.4 * lod + 0.1 * lod * lod));
+  let limit = mix(0.5, threshold, smoothstep(-0.5, 1.0, level));
+  return vec4f(t.rgb * 4.0, select(0.0, 1.0, cover >= limit));
+}
+`;
+
 const COVER_GBUFFER_WGSL = /* wgsl */ `
 #include "frame"
 #include "gbuffer"
 ${COVER_WGSL}
+${COVER_LEAF_WGSL}
 @group(2) @binding(4) var coverNoise: texture_3d<f32>;
 
 struct CoverVaryings {
@@ -189,9 +293,11 @@ struct CoverVaryings {
   @location(5) fixed: vec3f,
   @location(6) extra: vec2f,
   @location(7) up: vec3f,
+  @location(8) uv: vec2f,
+  @location(9) aux: vec2f,
 }
 
-@vertex fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, @location(2) extra: vec2f, @builtin(instance_index) instance: u32) -> CoverVaryings {
+@vertex fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, @location(2) extra: vec2f, @location(3) uv: vec2f, @location(4) aux: vec2f, @builtin(instance_index) instance: u32) -> CoverVaryings {
   let v = coverVertex(position, normal, instance);
   let r = coverRecords[v.rec];
   let c = coverChunks[u32(r.misc.y)];
@@ -205,19 +311,34 @@ struct CoverVaryings {
   o.fixed = v.fixed;
   o.extra = extra;
   o.up = v.up;
+  o.uv = uv;
+  o.aux = aux;
   return o;
 }
 
 @fragment fn fs(in: CoverVaryings, @builtin(front_facing) front: bool) -> GBufferOut {
   let r = coverRecords[in.rec];
   let mode = coverBody.kinds[u32(r.misc.w)].z;
-  // The face normal from the position (taken here, in uniform control flow).
-  var face = cross(dpdx(in.fixed), dpdy(in.fixed));
+  // The face normal from the position (taken here, in uniform control flow, like every other derivative).
+  let dfx = dpdx(in.fixed);
+  let dfy = dpdy(in.fixed);
+  var face = cross(dfx, dfy);
   let fl = length(face);
   var nv = normalize(in.normal);
   if (fl > 0.0) { face /= fl; } else { face = nv; }
   let up = normalize(in.up);
   let seed = r.misc.z;
+  let duvx = dpdx(in.uv);
+  let duvy = dpdy(in.uv);
+  let threshold = coverThreshold(in.fixed, dfx, dfy);
+  // Bark (wood only; uv = ridges around the stem, length along it in ridge widths): ridges that wander along
+  // the stem between furrows, broken across into plates. Every term is zero where it wraps.
+  let barkU = in.uv.x + 0.22 * sin(0.9 * in.uv.y + 6.2832 * in.aux.y) + 0.1 * sin(2.3 * in.uv.y + 1.7);
+  let barkX = fract(barkU);
+  let barkC = fract(0.31 * in.uv.y + 0.5 * floor(barkU));
+  let bark = smoothstep(0.0, 0.5, 1.0 - abs(2.0 * barkX - 1.0)) * mix(0.55, 1.0, smoothstep(0.0, 0.16, min(barkC, 1.0 - barkC)));
+  let dbx = dpdx(bark);
+  let dby = dpdy(bark);
   // Two octaves of noise fixed to the ground, in metres: leaves and the gaps between them (cells of 12 and
   // 4 cm), the grain of a stone (cells of 3 and 1 cm).
   let cells = select(8.0, 34.0, mode > 1.5);
@@ -231,7 +352,11 @@ struct CoverVaryings {
   var ao = 1.0;
   var rough = 0.8;
   var shade = 0.0;
+  // Share of the light that falls on the far side of a leaf or a blade and comes through it (G-buffer
+  // metallic of MATERIAL_TERRAIN, read by this package's brdf_terrain; nothing here is metal).
+  var through = 0.0;
   if (mode < 0.5) {
+    through = 0.3;
     // Grass: blades are lit from both sides; their normals lean towards the vertical, so a tussock shades
     // as a soft mass and not as a hundred mirrors. Dark at the base, pale and dry towards the tips.
     if (!front) { nv = -nv; }
@@ -244,13 +369,35 @@ struct CoverVaryings {
     rough = 0.92;
   } else if (mode < 1.5) {
     if (in.extra.y > 1.5) {
-      // Wood.
-      albedo = vec3f(0.085, 0.07, 0.055) * (0.8 + 0.4 * n1.a);
-      rough = 0.9;
-      ao = 0.6;
+      // Wood: furrowed bark, grey-brown, darker in the furrows, weathered pale in patches; the furrows are
+      // relief (the bark's height turned into a normal through its screen derivatives).
+      let depthM = 0.2 * 6.2832 * in.aux.x * r.pos.w / 6.0;
+      let r1 = cross(dfy, nv);
+      let r2 = cross(nv, dfx);
+      let det = dot(dfx, r1);
+      n = nv;
+      if (abs(det) > 1e-12) { n = normalize(abs(det) * nv - depthM * sign(det) * (dbx * r1 + dby * r2)); }
+      n = normalize(n + (n1.rgb * 2.0 - 1.0) * 0.2);
+      albedo = vec3f(0.082, 0.066, 0.052) * mix(0.45, 1.2, bark) * (0.85 + 0.3 * n1.a);
+      albedo = mix(albedo, vec3f(0.115, 0.108, 0.098) * (0.7 + 0.5 * bark), 0.4 * saturate(n2.a * 1.6 - 0.3));
+      rough = 0.92;
+      ao = mix(0.45, 1.0, bark) * 0.85;
+    } else if (in.aux.x > -0.5) {
+      // A spray of leaves: a card of the leaf atlas. Its normal is the crown's (the vertex normal leans away
+      // from the crown's middle, the same from both sides of the card); sprays deep in the crown are in its shade.
+      let depth = saturate(in.extra.y);
+      let leaf = coverLeaf(in.uv, duvx, duvy, in.aux.x, floor(in.aux.y), threshold);
+      if (leaf.a < 0.5) { discard; }
+      n = normalize(nv + (n1.rgb * 2.0 - 1.0) * 0.45);
+      albedo *= leaf.rgb * (0.8 + 0.4 * fract(in.aux.y)) * mix(0.62, 1.1, h) * mix(0.6, 1.0, depth);
+      ao = mix(0.4, 1.0, h) * mix(0.5, 1.0, depth);
+      shade = 0.5 * (1.0 - depth);
+      rough = 0.62;
+      through = 0.6;
     } else {
-      // Leaf clusters: gaps between the leaves when the plant is large on screen (not from afar, where a gap
-      // is less than a pixel and the cluster is its mean); clusters deep in the crown are in its shade.
+      // Leaf clusters of a stand of trees: gaps between the leaves when the stand is large on screen (not
+      // from afar, where a gap is less than a pixel and the cluster is its mean); clusters deep in the crown
+      // are in its shade.
       let depth = saturate(in.extra.y);
       let holes = smoothstep(0.006, 0.02, r.pos.w / max(in.currClip.w, 1e-3));
       if (lumps < mix(-2.0, -0.07, holes)) { discard; }
@@ -260,6 +407,7 @@ struct CoverVaryings {
       ao = mix(0.35, 1.0, h) * mix(0.5, 1.0, depth);
       shade = 0.5 * (1.0 - depth);
       rough = 0.7;
+      through = 0.3;
     }
   } else {
     // A loose piece of clinker: broken faces (a share of the facets kept), a rough, pitted skin (two
@@ -272,7 +420,7 @@ struct CoverVaryings {
     rough = 0.95;
   }
   albedo = clamp(albedo, vec3f(0.0), vec3f(1.0));
-  var packed = gbufferPack(albedo, ao, coverBody.rot * n, rough, 0.0, u32(coverBody.p0.x), 0.0, velocityFromClip(in.currClip, in.prevClip), vec3f(0.0));
+  var packed = gbufferPack(albedo, ao, coverBody.rot * n, rough, through, u32(coverBody.p0.x), 0.0, velocityFromClip(in.currClip, in.prevClip), vec3f(0.0));
   // RT4.b: the share of the sun the plant keeps off its own inside (shaders/lighting.ts).
   packed.extra.b = shade;
   return packed;
@@ -286,6 +434,42 @@ ${COVER_WGSL}
 @vertex fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, @builtin(instance_index) instance: u32) -> @builtin(position) vec4f {
   let v = coverVertex(position, normal, instance);
   return shadowPass.viewProj * vec4f(v.pos, 1.0);
+}
+`;
+
+/**
+ * The shadow pass of shrubs and trees: the leaf sprays cast through the same coverage test as the G-buffer
+ * pass (a crown's shadow is dappled, not the outline of its cards); wood casts whole.
+ */
+const COVER_LEAF_SHADOW_WGSL = /* wgsl */ `
+#include "frame"
+#include "shadow_pass"
+${COVER_WGSL}
+${COVER_LEAF_WGSL}
+struct LeafShadowVaryings {
+  @builtin(position) position: vec4f,
+  @location(0) fixed: vec3f,
+  @location(1) uv: vec2f,
+  @location(2) part: vec3f,
+}
+@vertex fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, @location(2) extra: vec2f, @location(3) uv: vec2f, @location(4) aux: vec2f, @builtin(instance_index) instance: u32) -> LeafShadowVaryings {
+  let v = coverVertex(position, normal, instance);
+  var o: LeafShadowVaryings;
+  o.position = shadowPass.viewProj * vec4f(v.pos, 1.0);
+  o.fixed = v.fixed;
+  o.uv = uv;
+  o.part = vec3f(extra.y, aux);
+  return o;
+}
+@fragment fn fs(in: LeafShadowVaryings) {
+  let dfx = dpdx(in.fixed);
+  let dfy = dpdy(in.fixed);
+  let duvx = dpdx(in.uv);
+  let duvy = dpdy(in.uv);
+  let threshold = coverThreshold(in.fixed, dfx, dfy);
+  if (in.part.x < 1.5 && in.part.y > -0.5) {
+    if (coverLeaf(in.uv, duvx, duvy, in.part.y, floor(in.part.z), threshold).a < 0.5) { discard; }
+  }
 }
 `;
 
@@ -457,6 +641,7 @@ export class CoverRenderer {
   private readonly meshes: MeshBuffers[] = [];
   private readonly gbuffer: Tracked<GPURenderPipeline>;
   private readonly shadow: Tracked<GPURenderPipeline>;
+  private readonly leafShadow: Tracked<GPURenderPipeline>;
   private readonly layout: GPUBindGroupLayout;
   private readonly emptyGroup: GPUBindGroup;
   private readonly recordBuffer: GPUBuffer;
@@ -517,6 +702,7 @@ export class CoverRenderer {
         { binding: 2, visibility: VF, buffer: { type: 'read-only-storage' } },
         { binding: 3, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '3d' } },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
       ],
     });
     const vertexLayout: GPUVertexBufferLayout = {
@@ -525,6 +711,8 @@ export class CoverRenderer {
         { shaderLocation: 0, offset: 0, format: 'float32x3' },
         { shaderLocation: 1, offset: 12, format: 'float32x3' },
         { shaderLocation: 2, offset: 24, format: 'float32x2' },
+        { shaderLocation: 3, offset: 32, format: 'float32x2' },
+        { shaderLocation: 4, offset: 40, format: 'float32x2' },
       ],
     };
     const emptyLayout = device.createBindGroupLayout({ label: 'terrain.cover.empty', entries: [] });
@@ -562,8 +750,20 @@ export class CoverRenderer {
         depthStencil: { format: RENDER_FORMATS.shadow, depthWriteEnabled: true, depthCompare: 'less', depthBias: 2, depthBiasSlopeScale: 1.5 },
       });
     });
+    this.leafShadow = core.shaders.tracked(() => {
+      const module = ctx.shaders.createModule('terrain.cover.leafShadow', COVER_LEAF_SHADOW_WGSL);
+      return device.createRenderPipeline({
+        label: 'terrain.cover.leafShadow',
+        layout: device.createPipelineLayout({ bindGroupLayouts: [ctx.frameBindGroupLayout, core.shadowPassLayout, this.layout] }),
+        vertex: { module, entryPoint: 'vs', buffers: [vertexLayout] },
+        fragment: { module, entryPoint: 'fs', targets: [] },
+        primitive: { topology: 'triangle-list', cullMode: 'none', unclippedDepth: true },
+        depthStencil: { format: RENDER_FORMATS.shadow, depthWriteEnabled: true, depthCompare: 'less', depthBias: 2, depthBiasSlopeScale: 1.5 },
+      });
+    });
     this.gbuffer.get();
     this.shadow.get();
+    this.leafShadow.get();
 
     const classNames = Object.keys(LANDCOVER_CLASS) as (keyof typeof LANDCOVER_CLASS)[];
     for (const info of infos) {
@@ -587,6 +787,7 @@ export class CoverRenderer {
           { binding: 2, resource: { buffer: this.chunkBuffer } },
           { binding: 3, resource: { buffer: this.instanceBuffer } },
           { binding: 4, resource: noiseView },
+          { binding: 5, resource: info.leaves },
         ],
       });
       this.bodies.push({
@@ -1130,14 +1331,14 @@ export class CoverRenderer {
 
   /**
    * Cover is body-fixed: it casts into every cascade of its body whose texels are small enough to hold it
-   * (an instance at least a texel across), from the coarsest mesh, or from the middle one where the map
-   * resolves the difference (an instance 24 texels across); only what is drawn casts.
+   * (an instance at least two texels across), from the coarsest mesh, or from a finer one where the map
+   * resolves the difference (SHADOW_MIDDLE_TEXELS, SHADOW_FINE_TEXELS); only what is drawn casts.
    */
   drawShadow(pass: GPURenderPassEncoder, cascade: ShadowCascadeView, bodyId: string): void {
     const b = this.bodies.find((x) => x.info.id === bodyId);
     if (!b || !b.active || b.empty) return;
     const m = cascade.viewProj;
-    const texelRadius = 0.5 * cascade.texelSize;
+    const texelRadius = SHADOW_MIN_TEXELS * cascade.texelSize;
     const ndcPerMetre = 1 / (cascade.texelSize * 1024);
     const start0 = this.instanceCount;
     this.bucketCount.fill(0);
@@ -1157,8 +1358,8 @@ export class CoverRenderer {
           const end = CoverRenderer.prefixEnd(c.radii, start, c.listEnd[v]!, texelRadius);
           // A crown that spans a hundred texels and more casts from its finest mesh: the coarser ones draw its
           // shadow as a few large polygons on the ground beside the eye.
-          const fine = CoverRenderer.prefixEnd(c.radii, start, end, 48 * cascade.texelSize);
-          const middle = CoverRenderer.prefixEnd(c.radii, fine, end, 12 * cascade.texelSize);
+          const fine = CoverRenderer.prefixEnd(c.radii, start, end, SHADOW_FINE_TEXELS * cascade.texelSize);
+          const middle = CoverRenderer.prefixEnd(c.radii, fine, end, SHADOW_MIDDLE_TEXELS * cascade.texelSize);
           this.pushRange(base + v * COVER_LODS, c.base + start, c.base + fine);
           this.pushRange(base + v * COVER_LODS + 1, c.base + fine, c.base + middle);
           this.pushRange(base + v * COVER_LODS + 2, c.base + middle, c.base + end);
@@ -1169,11 +1370,16 @@ export class CoverRenderer {
     this.flushBuckets(ranges);
     if (this.instanceCount === start0) return;
     this.device.queue.writeBuffer(this.instanceBuffer, start0 * 4, this.instances, start0, this.instanceCount - start0);
-    pass.setPipeline(this.shadow.get());
     pass.setBindGroup(2, b.group);
+    let leafy: boolean | null = null;
     for (let k = 0; k < BUCKETS; k++) {
       const count = ranges[k * 2 + 1]!;
       if (count === 0) continue;
+      const wantLeafy = SHAPE_LEAFY[COVER_SHAPES[Math.floor(k / (COVER_VARIANTS * COVER_LODS))]!];
+      if (wantLeafy !== leafy) {
+        pass.setPipeline(wantLeafy ? this.leafShadow.get() : this.shadow.get());
+        leafy = wantLeafy;
+      }
       const mesh = this.meshes[k]!;
       pass.setVertexBuffer(0, mesh.vertexBuffer);
       pass.setIndexBuffer(mesh.indexBuffer, 'uint16');

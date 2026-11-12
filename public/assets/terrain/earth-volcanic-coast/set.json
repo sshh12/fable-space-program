@@ -344,8 +344,9 @@
       "black-sand": 1.0
     },
     "sparseScrub": {
-      "scrub-soil": 0.5,
-      "pahoehoe": 0.5
+      "pahoehoe": 0.7,
+      "aa": 0.12,
+      "scrub-soil": 0.18
     },
     "grass": {
       "pasture": 0.7,
@@ -363,8 +364,8 @@
       "scrub-soil": 0.3
     },
     "builtUp": {
-      "scrub-soil": 0.6,
-      "black-sand": 0.4
+      "scrub-soil": 0.5,
+      "black-sand": 0.5
     },
     "snowIce": {
       "scrub-soil": 1.0
@@ -475,28 +476,33 @@
     "scrub-soil": -1.0
   },
   "gloss": {
-    "pahoehoe": 0.6
+    "pahoehoe": 0.65
   },
   "anchorAlbedo": {
     "scrub-soil": [
-      0.125,
       0.098,
-      0.066
+      0.08,
+      0.057
     ],
     "pasture": [
-      0.112,
-      0.1,
-      0.041
+      0.108,
+      0.097,
+      0.04
     ],
     "pahoehoe": [
-      0.057,
-      0.058,
-      0.061
+      0.039,
+      0.043,
+      0.05
     ],
     "aa": [
-      0.037,
-      0.035,
-      0.035
+      0.027,
+      0.027,
+      0.029
+    ],
+    "black-sand": [
+      0.036,
+      0.036,
+      0.037
     ]
   },
   "chroma": {
@@ -514,6 +520,7 @@
   "cover": {
     "windToDeg": 235.0,
     "windLean": 0.35,
+    "foliage": "foliage.webp",
     "kinds": [
       {
         "id": "tussock",
@@ -700,5 +707,27 @@
   },
   "apronMaterial": "concrete-apron",
   "gravelMaterial": "black-sand",
-  "rockMaterial": "aa"
+  "rockMaterial": "aa",
+  "toneMax": {
+    "pasture": 1.45,
+    "scrub-soil": 1.3
+  },
+  "classTone": {
+    "trees": [
+      0.5,
+      0.7
+    ],
+    "shrub": [
+      0.8,
+      0.3
+    ],
+    "wetland": [
+      0.6,
+      0.6
+    ],
+    "crop": [
+      1.0,
+      0.3
+    ]
+  }
 }

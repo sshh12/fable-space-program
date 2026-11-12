@@ -4,11 +4,12 @@
  */
 import type { SurfaceRenderDef } from '@/core/contracts/defs';
 import type { RenderContext } from '@/core/contracts/render';
-import { LANDCOVER_CLASS } from '@/core/contracts/terrain';
+import { COVERAGE_BLEND_TILES, LANDCOVER_CLASS, type TileLayerManifest } from '@/core/contracts/terrain';
+import { CUBE_FACES, type FaceId } from '@/core/geo/cubeSphere';
 import { hash4, hashToUnit } from '@/core/math';
 import { coreOf, mipCount } from '@/render/core';
 import type { CoverDef } from './cover';
-import { DETAIL_SCALES, MATERIAL_UNIFORM_FLOATS, MAX_CLASSES, MAX_MATERIALS, NOISE_GRADIENT_RANGE, NOISE_PERIOD } from './shaders/surface';
+import { DETAIL_SCALES, MATERIAL_UNIFORM_FLOATS, MAX_CLASSES, MAX_MATERIALS, MAX_REGIONS, NOISE_GRADIENT_RANGE, NOISE_PERIOD } from './shaders/surface';
 import { MAX_SITES, MAX_SITE_SHAPES, packSiteShapes, type SitePlan } from './sitePlan';
 import { IMAGE_DECODE_OPTIONS } from './workerProtocol';
 
@@ -45,6 +46,12 @@ export interface MaterialSetManifest {
   classWeights: Record<string, Record<string, number>>;
   /** Per class: orbital albedo amplitude, orbital relief amplitude (slope per unit noise gradient). */
   classOrbital: Record<string, [number, number]>;
+  /**
+   * Per class (default [1, 0]): what the class looks like from where the canopy over its ground is no longer
+   * drawn (beyond the ground cover's range), relative to the ground itself: brightness, and how far the
+   * colour goes to leaf green. A forest from the air is its crowns, darker and greener than the grass under them.
+   */
+  classTone: Record<string, [number, number]>;
   /** Weight added per unit of the bake's material channel (rockiness on Earth, crater freshness on the Moon). */
   channelGain: Record<string, number>;
   /** Weight added on steep ground. */
@@ -84,6 +91,11 @@ export interface MaterialSetManifest {
    * where the photographs its layers were made from are not (a watered lawn).
    */
   anchorAlbedo: Record<string, [number, number, number]>;
+  /**
+   * How far above its albedo the brightness of the imagery may lift the ground of a material (default 1.1):
+   * rock is as dark as it is wherever the mosaic is pale; dry grass and soil vary.
+   */
+  toneMax: Record<string, number>;
   /** Material of launch-pad aprons, or null. */
   apronMaterial: string | null;
   /** Material whose layers the compacted gravel of a launch site carries (with the body's gravel albedo), or null. */
@@ -143,6 +155,7 @@ export const SURFACE_PARAM_KEYS = [
   'anchorNear',
   'anchorFar',
   'reliefShadow',
+  'reliefShadowTaps',
   'shoreReachM',
   'lakeDepthM',
   'shoreWetnessHeightM',
@@ -191,7 +204,7 @@ export async function loadMaterialSet(ctx: RenderContext, setId: string): Promis
   if (manifest.materials.length > MAX_MATERIALS) throw new Error(`terrain material set "${setId}": ${manifest.materials.length} materials, at most ${MAX_MATERIALS}`);
   if (manifest.materials.some((m) => m.layers.length !== DETAIL_SCALES)) throw new Error(`terrain material set "${setId}": every material needs ${DETAIL_SCALES} layers`);
   if (!Array.isArray(manifest.hexBlend) || manifest.hexBlend.length !== 2 || typeof manifest.terrainRelief !== 'number') throw new Error(`terrain material set "${setId}": set.json lacks hexBlend or terrainRelief`);
-  if (typeof manifest.shoreGain !== 'object' || typeof manifest.gloss !== 'object' || typeof manifest.chroma !== 'object' || typeof manifest.anchorAlbedo !== 'object' || manifest.gravelMaterial === undefined || manifest.cover === undefined) throw new Error(`terrain material set "${setId}": set.json lacks shoreGain, gloss or gravelMaterial (rebuild it: tools/terrain/gen_materials.py --manifest-only)`);
+  if (typeof manifest.shoreGain !== 'object' || typeof manifest.gloss !== 'object' || typeof manifest.chroma !== 'object' || typeof manifest.anchorAlbedo !== 'object' || typeof manifest.toneMax !== 'object' || typeof manifest.classTone !== 'object' || manifest.gravelMaterial === undefined || manifest.cover === undefined) throw new Error(`terrain material set "${setId}": set.json lacks shoreGain, gloss, toneMax, classTone or gravelMaterial (rebuild it: tools/terrain/gen_materials.py --manifest-only)`);
   const core = coreOf(ctx);
   const count = manifest.materials.length;
   const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT;
@@ -241,8 +254,41 @@ export interface SiteGroundPlan {
   north: [number, number, number];
 }
 
+/**
+ * A region of a body whose ground takes the albedo of its materials: a rectangle in the coordinates of a cube
+ * face (s, t in -1..1), with the width of the feather inside its edge.
+ */
+export interface MaterialRegion {
+  face: FaceId;
+  s0: number;
+  t0: number;
+  s1: number;
+  t1: number;
+  feather: number;
+}
+
+/**
+ * The regions of a body: the rectangles of the imagery layer's first level above `calibrationLevel` (where
+ * regional imagery, and the ground the material set was made for, begin), feathered over the width the
+ * bakes blend regional data into the body-wide data over. None when the level is negative (the whole body is
+ * one region) or the layer has no such level.
+ */
+export function materialRegions(layer: TileLayerManifest, calibrationLevel: number): MaterialRegion[] {
+  if (calibrationLevel < 0) return [];
+  const level = Math.round(calibrationLevel) + 1;
+  const n = 2 ** level;
+  return (layer.coverage[String(level)] ?? []).slice(0, MAX_REGIONS).map((r) => ({
+    face: r.face,
+    s0: -1 + (2 * r.x0) / n,
+    t0: -1 + (2 * r.y0) / n,
+    s1: -1 + (2 * (r.x1 + 1)) / n,
+    t1: -1 + (2 * (r.y1 + 1)) / n,
+    feather: (2 * COVERAGE_BLEND_TILES) / n,
+  }));
+}
+
 /** The TerrainMaterial uniform (shaders/surface.ts) of a body. `sites`: at most MAX_SITES, in the order of their index. */
-export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams, sites: readonly SiteGroundPlan[] = []): Float32Array<ArrayBuffer> {
+export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams, sites: readonly SiteGroundPlan[] = [], regions: readonly MaterialRegion[] = []): Float32Array<ArrayBuffer> {
   const f = new Float32Array(MATERIAL_UNIFORM_FLOATS);
   const m = set.manifest;
   const idx = (id: string): number => {
@@ -262,11 +308,14 @@ export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams, sites: 
     const orb = (name && m.classOrbital[name]) || defaultOrb;
     f[orbBase + c * 4] = orb[0];
     f[orbBase + c * 4 + 1] = orb[1];
+    const tone = (name && m.classTone[name]) || [1, 0];
+    f[orbBase + c * 4 + 2] = tone[0]!;
+    f[orbBase + c * 4 + 3] = tone[1]!;
   }
   let o = orbBase + MAX_CLASSES * 4;
   m.materials.forEach((mt, i) => mt.layers.forEach((l, s) => f.set([l.meanAlbedo[0], l.meanAlbedo[1], l.meanAlbedo[2], l.reliefM], o + (i * DETAIL_SCALES + s) * 4)));
   o += MAX_MATERIALS * DETAIL_SCALES * 4;
-  m.materials.forEach((mt, i) => mt.layers.forEach((l, s) => f.set([l.meanHeight, m.gloss[mt.id] ?? 1, m.chroma[mt.id] ?? 1], o + (i * DETAIL_SCALES + s) * 4)));
+  m.materials.forEach((mt, i) => mt.layers.forEach((l, s) => f.set([l.meanHeight, m.gloss[mt.id] ?? 1, m.chroma[mt.id] ?? 1, m.toneMax[mt.id] ?? 1.1], o + (i * DETAIL_SCALES + s) * 4)));
   o += MAX_MATERIALS * DETAIL_SCALES * 4;
   const gains = (table: Record<string, number>, at: number): void => {
     for (const [id, value] of Object.entries(table)) f[at + idx(id)] = value;
@@ -290,7 +339,8 @@ export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams, sites: 
   f.set([p.imageryCalibrationLevel, p.imagerySaturation, Math.max(p.imageryRefLuminance, 1e-4), p.imageryContrast], o);
   f.set([p.anchorNear, p.anchorFar, Math.max(p.apronJointM, 0.5), m.gravelMaterial ? idx(m.gravelMaterial) : -1], o + 4);
   f.set([p.gravelAlbedoR, p.gravelAlbedoG, p.gravelAlbedoB, p.reliefShadow], o + 8);
-  f.set([Math.max(p.shoreReachM, 1e-3), Math.max(p.shoreWetnessHeightM, 1e-3), 0, 0], o + 12);
+  if (regions.length > MAX_REGIONS) throw new Error(`terrain material set "${m.id}": ${regions.length} regions, at most ${MAX_REGIONS}`);
+  f.set([Math.max(p.shoreReachM, 1e-3), Math.max(p.shoreWetnessHeightM, 1e-3), regions.length, Math.max(2, Math.round(p.reliefShadowTaps))], o + 12);
   o += 16;
   m.materials.forEach((mt, i) => f.set(m.anchorAlbedo[mt.id] ?? mt.layers[0].meanAlbedo, o + i * 4));
   o += MAX_MATERIALS * 4;
@@ -301,6 +351,11 @@ export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams, sites: 
     f.set([site.east[0], site.east[1], site.east[2], shape, site.north[0], site.north[1], site.north[2], count], o + i * 8);
     packSiteShapes({ ...site.plan, shapes: site.plan.shapes.slice(0, count) }, f, o + MAX_SITES * 8 + shape * 8);
     shape += count;
+  });
+  o += MAX_SITES * 8 + MAX_SITE_SHAPES * 8;
+  regions.forEach((r, i) => {
+    const face = CUBE_FACES[r.face]!;
+    f.set([face.n[0], face.n[1], face.n[2], r.s0, face.u[0], face.u[1], face.u[2], r.t0, face.v[0], face.v[1], face.v[2], r.s1, r.t1, r.feather, 0, 0], o + i * 16);
   });
   return f;
 }

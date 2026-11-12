@@ -23,6 +23,15 @@ interface IntegratedView {
   fov?: number;
 }
 
+/**
+ * The game's own views of the two surfaces (the lab's default chase camera on the vessel, every package
+ * that is in the tree): the stack on the pad and the lander on the Moon, as a player sees the ground.
+ */
+const GAME_VIEWS: { name: string; scene: string }[] = [
+  { name: 'game-pad', scene: 'pad' },
+  { name: 'game-lunar-surface', scene: 'lunarSurface' },
+];
+
 const VIEWS: IntegratedView[] = [
   { name: 'apron-eye', lat: PAD.lat - 0.0004, lon: PAD.lon + 0.0003, alt: PAD_ELEVATION + 1.7, heading: 2, pitch: -6 },
   { name: 'off-apron-eye', lat: PAD.lat + 0.0022, lon: PAD.lon + 0.0012, alt: PAD_ELEVATION + 1.7, heading: 20, pitch: -12 },
@@ -76,5 +85,23 @@ test('the ground around the pad with sky, atmosphere and ocean (integration lab)
     expect(info.loaded).toContain('terrain');
     expect(info.quarantined.filter((x) => x.pkg === 'terrain')).toEqual([]);
     expect(s.stats.fractionNonBlack).toBeGreaterThan(0.9);
+  }
+});
+
+test('the ground under the vessel as the game shows it (integration lab, every package)', async ({ page }) => {
+  test.setTimeout(20 * 60_000);
+  for (const v of GAME_VIEWS) {
+    if (only && !only.includes(v.name)) continue;
+    await openPage(page, `/labs/integration/?features=all&scene=${v.scene}&paused=1`, { timeoutMs: 180_000 });
+    await assertDiscreteGpu(page);
+    await waitIdle(page, 20, 240_000);
+    const info = await page.evaluate(() => {
+      const lab = (window as unknown as { __integration: { loaded: string[]; quarantined: { pkg: string; errors: string[] }[] } }).__integration;
+      return { loaded: lab.loaded, quarantined: lab.quarantined };
+    });
+    const s = await saveScreenshot(page, 'terrain', `integrated-${v.name}`);
+    console.log(`integrated-${v.name}: loaded ${info.loaded.join(', ')}; mean luma ${s.stats.meanLuma.toFixed(1)}`);
+    expect(info.loaded).toContain('terrain');
+    expect(info.quarantined.filter((x) => x.pkg === 'terrain')).toEqual([]);
   }
 });

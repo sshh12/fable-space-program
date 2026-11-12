@@ -14,9 +14,9 @@ import { createFetchTileSource, type TerrainAuthority } from '@/terrain';
 import { createGridMesh, GRID_VERTEX_LAYOUT, type GridMesh } from './gridMesh';
 import { loadLowResAlbedo, srgbToLinear } from './lowResAlbedo';
 import { capMaxLevel, capMorph, fitLodScale, GRID_QUADS, GRID_VERTS, GroundSpeed, levelRange, LOD_K_MAX, LOD_K_MIN, lodK, morphWindow, POOL_LOW, smooth01, warpLevelCap, type ReliefFloor } from './lod';
-import { buildMaterialUniform, createNoiseTexture, loadMaterialSet, readSurfaceParams, type MaterialSet, type SiteGroundPlan, type SurfaceParams } from './materials';
+import { buildMaterialUniform, createNoiseTexture, loadMaterialSet, materialRegions, readSurfaceParams, type MaterialSet, type SiteGroundPlan, type SurfaceParams } from './materials';
 import { BodyQuadtree, TILE_READY, type DrawItem, type LodObserverFixed, type SelectParams, type TileNode, type ViewFrustum } from './quadtree';
-import { CoverRenderer, type CoverBodyInfo, type CoverSite } from './cover';
+import { CoverRenderer, loadLeafAtlas, type CoverBodyInfo, type CoverSite } from './cover';
 import { buildRecordConstants, type RecordContext, type SiteDisc } from './records';
 import { RockRenderer } from './rocks';
 import { BODY_UNIFORM_BYTES, MAX_OBSERVERS, RECORD_BYTES, RECORD_FLOATS, TERRAIN_SHADOW_WGSL, TILE_FRAME_BYTES, TILE_FRAME_FLOATS } from './shaders/common';
@@ -394,7 +394,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const nightLayer = nightSource ? { ...nightSource, globalMaxLevel: Math.max(0, nightSource.globalMaxLevel - Math.round(params.nightMinMip)), coverage: {} } : undefined;
     const stream: StreamBody = { id: def.id, tileset: terrain.tileset, tree, albedoLayer, nightLayer };
     const recordCtx: RecordContext = { tree, detailScales: [params.detailScale0M, params.detailScale1M, params.detailScale2M, params.detailScale3M], orbitalWavelength: params.orbitalWavelengthM, pads, albedoLayer, nightLayer };
-    const materialData = buildMaterialUniform(set, params, sitePlans);
+    const materialData = buildMaterialUniform(set, params, sitePlans, materialRegions(albedoLayer, params.imageryCalibrationLevel));
     const materialBuffer = device.createBuffer({ label: `terrain.material.${def.id}`, size: MATERIAL_UNIFORM_FLOATS * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(materialBuffer, 0, materialData);
     const uniform = device.createBuffer({ label: `terrain.body.${def.id}`, size: BODY_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -939,7 +939,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         const covered: CoverBodyInfo[] = [];
         for (const b of bodies) {
           const def = b.set.manifest.cover;
-          if (def && b.landcover) covered.push({ id: b.id, def: b.def, cover: def, tileset: b.def.terrain!.tileset, landcover: b.landcover, sites: b.sites, seaLevel: b.hasOcean ? b.seaLevel : null });
+          if (def && b.landcover) {
+            covered.push({ id: b.id, def: b.def, cover: def, tileset: b.def.terrain!.tileset, landcover: b.landcover, sites: b.sites, seaLevel: b.hasOcean ? b.seaLevel : null, leaves: await loadLeafAtlas(ctx, b.set.manifest.id, def.foliage ?? null) });
+          }
         }
         if (covered.length > 0) cover = new CoverRenderer(ctx, provider, source, noiseView, covered);
       }

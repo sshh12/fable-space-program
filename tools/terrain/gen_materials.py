@@ -399,8 +399,11 @@ def scatter_craters(h: np.ndarray, metres: float, seed: int, d_lo: float, d_hi: 
     crowd = unit(spectral(n, seed + 991, 2.4, 1, 5)) * 0.5 + 0.5
     for d in picked:
         fresh = float(rng.uniform(0, 1) ** fresh_power)
-        # Depth / diameter 0.2 when fresh down to 0.03 when worn out; a crest only on the fresh.
-        depth = d * (0.03 + 0.17 * fresh)
+        # Depth / diameter 0.2 when fresh down to 0.025 when worn out, and most are worn: under a sun of 11
+        # degrees a bowl deeper than about a twentieth of its width has its floor in shadow, and a field of
+        # such bowls is a field of black discs; a worn crater shows a soft crescent on its sunward wall and a
+        # brighter far wall. A crest only on the fresh.
+        depth = d * (0.025 + 0.175 * fresh ** 1.6)
         rim = d * 0.03 * fresh * fresh
         for _ in range(8):
             cx, cy = rng.uniform(0, n), rng.uniform(0, n)
@@ -450,9 +453,10 @@ def regolith_base(n: int, metres: float, seed: int, slope_1m: float, inner_m: fl
     return field * (slope_1m * 1.6 / (np.sqrt((gx * gx).mean() * 2) + 1e-12))
 
 
-# Craters cover 0.03 of the ground per e-fold of diameter in the height authority's equilibrium population
-# (0.0125 of geometric saturation); the layers hold the sizes below what the terrain itself carries.
-CRATER_COVER_PER_EFOLD = 0.03
+# Small craters of the lunar surface are in equilibrium: N(> D) = 10^-1.1 D^-2 per square metre (Trask 1966),
+# which is 0.12 of the ground per e-fold of diameter, craters on craters at every size. The layers hold 0.09
+# (the height authority carries a sparser population of the larger sizes, 0.03 per e-fold, under them).
+CRATER_COVER_PER_EFOLD = 0.09
 
 
 def crater_cover(d_lo: float, d_hi: float) -> float:
@@ -471,13 +475,15 @@ def fine_regolith(scale: int, metres: float) -> Layer:
         h = regolith_base(n, metres, seed, 0.05, 0.25)
         grain = spectral(n, seed + 1, 1.2, 40, 500) * 0.0011 + spectral(n, seed + 2, 2.0, 6, 60) * 0.0035
         h += grain
-        scatter_craters(h, metres, seed + 3, 0.025, 0.4, 1.5 * crater_cover(0.025, 0.4), exponent=2.2, fresh_power=1.5)
-        clods = scatter_lumps(h, metres, seed + 4, 0.012, 0.06, 0.10, 0.45, 0.2)
+        scatter_craters(h, metres, seed + 3, 0.025, 0.4, 0.5 * crater_cover(0.025, 0.4), exponent=2.2, fresh_power=1.5)
+        # The soil is cloddy at the centimetre: clumps of a finger's width and less, sharp-edged, a quarter of
+        # the ground (each a lit facet with a black sliver behind it under a low sun), and a few stones.
+        clods = scatter_lumps(h, metres, seed + 4, 0.008, 0.07, 0.26, 0.6, 0.45)
         stones = scatter_lumps(h, metres, seed + 5, 0.015, 0.09, 0.012, 0.6, 0.9)
         speck = unit(spectral(n, seed + 6, 0.6, 60, 500))
         albedo = tint(GREY, n) * (0.93 + 0.14 * speck)[..., None] * (1.0 - 0.05 * clods)[..., None] * (1.0 + 0.22 * stones)[..., None]
         rough = 0.95 - 0.06 * stones
-        return Layer(metres, h, albedo, rough, 1.2).scaled_to_slope(0.22).with_feature_height(n / 12)
+        return Layer(metres, h, albedo, rough, 1.2).scaled_to_slope(0.27).with_feature_height(n / 12)
     if scale == 1:
         # Fine roughness only (a few millimetres); the forms are the craterlets'.
         h = spectral(n, seed + 1, 1.8, 20, 250) * 0.003
@@ -600,14 +606,16 @@ SETS = {
             "water": {"black-sand": 1.0},
             "bareRock": {"pahoehoe": 0.6, "aa": 0.4},
             "sand": {"black-sand": 1.0},
-            "sparseScrub": {"scrub-soil": 0.5, "pahoehoe": 0.5},
+            # Sparse scrub on this coast is lava with soil in pockets (the macro noise brings it up), not a
+            # half-and-half mixture: that was a pale brown plain.
+            "sparseScrub": {"pahoehoe": 0.7, "aa": 0.12, "scrub-soil": 0.18},
             "grass": {"pasture": 0.7, "scrub-soil": 0.3},
             "shrub": {"pasture": 0.5, "scrub-soil": 0.5},
             "trees": {"pasture": 1.0},
             "crop": {"pasture": 0.7, "scrub-soil": 0.3},
             # Built-up cells of the land cover on this coast are tracks, yards and a few roofs at 10 m: compacted
             # dirt and cinder. Concrete is where a site's ground plan puts it, never a stray white cell.
-            "builtUp": {"scrub-soil": 0.6, "black-sand": 0.4},
+            "builtUp": {"scrub-soil": 0.5, "black-sand": 0.5},
             "snowIce": {"scrub-soil": 1.0},
             "wetland": {"pasture": 1.0},
         },
@@ -625,6 +633,9 @@ SETS = {
             "snowIce": [0.03, 0.08],
             "wetland": [0.08, 0.01],
         },
+        # From where the trees over a ground are no longer drawn, a class of trees is its crowns: half as
+        # bright as the dry grass under them, and leaf green (brightness, share of green).
+        "classTone": {"trees": [0.5, 0.7], "shrub": [0.8, 0.3], "wetland": [0.6, 0.6], "crop": [1.0, 0.3]},
         "channelGain": {"aa": 0.6, "scrub-soil": -0.3, "black-sand": -0.3, "pasture": -0.5},
         # Steep ground is broken rock: a cliff or a bluff shows clinker, never turf or sand.
         "slopeGain": {"aa": 2.0, "pahoehoe": 0.2, "black-sand": -2.0, "scrub-soil": -0.6, "pasture": -1.0},
@@ -645,12 +656,18 @@ SETS = {
         # Low, level ground at the water's edge is a beach of black sand.
         "shoreGain": {"black-sand": 3.0, "pasture": -2.0, "scrub-soil": -1.0},
         # The crests of ropy lava are glassy.
-        "gloss": {"pahoehoe": 0.6},
+        "gloss": {"pahoehoe": 0.65},
         # What the ground is where a material covers it (linear albedo), where that is not the mean of its
         # photographs: the dry soil of this coast is grey-brown ash (sRGB about 112, 96, 78), not red earth, and no brighter than dry grass;
         # its grassland with the shade between the tussocks is hardly brighter than the lava beside it.
         # Basalt is neutral to cool under a blue sky (sRGB about 65, 67, 70), not brown.
-        "anchorAlbedo": {"scrub-soil": [0.125, 0.098, 0.066], "pasture": [0.112, 0.1, 0.041], "pahoehoe": [0.057, 0.058, 0.061], "aa": [0.037, 0.035, 0.035]},
+        # Basalt is dark and cool: pahoehoe photographed in sun under a blue sky is sRGB (55, 62, 73), 0.15 of
+        # the sky's luminance, old flows from orbit no brighter than twice the sea (out/qa/ref/INDEX.md,
+        # earth-terrain-aerial). Albedo 0.043 with blue above red; clinker darker and neutral.
+        "anchorAlbedo": {"scrub-soil": [0.098, 0.08, 0.057], "pasture": [0.108, 0.097, 0.04], "pahoehoe": [0.039, 0.043, 0.05], "aa": [0.027, 0.027, 0.029], "black-sand": [0.036, 0.036, 0.037]},
+        # How far above its own albedo the brightness of the imagery may lift the ground of a material (default
+        # 1.1): rock is as dark as it is wherever the mosaic is pale; dry grass and soil do vary.
+        "toneMax": {"pasture": 1.45, "scrub-soil": 1.3},
         # Lava, cinder and concrete are grey: the rust and blue specks of their photographs stay faint.
         "chroma": {"pahoehoe": 0.15, "aa": 0.2, "black-sand": 0.3, "concrete-apron": 0.5, "scrub-soil": 0.8},
         # Stones, tufts and clinker stay whole where the hexagon pattern blends its copies; cracks and gaps give way.
@@ -663,6 +680,8 @@ SETS = {
         "cover": {
             "windToDeg": 235.0,
             "windLean": 0.35,
+            # The leaf sprays of the shrubs and trees (tools/terrain/gen_foliage.py).
+            "foliage": "foliage.webp",
             "kinds": [
                 {"id": "tussock", "shape": "tuft", "radiusM": [0.16, 0.55], "heightPerRadius": [1.1, 2.0], "rangeM": 180.0, "minPixels": 3.5, "nearM": 0.0, "chunkM": 16.0,
                  "tint": [0.13, 0.125, 0.045], "tintDry": [0.26, 0.21, 0.09], "clump": 0.7, "clumpM": 9.0},
@@ -706,6 +725,7 @@ SETS = {
         # blankets), not on every faint trace of it.
         "classWeights": {"unknown": {"fine-regolith": 1.0, "blocky-ejecta": -1.0}},
         "classOrbital": {"unknown": [0.035, 0.01]},
+        "classTone": {},
         "channelGain": {"blocky-ejecta": 2.6, "fine-regolith": -0.6},
         "slopeGain": {"compacted-soil": 0.9, "fine-regolith": -0.6},
         "noiseGain": {"compacted-soil": 0.25},
@@ -713,6 +733,7 @@ SETS = {
         "shoreGain": {},
         "gloss": {},
         "anchorAlbedo": {},
+        "toneMax": {},
         "chroma": {},
         # Pits and craters stay whole as well as stones and rims (a crater cut in two is a blotch).
         "hexBlend": [10.0, 10.0],
@@ -726,7 +747,7 @@ SETS = {
 }
 
 
-MANIFEST_KEYS = ("classWeights", "classOrbital", "channelGain", "slopeGain", "noiseGain", "albedoGain", "shoreGain", "gloss", "anchorAlbedo", "chroma", "hexBlend", "terrainRelief", "cover", "apronMaterial", "gravelMaterial", "rockMaterial")
+MANIFEST_KEYS = ("classWeights", "classOrbital", "classTone", "channelGain", "slopeGain", "noiseGain", "albedoGain", "shoreGain", "gloss", "anchorAlbedo", "toneMax", "chroma", "hexBlend", "terrainRelief", "cover", "apronMaterial", "gravelMaterial", "rockMaterial")
 
 
 def bake(layer: Layer) -> tuple[np.ndarray, np.ndarray, dict]:
@@ -809,7 +830,8 @@ def main() -> int:
             print(f"{set_id}: set.json rewritten")
             continue
         for old in os.listdir(out_dir):
-            if old.endswith(".webp"):
+            # (The leaf atlas of the ground cover is gen_foliage.py's.)
+            if old.endswith(".webp") and not old.startswith("foliage"):
                 os.remove(os.path.join(out_dir, old))
         materials = []
         sheets = []

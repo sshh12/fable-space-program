@@ -6,10 +6,11 @@
  * is the ellipsoidal cap of the height function, and the mesh scaled by the cap's radius and height encloses
  * it.
  *
- * The mesh is not the polyhedron but a broken rock made from it (buildRockMesh): one welded surface with
- * smooth normals, worn corners, scoops where pieces have spalled off, a crack, lumps and pits, and a foot
- * that flares where soil is banked against it. The centre of the unit rock is its base point on the ground:
- * what lies below z = 0 is buried. No point comes nearer to the centre than the unit ball.
+ * The mesh is not the polyhedron but a broken rock made from it (buildRockMesh): its faces as patches that
+ * meet in creases, with worn corners, scoops where pieces have spalled off, a crack, the steps and pits of
+ * fracture faces, and a foot that flares where soil is banked against it. The centre of the unit rock is its
+ * base point on the ground: what lies below z = 0 is buried. No point comes nearer to the centre than the
+ * unit ball.
  */
 import { hash4, hashToUnit } from '@/core/math';
 
@@ -189,59 +190,24 @@ function chipNoise(p: P3, seed: number, freq0 = 2.3): number {
   return sum;
 }
 
-/** A welded icosphere: unit directions and triangles (wound outwards), `level` times subdivided. */
-export function icosphere(level: number): { dirs: P3[]; tris: number[] } {
-  const t = (1 + Math.sqrt(5)) / 2;
-  const dirs: P3[] = (
-    [
-      [-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0],
-      [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t],
-      [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1],
-    ] as P3[]
-  ).map(norm);
-  let tris = [0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8, 3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1];
-  for (let l = 0; l < level; l++) {
-    const mid = new Map<number, number>();
-    const midpoint = (a: number, b: number): number => {
-      const key = a < b ? a * 65536 + b : b * 65536 + a;
-      let i = mid.get(key);
-      if (i === undefined) {
-        const pa = dirs[a]!;
-        const pb = dirs[b]!;
-        i = dirs.length;
-        dirs.push(norm([pa[0] + pb[0], pa[1] + pb[1], pa[2] + pb[2]]));
-        mid.set(key, i);
-      }
-      return i;
-    };
-    const next: number[] = [];
-    for (let i = 0; i < tris.length; i += 3) {
-      const a = tris[i]!;
-      const b = tris[i + 1]!;
-      const c = tris[i + 2]!;
-      const ab = midpoint(a, b);
-      const bc = midpoint(b, c);
-      const ca = midpoint(c, a);
-      next.push(a, ab, ca, b, bc, ab, c, ca, bc, ab, bc, ca);
-    }
-    tris = next;
-  }
-  return { dirs, tris };
-}
+/** Edges of a face are divided into this many pieces at the three levels of detail (the coarsest has no inner vertices). */
+const ROCK_SEGMENTS = [5, 2, 1] as const;
 
 /**
- * The mesh of a variant at a level of detail: a welded sphere of directions (1280, 320 and 80 triangles)
- * pushed out to the variant's polyhedron, worn towards the unit ball, and then given the relief of a broken
- * rock, all as functions of the direction alone (every level samples the same solid): scoops where a piece
- * has spalled off (the solid is not convex), a crack, lumps and pits of three sizes. Nothing comes nearer
- * to the centre than the unit ball. The foot flares out a little: soil is banked against a rock that has
- * lain long (vertex soil share, for the shader to colour). Directions that would leave the solid through
- * its buried bottom end on the bottom's rim; the bottom itself is not drawn. `banked = false` leaves the
- * foot as it is (a loose stone that lies on the ground, not in it).
+ * The mesh of a variant at a level of detail: the variant's polyhedron, face by face, every face a patch of
+ * its own (vertices are not shared between faces, so the edges where two faces meet are creases: a broken
+ * rock is angular, and a mesh that is smooth across its edges shades as a loaf). A face is divided into
+ * triangles about its middle (the coarsest level: from one corner) and every point of it is moved along its
+ * direction from the centre by a function of the position alone, so the patches of two faces agree along
+ * their common edge and every level samples the same solid: worn towards the unit ball (corners lose most),
+ * scoops where a piece has spalled off (the solid is not convex), a crack, and the relief of a fracture face:
+ * steps and pits of two sizes, small enough to leave the face a face. Nothing comes nearer to the centre
+ * than the unit ball. The foot flares out a little: soil is banked against a rock that has lain long (vertex
+ * soil share, for the shader to colour). The sides end on the rim of the buried bottom; the bottom itself is
+ * not drawn. `banked = false` leaves the foot as it is (a loose stone that lies on the ground, not in it).
  */
 export function buildRockMesh(variant: number, lod: number, banked = true): RockMeshData {
   const all = rockPlanes(variant);
-  const planes = all.slice(0, -1);
   const boulder = variant % ROCK_CLASSES === 3;
   const wear = boulder ? ROCK_WEAR[1] : ROCK_WEAR[0];
   const seed = 0x51c0ffee + variant * 131;
@@ -260,39 +226,11 @@ export function buildRockMesh(variant: number, lod: number, banked = true): Rock
   const crackTilt = (u() - 0.5) * 1.2;
   const crack: P3 = norm([Math.cos(crackAz), Math.sin(crackAz), crackTilt]);
 
-  const sphere = icosphere(lod === 0 ? 3 : lod === 1 ? 2 : 1);
-  const count = sphere.dirs.length;
-  const pos: P3[] = new Array<P3>(count);
-  const rim: boolean[] = new Array<boolean>(count).fill(false);
-  const soil = new Float32Array(count);
-  const cavity = new Float32Array(count);
-  const ray = (d: P3): number => {
-    let t = Infinity;
-    for (const pl of planes) {
-      const nd = dot(pl.n, d);
-      if (nd > 1e-9) t = Math.min(t, pl.d / nd);
-    }
-    return t;
-  };
-  for (let i = 0; i < count; i++) {
-    const d = sphere.dirs[i]!;
-    const t = ray(d);
-    if (!(t < 1e6) || t * d[2] < -BURIED) {
-      // On the rim of the buried bottom, under the direction's azimuth.
-      const h = Math.hypot(d[0], d[1]);
-      const c = h > 1e-6 ? d[0] / h : 1;
-      const s = h > 1e-6 ? d[1] / h : 0;
-      let rho = Infinity;
-      for (const pl of planes) {
-        const nd = pl.n[0] * c + pl.n[1] * s;
-        if (nd > 1e-9) rho = Math.min(rho, (pl.d + pl.n[2] * BURIED) / nd);
-      }
-      pos[i] = [rho * c, rho * s, -BURIED];
-      rim[i] = true;
-      soil[i] = banked ? 1 : 0;
-      cavity[i] = 1;
-      continue;
-    }
+  /** A point of the polyhedron's surface as it lies on the broken rock, with its soil share and cavity. */
+  const broken = (q: P3): { p: P3; soil: number; cavity: number } => {
+    if (q[2] <= -BURIED + 1e-6) return { p: q, soil: banked ? 1 : 0, cavity: 1 };
+    const t = Math.hypot(q[0], q[1], q[2]);
+    const d: P3 = [q[0] / t, q[1] / t, q[2] / t];
     // Worn towards the unit ball (corners lose most), less so in the ground.
     const exposed = Math.min(1, Math.max(0, (t * d[2] + 0.35) / 0.45));
     let off = (t - 1) * (1 - wear * exposed * exposed * (3 - 2 * exposed) * Math.min(1, (t - 1) / 0.5));
@@ -309,11 +247,11 @@ export function buildRockMesh(variant: number, lod: number, banked = true): Rock
     const groove = Math.exp(-(cd * cd) / (0.022 * 0.022));
     off *= 1 - 0.4 * groove;
     open -= 0.25 * groove;
-    // Lumps and pits: outwards only (the unit ball stays inside), finer ones on top.
+    // The relief of a fracture face: outwards only (the unit ball stays inside), ridged (steps and edges,
+    // not bumps), a third of what a lump would be: the face stays a plane.
     const coarse = chipNoise(d, seed, 1.9);
     const fine = chipNoise(d, seed + 7, 6.5);
-    // (Ridged: the fine relief is of edges and steps, not of bumps.)
-    off += ROCK_CHIP * (0.6 * coarse + 0.4 * Math.abs(2 * fine - 0.55)) * (0.35 + 0.65 * exposed);
+    off += ROCK_CHIP * (0.32 * coarse + 0.3 * Math.abs(2 * fine - 0.55)) * (0.35 + 0.65 * exposed);
     open -= 0.7 * Math.max(0, 0.45 - fine);
     const r = 1 + Math.max(off, 1e-4);
     const p: P3 = [d[0] * r, d[1] * r, d[2] * r];
@@ -322,41 +260,123 @@ export function buildRockMesh(variant: number, lod: number, banked = true): Rock
     const flare = foot * foot * Math.min(1, Math.max(0, (p[2] + 0.55) / 0.35));
     p[0] *= 1 + 0.08 * flare;
     p[1] *= 1 + 0.08 * flare;
-    pos[i] = p;
-    soil[i] = !banked ? 0 : p[2] <= 0 ? 1 : foot * foot * (3 - 2 * foot);
-    cavity[i] = Math.min(1, Math.max(0.35, open));
+    return { p, soil: !banked ? 0 : p[2] <= 0 ? 1 : foot * foot * (3 - 2 * foot), cavity: Math.min(1, Math.max(0.35, open)) };
+  };
+
+  // The corners of the polyhedron, welded (clipping leaves the same corner on several faces to rounding).
+  const corners: P3[] = [];
+  const cornerOf = (p: P3): number => {
+    for (let i = 0; i < corners.length; i++) if (Math.hypot(p[0] - corners[i]![0], p[1] - corners[i]![1], p[2] - corners[i]![2]) < 2e-3) return i;
+    corners.push(p);
+    return corners.length - 1;
+  };
+  const faces: number[][] = [];
+  for (const f of clipPolyhedron(all)) {
+    // The buried bottom is not drawn.
+    if (f.plane.n[2] < -0.999) continue;
+    const loop: number[] = [];
+    for (const v of f.verts) {
+      const c = cornerOf(v);
+      if (loop[loop.length - 1] !== c) loop.push(c);
+    }
+    if (loop.length > 1 && loop[0] === loop[loop.length - 1]) loop.pop();
+    if (loop.length >= 3) faces.push(loop);
   }
+  /** The point at k / m of the edge between two corners: the same numbers from either face that has the edge. */
+  const onEdge = (a: number, b: number, k: number, m: number): P3 => {
+    const [lo, hi, t] = a < b ? [a, b, k / m] : [b, a, 1 - k / m];
+    const p = corners[lo]!;
+    const q = corners[hi]!;
+    return t <= 0 ? p : t >= 1 ? q : [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+  };
+
+  const m = ROCK_SEGMENTS[lod]!;
+  const positions: P3[] = [];
+  const soil: number[] = [];
+  const cavity: number[] = [];
   const indices: number[] = [];
-  const normals = new Float64Array(count * 3);
-  for (let i = 0; i < sphere.tris.length; i += 3) {
-    const a = sphere.tris[i]!;
-    const b = sphere.tris[i + 1]!;
-    const c = sphere.tris[i + 2]!;
-    if (rim[a] && rim[b] && rim[c]) continue;
-    const n = cross(sub(pos[b]!, pos[a]!), sub(pos[c]!, pos[a]!));
-    // Directions that end on the rim crowd together there: a sliver between them can fold over. It lies
-    // at the buried bottom and is left out.
-    if ((rim[a] || rim[b] || rim[c]) && dot(n, [pos[a]![0] + pos[b]![0] + pos[c]![0], pos[a]![1] + pos[b]![1] + pos[c]![1], pos[a]![2] + pos[b]![2] + pos[c]![2]]) <= 1e-9) continue;
-    // Area-weighted vertex normals; a sliver on the rim has none to give.
+  const normals: number[] = [];
+  const emit = (q: P3): number => {
+    const o = broken(q);
+    positions.push(o.p);
+    soil.push(o.soil);
+    cavity.push(o.cavity);
+    normals.push(0, 0, 0);
+    return positions.length - 1;
+  };
+  const triangle = (a: number, b: number, c: number): void => {
+    const n = cross(sub(positions[b]!, positions[a]!), sub(positions[c]!, positions[a]!));
+    if (Math.hypot(n[0], n[1], n[2]) < 1e-12) return;
+    // Area-weighted normals within the face: its relief shades, its edges stay creases.
     for (const v of [a, b, c]) {
       normals[v * 3] = normals[v * 3]! + n[0];
       normals[v * 3 + 1] = normals[v * 3 + 1]! + n[1];
       normals[v * 3 + 2] = normals[v * 3 + 2]! + n[2];
     }
-    if (Math.hypot(n[0], n[1], n[2]) < 1e-9) continue;
     indices.push(a, b, c);
+  };
+  for (const loop of faces) {
+    const n = loop.length;
+    if (m === 1) {
+      // The coarsest level: the face from one corner.
+      const vs = loop.map((c) => emit(corners[c]!));
+      for (let i = 1; i + 1 < n; i++) triangle(vs[0]!, vs[i]!, vs[i + 1]!);
+      continue;
+    }
+    const centre: P3 = [0, 0, 0];
+    for (const c of loop) {
+      centre[0] += corners[c]![0] / n;
+      centre[1] += corners[c]![1] / n;
+      centre[2] += corners[c]![2] / n;
+    }
+    const middle = emit(centre);
+    // Rings 1 .. m around the middle: ring r has r points per side of the face; ring m is the face's edge.
+    const rings: number[][] = [[middle]];
+    for (let r = 1; r <= m; r++) {
+      const ring: number[] = [];
+      for (let i = 0; i < n; i++) {
+        const a = loop[i]!;
+        const b = loop[(i + 1) % n]!;
+        for (let k = 0; k < r; k++) {
+          let q: P3;
+          if (r === m) q = onEdge(a, b, k, m);
+          else {
+            const e = onEdge(a, b, k, r);
+            q = [centre[0] + (e[0] - centre[0]) * (r / m), centre[1] + (e[1] - centre[1]) * (r / m), centre[2] + (e[2] - centre[2]) * (r / m)];
+          }
+          ring.push(emit(q));
+        }
+      }
+      rings.push(ring);
+    }
+    for (let r = 1; r <= m; r++) {
+      const outer = rings[r]!;
+      const inner = rings[r - 1]!;
+      for (let i = 0; i < n; i++) {
+        for (let k = 0; k < r; k++) {
+          const o0 = outer[i * r + k]!;
+          const o1 = outer[(i * r + k + 1) % outer.length]!;
+          const i0 = r === 1 ? inner[0]! : inner[(i * (r - 1) + Math.min(k, r - 1)) % inner.length]!;
+          triangle(i0, o0, o1);
+          if (k < r - 1) {
+            const i1 = inner[(i * (r - 1) + k + 1) % inner.length]!;
+            triangle(i0, o1, i1);
+          }
+        }
+      }
+    }
   }
-  // Vertices no triangle uses (inside the bottom) are dropped.
-  const used = new Int32Array(count).fill(-1);
+  // Vertices no triangle uses (corners of slivers) are dropped.
+  const used = new Int32Array(positions.length).fill(-1);
   let kept = 0;
   for (const i of indices) if (used[i]! < 0) used[i] = kept++;
   const vertices = new Float32Array(kept * ROCK_VERTEX_FLOATS);
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < positions.length; i++) {
     const o = used[i]!;
     if (o < 0) continue;
-    let n = norm([normals[i * 3]!, normals[i * 3 + 1]!, normals[i * 3 + 2]!]);
-    if (!(Math.hypot(n[0], n[1], n[2]) > 0.5)) n = norm(pos[i]!);
-    vertices.set([pos[i]![0], pos[i]![1], pos[i]![2], n[0], n[1], n[2], soil[i]!, cavity[i]!], o * ROCK_VERTEX_FLOATS);
+    let nv = norm([normals[i * 3]!, normals[i * 3 + 1]!, normals[i * 3 + 2]!]);
+    if (!(Math.hypot(nv[0], nv[1], nv[2]) > 0.5)) nv = norm(positions[i]!);
+    vertices.set([positions[i]![0], positions[i]![1], positions[i]![2], nv[0], nv[1], nv[2], soil[i]!, cavity[i]!], o * ROCK_VERTEX_FLOATS);
   }
   return { vertices, indices: new Uint16Array(indices.map((i) => used[i]!)) };
 }

@@ -41,10 +41,20 @@ fn terrainWet(s: Surface) -> vec4f {
 }
 fn brdfTerrainDirect(s: Surface, l: vec3f) -> vec3f {
   let NoL = dot(s.n, l);
-  if (NoL <= 0.0) { return vec3f(0.0); }
   let m = terrainWet(s);
+  if (NoL <= 0.0) {
+    // Leaves and blades of grass let light through (s.metallic = the share, written by the ground cover;
+    // terrain has no metal and leaves 0): lit from behind they glow, yellower than they reflect. The part
+    // of the plant that stands between the leaf and the sun (s.clearcoat) takes its share of it.
+    if (s.metallic <= 0.0) { return vec3f(0.0); }
+    return m.rgb * vec3f(1.15, 1.2, 0.55) * (s.metallic * -NoL * (1.0 - s.clearcoat) / PI);
+  }
   let h = normalize(s.v + l);
-  let NoV = max(dot(s.n, s.v), 1e-4);
+  // A field of lava, a beach or a pasture is rough at every size up to metres: seen at a grazing angle it
+  // shows the faces of its lumps that are turned to the eye, not a mirror of the horizon. The view angle of
+  // the specular terms therefore never falls below about 70 degrees from the normal (with the true angle the
+  // ground brightened towards the horizon, to twice its brightness at a few hundred metres).
+  let NoV = max(dot(s.n, s.v), 0.35);
   let a = ggxAlpha(max(m.w, 0.25), s.lightAlpha);
   // Rock, glass and soil grains are dielectrics of index about 1.5: the glassy crests of ropy lava mirror the
   // blue of the sky in photographs of it, which a reflectance of 0.02 (water's) did not.
@@ -54,9 +64,22 @@ fn brdfTerrainDirect(s: Surface, l: vec3f) -> vec3f {
 }
 fn brdfTerrainAmbient(s: Surface, a: AmbientInput) -> vec3f {
   let m = terrainWet(s);
-  let NoV = max(dot(s.n, s.v), 1e-4);
+  // (The view angle of the reflection is bounded as in the direct term; wet ground is a film of water and
+  // keeps its true angle by the share that is wet.)
+  let NoV = max(dot(s.n, s.v), mix(0.35, 1e-4, s.param));
   let dfg = envBrdfApprox(max(m.w, 0.25), NoV);
-  return (m.rgb * a.skyIrradiance / PI + a.skyReflection * (0.04 * dfg.x + dfg.y)) * s.ao;
+  // The sky lights a face by how much of it the face sees (a.skyIrradiance); the ground around it gives back
+  // about a tenth of what falls on it (lava, soil, dry grass), sun included (some four times the sky's light
+  // on level ground once the sun is up), to the faces that look sideways and down: a hollow or the shaded
+  // side of a stone is dark, not black. Light through leaves counts for the sky's too.
+  let facing = 0.5 + 0.5 * dot(s.n, s.up);
+  var irradiance = a.skyIrradiance;
+  if (facing > 1e-3 && s.bodyIndex >= 0) {
+    let muS = saturate(dot(s.up, frame.bodies[s.bodyIndex].sunDir.xyz));
+    let ground = 0.1 * (1.0 + 4.0 * saturate(2.0 * muS));
+    irradiance *= 1.0 + ground * (1.0 - facing) / facing + 0.5 * s.metallic;
+  }
+  return (m.rgb * irradiance / PI + a.skyReflection * (0.04 * dfg.x + dfg.y)) * s.ao;
 }
 `;
 

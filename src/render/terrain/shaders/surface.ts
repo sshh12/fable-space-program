@@ -22,15 +22,20 @@ export const DETAIL_SCALES = 4;
  * this many tiles (128 m for the near layer, 58 km for the aerial one).
  */
 export const HEX_PERIOD = 64;
+/**
+ * Regions of a body whose ground takes the albedo of its materials (the rectangles of the imagery's first
+ * regional level: where the material set was made for the ground), at most.
+ */
+export const MAX_REGIONS = 4;
 /** Floats of the TerrainMaterial uniform. */
-export const MATERIAL_UNIFORM_FLOATS = (MAX_CLASSES * 2 + MAX_CLASSES + 2 * MAX_MATERIALS * DETAIL_SCALES + 2 + 2 + 2 + 6 + 6 + 2 + 4 + MAX_MATERIALS + 2 * MAX_SITES + 2 * MAX_SITE_SHAPES) * 4;
+export const MATERIAL_UNIFORM_FLOATS = (MAX_CLASSES * 2 + MAX_CLASSES + 2 * MAX_MATERIALS * DETAIL_SCALES + 2 + 2 + 2 + 6 + 6 + 2 + 4 + MAX_MATERIALS + 2 * MAX_SITES + 2 * MAX_SITE_SHAPES + 4 * MAX_REGIONS) * 4;
 
 const SURFACE_BINDINGS_WGSL = /* wgsl */ `
 struct TerrainMaterial {
   classW: array<vec4f, ${MAX_CLASSES * 2}>,   // land-cover class c: weights of materials 0..3 in [2c], 4..7 in [2c + 1]
-  classOrb: array<vec4f, ${MAX_CLASSES}>,     // per class: orbital albedo amplitude, orbital relief amplitude, macro tint amplitude, unused
+  classOrb: array<vec4f, ${MAX_CLASSES}>,     // per class: orbital albedo amplitude, orbital relief amplitude, brightness of the class seen from afar relative to its ground (canopy), how far its colour goes to leaf green there
   layer: array<vec4f, ${MAX_MATERIALS * DETAIL_SCALES}>, // [4 m + s]: rgb = mean linear albedo of material m's layer of scale s, a = relief of its height map (m)
-  layerB: array<vec4f, ${MAX_MATERIALS * DETAIL_SCALES}>, // [4 m + s]: x = mean of the layer's height map (0..1), y = roughness factor of what stands above the mean (1 = none: crests of ropy lava are glassy), z = share of the material's colour variation kept where the ground takes its albedo (rock is grey, growth is not), w unused
+  layerB: array<vec4f, ${MAX_MATERIALS * DETAIL_SCALES}>, // [4 m + s]: x = mean of the layer's height map (0..1), y = roughness factor of what stands above the mean (1 = none: crests of ropy lava are glassy), z = share of the material's colour variation kept where the ground takes its albedo (rock is grey, growth is not), w = how far above its albedo the imagery's brightness may lift the ground
   channelGain: array<vec4f, 2>,               // weight added per unit of the normal map's material channel (rockiness / freshness)
   slopeGain: array<vec4f, 2>,                 // weight added on steep ground
   noiseGain: array<vec4f, 2>,                 // weight added per unit of macro noise (-1..1)
@@ -42,13 +47,14 @@ struct TerrainMaterial {
   p4: vec4f,                                  // texel size on the ground of the near, mid, far and aerial layers (m)
   p5: vec4f,                                  // hexagon blend: weight (octaves) per unit of height above / below the layer's mean; share of the far and aerial relief the terrain's own normal map replaces; width of the gravel shoulder around a site's concrete (m)
   shoreGain: array<vec4f, 2>,                 // weight added on low, level ground at the water's edge
-  p6: vec4f,                                  // imagery calibration: data level above which the imagery is calibrated (regional mosaics; below 0 = all of it), share of its saturation kept, its reference luminance, exponent of (luminance / reference)
-  p7: vec4f,                                  // share of the material's own albedo in the ground colour where a pixel is finer than the imagery, and where it is coarser; joint spacing of concrete slabs (m); gravel material (-1 = none)
+  p6: vec4f,                                  // imagery calibration: data level above which the imagery is regional (the regions below lie where it has such data; below 0 = the whole body is one region), share of its saturation kept, its reference luminance, exponent of (luminance / reference)
+  p7: vec4f,                                  // share of the material's own hue in the ground colour where a pixel is a few metres, and where it is tens of metres; joint spacing of concrete slabs (m); gravel material (-1 = none)
   p8: vec4f,                                  // rgb = albedo of site gravel, a = strength of the shadows the detail relief casts along the sun (0 = off)
-  p9: vec4f,                                  // height above sea level up to which shoreGain acts (m); wet band of the swash (m); unused
+  p9: vec4f,                                  // height above sea level up to which shoreGain acts (m); wet band of the swash (m); number of regions; taps of the relief-shadow march
   anchor: array<vec4f, ${MAX_MATERIALS}>,     // rgb = albedo the ground takes where material m covers it (its own mean, or the set's choice for it)
   siteFrame: array<vec4f, ${2 * MAX_SITES}>,  // [2 s]: xyz = east at the site (body-fixed), w = first shape; [2 s + 1]: xyz = north, w = shape count
   siteShape: array<vec4f, ${2 * MAX_SITE_SHAPES}>, // [2 i]: centre east, north of the pad centre, half sizes x, z (m); [2 i + 1]: cos, sin of the heading, kind (0 slab, 1 gravel), corner radius (m)
+  region: array<vec4f, ${4 * MAX_REGIONS}>,   // [4 r]: xyz = normal of the cube face of region r, w = lowest s; [4 r + 1]: xyz = the face's s axis, w = lowest t; [4 r + 2]: xyz = its t axis, w = highest s; [4 r + 3]: x = highest t, y = width of the feather inside the edge (face units)
 }
 
 @group(3) @binding(0) var normalTex: texture_2d_array<f32>;
@@ -241,6 +247,28 @@ fn maskInfluence(t: TileRecord, k: f32, imageLevel: f32) -> f32 {
   return saturate(imageLevel + 3.0 - (t.b.w - k));
 }
 
+/// Share (0 .. 1) of a point of the body ('dir' = its unit direction, body-fixed) that lies in a region whose
+/// ground takes the albedo of its materials. It is a place on the body, not a level of detail: the same
+/// ground has the same colour from every height, through every tile that shows it. The feather inside a
+/// region's edge is the one the bakes blend regional data into the body-wide data over.
+fn regionShare(dir: vec3f) -> f32 {
+  if (mat.p6.x < 0.0) { return 1.0; }
+  var share = 0.0;
+  let count = i32(mat.p9.z);
+  for (var r = 0; r < count; r++) {
+    let n = mat.region[4 * r];
+    let u = mat.region[4 * r + 1];
+    let v = mat.region[4 * r + 2];
+    let e = mat.region[4 * r + 3];
+    let dn = dot(dir, n.xyz);
+    if (dn <= 0.0) { continue; }
+    let st = vec2f(dot(dir, u.xyz), dot(dir, v.xyz)) / dn;
+    let d = min(min(st.x - n.w, v.w - st.x), min(st.y - u.w, e.x - st.y));
+    share = max(share, smoothstep(0.0, e.y, d));
+  }
+  return share;
+}
+
 /// How much a colour of the imagery is the flat fill the body-wide mosaic paints the open sea with, or the
 /// ramp towards it (0 .. 1). The fill is dark AND strongly blue; fresh lava, forest in shadow and swamp
 /// water are as dark but not blue, so darkness alone never makes water of them.
@@ -260,8 +288,13 @@ fn fillness(c: vec3f) -> f32 {
 fn waterAlbedo(imagery: vec3f, depth: f32) -> vec3f {
   if (body.deepWater.w <= 0.0) { return imagery; }
   let s = exp(-depth / (0.1 * body.deepWater.w));
-  let shallow = body.deepWater.rgb * (1.0 + 2.2 * s) + vec3f(0.0, 0.011, 0.007) * s;
-  let base = mix(imagery, shallow, fillness(imagery));
+  // (A little lighter and greener than the deep sea: the bottom of a rock coast is dark. The turquoise of
+  // sand and reef is in the imagery where it exists.)
+  let shallow = body.deepWater.rgb * (1.0 + 0.9 * s) + vec3f(0.0, 0.005, 0.004) * s;
+  // The imagery is believed where it shows water: blue above red. Where its coastline lies seaward of the
+  // mask's it shows land (ochre, cream) on what is water: that is not the colour of water over anything.
+  let watery = smoothstep(1.0, 1.5, imagery.b / max(imagery.r, 1e-5));
+  let base = mix(shallow, imagery, watery * (1.0 - fillness(imagery)));
   return mix(base, body.deepWater.rgb, smoothstep(0.08 * body.deepWater.w, body.deepWater.w, depth));
 }
 
@@ -509,7 +542,7 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, gloss: f32, mean
   o.rough *= inv;
   o.ao *= inv;
   if (sun.z > 0.0 && domW > 0.0) {
-    // Four taps towards the sun in the dominant copy, 1.5 to 33 texels away, each from the mip level that
+    // A few taps towards the sun in the dominant copy, 1.5 to 33 texels away, each from the mip level that
     // averages what lies between it and the last (a cone: far taps are wide, so the shadow of a far stone
     // has a soft edge and a near one a hard edge).
     let dir = vec2f(domRot.x * sun.x - domRot.y * sun.y, domRot.y * sun.x + domRot.x * sun.y);
@@ -525,15 +558,20 @@ fn detailPlane(scale: i32, layer: i32, mean: vec3f, meanH: f32, gloss: f32, mean
     if (scale == 0) { h0 = textureSampleLevel(detailA, linearRepeat, domUv, layer, lod0).a; }
     else { h0 = textureSampleLevel(detailWideA, linearRepeat, domUv, wide, lod0).a; }
     var occ = 0.0;
-    for (var i = 0; i < 4; i++) {
+    // (mat.p9.w taps over the same reach, 1.5 to 33 texels: four draw the shadow of a stone, six the
+    // crescent in a small crater.)
+    let taps = max(i32(mat.p9.w), 2);
+    let ratio = pow(22.0, 1.0 / f32(taps - 1));
+    let lodStep = 0.67 * log2(ratio);
+    for (var i = 0; i < taps; i++) {
       var h: f32;
-      let lod = lod0 + 1.0 * f32(i);
+      let lod = lod0 + lodStep * f32(i);
       if (scale == 0) { h = textureSampleLevel(detailA, linearRepeat, domUv + dir * d, layer, lod).a; }
       else { h = textureSampleLevel(detailWideA, linearRepeat, domUv + dir * d, wide, lod).a; }
       occ = max(occ, h - h0 - d * sun.z);
-      d *= 2.8;
+      d *= ratio;
     }
-    o.shadow = smoothstep(0.0, 0.05, occ);
+    o.shadow = smoothstep(0.0, 0.035, occ);
   }
   return o;
 }
@@ -645,6 +683,7 @@ struct Detail {
   ratioSecond: vec3f,
   matAlbedo: vec3f,    // mean albedo of the blended materials: what the ground is made of
   chroma: f32,         // share of their colour variation the blended materials keep on that albedo
+  toneMax: f32,        // how far above that albedo the imagery's brightness may lift the ground
   first: i32,
   second: i32,
   grad: vec3f,
@@ -729,6 +768,9 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   let chromaA = mat.layerB[first * ${DETAIL_SCALES}].z;
   let chromaB = mat.layerB[second * ${DETAIL_SCALES}].z;
   o.chroma = mix(chromaA, chromaB, blend);
+  let toneA = mat.layerB[first * ${DETAIL_SCALES}].w;
+  let toneB = mat.layerB[second * ${DETAIL_SCALES}].w;
+  o.toneMax = mix(toneA, toneB, blend);
 
   let fadeEnd = body.morph.z;
   if (dist >= fadeEnd) { return o; }
@@ -810,6 +852,7 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
   o.ratioSecond = ratioB;
   o.matAlbedo = mix(meanA, meanB, bl);
   o.chroma = mix(chromaA, chromaB, bl);
+  o.toneMax = mix(toneA, toneB, bl);
   o.grad = mix(gradA, gradB, bl) * mat.p1.y;
   o.roughMix = saturate(wsum);
   o.rough = mix(roughA, roughB, bl) / wsum;
@@ -902,6 +945,10 @@ ${DETAIL_WGSL}
   let warp = imageryWarp(t, in.local, levelSize * exp2(-min(t.imageUv.w, lv)) / 256.0, footprint) / tileSize;
   var s = sampleTile(t, uv, k, dx, dy, warp);
   let tn = tileNormal(t, uv, s.slope);
+  // The region is a place on the body (regionShare), never a level of detail: with the calibration tied to
+  // the level of the tile that happened to be drawn, two treatments met along a line across the island, and
+  // the land changed colour as the camera climbed.
+  let calibrated = regionShare(tn.sphere);
   let velocity = velocityFromClip(in.currClip, in.prevClip);
   let sphereRoot = body.rot * tn.sphere;
   // (The grain of the lights fades by the long axis of the pixel's footprint on the ground.)
@@ -939,7 +986,10 @@ ${DETAIL_WGSL}
     let coastal = 1.0 - smoothstep(0.75, 2.0, above);
     // Away from sea level the mask alone says "lake", and it is believed only where the ground is level: a
     // pond lies flat, and the land-cover source behind the mask also calls dark lava and shadowed slopes water.
-    let levelGround = 1.0 - smoothstep(0.03, 0.07, tn.slopeMag);
+    // (Level means level: a lake in the height data is flat to a fraction of a degree. Ground that falls two
+    // degrees to the sea is a lava plain, whatever the land cover calls it; with a looser test, 0.03 to 0.07,
+    // four ponds lay on the slope beside the pad.)
+    let levelGround = 1.0 - smoothstep(0.006, 0.018, tn.slopeMag);
     let threshold = mix(mix(1.01, 0.5, levelGround), mix(1.01, 0.5, influence), coastal);
     if (s.mask > threshold) {
       water = true;
@@ -1010,8 +1060,35 @@ ${DETAIL_WGSL}
       }
     }
   }
+  // A boundary between two classes is a band, not a line: grass thins out into lava through scattered
+  // patches, over some tens of metres. Where a pixel resolves patches of 9 m and 3 m the lookup is thrown
+  // about by noise of those sizes, much further than their own length (so near the boundary every patch
+  // falls on one side or the other); where it does not, the classes of two points on either side are averaged.
+  let band = min(2.5 * classTexel, 28.0);
+  let patches = smoothstep(1.5, 3.0, 9.0 / footLong);
+  if (patches > 0.0) {
+    let cp0 = noiseAt(classLattice.yzx * (5.0 * c0) + vec3f(6.1, 0.4, 9.9));
+    classWarp += patches * band * vec2f(cp0.a, clamp(0.5 * cp0.g, -1.0, 1.0));
+    let fine = smoothstep(1.5, 3.0, 3.0 / footLong);
+    if (fine > 0.0) {
+      let cp1 = noiseAt(classLattice.zxy * (15.0 * c0) + vec3f(1.3, 4.6, 2.2));
+      classWarp += fine * 0.45 * band * vec2f(cp1.a, clamp(0.5 * cp1.b, -1.0, 1.0));
+    }
+  }
   classWarp /= tileSize;
-  let cb = classBlend(t, uv, k, warp + classWarp, smoothstep(3.0, 8.0, classTexel / footLong));
+  let classSharp = smoothstep(3.0, 8.0, classTexel / footLong);
+  var cb = classBlend(t, uv, k, warp + classWarp, classSharp);
+  if (patches < 1.0 && mat.p7.x > 0.0 && calibrated > 0.0) {
+    // (Across the boundary's own direction as often as along it: the two points lie on a line that turns with
+    // the ground, by noise of 45 m.)
+    let turn = 6.2832 * noiseAt(classLattice * c0 + vec3f(8.8, 3.3, 5.5)).a;
+    let reach = (1.0 - patches) * band * vec2f(cos(turn), sin(turn)) / tileSize;
+    let ca = classBlend(t, uv, k, warp + classWarp + reach, classSharp);
+    let cc = classBlend(t, uv, k, warp + classWarp - reach, classSharp);
+    cb.w0 = 0.5 * cb.w0 + 0.25 * (ca.w0 + cc.w0);
+    cb.w1 = 0.5 * cb.w1 + 0.25 * (ca.w1 + cc.w1);
+    cb.orb = 0.5 * cb.orb + 0.25 * (ca.orb + cc.orb);
+  }
   let steep = smoothstep(mat.p0.x, mat.p0.y, tn.slopeMag);
 
   let imageTexel = levelSize * exp2(-min(s.imageLevel, lv)) / 256.0;
@@ -1065,22 +1142,35 @@ ${DETAIL_WGSL}
   // saturated. Where it is calibrated (mat.p6) it keeps a share of its saturation, and the ground takes the
   // albedo of the material it is made of, times the imagery's brightness relative to its usual one (bounded):
   // mostly so where a pixel is finer than the imagery (the materials are what one sees), less from afar.
-  let calibrated = select(smoothstep(mat.p6.x, mat.p6.x + 1.0, min(s.imageLevel, lv)), 1.0, mat.p6.x < 0.0);
   let lumI = luminance(s.albedo);
   let image = mix(vec3f(lumI), s.albedo, mix(1.0, mat.p6.y, calibrated));
-  let finer = smoothstep(1.0, 4.0, imageTexel / footprint);
-  let anchor = max(calibrated * mix(mat.p7.y, mat.p7.x, finer), fillLand);
-  let rel = clamp(pow(max(lumI, 1e-4) / mat.p6.z, mat.p6.w), 0.6, 1.3);
-  // Where the body anchors its ground to materials, the share the imagery keeps is bounded in brightness too
-  // (to 1.6 times the material's): a strip the mosaic paints cream along this coast (sRGB 211, 180, 125) is
-  // dry grass and weathered rock, about as bright as the sea beside it, not three times brighter.
-  let lumM = luminance(detail.matAlbedo);
-  let bounded = image * min(1.0, 1.6 * lumM / max(lumI, 1e-4));
-  let ground = mix(select(image, mix(image, bounded, calibrated), mat.p7.x > 0.0), detail.matAlbedo * mix(rel, 1.0, fillLand), anchor);
+  var ground = image;
+  var own = 0.0;
+  if (mat.p7.x > 0.0) {
+    // What the ground is made of, as it is seen from where the canopy over it is no longer drawn: a class
+    // of trees is darker and greener than the grass under them (mat.classOrb).
+    var made = detail.matAlbedo;
+    let canopy = smoothstep(1500.0, 7000.0, dist);
+    made *= mix(1.0, cb.orb.z, canopy);
+    made = mix(made, luminance(made) * vec3f(0.74, 1.12, 0.42), canopy * cb.orb.w);
+    let lumM = luminance(made);
+    // The ground has the BRIGHTNESS of its material, times how bright the imagery is there relative to its
+    // usual brightness (bounded: rock is as dark as it is wherever the mosaic is pale; a strip the mosaic
+    // paints cream along this coast is dry grass and weathered rock). Its HUE is the material's by the share
+    // mat.p7 (more where a pixel is a few metres and the materials are what one sees) and the imagery's by
+    // the rest; that share follows the size of a pixel on the ground alone.
+    let rel = clamp(pow(max(lumI, 1e-4) / mat.p6.z, mat.p6.w), 0.55, detail.toneMax);
+    let hue = min(image * (lumM / max(lumI, 1e-4)), vec3f(2.5 * lumM));
+    let share = max(mix(mat.p7.y, mat.p7.x, 1.0 - smoothstep(8.0, 40.0, footprint)), fillLand);
+    let toned = mix(hue, made, share) * mix(rel, 1.0, fillLand);
+    let inRegion = max(calibrated, fillLand);
+    ground = mix(image, toned, inRegion);
+    own = share * inRegion;
+  }
   // The detail mostly modulates brightness on imagery colour; on the material's own colour it is the material.
   let lumR = max(luminance(detail.albedoRatio), 1e-3);
   // The orbital noise stands in for structure nobody has data for; where the aerial layer shows, it has it.
-  var albedo = ground * mix(vec3f(lumR), detail.albedoRatio, mix(mat.p3.w, detail.chroma, anchor)) * mix(orb.albedo, 1.0, 0.75 * detail.aerial);
+  var albedo = ground * mix(vec3f(lumR), detail.albedoRatio, mix(mat.p3.w, detail.chroma, own)) * mix(orb.albedo, 1.0, 0.75 * detail.aerial);
   // Fresh material (crater ejecta, exposed rock) is brighter than the mature surface around it.
   albedo *= 1.0 + mat.p3.y * smoothstep(0.25, 0.9, s.channel);
   var roughScale = 1.0;
@@ -1178,10 +1268,16 @@ ${DETAIL_WGSL}
   if (water) {
     return gbufferPack(waterColour, 1.0, sphereRoot, 0.0, 0.0, MATERIAL_WATER, encodeWaterDepth(waterDepth), velocity, emissive);
   }
-  var packed = gbufferPack(albedo, s.ao * detail.ao * siteAo, n, rough, metallic, materialId, param, velocity, emissive);
+  // (The hollows of the detail layers keep a share of the sky: with the product of four layers' occlusion
+  // the hollows of broken ground were black blotches, 35 times darker than the ground around them.)
+  var packed = gbufferPack(albedo, s.ao * max(detail.ao, 0.4) * siteAo, n, rough, metallic, materialId, param, velocity, emissive);
   // RT4.b of the terrain materials: the share of the sun that relief below the mesh keeps off the pixel
   // (read by this package's brdf_terrain and brdf_regolith; every other writer of these materials leaves 0).
-  packed.extra.b = saturate(detail.shadow * mat.p8.a);
+  // Towards the terminator of the terrain's own slope the march gives way: there nearly every point lies
+  // behind something, the march says "all shadow" in patches (an ink blot on a slope turned from a low sun),
+  // and the mean of lit and shaded grains is what the facet term of the regolith BRDF and the slope's own
+  // cosine already give, smoothly.
+  packed.extra.b = saturate(detail.shadow * mat.p8.a * smoothstep(0.03, 0.14, muTerrain));
   // RT4.a: the smallest filter of the sun-shadow lookup, in metres on the ground (request terrain-render-4).
   // The terrain casts from its own tiles, so the shadow of a crater rim on its floor is drawn by a mesh of
   // quads of this tile's level: filtered over one such quad its edge is the smooth curve of the rim, not the

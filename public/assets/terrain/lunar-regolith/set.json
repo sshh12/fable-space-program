@@ -259,5 +259,7 @@
   "cover": null,
   "apronMaterial": null,
   "gravelMaterial": null,
-  "rockMaterial": "boulder"
+  "rockMaterial": "boulder",
+  "classTone": {},
+  "toneMax": {}
 }

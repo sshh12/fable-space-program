@@ -86,8 +86,9 @@ describe('ground cover meshes', () => {
         expect(counts[0]!).toBeGreaterThan(counts[2]!);
         // The far level is what thousands of instances are drawn with.
         expect(counts[2]!).toBeLessThanOrEqual(shape === 'grove' ? 140 : 100);
-        // The finest level is drawn for a handful of instances near the eye.
-        expect(counts[0]!).toBeLessThanOrEqual(3600);
+        // The finest level is drawn for a handful of instances near the eye (a tree's is its whole frame of
+        // limbs, branches and twigs with four leaf sprays at every twig end).
+        expect(counts[0]!).toBeLessThanOrEqual(shape === 'tree' ? 12000 : 3600);
       }
     }
   });
