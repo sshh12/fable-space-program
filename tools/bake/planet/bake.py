@@ -82,8 +82,11 @@ def step_fetch(body: config.Body, record: bool, steps: list[str] | None = None) 
 
 def step_prepare(body: config.Body, steps: list[str] | None = None) -> None:
     for key in source_keys(body, steps):
-        if source.is_prepared(body, key):
-            continue
+        step_prepare_one(body, key)
+
+
+def step_prepare_one(body: config.Body, key: str) -> None:
+    if not source.is_prepared(body, key):
         t0 = time.time()
         meta = source.prepare(body, key, fetch.local_path(body, key))
         if body.source(key).get("decimate", 1) > 1:
@@ -140,10 +143,14 @@ def bake_solid(body: config.Body, steps: list[str], record: bool, force: bool) -
     pending = [s for s in compute if force or not step_done(body, s)]
     # sources: those the pending compute steps read (all of them for an explicit fetch/prepare-only run)
     need = pending if compute else None
-    if "fetch" in steps or pending:
+    if pending or "prepare" in steps:
+        # one source at a time (download, prepare, drop a decimated source's download) keeps the disk peak low
+        for key in source_keys(body, need):
+            if not source.is_prepared(body, key):
+                fetch.ensure(body, key, record=record)
+                step_prepare_one(body, key)
+    elif "fetch" in steps:
         step_fetch(body, record, need)
-    if "prepare" in steps or pending:
-        step_prepare(body, need)
     for step in compute:
         fp = fingerprint(body, step)
         if step not in pending:
@@ -227,6 +234,9 @@ def main() -> None:
     ap.add_argument("--credits", action="store_true")
     ap.add_argument("--clean", action="store_true")
     ap.add_argument("--keep-going", action="store_true", help="bake the remaining bodies when one fails (exit 1 at the end)")
+    ap.add_argument("--split-passes", action="store_true",
+                    help="bake the height (with its DEM) and the albedo (with its maps) in two passes, cleaning after each: "
+                         "the disk then holds one pass's sources at a time")
     ap.add_argument("--clean-after", action="store_true",
                     help="delete a body's downloads and intermediates as soon as its bake has finished (disk floor)")
     a = ap.parse_args()
@@ -252,9 +262,14 @@ def main() -> None:
             bad = [s for s in steps if s not in SOLID_STEPS]
             if bad:
                 ap.error(f"unknown steps {bad}")
-            bake_solid(body, steps, a.record_checksums, a.force)
-            if a.clean_after:
-                clean(body)
+            if a.split_passes:
+                for part in (["procedural", "height"], ["albedo", "manifest"]):
+                    bake_solid(body, [p for p in steps if p in part], a.record_checksums, a.force)
+                    clean(body)
+            else:
+                bake_solid(body, steps, a.record_checksums, a.force)
+                if a.clean_after:
+                    clean(body)
         except Exception:
             if not a.keep_going:
                 raise
