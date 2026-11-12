@@ -17,8 +17,11 @@ It changed no behaviour: the suites give the results they gave before it (sectio
   contracts were kept additive".
 - 23:00 root configuration, tools, dependencies (37c5329). 23:10 terrain guard (1e69604). 23:20 harness:
   reference-image tooling and the frame clock (870d19e). 23:25 `MilestoneRuleDef.title` (95dac27).
-- The two GPU specs of this step (frame clock awake / asleep; reference-image proof on two checkpoints)
-  queued on the one GPU slot behind the other agents.
+- 23:25 the gate serves waiters in order of arrival (050b2b3): the two GPU specs of this step had been
+  overtaken three times by later arrivals. 23:35 the documents swapped, PACKAGE_RULES with the v2 rules
+  (1fa34fa, b2b219a). The renames of the swap (`git mv`) were staged for a minute and were carried by another
+  agent's commit (7d9c765): the index is shared; rule 10 of PACKAGE_RULES now says how to commit.
+- 23:54 the two GPU specs ran (frame clock; reference-image proof on two checkpoints): both green.
 
 ## 1. What wave 3.1 can rely on (short form)
 
@@ -176,6 +179,20 @@ readBaselineManifest(store?), tileSnapshot(), describeComparison(c)
   clean); `tests/browser/shell/baseline-tooling.spec.ts` (the difference measure on synthetic images, always;
   the browser proof with `BASELINE_TOOLING_PROOF=1`).
 
+Proof on two checkpoints (2026-11-11 23:55, RTX 5090, Chrome 157, on a PROOF manifest under
+`out/qa/baseline-proof/`, not the tracked one; the captures were looked at):
+
+| Checkpoint | Two recordings differ by | Tolerance (3 x, at least the floor) | Third capture | One pixel row changed by 48 levels |
+|---|---|---|---|---|
+| leo-day | mean 0.12825, p99.9 7, max 95, 18.3 % of pixels | mean 0.38475, p99.9 21 | mean 0.1140, p99.9 6: clean | p99.9 48: caught |
+| translunar-earth | mean 0.00247, p99.9 0, max 112, 0.05 % of pixels | mean 0.02 and p99.9 1 (the floor) | mean 0.0024, p99.9 0: clean | p99.9 48, mean 0.0246: caught |
+
+A reference file that is not the recorded one (sha256) is refused. For the lead when recording: `leo-day` is
+not stable between two loads in deterministic mode (18 % of the pixels differ slightly: the specular
+highlights of the vehicle and fine cloud and surface detail), so its tolerance comes out at 21 levels at the
+99.9th percentile; a checkpoint that loose is worth a look at what still varies before it is accepted as a
+gate (`translunar-earth` is stable to 0.05 % of its pixels).
+
 Commands:
 
 ```
@@ -292,8 +309,12 @@ to judge pacing on a clock that is not 60 Hz. No budget was changed.
 | Suite | Before (22:10) | After |
 |---|---|---|
 | `npm run typecheck` | passes (one configuration) | passes (two configurations) |
-| Unit (`npx vitest run`) | 104 files, 1109 tests: 1107 pass, 2 fail | see "Final runs" |
-| Headless mission | 31 tests: 30 pass, 1 fail (stale tile hash in `golden.json`); state hash 3f3a131cdd88eba7 | see "Final runs" |
+| Unit (`npx vitest run`) | 104 files, 1109 tests: 1107 pass, 2 fail | 113 files, 1263 tests: 1262 pass, 1 fail (the same `realData` pad test); 58 s |
+| Headless mission (`npm run test:mission`) | 31 tests: 30 pass, 1 fail (stale tile hash in `golden.json`); state hash 3f3a131cdd88eba7 | 31 tests, all pass; state hash 3f3a131cdd88eba7, 593,636 steps (unchanged); 68 s |
+| Browser, `tests/browser/shell` frame clock (perf) and reference-image tooling (functional) | - | 2 + 7 tests pass |
+
+The unit suite grew by the tests of this step (boundaries 62, root configuration 11, rules 4, frame 9, terrain
+guard 4) and by other agents' new tests. The whole functional browser project was not run (section 10).
 
 The two unit failures before this step: `tests/unit/flight-ui/displays.test.ts` (the flight-ui agent's work
 in progress at that minute; fixed by its commit 2bd0a88) and `tests/unit/terrain-core/realData.test.ts >
@@ -325,3 +346,16 @@ disc; the terrain owner's to bring in line).
 - **Contract items that could not be additive**: the table in section 2.
 - **Functional browser project, whole**: not run (one GPU slot shared by six agents; the amendment limits
   this step's browser work to the frame clock and the two-checkpoint proof).
+- **History of the swap**: the three renames are in commit 7d9c765 (another agent's, see the log), the
+  content in 1fa34fa. The tree is as intended; nothing was amended.
+
+## 11. Notes for the lead
+
+- Other agents compile against the working tree, not the last commit. A contract edit is visible to them the
+  moment it is saved, and they adapt to it at once (35eeb0b). Make contract changes in one save and commit
+  them within minutes; never leave `src/core/contracts` in an intermediate state.
+- With one GPU slot, a queued browser run waited 40 minutes at one point. The gate now keeps the order of
+  arrival; the wait is still the sum of the runs ahead.
+- `tests/unit/terrain-core/realData.test.ts > launch-site pads are flat within 5 cm over flatRadius` has been
+  red since the pad shape of request terrain-render-6; it needs its owner (the test should assert the core
+  and the slab areas, or the shape's relief share).

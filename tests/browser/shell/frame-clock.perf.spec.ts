@@ -26,6 +26,7 @@
  *
  * Results: out/qa/frame-clock/<label>.json and the table printed at the end.
  */
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -189,4 +190,118 @@ test.describe('frame clock of the harness', () => {
     const again = await keepDisplayAwake();
     again();
   });
+
+  /**
+   * The controlled experiment behind docs/research/webgpu-harness.md section 3a (opt-in: it switches the
+   * monitor off for about twenty seconds): with the display OFF a fresh browser's presenting pages run on
+   * the sleep-paced clock; woken again, a fresh browser's pages run at the nominal 60 Hz.
+   *
+   *   FRAME_CLOCK_DISPLAY_EXPERIMENT=1 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/frame-clock.perf.spec.ts --project=perf -g "display off"
+   */
+  test('display off: the sleep-paced clock; display on: 60 Hz', async () => {
+    test.skip(!process.env.FRAME_CLOCK_DISPLAY_EXPERIMENT || process.platform !== 'win32', 'switches the monitor off: FRAME_CLOCK_DISPLAY_EXPERIMENT=1 (Windows)');
+    test.setTimeout(10 * 60_000);
+    fs.mkdirSync(outDir, { recursive: true });
+    const results: (CaseResult & { display: number })[] = [];
+    const states: string[] = [];
+
+    const fresh = async (phase: CaseResult['phase'], name: string, display: number): Promise<void> => {
+      const browser = await chromium.launch({ channel: process.env.E2E_CHANNEL ?? 'chrome', headless: true, args: chromeArgs() });
+      try {
+        const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+        const p = await context.newPage();
+        for (const mode of ['raf', 'dom', 'webgpu'] as const) results.push({ ...(await measure(p, phase, name, mode, 300, 60)), display });
+        await context.close();
+      } finally {
+        await browser.close();
+      }
+    };
+
+    process.env.E2E_NO_DISPLAY_WAKE = '1';
+    try {
+      await withGpuLock(async () => {
+        states.push(`at the start: display ${displayState()}`);
+        displayPower('off');
+        let off = displayState();
+        for (let i = 0; i < 20 && off !== 0; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          off = displayState();
+        }
+        states.push(`after the power-off message: display ${off}`);
+        await fresh('as found', 'display-off', off);
+        states.push(`after the measurement: display ${displayState()}`);
+      });
+    } finally {
+      delete process.env.E2E_NO_DISPLAY_WAKE;
+    }
+    await withGpuLock(async () => {
+      const on = displayState();
+      states.push(`after keepDisplayAwake: display ${on}`);
+      await fresh('awake', 'display-on', on);
+    });
+
+    console.log(`\n[frame clock] the display experiment (display: 0 off, 1 on, 2 dimmed)\n${states.join('\n')}\n${results.map((r) => `display ${r.display}  ${row(r)}`).join('\n')}\n`);
+    fs.writeFileSync(path.join(outDir, 'display-experiment.json'), `${JSON.stringify({ when: new Date().toISOString(), states, results }, null, 1)}\n`);
+
+    const presenting = (name: string): CaseResult[] => results.filter((r) => r.variant === name && r.mode !== 'raf');
+    expect(results.filter((r) => r.variant === 'display-off').every((r) => r.display === 0), 'the display was off during the first measurement').toBe(true);
+    for (const r of presenting('display-off')) expect(r.frame.p50, `display off, ${r.mode}: median rAF period, ms`).toBeGreaterThan(NOMINAL_FRAME_MS + 0.4);
+    for (const r of presenting('display-on')) expect(Math.abs(r.frame.p50 - NOMINAL_FRAME_MS), `display on, ${r.mode}: median rAF period ${r.frame.p50.toFixed(2)} ms`).toBeLessThanOrEqual(NOMINAL_CLOCK_TOLERANCE_MS);
+  });
 });
+
+/** PowerShell, run once per call: prints one line and exits. */
+function powershell(script: string): string {
+  const res = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true });
+  if (res.status !== 0) throw new Error(`powershell failed: ${res.stderr.slice(0, 400)}`);
+  return res.stdout.trim();
+}
+
+/**
+ * The console display state as Windows reports it to a power-setting listener (GUID_CONSOLE_DISPLAY_STATE):
+ * 0 = off, 1 = on, 2 = dimmed; -1 = no answer.
+ */
+function displayState(): number {
+  const out = powershell(`
+$ErrorActionPreference = 'Stop'
+Add-Type -ReferencedAssemblies System.Windows.Forms -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+public class FableDisplayState : NativeWindow {
+  [DllImport("user32.dll")] static extern IntPtr RegisterPowerSettingNotification(IntPtr hRecipient, ref Guid PowerSettingGuid, int Flags);
+  [DllImport("user32.dll")] static extern bool UnregisterPowerSettingNotification(IntPtr handle);
+  public int State = -1;
+  static Guid ConsoleDisplayState = new Guid("6fe69556-704a-47a0-8f24-c28d936fda47");
+  public FableDisplayState() { CreateHandle(new CreateParams()); }
+  public int Read() {
+    IntPtr h = RegisterPowerSettingNotification(Handle, ref ConsoleDisplayState, 0);
+    DateTime t = DateTime.Now;
+    while (State < 0 && (DateTime.Now - t).TotalMilliseconds < 2000) { Application.DoEvents(); System.Threading.Thread.Sleep(20); }
+    UnregisterPowerSettingNotification(h);
+    return State;
+  }
+  protected override void WndProc(ref Message m) {
+    if (m.Msg == 0x218 && (int)m.WParam == 0x8013) { State = Marshal.ReadInt32(m.LParam, 20); }
+    base.WndProc(ref m);
+  }
+}
+'@
+$d = New-Object FableDisplayState
+"display=$($d.Read())"
+`);
+  const m = /display=(-?\d+)/.exec(out);
+  return m ? Number(m[1]) : -1;
+}
+
+/** Ask Windows to switch the monitor off (the same message the power button of a laptop lid sends). */
+function displayPower(state: 'off'): void {
+  if (state !== 'off') return;
+  powershell(`
+Add-Type -Namespace Fable -Name Monitor -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr hWnd, uint Msg, System.IntPtr wParam, System.IntPtr lParam);
+'@
+[void][Fable.Monitor]::PostMessage([System.IntPtr]0xFFFF, 0x0112, [System.IntPtr]0xF170, [System.IntPtr]2)
+"sent"
+`);
+}
