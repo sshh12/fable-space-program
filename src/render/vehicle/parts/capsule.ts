@@ -201,7 +201,9 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     const mottle = noise2(phi * 14 + 3, up * 9, 217);
     // A returned capsule is dark: char and soot over the whole shell, near black at the shoulder and to
     // windward, dark brown in the lee, never the bright film.
-    let w = (0.58 + 0.32 * wind + Math.pow(up, 2.2) * (0.6 + 0.4 * wind)) * (0.55 + 0.9 * streak) * (0.82 + 0.36 * mottle) + 0.35 * Math.pow(up, 8);
+    // (The pristine film is a mirror of a dark sky; soot that is to read darker than it has to be thick: most
+    // of the shell reaches the shader's near-black, the lee keeps streaks of dark brown.)
+    let w = (0.86 + 0.34 * wind + Math.pow(up, 2.2) * (0.6 + 0.4 * wind)) * (0.55 + 0.9 * streak) * (0.82 + 0.36 * mottle) + 0.35 * Math.pow(up, 8);
     for (const o of openings) {
       // Wake of an opening's frame: downstream is up the cone.
       const dy = y - o.C[1];
