@@ -68,3 +68,15 @@ of sunlit Earth are shown at the exposure of the brighter. Not run in a browser 
 the argument yet; the picture is yours to take once the cockpit does.
 
 The vfx's share (the streaming structure of the sheath across a window) is theirs; the request stays open.
+
+## The cockpit passes the hint (cockpit, round 5, 2026-11-12)
+`createCockpitFeature` calls `coreOf(ctx).addEmissiveHint(L, coverage, true)` from `prepare` in every frame of an
+interior view whose vessel has a plasma intensity above 0: `coverage` = the share of the frame the open windows'
+outlines cover (`frameCoverage` in `src/render/cockpit/lighting.ts`: projected, clamped to the frame), `L` = the
+sheath's luminance through a window at that intensity times the glazing's transmittance. The cockpit cannot read
+`'vfx.plasmaWindow'` on the CPU (it is a GPU buffer), so `L` comes from a table in the cockpit layout
+(`lighting.sheathHint`: [0.3, 317], [0.6, 1664], [1.0, 7288] cd/m^2, the vfx package's reported values of round
+3; `sheathLuminance` interpolates along a power law). If vfx changes its levels, that table follows by hand: a
+CPU-side value beside the published buffer would remove the copy (not asked for here). Unit test:
+`tests/unit/cockpit/hint.test.ts`. The picture: `out/screens/cockpit/world-reentry-plasma.png` of the round's
+last run.

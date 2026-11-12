@@ -32,7 +32,7 @@ import { controlStates, instrumentSource, updateMemory, type ControlState, type 
 import { CabinLampMaps, lampMatrix } from './lampmap';
 import { cockpitLayouts, DETAIL_KINDS, MAX_WINDOWS } from './layout';
 import { CabinProbe, PROBE_DEPTH_FORMAT, PROBE_FORMAT } from './probe';
-import { cabinSources, coveredWindows, floodLevel, floodLuminance, glassTransmittance, MAX_CABIN_POLYS, type CabinPoly } from './lighting';
+import { cabinSources, coveredWindows, floodLevel, floodLuminance, frameCoverage, glassTransmittance, MAX_CABIN_POLYS, sheathLuminance, type CabinPoly } from './lighting';
 import { VERTEX_STRIDE } from './mesh';
 import { insideDistance, mouldOf } from './mould';
 import { bakeOcclusion, OCC_STRIDE, occlusionAt, occlusionSources, type VertexOcclusion } from './occlusion';
@@ -724,7 +724,19 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       // ---- what is drawn: the full detail level in the chunks the camera's frustum reaches (from a couch
       // four fifths of the cabin's triangles lie beside or behind the view), the reduced levels whole.
       const whole = model.mesh.ranges[lod]!;
-      const runs = lod === 'lod0' ? visibleRuns(gm.chunks, mat4.mul(frame.proj, frame.view), mat3.fromQuat(q), origin, (ablation & ABLATE.frustumCulling) === 0, ablatedFamilies) : [{ start: whole.start, count: whole.count }];
+      const viewProj = mat4.mul(frame.proj, frame.view);
+      // ---- the entry sheath in the panes, for the exposure meter (it cannot see the sheath, which is drawn in
+      // the transparent pass; request cockpit-19): what the panes show of it and the share of the frame they cover.
+      if (interiorView && vessel.aero.plasmaIntensity > 0) {
+        const rm = mat3.fromQuat(q);
+        const toRootP = (p: Vec3): Vec3 => ({ x: rm[0] * p.x + rm[1] * p.y + rm[2] * p.z + origin.x, y: rm[3] * p.x + rm[4] * p.y + rm[5] * p.z + origin.y, z: rm[6] * p.x + rm[7] * p.y + rm[8] * p.z + origin.z });
+        const open = model.windows.filter((_, i) => !covered[i]).map((w) => w.outline.map(toRootP));
+        const cover = frameCoverage(open, viewProj);
+        const T = glassTransmittance(model);
+        const L = sheathLuminance(model.layout.lighting.sheathHint, vessel.aero.plasmaIntensity) * ((T[0] + T[1] + T[2]) / 3);
+        if (cover > 0 && L > 0) coreOf(ctx).addEmissiveHint(L, cover, true);
+      }
+      const runs = lod === 'lod0' ? visibleRuns(gm.chunks, viewProj, mat3.fromQuat(q), origin, (ablation & ABLATE.frustumCulling) === 0, ablatedFamilies) : [{ start: whole.start, count: whole.count }];
       active = { gm, lod, vessel, interiorView, centre, sun, runs };
       st.drawnTriangles = runs.reduce((n, r) => n + r.count, 0) / 3;
       st.active = true;

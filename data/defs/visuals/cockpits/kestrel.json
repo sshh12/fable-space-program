@@ -272,6 +272,7 @@
     "cabinAlbedo": 0.5,
     "cabinArea": 29,
     "plasmaLuminance": 50,
+    "sheathHint": [[0.3, 317], [0.6, 1664], [1.0, 7288]],
     "plasmaColor": [1.0, 0.56, 0.72]
   },
   "experience": {

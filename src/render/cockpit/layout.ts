@@ -261,6 +261,13 @@ export interface LightingDef {
   /** Shock-layer radiance seen through a window at plasmaIntensity 1 (cd/m^2) and its colour. */
   plasmaLuminance: number;
   plasmaColor: [number, number, number];
+  /**
+   * What the cockpit tells the exposure meter the panes show of the entry sheath (request cockpit-19: the
+   * meter cannot see it): pairs [plasma intensity, luminance through a window in cd/m^2], rising. The
+   * picture's own value is the vfx package's 'vfx.plasmaWindow' (a GPU resource the cockpit's shaders read);
+   * these numbers are that package's reported values, for the meter's hint only.
+   */
+  sheathHint: [number, number][];
 }
 
 export interface ExperienceDef {
@@ -404,6 +411,8 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
   if (!(l.displays.slowMinHz > 0 && l.displays.slowMinHz <= l.displays.rateHz)) fail('displays.slowMinHz: in (0, rateHz]');
   if (l.windows.panes.length < 1 || l.windows.panes.length > 3) fail('windows.panes: one to three panes');
   if (!(l.lighting.cabinAlbedo > 0 && l.lighting.cabinAlbedo < 0.95)) fail('lighting.cabinAlbedo must be in (0, 0.95)');
+  const sh = l.lighting.sheathHint;
+  if (!Array.isArray(sh) || sh.length < 1 || sh.some((p, i) => !(p[0] > 0 && p[1] > 0) || (i > 0 && !(p[0] > sh[i - 1]![0] && p[1] >= sh[i - 1]![1])))) fail('lighting.sheathHint: pairs [intensity, cd/m^2], both positive and rising');
   if (l.experience.vibration.frequencies.length === 0) fail('experience.vibration.frequencies: at least one frequency');
   if (mould.windows.length + 1 > MAX_WINDOWS) fail(`at most ${MAX_WINDOWS - 1} windows besides the hatch window (occlusion slots)`);
   if (l.console.displays.length > MAX_DISPLAYS) fail(`at most ${MAX_DISPLAYS} displays (occlusion slots)`);

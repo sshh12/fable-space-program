@@ -176,6 +176,56 @@ export function cabinSources(model: CockpitModel, sun: SunInput | null, floods: 
 }
 
 /**
+ * The entry sheath's luminance through a window (cd/m^2) at a plasma intensity, from the layout's table
+ * (`lighting.sheathHint`): between two entries along a power law, below the first as the cube of the
+ * intensity, above the last the last. For the exposure meter's hint only (request cockpit-19).
+ */
+export function sheathLuminance(table: readonly (readonly [number, number])[], intensity: number): number {
+  if (!(intensity > 0) || table.length === 0) return 0;
+  const first = table[0]!;
+  if (intensity <= first[0]) return first[1] * (intensity / first[0]) ** 3;
+  for (let i = 1; i < table.length; i++) {
+    const a = table[i - 1]!;
+    const b = table[i]!;
+    if (intensity <= b[0]) return a[1] * (b[1] / a[1]) ** (Math.log(intensity / a[0]) / Math.log(b[0] / a[0]));
+  }
+  return table[table.length - 1]![1];
+}
+
+/**
+ * Share of the frame (0..1) that planar outlines cover: each outline's points (camera-relative ROOT) through
+ * the column-major view-projection `viewProj`, clamped to the frame; an outline with a point behind the eye
+ * counts as nothing (the pane is beside or behind the view).
+ */
+export function frameCoverage(outlines: readonly (readonly Vec3[])[], viewProj: ArrayLike<number>): number {
+  const m = viewProj;
+  let share = 0;
+  for (const pts of outlines) {
+    const xy: [number, number][] = [];
+    let behind = false;
+    for (const p of pts) {
+      const w = m[3]! * p.x + m[7]! * p.y + m[11]! * p.z + m[15]!;
+      if (w <= 1e-4) {
+        behind = true;
+        break;
+      }
+      const x = (m[0]! * p.x + m[4]! * p.y + m[8]! * p.z + m[12]!) / w;
+      const y = (m[1]! * p.x + m[5]! * p.y + m[9]! * p.z + m[13]!) / w;
+      xy.push([Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y))]);
+    }
+    if (behind || xy.length < 3) continue;
+    let a = 0;
+    for (let i = 0; i < xy.length; i++) {
+      const [x0, y0] = xy[i]!;
+      const [x1, y1] = xy[(i + 1) % xy.length]!;
+      a += x0 * y1 - x1 * y0;
+    }
+    share += Math.abs(a) / 2 / 4;
+  }
+  return Math.min(1, share);
+}
+
+/**
  * The flood lights' level (0..1 of their full flux): full with the vessel's lights command on, the layout's
  * standby share otherwise. A crewed cabin is never flown dark: the lights command brightens it.
  */
