@@ -599,7 +599,8 @@ export class ChuteSystem {
         shred: d.mode === 'failed' ? Math.min(0.92, 0.25 + 0.7 * (age / S.time)) : 0,
         fade: 1 - Math.min(1, Math.max(0, (age - 0.7 * C.fadeTime) / (0.3 * C.fadeTime))),
         lineFade: 1 - flat,
-        flutter: d.down ? 0.15 + 1.6 * (1 - flat) : 2.2,
+        // (On the water the cloth still moves with the swell and the wind: a rumpled sheet, not a flat disc.)
+        flutter: d.down ? 0.9 + 0.9 * (1 - flat) : 2.2,
       });
     }
 
