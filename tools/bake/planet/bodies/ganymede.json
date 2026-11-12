@@ -29,7 +29,7 @@
    "bands": [
     1
    ],
-   "nodata": null,
+   "nodata": 0,
    "credit": "usgs-ganymede-voyager-galileo"
   },
   "colour": {
@@ -48,7 +48,7 @@
     2,
     3
    ],
-   "nodata": null,
+   "nodata": 0,
    "credit": "usgs-ganymede-colour"
   }
  },

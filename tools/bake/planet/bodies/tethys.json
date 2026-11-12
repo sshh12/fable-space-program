@@ -28,7 +28,7 @@
    "bands": [
     1
    ],
-   "nodata": null,
+   "nodata": 0,
    "credit": "usgs-tethys-cassini"
   }
  },

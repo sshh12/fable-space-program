@@ -29,7 +29,7 @@
    "bands": [
     1
    ],
-   "nodata": null,
+   "nodata": 0,
    "credit": "usgs-venus-magellan-mdir"
   },
   "dem": {
@@ -46,7 +46,7 @@
    "bands": [
     1
    ],
-   "nodata": null,
+   "nodata": -32768,
    "credit": "usgs-venus-magellan-topo"
   }
  },
