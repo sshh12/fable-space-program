@@ -34,6 +34,20 @@ This file is a running log first; the sections below it are filled as each step 
 - 03:40 step 5 complete: the world speaks the v2 snapshot; `createSession` in `src/session`. Guard
   bit-identical, golden unchanged (`7da3ffe86c85228d`).
 
+- 04:10-05:30 step 6: the overlay source and request `bodies-ephemeris-1` (885026b), the rules documents
+  (f0ac644), flatten discs from pads (0a27c8a), the pad list and `ScenarioDef.pad` (50d0cba), and LAST the
+  rename to `ka-lae` / `lc-1` (a2c6318 in this package's paths, 10057fe the one mechanical commit outside
+  them, by the lead's decision including the `git mv` of the ground survey section). Guard bit-identical,
+  golden unchanged, terrain guard green, whole-tree typecheck clean.
+- Requests filed at the end: `sim-core-v2-2` (a missing ground survey must fail loudly; vehicle-pad),
+  `sim-core-v2-3` (four contract decisions for the tighten step; the lead), notice `NOTICE-sim-core-v2-1`
+  (the rename). The lift-off rehearsal promised in `app-integration-13` did NOT land (see "Not done").
+
+- 06:00 closing: whole-tree typecheck clean; the brief's unit set 60 files, 652 tests; mission 36 of 36 with
+  `7da3ffe86c85228d`. The GPU run of the vehicle game spec's site test could not be had (18 minutes in the
+  queue for the one slot; withdrawn); the survey lookup was checked headless instead. Request
+  `sim-core-v2-2` was resolved by vehicle-pad meanwhile (37d3ad2).
+
 ## Step 1: the tick grid (MIGRATION_V2 3.1)
 
 ### What changed
@@ -511,3 +525,288 @@ mission is bit-identical under both.
 - Unit suites: `src/sim src/session src/core/defs src/terrain tests/unit/sim-vessel tests/unit/sim-world
   tests/unit/sim-orbits tests/unit/terrain-core tools/dev` plus the presentation unit tests that read part
   snapshots (`tests/unit/vehicle`, `cockpit`, `vfx`, `fakes`): 69 files, 735 tests, all pass.
+
+## Step 6: sites and the loader (MIGRATION_V2 3.6)
+
+### API
+
+```ts
+// src/core/defs/sites.ts (new): everything that needs a pad goes through these
+interface PadLocation { latDeg: number; lonDeg: number; padElevation: number | 'terrain' }
+const SINGLE_PAD_ID = 'pad'
+padsOf(site: LaunchSiteDef): PadDef[]                         // the pad list, or the deprecated single pad as the one pad
+padOf(site: LaunchSiteDef, padId?: string): PadDef            // absent = the first pad; unknown = Error naming site, id and pads
+padLocationOf(site: LaunchSiteDef, padId?: string): PadLocation   // first pad = the reference point; others = location.pads[id]
+padTitle(site: LaunchSiteDef, padId?: string): string         // "<site name>, <pad name>"
+singlePadOf(site: LaunchSiteDef): PadDef
+
+// src/core/defs/loader.ts
+overlayDefSource(base: DefSource, overlay: DefSource, dirs: readonly string[] = OVERLAY_DIRS /* ['bodies'] */): DefSource
+const TABLE_FILES: readonly string[]                          // ['bodies/radii.json']: data tables, never definitions
+normaliseSite(site: LaunchSiteDef, file: string): void        // what loadDefs does to every site
+validateRules(doc: UniverseRules, file: string): void
+loadDefs(source): Promise<DefLibrary>                         // now also fills DefLibrary.rules
+
+// src/sim/frames/padState.ts, src/sim/world/scenarioStart.ts: a trailing optional pad id (absent = the first pad)
+resolvePadElevation(site, terrainElevation?, padId?): number
+padState(system, site, ut, padElevation, heightAbovePad = 0, padId?): PadState
+padPose(system, site, vessel, ut, padElevation, padId?): StartPose
+
+// tools
+tools/sim/realWorld.ts   loadLibraryOver(overlayRoot = <repo>/data/staged): Promise<DefLibrary>
+tools/sim/writeRules.ts  rulesDocuments(): Record<string, UniverseRules>;  npx tsx tools/sim/writeRules.ts [--check]
+tools/sim/findStartTime.ts  new option --pad <id> (default: the scenario's pad, else the first pad)
+```
+
+### The site model
+
+- **The site file states its pads in `pads` only** (`data/defs/sites/ka-lae.json`: one pad, `lc-1`, "Launch
+  Complex 1", heavy, azimuth 90, flat 450 m / blend 900 m with the v1 shape, mount height 18 m, the v1
+  structures by `$ref`). The loader then writes the deprecated `pad`, `padAzimuthDeg` and `structures` FROM
+  THE FIRST PAD, so they are still filled and are `pads[0]` by construction; a file that states both is
+  refused (two statements of one pad can disagree). A file with the deprecated single pad and no list still
+  loads: the single pad becomes its one pad (id `pad`, heavy, no limits).
+- **Locations.** The first pad stands at the site's reference point (`location.latDeg/lonDeg/padElevation`);
+  every other pad needs `location.pads[<id>]` (the site-resolve tool writes them; an elevation cannot be
+  derived from an offset) or the load fails by pad. After load `location.pads` has an entry for every pad.
+- **Flatten discs are derived from the pads** (`src/terrain/modifiers.ts`): one per pad at its location, with
+  the pad's radii and shape; sites in id order, pads in their order; source text `sites/<site>.json pad
+  "<pad>"`. For `lc-1` the disc is the v1 disc: the terrain guard is unchanged.
+- **`ScenarioDef.pad`**: validated by the loader (unknown pad = `DefError` with the site's pads). The world
+  starts on it: place, elevation, heading (`azimuthDeg`), mount height, the `pad` terrain request
+  (`blendRadius + 600`), the `site:<id>` surface target (the pad's place and flat radius, name
+  `padTitle`) and the launch-site distance of the debris log. Absent = the first pad; naming the first pad
+  gives the same state hash as not naming it (tested).
+- **The rename.** Site `ka-lae`, pad `lc-1`; files `ka-lae.json`, `ka-lae.location.json`,
+  `ka-lae.structures.json`; nine scenarios (`"site": "ka-lae", "pad": "lc-1"`); the region file;
+  `tools/sim/start-time.json` regenerated (`npx tsx tools/sim/findStartTime.ts --launch-kind either`): the
+  same start, 938240818.8416667 s = tick 112588898261; `tools/sim/qaScenarios.ts` carries the pad into
+  re-captured scenarios. Outside the package's paths, in the one mechanical commit: the ground survey section
+  `data/defs/visuals/sites/ka-lae.json` (`git mv`, byte-identical) and three integration specs that read the
+  location file by path. No file was left changed and uncommitted (`docs/requests/NOTICE-sim-core-v2-1.md`).
+- **Data that is a choice, not a derivation:** `lc-1` has `maxLiftoffMass` 3,000,000 kg and `maxDiameter`
+  9.5 m, written from the only vehicle that exists (about 2,760 t at lift-off; a 9.0 m stack in a mount
+  that opens 9.56 m). ARCHITECTURE 9.3 has no limits per class (request `sim-core-v2-3`). The site's name
+  is now "Ka Lae Pacific Spaceport" and the pad's "Launch Complex 1"; the session's surface target keeps
+  the v1 string through `padTitle`.
+
+### The overlay source and data tables (request `bodies-ephemeris-1`, resolved)
+
+`overlayDefSource(base, overlay)`: under `bodies/` the second root REPLACES OR ADDS (its files are listed
+with the first's; a path both have is read from the second); every other file of the second root is a
+`$ref` target only (read when the first root has no file at that path; never listed, so never a
+definition or a section). A staged body refers to `../terrain/<id>.terrain.json` of its own root and to
+`../render/<id>.surface.json` of the first: no `$ref` leaves a defs root. Measured: the staged library
+of this tree (`data/staged`, 32 body files) loads over `data/defs` with every staged body in it and the
+sites, vehicles and sections of the first root unchanged. **For `solar-system-sim`:
+`loadLibraryOver()` of `tools/sim/realWorld.ts` is that library in Node.**
+
+`TABLE_FILES` (`['bodies/radii.json']`) declares the data tables that live beside definitions: a listed
+path is never read as a definition, in either root; an unlisted id-less file still fails by name. **For
+`bodies-activation`: the table may live at `bodies/radii.json` of any defs root.**
+
+### The data server
+
+`tools/server/dataPlugin.ts` (in this package's paths) is unchanged: it serves `data/defs` whole with a
+generated listing, so `rules/` reaches the browser like every other directory. The overlay is not offered
+to the browser: staged bodies are for Node tools and tests until the activation step moves them into
+`data/defs`.
+
+### The rules documents
+
+`data/defs/rules/default.json` = `DEFAULT_UNIVERSE_RULES` exactly (the lead's
+`src/core/contracts/net.test.ts` holds them equal: it passes). `local.json` = the default under the id
+`local`. `staging.json` = the default with every timer on the wall clock (`UNIVERSE_RULE_TIMERS`, base
+`wall`: the eleven of the expiry block) at a day per minute and none under one minute: craft 840 s,
+unowned assembly and craft 120 s, debris, wreck and arcs 60 s, accounts 5,400 s, pressure floors 60 s and
+180 s, sweep and outage threshold 60 s. The rule and the numbers are this package's choice (the contract
+says "lifetimes of minutes" and no more; request `sim-core-v2-3`); `universe-directory` owns the files from
+wave 4. The loader fills `DefLibrary.rules` and holds every document to exactly the fields of
+`UniverseRules` (a missing or unknown field and a non-number where the default has a number fail by the
+field's path). **When the contract gains a field, the three files fail to load until
+`npx tsx tools/sim/writeRules.ts` (which overwrites tuning) or their owner adds it.**
+
+### Acceptance of the step
+
+| Check | Result |
+|---|---|
+| Trajectory guard after step 6 | 400 of 400 mission samples bit-identical (attended craft 228 about the Earth and 172 about the Moon, the first shed vessel, the launch clamps over 395 samples); the six unit fixtures bit-identical; debris fates 0 s and 0 m |
+| `npm run test:mission` | 36 of 36; state hash `7da3ffe86c85228d` (unchanged since step 4); cheatCounter 0; no incomplete terrain query |
+| Start-time constraints | `tests/unit/sim-world/scenario.test.ts` and `tests/unit/sim-orbits/startTime.test.ts` pass on the regenerated record (same start) |
+| Terrain unit suites and the terrain guard | `src/terrain` + `tests/unit/terrain-core`: 15 files, 193 tests pass before the rename; in the final run below after it; the guard's heights bit-identical (it samples stored directions; its group is still called `site:ka-lae-lc1`, the name it was recorded under) |
+| The brief's unit set | `src/sim src/session src/core/defs src/terrain tests/unit/sim-vessel tests/unit/sim-world tests/unit/sim-orbits tests/unit/terrain-core tools/dev`: 60 files, 652 tests, all pass |
+| Other packages' unit tests that read sites or part snapshots | `src/core src/map src/render/vehicle tests/unit/vehicle tests/unit/cockpit tests/unit/vfx tests/unit/fakes`: pass. `tests/unit/site-bake/pads.test.ts` fails in 5 tests on `madrakah` (not resolved yet: site-bake's work in progress); its Ka Lae tests pass |
+| `npm run typecheck` | clean for the whole tree |
+
+New tests of the step: `src/core/defs/loader.test.ts` (20: the overlay (4), rules (2), sites and pads
+(5) among them), `tests/unit/terrain-core/pad.test.ts` (11: discs per pad (3) among them),
+`tests/unit/sim-world/pads.test.ts` (5).
+
+## Closing summary
+
+### The six scope items
+
+| # | Item | State | Where |
+|---|---|---|---|
+| 1 | The tick grid, alone | done; judged by the lead's four checks, all met. The brief's own tolerance against `baseline-v1.json` (1e-6, 1 s) is NOT met and cannot be (see "Deviations") | "Step 1" |
+| 2 | The trajectory guard | done; recorded once on the tick-grid tree, never re-recorded | "Step 2" |
+| 3 | The vessel model | done | "Step 3", with its limits |
+| 4 | State whole and versioned | done | "Step 4" |
+| 5 | The world speaks v2; `createSession` | done; the deprecated `createSim` keeps the v1 render root (see "Deviations") | "Step 5" |
+| 6 | Sites and the loader | done | "Step 6" |
+
+**Golden hash: `7da3ffe86c85228d`, 596,092 steps (`tests/mission/golden.json`).** Re-baselined twice in
+this package, each time reproduced by a second run without the update flag:
+1. step 1, `3f3a131cdd88eba7` -> `b850b94ea2dcc1a5`: the clock moved onto the tick grid (the start by
+   2.004 ms, every rails landing onto a tick), which is another flight;
+2. step 4, `b850b94ea2dcc1a5` -> `7da3ffe86c85228d`: the state hash became the hash of the codec's
+   output; the flight is the same (trajectory guard bit-identical before and after).
+Steps 2, 3, 5 and 6 did not change it.
+
+### The brief's acceptance criteria, one by one
+
+| Criterion | Met | Measured |
+|---|---|---|
+| Step 1: the tolerance table against baseline-v1, every milestone | table given; **the tolerance itself is not met** | "Step 1": same-start equality a, e, E, h within 5.0e-10 at 25 states (plane angles to 2.0e-9 and 7.7e-9 rad, stated there with their cause); rails 36 of 36 landings bit-identical to v1; envelope of four v1 control flights: 17 of 17 milestones inside |
+| `checkStartConstraints` and the solstice test on the tick-aligned start | yes | `tests/unit/sim-world/scenario.test.ts`, `tests/unit/sim-orbits/startTime.test.ts`; again after step 6 on the regenerated record |
+| A unit test proves every scenario start and every rails landing is an integer tick | yes | `tests/unit/sim-world/tickGrid.test.ts` (9); in the mission all 214,720 control ticks, 65,696 of them rails landings |
+| Trajectory guard bit-identical after steps 3, 4, 5 and 6 (attended craft, six fixtures, clamp vessel) | yes, after each | 400 of 400 samples; six fixtures bit for bit; clamps over 395 samples |
+| Debris within its fate tolerance | yes | 0 s and 0 m (tolerance 2 s, 500 m) |
+| `npm run test:mission` with cheatCounter 0 and zero incomplete terrain queries | yes | 36 of 36 (34 before this package; two tests added) |
+| Each re-baselined golden reproduces on a second run | yes | both |
+| Codec: the five scenes, sizes, N-1, changed PartDef, unknown block, embedded design | yes | "Step 4": the 38-part stack 8,197 bytes (target under 9,000); equal state hash at load and bit-identical for 6,000 steps in all scenes |
+| Merge then split: poses to 1e-9 m, linear momentum 1e-6, angular 1e-9; ring of three; own stages; ids | yes | "Step 3": 3.6e-15 m; 2.7e-16; 1.2e-11 |
+| The terrain guard is green | yes | after every step and after the rename |
+| `npm run typecheck` clean for the whole tree | yes | at the end of step 6 |
+
+### How to run and verify
+
+```
+npm run typecheck
+node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/sim src/session src/core/defs src/terrain tests/unit/sim-vessel tests/unit/sim-world tests/unit/sim-orbits tests/unit/terrain-core tools/dev
+node tools/dev/heavy.mjs --class=cpu -- npm run test:mission
+node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/sim/trajectoryGuard.ts          # the guard alone, with its table
+node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/sim/referenceFlight.ts          # same-start equality table
+npx tsx tools/sim/writeRules.ts --check                                               # rules files against their derivation
+npx tsx tools/sim/findStartTime.ts --launch-kind either                               # regenerates tools/sim/start-time.json
+```
+
+Last full run (after the rename): 60 files, 652 tests pass; mission 36 of 36, `7da3ffe86c85228d`.
+Never re-record: `tests/mission/trajectory-guard.json`, `tests/mission/reference-v1-aligned.json`,
+`tests/mission/controls-v1.json`, `tests/unit/sim-vessel/trajectory-fixtures/*.json`,
+`tests/unit/sim-vessel/codec-corpus/*` (blobs are only ever added).
+
+### Deviations from the brief (each stated where it is made)
+
+1. **The tolerance against `baseline-v1.json`** was replaced by the lead's decision
+   (`docs/requests/sim-core-v2-1.md`): the scripted pilot decides at 30 Hz, so the mission is a chaotic
+   function of its start instant, and the unmodified v1 code misses the tolerance when only its start is
+   shifted by 2 ms. The four checks of the decision are all met.
+2. **`createSim` keeps the v1 render root** (origin = the library's root body, one epoch, no rebase);
+   `createSession` has the origin at the active vessel's SOI body. The brief asked for one world that
+   speaks v2; a moving origin under presentation code that does not apply rebases yet would have broken
+   the v1 close-out flights on this tree. `src/app/game.ts`, `labs/integration` and
+   `tools/audio/entryProfile.ts` still call `createSim`, so they do not see the moving origin until the
+   sweep moves them. The option (`renderRoot`) goes with the alias.
+3. **The mechanical rename commit** also moved one data file that is neither under `labs/` nor `tests/`
+   (`data/defs/visuals/sites/ka-lae.json`), on the lead's decision, because the section is found by the
+   site id.
+4. **Data chosen by this package where the design gives no number:** the pad limits of `lc-1`, the numbers
+   of `rules/staging.json`, `rules/local.json` equal to the default, the name split of the site
+   (request `sim-core-v2-3`).
+5. **Event part ids** have two forms (instance id in a vessel of one craft, part key in an assembly) until
+   the sweep is through ("Step 3", limits).
+
+### Not done
+
+- **The lift-off rehearsal at load** announced in `docs/requests/app-integration-13.md` (to remove the
+  5.5 ms first execution of the release path) is not implemented. It needs a second world on the session's
+  terrain authority, whose request slots the two would share, and it runs inside the load path of every
+  session: proving it neutral for the golden hash, the terrain accounting and the mission's zero incomplete
+  queries is a piece of work of its own, and it was not started at the end of this package rather than
+  landed unproven. The measurement and the proposal are in the request, which stays open for whoever owns
+  the session next (`session-switch` or `island-core`).
+- **Control-from-here, lend policies in the allocation, port states and soft capture**: the data is there
+  (helm, policies, links); the behaviour is `contact-docking`'s and the island's ("Step 3", limits).
+- **The vehicle game spec's site test on the GPU** after the rename: **not run by this package.** The one run through the gate
+  (`node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/vehicle/game.spec.ts -g "the
+  terrain under every structure of a site" --project=functional`) waited 18 minutes for the single GPU slot
+  behind other agents' jobs and was withdrawn before it started, so that no browser of this package runs
+  after the hand-off. What was checked instead, headless, on the renamed tree: the library's site `ka-lae`
+  finds its survey (`visuals/sites/ka-lae`, 144 x 116 nodes at 5 m, `siteGround(...).surveyed` true, 34
+  structures), and `tests/unit/vehicle` passes (4 files, 38 tests, with vehicle-pad's new test that a site
+  with structures and no survey does not load, commit 37d3ad2). A job labelled `vehicle-game-site` held
+  the GPU slot from 10:57 to 11:06 UTC, after the rename; it was not this package's and its result is its
+  owner's to report.
+
+### Requests
+
+| File | State | To |
+|---|---|---|
+| `docs/requests/sim-core-v2-1.md` | resolved (lead decision) | how the tick-grid step is judged |
+| `docs/requests/sim-core-v2-2.md` | resolved by vehicle-pad (37d3ad2) | a missing ground survey section is an error at load, not level ground |
+| `docs/requests/sim-core-v2-3.md` | open | the lead: event part ids, the cockpit of a command part, pad class limits, the staging and local rules |
+| `docs/requests/NOTICE-sim-core-v2-1.md` | notice | everyone: the site is `ka-lae`, the pad `lc-1` |
+| `docs/requests/flight-ui-6.md`, `flight-ui-8.md`, `bodies-ephemeris-1.md` | resolved by this package | Mach in vacuum; stage thrust-to-weight after an SOI change; data tables beside body definitions |
+| `docs/requests/app-integration-13.md` | sim share answered, open | the rehearsal above |
+
+### What the next packages must know
+
+**presentation-sweep**
+- Moving a consumer from `createSim` to `createSession` (src/session) turns the moving render root on for
+  it: every `...Root` field is relative to the active vessel's SOI body, the origin body sits at exactly
+  (0, 0, 0), and at an SOI change (or a change of the active vessel to another body) `frame.epoch`
+  increases and `frame.rebase` carries held positions and velocities over. Use `FrameEpochTracker` of
+  `src/core/math/frame.ts`; `frame.previous` serves a consumer that skipped the snapshot of the change.
+  `peek()` shows a pending rebase without draining it; `snapshot()` drains it like the events.
+- `snapshot.tick` is deprecated and equals `revision`; the clock is `time.myTick`. Part lookups in an
+  assembly need the part key (`craftId/instanceId`); `PartSnapshot.craftId`, `stageGroup`, `stageLabel`
+  and `VesselSnapshot.crafts` (stage figures per craft, chase distances) are filled. An event's `partId`
+  is an instance id in a vessel of one craft and a part key in an assembly.
+- The first craft's id of a local session equals its vehicle id (the seeded id source), which is why v1
+  code that confuses the two still works; do not rely on it.
+- Sites: `padsOf(site)`, `padOf`, `padLocationOf`, `padTitle` of `src/core/defs/sites.ts`; the deprecated
+  single-pad fields are the first pad. `site.name` no longer includes the pad's name. The survey section
+  is `visuals/sites/ka-lae`.
+
+**island-core**
+- The world's clock base is state: body orientation is evaluated as the base (`baseTick`, `utBase`) plus
+  an offset of whole steps (`stepsSinceBase`), and a rails landing moves the base. A stepper that
+  evaluates orientation at `tick / 120` directly differs in the last bits and the trajectory guard will
+  say so. Carry the base with an island, or have the lead decide on a re-record.
+- The six unit fixtures are defined by `tests/unit/sim-vessel/helpers.ts` (`makeEnv`) and `scenarios.ts`
+  as they stand; they are the bit-exact reference for the per-vessel step.
+- A vessel's whole state is `Vessel` including `carried` (probe contact flags and friction anchors, buoy
+  wet flags, thermal wake factors); the structure cache is rebuilt from it (`invalidateStructure`).
+  `captureVessel` / `restoreVessel` are the cheap copy for rollback rings; `encodeVessel` /
+  `decodeVessel` the wire and storage form; `stateHash(vessel)` is the hash of the codec body and does not
+  depend on the library hash.
+- Ids come from an injected source (`CreateSimOptions.ids`, `CraftIdSource`); the split and merge rules
+  are in `src/sim/vessel/ids.ts`. `src/sim/vessel` may import only `src/core` and itself
+  (`TICKS_PER_SECOND` from `@/core/contracts/net` there, not `../clock`).
+- `dockMerge` and `undock` conserve momentum and restore poses; envelopes, port states and joints are
+  yours and `contact-docking`'s.
+
+**solar-system-sim**
+- `loadLibraryOver()` of `tools/sim/realWorld.ts` loads the staged bodies over `data/defs`; the table
+  `bodies/radii.json` is declared in `TABLE_FILES` and is not a body. The staged library loads; nothing
+  in the simulation has been run on it by this package.
+- The render root uses `BodySystem.stateRelative(bodyId, originId, ut)` for every body, the rebase, the
+  history and `Patch.bodyPosAtEnd`; with a root attractor above the Earth the frame code is unchanged, but
+  the snapshot tests of the frame (`tests/unit/sim-world/snapshotV2.test.ts`) name `earth` and `moon`.
+- A change of the body model moves the trajectory guard (it is bit-exact) and the golden hash: that is a
+  lead decision, not a re-record by the package that causes it.
+- Every instant the simulation evaluates a body at is a tick instant or an event instant inside a tick.
+
+**fleet-data**
+- A vessel blob carries a fingerprint of every part definition it was written under. Changing a
+  `PartDef` that flown vessels use needs a `PartMigration` in `src/sim/vessel/migrations/index.ts`
+  (helpers `fitResources`, `insertModule`, `dropModule`, `fitSurfaces`), or old blobs are refused by
+  part and fingerprints; add a blob to `tests/unit/sim-vessel/codec-corpus` when you do. A design the
+  reader's library does not have travels inside the blob.
+- `meridian-lunar` and its parts define the golden hash, the trajectory guard and the fixtures.
+- Stage labels shown per part come from `VehicleDef.stageGroups[].label`; chase distances from
+  `cameras.chase`; the command part's data from its `command` module (`command.cockpit` is in no part
+  file yet: request `sim-core-v2-3`).
+- Pads take `class`, `maxLiftoffMass` and `maxDiameter`; nothing checks a vehicle against a pad yet
+  (`VehicleDef.padInterface` is absent on the one vehicle).
