@@ -64,14 +64,13 @@
  },
  "landmarks": [
   {
-   "name": "Creusa rays",
-   "kind": "albedoContrast",
+   "name": "Creusa crater",
+   "kind": "albedoTexture",
    "latDeg": 49.19,
    "lonDegE": 283.68,
    "radiusKm": 18,
-   "sense": "brighter",
    "minRatio": 1.1,
-   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 1331 (49.19 N, 76.32 W, 36 km); bright rays (PIA20521)"
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 1331 (49.19 N, 76.32 W, 36 km); the mosaic carries the crater as shading (its rays are not visible in it)"
   },
   {
    "name": "leading hemisphere brighter than the wispy trailing hemisphere",
