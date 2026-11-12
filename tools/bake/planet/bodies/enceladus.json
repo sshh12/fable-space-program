@@ -62,5 +62,15 @@
   },
   "procedural": null
  },
- "landmarks": []
+ "landmarks": [
+  {
+   "name": "Ali Baba crater",
+   "kind": "albedoTexture",
+   "latDeg": 56.84,
+   "lonDegE": 342.49,
+   "radiusKm": 17,
+   "minRatio": 1.05,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 184 (56.84 N, 17.51 W, 34 km), the largest named crater; the mosaic is high-pass filtered, so craters show as shading"
+  }
+ ]
 }

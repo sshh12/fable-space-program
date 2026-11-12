@@ -2,8 +2,8 @@
 
 Wave 3.1, MIGRATION_V2 step 3.8. Tile pyramids for the 25 solid bodies other than Earth and the Moon, the
 giants' cloud-top maps and Saturn's ring strip, the generic amplification models `rocky-generic` and
-`icy-generic`. This file is kept as a running log from the start (sessions get cut off); the final sections
-are written at the end.
+`icy-generic`. This file is kept as a running log from the start (sessions get cut off); the sections after
+the log are the hand-off proper.
 
 ## Running log
 
@@ -25,4 +25,93 @@ are written at the end.
   bake, verify, sheets), 29 configs (25 solid, 4 giants), credits, the generic models
   (`src/terrain/amplification/{generic,rockyGeneric,icyGeneric}.ts`, registry entries, parameter files),
   unit tests. Landmark coordinates from the IAU Gazetteer (research pass, URLs in each config's `ref`).
-  First bake (Ceres) queued behind site-bake's job in the bake slot.
+  Commit 991c734. Request bodies-ephemeris-2 (against my paths) resolved: 0144348.
+- 01:35 the bake slot is held by site-bake's staging job (since 00:59); the first bake (Ceres) waits in the
+  gate. Downloads of 16 bodies' sources run meanwhile under `--class=cpu` (single process, network bound).
+
+- 01:40 giants staged under `--class=cpu` (single process): Jupiter (PIA07782), Saturn (Cassini ISS PDS map;
+  its ring-shadow and polar gaps are value 0 and are filled zonally), the ring strip (UVIS), Uranus and Neptune
+  (OPAL; their limb-smeared latitudes are cut at -25 / +32 deg and filled zonally). Looked at
+  `out/bake/planet/giants*.png`: Great Red Spot in the south, bands continuous, the ring strip shows the C ring
+  plateaus, the opaque B ring, the Cassini Division and the Encke gap.
+- 01:45 THE LONGITUDE TRAP, caught before any bake: the USGS GeoTIFFs whose ISIS label says
+  `LongitudeDirection = PositiveWest` (Io, Europa, Ganymede, Callisto, Rhea, Titan, Iapetus) are laid out with
+  east to the right like every other file; the label only numbers the longitudes westward. Proof
+  (`scratchpad preview_both.py`, both readings with Gazetteer landmarks): in the east-increasing reading Pele's
+  red plume ring and Loki's dark horseshoe sit on their Gazetteer positions, Ganymede's Tros rays and Galileo
+  Regio, Callisto's Valhalla and Asgard, Titan's Xanadu, Belet and Shangri-La, Europa's dark trailing
+  hemisphere around Pwyll, Iapetus' bright trailing hemisphere (brightest 60-degree band centred at 81 E); the
+  mirrored reading puts every one of them in the wrong place. All seven configs now say `lonPositive: east`
+  (the config key describes the pixel layout); the landmark tests lock it in.
+
+## 1. What consumers get
+
+### Tile sets `data/tiles/<id>/` (served at `/tiles/<id>/`), one per solid body
+
+Standard layout and `TileManifest` (`src/core/contracts/terrain.ts`), written through
+`tools/bake/common/layout.write_manifest` (validated, `contentHash`):
+
+| | |
+|---|---|
+| Frame | the body-fixed frame of the IAU rotation model (pck00011): +Z north pole, +X prime meridian, east longitude, planetocentric latitude. Every source is re-registered to it (west-positive maps mirrored, planetographic latitudes converted, point/cell registration honoured) and the landmark tests prove it |
+| `radius` | the body's MEAN radius (= `BodyDef.radius`, the datum sphere) |
+| `height` | `frt1-height`, global levels `0..maxLevel` (no sparse levels), `heightScales` 0.5 m. Height = reference surface - mean radius + DEM: the reference is the triaxial ellipsoid of the config's radii, or for a DEM given against a sphere that sphere (Mercury 2,439.4 km, Venus 6,051.0, Ceres 470.0, Pluto 1,188.3, Charon 606.0); Mars' MOLA heights are on the areoid and are added to the IAU ellipsoid (the brief's rule; the areoid's +-2 km undulation is not modelled). So physics and rendering see the body's shape (Phobos' 13 x 11.4 x 9.1 km, Iapetus' 20 km flattening, Mars' 20 km) as an ordinary heightfield. Additive field `elevation: {min, max}` (finest level, m above `radius`) and `build` (content hash) |
+| `albedo` | `webp` 256 x 256 opaque RGB, global levels `0..maxLevel`; sRGB base colour, calibrated so the area-weighted mean luminance (linear) equals the configured albedo (NSSDC geometric albedo, solar-system.md 2.5; Iapetus on its bright hemisphere). Additive `calibration` and `build` |
+| `globals.albedoLowRes` | `globals/albedo-lowres.png`, 1024 x 512 equirect (row 0 north, column 0 at 180 W), as the Moon's |
+| `residentHeightLevel` | min(3, height maxLevel) |
+| `body` (additive) | `name`, `radii {mean, a, b, c}`, `reference`, the resolved `amplification` definition (model, seed, params) the run-time model must use, `bakeConfig` |
+
+### Giants `data/staged/render/`
+
+`<id>.maps.json` per giant (descriptor: path, size, channels, format, conventions, credit, licence) and
+the maps under `<id>/`: `cloudTop` (equirect, row 0 north, column 0 at -180, east-positive body-fixed
+longitude, planetocentric latitude) for Jupiter, Saturn, Uranus and Neptune; `saturn-rings` (radial RGBA
+strip, 74,658-136,780 km, alpha = normal opacity 1 - exp(-tau)).
+
+### Credits `data/staged/credits.json`
+
+`{ formatVersion: 1, generatedBy, note, entries: [{ id, title, author, url, licence, licenceUrl,
+attribution, bodies: [names] }] }`, one entry per source of every config (the source list is
+`tools/bake/planet/credits.json`). `attribution` is the line for the Credits screen. Every licence is public
+domain (NASA/USGS/PDS) or CC BY 4.0 (Hubble OPAL); no map whose author forbids redistribution is used.
+
+### Amplification models
+
+| Key | File | Parameters | Bodies |
+|---|---|---|---|
+| `rocky-generic` | `src/terrain/amplification/rockyGeneric.ts` | `data/defs/terrain/rocky-generic.amplification.json` | Mercury, Venus, Mars, Phobos, Deimos, Io, Ceres |
+| `icy-generic` | `src/terrain/amplification/icyGeneric.ts` | `data/defs/terrain/icy-generic.amplification.json` | the other 18 |
+
+Both are the lunar-regolith algorithm (`createGenericModel` in `generic.ts` wraps the frozen
+`createLunarRegolith`, proven output-identical by `generic.test.ts`) under their own keys and parameter sets;
+they require every parameter (`GENERIC_PARAMS`) and reject unknown ones. A body's definition is its model's
+parameter file + the config's `amplification.params` overrides + the config's seed (`resolved_amplification`
+in `tools/bake/planet/procedural.py`; bodies-ephemeris' generator uses the same rule, request
+bodies-ephemeris-2). Exported for tools: `genericCraterParams(def, R, g, lambda0, maxDiameter)`,
+`runtimeCraterLog2MaxD(def, lambda0, E)`, `GENERIC_MODELS`, `GENERIC_PARAMS`.
+
+## 2. How to run
+
+Interpreter: `data/cache/earth/venv` (Python 3.10, numpy, numba, rasterio, Pillow, scipy, tifffile). Every
+bake through the gate, from the repository root (the gate runs `cmd.exe`, so backslashes in the interpreter
+path):
+
+```
+node tools/dev/heavy.mjs --class=bake --label=planet -- data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/bake.py <id> [<id> ...]
+node tools/dev/heavy.mjs --class=bake --label=planet -- data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/bake.py --kind giant
+data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/bake.py --credits          # data/staged/credits.json
+node tools/dev/heavy.mjs --class=cpu -- data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/verify.py --all
+data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/sheets.py --all            # out/bake/planet/<id>.png
+data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/bake.py <id> --clean       # delete downloads + intermediates
+npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts
+```
+
+Steps of a solid body: `fetch` (resumable range download into `data/cache/planets/<id>/dl/<source>/`,
+provider MD5 and the config's sha256 checked; `--record-checksums` fills them on a first download),
+`prepare` (windowed reads into a memory-mapped mip chain: the TIFF itself when it is an uncompressed strip
+file, else a float32 copy, regridded onto an exact 2:1 global grid when the file is not one, nodata filled by
+pull-push), `procedural` (map-less bodies: `procedural.ts` through `npx tsx`, up to 6 parts),
+`height`, `albedo`, `manifest`. Each step records a fingerprint (config + code version) in
+`data/cache/planets/<id>/work/state.json` and is skipped when unchanged, so an interrupted bake resumes.
+At most 6 worker processes, below-normal priority (`moon/rt.pool`). Adding a body or deepening one is a
+config change only (levels, sources, landmarks).

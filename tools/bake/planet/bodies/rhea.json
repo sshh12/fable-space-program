@@ -21,7 +21,7 @@
    "sha256": "ce537c3c93670a0d4ea5a64b99bffb76ff308727eb3eabeee0a38cf9f6f1abc7",
    "format": "geotiff",
    "latitude": "planetocentric",
-   "lonPositive": "west",
+   "lonPositive": "east",
    "lonLeftEdgeDeg": 180.0,
    "width": 11520,
    "height": 5760,
@@ -72,6 +72,22 @@
    "sense": "brighter",
    "minRatio": 1.1,
    "ref": "IAU Gazetteer of Planetary Nomenclature, feature 14671 (14.1 S, 112.1 W, 47 km); bright, youngest feature"
+  },
+  {
+   "name": "leading hemisphere brighter than the wispy trailing hemisphere",
+   "kind": "albedoCompare",
+   "brighter": {
+    "latDeg": 0.0,
+    "lonDegE": 270.0,
+    "radiusKm": 300
+   },
+   "darker": {
+    "latDeg": 0.0,
+    "lonDegE": 90.0,
+    "radiusKm": 300
+   },
+   "minRatio": 1.03,
+   "ref": "Cassini ISS: Rhea's trailing hemisphere (apex 90 E) is darker, with bright wisps; the leading (apex 270 E) is brighter"
   }
  ]
 }

@@ -21,7 +21,7 @@
    "sha256": "135f88cb645bfdb4e045b380971ab2ba14e230590c96c9c86cfe7310fda881ac",
    "format": "geotiff",
    "latitude": "planetocentric",
-   "lonPositive": "west",
+   "lonPositive": "east",
    "lonLeftEdgeDeg": -180.0,
    "width": 11445,
    "height": 5723,

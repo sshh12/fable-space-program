@@ -62,5 +62,32 @@
   },
   "procedural": null
  },
- "landmarks": []
+ "landmarks": [
+  {
+   "name": "Kikimora Maculae (dark)",
+   "kind": "albedoContrast",
+   "latDeg": -31.0,
+   "lonDegE": 78.0,
+   "radiusKm": 60,
+   "sense": "darker",
+   "minRatio": 1.05,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 3029 (31 S, 78 E); macula = dark spot"
+  },
+  {
+   "name": "south polar cap brighter than the cantaloupe terrain",
+   "kind": "albedoCompare",
+   "brighter": {
+    "latDeg": -37.0,
+    "lonDegE": 357.0,
+    "radiusKm": 250
+   },
+   "darker": {
+    "latDeg": 18.0,
+    "lonDegE": 335.0,
+    "radiusKm": 250
+   },
+   "minRatio": 1.05,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 6189 Uhlanga Regio (37 S, 357 E, bright south polar cap: PIA00340), 905 Bubembe Regio (18 N, 335 E)"
+  }
+ ]
 }

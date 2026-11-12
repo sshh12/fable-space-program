@@ -150,6 +150,13 @@ def landmark(body: config.Body, lm: dict, hr: TileReader, ar: AlbedoReader, rep:
         ring = float(ar.luminance(cap_points(lm["latDeg"], lm["lonDegE"], 2 * r, R, inner_m=r), L).mean())
         ratio = inner / ring if lm["sense"] == "brighter" else ring / inner
         rep.check(body.id, name, ratio >= lm["minRatio"], f"{lm['sense']}: disc {inner:.4f}, ring {ring:.4f}, ratio {ratio:.3f} >= {lm['minRatio']} ({lm['ref']})", value=ratio)
+    elif lm["kind"] == "albedoTexture":
+        r = lm["radiusKm"] * 1000.0
+        L = sample_level(body, r)
+        inner = ar.luminance(cap_points(lm["latDeg"], lm["lonDegE"], r, R, n=1200), L)
+        ring = ar.luminance(cap_points(lm["latDeg"], lm["lonDegE"], 2 * r, R, n=1200, inner_m=r), L)
+        ratio = float(inner.std() / max(ring.std(), 1e-9))
+        rep.check(body.id, name, ratio >= lm["minRatio"], f"luminance std disc {inner.std():.4f}, ring {ring.std():.4f}, ratio {ratio:.3f} >= {lm['minRatio']} ({lm['ref']})", value=ratio)
     elif lm["kind"] == "albedoCompare":
         b, d = lm["brighter"], lm["darker"]
         L = sample_level(body, min(b["radiusKm"], d["radiusKm"]) * 1000.0)

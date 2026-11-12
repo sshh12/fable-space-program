@@ -62,5 +62,15 @@
   },
   "procedural": null
  },
- "landmarks": []
+ "landmarks": [
+  {
+   "name": "Stickney",
+   "kind": "albedoTexture",
+   "latDeg": 1.0,
+   "lonDegE": 311.0,
+   "radiusKm": 4.5,
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 5707 (1 N, 49 W, 9 km); the largest crater, its shaded walls in the Viking mosaic"
+  }
+ ]
 }

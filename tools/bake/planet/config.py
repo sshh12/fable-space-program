@@ -102,6 +102,9 @@ LANDMARK_KINDS = {
     "albedoCompare": ("name", "kind", "brighter", "darker", "minRatio", "ref"),
     # a procedural named crater: centre at least depthFraction * depth below the rim ring
     "craterDepth": ("name", "kind", "latDeg", "lonDegE", "diameterKm", "minDepthM", "ref"),
+    # luminance standard deviation of a disc against the ring [r, 2r]: a crater or basin in a map that
+    # carries the mosaic's shading (Phobos, Tethys, the high-pass-filtered Enceladus) where the mean is no help
+    "albedoTexture": ("name", "kind", "latDeg", "lonDegE", "radiusKm", "minRatio", "ref"),
 }
 
 

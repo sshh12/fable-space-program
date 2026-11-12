@@ -62,5 +62,24 @@
   },
   "procedural": null
  },
- "landmarks": []
+ "landmarks": [
+  {
+   "name": "Penelope crater",
+   "kind": "albedoTexture",
+   "latDeg": -10.83,
+   "lonDegE": 110.78,
+   "radiusKm": 104,
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 4645 (10.83 S, 249.22 W, 207 km)"
+  },
+  {
+   "name": "Odysseus basin",
+   "kind": "albedoTexture",
+   "latDeg": 32.82,
+   "lonDegE": 231.11,
+   "radiusKm": 222,
+   "minRatio": 1.05,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 4406 (32.82 N, 128.89 W, 445 km)"
+  }
+ ]
 }

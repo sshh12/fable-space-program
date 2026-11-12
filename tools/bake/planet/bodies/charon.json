@@ -86,5 +86,22 @@
   },
   "procedural": null
  },
- "landmarks": []
+ "landmarks": [
+  {
+   "name": "Neverland Regio (Mordor Macula) darker than the mid-latitudes",
+   "kind": "albedoCompare",
+   "brighter": {
+    "latDeg": 25.0,
+    "lonDegE": 60.0,
+    "radiusKm": 200
+   },
+   "darker": {
+    "latDeg": 85.0,
+    "lonDegE": 60.0,
+    "radiusKm": 200
+   },
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 16443 Neverland Regio (85 N, 60 E): the dark reddish north polar region (NASA, 'Mordor Macula')"
+  }
+ ]
 }

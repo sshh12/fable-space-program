@@ -24,7 +24,7 @@ export const GIANTS = ['Jupiter', 'Saturn', 'Uranus', 'Neptune'] as const;
 
 export interface Landmark {
   name: string;
-  kind: 'demHeight' | 'albedoContrast' | 'albedoCompare' | 'craterDepth';
+  kind: 'demHeight' | 'albedoContrast' | 'albedoCompare' | 'albedoTexture' | 'craterDepth';
   latDeg?: number;
   lonDegE?: number;
   expectM?: number;
