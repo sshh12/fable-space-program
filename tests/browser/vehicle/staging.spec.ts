@@ -33,6 +33,14 @@ test.describe('vehicle staging and shadows', () => {
       // Later stages are small: bring the camera in as the stack gets shorter.
       const step = await page.evaluate(async (index) => {
         const lab = window.__veh!;
+        // The hardware is shown as flown (history the lab does not wait for): the engines at the foot of the
+        // stack have burnt, so they carry their soot (the feature spreads it to the stage they are on), and
+        // nothing that has left the pad carries frost.
+        const flying = lab.sim.vesselIds[0]!;
+        const engines = lab.sim.partsOf(flying).filter((p) => p.modules.some((m) => m.type === 'engine'));
+        const foot = Math.min(...engines.map((p) => p.localPos.y));
+        for (const p of engines) if (p.localPos.y < foot + 1) lab.vehicle.anim(flying, p.instanceId).soot = 1;
+        for (const p of lab.sim.partsOf(flying)) lab.vehicle.anim(flying, p.instanceId).frost = 0;
         const fired = lab.sim.fireStage();
         // 1.5 s of drift: the pieces have come apart but are all still in view.
         for (let k = 0; k < 90; k++) lab.sim.advance(1 / 60);
