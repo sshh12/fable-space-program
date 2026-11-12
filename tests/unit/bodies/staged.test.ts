@@ -4,11 +4,11 @@
  * sections and $refs that stay inside their root, the radii table, Earth and the Moon as the design pins them,
  * and the generator's output equal to what is on disk.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { BodyDef } from '../../../src/core/contracts/defs';
-import { resolveRefs, type DefSource } from '../../../src/core/defs/loader';
+import { loadDefs, resolveRefs, type DefSource } from '../../../src/core/defs/loader';
 import { generateFiles } from '../../../tools/bodies/generate.mjs';
 import { STAGED_BODY_FILES, STAGED_RADII, STAGED_TERRAIN_FILES } from './stagedBodies.generated';
 
@@ -148,6 +148,18 @@ describe('staged body library', () => {
     const sun = STAGED_BODY_FILES.sun;
     expect(sun.gravityRole).toBe('attractor');
     expect(sun.emission).not.toBeNull();
+  });
+
+  it('the whole library loads through the loader with data/staged laid over data/defs (radii.json excepted: request bodies-ephemeris-1)', async () => {
+    const list = (root: string, dir = ''): string[] =>
+      readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? list(root, `${dir}${e.name}/`) : e.name.endsWith('.json') ? [`${dir}${e.name}`] : []));
+    const staged = list(STAGED).filter((p) => p.startsWith('bodies/') || p.startsWith('terrain/')).filter((p) => p !== 'bodies/radii.json');
+    // The staged bodies replace the three live ones; everything else (sites, scenarios, sections) is data/defs.
+    const files = [...new Set([...list(DEFS).filter((p) => !p.startsWith('bodies/')), ...staged])];
+    const lib = await loadDefs({ list: () => Promise.resolve(files), read: overlay.read });
+    expect(Object.keys(lib.bodies).sort()).toEqual(BRIEF_LIST.map(idOf).sort());
+    expect(lib.rootBodyId).toBe('sun');
+    expect(lib.bodies['mars']!.terrain!.tileset).toBe('mars');
   });
 
   it('the generator reproduces every staged file byte for byte (generate --check)', () => {
