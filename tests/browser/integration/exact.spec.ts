@@ -22,8 +22,14 @@ const FRAMES = 64;
  * The pages, and whether two captures of one must be the same picture. The low-orbit page is since
  * 2026-11-12 (request core-4, done by atmosphere-clouds; the lab forwards `resetTemporal`, request
  * atmosphere-clouds-12): before, its captures differed along the edges of the clouds in 15 to 19 % of the
- * pixels. What was left in the first run with it (22:13): 261 pixels on the vessel, by up to 7 levels, between
- * the first capture of a page and every later one.
+ * pixels. In the first run with it (22:13) the FIRST capture of the first page differed from the two later
+ * ones, which agreed, in 261 single pixels on the vessel's bright metal and in its glare, by up to 7 levels.
+ * In the next run (22:44) this page was identical three times, and so were five fresh pages without one
+ * package each; the page WITHOUT THE TERRAIN differed again (550 pixels, 124 of them the same ones, by up
+ * to 15 levels): without the terrain's streaming to wait for, the first capture comes earlier. So it is not
+ * the terrain's, and the look of it is an input still arriving at the first capture, which no `isIdle`
+ * reports, not a sequence that is not restarted. The test asks for bit-identical captures (softly, beside
+ * the manifest's floor) and logs the sky probe's state at each capture.
  */
 const PAGES: Record<string, { url: string; exact: boolean }> = {
   'leo-day': { url: '/labs/integration/?scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1', exact: true },
@@ -37,6 +43,8 @@ interface Attempt {
   busyLeadIn: string[];
   busyBefore: string[];
   busyAfter: string[];
+  /** The sky's environment probe at the capture: cycles completed, bodies with an albedo map bound. */
+  probe: { completed: number; albedoMaps: number } | null;
 }
 
 interface Capture {
@@ -53,10 +61,12 @@ async function capture(page: Page): Promise<Capture> {
     const r = await page.evaluate(async (n) => {
       const held = await window.__test!.renderExact!(n);
       const renderer = window.__lab!.renderer;
-      return { held, info: renderer.exactInfo(), ev100: renderer.exposureInfo().ev100 };
+      const sky = window.__integration!.handles['sky.createSkyFeature'] as { probe?: () => { completed: number; albedoMaps: string[] } } | undefined;
+      const state = typeof sky?.probe === 'function' ? sky.probe() : null;
+      return { held, info: renderer.exactInfo(), ev100: renderer.exposureInfo().ev100, probe: state ? { completed: state.completed, albedoMaps: state.albedoMaps.length } : null };
     }, FRAMES);
     expect(r.held.frames).toBe(FRAMES);
-    attempts.push({ idle: r.held.idle, rounds: r.info?.rounds ?? 0, busyLeadIn: r.info?.busyLeadIn ?? [], busyBefore: r.info?.busyBefore ?? [], busyAfter: r.info?.busyAfter ?? [] });
+    attempts.push({ idle: r.held.idle, rounds: r.info?.rounds ?? 0, busyLeadIn: r.info?.busyLeadIn ?? [], busyBefore: r.info?.busyBefore ?? [], busyAfter: r.info?.busyAfter ?? [], probe: r.probe });
     if (r.held.idle) return { png: await page.screenshot(), attempts, ev100: r.ev100 };
   }
   throw new Error(`not idle through ${FRAMES} frames in 5 attempts: ${JSON.stringify(attempts)}`);
@@ -102,15 +112,16 @@ for (const [name, { url, exact }] of Object.entries(PAGES)) {
       expect(d.meanAbs).toBeLessThanOrEqual(0.02);
       expect(d.p999).toBeLessThanOrEqual(1);
     }
+    // And to the bit (soft: the diff pictures and the attempts' lines above say which capture stands apart).
+    expect.soft(Math.max(samePage.maxAbs, freshLoad.maxAbs, laterAgainstFresh.maxAbs), 'the three captures are identical to the bit').toBe(0);
   });
 }
-
 /**
- * Diagnosis (2026-11-12, to be taken out again): whose sequence it is when the first capture of the
- * low-orbit page differs from a later one. The page without one package at a time; each test is a new
- * browser context, as the test above is.
+ * Diagnosis (2026-11-12, to be taken out again): whose input it is. The page without the terrain (where the
+ * first capture differs from a later one) and without one more package at a time; the pair that is identical
+ * names the package, and if none is, it is the vehicle's or the core's own.
  */
-for (const without of ['sky', 'vfx', 'cockpit', 'ocean', 'atmosphere', 'terrain']) {
+for (const without of ['terrain', 'terrain,sky', 'terrain,vfx', 'terrain,cockpit', 'terrain,ocean', 'terrain,atmosphere']) {
   test(`diagnosis: leo-day without ${without}, the first capture of the page against one after another history`, async ({ page }) => {
     await openPage(page, `${PAGES['leo-day']!.url}&without=${without}`, { timeoutMs: 240_000 });
     const a = await capture(page);
@@ -119,8 +130,7 @@ for (const without of ['sky', 'vfx', 'cockpit', 'ocean', 'atmosphere', 'terrain'
     await page.evaluate(() => window.__test!.setDeterministic(true));
     const b = await capture(page);
     const d = imageDifference(a.png, b.png);
-    if (d.maxAbs > 0) fs.writeFileSync(path.join(repoRoot, 'out', 'screens', 'integration', `exact-leo-day-without-${without}.diff.png`), d.diff);
-    console.log(`  leo-day without ${without}: ${(100 * d.differingFraction).toFixed(4)} % of the pixels differ (about ${Math.round(d.differingFraction * 1280 * 720)} of 1280 x 720), max ${d.maxAbs}; EV100 ${a.ev100} / ${b.ev100}`);
-    record(`f.exact.leo-day.without.${without}`, { differingFraction: d.differingFraction, maxAbs: d.maxAbs });
+    if (d.maxAbs > 0) fs.writeFileSync(path.join(repoRoot, 'out', 'screens', 'integration', `exact-leo-day-without-${without.replace(',', '-')}.diff.png`), d.diff);
+    console.log(`  leo-day without ${without}: about ${Math.round(d.differingFraction * 1280 * 720)} pixels differ, max ${d.maxAbs}; probe at the first capture ${JSON.stringify(a.attempts[a.attempts.length - 1]!.probe)}, at the later one ${JSON.stringify(b.attempts[b.attempts.length - 1]!.probe)}`);
   });
 }
