@@ -1,7 +1,11 @@
 # Hand-off: site-bake (wave 3.1)
 
-Status: IN PROGRESS (the Madrakah regional bake is running; the sections below that need its results are filled in
-when it lands). The running log is at the end.
+Status: complete. The Madrakah region is baked and swapped into the live `earth` tile set (purely additive: 840
+new directories, 53,140 tiles, 0.46 GB; every existing Earth and Moon tile byte-identical, checked file by file);
+32 pads are resolved (16 per site, `data/staged/sites/`); the data supports keeping the Madrakah site (Q8 option A,
+section 5). `verify.py --region earth-madrakah` passes 24 of 27 checks: the three that fail are measured and
+explained in section 8 (relief shading baked into the imagery near the headland, reduced but not removed; a
+statistically marginal albedo seam excess of 0.03 sRGB levels at level 11). The running log is at the end.
 
 ## 1. What a consumer needs
 
@@ -181,10 +185,10 @@ section 2.
 
 | Level | Coverage (face 2) | Tiles | Vertex / texel at the site | sourceCoverage |
 |---|---|---|---|---|
-| 8 | x 43..51, y 176..184 | 81 | 141 m | 15 tiles in 5 rects |
-| 9 | x 87..102, y 353..366 | 224 | 70 m | 43 tiles in 11 rects |
-| 10 | x 175..203, y 707..732 | 754 | 35 m | 147 tiles in 23 rects |
-| 11 | x 352..404, y 1417..1464 | 2,544 | 17.6 m | 538 tiles in 45 rects |
+| 8 | x 43..51, y 176..184 | 81 | 141 m | 15 tiles in 3 rects |
+| 9 | x 87..102, y 353..366 | 224 | 70 m | 43 tiles in 6 rects |
+| 10 | x 175..203, y 707..732 | 754 | 35 m | 147 tiles in 12 rects |
+| 11 | x 352..404, y 1417..1464 | 2,544 | 17.6 m | 538 tiles in 23 rects |
 | 12 | x 706..808, y 2835..2928 | 9,682 | 8.8 m | none (the 30 m source is no finer than level 11's 17.6 m vertices: ARCHITECTURE 10.2, the level-11 procedural detail continues) |
 
 Sources and licences (all credited in the manifest's `sources` and `attribution`):
@@ -199,10 +203,15 @@ Sources and licences (all credited in the manifest's `sources` and `attribution`
 Bake facts: WorldCover grid 43,200 x 30,700 px (572 opened water components, 1 the ocean; 24 km2 inland water:
 khawrs and sabkhas); 2,204 Terrarium z14 tiles; 12,072 Sentinel-2 tiles per year x 5 years (60,360 requests at 12
 per second, 75 minutes); one ETOPO tile (N30E045) and three WorldCover tiles (N15E054, N18E054, N18E057; N15E057 is
-open sea). Corrections at level 12: tile-edge sea-level pockets filled (88 vertices in 10 tiles); upward needles
-removed (8,403 vertices in 23 tiles, a 22 km strip of corrupt Terrarium values along the south coast at 18.875 N,
-57.1-57.3 E up to 561 m, and a cluster on the shore 7 km north of the nominal point up to 232 m); downward needles
-removed (the trench of corrupt SRTM-boundary rows along 19.0 N, 56.83-57.0 E, up to 111 m deep: section 5).
+open sea). Corrections at level 12: tile-edge sea-level pockets filled (88 vertices in 10 tiles); needles removed,
+11,577 vertices in 26 tiles: upward ones (a 22 km strip of corrupt Terrarium values along the south coast at
+18.875 N, 57.1-57.3 E, up to 561 m; a cluster on the shore 7 km north of the nominal point, up to 232 m) and downward
+ones (the trench of corrupt rows along the SRTM tile boundary at 19.0 N, 56.83-57.0 E, up to 111 m deep in a 110 m
+plateau, 75 km west of the pads; found by `verify.py`'s pit check on the first bake, removed by the region option
+`despikeBelow`). Regional de-shading fit (level 10, slopes above 10 deg, 73,789 texels): alpha +0.257 (east), beta
+-0.174 (north), the morning sun of the Sentinel-2 overpass; colour match land gains (0.946, 1.175, 1.615), water
+(0.209, 0.239, 0.629). Sizes: height 246 MB, albedo 237 MB, landcover 25 MB, watermask 16 MB (on disk); 53,140
+files, 461,133,283 bytes.
 
 ## 5. Ground quality at Madrakah (OPEN_QUESTIONS Q8)
 
@@ -240,7 +249,9 @@ Ka Lae (v1 standard):
   111 m deep, 56.83-57.0 E, 75 km west of the pads) and corrupt shore values (needles up to 561 m); both removed by
   the despike pass (section 4). Remaining: Terrarium z14 tile edges carry a kink of 0.1-0.2 m (median second
   difference 0.27 m at the edge against 0.15 m inside), a faint line every 2.3 km in a low-sun hillshade.
-- Imagery de-shading: section 8 (relief shading near the headland).
+- Imagery de-shading: relief shading of the Sentinel-2 morning overpass remains on the headland's hills (east-facing
+  slopes 10-20 % brighter than west-facing ones against their surroundings: section 8); the 30 m normals cannot
+  carry the correction the imagery needs.
 
 Pictures (`out/bake/earth/site-bake/`; each: imagery | hillshade x3 | imagery lit by a 45 deg sun | land cover; red
 = the 500 m disc of the pad rule, yellow = the other pads): `quality-madrakah-overview.png` (every pad, 17 km),
@@ -314,6 +325,32 @@ configuration; the stage marker says where the region stands. After an interrupt
 tree for `.partial` or zero-length files before resuming (`layout.write_atomic` never leaves a truncated tile under
 its final name).
 
+## 8. Acceptance, measured
+
+| Criterion | Result |
+|---|---|
+| Existing Earth and Moon tiles outside the new region byte-identical (the guard's hash summary) | **Met.** Full form (every file read, name + bytes + content hash per directory, against the lead's recording of cde7b30) after the swap: Earth 8,379 directories unchanged, 840 added (exactly `{height,albedo,watermask,landcover}/2/{8..12}/{x}` of section 6: 53,140 files, 461,133,283 bytes), 0 removed, 1 changed: `.` (`manifest.json`, 15,109 -> 21,925 bytes); Moon 2,344 of 2,344 unchanged. Before the swap the every-commit guard passed 6 of 6. |
+| Terrain guard heights bit-identical | **Met.** After the swap the guard's height test passes bit for bit (2,000 Earth and 2,000 Moon directions, three queries each); only the directory test fails, by design, on the 840 new directories and `manifest.json` (request site-bake-1). |
+| Manifest swap atomic; a reader never sees a promised tile that is missing | **Met.** Unit test `tests/unit/site-bake/swap.test.ts` (real swap code in a separate Python process, a reader in the test process, 2 of 2). On the real swap a reader polled the live manifest for 176 s: 7,521 reads (7,504 of the old manifest `ab20fdfc579d4015`, 17 of the new `f70a61d55dca902f`), 0 failed reads, 903,380 existence checks of promised Madrakah tiles, 0 missing. The swap moved 20 directories by one rename each and wrote the manifest once; 750,486 promised tiles checked present before the write. |
+| Every resolved pad meets the slope and distance rules; report table; spacing verified by a test | **Met.** Tables in section 3; `tests/unit/site-bake/pads.test.ts` 10 of 10: counts, classes, ids, spacing (same class and mixed), every recorded gate, LC-1 unchanged, and an independent check with the real TerrainProvider on the live tiles (band limit 100 m): heights within 1.34 m (Ka Lae) and 0.95 m (Madrakah) of padElevation, steepest 500 m disc 3.99 deg and 2.95 deg, no sea within 600 m. |
+| data/ under 22 GB, 25 GB free, raw downloads deleted | **Met.** After cleanup: `data/` 33 GB of which `data/packs` 14 GB (separate 20 GB budget, platform-delivery's) and 19 GB of baked data, caches and stack state (tiles 18 GB, cache 1.8 GB, sky 0.13 GB, stack 0.35 GB); this package added 0.46 GB of tiles and left `data/cache/earth` at 0.92 GB as found (5.95 GB of downloads and intermediates deleted). Disk free 36 GB (lowest during the work 31.9 GB). |
+| Bakes through the gate, at most 6 workers | **Met** for every bake (stage x 3, the last with 4 workers after a worker ran out of commit memory while the machine was loaded), the guard runs and both region verifications. Light single-process analysis outside the gate: section 10, item 7. |
+| `python -I tools/bake/earth/verify.py --region earth-madrakah` | **24 of 27 pass** (live, after the swap; the same before it). Fails: (1) `no baked hillshade` level 10: paired east/west 1.205, north/south 0.954; level 12: 1.099 and 0.984 (need 1 +/- 0.03) within 10 km of the site. The regional de-shading fit is physically sound (alpha +0.26, beta -0.17, converged from slopes of 8 deg up) but the 30 m normals under-represent the slopes the 10 m imagery's shading follows; a correction strong enough for the gate (alpha about 0.9) lies outside the Lambertian bound of the morning sun. Before the fit fix the values were 1.307 / 0.929 and 1.193 / 0.961. (2) `albedo seams` level 11: border excess +0.033 sRGB levels against a 2-s.e. bound of 0.031 (300 borders). On 1,000 other borders per direction: +0.025 +/- 0.024 (east), +0.015 +/- 0.022 (north); Ka Lae's own regional levels show the same small positive excess (+0.008 +/- 0.013 at level 11), about 1-2 % of the neighbour difference at both sites; a real seam (lossy tiles) is about 60 %. Invisible; the absolute gate trips at Madrakah because its imagery has twice Ka Lae's texel contrast. Every other check passes: 53,140 files present and decoded, no alpha, pyramid complete, pads, sourceCoverage, 1,500 shared height edges identical, albedo seams at levels 8, 9, 10, 12, coverage edges at every level (height RMS 0.02-0.34 m, outermost texels = parent), coastline at every level, no inland pits, no needles, TypeScript decode 5 of 5. |
+| `npx vitest run tests/unit/site-bake tests/unit/terrain-core/terrain-guard.test.ts` | site-bake 12 of 12; terrain guard 5 of 6 (the directory test, by design: section 6). Also `npm run typecheck:paths -- tests/unit/site-bake/*.ts` OK, `tools/dev/boundaries.test.ts` 93 of 93, `check-stubs` OK. |
+
+## 9. Disk and machine
+
+| | Before | Peak | After |
+|---|---|---|---|
+| `data/tiles/earth` | 10.30 GB, 697,349 files | | 10.76 GB, 750,489 files |
+| `data/cache/earth` | 0.92 GB | 7.3 GB (Sentinel-2 5 years 1.5 GB, median stacks 2.4 GB, WorldCover grid 1.35 GB, coast grids 0.9 GB, Terrarium stack 0.6 GB, staged tiles 0.46 GB) | 0.92 GB |
+| Disk free | 61 GB | lowest 31.9 GB | 36 GB |
+
+Largest process: the ocean-connectivity step at about 4 GB (rewritten from about 13 GB). Timings (shared machine):
+Terrarium and WorldCover fetch 2 min, heights 15 min, water mask 3 min, Sentinel-2 fetch 75 min (rate-limited),
+regional albedo 12 min, land cover 3 min, pads 15-30 s per site, quality pictures 1 min, region verify 5 min, swap
+2 min (most of it the presence check of 750,486 tiles), cleanup 1 min.
+
 ## 10. Deviations, known limits, requests
 
 Deviations from the brief (each within the design; say if one is unwelcome):
@@ -352,7 +389,7 @@ Known limits:
 Requests filed: `docs/requests/site-bake-1.md` (lead: the mission golden and baseline record the earth manifest's
 contentHash, which the swap changes). Open requests against this package's paths: none found.
 
-## 12. What the next packages must know
+## 11. What the next packages must know
 
 - **fleet-data** (wave 4.1, `data/defs/sites/*`): take the pads from `data/staged/sites/{ka-lae,madrakah}.pads.json`:
   `id`, `class`, `azimuthDeg`, `offsetEnu` into `PadDef`; `latDeg`, `lonDeg`, `padElevation` into
@@ -371,7 +408,7 @@ contentHash, which the swap changes). Open requests against this package's paths
 - **The lead**: re-records the terrain guard's tile summary (section 6), appends the two new places' height groups,
   and updates the mission golden's earth hash (request site-bake-1).
 
-## 11. Running log
+## 12. Running log
 
 - 2026-11-12 00:45 Pacific. Start. Read the brief, ARCHITECTURE 9.3/9.4/10.1/10.2/31.3, MIGRATION_V2, PACKAGE_RULES,
   user decisions, OPEN_QUESTIONS Q8/Q14, the bake-earth and lead-baseline-v2 hand-offs, the earth bake code.
@@ -414,3 +451,19 @@ contentHash, which the swap changes). Open requests against this package's paths
   the lead (`--add-place`). This package must state exactly which tile directories it adds and where each new pad's
   flatten disc lies (section 6), and must leave every existing tile byte-identical (the every-commit guard now
   compares bytes per directory by stat).
+- 02:57. Stage bake done (53,140 tiles, 0.46 GB staged). Madrakah pads resolved on the staged tiles: 16 within 6 km
+  of the nominal point. Quality pictures and contact sheets LOOKED at (pad level, 2 km, 20 km): imagery clean and
+  natural; heights carry SRTM noise and faint Terrarium tile-edge lines; decision: keep Madrakah (section 5).
+- 03:30. `verify.py --region` on the staged region: 23 of 27. Found: a straight trench up to 111 m deep along 19.0 N
+  (corrupt Terrarium rows at an SRTM tile boundary; three pits) and relief shading in the imagery (paired E/W 1.31,
+  the de-shading fit diluted by noise slopes gave alpha -0.05). Fixes as region options (Ka Lae's configuration
+  hashes unchanged): `despikeBelow`, `deshadeFitMinSlopeDeg` 10. Commit 62a769e.
+- 03:53-04:45. Re-bake through the gate. One run failed with a worker out of commit memory (six workers each
+  rebuilding the Sentinel-2 tile lists on a loaded machine); the tile lists are now cached (s2.py) and the run
+  resumed with 4 workers. A duplicate queued run was stopped before it wrote anything (no partial files).
+- 04:50. Pads re-resolved: positions unchanged. Region verify: 24 of 27 (trench and pits gone; residual shading and a
+  marginal seam excess: section 8). Every-commit guard before the swap: 6 of 6.
+- 04:59. Swap: 20 directory renames, manifest `ab20fdfc579d4015` -> `f70a61d55dca902f`, a concurrent reader saw no
+  missing tile in 7,521 reads. Guard after: heights bit-identical; full-form directory comparison: only the 840 new
+  directories and `manifest.json`. site-bake tests 12 of 12 (the TerrainProvider check now covers Madrakah). Cleanup
+  freed 5.95 GB. Request site-bake-1 filed.
