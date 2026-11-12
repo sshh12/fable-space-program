@@ -577,7 +577,7 @@ Suites (05:00): `npm run typecheck` (both configurations, through the gate) clea
 `tools/dev`, `tests/unit/site-bake/pads.test.ts`: 43 files, 483 tests pass. `npx tsx tools/sim/writeRules.ts
 --check`: the three files as derived. `check-stubs`, `check-secrets` OK. Headless mission (through the gate, 05:02): 35 of 36 pass; the one failure is the determinism test's precondition, not a result of this round: the Earth tile set was re-baked at 04:59 (site-bake's Madrakah region; content hash f70a61d55dca902f, golden.json still says ab20fdfc579d4015), so the test refuses to compare. Flown once more with the recorder: state hash b8221b0fd316207e, 596,933 steps on the new tiles, equal to the golden, so neither this round nor the re-bake changed the flight and only the tiles.earth field of tests/mission/golden.json is out of date (not edited: not the lead-baseline paths; reported to the coordinator). No browser run.
 
-## 15. Request site-bake-1: the Madrakah region in the lead's records (2026-11-12, 05:15-05:40)
+## 15. Request site-bake-1: the Madrakah region in the lead's records (2026-11-12, 05:10-05:30)
 
 site-bake swapped the Madrakah region into the live `earth` tile set at 04:59 (manifest content hash
 `ab20fdfc579d4015` -> `f70a61d55dca902f`). This closes the bullet on that request in section 14.
@@ -613,7 +613,7 @@ Madrakah's group has 200 points within 200 m and 200 within 2 km of its referenc
 of the bake tools; True for `earth-madrakah`): site-bake's remark is confirmed, the Ka Lae unit records do
 not match the configuration since the site rename. Request `lead-4`.
 
-Suites (05:35): the terrain guard 7 of 7 through the gate, in the every-commit form (cpu slot, 20 s) and
+Suites (05:25): the terrain guard 7 of 7 through the gate, in the every-commit form (cpu slot, 20 s) and
 in the full form (`TERRAIN_GUARD_FULL=1`, bake slot, 54 s). `npm run test:mission`: 5 files, 36 of 36.
 `npm run typecheck:paths -- tests/unit/terrain-core` (both configurations) clean. `check-stubs`,
 `check-secrets` OK. No browser run.
