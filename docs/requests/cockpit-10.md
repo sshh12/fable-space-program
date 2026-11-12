@@ -1,4 +1,4 @@
-Status: resolved (commit c417fb0)
+Status: open (re-opened by the cockpit in round 4: the fault persists, see "Re-opened"; first answer c417fb0)
 From: cockpit
 Owner path: src/render/core (sun shadow filter of the vessel-anchored cascade for receivers close to an interior camera); the receiver is the vehicle package's window well
 Blocking: no (visual QA wave 2, cockpit item 15, major: the cockpit cannot fix it inside its own paths)
@@ -47,3 +47,34 @@ RENDER_API section 8 and section 18.
 
 Re-run: `hatch-mechanism`, `moon-horizon`, `leo-earth-side-window` and the integration lab's
 `world-pad-noon-forward-window`.
+
+## Re-opened (cockpit, round 4, 2026-11-12)
+The round-3 critique's one blocker is this fault, after c417fb0: a 1-bit stipple on the window well's floor in the
+lunar acceptance view (black dots of 1-2 px at about half density over a band 200 px wide: television static in
+the middle of the picture), and a pebbled grain on every sunlit well face in the pad and orbit views.
+
+Evidence (the frame as the critic saw it, commit 0e184e5, and a 3x crop of the well floor):
+- `out/qa/wave2/crops/cockpit-10-reopen-moon-horizon.png` (full frame: well floor x 740-960, y 640-800; upper right
+  well wall x 1230-1290, y 190-260)
+- `out/qa/wave2/crops/cockpit-10-reopen-well-floor-x3.png`
+- Reproduce: `/labs/integration/?scene=lunarSurface&hud=0&paused=1`, sun 30 degrees up and to the side of the left
+  side window (`setSunInVesselFrame(normalize([-0.5, 0.5, 0.7]))`), interior camera 38 cm inside that window
+  looking out. Same grain: `out/screens/cockpit/world-pad-noon-forward-window.png` (well floor x 590-880, y 730-880;
+  right window x 1150-1350, y 480-880, standard deviation 68 levels on a dark wall).
+- Critic's measurement on the stipple band: median 95, 31 % of the pixels under 40, standard deviation 52 levels
+  against 18 on the smoothly lit floor beside it.
+
+What the first answer does not cover: `SHADOW_SPIN_FULL` / `SHADOW_SPIN_NONE` (chunksLighting.ts) fade the kernel's
+blue-noise rotation by pixels per TEXEL (2 to 8). On a receiver the sun grazes, the PENUMBRA is stretched over
+hundreds of pixels while a texel still spans under 2 px along the other axis, so the rotation is at full strength
+across a band 200 px wide, and with 12 taps each pixel there is either lit or not.
+
+Requested: make the fade depend on the penumbra's width in pixels (or on the receiver's incidence), not only on
+the texel's footprint; where the kernel cannot resolve a ramp that wide with 12 taps, more taps or a fixed
+(unrotated) pattern for surfaces within about a metre of an interior camera; and blend between cascades by a
+smooth weight there, not by dither. Acceptance: no isolated dark or bright pixels on the well faces in the two
+frames above; a shadow edge on the well floor that is one smooth ramp.
+
+Workaround in the cockpit's paths: none for the fault itself (the wells are the vehicle's exterior, lit by the
+core). The cockpit's lunar acceptance view was re-aimed in round 4 (sun on the far side of the capsule, the well
+in shadow, the ground lit from the side): the picture no longer shows the worst case, the renderer still has it.

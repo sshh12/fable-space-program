@@ -1,4 +1,4 @@
-Status: open
+Status: open (cockpit half, items 1 and 2: done in cockpit round 4, see "Resolution: cockpit"; item 3 is flight-ui's, also filed as cockpit-17)
 From: app-integration-v1
 Owner path: src/render/cockpit (feature.ts `compute`, displays.ts; cockpit), src/ui/mfd/mfdPainter.ts (the page painter; flight-ui)
 Blocking: yes   (ARCHITECTURE 17: main-thread frame p99 <= 6 ms; this is the whole miss during engine burns away from terrain)
@@ -64,3 +64,20 @@ flight-ui (`src/ui/mfd/mfdPainter.ts`):
 
 Must not change: the picture of the displays in the cockpit view; the cabin seen through the glazing from close
 by (request cockpit-8); `'ui.mfd'`.
+
+## Resolution: cockpit (items 1 and 2; round 4)
+`src/render/cockpit/displays.ts`, `feature.ts` `compute`:
+1. No display is painted, uploaded or mipped unless a camera can see the screens: only while the cabin is drawn at
+   its full detail level (`lod0`: the eye inside, or within 6-7 m outside) and the view is not the map. In the
+   chase view beyond that the pages are not touched; they are marked dirty and are current again within three
+   frames of the cabin coming back into view (one per frame). At a far detail level the cabin's sun map, ambient
+   pass and probe run every 8th frame (`FAR_LIGHT_INTERVAL`). What is left of `cockpit.compute` in an external
+   view is the call itself.
+2. At most ONE display is painted per frame, dirty ones included (a page change, the first paint, the return
+   into view): there is no frame with two or three paints any more. Nothing in the cockpit is rebuilt when the
+   vessel list changes: the feature picks the vessel by id and re-uses the layout's GPU model (the bind groups
+   depend only on shared-resource versions). If a slow frame remains at lift-off in the cockpit view it is the
+   first paint of a page whose content changed (the painter: item 3 / cockpit-17).
+Also: a display whose page is dear to paint is painted less often (its smoothed cost keeps all displays within
+0.36 ms per frame on average); with the ORB page at 5 ms that is about one paint a second during a burn. Inside
+(`lod0`) the picture is unchanged for pages that paint in about half a millisecond (15 Hz).

@@ -284,15 +284,14 @@ export const WORLD_VIEWS: WorldView[] = [
   { name: 'world-ascent-plume-displays', query: 'scene=ascent&throttle=1', recipe: { seat: { yaw: 22, pitch: -2 }, fovDeg: 70 }, checks: {} },
   // Entry: the shock layer outside the windows, the floods on.
   { name: 'world-reentry-plasma', query: 'scene=reentry', recipe: { lights: true, seat: { yaw: 16, pitch: 40 }, fovDeg: 70 }, checks: { dark: true, litPanes: ['fwd-left', 'fwd-right'] } },
-  // On the lunar surface, the sun 30 degrees up and off to the side of the window's axis, the floods on:
-  // the head 38 cm from the side window, looking 10 degrees above the horizon (the window's axis points 32
-  // degrees up: further down the well's own walls fill it), the capsule upright (head-up along its nose): the
-  // sunlit ground blown out below black sky and the cabin readable under its floods, as in the LM photograph
-  // AS11-36-5390.
+  // On the lunar surface, the sun 17 degrees up on the far side of the capsule and across the view (long
+  // shadows on the ground, this window's well in the capsule's own shade), the floods on: the head 30 cm inside
+  // the left side window and above its axis, looking 10 degrees down through it at the ground and the horizon
+  // (the capsule upright, head-up along its nose).
   {
     name: 'world-moon-horizon',
     query: 'scene=lunarSurface',
-    recipe: { sun: { ves: [-0.5, 0.5, 0.7] }, lights: true, free: { kind: 'interior', eye: { through: 'side-left', from: { seat: [0, 0, 0] }, out: -0.38 }, look: { horizon: 'side-left', out: 10, drop: -1.8 }, up: 'nose' }, fovDeg: 62 },
+    recipe: { sun: { ves: [0.35, 0.3, 0.89] }, lights: true, free: { kind: 'interior', eye: { p: [-0.84, 1.2, 0.0] }, look: { p: [-11, -0.6, 0.6] }, up: 'nose' }, fovDeg: 62 },
     checks: { dark: true, maxBlack: 0.3 },
   },
   // From outside: looking in through a forward window by day (the sun's way in) and on the night side.

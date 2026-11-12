@@ -218,8 +218,8 @@ export function buildCouches(ctx: CabinContext): void {
     }
     const headCross = [seatPoint(s, -(hw + 0.02), 0.1, backPlane - 0.045), seatPoint(s, hw + 0.02, 0.1, backPlane - 0.045)];
     const hipCross = [seatPoint(s, -(hw + 0.02), c.hipU + 0.05, backPlane - 0.045), seatPoint(s, hw + 0.02, c.hipU + 0.05, backPlane - 0.045)];
-    b.tube(headCross, 0.016, 8, rail);
-    b.tube(hipCross, 0.016, 8, rail);
+    b.tube(headCross, 0.016, 8, rail, { caps: true });
+    b.tube(hipCross, 0.016, 8, rail, { caps: true });
     if (d < 2) {
       // The attenuator struts carry the pallet's beams (under the couch's cross tubes): from the beam's far
       // face to the floor, part of the pallet.
@@ -241,7 +241,7 @@ export function buildCouches(ctx: CabinContext): void {
           // Brackets from the rail to the armrest.
           for (const at of [p0, p1]) {
             const base = seatPoint(s, Math.sign(x) * (hw + 0.02), v3.dot(v3.sub(at, s.eye), s.U), backPlane - 0.045);
-            b.tube([base, v3.addScaled(at, s.L, -0.02)], 0.009, 8, rail);
+            b.tube([base, v3.addScaled(at, s.L, -0.02)], 0.009, 8, rail, { caps: true });
           }
         }
       }

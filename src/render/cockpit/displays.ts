@@ -53,6 +53,12 @@ export interface DisplayStats {
   frames: number;
 }
 
+/**
+ * Main-thread time the displays may take per second of wall time, all of them together (ms): 0.36 ms per
+ * frame at 60 frames a second, under the 0.4 ms line of the brief.
+ */
+export const DISPLAY_CPU_BUDGET = 21.6;
+
 export class MfdDisplays {
   readonly texture: GPUTexture;
   readonly view: GPUTextureView;
@@ -70,6 +76,8 @@ export class MfdDisplays {
   private readonly mipViews: GPUTextureView[][] = [];
   private readonly mipGroups: GPUBindGroup[][] = [];
   private readonly period: number;
+  /** Main-thread cost of one paint of each display (paint, upload, mips; ms), smoothed: what paces it. */
+  private readonly cost: number[] = [];
   /** Page each layer shows and the snapshot tick it was painted from. */
   readonly painted: { page: MfdPage | null; tick: number; at: number }[] = [];
   stats: DisplayStats = { paints: 0, cpuMs: 0, paintMs: 0, copyMs: 0, mipMs: 0, frames: 0 };
@@ -120,6 +128,7 @@ export class MfdDisplays {
       this.contexts.push(ctx);
       // Staggered: display i first paints i / count of a period after start.
       this.next.push((i / count) * this.period);
+      this.cost.push(0);
       this.dirty.add(i);
       this.painted.push({ page: null, tick: -1, at: -1 });
       const views: GPUTextureView[] = [];
@@ -146,14 +155,32 @@ export class MfdDisplays {
   }
 
   /**
-   * Paint what is due this frame: every dirty display (page changes, first frame), else the one display
-   * whose 15 Hz slot has come. Encodes the mip passes on `encoder` (call from a hook that has one).
+   * Paint what is due this frame: AT MOST ONE display (a paint is a main-thread cost of half a millisecond
+   * and more: never two in one frame). A dirty display first (a page change, the first frame, a cabin that
+   * comes back into view), else the display whose slot has come. Encodes the mip passes on `encoder`.
+   *
+   * `visible` false (no camera can see the screens: the cabin is drawn at a far detail level, or not at
+   * all): nothing is painted; every display is marked dirty, so the pages are current again within three
+   * frames of the cabin coming back into view (request app-integration-12).
+   *
+   * Pacing: a display's slot comes every 1 / rateHz, or later when its page is dear to paint: its paints are
+   * spaced so that their smoothed cost stays within DISPLAY_CPU_BUDGET of main-thread time per second of
+   * wall time. A page that paints in half a millisecond keeps its 15 Hz; one that takes five is painted
+   * about once a second (and should be made cheaper: the painter is src/ui's).
    */
-  update(time: number, snapshot: SimSnapshot, pageOf: (display: number) => MfdPage, encoder: GPUCommandEncoder): void {
+  update(time: number, snapshot: SimSnapshot, pageOf: (display: number) => MfdPage, encoder: GPUCommandEncoder, visible = true): void {
     this.stats.frames++;
     for (const f of this.frames) f.close();
     this.frames = [];
-    const due: number[] = [...this.dirty];
+    if (!visible) {
+      for (let i = 0; i < this.next.length; i++) this.dirty.add(i);
+      return;
+    }
+    const due: number[] = [];
+    for (const i of this.dirty) {
+      due.push(i);
+      break;
+    }
     if (due.length === 0) {
       let best = -1;
       for (let i = 0; i < this.next.length; i++) if (time >= this.next[i]! && (best < 0 || this.next[i]! < this.next[best]!)) best = i;
@@ -163,8 +190,9 @@ export class MfdDisplays {
     const t0 = performance.now();
     for (const i of due) {
       this.dirty.delete(i);
-      this.next[i] = Math.max(this.next[i]! + this.period, time + this.period * 0.5);
       const page = pageOf(i);
+      // A page other than the one painted last starts from the plain rate (its cost is not known yet).
+      if (this.painted[i]!.page !== page) this.cost[i] = 0;
       const a = performance.now();
       this.painter.paint(this.contexts[i]!, this.width, this.height, page, snapshot, this.defs);
       const b = performance.now();
@@ -176,6 +204,10 @@ export class MfdDisplays {
       this.stats.mipMs += performance.now() - c;
       this.painted[i] = { page, tick: snapshot.tick, at: time };
       this.stats.paints++;
+      const spent = performance.now() - a;
+      this.cost[i] = this.cost[i]! > 0 ? this.cost[i]! + (spent - this.cost[i]!) * 0.25 : spent;
+      const interval = Math.max(this.period, this.cost[i]! / (DISPLAY_CPU_BUDGET / this.next.length));
+      this.next[i] = Math.max(this.next[i]! + interval, time + interval * 0.5);
     }
     this.stats.cpuMs += performance.now() - t0;
   }

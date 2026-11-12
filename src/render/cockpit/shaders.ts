@@ -243,6 +243,13 @@ const MAX_CABIN_POLYS = ${MAX_CABIN_POLYS}u;
 const FLOOD_FAR2 = 0.2;
 /// The same for a display's screen.
 const DISPLAY_FAR2 = 0.3;
+/// Share of a surface's known irradiance under which a source's largest possible contribution is skipped.
+const CABIN_NEGLIGIBLE = 0.01;
+/// A flood's reflector gathers its light into a beam about the lens normal (half power at about 45 degrees,
+/// nothing beyond 63): a pool of light where the lamp is aimed, darker walls beside and behind it. The same
+/// flux as the bare Lambertian lens: FLOOD_BEAM_GAIN is 1 / (2 x the integral of the ramp x cosine).
+const FLOOD_BEAM_GAIN = 2.05;
+fn floodBeam(c: f32) -> f32 { return FLOOD_BEAM_GAIN * smoothstep(0.45, 0.95, c); }
 const POLY_WINDOW = 0u;
 const POLY_PATCH = 1u;
 const POLY_FLOOD = 2u;
@@ -431,7 +438,10 @@ fn windowOpening(posPart: vec3f, nPart: vec3f, wi: u32) -> f32 {
 /// surface. sunScale = the atmosphere's and the clouds' transmittance of the sun (the sun patches' radiance
 /// is given without them). The specular reflection of the same sources comes from the cabin probe, which
 /// holds their images.
-fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, sunScale: vec3f) -> vec3f {
+/// eKnown: irradiance (lux) the surface is known to receive from elsewhere (the cabin's bounce light): a
+/// source whose LARGEST possible irradiance here (its radiance x area / distance^2 x baked visibility) is
+/// under a hundredth of that and of what the sources before it gave is not integrated.
+fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, sunScale: vec3f, eKnown: f32) -> vec3f {
   var occ = occIn;
   var diffuse = vec3f(0.0);
   for (var i = 0u; i < cabin.counts.x; i++) {
@@ -448,6 +458,8 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
       // (A window that looks into black space sends nothing in: its opening is not integrated.)
       let Lw = cabinPolyRadiance(i);
       if (max(Lw.r, max(Lw.g, Lw.b)) <= 1e-3) { continue; }
+      let toW = (P.p0.xyz + P.p2.xyz) * 0.5 - pos;
+      if (luminance(Lw) * P.radiance.w * vw < CABIN_NEGLIGIBLE * (eKnown + luminance(diffuse)) * max(dot(toW, toW), 0.01)) { continue; }
       let ffw = windowOpening(posPart, nPart, index);
       if (ffw <= 0.0) { continue; }
       diffuse += Lw * (PI * ffw * vw);
@@ -472,13 +484,17 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
     // A source this point cannot see (baked) costs nothing.
     if (vis <= 0.004) { continue; }
     let d2 = dot(toC, toC);
+    if (kind != POLY_PATCH) {
+      let Lmax = select(luminance(cabinPolyRadiance(i)), luminance(P.radiance.rgb) * FLOOD_BEAM_GAIN, kind == POLY_FLOOD);
+      if (Lmax * P.radiance.w * vis < CABIN_NEGLIGIBLE * (eKnown + luminance(diffuse)) * max(d2, 0.01)) { continue; }
+    }
     if ((kind == POLY_FLOOD && d2 > FLOOD_FAR2) || (kind == POLY_DISPLAY && d2 > DISPLAY_FAR2)) {
       // A flood's lens is a strip a hand long, a screen a hand and a half across: from more than twice its
       // size away it is a small source, E = L A cos(source) cos(receiver) / d^2 (within a few per cent of
       // the polygon's integral); a flood with the same beam about its lens normal as below.
       let inv = inverseSqrt(d2);
       let cs = max(-dot(toC, P.normal.xyz) * inv, 0.0);
-      let Lf = select(cabinPolyRadiance(i), P.radiance.rgb * (1.6 * smoothstep(0.26, 0.82, cs)), kind == POLY_FLOOD);
+      let Lf = select(cabinPolyRadiance(i), P.radiance.rgb * floodBeam(cs), kind == POLY_FLOOD);
       diffuse += Lf * (P.radiance.w * max(cr, 0.0) * cs * inv * inv * inv * vis);
       continue;
     }
@@ -491,11 +507,8 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
     } else if (kind == POLY_PATCH) {
       L = P.radiance.rgb * sunScale;
     } else {
-      // A flood's reflector gathers its light into a beam about the lens normal (half-power at about 55
-      // degrees, nothing beyond 75): pools of light where it is aimed, darker walls beside and behind it.
-      // The same flux: what the beam leaves out is in the beam.
       let c = dot(normalize(pos - (P.p0.xyz + P.p2.xyz) * 0.5), P.normal.xyz);
-      L = P.radiance.rgb * (1.6 * smoothstep(0.26, 0.82, c));
+      L = P.radiance.rgb * floodBeam(c);
     }
     diffuse += L * (PI * ff) * vis;
   }
@@ -557,6 +570,20 @@ fn cabinProbeAtFp(p: vec3f, d: vec3f, roughness: f32, fp: f32) -> vec3f {
   var s = textureSampleLevel(cabinProbe, linearClamp, dir + (t + b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t + b) * a, lod).rgb;
   if (lod < 3.6) { return s * (0.5 * cabin.probe.w); }
   s += textureSampleLevel(cabinProbe, linearClamp, dir + (t - b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t - b) * a, lod).rgb;
+  return s * (0.25 * cabin.probe.w);
+}
+/// The cabin along a mirror ray off flat glass: mip 2 of the probe, read four times half a texel apart. (The
+/// probe is a small cube: read at its finest level and magnified by a window pane, its texels are a staircase
+/// a dozen pixels a step. The lamps and the screens are drawn over this image as exact polygons.)
+fn cabinProbeSoft(p: vec3f, d: vec3f) -> vec3f {
+  let texelsPerRad = f32(textureDimensions(cabinProbe).x) / 1.5708;
+  let lod = min(2.0, f32(textureNumLevels(cabinProbe)) - 1.0);
+  let dir = normalize(cabinProbeDir(p, d));
+  let t = normalize(cross(dir, select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(dir.y) > 0.9)));
+  let b = cross(dir, t);
+  let a = 0.5 * exp2(lod) / texelsPerRad;
+  let s = textureSampleLevel(cabinProbe, linearClamp, dir + (t + b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t + b) * a, lod).rgb
+        + textureSampleLevel(cabinProbe, linearClamp, dir + (t - b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t - b) * a, lod).rgb;
   return s * (0.25 * cabin.probe.w);
 }
 /// Radians per pixel swept by a reflected direction r (screen derivatives; uniform control flow only).
@@ -709,7 +736,8 @@ fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, wi: u32) -> f32 {
   // least a texel and a half.
   // (On a receiver the light only grazes, one texel of the map spans many pixels along the light: the floor
   // grows to four texels there, so a caster's rasterised edge does not show as teeth.)
-  let pen = clamp((q.z - zNear) * range * 0.5 * cabin.sunPart.w, texelM * (1.5 + 2.5 * sinL * sinL), SUN_PENUMBRA_MAX);
+  // (... over the texel's footprint on the receiver, 1 / NoL: the teeth where a bezel cast a patch's edge.)
+  let pen = clamp((q.z - zNear) * range * 0.5 * cabin.sunPart.w, min(texelM * (1.5 + 2.5 * sinL * sinL) / max(NoL, 0.25), SUN_PENUMBRA_MAX), SUN_PENUMBRA_MAX);
   // Bilinear comparisons on a grid over the penumbra, a texel and a half apart (wide penumbrae take more taps,
   // 5 x 5 to 7 x 7; beyond that the spacing grows, over a ramp already several millimetres wide): a smooth
   // ramp across the edge, no stacked copies of it.
@@ -1114,8 +1142,8 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
   let materialId = select(MATERIAL_STANDARD, MATERIAL_CLOTH, shading == 1u);
   let nPart = dirPart(n);
   let NoV = max(dot(n, viewDir), 1e-3);
-  let Edirect = cabinLight(world, n, in.part, nPart, occ, amb.sunT * amb.cloudT);
   let Ebounce = cabinBounce(nPart) * (occ.ao * cavity);
+  let Edirect = cabinLight(world, n, in.part, nPart, occ, amb.sunT * amb.cloudT, luminance(Ebounce));
   let E = Edirect + Ebounce;
   // In the probe a metal counts as a diffuse reflector of its own colour (it holds no specular light).
   let diffuseColor = select(albedo * (1.0 - metallic), albedo, probe);
@@ -1427,7 +1455,7 @@ fn srgbToLinear(c: vec3f) -> vec3f { return select(pow((c + 0.055) / 1.055, vec3
   // The ball sits in the instrument's cavity: the occlusion baked at the front of the ball.
   let occ = occUnpack(cabin.ballOcc[0], cabin.ballOcc[1], cabin.ballOcc[2], cabin.ballOcc[3], cabin.ballOcc[4], cabin.ballOcc[5]);
   let nP = normalize(in.nPart);
-  let E = cabinLight(in.world, n, in.part, nP, occ, amb.sunT * amb.cloudT) + cabinBounce(nP) * occ.ao;
+  let E = cabinLight(in.world, n, in.part, nP, occ, amb.sunT * amb.cloudT, 0.0) + cabinBounce(nP) * occ.ao;
   // A satin ball: its faint image of the cabin on top of the painted sphere.
   let NoV = max(dot(n, v), 1e-3);
   let dfg = envBrdfApprox(0.38, NoV);
@@ -1486,7 +1514,7 @@ fn fresnelDielectric(cosi: f32, eta: f32) -> f32 {
 /// point in the part frame, d ROOT): the cabin probe's image of the lit interior, and over it the displays
 /// and the flood lights where the ray hits them (sharp images of the screens and the lamps).
 fn cabinRadianceAlong(o: vec3f, oPart: vec3f, d: vec3f, amb: CabinAmbient) -> vec3f {
-  var L = textureSampleLevel(cabinProbe, linearClamp, cabinProbeDir(oPart, dirPart(d)), 0.0).rgb * cabin.probe.w;
+  var L = cabinProbeSoft(oPart, dirPart(d));
   var best = 1e9;
   for (var i = 0u; i < cabin.counts.x; i++) {
     let P = cabin.polys[i];
@@ -1580,7 +1608,7 @@ fn glass(in: VOut) -> GlassOut {
   } else if (instrument) {
     // (The probe's texels are coarser than the dome's image at reading distance: a sharp lookup magnifies
     // them into hard-edged shards. A satin lobe gives the smooth, curved highlights of a real dome glass.)
-    refl = cabinProbeAtFp(in.part + nvPart * 0.002, reflect(-dirPart(v), nvPart), 0.3, fpR);
+    refl = cabinProbeAtFp(in.part + nvPart * 0.002, reflect(-dirPart(v), nvPart), 0.55, fpR);
   } else {
     // Bare glass mirrors the cabin; each pane is drawn where it is, so the two panes' images lie a little
     // apart (the doubled reflection of a real window).

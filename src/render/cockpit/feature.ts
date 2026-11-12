@@ -163,6 +163,8 @@ interface DetailTextures {
 }
 
 const PANE_FLOATS = 10;
+/** The cabin's light passes (sun map, ambient, probe) run every this many frames while the cabin is drawn at a far detail level. */
+const FAR_LIGHT_INTERVAL = 8;
 
 export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOptions): { feature: CockpitFeature; controls: CockpitControls } {
   const defs = ctx0.defs;
@@ -206,6 +208,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   // Per-frame state.
   let active: { gm: GpuModel; lod: LodName; vessel: VesselSnapshot; interiorView: boolean; centre: Vec3; sun: SunMapLayout | null } | null = null;
   let clock = 0;
+  /** Frames since the cabin's light passes last ran while the cabin is drawn at a far detail level. */
+  let farFrames = 0;
   let gFiltered = 1;
   let tunnel = 0;
   let prevVib: Vec3 = v3.zero();
@@ -655,8 +659,17 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
     compute(frame, encoder) {
       if (!displays || !active) return;
       const t0 = performance.now();
-      displays.update(clock, frame.snapshot, (i) => controls.page(Math.min(i, controls.displayCount - 1)), encoder);
+      // The screens are painted only while a camera can see them: from inside, or close enough outside for
+      // the full detail level (request app-integration-12: not in the chase view, not in the map).
+      displays.update(clock, frame.snapshot, (i) => controls.page(Math.min(i, controls.displayCount - 1)), encoder, active.lod === 'lod0' && frame.camera.kind !== 'map');
       const gm = active.gm;
+      // Seen from outside at a far detail level the cabin is a few lit pixels behind its windows: its sun map,
+      // ambient pass and probe run every FAR_LIGHT_INTERVAL-th frame there (request app-integration-12).
+      if (active.lod !== 'lod0' && farFrames++ % FAR_LIGHT_INTERVAL !== 0) {
+        st.prepareMs += performance.now() - t0;
+        return;
+      }
+      if (active.lod === 'lod0') farFrames = 0;
       if (active.sun) {
         // The cabin's sun map: the interior's occluders at the drawn detail level (not the enclosure), into
         // the tile of every window the sun enters.

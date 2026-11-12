@@ -9,7 +9,7 @@
  */
 import { DEG, v3, type Vec3 } from '@/core/math';
 import { frameAt, type Attr } from '../mesh';
-import { azimuthOf, coneNormal, conePointAt, openingsOf, radialDir, revPoint, type Opening } from '../mould';
+import { azimuthOf, coneGenerator, coneNormal, conePointAt, openingsOf, radialDir, revPoint, type Opening } from '../mould';
 import { FLAG_ENCLOSURE, FLAG_OVERLAY, type CabinContext } from './context';
 import { QUILT, quiltMeshHeight } from './quilt';
 
@@ -461,6 +461,15 @@ function stringer(ctx: CabinContext, regions: Region[], a: number, y0: number, y
     b.patch((s, tt) => pt(ya + (yb - ya) * tt, -1 + 2 * s, depth), 1, segs, attr, { normalAt: () => n, flip: true });
     b.patch((s, tt) => pt(ya + (yb - ya) * tt, -1, depth * s), 1, segs, attr, { normalAt: () => v3.neg(t) });
     b.patch((s, tt) => pt(ya + (yb - ya) * tt, 1, depth * s), 1, segs, attr, { normalAt: () => t, flip: true });
+    // No sawn end in view: where a stringer stops (at an opening's surround, the floor, the tunnel) it ends
+    // in a clip riveted to the wall, a little wider than the section.
+    if (ctx.detail === 0) {
+      const g = coneGenerator(m, a);
+      for (const [y, dir] of [[ya, 1], [yb, -1]] as [number, number][]) {
+        const o = v3.add(v3.addScaled(wallPoint(ctx, a, y), g, dir * 0.011), v3.scale(n, depth * 0.5 + 0.0015));
+        b.box(frameAt(o, t, g), width * 0.5 + 0.007, 0.013, depth * 0.5 - 0.0005, 0.002, attr);
+      }
+    }
   }
 }
 
