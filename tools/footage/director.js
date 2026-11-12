@@ -8,8 +8,9 @@
  *
  * Shots are chosen from the pilot's phase, the time spent in it and the milestones. A chase shot names the eye
  * direction (from the vessel's centre of mass to the eye, ROOT axes) and the distance; the director re-expresses
- * it in the chase rig's reference frame (src/camera/chaseRig.ts: local north/up in the navball's surface mode,
- * the orbit plane in orbit mode) and eases the rig there every frame. A map shot names the map rig's orbit
+ * it in the chase rig's reference frame (src/camera/chaseRig.ts: the local vertical is up; azimuth from north in
+ * the navball's surface mode, from the horizontal part of the velocity in orbit mode) and eases the rig there
+ * every frame. A map shot names the map rig's orbit
  * (azimuth about ROOT +Z, elevation above the ROOT equator, distance from the focus surface).
  *
  * Every shot change, phase and milestone is logged with performance.now() so the editor can cut the recording.
@@ -121,18 +122,21 @@
     return out;
   }
 
-  /** The chase rig's reference frame (chaseReferenceFrame in src/camera/chaseRig.ts). */
+  /**
+   * The chase rig's reference frame (chaseReferenceFrame in src/camera/chaseRig.ts): up = the local vertical
+   * in both navball modes; azimuth zero = the horizontal part of the orbital velocity in orbit mode, north on
+   * a surface.
+   */
   function rigFrame(geo, mode) {
+    const u = geo.up;
     if (mode === 'orbit') {
-      const sp = len(geo.v);
-      if (sp > 1e-3) {
-        const X = mul(geo.v, 1 / sp);
-        let Z = rej(geo.up, X);
-        Z = len(Z) < 1e-9 ? anyOrth(X) : norm(Z);
-        return { X, Y: cross(Z, X), Z };
+      const h = rej(geo.v, u);
+      const sp = len(h);
+      if (sp > 1e-3 && sp > 1e-6 * len(geo.v)) {
+        const X = mul(h, 1 / sp);
+        return { X, Y: cross(u, X), Z: u };
       }
     }
-    const u = geo.up;
     let e = cross(geo.pole, u);
     e = len(e) < 1e-9 ? anyOrth(u) : norm(e);
     const n = cross(u, e);
