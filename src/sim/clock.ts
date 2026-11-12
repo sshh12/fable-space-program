@@ -53,6 +53,10 @@ export const secondsOfTicks = (ticks: number): number => ticks * PHYSICS_DT;
  * from, the phase of the control ticks and the phase of the sun sample. All three are fixed functions of
  * the tick, so a session that reaches a tick by rails, by steps or after a restore is in the same state.
  *
+ * NOTHING CARRIES A BASE (docs/ARCHITECTURE.md 3 and 5.2: "no clock base"). The base below is a function of
+ * the tick, computed where it is needed: it is how "the orientation at ut = tick / 120" is evaluated
+ * without losing the bits that an absolute time in seconds does not have.
+ *
  * Clock base. A body's orientation is W(base) + rate x (seconds since the base), and a vessel on rails is
  * propagated to "base plus seconds since": the absolute time in seconds resolves only 1.2e-7 s at mission
  * epochs (1e-11 rad of the Earth's turn, a millimetre of an orbit), which would show as noise from step to

@@ -408,6 +408,10 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     // this flight acts on the clock's control ticks, `lead` ticks after the start (the test above), which
     // the controls do not sample. A milestone that is outside by its event time ALONE is therefore held to
     // the checker's allowance plus that lead; every element stays held to the checker's own allowance.
+    // THE RULE (accepted by the lead, 2026-11-12): outside by event time alone => allowed the checker's
+    // allowance + lead, where lead = 3 ticks = 0.025 s for this start. THE NUMBER it was accepted on:
+    // STAGE_SEP_1, 0.042 s against the checker's 0.033 s (its floor of one control tick), so 0.058 s
+    // allowed; the other 16 milestones are inside by the checker unchanged.
     const lead = ((4 - (Math.round(a.scenario.startUt * 120) % 4)) % 4) / 120;
     const byTheChecker = rows.filter((r) => r.pass).length;
     const timeOnly: string[] = [];

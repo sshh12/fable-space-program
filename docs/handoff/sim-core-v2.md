@@ -48,6 +48,12 @@ This file is a running log first; the sections below it are filled as each step 
   queue for the one slot; withdrawn); the survey lookup was checked headless instead. Request
   `sim-core-v2-2` was resolved by vehicle-pad meanwhile (37d3ad2).
 
+- Review of the six steps (accepted; four majors, eight minors) and lead decisions D1-D3: fixed in commits
+  972c8f8 (craft ids, crew, capture, codec 3, corpus), ac2fb78 (the tick-pure rule and the one authorised
+  re-record), 6a08c06 (rules as overrides, pad class limits, ids in the loader), 38cdfce (the pins),
+  a643a8f (request flight-ui-9). **READ "After the review" AT THE END FIRST: it replaces what the step
+  sections say about the clock base, the golden hash, the guard's recording, piece ids and the corpus path.**
+
 ## Step 1: the tick grid (MIGRATION_V2 3.1)
 
 ### What changed
@@ -421,7 +427,7 @@ the carried state afresh. A fingerprint with no way to the current one is refuse
 **Rule for every later package that edits a part definition's modules, resources or mass: add the entry;
 the corpus test fails until it exists.**
 
-### The corpus (`tests/unit/sim-vessel/codec-corpus/`)
+### The corpus (`tests/unit/sim-vessel/corpus/`; it was `codec-corpus` until the review)
 
 Twelve blobs: the six scenes of `tests/unit/sim-vessel/codecScenes.ts`, each written by codec version 1 and
 by version 2, with `corpus.json` (file, scene, version, library hash, bytes, parts, the state hash of the
@@ -655,12 +661,14 @@ New tests of the step: `src/core/defs/loader.test.ts` (20: the overlay (4), rule
 | 5 | The world speaks v2; `createSession` | done; the deprecated `createSim` keeps the v1 render root (see "Deviations") | "Step 5" |
 | 6 | Sites and the loader | done | "Step 6" |
 
-**Golden hash: `7da3ffe86c85228d`, 596,092 steps (`tests/mission/golden.json`).** Re-baselined twice in
-this package, each time reproduced by a second run without the update flag:
+**Golden hash: `b8221b0fd316207e`, 596,933 steps (`tests/mission/golden.json`).** Re-baselined three
+times in this package, each time reproduced by a second run without the update flag:
 1. step 1, `3f3a131cdd88eba7` -> `b850b94ea2dcc1a5`: the clock moved onto the tick grid (the start by
    2.004 ms, every rails landing onto a tick), which is another flight;
 2. step 4, `b850b94ea2dcc1a5` -> `7da3ffe86c85228d`: the state hash became the hash of the codec's
    output; the flight is the same (trajectory guard bit-identical before and after).
+3. the review fixes, `7da3ffe86c85228d` -> `b8221b0fd316207e`: the tick-pure rule (lead decision D1) is
+   another flight, and codec version 3 another hash; done once, for both ("After the review").
 Steps 2, 3, 5 and 6 did not change it.
 
 ### The brief's acceptance criteria, one by one
@@ -691,10 +699,11 @@ npx tsx tools/sim/writeRules.ts --check                                         
 npx tsx tools/sim/findStartTime.ts --launch-kind either                               # regenerates tools/sim/start-time.json
 ```
 
-Last full run (after the rename): 60 files, 652 tests pass; mission 36 of 36, `7da3ffe86c85228d`.
-Never re-record: `tests/mission/trajectory-guard.json`, `tests/mission/reference-v1-aligned.json`,
-`tests/mission/controls-v1.json`, `tests/unit/sim-vessel/trajectory-fixtures/*.json`,
-`tests/unit/sim-vessel/codec-corpus/*` (blobs are only ever added).
+Last full run (after the review fixes): see "After the review". Recorded files are pinned by
+`tools/dev/guard-pins.test.ts` and re-recorded by the lead only: `tests/mission/trajectory-guard.json`,
+`tests/mission/reference-v1-aligned.json`, `tests/mission/controls-v1.json`,
+`tests/unit/sim-vessel/trajectory-fixtures/*.json`, `tests/unit/sim-vessel/corpus/*.bin` (blobs are only
+ever added).
 
 ### Deviations from the brief (each stated where it is made)
 
@@ -745,7 +754,8 @@ Never re-record: `tests/mission/trajectory-guard.json`, `tests/mission/reference
 |---|---|---|
 | `docs/requests/sim-core-v2-1.md` | resolved (lead decision) | how the tick-grid step is judged |
 | `docs/requests/sim-core-v2-2.md` | resolved by vehicle-pad (37d3ad2) | a missing ground survey section is an error at load, not level ground |
-| `docs/requests/sim-core-v2-3.md` | open | the lead: event part ids, the cockpit of a command part, pad class limits, the staging and local rules |
+| `docs/requests/sim-core-v2-3.md` | resolved (lead decision D3, recorded in the request) | event part ids, the cockpit of a command part, pad class limits, the staging and local rules |
+| `docs/requests/flight-ui-9.md` | resolved by this package (a643a8f) | chute light without air, radar altitude and g load of a held vessel: read-outs only |
 | `docs/requests/NOTICE-sim-core-v2-1.md` | notice | everyone: the site is `ka-lae`, the pad `lc-1` |
 | `docs/requests/flight-ui-6.md`, `flight-ui-8.md`, `bodies-ephemeris-1.md` | resolved by this package | Mach in vacuum; stage thrust-to-weight after an SOI change; data tables beside body definitions |
 | `docs/requests/app-integration-13.md` | sim share answered, open | the rehearsal above |
@@ -764,16 +774,26 @@ Never re-record: `tests/mission/trajectory-guard.json`, `tests/mission/reference
   and `VesselSnapshot.crafts` (stage figures per craft, chase distances) are filled. An event's `partId`
   is an instance id in a vessel of one craft and a part key in an assembly.
 - The first craft's id of a local session equals its vehicle id (the seeded id source), which is why v1
-  code that confuses the two still works; do not rely on it.
+  code that confuses the two still works; do not rely on it. A piece of debris is a craft of its own:
+  `CraftSnapshot.id` is `<the craft it left>.<its root part>` and unique in the snapshot, while its VESSEL
+  id keeps the form `<launched craft>~<root part>` that `src/render/vehicle/vesselFeature.ts` parses.
+- `CraftSnapshot.cockpit` is filled (the interior id, the camera seat and the sensor mount of the command
+  part); null for a craft without a command part.
+- The list of callers of the deprecated `createSim` to move: `src/app/game.ts`, `labs/integration`
+  (`features.ts`, `main.ts`) and `tools/audio/entryProfile.ts`.
 - Sites: `padsOf(site)`, `padOf`, `padLocationOf`, `padTitle` of `src/core/defs/sites.ts`; the deprecated
   single-pad fields are the first pad. `site.name` no longer includes the pad's name. The survey section
   is `visuals/sites/ka-lae`.
 
 **island-core**
-- The world's clock base is state: body orientation is evaluated as the base (`baseTick`, `utBase`) plus
-  an offset of whole steps (`stepsSinceBase`), and a rails landing moves the base. A stepper that
-  evaluates orientation at `tick / 120` directly differs in the last bits and the trajectory guard will
-  say so. Carry the base with an island, or have the lead decide on a re-record.
+- **The state at a tick is a function of the tick and the vessels** (`src/sim/clock.ts`). There is no
+  clock base, control phase or sun phase to carry: the base of a tick is `baseTickOf(tick)` (the last whole
+  day), body orientation is `W(baseUtOfTick(tick)) + rate x offsetOfTick(tick)`, a vessel on rails is
+  `propagate(orbit, baseUtOfTick(tick), offsetOfTick(tick))` for a step and a landing alike, a control
+  tick is due when `tick % 4 === 0`, the sun sample is taken when `tick % 12 === 0` and is vessel state
+  (`Vessel.sun`, in the codec). An island that evaluates these expressions reproduces the world bit for
+  bit; one that evaluates orientation or a conic at `tick / 120` directly does not (the absolute time
+  resolves 1.2e-7 s there), and the trajectory guard will say so.
 - The six unit fixtures are defined by `tests/unit/sim-vessel/helpers.ts` (`makeEnv`) and `scenarios.ts`
   as they stand; they are the bit-exact reference for the per-vessel step.
 - A vessel's whole state is `Vessel` including `carried` (probe contact flags and friction anchors, buoy
@@ -781,8 +801,9 @@ Never re-record: `tests/mission/trajectory-guard.json`, `tests/mission/reference
   `captureVessel` / `restoreVessel` are the cheap copy for rollback rings; `encodeVessel` /
   `decodeVessel` the wire and storage form; `stateHash(vessel)` is the hash of the codec body and does not
   depend on the library hash.
-- Ids come from an injected source (`CreateSimOptions.ids`, `CraftIdSource`); the split and merge rules
-  are in `src/sim/vessel/ids.ts`. `src/sim/vessel` may import only `src/core` and itself
+- Ids of launched craft come from an injected source (`CreateSimOptions.ids`, `CraftIdSource`); a piece
+  that leaves a craft is a new craft whose id is DERIVED (`pieceCraftId`: `<parent>.<root part>`, no
+  counter, so a rollback and a replay issue the same one); the rules are in `src/sim/vessel/ids.ts`. `src/sim/vessel` may import only `src/core` and itself
   (`TICKS_PER_SECOND` from `@/core/contracts/net` there, not `../clock`).
 - `dockMerge` and `undock` conserve momentum and restore poses; envelopes, port states and joints are
   yours and `contact-docking`'s.
@@ -802,7 +823,7 @@ Never re-record: `tests/mission/trajectory-guard.json`, `tests/mission/reference
 - A vessel blob carries a fingerprint of every part definition it was written under. Changing a
   `PartDef` that flown vessels use needs a `PartMigration` in `src/sim/vessel/migrations/index.ts`
   (helpers `fitResources`, `insertModule`, `dropModule`, `fitSurfaces`), or old blobs are refused by
-  part and fingerprints; add a blob to `tests/unit/sim-vessel/codec-corpus` when you do. A design the
+  part and fingerprints; a blob added to `tests/unit/sim-vessel/corpus` is pinned by the lead (`tools/dev/guard-pins.test.ts`). A design the
   reader's library does not have travels inside the blob.
 - `meridian-lunar` and its parts define the golden hash, the trajectory guard and the fixtures.
 - Stage labels shown per part come from `VehicleDef.stageGroups[].label`; chase distances from
@@ -810,3 +831,211 @@ Never re-record: `tests/mission/trajectory-guard.json`, `tests/mission/reference
   file yet: request `sim-core-v2-3`).
 - Pads take `class`, `maxLiftoffMass` and `maxDiameter`; nothing checks a vehicle against a pad yet
   (`VehicleDef.padInterface` is absent on the one vehicle).
+
+## After the review (lead decisions D1, D2, D3; findings 1-12; request flight-ui-9)
+
+An independent review accepted the six steps and found four majors and eight minors. This section says
+what changed; where it contradicts a step section above, this section holds.
+
+### D1: the state at a tick is a function of the tick and the vessels (finding 1)
+
+Before, three things depended on how the clock got to a tick: the base that body orientations were
+evaluated from (the last rails landing), the phase of the control ticks (counted from the start and from
+every landing) and the phase of the sun sample (counted in steps). Reaching one tick by three routes gave
+three Earth quaternions (5e-12 apart) and pad positions up to 63 um apart. Now (`src/sim/clock.ts`):
+
+| What | Rule | Where |
+|---|---|---|
+| Clock base | `baseTickOf(tick)` = the last whole multiple of `BASE_TICKS` = one day (10,368,000 ticks) | orientation: `W(base) + rate x offset`; a vessel on rails: `propagate(orbit, base, offset)` for a step AND for a rails landing |
+| Control tick | due when `tick % 4 === 0`; the pilot is also asked before every rails advance, at whatever tick the clock stands (the contract's words; a rails advance is the driver's request, an input) | `World.step`, `World.advance`, `src/pilot/runner.ts` |
+| Sun sample | taken when `tick % 12 === 0` (the reduced tier: every tenth of those), at a rails landing and at the start; it is vessel state, `Vessel.sun { dir, visibility }`, carried by the codec | `World.refreshSun` |
+
+Why a day for the base: the offset from the base stays under 86,400 s, where a whole number of ticks
+times 1/120 s is exact to 1.5e-11 s (1e-15 rad of the Earth's turn, 7 nm at its surface, 1e-7 m of a low
+orbit); a base is a whole number of seconds, exact; and it changes once per day of universe time. At that
+one tick the evaluation error of the body angle at an absolute time shows as one step of the ground:
+measured under the stack on the pad, 23 um (`tickPure.test.ts`). A shorter period shows it more often, a
+longer one lets the offset lose bits.
+
+One consequence that is a change of numbers, not only of phase: **a rails landing is now the conic at the
+tick evaluated from the base** (the same expression as a step). v1, and this world before, evaluated a
+landing at the absolute time in seconds, which resolves 1.2e-7 s at mission epochs. The two differ by up
+to 0.38 mm (5.6e-8 s of flight; measured over 30 landings). Without this a vessel on rails was in one
+state at a tick after a landing and in another after a step.
+
+Test: `tests/unit/sim-world/tickPure.test.ts` (5). One tick is reached by a rails advance of 100 s and
+240 steps, by one of 98 s and 480 steps, and by 12,240 steps, for a stack held on the pad and for a vessel
+coasting on rails: every body's orientation, the vessel's position, velocity and attitude, its sun sample
+(also twelve steps later) and the ticks at which the real-time loop asks the pilot are the same bits on
+all three routes. (The start tick of the scenario is 1 mod 4 and 5 mod 12: the phases are the clock's.)
+What is NOT equal between a rails route and a stepped one, and is not meant to be: temperatures (a rails
+advance does not integrate the thermal state) and the attitude of a vessel that tumbles on rails.
+
+### The one authorised re-record, and what was not re-recorded
+
+| File | State |
+|---|---|
+| `tests/mission/golden.json` | re-baselined once: `b8221b0fd316207e`, 596,933 steps (before: `7da3ffe86c85228d`, 596,092); reproduced on a second run and on a third after request flight-ui-9 |
+| `tests/mission/trajectory-guard.json` | re-recorded once on the tick-pure flight (the recorder refuses to overwrite: the old file was removed first); 400 of 400 bit-identical on the second and third run |
+| `data/defs/scenarios/qa-*.json` | re-captured from the new nominal flight (they are captures of it; the mission test compares) |
+| the six fixtures `tests/unit/sim-vessel/trajectory-fixtures/*.json` | NOT re-recorded: bit-identical through every change of this round (the per-vessel step did not change) |
+| `tests/mission/reference-v1-aligned.json` | NOT re-recorded: v1 values, see check 1 |
+| `tests/mission/controls-v1.json` | NOT re-recorded: four v1 flights, see check 4 |
+| `tests/unit/sim-vessel/corpus` | 6 version-3 blobs added; the 12 earlier blobs untouched; the index re-derived (the hash is of the version-3 body) after decoding every blob to the hash of its scene |
+
+All of them are pinned by SHA-256 in `tools/dev/guard-pins.test.ts` (finding 7): only the lead re-records.
+
+### The four checks of sim-core-v2-1 on the tick-pure flight
+
+| Check | Result |
+|---|---|
+| 1. Same start, against the v1 clock (`reference-v1-aligned.json`, unchanged) | The equality of step 1 (5e-10) cannot hold any more and is restated. The first control tick after the start is at the next multiple of four, 3 ticks after the start (start tick 112588898261 = 1 mod 4), where v1's pilot acted at the start. **The ascent is v1's ascent flown 3 ticks later**: at all 25 states (six milestones to EARTH_ORBIT and every 30 s) the event and capture times differ by exactly 0.025 s; da/a 4.8e-7, de 5.8e-7, dE/E 4.8e-7, dh/h 5.3e-7, dm/m 3.5e-8, altitude 1.8 mm; the plane and the inertial place differ by what the Earth turns in 25 ms (di 2.6e-6 rad, dLAN 1.0e-5 rad, 11.3 m). Asserted with: the lead to 1e-4 s; 1e-6 in a, e, E, h; 1e-7 in mass; 1 cm; 1e-5 and 2e-5 rad; 15 m |
+| 2. Rails equivalence | 30 landings from the six coast states: 0 m and 0 m/s against the conic at the tick. Against v1's evaluation at the absolute time: up to 3.8e-4 m (5.6e-8 s of flight). The 36-of-36 bit-identity with v1 measured at step 1 is given up by the rule above, by that amount |
+| 3. The mission's gates | 36 of 36; cheatCounter 0; no incomplete terrain query. One assertion changed its tolerance: see 4 |
+| 4. Envelope against `baseline-v1.json` with the four v1 controls | 16 of 17 milestones inside by the lead's checker unchanged. STAGE_SEP_1 is outside BY ITS EVENT TIME ALONE: 0.042 s against 0.033 s (the checker's floor of one control tick); its elements are inside (da/a 5.3e-5 of 1.05e-4 allowed). The controls are v1 flights with shifted starts, whose pilots act at their starts; none samples a pilot who acts 3 ticks after the start. **The test therefore allows a milestone that is outside by event time alone the checker's allowance plus that lead (0.025 s)**, and holds every element to the checker's own allowance. This is a tolerance I changed in a test of a check the lead defined: it is the lead's to confirm or to replace by control flights that sample the lead (they need the v1 tree, which no longer builds against the craft model here). Touchdown 4.02 m from the baseline's point; splashdown in the baseline's zone |
+
+Envelope rows (dTime s, da/a; allowed in brackets): LIFTOFF 0.008 (0.033), 1.5e-16; MAX_Q 0.008,
+7.7e-15; STAGE_SEP_1 0.042 (0.033), 5.3e-5 (1.05e-4); FAIRING_JETTISON 0.008, 4.5e-5; STAGE_SEP_2 -0.025
+(0.100), -4.8e-5; EARTH_ORBIT -0.025, -4.8e-5; TLI_COMPLETE -0.592 (1.333), -1.7e-3; MOON_SOI_ENTER -16.3
+(223.2), 3.1e-4; LUNAR_ORBIT -16.9 (269.1), 4.7e-3; LUNAR_TOUCHDOWN 42.1 (150.5), -3.9e-8 (4.5e-8);
+LUNAR_LIFTOFF 42.1, 2.5e-6; MOON_SOI_EXIT 68.1 (206.4), -2.9e-4; EARTH_PERIGEE_TARGETED 68.0 (1293.6),
+8.9e-5; ENTRY_INTERFACE 16.6 (157.3), 2.1e-4; DROGUE_DEPLOY 24.9, 2.4e-5; MAIN_DEPLOY 24.9, 4.7e-6;
+SPLASHDOWN 24.8, 4.6e-6.
+
+### D2: craft ids are unique (finding 4)
+
+Wording for the architecture's owner (section 3 "Ids" and 7.2):
+
+- **A craft has one part tree with one root part** (`CraftRuntime.root`, the instance id of that part) and
+  a lineage (`CraftRuntime.parent`: the craft it separated from; null for a craft that was launched).
+- **At assembly** a vehicle whose file mates trees by docking ports is an assembly from the start: every
+  tree is a craft of its own. The tree of the vehicle's root part takes the identity given to the
+  assembler; each further tree takes an id from the id source (`CraftIdentity.ids`; without one,
+  `<craftId>-2`, `-3`, ...). The vessel has the assembly id of its first two craft. Each craft has the
+  vehicle's stage list and its own stage pointer, and fires of a stage the actions whose parts it has.
+- **At a separation**, for each craft of the vessel: the piece that holds the craft's root part keeps the
+  craft (its id and its live stage stack; when no piece holds it, the identity-keeping piece, as before).
+  Every other piece that takes parts of it away is a NEW craft: id `<parent craft id>.<instance id of its
+  root part>` (`pieceCraftId`), `parent` = the craft it left, a copy of the stage state. The id is a
+  function of ids, with no counter, so a replay, a rollback and a re-run of a split issue the same one.
+- **Vessel ids are unchanged.** A vessel of one piece craft is `<launched craft at the top of its
+  lineage>~<instance id of its root part>`, the form a piece always had (so presentation state keyed by
+  vessel id, and `rootOf` in `src/render/vehicle/vesselFeature.ts`, are unaffected; a fairing panel is
+  `<craft>~<fairing>#panel<k>`). A launched craft alone is its craft id; assemblies as before.
+- **Alphabet.** An id issued by a source, a vehicle id and a part's instance id contain none of `/` (part
+  key), `~` (derived vessel ids), `.` (lineage of a piece craft): checked in the loader, in the seeded
+  source and where a vehicle is assembled. The contract names `/` and `~`; `.` is this package's, needed
+  so that a derived craft id cannot collide with an issued one. A craft id may therefore contain `.`.
+- The launch clamps (four pieces of one craft) are welded into one held structure: `mergeVessels` welds
+  pieces that left the SAME craft; the result is the first piece's craft, the other three ids end there.
+- Two former pieces of one craft are two craft: docking them again is ordinary docking (tested with the
+  released tandem and with a capsule whose service module left).
+
+**A consequence the lead should know (not bent, reported):** a flat vehicle file with mated trees has ONE
+stage list. Each tree's craft fires only the actions on its own parts, so in `test-tandem` the tug's
+engine and the tug's port are fired by the TUG craft's stack (`fireNextStage(v, env, 1)`), and the helm
+craft (the capsule) has no live stage of its own. `PlayerCommands.stage()` fires the helm craft only, so a
+single pilot cannot fly such a vehicle through the session until a command reaches the stacks of their
+other craft (or the vehicle is authored as assemblies with their own stages, as fleet-data's `uses`).
+No real vehicle is affected: `meridian-lunar` is one tree.
+
+### Findings 2, 3, 5, 8, 9, 10, 11, 12
+
+| # | Fixed how | Test |
+|---|---|---|
+| 2 | `restoreVessel` keeps the structure cache only when it is the very object the capture was taken under (`VesselCapture.struct`); a cache built since is dropped and rebuilt from the restored state | `codec.test.ts`, "a capture and the structure cache": capsule entries at 9, 15 and 25 degrees, captured at a dose of 12 g s, crew lost 47, 30 and 20 steps later; after the restore the crew is alive, the structure has 3 crew, the dose goes on, and the end hash equals an independent copy's |
+| 3 | The crew flag is derived from the command parts (`crewAliveOf`: a live crewed command part, or none crewed) in `dockMerge`, for every piece of `separateVessel` (the identity-keeping piece of a vessel that had lost its crew stays so unless a live crew is aboard) and at a crew loss. The g dose is the command part's (`CommandRuntime.gDose`); `Vessel.gDose` shows the largest among live crews (the fatal one when none lives) | `crafts.test.ts`, "crew at a dock and an undock": a live ferry and a ferry whose crew was lost at 21 g s, either as the base: the assembly is alive, the doses stay 4 and 21, after the undock each is itself |
+| 5 | A crewed ferry and a tug docked by the tug's flank port: axes 113 degrees apart, unequal masses, both spinning, products of inertia up to 98 % of the smallest moment. The merged body against an independent parallel-axis composition (Cramer's rule, nothing of `dock.ts`): turn rate to 6.2e-15 relative, inertia to 1e-11, momentum to 1e-11. An undock at that port: each piece gains (port - its centre) x impulse to 1e-9; they turn by 0.18 and 6.11 deg/s | `crafts.test.ts`, "docking without symmetry" (2) |
+| 8 | `tests/unit/sim-vessel/codec-corpus` -> `tests/unit/sim-vessel/corpus` (`git mv`) | - |
+| 9 | Codec version 3. An enumeration byte this build has no member for is refused (hold, surface state, SAS mode); a parent index that is outside the vessel, the part itself, in another craft or closing a loop is refused; an embedded design is held to what the simulation reads of a vehicle; the keys of every plain object are written sorted. **Versions 1 and 2 were written by earlier states of this same package, not by a released build: reading them proves the version dispatch and the conversions (a piece that carried its parent's craft id becomes a craft of its own; the vessel's dose goes to its live crews), not compatibility with a blob in the field.** Sizes of version 3: lander 2,988 and 2,990, capsule 1,728, stack mid-staging 8,331, coasting 2,245, the 38-part stack 8,240 bytes (target under 9,000) | `codec.test.ts`, "what a blob may not say" (5) |
+| 10 | `findPartByKey` takes part keys only (a string without `/` names nothing; `findCraftPart` inside a craft). Event part ids keep both forms until the tighten step after sub-wave 3.2 (D3) | `crafts.test.ts` |
+| 11 | `TimeView.limitedBy.kind` is set where the sentence is chosen (`warpLimitKind`), not read out of it. `advanceRails`: the contract's comment now says what the code does (the first tick at or after the target; commit 537da5f by its owner) | `snapshotV2.test.ts` |
+| 12 | `normaliseSite` compares a pad's `offsetEnu` with its resolved coordinates: within 20 m or 0.2 % of the distance (the staged Ka Lae pads, rounded to 10 m, are within 5.1 m at 13 km) | `loader.test.ts` |
+
+### D3 (request sim-core-v2-3)
+
+- **Event part ids**: both forms stay until the tighten step, as the contract now says.
+- **Cockpit**: `CraftSnapshot.cockpit { id, cameraSeat, sensorMount }` is filled from the command part.
+- **Pad limits**: `padLimitsOf(pad, rules?)` of `src/core/defs/sites.ts`: the class's limits
+  (`rules.pads.classLimits`, else the contract's `DEFAULT_PAD_CLASS_LIMITS`) with the pad's own values over
+  them. No `Infinity` anywhere: a site that states the single pad only is of the heavy class. LC-1's
+  3,000 t and 9.5 m stay on the pad, marked PROVISIONAL in the file. Nothing checks a vehicle against
+  them yet.
+- **Rules files are overrides of the default** (`completeRules`): `default.json` states its id and version;
+  `staging.json` every wall-clock timer, THE SWEEP INCLUDED, at a day per minute with lifetimes of at least
+  two sweeps (sweep 1/24 s; outage threshold 2.5 s; debris and wrecks 5 s; arcs 60 s; pressure floors 60
+  and 180 s; unowned 120 s; craft 840 s; accounts 5,400 s: a staging identity does not outlive a session,
+  and the file says so); `local.json` the nine retentions at `Number.MAX_SAFE_INTEGER` s (the largest value
+  a number carries exactly: the contract states no smaller bound) and everything else the default. A key
+  that starts with `$` annotates a file and is dropped by the loader (JSON has no comments). The lead can
+  now move the class limits into the default document without touching a file.
+
+### Request flight-ui-9 (a643a8f)
+
+Read-outs only; the golden hash and the trajectory guard are unchanged by it. `Readouts.chuteEnvelope` is
+null where there is no air at the vessel; `Readouts.altitudeRadar` is the clearance of the vehicle's own
+lowest probe held or flying (continuous through the clamp release); `Readouts.gLoad` and
+`VesselSnapshot.gLoad` of a held vessel are the local gravity over g0. The simulation's own
+`radarAltitude` (milestones, warp clamp) and `Vessel.gLoad` are untouched. Not done: the per-chute module
+state `envelope` is a non-nullable contract type and still carries a judgement in vacuum.
+
+### Verification after the review
+
+- `npm run typecheck`: clean for the whole tree.
+- The brief's unit set plus `src/pilot`, `src/core/contracts` and `tests/unit/vehicle`: see the last line
+  of this section.
+- `npm run test:mission`: 36 of 36, `b8221b0fd316207e`, guard 400 of 400 (the last run, after every change of this section but comments and this file: unit suites `src/sim src/session src/pilot src/core/defs src/core/contracts src/terrain tests/unit/sim-vessel tests/unit/sim-world tests/unit/sim-orbits tests/unit/terrain-core tools/dev tests/unit/vehicle tests/unit/cockpit tests/unit/vfx tests/unit/fakes`: 73 files, 790 tests, all pass).
+
+### Rulings of the lead on what was reported (2026-11-12, relayed by the coordinator)
+
+1. **The vessel id of a departing piece keeps its derived form** `<launched craft>~<root part>`. The craft
+   id is what is universe-unique (`<parent craft id>.<root part instance id>`, a pure function of ids,
+   the lineage in `parent`). The sentence of ARCHITECTURE section 3 that made the vessel id the craft id
+   was the recorder's wording and is being corrected by its owner. No second re-baseline.
+2. **The lineage is the parent craft id.** No separation tick is kept beyond `joinedTick`; no codec
+   change. The architecture sentence is being corrected.
+3. **The envelope rule stands**: a milestone that is outside by its event time ALONE is allowed the
+   checker's allowance plus the pilot's lead of 3 ticks (0.025 s); every element is held to the checker's
+   own allowance. The one case: STAGE_SEP_1, 0.042 s against 0.033 s (allowed with the lead: 0.058 s). The
+   rule and the number are stated where `tests/mission/full-mission.test.ts` asserts them ("envelope").
+4. **The same-start check is "the v1 ascent flown exactly 3 ticks later"**, with the v1 reference
+   unchanged and pinned (below: why the bound is the size it is).
+
+Still open, for the lead:
+- The stage stack of a vehicle whose file mates several trees (D2, above).
+- The per-chute `envelope` state in vacuum (flight-ui-9): a contract change if it should be nullable.
+- `CraftSnapshot` has no lineage field: request `docs/requests/sim-core-v2-4.md` (below, for the sweep).
+
+### Why 1e-6 is the right size for the same-start bound (and not a loosened 1e-9)
+
+The 5e-10 equality with the v1 clock was demonstrated at step 1 (commit 2efb4bb, "Step 1" above: a, e, E,
+h within 5.0e-10 at all 25 states, i 2.0e-9 rad, LAN 7.7e-9 rad, event times within 1.9e-5 s), while both
+pilots acted on the same ticks. The tick-pure rule moved the pilot's control ticks onto the multiples of
+four: 3 ticks after this start. Every state of the ascent is then v1's state 0.025 s later, to the tick.
+A lift-off 0.025 s later is the same ascent in the rotating frame of the Earth, turned in inertial space by
+what the Earth turns in that time:
+
+    Earth's rate x lead = 7.292e-5 rad/s x 0.025 s = 1.8e-6 rad   (11 m at the pad, which moves at 440 m/s)
+
+A pure turn about the pole would change the node by 1.8e-6 rad (measured at LIFTOFF to T+240: 1.8e-6)
+and nothing else. The guidance flies to an inertially fixed target (the plane and the parking orbit it
+aims for do not turn with the Earth), so it steers that 1.8e-6 rad out, and the in-plane elements move by
+a fraction of it: measured da/a 4.8e-7, de 5.8e-7, dE/E 4.8e-7, dh/h 5.3e-7, a quarter to a third of
+1.8e-6. The bound 1e-6 is that angle's order, not a tolerance that was opened: a flight that differed from
+v1 by a control tick at a cut-off shows 5e-5 (the envelope rows), fifty times more, and fails it. The
+plane angles are held to 1e-5 rad (i, measured 2.6e-6) and 2e-5 rad (LAN, measured 1.0e-5 once the yaw
+steering has acted), the mass to 1e-7 (3.5e-8), the altitude to 1 cm (1.8 mm), the times to the lead
+within 1e-4 s.
+
+### For presentation-sweep, from the rulings
+
+- **Do not parse a vessel id.** `src/render/vehicle/vesselFeature.ts` takes the launched craft of a debris
+  vessel from the text before `~` in its vessel id (`rootOf`) to carry per-part presentation state across
+  a separation. That is the consumer's fault to remove at the sweep: the lineage belongs to the CRAFT. A
+  piece is a craft whose id is `<parent craft id>.<instance id of its root part>` and whose `parent` is
+  the craft it left. The snapshot's craft block does not carry `parent` yet (it is not a field of
+  `CraftSnapshot`; request `sim-core-v2-4` asks for it, and the world fills it in one line when it is
+  there). Until then the parent is the craft id up to its last `.`, and the launched craft the id up to
+  its first `.`: source-issued craft ids and instance ids contain no `.`.
+- Callers of the deprecated `createSim`: `src/app/game.ts`, `labs/integration/features.ts` and `main.ts`,
+  `tools/audio/entryProfile.ts`.

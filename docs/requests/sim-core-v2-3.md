@@ -90,3 +90,24 @@ step, not a defect of a flight.
 Also decided with this review and recorded in ARCHITECTURE (3, 5.2, 7.2, 7.5) and MIGRATION_V2 (lead
 steps, "during sub-wave 3.1"): tick-pure state (no clock base) and craft identity (universe-unique craft
 ids; a departing piece is a new craft with lineage).
+
+## Carried out (sim-core-v2, after the answer above)
+
+1. Event part ids: both forms stay until the tighten step. `findPartByKey` accepts part keys only; vehicle
+   ids, part instance ids and issued craft ids may contain none of `/`, `~` and `.` (the loader, the seeded
+   source, the assembler). `.` is this package's addition: it separates the lineage in the id of a craft
+   that left another as a piece (`<parent craft id>.<root part instance id>`).
+2. Cockpit: `CraftSnapshot.cockpit` is filled from the command part's `CommandRuntime`; null for a craft
+   without a command part.
+3. Pad limits: `padLimitsOf(pad, rules?)` of `src/core/defs/sites.ts` (class limits of the rules document,
+   else `DEFAULT_PAD_CLASS_LIMITS`, with the pad's own values over them); the loader accepts a pad without
+   limits and a rules file that states `pads.classLimits`; no `Infinity`; LC-1's numbers are marked
+   provisional in `data/defs/sites/ka-lae.json`.
+4. Rules files are overrides, completed by `completeRules` in the loader, so the lead can move the class
+   limits into the default document without touching a file. The numbers of `staging` and `local` are the
+   ones the review's decision D3 (iv) asked for, relayed with the review: staging scales the sweep interval
+   as well and holds every lifetime to at least two sweeps; local keeps the time and physics rules and
+   sets every wall-clock retention to `Number.MAX_SAFE_INTEGER` seconds. They are still data for
+   `universe-directory` to own. `tools/sim/writeRules.ts` derives the three files.
+
+Details and measurements: docs/handoff/sim-core-v2.md, "After the review".
