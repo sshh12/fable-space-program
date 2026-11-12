@@ -642,59 +642,74 @@ export const padCrawlerway: SiteGenerator = ({ params }) => {
 
 // ------------------------------------------------------------------------------------------ pipe run
 
-export const padPipeRun: SiteGenerator = ({ params }) => {
+export const padPipeRun: SiteGenerator = ({ params, ground }) => {
   const length = numParam(params, 'length', 100);
   const radius = numParam(params, 'radius', 0.3);
   const count = numParam(params, 'count', 2);
   const height = numParam(params, 'height', 1.6);
-  const material = strParam(params, 'material', 'steel-brushed') as MatId;
+  const material = strParam(params, 'material', 'paint-pipe') as MatId;
   const loopEvery = numParam(params, 'loopEvery', 70);
   const pitchOf = (r: number): number => r * 2 + 0.35;
+  const pitch = pitchOf(radius);
+  const w = count * pitch + 0.5;
+  // The run is level and clears the highest ground under it; where that lifts it above the height its ends
+  // are met at, each end steps down to it.
+  let top = -Infinity;
+  for (let z = 0; z <= length; z += 2) for (const x of [-w / 2 - 3, 0, w / 2 + 3]) top = Math.max(top, ground.hi(x, -z));
+  const run = Math.max(height, top + radius + 0.55);
+  const stepped = run > height + 0.03;
+  const n = Math.max(2, Math.round(length / 9));
   const body = buildModel('pad.pipeRun', (b) => {
-    const pitch = pitchOf(radius);
     // Along the model's -Z ("north") from the origin, with expansion loops.
     for (let i = 0; i < count; i++) {
       const x = (i - (count - 1) / 2) * pitch;
-      const pts: Vec3Tuple[] = [[x, height, 0]];
+      const pts: Vec3Tuple[] = stepped ? [[x, height, 0], [x, height, -1.2], [x, run, -1.2 - (run - height) * 1.6]] : [[x, height, 0]];
       const loops = Math.floor(length / loopEvery);
       for (let k = 1; k <= loops; k++) {
         const z = -(k * length) / (loops + 1);
         const out = 3 + i * pitch;
-        pts.push([x, height, z + 2.5], [x + out, height, z + 2.5], [x + out, height, z - 2.5], [x, height, z - 2.5]);
+        pts.push([x, run, z + 2.5], [x + out, run, z + 2.5], [x + out, run, z - 2.5], [x, run, z - 2.5]);
       }
+      if (stepped) pts.push([x, run, -length + 1.2 + (run - height) * 1.6], [x, height, -length + 1.2]);
       pts.push([x, height, -length]);
       b.mat(material).masks(0.1, 1, 0.3, 0.3);
       pipe(b, pts, radius, radius * 3, { segs: b.pick(14, 8, 5), tag: 'pipe' });
     }
-    b.mat('galvanised').masks(0.2, 1, 0.1, 0);
-    const w = count * pitch + 0.5;
-    const n = Math.max(2, Math.round(length / 9));
+    // Supports: a steel post on a concrete plinth that stands in the ground under it, and a cross-head.
     // The far LOD keeps the two end supports, so the run still stands on the ground.
     for (let k = 0; k <= n; k += b.lod === 2 ? n : 1) {
       const z = -(length * k) / n;
-      box(b, 0.22, height - radius, 0.22, [0, (height - radius) / 2, z], 'support');
-      if (b.lod < 2) box(b, w, 0.16, 0.26, [0, height - radius - 0.08, z], 'cross-head');
+      const under = k === 0 || k === n ? height : run;
+      const lo = ground.lo(0, z) - 0.35;
+      const hi = ground.hi(0, z) + 0.18;
+      b.mat('concrete-wall').masks(0, 1, 0.35, 0);
+      box(b, 0.7, hi - lo, 0.5, [0, (hi + lo) / 2, z], 'plinth');
+      b.mat('galvanised').masks(0.2, 1, 0.2, 0);
+      box(b, 0.22, under - radius - hi + 0.02, 0.22, [0, (under - radius + hi) / 2 - 0.01, z], 'support');
+      if (b.lod < 2) box(b, w, 0.16, 0.26, [0, under - radius - 0.08, z], 'cross-head');
     }
     if (b.lod === 2) return;
+    // A cable tray rides the supports beside the pipes.
+    b.mat('galvanised').masks(0.2, 1, 0.3, 0);
+    box(b, 0.34, 0.07, length - 4, [-w / 2 - 0.1, run - radius - 0.2, -length / 2], 'cable-tray');
     // Both ends of a run meet something (a tank farm's manifold, a valve house wall): each pipe ends in a
     // sleeve collar there instead of a sawn-off tube.
     b.mat('steel-dark');
     for (let i = 0; i < count; i++) for (const z of [-0.12, -length + 0.12]) b.at(xf.mul(xf.translate((i - (count - 1) / 2) * pitch, height, z), xf.rotX(Math.PI / 2)), () => ringSolid(b, radius - 0.01, radius + 0.13, -0.12, 0.12, b.pick(16, 10, 6), 'sleeve'));
-    if (b.lod === 0) {
-      b.mat('steel-bare');
-      for (let i = 0; i < count; i++) for (let k = 1; k < n; k += 3) b.at(xf.mul(xf.translate((i - (count - 1) / 2) * pitch, height, -(length * k) / n + 1.2), xf.rotX(Math.PI / 2)), () => ringSolid(b, radius, radius + 0.07, -0.06, 0.06, 16, 'flange'));
-    }
+    // Field joints of the jacket: a flanged collar every third support, in bare steel.
+    b.mat('steel-bare').masks(0.3, 1, 0.5, 0);
+    for (let i = 0; i < count; i++) for (let k = 1; k < n; k += 3) b.at(xf.mul(xf.translate((i - (count - 1) / 2) * pitch, run, -(length * k) / n + 1.2), xf.rotX(Math.PI / 2)), () => ringSolid(b, radius, radius + b.pick(0.07, 0.09, 0), -0.06, 0.06, b.pick(16, 8, 6), 'flange'));
   });
   // The run's own shadow is resolved only close to the camera. In the next cascade a solid bar the width of
   // the pipe bundle casts for it: a clean continuous line beside the run, not the crumbs of its supports.
   const shadow = buildModel('pad.pipeRun.shadow', (b) => {
     b.mat('galvanised');
-    box(b, count * pitchOf(radius), radius * 2, length, [0, height, -length / 2], 'shadow-proxy');
+    box(b, count * pitchOf(radius), radius * 2, length, [0, run, -length / 2], 'shadow-proxy');
   });
   return {
     models: { body, shadow },
     pose: (_state, emit) => {
-      emit('body', null, null, { fineShadowOnly: true });
+      emit('body', null, null, { fineShadowOnly: true, grime: 1 });
       emit('shadow', null, null, { shadowProxy: true, nearShadowOnly: true });
     },
   };

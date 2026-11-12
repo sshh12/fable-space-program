@@ -818,6 +818,33 @@ const recipes: Record<string, () => void> = {
     save('grate_orm', orm(S, S, (u, v) => [clamp(0.25 + 0.75 * bar(u, v)), 0.9, bar(u, v)]));
   },
 
+  // Chain-link fence fabric, tile 0.6 m: twelve 50 mm diamonds of 3.5 mm galvanised wire, woven (the wires
+  // of the two directions pass over and under each other at the knuckles).
+  chainlink() {
+    const S = 512;
+    const N = 12;
+    const wire = (u: number, v: number): { k: number; over: number } => {
+      const a = Math.abs(mod((u + v) * N, 1) - 0.5);
+      const b = Math.abs(mod((u - v) * N, 1) - 0.5);
+      const wa = smooth(0.445, 0.47, a);
+      const wb = smooth(0.445, 0.47, b);
+      return { k: Math.max(wa, wb), over: wa > wb ? 1 : 0.8 };
+    };
+    const h = Field.from(S, S, (u, v) => {
+      const w = wire(u, v);
+      return 0.004 * w.k * w.over;
+    });
+    save('chainlink_n', normalMap(h, 0.6, 0.6));
+    save(
+      'chainlink_albedo',
+      Image.from(S, S, (u, v) => {
+        const w = wire(u, v);
+        const k = (0.34 + 0.08 * fbm(u, v, 30, 30, 2, 191)) * w.over;
+        return [k * 0.97, k * 0.985, k];
+      }).alpha((u, v) => wire(u, v).k),
+    );
+  },
+
   // Cast-in-place concrete, tile 18 m: sixteen 4.5 m slabs, each poured and finished on its own (tone, trowel
   // direction, mottling), joints, a few hairline cracks. Nothing in it is a distinct stain: stains and
   // weathering larger than a slab are the mesh's grime weights, so no two bays of the apron look alike.

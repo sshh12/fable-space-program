@@ -50,6 +50,8 @@ const SPECS = {
   'paint-red': paint([0.52, 0.035, 0.02], 0.45, 1, 0.16),
   'paint-grey': paint([0.33, 0.35, 0.37], 0.5, 0.7, 0.25),
   'paint-yellow': paint([0.72, 0.5, 0.03], 0.5, 0.8, 0.22),
+  /** Weathered white paint on the jackets of cross-country propellant lines: chalky, hardly any gloss left. */
+  'paint-pipe': paint([0.66, 0.66, 0.63], 0.68, 0.25, 0.4),
   /** Zinc-chromate style primer on internal structure. */
   primer: { color: [0.36, 0.42, 0.2], metallic: 0, roughness: 0.62, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
   // ---- metals
@@ -74,6 +76,8 @@ const SPECS = {
   /** Hot-dip galvanised steel after a few years outdoors: the zinc has gone to a dull grey patina, more oxide than metal. */
   galvanised: { color: [1, 1, 1], metallic: 0.45, roughness: 0.6, tile: [0.8, 0.8], tex: { a: 'galv_albedo', n: 'galv_n', o: 'galv_orm' } },
   grating: { color: [1, 1, 1], metallic: 0.9, roughness: 0.6, tile: [0.5, 0.5], tex: { a: 'grate_albedo', n: 'grate_n', o: 'grate_orm' }, doubleSided: true, alphaCutoff: 0.5 },
+  /** Chain-link fence fabric: 50 mm diamonds of galvanised wire, cut out (far away it thins to a grey veil). */
+  chainlink: { color: [1, 1, 1], metallic: 0.5, roughness: 0.6, tile: [0.6, 0.6], tex: { a: 'chainlink_albedo', n: 'chainlink_n', o: 'galv_orm' }, doubleSided: true, alphaCutoff: 0.5 },
   // ---- composites, insulation, thermal protection
   carbon: { color: [1, 1, 1], metallic: 0, roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.18, tile: [0.25, 0.25], tex: { a: 'carbon_albedo', n: 'carbon_n', o: 'carbon_orm' } },
   'foam-orange': { color: [1, 1, 1], metallic: 0, roughness: 0.92, tile: [9.6, 9.6], tex: { a: 'foam_albedo', n: 'foam_n', o: 'foam_orm' } },

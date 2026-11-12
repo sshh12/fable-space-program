@@ -11,6 +11,7 @@ import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import { checkMesh } from '@/render/vehicle/geom/validate';
 import { isMatId } from '@/render/vehicle/materials';
 import { generateStructure, siteGeneratorIds, type SiteState, type SiteVisual } from '@/render/vehicle/site';
+import { siteGround, siteSurvey, structureGround } from '@/render/vehicle/site/survey';
 import { nozzleEquilibrium, stepNozzleTemp } from '@/render/vehicle/vesselFeature';
 
 let defs: DefLibrary;
@@ -20,7 +21,7 @@ beforeAll(async () => {
   defs = await loadDefs(fsDefSource());
   for (const site of Object.values(defs.sites)) {
     site.structures.forEach((s, index) => {
-      visuals.push({ site: site.id, index, model: s.model, offset: [s.offsetEnu[0], s.offsetEnu[1], s.offsetEnu[2]], visual: generateStructure(defs, site, s.model, s.params ?? {}) });
+      visuals.push({ site: site.id, index, model: s.model, offset: [s.offsetEnu[0], s.offsetEnu[1], s.offsetEnu[2]], visual: generateStructure(defs, site, s.model, s.params ?? {}, s) });
     });
   }
 });
@@ -128,6 +129,66 @@ describe('launch complex structures', () => {
         expect(e.yMax, `${s.model} LOD${lod}`).toBeGreaterThan(-0.5);
       }
     }
+  });
+
+  it('earthworks, roads, fences and pipe supports are built on the surveyed ground: fill above it, feet below it', () => {
+    let checked = 0;
+    for (const site of Object.values(defs.sites)) {
+      const survey = siteSurvey(defs, site);
+      // (A site without a survey is level ground, which the test above covers.)
+      if (!survey) continue;
+      // The survey bounds the terrain: it is not level, and its bounds are ordered.
+      expect(Math.max(...survey.hiCm) - Math.min(...survey.loCm)).toBeGreaterThan(50);
+      for (let k = 0; k < survey.hiCm.length; k++) expect(survey.hiCm[k]!).toBeGreaterThanOrEqual(survey.loCm[k]!);
+      site.structures.forEach((s, index) => {
+        if (s.model !== 'pad.groundworks' && s.model !== 'pad.fence' && s.model !== 'pad.pipeRun') return;
+        const ground = structureGround(siteGround(defs, site), s.offsetEnu, s.headingDeg);
+        const v = visuals.find((x) => x.site === site.id && x.index === index)!.visual;
+        for (const [name, model] of Object.entries(v.models)) {
+          model.lods.forEach((mesh, lod) => {
+            const p = mesh.positions;
+            const n = mesh.normals;
+            const where = `${s.model}.${name} LOD${lod}`;
+            if (name === 'ground') {
+              // Every vertex of the ground model is either fill over the highest terrain or a foot under the lowest:
+              // none lies inside the band the terrain occupies, where a surface could be buried or show its edge.
+              for (let k = 0; k < p.length; k += 3) {
+                const hi = ground.hi(p[k]!, p[k + 2]!);
+                const lo = ground.lo(p[k]!, p[k + 2]!);
+                const y = p[k + 1]!;
+                expect(y >= hi + 0.02 || y <= lo - 0.3, `${where}: vertex at ${p[k]!.toFixed(1)}, ${p[k + 2]!.toFixed(1)} is at ${y.toFixed(2)} m, terrain ${lo.toFixed(2)} .. ${hi.toFixed(2)} m`).toBe(true);
+                checked++;
+              }
+              // And the level faces between them stay above the terrain all the way across (centres of the triangles).
+              const ix = mesh.indices;
+              for (let t = 0; t < ix.length; t += 3) {
+                const a = ix[t]! * 3;
+                const c = ix[t + 1]! * 3;
+                const d = ix[t + 2]! * 3;
+                if (Math.min(n[a + 1]!, n[c + 1]!, n[d + 1]!) < 0.99) continue;
+                const x = (p[a]! + p[c]! + p[d]!) / 3;
+                const z = (p[a + 2]! + p[c + 2]! + p[d + 2]!) / 3;
+                const y = (p[a + 1]! + p[c + 1]! + p[d + 1]!) / 3;
+                expect(y, `${where}: face at ${x.toFixed(1)}, ${z.toFixed(1)}`).toBeGreaterThan(ground.hi(x, z));
+              }
+            } else if (name !== 'shadow' && name !== 'pole-lamps') {
+              // Posts, plinths, berms and fabric: the lowest point of the model is under the terrain there
+              // (shadow stand-ins and lamp lenses are not on the ground).
+              let yMin = Infinity;
+              let at = 0;
+              for (let k = 0; k < p.length; k += 3) {
+                if (p[k + 1]! < yMin) {
+                  yMin = p[k + 1]!;
+                  at = k;
+                }
+              }
+              if (p.length > 0) expect(yMin, where).toBeLessThanOrEqual(ground.lo(p[at]!, p[at + 2]!) + 1e-6);
+            }
+          });
+        }
+      });
+    }
+    expect(checked).toBeGreaterThan(1000);
   });
 
   it('swing arms and the crew arm move away from the vehicle when they retract, and nothing else moves', () => {

@@ -60,7 +60,7 @@ async function main(): Promise<void> {
     const totals = [0, 0, 0];
     const rows: string[] = [];
     for (const s of site.structures) {
-      const v = generateStructure(defs, site, s.model, s.params ?? {});
+      const v = generateStructure(defs, site, s.model, s.params ?? {}, s);
       const t = [0, 1, 2].map((lod) => Object.values(v.models).reduce((n, m) => n + m.lods[lod]!.indices.length / 3, 0));
       t.forEach((n, i) => (totals[i] = totals[i]! + n));
       rows.push(`  ${s.model.padEnd(30)} ${t.join(' / ')}`);

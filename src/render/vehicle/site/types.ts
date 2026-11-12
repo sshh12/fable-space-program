@@ -8,6 +8,7 @@
 import type { DefLibrary, LaunchSiteDef } from '@/core/contracts/defs';
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import type { PartLight, PartModel } from '../parts/types';
+import { siteGround, structureGround, type GroundField } from './survey';
 
 export type StructureParams = Record<string, number | string>;
 
@@ -15,6 +16,18 @@ export interface SiteGenContext {
   params: StructureParams;
   site: LaunchSiteDef;
   defs: DefLibrary;
+  /**
+   * Bounds of the real terrain in the structure's model frame, m above the plane its origin stands on (the
+   * site's ground survey, ./survey.ts): level for a site without a survey. Earthworks, roads, fences and
+   * supports are built on it; structures on the level areas of the pad shape need not look.
+   */
+  ground: GroundField;
+}
+
+/** Where a structure stands: `SiteStructureDef.offsetEnu` and `headingDeg`. */
+export interface StructurePlacement {
+  offsetEnu: readonly [number, number, number];
+  headingDeg: number;
 }
 
 /** Presentation state of the launch complex. */
@@ -84,10 +97,10 @@ export function siteGeneratorIds(): string[] {
   return [...generators.keys()].sort();
 }
 
-export function generateStructure(defs: DefLibrary, site: LaunchSiteDef, model: string, params: StructureParams): SiteVisual {
+export function generateStructure(defs: DefLibrary, site: LaunchSiteDef, model: string, params: StructureParams, placement: StructurePlacement = { offsetEnu: [0, 0, 0], headingDeg: 0 }): SiteVisual {
   const g = generators.get(model);
   if (!g) throw new Error(`site "${site.id}": unknown structure model "${model}"`);
-  return g({ params, site, defs });
+  return g({ params, site, defs, ground: structureGround(siteGround(defs, site), placement.offsetEnu, placement.headingDeg) });
 }
 
 /** Numeric structure parameter with a default. */

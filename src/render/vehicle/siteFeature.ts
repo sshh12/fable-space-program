@@ -135,10 +135,11 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     const meshes = coreOf(ctx).meshes;
     const cache = new Map<string, StructureModels>();
     const placed: Placed[] = site.structures.map((s) => {
-      const key = `${s.model}|${JSON.stringify(s.params ?? {})}`;
+      // (A structure is built on the ground where it stands: the placement is part of what it is.)
+      const key = `${s.model}|${JSON.stringify(s.params ?? {})}|${s.offsetEnu.join(',')}|${s.headingDeg}`;
       let entry = cache.get(key);
       if (!entry) {
-        const visual = generateStructure(defs, site, s.model, s.params ?? {});
+        const visual = generateStructure(defs, site, s.model, s.params ?? {}, s);
         const lods: Record<string, ModelHandle[]> = {};
         const lodPixels: Record<string, readonly number[]> = {};
         for (const [name, model] of Object.entries(visual.models)) {

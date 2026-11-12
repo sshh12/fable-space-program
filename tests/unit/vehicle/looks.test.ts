@@ -108,7 +108,7 @@ describe('content lives in the definition library', () => {
       for (const s of site.structures) {
         // Strip every parameter that names a decal: the structure must still build, without the 'decal' materials.
         const params = Object.fromEntries(Object.entries(s.params ?? {}).filter(([k]) => !/decal|sign|label/i.test(k)));
-        const v = generateStructure(defs, site, s.model, params);
+        const v = generateStructure(defs, site, s.model, params, s);
         for (const [name, m] of Object.entries(v.models)) expect(m.materials.some((x) => x.name === 'decal' || x.name === 'decal-ground'), `${s.model}.${name} without marking parameters`).toBe(false);
       }
     }
