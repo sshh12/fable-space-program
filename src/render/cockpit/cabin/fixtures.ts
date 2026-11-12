@@ -105,14 +105,17 @@ function seatedFrame(ctx: CabinContext, azDeg: number, y: number, w: number, h: 
 function standoff(ctx: CabinContext, group: string, from: Vec3, n: Vec3, radius: number, mat = 'aluminium'): void {
   const b = ctx.b;
   const keep = b.groupName;
-  const w = fitWall(ctx, from, v3.neg(n));
+  // (Its end stands a fraction of its radius off the wall: where the post meets the wall off its normal, the
+  // rim of a flush end would lie in the wall.)
+  const hit = fitWall(ctx, from, v3.neg(n));
+  const w = v3.dist(from, hit) > 0.003 ? v3.addScaled(hit, v3.normalize(v3.sub(from, hit)), radius * 0.15) : hit;
   if (v3.dist(from, w) > 0.003) {
     b.group(`mount:${group}`);
     b.cylinder(w, v3.sub(from, w), radius, v3.dist(from, w), 8, ctx.m(mat));
     // Its foot on the wall: a boss (a metal post ends in one, never as a bare tube on the cloth).
-    // (A millimetre and a half off the wall: the wall curves away under a foot this wide, and the post may
-    // meet it a few degrees off its normal.)
-    if (mat === 'aluminium' && v3.dist(from, w) > 0.012) b.cylinder(v3.addScaled(w, v3.normalize(v3.sub(from, w)), 0.0015), v3.sub(from, w), radius * 1.9, 0.003, 12, ctx.m(mat), { caps: 'top' });
+    // (A collar a few millimetres off the wall: the wall curves away under a foot this wide, and the post
+    // may meet it up to some ten degrees off its normal.)
+    if (mat === 'aluminium' && v3.dist(from, w) > 0.012) b.cylinder(v3.addScaled(w, v3.normalize(v3.sub(from, w)), 0.0015 + radius * 0.4), v3.sub(from, w), radius * 1.9, 0.003, 12, ctx.m(mat), { caps: 'top' });
     b.group(keep);
   }
 }
@@ -538,6 +541,21 @@ function locker(ctx: CabinContext, az: number, y: number, w: number, h: number, 
   const f = seatedFrame(ctx, az, y, w, h, depth);
   const b = ctx.b;
   b.box(offsetFrame(f, 0, 0, -depth / 2), w / 2, h / 2, depth / 2, 0.006, ctx.m('closeout', { ao: 0.85 }));
+  // What carries it (round 6: the lockers hung on nothing): a mounting ear at each corner of the body, above
+  // and below it, bolted through to a post that stands on a boss on the wall.
+  {
+    const keep = b.groupName;
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        b.group(`mount:${keep}`);
+        const ear = offsetFrame(f, sx * (w / 2 - 0.03), sy * (h / 2 + 0.01), -depth * 0.55);
+        b.box(ear, 0.015, 0.012, 0.0025, 0.001, ctx.m('aluminium'));
+        b.cylinder(local(ear, 0, sy * 0.002, 0.0025), f.n, 0.0058, 0.0032, 6, ctx.m('steel'), { caps: 'top' });
+        b.group(keep);
+        standoff(ctx, keep, local(ear, 0, sy * 0.002, -0.0025), f.n, 0.006);
+      }
+    }
+  }
   // The door: a pressed sheet in the body's rim, hung on a piano hinge along one side and held by two
   // quarter-turn fasteners on the other, stiffened by two pressed beads, with a paddle latch, a webbing pull,
   // its stowage label and a data plate. Rivets hold the rim to the body.
