@@ -246,3 +246,68 @@ test('an unknown view mode of kind external sounds exactly like the chase camera
   expect(r.masterDiff).toBeLessThanOrEqual(Math.max(4 * r.selfMasterDiff, 3e-4 * r.masterRms));
   await expectNoErrors(page, pageLog);
 });
+
+test("the mission's entry: the sound follows the aerodynamic load from the heat pulse to the drogues, for the chase camera and in the cabin", async ({ page, pageLog }) => {
+  test.setTimeout(240_000);
+  await lab(page);
+  // labs/audio/entry.ts: the real Sim's capsule on the nominal lunar return (tools/audio/entryProfile.ts), six
+  // seconds of real time every 30 s of the flight from the entry interface to the drogues.
+  const starts: number[] = [];
+  for (let t = 30; t <= 690; t += 30) starts.push(t);
+  type Entry = Awaited<ReturnType<Lab['entry']>>;
+  const run = (kind: 'interior' | 'external', rules: 'current' | 'plasmaOnly'): Promise<Entry> => call(page, (l, a: { kind: 'interior' | 'external'; starts: number[]; rules: 'current' | 'plasmaOnly' }) => l.entry(a.kind, a.starts, 6, a.rules), { kind, starts, rules });
+  const out: Record<string, unknown> = {};
+  for (const kind of ['external', 'interior'] as const) {
+    const now = await run(kind, 'current');
+    const was = await run(kind, 'plasmaOnly');
+    expect(now.problems).toEqual([]);
+    const rows = now.rows.map((r, i) => ({
+      t: r.from,
+      altitudeKm: r.state.altitude / 1000,
+      mach: r.state.mach,
+      q: r.state.q,
+      plasma: r.state.plasma,
+      gLoad: r.state.gLoad,
+      masterDb: r.levels['master']!,
+      aeroDb: r.levels['aero']!,
+      reentryDb: r.levels['reentry']!,
+      masterDbBefore: was.rows[i]!.levels['master']!,
+    }));
+    out[kind] = rows;
+    console.log(`  ${kind}: t s, km, Mach, q Pa, plasma, g | master dBFS now (before the fix)`);
+    for (const r of rows) console.log(`  ${String(r.t).padStart(4)} ${r.altitudeKm.toFixed(1).padStart(5)} ${r.mach.toFixed(1).padStart(5)} ${r.q.toFixed(0).padStart(6)} ${r.plasma.toFixed(2)} ${r.gLoad.toFixed(2)} | ${r.masterDb.toFixed(1).padStart(6)} (${Number.isFinite(r.masterDbBefore) ? r.masterDbBefore.toFixed(1) : '-inf'})`);
+    const label = (r: (typeof rows)[number]): string => `${kind}, t ${r.t} s, ${r.altitudeKm.toFixed(1)} km, Mach ${r.mach.toFixed(1)}, q ${r.q.toFixed(0)} Pa`;
+    // The heat pulse: full plasma at the largest dynamic pressure.
+    const pulse = rows.filter((r) => r.plasma > 0.9).reduce((a, b) => (b.q > a.q ? b : a));
+    expect(pulse.masterDb, 'the heat pulse is loud').toBeGreaterThan(-30);
+    // Wherever the air loads the capsule (5 kPa and more: Mach 30 down to Mach 0.5) the game is within 14 dB of
+    // the heat pulse; in hypersonic flight at 8 kPa and more (the second dip: 3.3 g with a tenth of the glow)
+    // within 6.5 dB. The mission video had it 25 to 35 dB down there for the chase camera, then silent.
+    const loaded = rows.filter((r) => r.q >= 5000);
+    expect(loaded.length).toBeGreaterThanOrEqual(10);
+    expect(Math.min(...loaded.map((r) => r.mach))).toBeLessThan(1);
+    for (const r of loaded) {
+      expect(pulse.masterDb - r.masterDb, label(r)).toBeLessThan(14);
+      if (r.mach >= 8 && r.q >= 8000) expect(pulse.masterDb - r.masterDb, label(r)).toBeLessThan(6.5);
+    }
+    const dip = rows.filter((r) => r.t > 380 && r.mach >= 8 && r.q >= 8000 && r.plasma < 0.1);
+    expect(dip.length).toBeGreaterThanOrEqual(2);
+    // The loft between the two dips (q under 700 Pa) is quiet: the level is the load's, not a constant bed.
+    const loft = rows.filter((r) => r.t > 200 && r.t < 340 && r.q < 700);
+    expect(loft.length).toBeGreaterThanOrEqual(2);
+    if (kind === 'external') {
+      for (const r of loft) expect(pulse.masterDb - r.masterDb, label(r)).toBeGreaterThan(18);
+      // What the fix changed: with the old rules the chase camera lost the second dip and heard nothing from
+      // Mach 6 to Mach 1.
+      for (const r of dip) expect(r.masterDb - r.masterDbBefore, `before the fix: ${label(r)}`).toBeGreaterThan(12);
+      const fall = rows.filter((r) => r.t >= 510 && r.mach > 1.2);
+      expect(fall.length).toBeGreaterThanOrEqual(3);
+      for (const r of fall) {
+        expect(r.masterDbBefore, `before the fix: ${label(r)}`).toBeLessThan(-70);
+        expect(r.masterDb, label(r)).toBeGreaterThan(-40);
+      }
+    }
+  }
+  record('missionEntry', out);
+  await expectNoErrors(page, pageLog);
+});

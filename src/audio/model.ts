@@ -30,6 +30,7 @@ import {
   continuousAudible,
   crackleFactor,
   creakRate,
+  entryLoad,
   dbToGain,
   distanceGain,
   engineLevelDb,
@@ -575,7 +576,9 @@ export class SoundModel {
     const air = this.airOf(geom, v);
     const paths = geom.interior
       ? { air: { ...this.paths(geom, 'aero', rel, air, a.refDistance, v.id, false, 0, a.hullCutoffHz).air, gain: 0 }, body: { gain: w === -Infinity ? 0 : dbToGain(a.hullGainDb), cutoff: a.hullCutoffHz } }
-      : this.paths(geom, 'aero', rel, air, Math.max(a.refDistance, v.boundingRadius), v.id, false, 0, a.hullCutoffHz);
+      : // Outside: through the air where it carries, and through the skin to a camera that rides with the vessel
+        // (the only way while the camera is outside the Mach cone or the air is too thin to carry sound).
+        this.paths(geom, 'aero', rel, air, Math.max(a.refDistance, v.boundingRadius), v.id, true, w === -Infinity ? 0 : dbToGain(a.bodyGainDb), a.hullCutoffHz);
     return {
       wind: { gain: dbToGain(w + a.wind.gainDb), cutoff: lerp(a.wind.cutoffHz[0], a.wind.cutoffHz[1], m) },
       noise: { gain: dbToGain(w + a.noise.gainDb), lowHz: lerp(a.noise.bandHz[0], a.noise.bandAtMachMax[0], m), highHz: lerp(a.noise.bandHz[1], a.noise.bandAtMachMax[1], m) },
@@ -599,11 +602,14 @@ export class SoundModel {
       paths = this.paths(geom, 'reentry', rel, air, Math.max(r.refDistance, v.boundingRadius), v.id, true, 1, r.hullCutoffHz);
     }
     const gRatio = Math.min(1, Math.max(0, v.gLoad / r.rumble.gLoadRef));
+    // The roar and the rumble are the shock layer's and the wake's: they follow the glow or the hypersonic
+    // aerodynamic load, whichever is larger (after the heat pulse the capsule still decelerates at several g).
+    const load = entryLoad(v.aero.q, v.aero.mach, r.load);
     return {
-      roar: { gain: dbToGain(r.roar.gainDb) * plasmaAmplitude(plasma, r.roar.exponent) },
+      roar: { gain: dbToGain(r.roar.gainDb) * Math.max(plasmaAmplitude(plasma, r.roar.exponent), load) },
       hiss: { gain: dbToGain(r.hiss.gainDb) * plasmaAmplitude(plasma, r.hiss.exponent) },
       crackle: { gain: dbToGain(r.crackle.gainDb) * plasmaAmplitude(plasma, 1), rate: lerp(r.crackle.rateHz[0], r.crackle.rateHz[1], Math.min(1, Math.max(0, plasma))) },
-      rumble: { gain: dbToGain(r.rumble.gainDb) * plasmaAmplitude(plasma, 1) * Math.sqrt(gRatio) },
+      rumble: { gain: dbToGain(r.rumble.gainDb) * Math.max(plasmaAmplitude(plasma, 1), load) * Math.sqrt(gRatio) },
       paths,
     };
   }

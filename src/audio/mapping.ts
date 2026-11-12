@@ -164,6 +164,19 @@ export function plasmaAmplitude(plasma: number, exponent: number): number {
   return saturate(plasma) ** exponent;
 }
 
+/**
+ * Hypersonic aerodynamic load of an entry, 0..1: smoothstep(mach[0], mach[1], Mach) x min(1, q / qRef)^exponent.
+ * The pressure fluctuations of the shock layer and the wake scale with the dynamic pressure; below mach[0]
+ * the flight is the boundary-layer wind's (windDb), so the two hand over between mach[1] and mach[0].
+ * Exactly 0 without air (q <= 0).
+ */
+export function entryLoad(q: number, mach: number, c: { qRef: number; mach: readonly [number, number]; exponent: number }): number {
+  if (!(q > 0)) return 0;
+  const [m0, m1] = c.mach;
+  const t = m1 > m0 ? saturate((mach - m0) / (m1 - m0)) : mach >= m1 ? 1 : 0;
+  return t * t * (3 - 2 * t) * Math.min(1, q / c.qRef) ** c.exponent;
+}
+
 /** Surface ambience share from the height above the surface: 1 up to `full` m, smoothly 0 at `none` m. */
 export function surfaceFactor(altitude: number, full: number, none: number): number {
   if (altitude <= full) return 1;

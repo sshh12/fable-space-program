@@ -103,6 +103,11 @@ export interface EnvironmentConfig {
     refDistance: number;
     hullCutoffHz: number;
     hullGainDb: number;
+    /**
+     * Structure coupling of the boundary-layer noise for an outside camera attached to the vessel, dB (before
+     * mix.propagation.attach): what the skin carries when the air cannot (thin air, a camera outside the Mach cone).
+     */
+    bodyGainDb: number;
     wind: { asset: string; gainDb: number; cutoffHz: Range; machForMaxCutoff: number };
     noise: { gainDb: number; bandHz: Range; bandAtMachMax: Range };
     buffet: { gainDb: number; machCenter: number; machWidth: number; cutoffHz: number; turbulence: number; turbulenceHz: number };
@@ -111,6 +116,12 @@ export interface EnvironmentConfig {
     refDistance: number;
     hullCutoffHz: number;
     hullGainDb: number;
+    /**
+     * Hypersonic aerodynamic load: the roar and the rumble follow the larger of the plasma and
+     * smoothstep(mach[0], mach[1], Mach) x min(1, q / qRef)^exponent, so the entry stays loud through its
+     * deceleration after the glow has faded (mapping.entryLoad).
+     */
+    load: { qRef: number; mach: Range; exponent: number };
     roar: { asset: string; gainDb: number; exponent: number };
     hiss: BandLayer & { exponent: number };
     crackle: { gainDb: number; rateHz: Range; highpassHz: number };
@@ -257,6 +268,19 @@ const EVENT_TYPES: Record<SimEventType, true> = {
   nodeCompleted: true,
   milestone: true,
   missionFailed: true,
+  // v2 contract (docking, multiplayer): listed so that data/defs/audio/events.json may give them a sound.
+  dockCapture: true,
+  docked: true,
+  captureLost: true,
+  undocked: true,
+  collision: true,
+  helmChanged: true,
+  commandResult: true,
+  claimLost: true,
+  proximityWarning: true,
+  padReleased: true,
+  clockChanged: true,
+  rangeClearing: true,
 };
 export const ALL_EVENT_TYPES = Object.keys(EVENT_TYPES) as SimEventType[];
 
@@ -269,7 +293,7 @@ const READOUT_FIELDS: Record<keyof Readouts, true> = {
   heatFlux: true, ablatorFraction: true, maxTempFraction: true, sasEnabled: true, sasMode: true, sasModesAvailable: true,
   rcsEnabled: true, fineControl: true, legsDeployed: true, lightsOn: true, chuteEnvelope: true, rcsFraction: true,
   deltaVTotal: true, targetBodyId: true, targetRelativeInclination: true, targetClosestApproach: true, launchWindow: true,
-  nodeBurn: true, liftVectorUp: true, tiltFromVertical: true, landingTarget: true,
+  nodeBurn: true, liftVectorUp: true, tiltFromVertical: true, landingTarget: true, target: true, docking: true,
 };
 const NAVBALL_FIELDS: Record<keyof NavballState, true> = { mode: true, qVesselToHorizon: true, markers: true, pitchDeg: true, headingDeg: true, rollDeg: true };
 const WARP_FIELDS: Record<keyof WarpState, true> = { index: true, factor: true, maxIndex: true, limitedBy: true, onRails: true };
@@ -494,6 +518,7 @@ function parseEnvironment(n: Field, assets: Record<string, AssetDef>): Environme
   const hiss = r.get('hiss');
   const crackle = r.get('crackle');
   const rumble = r.get('rumble');
+  const load = r.get('load');
   const creaks = c.get('creaks');
   const hum = c.get('hum');
   const amb = n.get('ambience');
@@ -510,6 +535,7 @@ function parseEnvironment(n: Field, assets: Record<string, AssetDef>): Environme
       refDistance: a.get('refDistance').num({ gt: 0 }),
       hullCutoffHz: a.get('hullCutoffHz').num({ gt: 0 }),
       hullGainDb: a.get('hullGainDb').num(),
+      bodyGainDb: a.get('bodyGainDb').num({ min: -60, max: 24 }),
       wind: {
         asset: assetRef(wind.get('asset'), assets, true),
         gainDb: wind.get('gainDb').num(),
@@ -530,6 +556,7 @@ function parseEnvironment(n: Field, assets: Record<string, AssetDef>): Environme
       refDistance: r.get('refDistance').num({ gt: 0 }),
       hullCutoffHz: r.get('hullCutoffHz').num({ gt: 0 }),
       hullGainDb: r.get('hullGainDb').num(),
+      load: { qRef: load.get('qRef').num({ gt: 0 }), mach: load.get('mach').range({ min: 0 }), exponent: load.get('exponent').num({ gt: 0, max: 4 }) },
       roar: { asset: assetRef(roar.get('asset'), assets, true), gainDb: roar.get('gainDb').num(), exponent: roar.get('exponent').num({ gt: 0 }) },
       hiss: { ...band(hiss), exponent: hiss.get('exponent').num({ gt: 0 }) },
       crackle: { gainDb: crackle.get('gainDb').num(), rateHz: crackle.get('rateHz').range({ min: 0, max: 5000 }), highpassHz: crackle.get('highpassHz').num({ gt: 0 }) },

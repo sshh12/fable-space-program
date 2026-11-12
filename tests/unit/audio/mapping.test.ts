@@ -12,6 +12,7 @@ import {
   dbToGain,
   distanceGain,
   engineLevelDb,
+  entryLoad,
   eventScaleDb,
   gainToDb,
   localSoundSpeed,
@@ -208,6 +209,23 @@ describe('aero, reentry, cabin and events', () => {
     expect(buffetWeight(1, 1, 0.2)).toBe(1);
     expect(buffetWeight(0.5, 1, 0.2)).toBeLessThan(0.05);
     expect(buffetWeight(1.2, 1, 0.2)).toBeCloseTo(Math.exp(-0.5), 12);
+  });
+  it('the entry load follows q in hypersonic flight, hands over to the wind below, and is exactly zero without air', () => {
+    const c = { qRef: 18000, mach: [4, 8] as const, exponent: 1 };
+    expect(entryLoad(0, 25, c)).toBe(0);
+    expect(entryLoad(-1, 25, c)).toBe(0);
+    expect(entryLoad(18000, 12, c)).toBe(1);
+    expect(entryLoad(40000, 12, c)).toBe(1);
+    expect(entryLoad(9000, 12, c)).toBeCloseTo(0.5, 12);
+    expect(entryLoad(9000, 8, c)).toBeCloseTo(0.5, 12);
+    expect(entryLoad(9000, 6, c)).toBeCloseTo(0.25, 12);
+    expect(entryLoad(9000, 4, c)).toBe(0);
+    expect(entryLoad(9000, 1, c)).toBe(0);
+    expect(entryLoad(4500, 12, { ...c, exponent: 2 })).toBeCloseTo(1 / 16, 12);
+    const live = cfg.environment.reentry.load;
+    expect(live.mach[1]).toBeGreaterThan(live.mach[0]);
+    // The ascent passes Mach 4 to 8 above 40 km at under 3 kPa: next to nothing of an entry roar.
+    expect(entryLoad(2500, 6, live)).toBeLessThan(0.1);
   });
   it('surface ambience is full near the ground and gone well above it', () => {
     expect(surfaceFactor(0, 150, 1500)).toBe(1);

@@ -1,11 +1,12 @@
 {
-  "$comment": "Continuous sounds of the active vessel's environment. aero: boundary-layer wind (level 20 log10(q / qRef) dB, brightness from Mach) and transonic buffet (Gaussian in Mach around machCenter, modulated rumble). reentry: shock-layer roar and plasma hiss from aero.plasmaIntensity, a buffet rumble that also follows the g-load. Both are airborne for an outside listener and hull-borne (low-passed at hullCutoffHz) inside the cabin. turbulence = depth of the slow random amplitude modulation g (1 + depth x), x the average of two coprime value-noise buffers (RMS 0.35, bounded to [-1, 1]). ambience: the air and sea around the listener, one bed per surface ('water' when the active vessel floats, else 'land'), scaled by (listener pressure / sea level)^pressureGainExponent (silent in vacuum) and, for land, faded out between surfaceAltitude[0] and [1] m of radar altitude; inside the cabin heard through the hull (hullGainDb, hullCutoffHz). cabin: interior ambience (fans, pumps, airflow, 400 Hz power hum) heard only by an interior listener, and structural creaks whose Poisson rate follows g-load, its rate of change and sunlight changes (thermal creaks); creaks use a seeded generator so renders are reproducible.",
+  "$comment": "Continuous sounds of the active vessel's environment. aero: boundary-layer wind (level 20 log10(q / qRef) dB, brightness from Mach) and transonic buffet (Gaussian in Mach around machCenter, modulated rumble). reentry: shock-layer roar and a buffet rumble (which also follows the g-load) driven by the larger of aero.plasmaIntensity and the hypersonic aerodynamic load smoothstep(load.mach[0], load.mach[1], Mach) x min(1, q / load.qRef)^load.exponent, so the entry stays loud through its deceleration after the glow has faded and hands over to the wind between Mach 8 and 4; plasma hiss and crackle from aero.plasmaIntensity alone. Both are airborne for an outside listener, hull-borne (low-passed at hullCutoffHz) inside the cabin, and reach an outside camera that rides with the vessel through its structure as well (mix.json propagation.attach; aero.bodyGainDb is the wind's coupling into it): the only path while that camera is outside the Mach cone or the air is too thin to carry sound. turbulence = depth of the slow random amplitude modulation g (1 + depth x), x the average of two coprime value-noise buffers (RMS 0.35, bounded to [-1, 1]). ambience: the air and sea around the listener, one bed per surface ('water' when the active vessel floats, else 'land'), scaled by (listener pressure / sea level)^pressureGainExponent (silent in vacuum) and, for land, faded out between surfaceAltitude[0] and [1] m of radar altitude; inside the cabin heard through the hull (hullGainDb, hullCutoffHz). cabin: interior ambience (fans, pumps, airflow, 400 Hz power hum) heard only by an interior listener, and structural creaks whose Poisson rate follows g-load, its rate of change and sunlight changes (thermal creaks); creaks use a seeded generator so renders are reproducible.",
   "aero": {
     "qRef": 30000,
     "maxDb": 6,
     "refDistance": 25,
     "hullCutoffHz": 1400,
     "hullGainDb": 1,
+    "bodyGainDb": 0,
     "wind": {
       "asset": "aero-wind",
       "gainDb": -2,
@@ -65,6 +66,14 @@
     "refDistance": 15,
     "hullCutoffHz": 3500,
     "hullGainDb": 4,
+    "load": {
+      "qRef": 18000,
+      "mach": [
+        4,
+        8
+      ],
+      "exponent": 1
+    },
     "roar": {
       "asset": "reentry-roar",
       "gainDb": 2,

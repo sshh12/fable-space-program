@@ -6,6 +6,7 @@
 import { audioAnalysis, BUS_NAMES, createAudioGraph, renderOffline, SoundModel, TAP_NAMES, type AssetBank, type AudioConfig, type AudioGraphStats, type OfflineRender, type TapName } from '@/audio';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimEventType } from '@/core/contracts/sim';
+import { ENTRY_PROFILE, entryStateAt, missionEntryScript, type EntryState } from './entry';
 import type { LabStackId } from './labVehicle';
 import { clipStats, masterWavBase64, maxAbsDiff, measureRender, onset, onsetAbove, preCeilingLevels, type ClipStats, type TapMeasure } from './measure';
 import type { Script } from './scenes';
@@ -48,6 +49,23 @@ export interface AudioLabApi {
   clip(name: string): Promise<{ wav: string; stats: ClipStats; renderMs: number; problems: string[]; preCeiling: { peak: number; kneeShare: number }; maxStats: AudioGraphStats }>;
   /** Per-bus and per-path levels of a clip in the given windows (diagnosis of what is heard when). */
   clipTaps(name: string, windows: [number, number][]): Promise<MeasureResult>;
+  /**
+   * The mission's entry (labs/audio/entry.ts: the real Sim's capsule, entry interface to splashdown) heard
+   * from the cabin or by a chase camera: one real-time render of `seconds` per start time (seconds into the
+   * profile), measured from 1.5 s on. Per start: the flight state there and the RMS level, dBFS, of the
+   * master and of every bus. `rules: 'plasmaOnly'` renders with the rules the game had before the entry fix
+   * (the wind without a structure-borne share for the camera, the roar and the rumble driven by the glow
+   * alone), for the before / after table of the acceptance spec.
+   */
+  entry(kind: 'interior' | 'external', starts: number[], seconds: number, rules?: 'current' | 'plasmaOnly'): Promise<{ marks: Record<string, number>; rows: EntryLevels[]; renderMs: number; problems: string[] }>;
+}
+
+export interface EntryLevels {
+  from: number;
+  state: EntryState;
+  /** RMS over the window, dBFS: 'master' and each bus. */
+  levels: Record<string, number>;
+  oneShots: string[];
 }
 
 export function createLabApi(config: AudioConfig, defs: DefLibrary, bank: AssetBank): AudioLabApi {
@@ -172,6 +190,31 @@ export function createLabApi(config: AudioConfig, defs: DefLibrary, bank: AssetB
       if (!s) throw new Error(`unknown clip ${name}`);
       const taps = TAP_NAMES.filter((t) => t !== 'master');
       return result(await render(s, taps), ['master', ...taps], windows);
+    },
+    async entry(kind, starts, seconds, rules = 'current') {
+      const taps: TapName[] = [...BUS_NAMES];
+      const env = config.environment;
+      const used: AudioConfig =
+        rules === 'plasmaOnly'
+          ? { ...config, environment: { ...env, aero: { ...env.aero, bodyGainDb: -Infinity }, reentry: { ...env.reentry, load: { ...env.reentry.load, qRef: Infinity } } } }
+          : config;
+      const rows: EntryLevels[] = [];
+      const problems: string[] = [];
+      let renderMs = 0;
+      for (const from of starts) {
+        const s = missionEntryScript(defs, { from, duration: seconds, kind });
+        const r = await renderOffline(used, defs, bank, { duration: s.duration, frame: s.frame, taps });
+        renderMs += r.renderMs;
+        problems.push(...r.problems);
+        const m = measureRender(r, ['master', ...taps], [[1.5, seconds]]);
+        rows.push({
+          from,
+          state: entryStateAt(ENTRY_PROFILE, from + 0.5 * seconds),
+          levels: Object.fromEntries(Object.entries(m).map(([tap, v]) => [tap, v.windows[0]!.rmsDb])),
+          oneShots: r.oneShots.map((o) => o.cause),
+        });
+      }
+      return { marks: ENTRY_PROFILE.marks, rows, renderMs, problems };
     },
     async clip(name) {
       const s = clipScripts(defs).find((x) => x.name === name);
