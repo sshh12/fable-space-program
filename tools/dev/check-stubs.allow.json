@@ -8,5 +8,7 @@
   {"path":"labs/integration/","word":"placeholder","contains":"placeholder parts","reason":"the integration lab reports when it had to fall back to the FakeSim's stand-in vessel; a lab page, never shipped"},
   {"path":"labs/map-view/main.ts","word":"placeholder","contains":"placeholder text next to a finished interface","reason":"a comment that explains why the lab names its vessel (request map-view-7)"},
   {"path":"src/render/cockpit/cabin/fixtures.ts","word":"stub","contains":"stub","reason":"geometry: the short end of a pipe run in the cabin is called a stub"},
-  {"path":"src/ui/icons.ts","word":"stub","contains":"short downward stubs","reason":"geometry: the short strokes of an icon"}
+  {"path":"src/ui/icons.ts","word":"stub","contains":"short downward stubs","reason":"geometry: the short strokes of an icon"},
+  {"path":"src/camera/chaseRig.ts","word":"placeholder","contains":"placeholder parts","reason":"names the FakeSim's stand-in parts (no part envelope): the case the chase rig falls back for"},
+  {"path":"tests/unit/camera/chase.test.ts","word":"placeholder","contains":"Placeholder parts","reason":"a test of the chase rig on the FakeSim's stand-in parts"}
 ]
