@@ -10,10 +10,14 @@ import {
   CHASE_DISC_ROLL,
   CHASE_DISTANCE_PER_RADIUS,
   CHASE_SUN_OFFSET,
+  CHASE_TOWER_CLEAR,
+  CHASE_TRENCH_MODELS,
+  CHASE_TRENCH_OFFSET,
   chaseAutoDistance,
   chaseDistanceLimits,
   chaseReferenceElevation,
   chaseReferenceRoll,
+  chaseTrenchHeading,
   createChaseRig,
   createCockpitRig,
   createMapRig,
@@ -245,7 +249,7 @@ describe('the sun in the default framing (orbit mode)', () => {
     expect(rig.autoAzimuth).toBe(true);
   });
 
-  it('on a surface the default azimuth is the vessel\'s, whatever the sun does', () => {
+  it('on a surface the default azimuth stays where it starts, whatever the sun does', () => {
     const s = snapshot('pad');
     const rig = createChaseRig({ defs });
     rig.activate(null, s);
@@ -253,6 +257,81 @@ describe('the sun in the default framing (orbit mode)', () => {
     const a = rig.offsets.azimuth;
     for (let i = 0; i < 120; i++) rig.update(s, IDLE, DT);
     expect(rig.offsets.azimuth).toBe(a);
+  });
+});
+
+describe('the default view at a launch pad with a flame trench (request vfx-11)', () => {
+  /** Compass bearing (rad, clockwise from north) of the horizontal part of a ROOT direction at the vessel, and that part's share. */
+  const bearing = (s: SimSnapshot, v: VesselSnapshot, dirRoot: Vec3): { rad: number; share: number } => {
+    const body = s.bodies.find((b) => b.id === v.bodyId)!;
+    const up = v3.normalize(v.r);
+    const east = v3.normalize(v3.cross(quat.rotate(body.qFixedToRoot, v3.unitZ()), up));
+    const north = v3.cross(up, east);
+    const d = v3.normalize(dirRoot);
+    const e = v3.dot(d, east);
+    const n = v3.dot(d, north);
+    return { rad: Math.atan2(e, n), share: Math.hypot(e, n) };
+  };
+  const wrap = (a: number): number => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+  const siteTrenchDeg = (): number => {
+    const site = Object.values(defs.sites)[0]!;
+    const structures = site.pads && site.pads.length > 0 ? site.pads[0]!.structures : site.structures;
+    return structures.find((x) => CHASE_TRENCH_MODELS.includes(x.model))!.headingDeg;
+  };
+
+  it('finds the trench of the pad the vessel stands on, and none where no pad is near', () => {
+    const pad = snapshot('pad');
+    expect(chaseTrenchHeading(defs, pad, vesselOf(pad))! / DEG).toBeCloseTo(siteTrenchDeg(), 9);
+    for (const scene of ['lowOrbit', 'lunarSurface'] as const) {
+      const s = snapshot(scene);
+      expect(chaseTrenchHeading(defs, s, vesselOf(s))).toBeNull();
+    }
+  });
+
+  it('stands 70 degrees off the trench axis, clear of the tower side, and of the places that leaves on the one the sun is most behind', () => {
+    const s = snapshot('pad');
+    const v = vesselOf(s);
+    const rig = createChaseRig({ defs, padView: true });
+    rig.activate(null, s);
+    const c = rig.update(s, IDLE, DT);
+    const eye = bearing(s, v, v3.sub(c.positionRoot, vesselComRoot(v)));
+    const trench = siteTrenchDeg() * DEG;
+    // Off the axis (either end of it) by the offset.
+    const offAxis = Math.min(Math.abs(wrap(eye.rad - trench)), Math.abs(wrap(eye.rad - trench - Math.PI)));
+    expect(offAxis / DEG).toBeCloseTo(CHASE_TRENCH_OFFSET / DEG, 6);
+    // Not on the side of the umbilical tower (the vessel's ventral side).
+    const ventral = bearing(s, v, quat.rotate(v.q, v3.new(0, 0, -1)));
+    expect(ventral.share).toBeGreaterThan(0.9);
+    expect(Math.abs(wrap(eye.rad - ventral.rad))).toBeGreaterThanOrEqual(CHASE_TOWER_CLEAR);
+    // Of the places off the axis that are clear of the tower, none has the sun further behind the camera
+    // (the rig leans a twentieth towards the vessel's starboard side where the sun does not decide).
+    const sun = bearing(s, v, s.bodies.find((b) => b.id === v.bodyId)!.sunDir);
+    const behind = (b: number): number => sun.share * Math.cos(b - sun.rad);
+    for (const axis of [trench, trench + Math.PI]) {
+      for (const side of [-1, 1]) {
+        const b = axis + side * CHASE_TRENCH_OFFSET;
+        if (Math.abs(wrap(b - ventral.rad)) < CHASE_TOWER_CLEAR) continue;
+        expect(behind(eye.rad)).toBeGreaterThanOrEqual(behind(b) - 0.11);
+      }
+    }
+    // The player's yaw wins, and a reset comes back to the pad's view.
+    rig.update(s, { yaw: 0.4, pitch: 0, zoom: 1 }, DT);
+    expect(rig.autoAzimuth).toBe(false);
+    rig.resetView();
+    for (let i = 0; i < 400; i++) rig.update(s, IDLE, DT);
+    const back = rig.update(s, IDLE, DT);
+    expect(Math.abs(wrap(bearing(s, v, v3.sub(back.positionRoot, vesselComRoot(v))).rad - eye.rad))).toBeLessThan(1e-6);
+  });
+
+  it('frameBody: false keeps the view from the starboard side of the vessel on the pad', () => {
+    const s = snapshot('pad');
+    const v = vesselOf(s);
+    const rig = createChaseRig({ defs, frameBody: false });
+    rig.activate(null, s);
+    const c = rig.update(s, IDLE, DT);
+    const eye = bearing(s, v, v3.sub(c.positionRoot, vesselComRoot(v)));
+    const starboard = bearing(s, v, quat.rotate(v.q, v3.unitX()));
+    expect(Math.abs(wrap(eye.rad - starboard.rad))).toBeLessThan(1e-6);
   });
 });
 

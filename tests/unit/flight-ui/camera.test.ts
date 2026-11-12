@@ -484,25 +484,48 @@ describe('audio listener', () => {
   });
 });
 
-describe('chase rig on a surface (request app-integration-3)', () => {
-  it('sees a vertical vessel standing on the pad from its starboard side, clear of the tower off its ventral side', () => {
+describe('chase rig on a surface (requests app-integration-3, vfx-11)', () => {
+  /** The active vessel lifted `metres` straight up (the same attitude, away from every pad). */
+  const lifted = (s: SimSnapshot, metres: number): SimSnapshot => ({
+    ...s,
+    vessels: s.vessels.map((x) => {
+      if (x.id !== s.activeVesselId) return x;
+      const up = v3.normalize(x.r);
+      return { ...x, r: v3.addScaled(x.r, up, metres), rRoot: v3.addScaled(x.rRoot, up, metres) };
+    }),
+  });
+
+  it('sees a vertical vessel standing on the pad clear of the tower off its ventral side (at a pad with a flame trench: 70 degrees off the trench)', () => {
     const s = sim('pad').snap();
     const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
     expect(v.situation).toBe('prelaunch');
-    const cam = createChaseRig({ defs }).update(s, IDLE, DT);
+    const cam = createChaseRig({ defs, padView: true }).update(s, IDLE, DT);
     const eye = v3.normalize(rel(s, cam));
-    const starboard = quat.rotate(v.q, v3.unitX());
     const ventral = quat.rotate(v.q, v3.new(0, 0, -1));
-    // 12 deg above the horizontal plane, on the starboard side: cos 12 deg of it along +X, nothing toward ventral.
-    expect(v3.dot(eye, starboard)).toBeGreaterThan(Math.cos(12 * DEG) - 0.01);
-    expect(Math.abs(v3.dot(eye, ventral))).toBeLessThan(0.02);
+    // 12 deg above the horizontal plane and at least 50 degrees round from the ventral side.
+    expect(Math.asin(v3.dot(eye, v3.normalize(v.r))) / DEG).toBeCloseTo(12, 6);
+    expect(v3.dot(eye, ventral)).toBeLessThan(Math.cos(12 * DEG) * Math.cos(50 * DEG) + 1e-9);
   });
 
-  it('still faces the ventral side of a vertical vessel in flight', () => {
+  it('without the pad rule (padView: false) the standing vessel is seen from its starboard side', () => {
+    const s = sim('pad').snap();
+    const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
+    const cam = createChaseRig({ defs, padView: false }).update(s, IDLE, DT);
+    const eye = v3.normalize(rel(s, cam));
+    // Cos 12 deg of it along +X, nothing toward ventral.
+    expect(v3.dot(eye, quat.rotate(v.q, v3.unitX()))).toBeGreaterThan(Math.cos(12 * DEG) - 0.01);
+    expect(Math.abs(v3.dot(eye, quat.rotate(v.q, v3.new(0, 0, -1))))).toBeLessThan(0.02);
+  });
+
+  it('still faces the ventral side of a vertical vessel in flight away from a pad; over the pad it keeps the pad\'s view', () => {
     const s = sim('ascent').snap();
     const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
-    const cam = createChaseRig({ defs }).update(s, IDLE, DT);
-    const eye = v3.normalize(rel(s, cam));
-    expect(v3.dot(eye, quat.rotate(v.q, v3.new(0, 0, -1)))).toBeGreaterThan(Math.cos(12 * DEG) - 0.01);
+    const ventral = quat.rotate(v.q, v3.new(0, 0, -1));
+    const far = lifted(s, 40_000);
+    const away = v3.normalize(rel(far, createChaseRig({ defs, padView: true }).update(far, IDLE, DT)));
+    expect(v3.dot(away, ventral)).toBeGreaterThan(Math.cos(12 * DEG) - 0.01);
+    // Within the first minute of the launch (CHASE_PAD_RANGE of the pad): not from the tower's side.
+    const near = v3.normalize(rel(s, createChaseRig({ defs, padView: true }).update(s, IDLE, DT)));
+    expect(v3.dot(near, ventral)).toBeLessThan(Math.cos(50 * DEG));
   });
 });

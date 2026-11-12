@@ -22,7 +22,10 @@
  * eases out when the player turns or tilts the camera, whose frame is then level again. In orbit mode the default azimuth puts the eye on the sunward side of the vessel, CHASE_SUN_OFFSET
  * off the sun's line: the vehicle is lit and the sun is behind the camera, not a starburst over the vehicle;
  * it follows the sun around the orbit (once per revolution) until the player turns the camera. On a surface
- * the default azimuth is the vessel's (behind the nose; from starboard while it stands). The distance is the
+ * the default azimuth is the vessel's (behind the nose; from starboard while it stands), except at a launch
+ * pad with a flame trench: there the eye stands CHASE_TRENCH_OFFSET off the trench's axis, on the side the
+ * sun lights and clear of the umbilical tower, so that the two jets of exhaust the trench throws out are
+ * seen from the side, left and right of the vehicle, not end-on behind it (request vfx-11). The distance is the
  * default distance for the vessel as it is now (`chaseAutoDistance`: the vehicle's
  * `cameras.chase.defaultDistance`, or less for what is left of it after staging) times the player's zoom.
  *
@@ -38,10 +41,11 @@
  * Terrain: with a TerrainProvider the eye stays `clearance` metres above the collision surface (or above the
  * sea where the body has an ocean); without one, above the body's datum sphere (and its sea level).
  */
-import type { DefLibrary } from '@/core/contracts/defs';
+import type { DefLibrary, SiteStructureDef } from '@/core/contracts/defs';
 import type { CameraInput, CameraState } from '@/core/contracts/render';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
+import { latLonToDir } from '@/core/geo/cubeSphere';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
@@ -61,6 +65,12 @@ export interface ChaseRigOptions {
    * true). False pins the framing of before: `elevation` at every altitude, the azimuth from the vessel's nose.
    */
   frameBody?: boolean;
+  /**
+   * At a launch pad with a flame trench, look from CHASE_TRENCH_OFFSET off the trench's axis by default
+   * (request vfx-11). Needs `frameBody`. Default while the view is being proved in the game: false, unless
+   * the page's server was started with VITE_CORE_PAD_VIEW=1.
+   */
+  padView?: boolean;
   /**
    * Default distance in radii of the vessel about its centre of mass (default CHASE_DISTANCE_PER_RADIUS),
    * never more than the vehicle's `cameras.chase.defaultDistance`. Infinity: always the vehicle's default.
@@ -99,6 +109,19 @@ export const CHASE_DISC_FROM = 16 * DEG;
 export const CHASE_DISC_FULL = 6 * DEG;
 /** Time constant of the roll, s. */
 export const CHASE_ROLL_SECONDS = 0.6;
+/**
+ * Models of a pad's flame trench (`SiteStructureDef.model`): the exhaust leaves the pad both ways along its
+ * heading (the vfx finds it the same way: `trenchModels` in data/defs/visuals/plumes.json).
+ */
+export const CHASE_TRENCH_MODELS: readonly string[] = ['pad.flameTrench'];
+/** At a pad with a flame trench the default view stands this far off the trench's axis, rad (request vfx-11). */
+export const CHASE_TRENCH_OFFSET = 70 * DEG;
+/** ...and not within this of the vessel's ventral side, off which the umbilical tower stands (request app-integration-3), rad. */
+export const CHASE_TOWER_CLEAR = 50 * DEG;
+/** The pad's default view holds within this distance of the pad, m: on it and through the first minute of a launch. */
+export const CHASE_PAD_RANGE = 12_000;
+/** The default of `ChaseRigOptions.padView` (the env of the page's Vite server; undefined elsewhere). */
+const PAD_VIEW_DEFAULT = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_CORE_PAD_VIEW === '1';
 const MAX_ELEVATION = 89 * DEG;
 
 type RefMode = 'surface' | 'orbit';
@@ -117,6 +140,31 @@ export function chaseReferenceFrame(s: SimSnapshot, v: VesselSnapshot, mode: Ref
     }
   }
   return quat.fromBasis(n, v3.cross(u, n), u);
+}
+
+/**
+ * Compass heading (rad, clockwise from north) of the flame trench of the launch pad nearest to the vessel
+ * within CHASE_PAD_RANGE; null where there is no pad that near, or it has no trench.
+ */
+export function chaseTrenchHeading(defs: DefLibrary, s: SimSnapshot, v: VesselSnapshot): number | null {
+  const body = bodyById(s, v.bodyId);
+  const radius = bodyDef(defs, v.bodyId).radius;
+  const fixed = quat.rotateInv(body.qFixedToRoot, v.r);
+  let best: { d: number; structures: readonly SiteStructureDef[] } | null = null;
+  for (const site of Object.values(defs.sites)) {
+    if (site.bodyId !== v.bodyId) continue;
+    const pads =
+      site.pads && site.pads.length > 0
+        ? site.pads.map((p) => ({ at: site.location.pads?.[p.id] ?? site.location, structures: p.structures }))
+        : [{ at: site.location, structures: site.structures }];
+    for (const p of pads) {
+      const elevation = typeof p.at.padElevation === 'number' ? p.at.padElevation : 0;
+      const d = v3.dist(fixed, v3.scale(latLonToDir(p.at.latDeg * DEG, p.at.lonDeg * DEG), radius + elevation));
+      if (d < CHASE_PAD_RANGE && (!best || d < best.d)) best = { d, structures: p.structures };
+    }
+  }
+  const trench = best?.structures.find((x) => CHASE_TRENCH_MODELS.includes(x.model));
+  return trench ? trench.headingDeg * DEG : null;
 }
 
 /** Offset direction (from the target to the eye) for azimuth / elevation in a reference frame. */
@@ -222,6 +270,7 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
   const clearance = opts.clearance ?? 2.5;
   const baseElevation = opts.elevation ?? 12 * DEG;
   const frameBody = opts.frameBody ?? true;
+  const padView = frameBody && (opts.padView ?? PAD_VIEW_DEFAULT);
   const distanceRadii = opts.distanceRadii ?? CHASE_DISTANCE_PER_RADIUS;
 
   let initialised = false;
@@ -270,12 +319,47 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
   };
 
   /**
-   * Azimuth of the default view: behind the nose when it is not vertical, else facing the ventral side; in
-   * orbit mode the sunward side nearest to that.
+   * Azimuth of the default view at a launch pad with a flame trench (surface frame: from north towards
+   * west): CHASE_TRENCH_OFFSET off the trench's axis, which gives four places; of those the one the sun
+   * stands most behind, never one within CHASE_TOWER_CLEAR of the vessel's ventral side (the tower would be
+   * between the camera and the vehicle), and with no sun to choose by the one nearest to `near`. Null where
+   * no pad with a trench is near.
+   */
+  const padAzimuth = (s: SimSnapshot, v: VesselSnapshot, frame: Quat, near: number): number | null => {
+    const heading = chaseTrenchHeading(defs, s, v);
+    if (heading === null) return null;
+    const flat = (dirRoot: Vec3): { azimuth: number; share: number } => {
+      const d = quat.rotateInv(frame, dirRoot);
+      return { azimuth: Math.atan2(d.y, d.x), share: Math.hypot(d.x, d.y) };
+    };
+    const sun = flat(bodyById(s, v.bodyId).sunDir);
+    const ventral = flat(quat.rotate(v.q, v3.new(0, 0, -1)));
+    let best = near;
+    let bestScore = -Infinity;
+    // (A compass heading turns from north towards east, the frame's azimuth from north towards west.)
+    for (const axis of [-heading, -heading + Math.PI]) {
+      for (const side of [-1, 1]) {
+        const a = axis + side * CHASE_TRENCH_OFFSET;
+        let score = sun.share * Math.cos(a - sun.azimuth) + 0.05 * Math.cos(a - near);
+        if (ventral.share > 0.5 && Math.abs(wrapAngle(a - ventral.azimuth)) < CHASE_TOWER_CLEAR) score -= 4;
+        if (score > bestScore) {
+          bestScore = score;
+          best = a;
+        }
+      }
+    }
+    return best;
+  };
+
+  /**
+   * Azimuth of the default view: behind the nose when it is not vertical, else facing the ventral side; at
+   * a launch pad with a flame trench off the trench's axis; in orbit mode the sunward side nearest to that.
    */
   const defaultAzimuth = (s: SimSnapshot, v: VesselSnapshot, frame: Quat): number => {
     const byNose = noseAzimuth(s, v, frame);
-    return frameBody && refMode === 'orbit' ? (sunAzimuth(s, v, frame, byNose) ?? byNose) : byNose;
+    if (!frameBody) return byNose;
+    if (refMode === 'orbit') return sunAzimuth(s, v, frame, byNose) ?? byNose;
+    return padView ? (padAzimuth(s, v, frame, byNose) ?? byNose) : byNose;
   };
 
   const noseAzimuth = (s: SimSnapshot, v: VesselSnapshot, frame: Quat): number => {
