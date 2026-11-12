@@ -1,4 +1,4 @@
-Status: open
+Status: open (parts 2-6 done in 1e5bceb; part 1, asynchronous pipeline creation, not started: plan below; part 7 is the atmosphere's)
 From: app-integration-v1
 Owner path: src/render/core (pipeline creation, shader library, mesh system; shared-code maintainer), src/render/terrain (streamer.ts, feature.ts; terrain-render), src/render/atmosphere (feature.ts; atmosphere-clouds)
 Blocking: no   (the loading screen shows what each subsystem exposes today; this asks for a shorter load and for the numbers the screen lacks)
@@ -62,3 +62,57 @@ start 8.5 s, compiles done 18.7 s, terrain done 32.0 s.
 
 Must not change: `isIdle()` of any of them (the harness's `waitIdle` and the app's reveal condition use it), the
 picture, the VRAM lines of ARCHITECTURE 17.
+
+## Resolution of parts 2 to 6 (shared-code maintainer; also for src/render/terrain this round)
+- **2.** `CoreShaderLibrary.compilations(): { pending, total }` (modules created so far and still compiling) and
+  `MeshSystem.loads(): { pending, total }` (texture loads started and outstanding). `coreOf(ctx).shaders` /
+  `.meshes`, or `renderer.core`.
+- **3.** The streamer hands the next job to a worker when it reports back (`TileStreamer.onMessage`), not only in
+  `update()`: the bake rate no longer depends on the frame rate.
+- **4.** The always-resident levels (0 to `pinLevel`, 126 tiles a body) are requested from `init` on, and bake
+  while the other features start. After a cut and at the start (the first frame is a cut) the selection asks for
+  the tiles under the view three levels at a time until one selection wants nothing (`SelectParams.eager`,
+  `EAGER_LEVELS`): children of tiles that are not resident yet, by the bounds they inherit. The view then streams
+  in a third of the round trips with the same tiles (unit test: 15 passes -> 6, 15 % more bakes at most). I tried
+  the whole chain at once first: the inherited bounds are too wide for that deep, it asked for twice the pad
+  view's tiles. No `startView` option: without the view direction a start view asks for the whole ring (four
+  times the tiles of the frustum), and the first frame's eager pass does the same job with the real camera.
+- **5.** `TerrainDebug.residency(bodyId): { wantedLevel, residentLevel, wanted: number[], resident: number[] } | null`
+  for the latest camera selection of the body (levels 0..maxRenderLevel; a tile counts as wanted when the
+  selection drew it, a parent of something drawn, or asked for it; a tile given up for want of a pool layer is
+  not wanted until its retry). `residentLevel` = the deepest level down to which every wanted tile is READY.
+  One walk over the body's nodes (a few thousand): fine for every frame of the loading screen.
+- **6.** `TerrainDebug.setUploadBudget(tiles, ms)` (default 8 tiles and 2 ms a frame; set it back when the scene
+  is revealed).
+- Also from request app-integration-7: a tile that cannot get a pool layer is given up after 240 frames
+  (`StreamStats.droppedTotal`) and `isIdle()` is reached at 1440p; `StreamStats.stalled`, `demandTiles`,
+  `demandImages`, `lodScale`.
+
+Tests: `tests/browser/terrain/smoke.spec.ts` (residency equals wanted level by level at rest, counts of shaders
+and textures), `tests/unit/terrain-render/pools.test.ts` (eager requests). In `tests/browser/integration/pad-pools.spec.ts`
+the terrain is at rest 28.1 s after navigation on the pad at 2560 x 1440 and 21.7 s on the Moon (one run each,
+with the compile stall of part 1 still in it); your spec has the finer clock ("the loading screen shows real
+progress").
+
+## Part 1 (asynchronous pipeline creation): measured, planned, not built
+What blocks: every package creates its pipelines with the synchronous `device.createRenderPipeline` /
+`createComputePipeline` inside `core.shaders.tracked(build)`, and most call `.get()` in their `init`. The GPU
+process then compiles them one after another on its device thread and the first frames queue behind them.
+A plan that needs no change to how features hold their pipelines:
+
+1. The GPU experiment is done (this round's probe, a device of its own in the lab page, eight pipelines with a
+   heavy fragment shader each, RTX 5090): created synchronously and used, 7.39 s (one after another: 0.92 s
+   each; a second set of eight, 7.44 s); eight others created with `createRenderPipelineAsync`, 1.31 s (5.6
+   times faster: they compile side by side); and those eight created AGAIN synchronously from equal descriptors
+   (new module objects of the same WGSL, the same explicit layout) and used: 5 ms. Dawn returns the cached
+   pipeline. So a warm-up with the asynchronous call makes the features' synchronous creation free.
+2. `CoreShaderLibrary.warm(): Promise<void>`: for every tracked item that is not built yet, run its `build`
+   with `device.createRenderPipeline` / `createComputePipeline` replaced for the duration by functions that start
+   the asynchronous creation of the same descriptor and throw a private marker; catch the marker, await the
+   creations (all items in parallel), and repeat until a `build` runs through (a build that creates several
+   pipelines takes one round each). Then `.get()` is a cache hit.
+3. Each feature replaces the `.get()` calls at the end of its `init` by one `await coreOf(ctx).shaders.warm()`
+   (core: `createRenderer` would have to return its promise, or the app awaits `renderer.core.shaders.warm()`
+   before the first frame). 65 creation sites: core 8, terrain 7, cockpit 12, vfx 15, ocean 6, sky 6,
+   atmosphere 5, ui / map / app 6.
+

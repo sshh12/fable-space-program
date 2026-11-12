@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 1e5bceb)
 From: app-integration-v1
 Owner path: src/camera (chaseRig.ts, cameraMath.ts; shared-code maintainer), data/defs/vehicles/*.json `cameras.chase` (sim-world-pilot data)
 Blocking: no   (visual: the largest gap of the browser mission's pictures)
@@ -53,3 +53,49 @@ In `createChaseRig` (generic: no body or vehicle id in code):
 Must not change: the surface-mode view on the pad (request app-integration-3: the starboard-side view clear of
 the tower), the continuity rule when switching from another view ("start behind the previous view direction"),
 terrain clearance, `setOrbit`.
+
+## Resolution (shared-code maintainer, src/camera)
+`src/camera/chaseRig.ts` (generic: no body or vehicle id). Nothing has to change in `src/app/game.ts`:
+`createChaseRig({ defs, terrain })` has the new defaults.
+
+1. **Distance.** `chaseAutoDistance(defs, vessel)`: the vehicle's `cameras.chase.defaultDistance`, or 3.2 radii
+   of the vessel about its centre of mass (`vesselRadiusAboutCom`, from the parts' `bounds`) when that is nearer,
+   inside the vehicle's min / max. Followed over 0.8 s after a separation. The player's zoom is a factor on it
+   and persists. In the app's QA scenarios: 49 m for the stack in LEO, 32 m for the lander stack, 14 m for the
+   ascent stage with the capsule, 10.6 m for the capsule (it was 140 m for all of them). The data did not have to
+   change (`defaultDistance` is the cap, and applies to the full stack).
+2. **Direction.** The frame's up is the local vertical of the SOI body in both navball modes (orbit mode:
+   azimuth from the horizontal part of the velocity), so the body is always on the lower side of the frame.
+   The elevation is `chaseReferenceElevation(angular radius, fovY)` plus the player's pitch: 12 degrees near a
+   body, as on the pad; higher up the camera rises over the vehicle so that the limb stays a third of the half
+   frame under the centre. A body that has become a small disc (angular radius under 16 to 6 degrees: the Earth
+   beyond 16,000 to 55,000 km) stands to the lower left of the vehicle: the default view rolls up to 65 degrees
+   (`chaseReferenceRoll`), because straight below the vehicle is the HUD's navball (the first version put the
+   Earth behind it). In orbit mode the default azimuth is the sunward side, 35 degrees off the sun's line, and
+   follows the sun round the orbit: the vehicle is lit and the sun is behind the camera (104 to 145 degrees
+   from the view axis in the five scenarios). I used the SOI body throughout (not "the larger of the SOI body and
+   its parent"): it changes at the SOI boundary, where the camera swings to the new body over 3 s.
+3. **The player's input wins and persists** (the brief of this round; it differs from your point 2 in two
+   places). Yaw, pitch and zoom are kept as the azimuth, an offset from the reference elevation and a factor on
+   the default distance, through navball modes, staging, spheres of influence, and through the cockpit and the
+   map and back. So the default direction is NOT re-applied at an SOI or mode change once the player has turned
+   the camera, and `activate()` no longer starts behind the previous view's direction (that rule is what left
+   the chase view looking into the Sun after the mission's cockpit pictures). When the player turns or tilts the
+   camera the roll eases out and the frame is level. `rig.resetView()` returns to the default framing in a
+   1.5 s swing: bind it to a key if you want one (`(views.rig('chase') as ChaseRig).resetView()`).
+4. **Options**, as you asked: `frameBody?: boolean` (default true; false = 12 degrees at every altitude, the
+   azimuth from the nose, no roll), `distanceRadii?: number` (default 3.2; `Infinity` = always the vehicle's
+   default), `startBehindPreviousView?: boolean` (default false; true = the old continuity rule). The app should
+   pass none of them. Also on the rig: `offsets` (the player's part), `autoAzimuth`, `roll`.
+
+Unchanged: the surface view on the pad (app-integration-3: from starboard, 12 degrees: flight-ui's
+`tests/unit/flight-ui/camera.test.ts` passes untouched), terrain clearance, `setOrbit` (absolute azimuth,
+elevation, distance; it counts as player input), the distance limits (`chaseDistanceLimits`).
+
+Checked: `tests/unit/camera/chase.test.ts` (21) and, in the app, `tests/browser/integration/chase-framing.spec.ts`
+(`/?scenario=qa-leo | qa-translunar | qa-lunar-orbit | qa-trans-earth | qa-entry`, nothing touched): the body's
+limb inside the frame, a small disc whole and beside the vehicle, the sun at least 73 degrees from the axis, the
+camera within a few radii. Pictures (looked at): `out/screens/core-support/chase-<scenario>.png`. What geometry
+does not allow: over the night side the Earth below is black at the daylight exposure (qa-entry, 836 km up, the
+ground in darkness), and far out the vehicle is side-lit when the sun stands across the line to the body.
+`tools/footage/director.js` (it copies the rig's frame) follows the new frame.

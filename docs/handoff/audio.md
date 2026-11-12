@@ -371,3 +371,61 @@ Full list: `docs/handoff/lead-baseline.md`.
   the range). The browser suite is unchanged: 16 of 16, the 50 m -> 2 km criterion still holds (in air the
   airborne path dominates). The "External structure-borne share" item of "Known limits" above is outdated
   to that extent.
+
+- **Entry: no silence after the heat pulse** (2026-11-11, third maintainer; from the mission video: the sound
+  fell to about -55 dB at 66 km and Mach 16 on the way down and stayed there). The cause was in the model, not
+  in the mix. After the heat pulse the capsule lofts to 77 km and comes down again through 60 to 45 km at Mach
+  16 to 10 with 11 kPa of dynamic pressure and 3.3 g, and a tenth of the glow (0.2 MW/m^2). For a chase camera
+  the boundary-layer wind had no path at all: the camera rides outside the Mach cone, air at 10 to 100 Pa
+  carries nothing, and the wind had no structure-borne share (the engines and the entry sounds had); and the
+  entry roar and rumble followed `plasmaIntensity` alone. From Mach 8 to Mach 1 the chase view was silent.
+  - `environment.json aero.bodyGainDb` (0 dB): the wind's coupling into the structure for an outside camera
+    attached to the vessel, through `mix.json propagation.attach` (-12 dB), for the share of the wind the air
+    does not carry to the camera (1 - airborne gain: all of it in thin air and outside the Mach cone, none beside
+    a subsonic vessel at sea level, so bus levels there are what they were).
+  - `environment.json reentry.load` (`qRef` 18 kPa, `mach` [4, 8], `exponent` 1): the roar and the rumble follow
+    the larger of the plasma and `smoothstep(mach) x min(1, q / qRef)^exponent` (`mapping.entryLoad`); the hiss
+    and the crackle stay with the plasma. The roar hands over to the wind between Mach 8 and Mach 4.
+  - The mission's entry as a timeline: `tools/audio/entryProfile.ts` flies the capsule on the nominal lunar
+    return through the real Sim and writes `labs/audio/entryProfile.json` (2 Hz, 1,164 s; re-run it when the
+    entry physics change: `node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/audio/entryProfile.ts`);
+    `labs/audio/entry.ts` `missionEntryScript(lib, { from, duration, kind })` plays any stretch of it;
+    `window.__audioLab.entry(kind, starts, seconds, rules)` renders it offline (`rules: 'plasmaOnly'` = the rules
+    before the fix, for the comparison).
+  - The lab's `plasmaScript` is the glow alone by default (q = 0), with an optional dynamic pressure: the
+    acceptance case "reentry bus tracks plasmaIntensity" ran at 9 kPa and Mach 25, where the load now speaks.
+
+  Measured: offline renders of the real graph in Chrome over the profile, 6 s of real time every 30 s, master
+  RMS in dBFS (`tests/browser/audio/audio-offline.spec.ts`, "the mission's entry ..."; `out/audio/acceptance.json`
+  `missionEntry`):
+
+| t, s | altitude, km | Mach | q, kPa | plasma | g | chase camera: now (before) | cabin: now (before) |
+|---|---|---|---|---|---|---|---|
+| 30 | 90.7 | 38.3 | 0.2 | 0.05 | 0.05 | -48.8 (-48.9) | -31.6 (-31.6) |
+| 60 | 67.7 | 34.5 | 6.2 | 1.00 | 1.83 | -25.6 (-26.0) | -17.1 (-17.1) |
+| 90 | 58.0 | 29.1 | 17.1 | 1.00 | 5.15 | -23.8 (-25.3) | -16.3 (-16.3) |
+| 120 | 54.5 | 23.9 | 18.1 | 0.94 | 5.44 | -23.7 (-25.8) | -16.4 (-16.6) |
+| 150 | 56.8 | 20.4 | 9.7 | 0.38 | 2.93 | -28.0 (-33.2) | -19.3 (-20.7) |
+| 180 | 64.0 | 19.5 | 3.3 | 0.09 | 1.01 | -37.5 (-46.8) | -24.8 (-28.3) |
+| 210 | 70.8 | 19.7 | 1.3 | 0.02 | 0.38 | -46.1 (-60.3) | -31.0 (-35.2) |
+| 240 | 75.3 | 19.8 | 0.6 | 0.00 | 0.19 | -52.0 (-72.7) | -34.6 (-36.7) |
+| 270 | 77.0 | 19.8 | 0.5 | 0.00 | 0.14 | -46.8 (-47.7) | -28.2 (-28.4) |
+| 300 | 75.7 | 19.6 | 0.6 | 0.00 | 0.17 | -52.6 (-75.4) | -34.9 (-36.8) |
+| 330 | 71.4 | 19.0 | 1.1 | 0.01 | 0.32 | -47.2 (-64.6) | -31.8 (-35.8) |
+| 360 | 64.6 | 17.8 | 2.6 | 0.04 | 0.77 | -39.3 (-53.5) | -26.0 (-31.6) |
+| 390 | 56.3 | 15.9 | 6.4 | 0.09 | 1.91 | -31.3 (-46.1) | -21.2 (-25.6) |
+| 420 | 49.2 | 13.2 | 10.9 | 0.08 | 3.28 | -26.8 (-46.8) | -18.5 (-22.8) |
+| 450 | 45.3 | 10.4 | 10.9 | 0.02 | 3.30 | -26.9 (-59.0) | -18.6 (-22.9) |
+| 480 | 43.5 | 8.0 | 8.2 | 0.00 | 2.50 | -29.2 (-88.1) | -20.0 (-24.9) |
+| 510 | 40.9 | 6.2 | 6.8 | 0.00 | 2.07 | -33.1 (silent) | -23.2 (-26.4) |
+| 540 | 36.7 | 4.6 | 6.6 | 0.00 | 2.03 | -34.7 (-47.9) | -25.0 (-25.0) |
+| 570 | 31.4 | 3.0 | 6.1 | 0.00 | 1.94 | -35.7 (silent) | -27.2 (-27.2) |
+| 600 | 25.7 | 1.7 | 4.5 | 0.00 | 1.48 | -35.4 (-38.2) | -20.2 (-20.2) |
+| 630 | 19.7 | 1.0 | 4.1 | 0.00 | 1.12 | -34.8 (-40.1) | -26.2 (-26.2) |
+| 660 | 13.7 | 0.7 | 5.1 | 0.00 | 1.19 | -33.3 (-34.6) | -20.5 (-20.5) |
+| 690 | 8.8 | 0.5 | 5.0 | 0.00 | 1.12 | -33.7 (-34.2) | -28.4 (-28.4) |
+
+  Chase camera: the heat pulse (t 120 s) is at -23.7 dBFS; the second dip (t 420 to 480 s, Mach 13 to 8, 11 kPa, 3.3 g) was at -46.8, -59.0, -88.1 dBFS and is at -26.8, -26.9, -29.2 dBFS. Where the old rules were not silent in the fall
+  (t 540, 600 s) a thruster pulse of the pilot was in the window. The loft is quiet by its load (0.5 kPa), not
+  silent. Tests: `tests/unit/audio/entryProfile.test.ts` (11), `mapping.test.ts` (`entryLoad`), the offline spec's
+  mission entry and "reentry bus tracks plasmaIntensity" (with the case under load). Not listened to by a human.

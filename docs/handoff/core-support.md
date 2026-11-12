@@ -383,3 +383,223 @@ flight-ui, map-view). `src/ui` and `src/map` have their own fixers now; they are
   suites 212 of 212; looked at from 1.8 m), `atmosphere-clouds-8` declined, `sky-lighting-6` (bake: 131,070
   tiles recoloured in 10 min), `sky-lighting-4` (Clouds), `terrain-render-5` declined, `vehicle-pad-2` part 2
   (render-core lighting / mesh / shadows specs 22 of 22), NOTICE-core-3.
+
+## 9. Visual close-out, third maintainer (2026-11-11, 22:00 on)
+
+Ownership in this round: `src/render/core`, `src/terrain`, `src/camera`, `src/audio`, `src/input`, `src/core`
+except `src/core/contracts` (the v2-baseline agent's), `tools` except `tools/dev`, the labs and specs of the
+render core, the integration lab and audio, `data/defs/audio`, `data/defs/terrain`, and for this round
+`src/render/terrain` (no terrain fixer was running). One GPU slot for five agents from 22:20 on (third bugcheck
+0x119 at 22:16, during this round's first probe and a cockpit spec): browser runs waited 10 to 20 minutes each,
+so they were batched into three.
+
+### Requests
+
+| Request | Blocking | Result | One line |
+|---|---|---|---|
+| `flight-ui-4` | no | resolved by routing (`e153012`) | The reentry streak is the vfx ablation sparks (per-package switch in one page: 74 px with everything, 0 without vfx); `vfx-cs-1` filed, resolved by vfx (`cb47e66`, `11da1a3`) |
+| `vfx-7` | no | resolved `3e95313` | Exterior exposure bounded from below under the sun (sunny 16 - 0.5 EV) while sunlit surfaces are in the frame and the sun stands above 10-25 degrees |
+| `vfx-8` | no | resolved `6a2fb76` | Under the sun, what is brighter than sunlit white (flame-lit ground, glints, emitter hints) moves the target by 0.25 EV at most |
+| `cockpit-14` | yes | resolved `6a2fb76` | A change of `CameraState.kind` is a cut: the exposure follows the target with 0.06 s for 0.75 s |
+| `app-integration-5` | no | core half answered `9b951c9` | Nothing to change in the deferred local lights: the cabin's and the displays' records are the cockpit's and inert (27fb5c8, 38da0ee) |
+| `app-integration-7` | no | resolved `189d1e2` | The pad at 1440p fits the tile pools: vessel observer at the foot, live demand, fit of the ranges, one eviction search per frame, give-up |
+| `app-integration-6` | no | resolved `189d1e2` | One warp cap per observer, ground speed without cuts and blends, parked view while in the map: the ground is as it was left |
+| `app-integration-10` | no | resolved `189d1e2`, `1e5bceb` | Chase rig: body in the frame, sun behind the camera, distance for what is left of the vehicle, the player's input persists |
+| `app-integration-11` | no | parts 2-6 done (`189d1e2`, `aea5efa`, `1e5bceb`); part 1 measured and planned, not built; part 7 is the atmosphere's | `compilations()`, `loads()`, `residency()`, `setUploadBudget()`, bakes independent of the frame rate, pinned levels from init, the view asked for whole after a cut |
+| `sky-lighting-11` | no | terrain part declined `c4097fe` | Measured: the ground the terrain draws is a sphere of albedo 0.057 (land 0.18); the missing half of the far Earth is cloud tops and air |
+| `flight-ui-5` | no | resolved `15c6393` (+ contract `95dac27` by the v2-baseline agent) | Milestone titles: loader validation, the 17 titles of the mission scenario |
+
+Not mine and left alone: `flight-ui-6`, `flight-ui-8` (both `src/sim`: no sim owner is running this round),
+`app-integration-8` (harness), `-12` (cockpit / flight-ui), `-13` (sim / vfx), `cockpit-15` (mission spec).
+
+### The sound during entry (work item 2)
+
+Cause, found by running the sound model over the mission's entry as the real Sim flies it
+(`tools/audio/entryProfile.ts` -> `labs/audio/entryProfile.json`, nominal 45 km perigee, 2 Hz, 1,164 s): after the
+heat pulse the capsule lofts to 77 km and comes down again through 60 to 45 km at Mach 16 to 10, 11 kPa and
+3.3 g, with a tenth of the glow (heat flux 0.2 MW/m^2). For a chase camera (1) the boundary-layer wind had no
+path at all: the camera rides outside the Mach cone, the air at 10-100 Pa carries nothing, and the wind had no
+structure-borne share (the engines and the entry sounds had); (2) the entry roar and rumble followed
+`plasmaIntensity` alone. So the game went quiet at about 66 km on the way down and silent from Mach 8 to Mach 1.
+
+Fix (`src/audio/model.ts`, `mapping.ts`, `config.ts`, `data/defs/audio/environment.json`): the wind reaches an
+attached outside camera through the structure (`aero.bodyGainDb`, with `mix.propagation.attach`), and the roar
+and the rumble follow the larger of the plasma and the hypersonic aerodynamic load
+`smoothstep(Mach 4, 8) x min(1, q / 18 kPa)` (`reentry.load`, `mapping.entryLoad`); hiss and crackle stay with
+the plasma. Vacuum is silent as before (q = 0).
+
+Proof, offline renders of the real graph in Chrome over the profile, 6 s of real time every 30 s, master RMS in
+dBFS, with the rules before the fix rendered in the same page (`tests/browser/audio/audio-offline.spec.ts`, "the
+mission's entry ..."; numbers in `out/audio/acceptance.json` `missionEntry`):
+
+| t, s | altitude, km | Mach | q, kPa | plasma | g | chase camera: now (before) | cabin: now (before) |
+|---|---|---|---|---|---|---|---|
+| 30 | 90.7 | 38.3 | 0.2 | 0.05 | 0.05 | -48.8 (-48.9) | -31.6 (-31.6) |
+| 60 | 67.7 | 34.5 | 6.2 | 1.00 | 1.83 | -25.6 (-26.0) | -17.1 (-17.1) |
+| 90 | 58.0 | 29.1 | 17.1 | 1.00 | 5.15 | -23.8 (-25.3) | -16.3 (-16.3) |
+| 120 | 54.5 | 23.9 | 18.1 | 0.94 | 5.44 | -23.7 (-25.8) | -16.4 (-16.6) |
+| 150 | 56.8 | 20.4 | 9.7 | 0.38 | 2.93 | -28.0 (-33.2) | -19.3 (-20.7) |
+| 180 | 64.0 | 19.5 | 3.3 | 0.09 | 1.01 | -37.5 (-46.8) | -24.8 (-28.3) |
+| 210 | 70.8 | 19.7 | 1.3 | 0.02 | 0.38 | -46.1 (-60.3) | -31.0 (-35.2) |
+| 240 | 75.3 | 19.8 | 0.6 | 0.00 | 0.19 | -52.0 (-72.7) | -34.6 (-36.7) |
+| 270 | 77.0 | 19.8 | 0.5 | 0.00 | 0.14 | -46.8 (-47.7) | -28.2 (-28.4) |
+| 300 | 75.7 | 19.6 | 0.6 | 0.00 | 0.17 | -52.6 (-75.4) | -34.9 (-36.8) |
+| 330 | 71.4 | 19.0 | 1.1 | 0.01 | 0.32 | -47.2 (-64.6) | -31.8 (-35.8) |
+| 360 | 64.6 | 17.8 | 2.6 | 0.04 | 0.77 | -39.3 (-53.5) | -26.0 (-31.6) |
+| 390 | 56.3 | 15.9 | 6.4 | 0.09 | 1.91 | -31.3 (-46.1) | -21.2 (-25.6) |
+| 420 | 49.2 | 13.2 | 10.9 | 0.08 | 3.28 | -26.8 (-46.8) | -18.5 (-22.8) |
+| 450 | 45.3 | 10.4 | 10.9 | 0.02 | 3.30 | -26.9 (-59.0) | -18.6 (-22.9) |
+| 480 | 43.5 | 8.0 | 8.2 | 0.00 | 2.50 | -29.2 (-88.1) | -20.0 (-24.9) |
+| 510 | 40.9 | 6.2 | 6.8 | 0.00 | 2.07 | -33.1 (silent) | -23.2 (-26.4) |
+| 540 | 36.7 | 4.6 | 6.6 | 0.00 | 2.03 | -34.7 (-47.9) | -25.0 (-25.0) |
+| 570 | 31.4 | 3.0 | 6.1 | 0.00 | 1.94 | -35.7 (silent) | -27.2 (-27.2) |
+| 600 | 25.7 | 1.7 | 4.5 | 0.00 | 1.48 | -35.4 (-38.2) | -20.2 (-20.2) |
+| 630 | 19.7 | 1.0 | 4.1 | 0.00 | 1.12 | -34.8 (-40.1) | -26.2 (-26.2) |
+| 660 | 13.7 | 0.7 | 5.1 | 0.00 | 1.19 | -33.3 (-34.6) | -20.5 (-20.5) |
+| 690 | 8.8 | 0.5 | 5.0 | 0.00 | 1.12 | -33.7 (-34.2) | -28.4 (-28.4) |
+
+Chase camera: the heat pulse (t 120 s) is at -23.7 dBFS; the second dip (t 420 to 480 s, Mach 13 to 8, 11 kPa, 3.3 g) was at -46.8, -59.0, -88.1 dBFS and is at -26.8, -26.9, -29.2 dBFS. The loft between the dips (q under 0.7 kPa) is 20 to 29 dB under the
+heat pulse: the level is the load's, not a bed.
+
+Unit tests: `tests/unit/audio/entryProfile.test.ts` (10: the level follows 20 log10 q from Mach 30 to Mach 0.5
+for both listeners, the loft is quiet, vacuum is silent), `mapping.test.ts` (`entryLoad`).
+
+### The chase camera (work item 3, request app-integration-10)
+
+`src/camera/chaseRig.ts`; API for the app (nothing has to change in `src/app/game.ts`:
+`createChaseRig({ defs, terrain })` gets the new defaults; a key for `resetView()` is the app's to add):
+
+```ts
+interface ChaseRigOptions { defs; terrain?; fovY?; clearance?; elevation?;
+  frameBody?: boolean;              // default true; false = the fixed 12 degrees and the nose-based azimuth of before
+  distanceRadii?: number;           // default 3.2 radii about the centre of mass; Infinity = always the vehicle default
+  startBehindPreviousView?: boolean // default false: the rig keeps the placement the player left
+}
+interface ChaseRig extends FlightCameraRig {
+  setOrbit(azimuth, elevation, distance): void;   // absolute, counts as player input (unchanged)
+  resetView(): void;                              // back to the default framing in a 1.5 s swing (bind a key to it)
+  readonly distance: number;
+  readonly offsets: { azimuth: number; pitch: number; zoom: number };  // the player's part
+  readonly autoAzimuth: boolean;                  // true until the player turns the camera
+  readonly roll: number;                          // roll of the default view now, rad (0 once the player has the camera)
+}
+chaseReferenceElevation(angularRadius, fovY, base = 12 deg, side = 0): number
+chaseReferenceRoll(angularRadius): number
+chaseAutoDistance(defs, vessel, radii = 3.2): number
+vesselRadiusAboutCom(defs, vessel): number | null
+```
+
+- Frame: up = the local vertical of the SOI body in both navball modes (orbit mode: azimuth from the horizontal
+  part of the velocity). A navball-mode change re-expresses the azimuth and moves nothing; a change of body
+  swings the camera to the same angles in the new body's frame over 3 s.
+- Elevation = reference + the player's pitch. Reference: 12 degrees near a body (the limb less than about 22
+  degrees under the horizontal: up to about 500 km over the Earth, 140 km over the Moon), then
+  `90 deg - angular radius - 10 deg`, so the limb stays a third of the half frame under the centre.
+- A body that has become a disc (angular radius from 16 down to 6 degrees: the Earth beyond 16,000 to 55,000
+  km) stands to the lower left of the vehicle: the default view rolls up to 65 degrees and the disc moves out to
+  20 degrees from the centre. Straight below the vehicle is where the HUD has its navball: the first version of
+  this round put the Earth there, whole and hidden (found by looking at the picture). The roll belongs to the
+  default: when the player turns or tilts the camera it eases out (0.6 s) and the frame is level.
+- Azimuth: on a surface the vessel's (behind the nose, from starboard while it stands: app-integration-3). In
+  orbit mode the sunward side, 35 degrees off the sun's line, following the sun round the orbit at up to 15
+  degrees a second, until the player turns the camera; then it is the player's, fixed to the track.
+- Distance = `chaseAutoDistance` (the vehicle's `defaultDistance`, or 3.2 radii of what is left of it if that
+  is nearer; followed over 0.8 s after a separation) x the player's zoom factor, inside the vehicle's limits.
+- Persistence: yaw, pitch and zoom are kept through cockpit and map and back, navball modes, staging and
+  spheres of influence; another active vessel starts from the defaults.
+
+In the app, nothing touched (`tests/browser/integration/chase-framing.spec.ts`; pictures looked at:
+`out/screens/core-support/chase-<scenario>.png`):
+
+| Scenario | Body, altitude | Angular radius | Body in the frame | Sun from the view axis | Camera distance (it was 140 m) |
+|---|---|---|---|---|---|
+| `qa-leo` | Earth, 202 km | 75.8 deg | limb 2.2 deg under the centre, the frame level | 104 deg | 49.0 m (stack of bounding radius 21.4 m) |
+| `qa-translunar` | Earth, 81,806 km | 4.1 deg | whole disc, 21.6 deg left and 9.9 deg under the centre | 138 deg | 31.6 m |
+| `qa-lunar-orbit` | Moon, 97 km | 71.3 deg | limb 6.7 deg under the centre, the frame level | 145 deg | 32.2 m |
+| `qa-trans-earth` | Earth, 322,567 km | 1.1 deg | whole disc, 18.9 deg left and 8.7 deg under the centre | 107 deg | 14.2 m |
+| `qa-entry` | Earth, 836 km | 62.1 deg | limb 9.9 deg under the centre (the night side: black) | 128 deg | 10.6 m (capsule) |
+
+What geometry does not allow: over the night side the ground below is black at the daylight exposure the lit
+vehicle sets (qa-entry), and far out the vehicle is side-lit when the sun stands across the line to the body
+(qa-trans-earth). The player can turn the camera; the default cannot have both.
+
+### Terrain (requests app-integration-6, -7, -11)
+
+Details and the table of numbers: `docs/handoff/terrain-render.md` section 13. In short, measured in the app at
+2560 x 1440 on the pad (`tests/browser/integration/pad-pools.spec.ts`): the terrain's main-thread time went
+from 5.27 / 6.74 ms (p50 / p99) to 1.41 / 2.10 ms, the app's frame from 8.0 / 11.0 ms to 3.4 / 4.8 ms (line:
+6 ms), `isIdle()` is reached (it never was; 28 s after navigation), and a map round trip streams nothing again
+(deepest level 20 in the map and in the first frame back; it was 11 and 2). The lander on the Moon at 1440p
+(`qa-lunar-surface`): at rest after 22 s, terrain 0.96 / 1.33 ms, the app's frame p99 under 6 ms. The terrain
+package's functional browser suite passes on the final code (20 of 20: integrity, pops with and without delayed
+streaming, views), and its time-warp perf test (5x, 10x, 50x in a 200 km orbit: caps 7.1 / 6.1 / 3.8, no frame
+over 33 ms, queue at most 5).
+
+### API and behaviour changes of this round
+
+| Change | Where | Affects | Migration |
+|---|---|---|---|
+| Exposure: lower sunlit bound, over-white bound, cut adaptation; `MeterInput.sunElevationSin`, `MeterResult.sunlitFloor`, `exposureInfo().sunlitFloor`, `adaptEv100Cut` | `src/render/core/post/exposure.ts`, `renderer.ts` | every exterior daylight frame, every view change | None in code (RENDER_API 13, 18) |
+| `CoreShaderLibrary.compilations()`, `MeshSystem.loads()` | `src/render/core` | loading screens | None |
+| Chase rig (above); `CHASE_FRAME_BLEND_SECONDS` deprecated | `src/camera/chaseRig.ts` | app, flight-ui lab, footage director | `frameBody: false, distanceRadii: Infinity, startBehindPreviousView: true` pins the old behaviour |
+| `vesselGroundObserver`: vessel LOD observers at the foot with the footprint as bias | `src/camera/listener.ts` | terrain (only consumer) | None |
+| Terrain: `LodObserverFixed.cap`, `SelectParams.counted / eager`, `TileNode.cap / neededFrame / deferUntil / queuedAt`, `GroundSpeed`, `fitLodScale`, `TileStreamer.demand / setUploadBudget / noteFit`, `TerrainDebug.residency / setUploadBudget`, stats | `src/render/terrain` | app (stats), terrain specs | None |
+| Audio: `aero.bodyGainDb`, `reentry.load` (required in `data/defs/audio/environment.json`); `entryLoad`; the config's event and readout lists know the v2 contract's additions | `src/audio`, `data/defs/audio` | chase views in fast flight, every entry | None |
+| Audio lab: `missionEntryScript`, `__audioLab.entry(kind, starts, seconds, rules)` | `labs/audio` | acceptance spec | None |
+| Loader: `MilestoneRuleDef.title` validated | `src/core/defs/loader.ts` | scenario authors | None |
+
+Announced in `docs/requests/NOTICE-core-4.md`.
+
+### Lead-owned data changed in this round
+
+- `data/defs/scenarios/lunar-direct.json`: a `title` on each of the 17 milestones (request `flight-ui-5`). Ids,
+  triggers and order unchanged.
+
+### Tests added or corrected
+
+`tests/unit/audio/entryProfile.test.ts` (11), `tests/unit/camera/chase.test.ts` (21), `observers.test.ts` (4),
+`tests/unit/terrain-render/pools.test.ts` (12), exposure (10 new in `exposureGovernor.test.ts`), loader (2);
+browser: `tests/browser/integration/pad-pools.spec.ts`, `chase-framing.spec.ts`, a cut test in
+`exposure.spec.ts`, the mission entry in `tests/browser/audio/audio-offline.spec.ts`, residency in
+`tests/browser/terrain/smoke.spec.ts`. Corrected: `tests/unit/terrain-core/realData.test.ts` "launch-site pads
+are flat" had failed since the shaped pad of `terrain-render-6` (it asked for 5 cm over `flatRadius`; the
+contract is the core and the areas).
+
+### Open items of this round (for the lead)
+
+1. `app-integration-11` part 1: pipelines are still created synchronously (about 70 modules compile one after
+   another in the GPU process while the first frames wait: 11 s of the 32 s load). Measured in this round's
+   probe: eight heavy pipelines take 7.4 s created synchronously, 1.3 s with `createRenderPipelineAsync`, and
+   5 ms when created synchronously AGAIN from equal descriptors (Dawn's cache). So a `CoreShaderLibrary.warm()`
+   that runs every tracked build once through the asynchronous call makes the features' own creation free: plan
+   in the request. It needs one awaited call in every feature's `init` (65 creation sites in eight packages).
+2. Terrain main thread on the pad at 1440p: 1.4 ms p50 against the 1 ms line of "quadtree + cascades"
+   (selection 0.59, ground cover 0.52).
+3. `flight-ui-6`, `flight-ui-8`: `src/sim` has no owner in this round.
+4. The 12-level "always resident" coarse tiles of the Moon take 126 of the 1,280 tile layers also when the Moon
+   is a few pixels wide (and so will every v2 body): pin by distance.
+5. The cross-feature suite and the budget table were not re-run (by the brief). The integration lab's `water`,
+   `clouds`, `shadows`, `terrain` checks have not seen this round's terrain and exposure changes.
+
+### Journal
+
+- 2026-11-11 22:00. Start. Probe 1 (pad at 1440p, reentry streak by package, map round trip). 22:16: third
+  bugcheck during it; the gate went to one GPU slot. The probe's first two parts had finished: the pad view asks
+  for 1,660 of 1,280 tile layers and the streamer spends 2.6 ms a frame on waiting tiles; the streak is vfx.
+- 22:25. `flight-ui-4` routed (`vfx-cs-1`). Entry profile from the real Sim; the sound model over it in node shows
+  the chase camera silent from Mach 8 to Mach 1. Audio fix, unit tests, lab timeline, offline acceptance test.
+- 22:40. `vfx-7` (lower sunlit bound). The v2 contract's new event types and readouts listed in the audio
+  config's exhaustive maps (they broke `typecheck:paths src/audio`).
+- 22:45-23:10. Terrain: demand simulation in node (the 101 m bias), vessel observer at the foot, per-observer
+  caps, ground speed, pool fit, give-up, parked view. Chase rig rewritten. `cockpit-14`, `vfx-8`.
+- 23:10-23:30. Run A (pad pools, mission entry audio): the numbers of sections above; two over-tight assertions.
+  `app-integration-5` core half, `sky-lighting-11` terrain part, `flight-ui-5`, `app-integration-11` parts 2-6,
+  the stale pad test of terrain-core, the footage director's frame.
+- 23:30-23:55. Run B (87 tests: integration exposure, pad pools, chase framing, render-core, terrain, audio):
+  80 passed, 1 failed (the audio lab's plasma case ran at 9 kPa: corrected), 6 of the same serial file skipped.
+  Looked at the chase pictures: the far Earth stood behind the HUD's navball; default view rolled for small discs.
+  Eager requests cut to three levels (the whole chain asked for twice the tiles).
+- 2026-11-12 00:00-00:35. Run C waited 31 minutes for the slot, then 6 minutes: audio offline suite 11 of 11
+  (the mission entry table), chase framing 5 of 5 with the roll, pad pools 2 of 2 (pad and lunar surface at
+  1440p), the pipeline cache probe, the terrain warp perf test. Unit suite 1,252 of 1,252, typecheck clean for
+  every owned path. Hand-offs, resolutions, NOTICE-core-4.
