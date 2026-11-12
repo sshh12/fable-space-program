@@ -8,7 +8,7 @@
  * own border vertices, so the wall is watertight and the opening edge lies exactly on the outline.
  */
 import { DEG, v3, type Vec3 } from '@/core/math';
-import { frameAt, type Attr } from '../mesh';
+import { frameAt, offsetFrame, type Attr } from '../mesh';
 import { azimuthOf, coneGenerator, coneNormal, conePointAt, openingsOf, radialDir, revPoint, type Opening } from '../mould';
 import { FLAG_ENCLOSURE, FLAG_OVERLAY, type CabinContext } from './context';
 import { QUILT, quiltMeshHeight } from './quilt';
@@ -628,6 +628,37 @@ function blanket(ctx: CabinContext, a0: number, a1: number, y0: number, y1: numb
           const out = v3.normalize(v3.sub(v3.lerp(pa, pb, 0.5), onCloth(px, py, 0.0016)));
           b.strip(pa, pb, qb, qa, out, v3.normalize(v3.sub(pb, pa)), velcro);
         }
+        // What the crew have parked there (round 6: a cabin in use, without crew figures): on about a third
+        // of the squares a roll of grey tape, a pen light or a note pad, each on its own hook-and-loop patch.
+        const what = rnd();
+        if (what > 0.34) continue;
+        const o = onCloth(px, py, 0.0022);
+        const tH = v3.normalize(v3.sub(onCloth(px + 0.01, py, 0.0022), onCloth(px - 0.01, py, 0.0022)));
+        const tV = v3.normalize(v3.sub(onCloth(px, py + 0.01, 0.0022), onCloth(px, py - 0.01, 0.0022)));
+        let nIn = v3.normalize(v3.cross(tH, tV));
+        if (v3.dot(nIn, v3.sub(onCloth(px, py, 0.02), o)) < 0) nIn = v3.neg(nIn);
+        const keep = b.groupName;
+        b.group('stowed');
+        if (what < 0.12) {
+          // Tape: the roll's outer wall, its edge, the core's inner wall.
+          b.lathe(o, nIn, [[0.022, 0], [0.022, 0.019], [0.0135, 0.019], [0.0135, 0]], 28, ctx.m('closeout', { ao: 0.9 }));
+          b.lathe(o, nIn, [[0.0135, 0.0005], [0.0135, 0.0185], [0.012, 0.0185], [0.012, 0.0005]], 20, ctx.m('card', { ao: 0.7 }));
+        } else if (what < 0.24) {
+          // Pen light: a knurled black barrel with a bright head, lying along the bay.
+          const axis = v3.normalize(v3.add(tH, v3.scale(tV, 0.5 * (rnd() - 0.5))));
+          const base = v3.add(v3.addScaled(o, axis, -0.045), v3.scale(nIn, 0.0068));
+          b.cylinder(base, axis, 0.0062, 0.074, 12, ctx.m('matteBlack'), { caps: 'both' });
+          b.cylinder(v3.addScaled(base, axis, 0.074), axis, 0.0082, 0.018, 14, ctx.m('aluminium'), { caps: 'both' });
+        } else {
+          // Note pad: a card block a little askew, its top sheet written on.
+          const skew = 0.25 * (rnd() - 0.5);
+          const fx = v3.normalize(v3.add(tH, v3.scale(tV, skew)));
+          const pad = frameAt(v3.addScaled(o, nIn, 0.003), fx, v3.normalize(v3.reject(tV, fx)));
+          const top = v3.dot(pad.n, nIn) > 0 ? pad : frameAt(pad.o, v3.neg(fx), pad.y);
+          b.box(top, 0.027, 0.039, 0.003, 0.0006, ctx.m('card'));
+          ctx.labelQuad(offsetFrame(top, 0, 0.012, 0.0032), 0, 0, 0.044, 0.012, what < 0.29 ? 'BURN 2  T+3:12' : 'CO2 CART 2  CHG', 'card', { color: 0 });
+        }
+        b.group(keep);
       }
     }
   }
