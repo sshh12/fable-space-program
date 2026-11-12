@@ -64,11 +64,13 @@ fn canopyPoint(I: CanopyInst, s: f32, gc: f32) -> vec3f {
   let taut = smoothstep(0.02, 0.4, infl);
   var r = pr.x * R;
   var y = pr.y * R;
-  // Pillowing between the radial tapes; a canopy that is not filled hangs in pleats, gore by gore.
-  r *= 1.0 + (0.02 + 0.035 * taut) * sin(PI * u);
-  let slack = 1.0 - 0.75 * taut;
+  // Pillowing between the radial tapes: a shallow scallop, a per cent or two of the radius (a filled canopy
+  // is a smooth dome with a fine grid of tapes, not a pumpkin); a canopy that is not filled hangs in pleats,
+  // gore by gore, and the pleats are gone when the cloth is taut.
+  r *= 1.0 + (0.012 + 0.012 * taut) * sin(PI * u);
+  let slack = 1.0 - 0.94 * smoothstep(0.02, 0.6, infl);
   let pleat = (abs(sin(PI * u)) - 0.637) * select(-1.0, 1.0, (u32(floor(gc)) & 1u) == 0u);
-  r *= 1.0 + slack * 0.42 * pleat * (0.35 + 0.65 * s);
+  r *= 1.0 + slack * 0.3 * pleat * (0.35 + 0.65 * s);
   // Breathing of the whole canopy (two slow beats), flutter of the skirt (more when slack) and cloth waves
   // that travel down the gores and round the canopy.
   r *= 1.0 + gain * (0.03 * sin(time * 1.9 + seed * 6.28) + 0.014 * sin(time * 3.3 + seed * 2.1));
@@ -134,7 +136,7 @@ fn hash2(a: f32, b: f32) -> f32 { return fract(sin(a * 12.9898 + b * 78.233) * 4
   let dw = fwidth(v.coord.z);
   // The gore stripes are the pattern; the radial tapes are a faint line along the seams and the hems of the
   // rings a few per cent of albedo (a photograph shows smooth stripes with a fine grid, not a quilt of bricks).
-  var tape = max(0.4 * (1.0 - smoothstep(0.02, 0.05 + du, min(u, 1.0 - u))), 0.1 * (1.0 - smoothstep(0.03, 0.09 + dw, min(w, 1.0 - w))));
+  var tape = max(0.22 * (1.0 - smoothstep(0.015, 0.04 + du, min(u, 1.0 - u))), 0.07 * (1.0 - smoothstep(0.03, 0.09 + dw, min(w, 1.0 - w))));
   var mean = vec3f(0.0);
   let np = u32(style.band.a);
   for (var k = 0u; k < np; k++) { mean += style.colors[u32(style.pattern[k])].rgb; }
@@ -146,7 +148,7 @@ fn hash2(a: f32, b: f32) -> f32 { return fract(sin(a * 12.9898 + b * 78.233) * 4
   var n = normalize(v.n);
   if (!outside) { n = -n; }
   // Cloth is a little rougher and denser under the tapes; fine pleats run along the gores.
-  let pleat = sin(u * TWO_PI * 7.0) * 0.02 * (1.0 - tape);
+  let pleat = sin(u * TWO_PI * 7.0) * 0.012 * (1.0 - tape);
   let translucency = style.params.w * (1.0 - 0.55 * tape);
   // The canopy is a lantern: sunlight that came in through the cloth on the sunny side fills the cavity and
   // shines out through every surface turned away from the sun (the deferred pass only knows the first pass

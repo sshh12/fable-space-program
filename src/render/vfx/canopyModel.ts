@@ -168,8 +168,10 @@ export interface CanopyMesh {
 }
 
 /**
- * Topology of one canopy: `rings` cloth rings of `gores` panels each; every ring leaves the upper
- * `slotFraction` of its width open (the slots of the crown, the crescent gaps of the sails).
+ * Topology of one canopy: `rings` cloth rings of `gores` panels each. The rings of the crown leave the upper
+ * `slotFraction` of their width open (the slots of a ring-sail's crown); towards the skirt the sails overlap
+ * and only a hairline gap is left between them (a sixth of the crown's): seen from outside, a filled canopy
+ * is closed cloth with a few dark slots round the vent, not a wall of bricks with dark joints.
  */
 export function buildCanopyMesh(style: CanopyStyleDef): CanopyMesh {
   const { gores, rings } = style;
@@ -179,7 +181,8 @@ export function buildCanopyMesh(style: CanopyStyleDef): CanopyMesh {
   let v = 0;
   let i = 0;
   for (let ring = 0; ring < rings; ring++) {
-    const s0 = (ring + style.slotFraction) / rings;
+    const slot = style.slotFraction * (1 - (5 / 6) * smooth(0.2, 0.55, (ring + 0.5) / rings));
+    const s0 = (ring + slot) / rings;
     const s1 = (ring + 1) / rings;
     for (let gore = 0; gore < gores; gore++) {
       const base = v / CANOPY_VERTEX_FLOATS;

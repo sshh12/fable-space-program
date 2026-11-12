@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { assertDiscreteGpu, expectNoErrors, openPage, saveScreenshot, test } from '../harness';
+import { appUrl, assertDiscreteGpu, expectNoErrors, saveScreenshot, test } from '../harness';
 
 /**
  * Ad-hoc screenshots of the effects in the GAME itself (src/app with the real sim, the real vehicle and pad),
@@ -41,10 +41,16 @@ const runs: Run[] = file && fs.existsSync(file) ? (JSON.parse(fs.readFileSync(fi
 
 test.describe('vfx ad-hoc shots of the game', () => {
   test.skip(runs.length === 0, 'set VFX_APP_SHOTS=<json file> to take pictures of the effects in the game');
-  test.describe.configure({ timeout: 30 * 60_000 });
+  test.describe.configure({ timeout: 20 * 60_000 });
   runs.forEach((run, index) => {
     test(`run ${index}: ${run.url}`, async ({ page, pageLog }) => {
-      await openPage(page, run.url, { timeoutMs: 240_000 });
+      // (As the harness's openPage, but with a bound on the wait for `ready`: a page that never finishes
+      // starting up must fail here in minutes, not hold the machine's one GPU slot until the test times out.)
+      await page.goto(appUrl(run.url));
+      await page.waitForFunction(() => window.__test !== undefined, undefined, { timeout: 240_000 });
+      const ready = await Promise.race([page.evaluate(() => window.__test!.ready), new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 300_000))]);
+      const startErrors = await page.evaluate(() => window.__test!.errors);
+      if (ready !== true) throw new Error(`the page did not become ready (${String(ready)}): ${JSON.stringify(startErrors)}`);
       await assertDiscreteGpu(page);
       for (const step of run.steps) {
         if (step.size) await page.setViewportSize({ width: step.size[0], height: step.size[1] });

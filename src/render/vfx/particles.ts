@@ -330,6 +330,7 @@ struct VOut {
   @location(1) @interpolate(flat) half: f32,      // half length of the streak in radii
   @location(2) @interpolate(flat) lum: vec4f,     // pre-exposed radiance, opacity
   @location(3) @interpolate(flat) info: vec4f,    // distance from the eye (m), soft-depth range (m), kind, view z
+  @location(4) @interpolate(flat) seed: f32,      // random 0..1 of the particle (the outline of a flake)
 }
 @vertex fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
   var o: VOut;
@@ -343,8 +344,11 @@ struct VOut {
   if (viewZ < 0.1) { return o; }
   let V = -c / dist;
   // Velocity relative to the camera: the particle's own plus the motion of the domain past the eye.
-  var vrel = vfxDomainDir(p.vel);
-  if (frame.time.y > 1e-5) { vrel += (vfx.domOrigin.xyz - vfx.domPrevOrigin.xyz) / frame.time.y; }
+  // (Both in metres per SIMULATED second. The motion of the domain past the eye is measured over the simulated
+  // time of the frame and held while the clock stands still: taken over the real frame time, every particle
+  // that rides with a vehicle at 2 km/s was a hairline across the frame under time warp, and with the clock
+  // stopped, a line ahead of a reentering capsule.)
+  var vrel = vfxDomainDir(p.vel) + vfx.domVel.xyz;
   var vperp = vrel - V * dot(vrel, V);
   let speed = length(vperp);
   let kind = p.kind;
@@ -368,8 +372,14 @@ struct VOut {
   // grainless haze of spray. Each is spread over a few pixels with its light conserved (alpha by area), so
   // that only the few large pieces read as pieces.
   let thing = kind == KIND_DROPLET || kind == KIND_ICE || kind == KIND_CHIP;
+  let flake = kind == KIND_ICE || kind == KIND_CHIP;
   if (thing) { minR = (1.6 + 1.6 * p.seed) * pixel; }
+  // (A flake is drawn with a Gaussian profile, which is half as wide as its quad: its floor is a pixel and a half.)
+  if (flake) { minR = (1.4 + 0.9 * p.seed) * pixel; }
   if (radius < minR) { alpha *= pow(radius / minR, select(1.5, 2.0, thing)); radius = minR; }
+  // A flake of frost or a chip is a plate that tumbles: seen now flat, now edge-on.
+  var across = radius;
+  if (flake) { across = radius * (0.4 + 0.6 * abs(sin(p.seed * 77.0 + p.age * (2.0 + 9.0 * fract(p.seed * 13.7))))); }
   // A particle that fills the view fades out (the eye is inside the cloud).
   alpha *= saturate(2.0 - radius / (220.0 * pixel));
   // The streak is the path during the shutter, behind the particle (never ahead of it, and never longer than
@@ -378,12 +388,13 @@ struct VOut {
   // The same light spread over a longer streak is dimmer.
   alpha *= radius / (radius + 0.25 * halfLen);
   let q = vec2f(f32(vi & 1u) * 2.0 - 1.0, f32((vi >> 1u) & 1u) * 2.0 - 1.0);
-  let world = c - axis * halfLen + axis * (q.x * (halfLen + radius)) + side * (q.y * radius);
+  let world = c - axis * halfLen + axis * (q.x * (halfLen + radius)) + side * (q.y * across);
   o.clip = frame.viewProj * vec4f(world, 1.0);
   o.local = vec2f(q.x * (halfLen + radius) / radius, q.y);
   o.half = halfLen / radius;
   o.lum = vec4f(p.lum.rgb * frame.exposure.x, alpha);
   o.info = vec4f(dist, max(2.0 * radius, 0.25), kind, viewZ);
+  o.seed = p.seed;
   return o;
 }
 
@@ -393,6 +404,14 @@ struct VOut {
   let kind = in.info.z;
   var fall = 1.0 - smoothstep(0.3, 1.0, r);
   if (kind == KIND_GAS || kind == KIND_MIST) { fall = exp(-3.5 * r * r) * (1.0 - smoothstep(0.7, 1.0, r)); }
+  if (kind == KIND_ICE || kind == KIND_CHIP) {
+    // A flake or a chip: a soft irregular speck, no two alike. (A disc with a flat top and an edge is a sprite:
+    // at a few pixels it reads as a white rectangle, and a shower of them as confetti.)
+    let th = atan2(in.local.y, in.local.x - clamp(in.local.x, -in.half, in.half));
+    let lobes = 0.72 + 0.28 * sin(3.0 * th + 40.0 * in.seed) * sin(2.0 * th + 17.0 * in.seed);
+    let rs = r / lobes;
+    fall = exp(-3.0 * rs * rs) * (1.0 - smoothstep(0.7, 1.0, rs));
+  }
   if (kind == KIND_DUST || kind == KIND_DROPLET) {
     // A soft streak: no edge across it, and it thins out towards both ends.
     let u = in.local.x / (in.half + 1.0);

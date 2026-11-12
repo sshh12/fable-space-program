@@ -14,7 +14,7 @@
  * long streaming wake at 1.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { FrameContext, LocalLight, RenderContext } from '@/core/contracts/render';
+import { PLASMA_WINDOW_BYTES, type FrameContext, type LocalLight, type RenderContext } from '@/core/contracts/render';
 import type { VesselSnapshot } from '@/core/contracts/sim';
 import { hashToUnit, hashU32, quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import type { Tracked } from '@/render/core';
@@ -392,6 +392,10 @@ export class PlasmaRenderer {
   private readonly group: GPUBindGroup;
   private readonly pipeline: Tracked<GPURenderPipeline>;
   private placed: PlacedPlasma[] = [];
+  /** 'vfx.plasmaWindow' (request cockpit-13): what a lee-side cabin window of the active vessel sees of the sheath. */
+  private readonly windowBuffer: GPUBuffer;
+  private readonly windowData = new Float32Array(PLASMA_WINDOW_BYTES / 4);
+  private windowWritten = false;
   readonly lights: { light: LocalLight; power: number }[] = [];
   readonly hints: EmitterHint[] = [];
 
@@ -406,6 +410,8 @@ export class PlasmaRenderer {
     this.group = device.createBindGroup({ label: 'vfx.plasma', layout, entries: [{ binding: 0, resource: { buffer: this.buffer } }] });
     this.pipeline = createVolumePipeline(ctx, common, 'vfx.plasma', WGSL, layout);
     this.pipeline.get();
+    this.windowBuffer = device.createBuffer({ label: 'vfx.plasmaWindow', size: PLASMA_WINDOW_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    ctx.resources.publish('vfx.plasmaWindow', this.windowBuffer);
   }
 
   /** Gather the vessels with plasma, pack the instances and prepare their lights. */
@@ -471,6 +477,22 @@ export class PlasmaRenderer {
       this.lights.push({ power: rear * lum, light: { kind: 'point', posRelCam: behind, intensity: [color[0] * rear, color[1] * rear * 0.7, color[2] * rear * 0.5], range: R.light.range, radius: 1.3 * proxy.radius } });
     }
     if (this.placed.length > 0) this.device.queue.writeBuffer(this.buffer, 0, D, 0, this.placed.length * INST_FLOATS);
+
+    // The light the sheath throws into the cabin of the active vessel (the cockpit's cabin light reads it, so
+    // that what the windows show and what they light agree): the mean over streaks and flicker, zero without a sheath.
+    const W = this.windowData;
+    const active = frame.snapshot.vessels.find((v) => v.id === frame.snapshot.activeVesselId);
+    const before = [W[0], W[1], W[2], W[3]];
+    W.fill(0);
+    if (active && list.includes(active)) {
+      const k = Math.min(1, Math.max(0, active.aero.plasmaIntensity));
+      const seen = plasmaWindowRadiance(R, active.aero.heatFlux, k, v3.len(active.aero.airVelocity));
+      W.set([seen.color[0] * seen.luminance, seen.color[1] * seen.luminance, seen.color[2] * seen.luminance, seen.luminance > 0 ? k : 0]);
+    }
+    if (!this.windowWritten || before.some((x, i) => x !== W[i])) {
+      this.device.queue.writeBuffer(this.windowBuffer, 0, W);
+      this.windowWritten = true;
+    }
   }
 
   get count(): number {
@@ -490,5 +512,6 @@ export class PlasmaRenderer {
 
   dispose(): void {
     this.buffer.destroy();
+    this.windowBuffer.destroy();
   }
 }

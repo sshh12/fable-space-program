@@ -144,6 +144,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   let placed: PlacedCluster[] = [];
   let myLights: LocalLight[] = [];
   let dom: DomainFrame | null = null;
+  /** Velocity of the effect domain's origin relative to the eye, ROOT axes, m per simulated second (null: not yet measured in this domain). */
+  let domainVelocity: Vec3 | null = null;
   const stats: Record<string, number> = {};
 
   /** Illuminance of the star at the camera (lux): what is left of it behind the bodies (the core's own measure). */
@@ -343,7 +345,9 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     prepare(frame) {
       lastFrame = frame;
       const snap = frame.snapshot;
-      const simDt = Math.min(0.1, Math.max(0, snap.ut - frame.prevSnapshot.ut));
+      /** Simulated time between the two snapshots: the camera and the bodies moved for this long (time warp included). */
+      const frameDt = Math.max(0, snap.ut - frame.prevSnapshot.ut);
+      const simDt = Math.min(0.1, frameDt);
       effectTime += simDt;
       if (frame.animate) noiseTime += simDt;
       const candidates: LightCandidate[] = [];
@@ -436,12 +440,20 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
           prevOrigin = v3.add(pose.prevCenterRelCam, quat.rotate(pose.prevQFixedToRoot, d.state.origin));
           pq = pose.prevQFixedToRoot;
         } else {
-          prevOrigin = v3.sub(v3.addScaled(d.originRoot, d.velocityRoot, -simDt), frame.prevCamera.positionRoot);
+          prevOrigin = v3.sub(v3.addScaled(d.originRoot, d.velocityRoot, -frameDt), frame.prevCamera.positionRoot);
         }
         const px = quat.rotate(pq, v3.unitX());
         const py = quat.rotate(pq, v3.unitY());
         const pz = quat.rotate(pq, v3.unitZ());
         g.set([prevOrigin.x, prevOrigin.y, prevOrigin.z, out.water ?? -1e30], G.domPrevOrigin);
+        // How fast the domain passes the eye (the streak of a particle is its path relative to the camera during
+        // the shutter): from where the origin was one frame ago, over the SIMULATED time between the two frames.
+        // While the clock stands still the last value holds; before the first step, a camera that travels with
+        // the focus vessel is assumed.
+        if (d.reset || d.rebase) domainVelocity = null;
+        if (frameDt > 1e-6 && frame.frameIndex > 0) domainVelocity = v3.scale(v3.sub(originRel, prevOrigin), 1 / frameDt);
+        else if (!domainVelocity) domainVelocity = v3.sub(d.velocityRoot, focus.vRoot);
+        g.set([domainVelocity.x, domainVelocity.y, domainVelocity.z, 0], G.domVel);
         g.set([px.x, px.y, px.z, 0], G.domPrevX);
         g.set([py.x, py.y, py.z, 0], G.domPrevY);
         g.set([pz.x, pz.y, pz.z, 0], G.domPrevZ);

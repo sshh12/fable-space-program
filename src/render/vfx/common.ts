@@ -35,6 +35,7 @@ export const G = {
   sunDom: 44,
   windDom: 48,
   misc: 52,
+  domVel: 56,
 } as const;
 
 const GLOBALS_WGSL = /* wgsl */ `
@@ -53,7 +54,7 @@ struct VfxGlobals {
   sunDom: vec4f,        // xyz = unit direction to the sun in domain axes
   windDom: vec4f,       // xyz = velocity of the air in domain axes (m/s)
   misc: vec4f,          // x = count of frames in which simulated time advanced (staggered work), y = 1 when the scene depth copy holds a usable previous frame
-  reserved0: vec4f,
+  domVel: vec4f,        // xyz = velocity of the domain origin relative to the eye (ROOT axes, m per simulated second; held while the clock stands still)
   reserved1: vec4f,
 }
 struct VfxProbe {
