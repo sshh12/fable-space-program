@@ -51,8 +51,14 @@ const VARIANTS: Variant[] = [
 ];
 /** Index of the game's rules in VARIANTS. */
 const DEFAULT = 4;
-/** What of a well face's grain is the cascade's: the game's contact rules with no cascade shadow at all. */
-const FILTER_VARIANTS: Variant[] = [{ name: 'noshadow', contact: null, shadowDebug: 8 }];
+/**
+ * What of a well face's grain is the cascade's: the game's contact rules with no cascade shadow at all; and
+ * what the one-tap lookup draws (sampleSunShadowHard, request ocean-9) where the filtered one stands.
+ */
+const FILTER_VARIANTS: Variant[] = [
+  { name: 'noshadow', contact: null, shadowDebug: 8 },
+  { name: 'hard', contact: null, shadowDebug: 16 },
+];
 
 interface Region {
   name: string;

@@ -604,6 +604,39 @@ fn sampleSunShadowSoft(posRelCam: vec3f, n: vec3f, pixel: vec2u, softRadius: f32
   }
   return 1.0;
 }
+/// Sun visibility (0 shadowed .. 1 lit) from the sun shadow cascades with ONE hardware comparison tap (2 x 2
+/// bilinear) in the cascade that covers the point: no blocker search, no kernel, no noise. For surfaces
+/// whose own detail hides a soft edge (water; request ocean-9). The cascade selection, the normal offset and
+/// the bias are sampleSunShadow's (the tap is the kernel's centre tap); where sampleSunShadow dithers from a
+/// cascade's border into the next one, this takes both in the dither's proportions. Returns 1 where no
+/// cascade covers the point and with the default (empty) resources.
+fn sampleSunShadowHard(posRelCam: vec3f, n: vec3f) -> f32 {
+  let count = min(shadowU.count.x, SHADOW_MAX_CASCADES);
+  var lit = 0.0;
+  var left = 1.0;   // the share no cascade has taken yet
+  for (var i = 0u; i < count; i++) {
+    let cas = shadowU.cascades[i];
+    let c0 = cas.viewProj * vec4f(posRelCam, 1.0);
+    let edge = 1.0 - max(abs(c0.x), abs(c0.y));
+    if (edge <= 0.0 || c0.z <= 0.0 || c0.z >= 1.0) { continue; }
+    let fade = saturate(edge * 10.0) * saturate((1.0 - c0.z) * 20.0) * cas.params.z;
+    let l = cas.lightDir.xyz;
+    let NoL = dot(n, l);
+    var tap = 1.0;   // back faces are dark through the BRDF, as in shadowSampleCascade
+    if (NoL > 0.0) {
+      let texelMax = max(cas.params.x, cas.params.w);
+      let sinT = sqrt(saturate(1.0 - NoL * NoL));
+      let po = posRelCam + n * (texelMax * shadowU.settings.w * sinT) + l * (texelMax * 0.5);
+      let c = cas.viewProj * vec4f(po, 1.0);
+      let uv = vec2f(c.x * 0.5 + 0.5, 0.5 - c.y * 0.5);
+      tap = textureSampleCompareLevel(shadowCascades, shadowCompare, uv, i32(cas.axisU.w), c.z - 0.75 * texelMax / cas.params.y);
+    }
+    lit += left * fade * tap;
+    left *= 1.0 - fade;
+    if (left <= 0.0) { break; }
+  }
+  return lit + left;
+}
 /// Index of the cascade sampleSunShadow would use without dithering (-1 = none); for debug views.
 fn shadowCascadeIndex(posRelCam: vec3f) -> i32 {
   let count = min(shadowU.count.x, SHADOW_MAX_CASCADES);

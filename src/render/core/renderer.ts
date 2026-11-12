@@ -79,8 +79,9 @@ const VITE_ENV: Record<string, string | undefined> | undefined = (import.meta as
 /**
  * The sun-shadow chunk with switches for A/B pictures of its filter, read from ShadowUniforms.count.y
  * (ShadowSystem.debugFlags): 1 = the kernel is not turned per pixel, 2 = no dithered cross-fade between
- * cascades, 8 = no cascade shadow at all (what of a picture's grain is the shadow's). Only pages that ask
- * for it (`shadowdebug=1`, VITE_CORE_SHADOW_DEBUG=1) compile this text.
+ * cascades, 8 = no cascade shadow at all (what of a picture's grain is the shadow's), 16 = every lookup is
+ * the one-tap sampleSunShadowHard (request ocean-9: what it draws, on any page). Only pages that ask for it
+ * (`shadowdebug=1`, VITE_CORE_SHADOW_DEBUG=1) compile this text.
  */
 function shadowsWithSwitches(wgsl: string, reportError: (m: string) => void): string {
   const edits: [string, string][] = [
@@ -90,6 +91,7 @@ function shadowsWithSwitches(wgsl: string, reportError: (m: string) => void): st
     ],
     ['if (fade < 1.0 && noise.b >= fade) { continue; }', 'if (fade < 1.0 && noise.b >= fade && (shadowU.count.y & 2u) == 0u) { continue; }'],
     ['if (blockers == 0.0) { return 1.0; }', 'if (blockers == 0.0 || (shadowU.count.y & 8u) != 0u) { return 1.0; }'],
+    ['let noise = blueNoise(pixel);', 'if ((shadowU.count.y & 16u) != 0u) { return sampleSunShadowHard(posRelCam, n); } let noise = blueNoise(pixel);'],
   ];
   let out = wgsl;
   for (const [from, to] of edits) {

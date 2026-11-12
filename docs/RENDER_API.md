@@ -234,7 +234,7 @@ when a chunk they included is registered again (call `.get()` each frame to obta
 | `brdf_water` (overridable) | `brdfWaterDirect`, `brdfWaterAmbient`, `waterAlpha`, `waterBodyColor` | `brdf` |
 | `eclipse` | `discVisibleFraction(rs, ro, d)`, `sunVisibility(posRelCam, sunDir)` | - |
 | `atmosphere_common` | `altitudeAt`, `transmittanceUvFromRMu` / `rMuFromTransmittanceUv`, `skyIrradianceUvFromRMuS` / `rMuSFromSkyIrradianceUv`, `skyViewUv`, `aerialSliceToDistance` / `aerialDistanceToSlice`, `atmosphereSunTransmittance(lut, bodyIndex, r, mu)` | - |
-| `shadows` | `ShadowUniforms`, `sampleSunShadow(posRelCam, n, pixel)`, `sampleSunShadowSoft(posRelCam, n, pixel, softRadiusM)`, `shadowCascadeIndex(posRelCam)` | `shadowCascades`, `shadowU` (binding set `shadow`) |
+| `shadows` | `ShadowUniforms`, `sampleSunShadow(posRelCam, n, pixel)`, `sampleSunShadowSoft(posRelCam, n, pixel, softRadiusM)`, `sampleSunShadowHard(posRelCam, n)`, `shadowCascadeIndex(posRelCam)` | `shadowCascades`, `shadowU` (binding set `shadow`) |
 | `shadow_pass` | `ShadowPassUniforms`, `shadowPass` at `@group(1) @binding(0)` | - |
 | `cloud_shadow` | `cloudLight(pos, bodyIndex, up, r, sunDir) -> vec2f`: what the clouds leave of the sun's illuminance at a camera-relative point, x = the share in the direct beam, y = the share that arrives at all (beam + diffusely through the cloud; y - x is white light from the cloud base) (near map, depth-resolved; coverage map beyond). `cloudShadow(...) -> f32` = its y, for a shader that lights with one factor on the sun. What the deferred lighting uses; use it in every forward-lit shader instead of sampling `'clouds.shadowMap'` yourself | `cloudShadowMapTex`, `cloudCoverageMapTex` (binding set `cloudShadow`) |
 | `transparency` | `applyAtmosphere(uv, distance, colour, alpha)` | `aerialPerspectiveTex`, `cloudsScreenTex`, `cloudsDepthTex`, `aerialTransmittanceTex` (binding set `transparency`) |
@@ -547,6 +547,11 @@ receiver's distance) and the fixed pattern of bilinear comparisons is smooth (re
 row-to-row variation along an edge 0.35 m from the camera 0.08 -> 0.008). Receivers with fewer than 2
 pixels per texel (every view of the ground from more than a few metres) are unchanged.
 
+`sampleSunShadowHard(posRelCam, n)` (request `ocean-9`) is ONE hardware comparison tap (2 x 2 bilinear) in the
+cascade that covers the point: no blocker search, no kernel, no noise, the same cascade selection, normal
+offset and bias (the kernel's centre tap); at a cascade's border it takes this cascade and the next in the
+proportions in which the filtered lookup dithers between them. For surfaces whose own detail hides a soft
+edge (water). `shadowdebug=1` with flag 16 routes every lookup of a page through it, to look at it.
 `sampleSunShadowSoft(posRelCam, n, pixel, softRadius)` is the same lookup with a smallest filter radius in
 metres on the receiver (across the light; times NoL along it, where a metre of map covers 1 / NoL metres of
 ground), up to the 12-texel maximum; `sampleSunShadow` is it with 0. The deferred pass uses it for
