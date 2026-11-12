@@ -337,8 +337,10 @@ disc; the terrain owner's to bring in line).
 - **`.wslconfig`**: NOT written. The session's permission system refused the action (writing
   `%UserProfile%\.wslconfig` and `wsl --shutdown`), and that refusal was not worked around. State found:
   WSL 2.7.3, distributions `Ubuntu` and `docker-desktop` both stopped, no `.wslconfig`, no Docker process.
-  The user or the lead does it by hand before the first compose suite (wave 5); nothing in waves 3 and 4
-  needs Docker. File content:
+  The user writes it (the agents do not). It is needed in sub-wave 3.1 already: `platform-delivery` has a
+  docker compose suite (the pinned-image form of the local stack) and has been told not to start Docker
+  until the user has written the file; everything else of waves 3 and 4 runs on the host stack without
+  Docker. File content:
 
   ```
   [wsl2]

@@ -268,9 +268,11 @@ exception stated to players), instead of being claimed as reachable.
   **Not done yet (2026-11-11).** The lead step `lead-baseline-v2` tried to write it at a moment when
   nothing ran (WSL 2.7.3; `Ubuntu` and `docker-desktop` both stopped; no `.wslconfig` existed; no Docker
   process), and the agent's permission system refused the action as one that interferes with other
-  workloads; the refusal was respected. Nothing in waves 3 and 4 needs Docker (the local stack runs on
-  host processes with an embedded Postgres); the first compose suites are in wave 5. Before then, either
-  the user allows it or does it by hand: create `%UserProfile%\.wslconfig` with
+  workloads; the refusal was respected, and no agent will write the file. **It is the user's to do, and it
+  is needed soon:** `platform-delivery` (sub-wave 3.1) has a docker compose suite (the pinned-image form
+  of the local stack) and has been told not to start Docker until the file exists; everything else of
+  waves 3 and 4 runs on host processes with an embedded Postgres, without Docker. Create
+  `%UserProfile%\.wslconfig` with
 
   ```
   [wsl2]
