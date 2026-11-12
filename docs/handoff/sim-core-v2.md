@@ -25,6 +25,9 @@ This file is a running log first; the sections below it are filled as each step 
   load is planned after the vessel-model step.
 - 01:35 step 2 complete: the trajectory guard recorded (mission: 400 samples; six unit fixtures) and asserted.
 
+- 02:10 step 3 complete: the craft model. The mission state hash did not change (`b850b94ea2dcc1a5`), the
+  trajectory guard and the six fixtures are bit-identical.
+
 ## Step 1: the tick grid (MIGRATION_V2 3.1)
 
 ### What changed
@@ -230,3 +233,110 @@ writing it. **The fixtures are defined by `fixtures.ts`, `../helpers.ts` (`makeE
 together with `data/defs` (parts, `meridian-lunar`)**: a change to the analytic environment or to those
 definitions moves the numbers as surely as a change of the physics (MIGRATION_V2 already keeps
 `meridian-lunar.json` byte-identical through wave 4).
+
+## Step 3: the vessel model (MIGRATION_V2 3.3)
+
+### What a vessel is now (`src/sim/vessel/types.ts`)
+
+```ts
+interface CraftRuntime {
+  craftId: string; vehicleId: string; vehicle: VehicleDef;
+  ownerId: string | null; name: string; joinedTick: number;
+  nextStage: number; stageLockout: number; pending: PendingAction[]; sinceStaging: number;
+  policy: LendPolicy;                       // src/core/contracts/net.ts
+}
+interface DockLink { a: number; b: number; roll: number }   // part indices of the two port parts
+interface CommandRuntime {                  // on every part with a command module
+  module: number; crew: { seat: string; name: string }[]; cockpit: string | null; cameraSeat: string | null;
+  sensorCamera: { pos; lookDir; upDir } | null; remote: boolean;
+}
+interface PartRuntime { craft: number; command: CommandRuntime | null; ... }
+interface Vessel {
+  id: string; name: string;
+  crafts: CraftRuntime[];                   // base craft first; length 1 for anything that never docked
+  links: DockLink[];
+  helm: { accountId: string | null; craft: number; controlPart: number };
+  parts: PartRuntime[];                     // a forest: each craft its own tree and root
+  ...                                       // vehicleId, vehicle, nextStage, stageLockout, pending, sinceStaging are gone
+}
+```
+
+- **Per craft**: stage stack, lockout, pending queue, seconds since staging, the abort sequence (the craft's
+  vehicle). `fireNextStage(vessel, env, craft = vessel.helm.craft)`, `abort(vessel, env, craft?)`,
+  `nextLiveStage(vessel, craft?)`, `stagingInfo(vessel, env, craft?)`, `applyStageInstant(vessel, stage, craft?)`,
+  `executeAction(vessel, craft: CraftRuntime, action, stageIndex, ctx)`: a press acts on one craft's stack and
+  only on that craft's parts. `helmCraft(vessel)`, `anyPending(vessel)`.
+- **Flow group = (craft, stage group)**: `tanksFor` in `structure.ts`, the staging-info model in `facade.ts`.
+  Docking pools nothing. A fairing shields parts of its own craft only.
+- **The command part** carries crew, cockpit id, camera seat, sensor camera and the remote flag
+  (`PartRuntime.command`), copied by the assembler from `VehicleDef.crew`, `.cockpit` and `.cameras.cockpit`
+  (a `command.cockpit` of the part definition wins). Seats and hatch are read from the definition.
+- **Ids** (`src/sim/vessel/ids.ts`): `CraftIdSource { next(vehicleId): string }`, injected
+  (`createSim(defs, scenario, { terrain, ids? })`, `assembleVessel(defs, vehicleId, { stagesAlreadyFired?, craft? })`
+  with `craft: { craftId?, ownerId?, name?, joinedTick?, policy? }`). `seededCraftIds(seed = '')` is the local
+  universe's counter: the first craft of a vehicle is `<seed><vehicleId>`, the n-th `<seed><vehicleId>-<n>`.
+  Vessel ids follow ARCHITECTURE section 3: the craft id for a whole single craft, `<craftId>~<instance id of
+  the piece's first part>` for a piece without the craft's root, `a~<lower vessel id>~<tick>` for two or more
+  craft (kept while craft join; of the multi-craft pieces of a split the one with the most craft, tie the
+  lowest craft id, keeps it; the others are `a~<their lowest craft id>~<tick>`). `partKey(craftId, instanceId)`
+  = `craftId/instanceId`; `partKeyOf(vessel, index)`, `findPartByKey(vessel, key)` (a bare instance id is
+  accepted only when unambiguous), `findCraftPart(vessel, craft, instanceId)`, `assemblyId`, `isAssemblyId`.
+- **`separateVessel`** computes the connected components over tree edges AND links (union-find; same order
+  of pieces and parts as before for a tree). Each piece lists the craft whose parts it has; the live craft
+  record stays with the piece that holds the craft's root part, the others carry a copy with an empty
+  queue; delayed actions go to the piece that holds their parts; the helm stays with the piece that holds
+  its control part, every other piece gets a vacant helm on its first craft with a command part.
+- **Pre-mated dock nodes are links**: a placement whose `node` and `parentNode` are both attach nodes of
+  kind `dock` becomes a `DockLink` and the child a root of its own tree. The stage action `undock` releases
+  every link of the named port part (spring impulse from `DockingPortModuleDef.undockImpulse`, read
+  structurally until the lead joins that module type to `ModuleDef`).
+- **Dock merge, added** (`src/sim/vessel/dock.ts`): `dockMerge(base, other, basePort, otherPort, tick, pose?)`.
+  Linear momentum of both fixes the velocity of the new centre of mass; angular momentum about it (spin and
+  orbital terms m (c_i - c) x (v_i - v)) fixes `w = I^-1 L` through the merged inertia tensor; no tree is
+  re-rooted; the craft of `other` are appended with `joinedTick = tick`; base helm, SAS and name stay.
+  By default the two are joined in the pose they have; `pose` (for example `snapPose(base, other, a, b)`,
+  which puts the two port faces exactly on each other) replaces it. `dockBase(a, b)` (the heavier, tie the
+  lower id), `addLink(vessel, a, b)` (a ring closes), `undock(vessel, link, impulse, ctx)` (the spring acts
+  at the port: `dv = J/m`, `dw = I^-1 (r x J)`; emits `undocked` with part keys), `momentumOf`,
+  `combinedMomentum`, `applyImpulseAt`, `dockFace`.
+- **`mergeVessels` is kept** as the weld of the released clamp pieces into one held ground structure. It
+  refuses two different craft. The clamp vessel of the mission is in the trajectory guard (395 samples).
+- `src/sim/vessel/public.ts` keeps its signatures (`assembleVessel` gained the optional `craft` option).
+
+### Acceptance (measured; `tests/unit/sim-vessel/crafts.test.ts`, 15 tests, with `dockingFixtures.ts`: a
+synthetic port part and the test vehicles ferry, hub and tandem built from library parts)
+
+| Criterion | Result |
+|---|---|
+| Merge then split of two craft restores every part pose to 1e-9 m | 3.6e-15 m near the origin, 0 m at an orbital radius of 6,560 km (float64 resolves 9.3e-10 m there); axes within 5.1e-16. Second craft rolled 0.6435 rad about the port axis, both with their own velocity and spin |
+| Linear momentum to 1e-6 relative | 1.4e-16 and 2.7e-16 through merge and split; the merge alone below 1e-12 |
+| Angular momentum to 1e-9 relative | 2.4e-12 and 1.2e-11 through merge and split |
+| A ring of three links splits correctly | the first release separates nothing (links 3 to 2, id, parts and momentum unchanged, `undocked` with no new vessel); the second splits one craft off and the two that are still linked keep the assembly id |
+| Two craft of the same vehicle fire only their own stages | craft 1 fires: its engine (same instance id `engine` as craft 0's) lights, craft 0's does not; under throttle only craft 1's tank drains; its second stage drops its own service module as `ferry-b~sep` carrying a copy of the craft record with its owner |
+| Ids unique and deterministic through dock, base-craft undock and re-dock | `a~test-hub~100` at the first dock, kept when a third craft joins; the base craft undocks as `test-hub`, the rest keeps the assembly id; re-dock keeps it; full separation gives the three craft ids; identical in a second run |
+| Trajectory guard bit-identical (attended craft, six fixtures, clamp vessel) | yes: 400 of 400 samples, debris 0 s and 0 m; the six fixtures bit for bit |
+| Mission | 36 of 36; state hash `b850b94ea2dcc1a5` UNCHANGED by this step (the hash reads the base craft's stage state where it read the vessel's; an assembly's hash also covers every craft, the links and the helm) |
+
+Also tested: a chain of four cut in the middle (tie of two craft each: `a~hub-a~100` stays with the lower
+craft id, the other piece is `a~hub-c~900`), `snapPose` (faces coincide to 1e-12 m from a 5 mm, 0.08 deg
+residual), the undock spring (600 N s: 3-20 cm/s along the port axis, both momenta conserved to 1e-9), a
+pre-mated pair released by the stage action, the command part's crew and cockpit, part keys, the hash of
+an assembly.
+
+### Limits of this step (stated, not hidden)
+
+- **Events name parts by instance id in a vessel of one craft and by part key in a vessel of several**
+  (`eventPartId` in `ids.ts`, the one place that decides). Every v1 consumer matches `partId` against
+  `PartSnapshot.instanceId`, so a key there now would break the presentation before its sweep. After the
+  sweep the function can return the key always (see "Contract changes requested").
+- **The control frame is still VES.** `helm.controlPart` is state (set to the craft's first command part,
+  moved by splits and merges), but control inputs and the SAS still refer to the VES axes of `parts[0]`.
+  Control-from-here is `contact-docking`'s; for every vessel that exists today the two frames coincide.
+- **Lend policies are data only**: the allocation does not yet exclude a docked craft's actuators (docked
+  free drift is `contact-docking`'s). `dockMerge` takes any two port parts the caller names; envelopes,
+  port states, soft capture and the strength of a docked joint are the island's and `contact-docking`'s.
+- A split of a vessel of ONE craft leaves the inherited throttle lever on the pieces for the one step until
+  they are stepped with their own (neutral) controls, exactly as before; pieces of an ASSEMBLY that the helm
+  did not go with have it closed at once.
+- The id of the identity-keeping piece of a single craft is kept even when its root part was destroyed
+  (v1 behaviour; no other piece can claim that id).

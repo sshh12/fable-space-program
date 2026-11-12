@@ -713,5 +713,15 @@ export function vesselStateHash(vessel: Vessel): string {
     for (const m of p.modules) h.any(m);
     for (const r of p.rt) h.any(r);
   }
+  // A vessel of several craft (or with a link): every craft record, the links, the helm and each part's craft.
+  if (vessel.crafts.length > 1 || vessel.links.length > 0) {
+    for (const c of vessel.crafts) {
+      h.any([c.craftId, c.vehicleId, c.ownerId, c.name, c.joinedTick, c.nextStage, c.stageLockout, c.sinceStaging, c.policy.lendAttitude, c.policy.lendEngines, c.policy.lendPropellant, c.policy.helm]);
+      for (const pa of c.pending) h.any([pa.timeLeft, pa.stageIndex, pa.action.kind, actionParts(pa.action)]);
+    }
+    h.any(vessel.links.map((l) => [l.a, l.b, l.roll]));
+    h.any([vessel.helm.accountId, vessel.helm.craft, vessel.helm.controlPart]);
+    h.any(vessel.parts.map((p) => p.craft));
+  }
   return h.hex();
 }
