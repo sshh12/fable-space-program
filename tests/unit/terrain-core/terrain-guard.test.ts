@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '../../../src/core/contracts/defs';
 import {
   auditAdditions,
+  auditTiles,
   BAND_LIMITS,
   bakedTerrainBodies,
   bitsHex,
@@ -26,6 +27,7 @@ import {
   PLACE_POINTS,
   sampleHeights,
   seedOf,
+  spliceGroup,
   summariseTileset,
   tileDifferences,
   TILES_FILE,
@@ -84,11 +86,13 @@ describe('terrain guard', () => {
     }
     expect(Object.fromEntries(Object.entries(recordedHeights.bodies).map(([id, b]) => [id, b.groups.reduce((n, g) => n + g.count, 0)]))).toMatchObject({ earth: 2800, moon: 2000 });
     // Groups are only ever appended: the two of the first recording, then the place added with the Madrakah
-    // region (site-bake, 2026-11-12), about its reference pad, sampled on the tile set that holds the region.
+    // region (site-bake, 2026-11-12), about the reference pad the site had then. Its directions never move;
+    // its heights are those of the tile set named in `recordedOn` (the region was re-baked on GLO-30 the same
+    // day and the group, and only the group, re-recorded).
     const earth = recordedHeights.bodies['earth']!;
     expect(earth.groups.map((g) => g.key)).toEqual(['uniform', 'site:ka-lae-lc1', 'site:madrakah']);
     expect(earth.groups[1]).toEqual({ key: 'site:ka-lae-lc1', count: PLACE_POINTS, latDeg: 18.987556, lonDeg: -155.603239 });
-    expect(earth.groups[2]).toEqual({ key: 'site:madrakah', count: PLACE_POINTS, latDeg: 18.996043, lonDeg: 57.793818, recordedOn: 'f70a61d55dca902f' });
+    expect(earth.groups[2]).toEqual({ key: 'site:madrakah', count: PLACE_POINTS, latDeg: 18.996043, lonDeg: 57.793818, recordedOn: 'f5e6ef420bda7cea' });
     expect(recordedHeights.bodies['moon']!.groups.map((g) => g.key)).toEqual(['uniform', 'landing:0.661471,23.435999']);
   });
 
@@ -155,6 +159,57 @@ describe('terrain guard', () => {
     const statOnly = Object.fromEntries(Object.entries(additive).map(([k, d]) => [k, { files: d.files, names: d.names, bytes: d.bytes }]));
     expect(auditAdditions(recorded, statOnly, ['.']).violations.length).toBeGreaterThan(0);
     expect(auditAdditions(recorded, statOnly, ['.']).violations.every((v) => /no content hash/.test(v))).toBe(true);
+  });
+
+  it('the audit of a bake that replaces a region: only footprint directories may differ, with their file names; nothing is added or removed', () => {
+    const dir = (files: number, bytes: number, content: string): { files: number; names: string; bytes: number; content: string } => ({ files, names: `n${files}`, bytes, content });
+    const recorded = { '.': dir(1, 21925, 'm2'), 'height/2/8/43': dir(9, 900, 'sea'), 'height/2/8/44': dir(9, 900, 'old'), 'albedo/2/8/44': dir(9, 5000, 'old'), 'height/5/8/10': dir(9, 900, 'kalae'), 'globals': dir(2, 50, 'g') };
+    const footprint = new Set(['height/2/8/43', 'height/2/8/44', 'albedo/2/8/44']);
+    const rebaked = { ...recorded, '.': dir(1, 22126, 'm3'), 'height/2/8/44': dir(9, 900, 'new'), 'albedo/2/8/44': dir(9, 4800, 'new') };
+    const ok = auditTiles(recorded, rebaked, { expectChanged: ['.'], mayChange: footprint, additions: false });
+    expect(ok.violations).toEqual([]);
+    expect(ok.replaced).toEqual(['albedo/2/8/44', 'height/2/8/44']);
+    expect(ok.changed).toEqual(['.: 21925 bytes recorded, 22126 now']);
+    // The sea column of the footprint came out byte-identical: it counts as unchanged, with the two outside it.
+    expect(ok.unchanged).toBe(3);
+    expect(ok.added).toEqual([]);
+    // A directory OUTSIDE the footprint that differs, even by content alone, stops the re-recording.
+    expect(auditTiles(recorded, { ...rebaked, 'height/5/8/10': dir(9, 900, 'KALAE') }, { expectChanged: ['.'], mayChange: footprint, additions: false }).violations).toEqual(['height/5/8/10: content changed (kalae -> KALAE)']);
+    // Without the footprint every replaced directory is a violation: the footprint is the lead's, not the package's.
+    expect(auditTiles(recorded, rebaked, { expectChanged: ['.'], additions: false }).violations).toEqual(['albedo/2/8/44: 5000 bytes recorded, 4800 now', 'height/2/8/44: content changed (old -> new)']);
+    // A replacing bake adds no directory and no file, and removes none, inside the footprint or outside.
+    expect(auditTiles(recorded, { ...rebaked, 'height/2/8/45': dir(9, 900, 'x') }, { expectChanged: ['.'], mayChange: footprint, additions: false }).violations).toEqual(['height/2/8/45: new directory (9 files): a bake that replaces adds none']);
+    expect(auditTiles(recorded, { ...rebaked, 'height/2/8/44': dir(10, 1000, 'new') }, { expectChanged: ['.'], mayChange: footprint, additions: false }).violations[0]).toMatch(/^height\/2\/8\/44: inside the footprint, but its files changed: 9 files recorded, 10 now/);
+    const gone = Object.fromEntries(Object.entries(rebaked).filter(([k]) => k !== 'height/2/8/43'));
+    expect(auditTiles(recorded, gone, { expectChanged: ['.'], mayChange: footprint, additions: false }).violations).toEqual(['height/2/8/43: directory is gone (had 9 files)']);
+    // A footprint entry that was never recorded is a mistake in the footprint.
+    expect(auditTiles(recorded, rebaked, { expectChanged: ['.'], mayChange: new Set([...footprint, 'height/2/8/99']), additions: false }).violations).toEqual(['height/2/8/99: in the footprint, but it was never recorded']);
+  });
+
+  it('re-recording ONE group: its heights come from the new sampling, every other point stays as recorded, a change outside it is named', () => {
+    const body: GuardBodyHeights = {
+      tilesetContentHash: 'x', radius: 1000,
+      groups: [{ key: 'uniform', count: 2 }, { key: 'site:a', count: 2, latDeg: 10, lonDeg: 20 }, { key: 'site:b', count: 1, latDeg: -5, lonDeg: 40 }],
+      directions: directionsHex([{ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }, { x: -1, y: 0, z: 0 }, { x: 0, y: -1, z: 0 }]),
+      collision: [1, 2, 3, 4, 5].map(bitsHex).join(''),
+      band: { '25': [1, 2, 3, 4, 5].map(bitsHex).join(''), '1000': [1.5, 2.5, 3.5, 4.5, 5.5].map(bitsHex).join('') },
+    };
+    // The region of site:a was re-baked: its two points moved on the collision query, one of them on a band query.
+    const sampled = { collision: [1, 2, 30, 40, 5].map(bitsHex).join(''), band: { '25': [1, 2, 3, 41, 5].map(bitsHex).join(''), '1000': body.band['1000']! } };
+    const clean = spliceGroup(body, 'site:a', sampled);
+    expect(clean.outside).toEqual([]);
+    expect(clean.changedInGroup).toEqual({ collision: 2, 'band 25 m': 1, 'band 1000 m': 0 });
+    expect(clean.body.collision).toBe(sampled.collision);
+    expect(clean.body.band['25']).toBe(sampled.band['25']);
+    expect(clean.body.directions).toBe(body.directions);
+    expect(clean.body.groups).toEqual(body.groups);
+    // A point of another group moved as well (index 4, site:b) and so did a uniform one (index 0): both are named,
+    // and the spliced strings still hold the RECORDED values there.
+    const dirty = spliceGroup(body, 'site:a', { ...sampled, collision: [1.25, 2, 30, 40, 55].map(bitsHex).join('') });
+    expect(dirty.outside.map((d) => [d.query, d.index, d.group, d.recorded, d.current])).toEqual([['collision', 0, 'uniform', 1, 1.25], ['collision', 4, 'site:b', 5, 55]]);
+    expect(dirty.body.collision).toBe([1, 2, 30, 40, 5].map(bitsHex).join(''));
+    expect(() => spliceGroup(body, 'site:c', sampled)).toThrow(/no group site:c/);
+    expect(() => spliceGroup(body, 'site:a', { ...sampled, collision: sampled.collision.slice(16) })).toThrow(/the sampling has 4 points, the recording 5/);
   });
 
   it('heights at the stored directions are bit-identical to the recording: collision and band-limited queries', async () => {

@@ -36,14 +36,22 @@
  * package states which directories it changed, and the lead re-records after checking that nothing else did.
  * The check and the re-recording are one act: `terrain-guard.record.ts --tiles-additions --changed
  * <tileset>/.` reads every file, refuses to write if a recorded directory is gone or differs in files,
- * names, bytes or content (`auditAdditions`), and lists what was added.
+ * names, bytes or content (`auditTiles`), and lists what was added. A bake that REPLACES the tiles of a
+ * region in place is re-recorded by `--tiles-replaced --footprint <file>`: nothing added or removed, and
+ * nothing outside the footprint differs; the footprint is taken from this guard's own history (the
+ * directories the region's first bake added), never from the package. Its heights are re-recorded for that
+ * region's place group alone (`--resample-group`), which refuses while any other point differs.
  *
- * History of the recordings. 2026-11-11: Earth and Moon, 2,000 points each. 2026-11-12: the Madrakah
- * region was added to the Earth set (840 directories on face 2, levels 8-12; request site-bake-1): the
- * summary re-recorded by --tiles-additions, and the place group `site:madrakah` appended to Earth (2,800
- * points). STILL TO COME: the flatten discs of the fifteen new Ka Lae pads and the sixteen Madrakah pads
- * exist only once fleet-data writes the site files; the heights are then re-recorded (`--resample`) by the
- * lead under the rule "only points inside new flatten discs may change".
+ * History of the recordings. 2026-11-11: Earth and Moon, 2,000 points each. 2026-11-12, 05:25: the
+ * Madrakah region was added to the Earth set (840 directories on face 2, levels 8-12; request site-bake-1):
+ * the summary re-recorded by --tiles-additions, and the place group `site:madrakah` appended to Earth
+ * (2,800 points). 2026-11-12, 10:40: the region was re-baked on GLO-30 and replaced in place (506 of its
+ * 840 directories and the manifest differ, nothing else): the summary re-recorded by --tiles-replaced and
+ * the heights of `site:madrakah` alone by --resample-group (497 of its 800 points on the collision query).
+ * That group is centred on the reference pad of the FIRST pad layout (18.996 N 57.794 E); the pads have
+ * since moved 9-41 km north along the coast. STILL TO COME: the flatten discs of the new pads exist only
+ * once fleet-data writes the site files; the heights are then re-recorded (`--resample`) by the lead under
+ * the rule "only points inside new flatten discs may change".
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -352,26 +360,43 @@ export function tileDifferences(recorded: Record<string, DirSummary>, current: R
   return out;
 }
 
-export interface AdditionsAudit {
-  /** What a bake that only adds tiles may not do: a recorded directory gone or different, an expected change that is none. */
+export interface TileAudit {
+  /** What the bake may not have done (see `auditTiles`). Empty = the summary may be re-recorded. */
   violations: string[];
-  /** The directories the package named as changed, with what changed in them. */
+  /** The directories the package named as changed (they must differ), with what changed in them. */
   changed: string[];
-  /** New directories, sorted. */
+  /** Directories of the footprint that differ (a bake that REPLACES the tiles of a region), sorted. */
+  replaced: string[];
+  /** New directories, sorted (a violation each unless the bake is one that adds). */
   added: string[];
   /** Recorded directories that are byte-identical (files, names, bytes, content). */
   unchanged: number;
 }
+/** The audit of a bake that only adds (the name it had before replacing bakes existed). */
+export type AdditionsAudit = TileAudit;
+
+export interface TileAuditRule {
+  /** Directories that must be there on both sides and must in fact differ (a tile set's root with its manifest). */
+  expectChanged?: readonly string[];
+  /** The footprint of a replacing bake: directories that MAY differ (some come out byte-identical). Each must have been recorded. */
+  mayChange?: ReadonlySet<string>;
+  /** True for a bake that adds directories; false for one that replaces files in place (a new directory is then a violation). */
+  additions: boolean;
+}
 
 /**
- * The check the lead makes before re-recording the tile summary after a bake that ADDS tiles: every recorded
- * directory is still there with the same files, names, bytes and CONTENT (the full form on both sides),
- * except the directories the package names as changed (`expectChanged`: a tile set's root with its
- * manifest), which must be there on both sides and must in fact differ. Everything else that is new is an
- * added directory. Nothing is truncated: every violation and every added directory is returned.
+ * The check the lead makes before re-recording the tile summary. The full form on both sides: every recorded
+ * directory is still there with the same files, names, bytes and CONTENT, except
+ *   - the directories named as changed (`expectChanged`), which must exist on both sides and must differ;
+ *   - for a bake that REPLACES the tiles of a region, the directories of its footprint (`mayChange`), which
+ *     may differ and must keep their file names (a replacing bake adds and removes no file).
+ * A directory that is new is an addition: allowed for a bake that adds, a violation for one that replaces.
+ * Nothing is truncated: every violation, every replaced and every added directory is returned.
  */
-export function auditAdditions(recorded: Record<string, DirSummary>, current: Record<string, DirSummary>, expectChanged: readonly string[] = []): AdditionsAudit {
-  const audit: AdditionsAudit = { violations: [], changed: [], added: [], unchanged: 0 };
+export function auditTiles(recorded: Record<string, DirSummary>, current: Record<string, DirSummary>, rule: TileAuditRule): TileAudit {
+  const audit: TileAudit = { violations: [], changed: [], replaced: [], added: [], unchanged: 0 };
+  const expectChanged = rule.expectChanged ?? [];
+  const mayChange = rule.mayChange ?? new Set<string>();
   const describe = (a: DirSummary, b: DirSummary): string | null => {
     if (a.files !== b.files || a.names !== b.names) return `${a.files} files recorded, ${b.files} now (names ${a.names} -> ${b.names})`;
     if (a.bytes !== b.bytes) return `${a.bytes} bytes recorded, ${b.bytes} now`;
@@ -382,23 +407,68 @@ export function auditAdditions(recorded: Record<string, DirSummary>, current: Re
   for (const k of Object.keys(recorded).sort()) {
     const a = recorded[k]!;
     const b = current[k];
-    const expected = expectChanged.includes(k);
     if (!b) {
       audit.violations.push(`${k}: directory is gone (had ${a.files} files)`);
       continue;
     }
     const difference = describe(a, b);
-    if (expected) {
+    const blind = a.content === undefined || b.content === undefined;
+    if (expectChanged.includes(k)) {
       if (difference === null) audit.violations.push(`${k}: named as changed, but it is byte-identical`);
-      else if (/no content hash/.test(difference)) audit.violations.push(`${k}: ${difference}`);
+      else if (blind) audit.violations.push(`${k}: no content hash on one side: the audit needs the full form of both`);
       else audit.changed.push(`${k}: ${difference}`);
-    } else if (difference !== null) audit.violations.push(`${k}: ${difference}`);
-    else audit.unchanged++;
+    } else if (difference === null) audit.unchanged++;
+    else if (!mayChange.has(k)) audit.violations.push(`${k}: ${difference}`);
+    else if (blind) audit.violations.push(`${k}: no content hash on one side: the audit needs the full form of both`);
+    else if (a.files !== b.files || a.names !== b.names) audit.violations.push(`${k}: inside the footprint, but its files changed: ${difference} (a replacing bake adds and removes no file)`);
+    else audit.replaced.push(k);
   }
   for (const k of expectChanged) if (!(k in recorded)) audit.violations.push(`${k}: named as changed, but it was never recorded`);
+  for (const k of [...mayChange].sort()) if (!(k in recorded)) audit.violations.push(`${k}: in the footprint, but it was never recorded`);
   audit.added = Object.keys(current)
     .filter((k) => !(k in recorded))
     .sort();
-  for (const k of audit.added) if (current[k]!.content === undefined) audit.violations.push(`${k}: no content hash: the audit needs the full form`);
+  for (const k of audit.added) {
+    if (!rule.additions) audit.violations.push(`${k}: new directory (${current[k]!.files} files): a bake that replaces adds none`);
+    else if (current[k]!.content === undefined) audit.violations.push(`${k}: no content hash: the audit needs the full form`);
+  }
   return audit;
+}
+
+/** `auditTiles` for a bake that ADDS tiles: nothing recorded changes but the directories named. */
+export function auditAdditions(recorded: Record<string, DirSummary>, current: Record<string, DirSummary>, expectChanged: readonly string[] = []): AdditionsAudit {
+  return auditTiles(recorded, current, { expectChanged, additions: true });
+}
+
+/** First and one-past-last point index of a group of a body, or null when the body has no such group. */
+export function groupRange(groups: GuardGroup[], key: string): { start: number; end: number } | null {
+  let start = 0;
+  for (const g of groups) {
+    if (g.key === key) return { start, end: start + g.count };
+    start += g.count;
+  }
+  return null;
+}
+
+/**
+ * The heights of ONE group taken from a new sampling of the whole body, every other point as recorded:
+ * what a re-recording of one place may change. `outside` lists every point outside the group whose height
+ * differs between the recording and the sampling, in any of the queries: the re-recording is refused while
+ * that list is not empty. `changedInGroup` counts the points of the group that differ, per query.
+ */
+export function spliceGroup(body: GuardBodyHeights, key: string, sampled: SampledHeights): { body: GuardBodyHeights; outside: (ChangedPoint & { query: string })[]; changedInGroup: Record<string, number> } {
+  const range = groupRange(body.groups, key);
+  if (!range) throw new Error(`no group ${key} (groups: ${body.groups.map((g) => g.key).join(', ')})`);
+  const queries: [string, string, string][] = [['collision', body.collision, sampled.collision], ...Object.keys(body.band).map((l): [string, string, string] => [`band ${l} m`, body.band[l]!, sampled.band[l] ?? ''])];
+  const outside: (ChangedPoint & { query: string })[] = [];
+  const changedInGroup: Record<string, number> = {};
+  for (const [query, recorded, current] of queries) {
+    if (current.length !== recorded.length) throw new Error(`${query}: the sampling has ${current.length / 16} points, the recording ${recorded.length / 16}`);
+    const diffs = heightDifferences(body, recorded, current);
+    changedInGroup[query] = diffs.filter((d) => d.index >= range.start && d.index < range.end).length;
+    for (const d of diffs) if (d.index < range.start || d.index >= range.end) outside.push({ ...d, query });
+  }
+  const splice = (recorded: string, current: string): string => recorded.slice(0, range.start * 16) + current.slice(range.start * 16, range.end * 16) + recorded.slice(range.end * 16);
+  const band = Object.fromEntries(Object.keys(body.band).map((l) => [l, splice(body.band[l]!, sampled.band[l]!)]));
+  return { body: { ...body, collision: splice(body.collision, sampled.collision), band }, outside, changedInGroup };
 }
