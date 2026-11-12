@@ -243,7 +243,7 @@ fn cloudColumnAt(bi: u32, pos: vec3f, q: vec3f, footprint: f32, hLow: f32) -> Cl
   // Extinction of the low layer: fair-weather cumulus are dense whatever the map says; cloud the map
   // itself shows is as thin as its opacity is low. Both are mottled at the mesoscale.
   let thin = mix(mix(atmo.cloudLow3.x, 1.0, smoothstep(0.0, 0.6, c)), 1.0, saturate(fair / max(c0, 1e-4)));
-  col.dens = thin * exp2(((mix(0.5, meso.g, mesoKeep) - 0.5) + (nLarge - 0.5) * 0.8) * 2.0 * atmo.cloudLow3.y) * mix(1.0, 0.4 + 1.2 * cells * cells, deckness);
+  col.dens = thin * exp2(((mix(0.5, meso.g, mesoKeep) - 0.5) + (nLarge - 0.5) * 0.8) * 2.0 * atmo.cloudLow3.y) * mix(1.0, 0.5 + cells * cells, deckness);
 
   // The upper body: only where the map's top leaves room above the low layer. Its outline wanders with the
   // weather-scale and mesoscale noise: veils with irregular edges instead of the map's contour lines.
@@ -1259,7 +1259,7 @@ const NO_CLOUD = vec3f(3.0e38, 3.0e38, 3.0e38);
  *       lookup between a cloudy and a clear texel is a thinner cloud at the same height, not a ramp.
  * The line is marched in two parts (the low shell with two thirds of the steps, the shell above it with the
  * rest); the number of steps grows as the sun gets low and the share of texels refreshed per frame falls
- * with it (a sixteenth to a sixty-fourth). `inPlace` = true: the pass draws into the maps themselves and
+ * with it and with the governor's quality scale (a sixteenth to a ninety-sixth). `inPlace` = true: the pass draws into the maps themselves and
  * leaves the other texels as they are. `inPlace` = false: the map origin has moved by whole texels; the
  * pass draws into scratch targets, taking the other texels from the maps at that shift (bindings 4, 5), and
  * CLOUD_SHADOW_BLIT_FS_WGSL writes the scratch targets back.

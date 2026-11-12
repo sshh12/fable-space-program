@@ -1009,8 +1009,10 @@ export class CloudSystem {
     // cloud shadow the frame can show.
     const pixelOnGround = (1.5 * Math.max(pose.cameraAltitude, 0) * 2 * Math.tan(frame.camera.fovY / 2)) / Math.ceil(frame.renderSize[1] / 2);
     let steps = Math.min(Math.max(Math.round(params.shadowSteps / Math.max(scale, 1 / 2)), params.shadowSteps), 2 * params.shadowSteps);
-    // (A third of the lines per frame with the long count: the cost of a frame stays that of a high sun.)
-    const rounds = steps > 1.5 * params.shadowSteps ? 3 : 1;
+    // (A third of the lines per frame with the long count: the cost of a frame stays that of a high sun. And
+    // half of that again while the governor has lowered the quality scale: the map then follows the clouds
+    // and the sun over twice as many frames, and costs half as much in each.)
+    const rounds = (steps > 1.5 * params.shadowSteps ? 3 : 1) * (frame.qualityScale < 0.85 ? 2 : 1);
     // From so far away that a pixel covers several texels of the map the density is read as wide as the pixel
     // and has no detail that half the steps would miss. (With hysteresis; the switch re-marches the whole
     // map: a map whose texels were marched with two counts shows the refresh pattern.)
