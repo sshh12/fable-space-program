@@ -321,16 +321,17 @@ def verify_global(rep: Report, all_ids: list[str]) -> dict:
     for p in rt.TILES_ROOT.iterdir():
         if p.is_dir() and p.name not in ("earth", "moon"):
             planet += rt.dir_size(p)
-    other = 0
-    for p in rt.DATA_ROOT.iterdir():
-        if p.name == "tiles":
-            continue
-        if p.is_dir():
-            other += rt.dir_size(p)
+    # PACKAGE_RULES 13d: the baked data (tiles, sky, staged, defs) stays under 22 GB; data/packs has its own cap
+    # and data/cache, data/stack are working directories (reported, not counted)
+    baked_other = sum(rt.dir_size(rt.DATA_ROOT / d) for d in ("sky", "staged", "defs") if (rt.DATA_ROOT / d).is_dir())
+    working = {d: rt.dir_size(rt.DATA_ROOT / d) for d in ("cache", "packs", "stack") if (rt.DATA_ROOT / d).is_dir()}
     earth_moon = _guard_bytes(guard)
-    data_gb = (planet + other + earth_moon) / 1e9
-    rep.check("all", f"data/ under {DATA_CAP_GB} GB", data_gb < DATA_CAP_GB,
-              f"{data_gb:.2f} GB (earth+moon tiles {earth_moon / 1e9:.2f} GB from the terrain guard record, other tile sets {planet / 1e9:.2f} GB, rest of data/ {other / 1e9:.2f} GB)")
+    other = baked_other
+    data_gb = (planet + baked_other + earth_moon) / 1e9
+    rep.check("all", f"baked data/ (tiles, sky, staged, defs) under {DATA_CAP_GB} GB", data_gb < DATA_CAP_GB,
+              f"{data_gb:.2f} GB (earth+moon tiles {earth_moon / 1e9:.2f} GB from the terrain guard record, the other tile sets "
+              f"{planet / 1e9:.2f} GB, sky+staged+defs {baked_other / 1e9:.2f} GB); working directories, not counted: "
+              + ", ".join(f"{k} {v / 1e9:.2f} GB" for k, v in working.items()))
     free = rt.disk_free_gb()
     rep.check("all", "disk keeps at least 25 GB free", free >= rt.DISK_FLOOR_GB, f"{free:.1f} GB free")
     return {"dataGB": round(data_gb, 3), "planetTilesBytes": planet, "otherDataBytes": other, "diskFreeGB": round(free, 1)}
