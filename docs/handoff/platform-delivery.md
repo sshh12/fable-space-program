@@ -149,7 +149,7 @@ pub: string[], bootPack: { url, hash, bytes } }`. The pack list: `GET /packs.jso
 ## 4. How to run and verify
 
 ```
-npx vitest run tests/unit/platform src/terrain/tileSource.test.ts             # 46 tests (in-stack suite skipped)
+npx vitest run tests/unit/platform src/terrain/tileSource.test.ts             # 36 tests; the 9 in-stack tests skip outside a stack
 npx tsx tests/unit/platform/stack-selftest.ts                                 # the slot, kill, names, refusal, shapes, status (starts stacks itself)
 STACK_NAME=fsp-platform-delivery npm run stack -- -- npx vitest run tests/unit/platform/localStack.stack.test.ts
 EGRESS_MIRROR_BYTES_PER_DAY=1e13 MIRROR_PER_ADDRESS_BYTES=1e13 STACK_NAME=fsp-platform-delivery npm run stack -- -- node tools/dev/heavy.mjs --class=cpu -- npx tsx tests/unit/platform/pack-sweep.ts sweep
@@ -164,6 +164,125 @@ The sweep lifts the stack shell's mirror budgets through the environment (8 GB a
 in 10 minutes would refuse a 14 GB sweep: that is the budget working). Compose (when `.wslconfig` caps the VM
 at 6 GB): `STACK_NAME=fsp-platform-delivery npm run stack -- --compose -- <suite>`; `docker compose run --rm dump`
 inside it dumps the compose Postgres to MinIO.
+
+## 5. Acceptance, criterion by criterion
+
+| Criterion | Result |
+|---|---|
+| Every tile through `createTileSource({kind:'pack'})` byte-identical to fs, earth and moon, whole-pack mode and both mirror modes | **Met.** Full sweep (`pack-sweep.ts sweep`, inside the stack): earth 697,346 tiles + 3 files (10.26 GB) and moon 164,874 tiles + 3 files (3.39 GB), every one in four modes (whole packs on disk; bucket presigned ranges; mirror ranges; mirror slices), **0 mismatches**, 162 s. Unit tests do the same on the synthetic fixtures in CI. No small-body tile set exists yet; the sweep iterates whatever is packed |
+| Request count of a recorded flight trace at least 5x lower than per-file fetching | **Met with the client cache, not without it.** The recorded session (4 minutes to orbit, not 10: section 7) has 26,023 tile reads; through the packs with the cache the design puts in front (OPFS; emulated in memory): 2,508 requests, 10.4x fewer. With no client cache at all: 4.2x at the default 64 KiB coalescing gap (5.5x at 128 KiB, at 1.32 bytes per byte needed) |
+| Browser: main thread and worker through the pack source against the local stack (CORS, COEP, no Content-Range), OPFS hit on reload, failover on 429, on a 404 for an indexed object, after one refresh on a 403; terrain hash equals the guard | Written (`tests/browser/platform/packs.spec.ts`, lab `labs/platform`); first run failed to open the lab (it lacked the harness's test API; fixed); the rerun's result is in the running log. The same behaviours are proven in Node (unit tests: 429, 500, 503, 404, expired 403 with one refresh, persistent 403, all mirrors failing, a wrong body length) |
+| Boot set at most 25 MB, cold over 50 Mbit/s in under 8 s with `--page=build`; shell refuses a missing pack or a wrong hash; boot manifest matches the uploaded object | **25 MB: met** (22.4 MB: pack 19.97, first paint 2.22, definitions 0.23). Shell's health stays failing for a missing pack and a wrong size (unit test), and it verifies the SHA-256 (the deployed shell loaded and verified 5b7c3d4f... in one attempt). The manifest's hash is the bucket object's (`upload --boot` writes it only after the upload). **Cold load: see the running log** (`coldstart.spec.ts`) |
+| Egress budgets: each route stops at its budget and answers as specified; query string 404 no body; per-address limit; reset at 00:00 UTC; /endpoints.json no-cache with candidates in order | **Met** (unit tests against the stand-in: client 503 with Retry-After to midnight, boot 302 to a presigned URL that serves the bytes, mirror 429; per-address window; reset at 00:00 UTC; and on the deployed shell: 404 with 0 bytes for four query variants, the boot redirect with a 1-byte budget) |
+| CI green on a branch under 8 minutes, builds the client and the image, fails on a planted secret, TODO and boundary violation | **Met**: runs 43195587786 and 43196339349 green (checks 1m42s, image 2m21s in parallel); planted runs 43196693530 (secret, caught by the credential-shape scan), 43196699082 (TODO), 43196739442 (boundary) all failed at the right step. Ten unit files that need baked data are excluded on CI (request platform-delivery-1) |
+| Local stack: starts from nothing with Docker stopped and no network | **Met** (selftest `offline`: no Docker process while every stack ran; nothing reaches the network: embedded Postgres, stand-in, local packs) |
+| Postgres ready in under 1 s after its first initialisation | **Met**: initdb 1.0 s, then ready in 152-280 ms on every start |
+| Two sessions, one advisory lock, exactly one gets it; a fenced write with a stale token changes 0 rows; a committed row survives a hard kill of Postgres and of the launcher | **Met** (in-stack suite; selftest `kill-row`) |
+| UTF8 with the built-in C.UTF-8 locale; non-1252 text round-trips; citext case-insensitive; a data directory created otherwise is refused | **Met** (in-stack suite; selftest `refuse`: a WIN1252/libc cluster is refused with its encoding and provider named) |
+| --shape=split and --shape=launch start their processes on their own ports | **Met** (5 and 9 processes, every /healthz 200) |
+| status: resident memory at or under 0.6 GB for this wave's stack | **Met**: 387 MB without the page server (Postgres 140 MB), 504 MB with the Vite dev server |
+| THE SLOT: held while up, a second stack waits, free when done, `down` after a killed launcher leaves no process or port and the slot reclaimed; two STACK_NAMEs separate | **Met** (selftest `slot`, `wait`, `free`, `kill`, `names`, `names-state`); plus the launcher's own exclusive lock `data/stack/.launcher.lock` and the `<build>.use-<pid>` file beside a served client build |
+| Compose form: VM capped at 6 GB, same pack requests, same encoding, dump and restore, image smoke with the same buildId | **Built, not run: waiting for `.wslconfig`** (the coordinator's rule this round). The launcher refuses `--compose` and `--db=docker` unless the VM is capped at 6 GB or less. Commands: section 4. The image smoke test runs in CI on every push (role `game` healthy, buildId printed and recorded) and Railway's own build printed the same buildId as CI (5c50250b3dab3d80) |
+| Stage-0 skeleton deployed on Hobby, reachable: shell serves the boot pack from the bucket with isolation headers through the CDN and the endpoint document; hello game healthy in standby and survives a redeploy with the drain honoured; dump written and pruned, credential only in dump; UTF8 and builtin; nothing needing Pro | **Met** (sections 2 and 6 and the capacity report): dump 20261112T100751Z-none.dump written (915 bytes, pg_dump 18 against server 18), 205 retention-probe objects pruned, 36 kept |
+| Cost by the one formula, per service, at 6 and at 72 hours | **First reading only** (25 minutes, measurement traffic included): U = $3.75 a month, U + $5 = $8.75 against $30, workspace $11.83. **The 6-hour and 72-hour readings are not taken** (section 7) |
+| docs/capacity report | `docs/capacity/2026-11-12-platform.md` |
+| No existing Modal app or volume and no existing Railway project touched | **Met** (section 2 lists everything created) |
+
+## 6. Cloud measurements (D1-D8), short
+
+Details and tables: `docs/capacity/2026-11-12-platform.md`.
+
+- D1 cost: first reading U + $5 = $8.75 (met); 6 h and 72 h not taken.
+- D2 Postgres: 18.6; POSTGRES_INITDB_ARGS took effect (UTF8, builtin, C.UTF-8); ALTER SYSTEM accepted, in force
+  after one restart.
+- D3 overlap: build 2-2.5 min, no pause; standby healthy; SIGTERM 1.4 s after the new one is healthy; 45 s drain
+  honoured; requests move to the new deployment at once, 0 errors in 494.
+- D4 Postgres restart: the hello role reconnected after 850 ms.
+- D5 CDN and mirror: ranged responses never cached (DYNAMIC); whole objects are; mirror mode = slices of
+  256 KiB (1.38 bytes per byte needed over the first session; 2 MiB 3.28, 1 MiB 2.20); query strings 404 with
+  0 bytes; the origin sees the client address in X-Forwarded-For; boot redirect works; slice MISS 334 ms, HIT
+  40 ms to first byte; bucket CORS and ExposeHeaders honoured. Chrome under COEP against the deployed
+  services: see the running log.
+- D6 bucket from Modal at 20, 500, 2,000 fetchers: see the running log.
+- D7 derating: not measured.
+- D8 first session: 577 MB as the browser loads today (tiles 304, sky 135, assets 136), 461 MB with the OPFS
+  cache; per-visitor and front-page figures recomputed in the capacity report (23-29 TB and $1,590-1,990 for
+  the all-miss mirror day instead of 15 TB and $750-1,125).
+
+## 7. Not done, and why
+
+- **The 6-hour and 72-hour idle cost readings (D1).** They need the skeleton untouched for that long after the
+  measurement traffic; this session cannot wait three days. The skeleton is left running at its idle floor
+  (as the brief asks); `node deploy/railway/usage.mjs snapshot` at +6 h and +72 h, then `report`.
+- **The cloud derating benchmark (D7).** Not built: a faithful harness needs the real stepVessel regimes of
+  codebase-audit 3.3 (vessels assembled in each regime's state, the world environment, flat ground for
+  touchdown) run by 1, 2, 4 and 8 synchronised, sleep-scheduled worker threads on the game replica with its
+  limit raised to 8 vCPU / 8 GB and put back. The budget went to the measurements that decide the delivery
+  design (CDN, mirror mode, first session, bucket). It belongs with `server-persistence` or `deploy-loadtest`,
+  whose shard code it would measure; nothing in stage 0 depends on it.
+- **The compose suites** (dump and restore in the pinned image, compose Postgres encoding, the VM cap): built,
+  not run, by the coordinator's rule (no `.wslconfig` cap).
+- **The recorded trace is 4 minutes, not 10**: the pilot reached orbit in 237 s; the session ends there by
+  the brief's own definition of D8 (boot, title, one launch to orbit). A 10-minute trace would add orbit tiles.
+- **Levels 0-3 of Earth and the Moon in the boot pack**: 122 MB on disk, five times the 25 MB budget; levels 0-2
+  (and 0-1 of height) are in, the rest deferred and listed in `deploy/boot-manifest.json`.
+- **Low mips of the cloud map**: none is baked (the cloud coverage map is one 38 MB PNG); a reduced copy is a bake
+  product, not tile bytes; listed as deferred.
+- **The client does not use the boot pack or the pack source yet** (app-integration-2 and presentation-sweep);
+  the boot set measurement therefore holds back the page's own requests beyond it.
+
+## 8. Requests and contract changes
+
+- `docs/requests/platform-delivery-1.md` (open, not blocking): ten unit test files read baked data without
+  skipping when it is absent; CI excludes them meanwhile (`.github/workflows/ci.yml`).
+- Contract change for the lead: lift `TilePackIndex` (and with it `PackList`, the pack list document) from
+  `src/terrain/packIndex.ts` into `src/core/contracts/terrain.ts` (MIGRATION_V2 "after 3.2"). Nothing else in
+  `src/core/contracts` was changed; `TileSourceSpec` is used as the lead wrote it.
+- New file outside the four named `src/terrain` files: `src/terrain/tileSource.node.ts` (the `fs` kind cannot
+  live in the browser-safe module; the coordinator allowed new files there), and `src/terrain/tileSource.test.ts`.
+- No open request against this package's paths was found in `docs/requests/`.
+
+## 9. What the next packages must know
+
+**presentation-sweep (tile workers take a TileSourceSpec).** Call `createTileSource(spec)` from
+`src/terrain/tileSource.ts` in the worker's init; it returns the existing fetch source for `{ kind: 'fetch' }`
+(the plain-file dev path is unchanged) and the pack source for `{ kind: 'pack', packListUrl, cache }`. The pack
+source batches what is asked in the same turn: issue a level's requests together, not one awaited after
+another. `cache: { kind: 'opfs', maxBytes }` works in workers and on the main thread; in Node it fails every
+read with a clear error (by design). `addBootPack(bytes)` serves the boot pack's tiles from memory.
+
+**server-persistence (wave 5).** Put the server roles into `deploy/roles/manifest.ts` (replace the hello entries;
+`server/` must not import `deploy/`: your roles receive `RoleContext` from the entry, with the logger, the egress
+meter (count `public-docs`, `api` and socket bytes there and add their budgets), the build identity, the HTTP
+router and `services.packList` (serve it at `/packs.json` from `api`). The dump role is yours to give the real
+schema: it reads `meta.change_seq` (absent today: it logs `dump-no-marker` and dumps every due hour) and
+excludes the data of island_jrnl, island_ckpt and usage_hour. The host stack's Postgres is at
+`STACK_STATE.postgres.url` (database `fsp`, production's cluster settings and `ALTER SYSTEM` values); the
+directory must also refuse a non-UTF8/non-builtin database (the launcher already does). Drain: Railway honours
+`RAILWAY_DEPLOYMENT_DRAINING_SECONDS=45` and sends SIGTERM 1.4 s after the new deployment is healthy; on the host
+stack a stop is `POST /_ctl/stop` with `x-stack-token: STACK_CONTROL_TOKEN`. A Postgres restart costs a
+connected client about 0.85 s.
+
+**deploy-loadtest (wave 6).** The production environment is up at its idle floor: fill it. Tools:
+`deploy/railway/provision.mjs` (idempotent runbook: services, deploy a clean export, ops jobs),
+`deploy/railway/usage.mjs` (the one formula; the readings log), `deploy/modal/fsp_probe.py` and
+`make-requests.ts` (bucket fleet), `tests/browser/platform/deployed.spec.ts` (Chrome against production),
+`tests/browser/platform/session-trace.spec.ts` (record a session), `pack-sweep.ts trace-local` (replay a trace
+for any mirror addressing). Take the 6 h and 72 h readings first if the lead has not. The mirror runs slices of
+256 KiB (`MIRROR_SLICE_BYTES`, on shell and in game's pack list); a ranged mirror is pointless on Railway's CDN
+today. The budget guard is the replica limits plus the shell's egress budgets; no usage limit is set.
+
+**app-integration-1 and -2, capability-settings.** The boot pack's contents and order are data
+(`deploy/boot-pack.json`); `deploy/boot-manifest.json` says what is in it and what is deferred; the shell serves it
+at the endpoint document's `bootPack.url`, immutable, through the CDN. The sky and assets are packed as file sets
+(`sky`, `assets`): read them with `file(set, path)` or, for the low mips, `fileRange`. Today the browser loads the
+whole sky (135 MB) and every asset (136 MB) in the first session: streaming them on demand would halve a first
+visit.
+
+**The lead.** `data/packs` (13.96 GB) is to be kept until `copy_packs` has filled the Modal volume
+`fsp-packs` (it runs once the earth upload is complete: `modal run --env fsp deploy/modal/fsp_offsite.py::copy_packs
+--pack-list https://game-production-dfc41bff.up.railway.app/packs.json`, see the running log). The terrain guard
+was re-recorded in format 2 during this work; the browser terrain check reads its directions from the file.
 
 ## Running log
 
