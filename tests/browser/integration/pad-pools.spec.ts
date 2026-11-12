@@ -145,3 +145,40 @@ test('the pad at 1440p fits the tile pools, comes to rest, and a map round trip 
   expect(round.settledVsBefore.changed).toBeLessThan(0.02);
   await expectNoErrors(page, pageLog);
 });
+
+test('the lander on the Moon at 1440p: the terrain comes to rest inside the pools, main thread within its line', async ({ page, pageLog }) => {
+  await openPage(page, '/?scenario=qa-lunar-surface&capture=0&scale=1&governor=off&mute=1', { timeoutMs: 240_000 });
+  await assertDiscreteGpu(page);
+  await waitIdle(page, 30, 180_000);
+  const restAt = (await page.evaluate(() => performance.now())) / 1000;
+  const t = await page.evaluate(() => {
+    const s = window.__app!.terrainStats();
+    return { stream: s.stream as unknown as Stream, moon: s.bodies['moon'] as unknown as { deepestLevel: number; nodes: number } };
+  });
+  const cpu = await page.evaluate(async () => {
+    window.__test!.resetPerf();
+    const rows: Record<string, number>[] = [];
+    for (let i = 0; i < 300; i++) {
+      await window.__test!.waitFrames(1);
+      rows.push({ ...window.__app!.terrainStats().cpu });
+    }
+    const out: Record<string, { p50: number; p99: number }> = {};
+    for (const k of Object.keys(rows[0]!)) {
+      const v = rows.map((x) => x[k]!).sort((a, b) => a - b);
+      out[k] = { p50: Math.round(v[150]! * 1000) / 1000, p99: Math.round(v[296]! * 1000) / 1000 };
+    }
+    const app = window.__app!.cpu();
+    return { terrain: out, frame: { p50: app.frame.p50, p99: app.frame.p99 } };
+  });
+  record('lunar-surface-1440p', { restAtSeconds: Math.round(restAt * 10) / 10, stream: t.stream, moon: t.moon, cpu });
+  await saveScreenshot(page, 'core-support', 'lunar-surface-1440p-rest');
+  expect(t.stream.stalled).toBe(0);
+  expect(t.stream.droppedTotal).toBe(0);
+  expect(t.stream.uploading + t.stream.queued + t.stream.loading).toBe(0);
+  expect(t.moon.deepestLevel).toBe(18);
+  expect(t.stream.demandTiles).toBeLessThanOrEqual(0.93 * 1280);
+  expect(cpu.terrain['stream']!.p99).toBeLessThan(0.5);
+  // ARCHITECTURE 17: the main thread's frame, p99 6 ms.
+  expect(cpu.frame.p99, 'app frame on the main thread, p99 ms').toBeLessThan(6);
+  await expectNoErrors(page, pageLog);
+});
