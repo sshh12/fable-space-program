@@ -408,6 +408,7 @@ so they were batched into three.
 | `app-integration-11` | no | parts 2-6 done (`189d1e2`, `aea5efa`, `1e5bceb`); part 1 measured and planned, not built; part 7 is the atmosphere's | `compilations()`, `loads()`, `residency()`, `setUploadBudget()`, bakes independent of the frame rate, pinned levels from init, the view asked for whole after a cut |
 | `sky-lighting-11` | no | terrain part declined `c4097fe` | Measured: the ground the terrain draws is a sphere of albedo 0.057 (land 0.18); the missing half of the far Earth is cloud tops and air |
 | `flight-ui-5` | no | resolved `15c6393` (+ contract `95dac27` by the v2-baseline agent) | Milestone titles: loader validation, the 17 titles of the mission scenario |
+| `lead-2` | no | resolved `2c879f1` | The stale real-data pad test follows the shaped pad (flat over the core and the areas; 2.65 m of kept relief inside `flatRadius`) |
 
 Not mine and left alone: `flight-ui-6`, `flight-ui-8` (both `src/sim`: no sim owner is running this round),
 `app-integration-8` (harness), `-12` (cockpit / flight-ui), `-13` (sim / vfx), `cockpit-15` (mission spec).
