@@ -85,8 +85,12 @@ def fit(region_id: str) -> dict:
     # sparsely vegetated ground: above the vegetation on the Hawaiian volcanoes; every height on a desert coast
     # (region file `sources.albedo.deshadeFitMinHeightM`)
     min_h = float(reg["sources"]["albedo"].get("deshadeFitMinHeightM", FIT_MIN_HEIGHT_M))
+    # slopes the fit uses (default 2 deg); where the elevation source is coarser than the imagery (30 m SRTM against
+    # 10 m Sentinel-2) the gentle slopes are mostly survey noise and wadi banks, which dilute the fit towards zero and
+    # even flip its sign (Madrakah: alpha -0.05 from 2 deg, converging to +0.22..+0.26 from 8 deg up)
+    min_s = float(reg["sources"]["albedo"].get("deshadeFitMinSlopeDeg", 2.0))
     key = str({"centre": reg["shape"], "years": reg["sources"]["albedo"]["years"], "v": 4,
-               "sigma": FIT_SIGMA_M, "minHeight": min_h,
+               "sigma": FIT_SIGMA_M, "minHeight": min_h, **({"minSlope": min_s} if min_s != 2.0 else {}),
                "inputs": {"height": inp["height"], "albedoGlobal": inp["albedoGlobal"]}})
     if p.is_file():
         f = read_json(p)
@@ -115,7 +119,7 @@ def fit(region_id: str) -> dict:
     land = (HC > 5.0) & (Y > 0.003)
     tm = regional.texel_metres(face, FIT_LEVEL, xs[len(xs) // 2], ys[len(ys) // 2])
     lr = deshade.local_log_ratio(Y, land, sigma_px=FIT_SIGMA_M / tm)
-    sel = land & (HC > min_h) & (np.hypot(NE, NN) > math.sin(math.radians(2.0))) & (Y < 0.6)
+    sel = land & (HC > min_h) & (np.hypot(NE, NN) > math.sin(math.radians(min_s))) & (Y < 0.6)
     if int(sel.sum()) < 1000:
         raise RuntimeError(f"regalbedo {region_id}: only {int(sel.sum())} texels to fit the de-shading on (need 1000); "
                            "set sources.albedo.deshadeFitMinHeightM in the region file")

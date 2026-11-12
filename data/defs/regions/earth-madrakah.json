@@ -49,11 +49,12 @@
       "landSurvey": "SRTM",
       "seaFloorRampKm": 1.5,
       "nearShoreSlope": 0.04,
+      "despikeBelow": true,
       "credit": "AWS Terrain Tiles (Terrarium; NASA SRTM 1 arc-second, about 30 m, on the Oman coast), attribution: https://github.com/tilezen/joerd/blob/master/docs/attribution.md",
       "attribution": [
         "Regional elevation, Oman: AWS Terrain Tiles / Mapzen Terrarium (SRTM terrain data courtesy of the U.S. Geological Survey)"
       ],
-      "note": "Outside the United States Terrarium carries SRTM 1 arc-second (about 30 m; voids filled from coarser data). z14 (about 9 m pixels at 19 N) holds that source completely, so landZoom is 14 here, not Ka Lae's 15. The land source is finer than the parent level's vertices at levels 8-11 only (level 11 samples every 18 m), so sourceCoverage lists levels 8-11 and level 12 carries the level-11 procedural detail (ARCHITECTURE 10.2). Sea floor of the ocean (WorldCover water connected to the open sea): ETOPO 2022 15 arc-second, starting at the WorldCover coastline with a 1:25 slope (a sand and gravel shore, gentler than Ka Lae's 1:10 lava coast; shallower where ETOPO is shallower) and becoming the ETOPO depth 1.5 km offshore."
+      "note": "Outside the United States Terrarium carries SRTM 1 arc-second (about 30 m; voids filled from coarser data). z14 (about 9 m pixels at 19 N) holds that source completely, so landZoom is 14 here, not Ka Lae's 15. The land source is finer than the parent level's vertices at levels 8-11 only (level 11 samples every 18 m), so sourceCoverage lists levels 8-11 and level 12 carries the level-11 procedural detail (ARCHITECTURE 10.2). Sea floor of the ocean (WorldCover water connected to the open sea): ETOPO 2022 15 arc-second, starting at the WorldCover coastline with a 1:25 slope (a sand and gravel shore, gentler than Ka Lae's 1:10 lava coast; shallower where ETOPO is shallower) and becoming the ETOPO depth 1.5 km offshore. despikeBelow: the Oman Terrarium tiles carry rows of corrupt values along the SRTM tile boundary at 19.0 N (56.8-57.0 E: -3,633 m to +440 m under a 110 m plateau), which the tent average turns into a straight trench up to 111 m deep; the despike pass also removes land vertices more than 30 m below the median of their 9 x 9 neighbourhood here."
     },
     "albedo": {
       "id": "s2cloudless",
@@ -66,6 +67,7 @@
       ],
       "zoom": 14,
       "deshadeFitMinHeightM": 5,
+      "deshadeFitMinSlopeDeg": 10,
       "licence": "CC BY-NC-SA 4.0 (Sentinel-2 cloudless by EOX IT Services GmbH, contains modified Copernicus Sentinel data)",
       "swappable": true
     },

@@ -162,6 +162,13 @@ SPIKE_SCAN_M = 24.0        # candidate tiles: the test on the tile's own grid wi
 SPIKE_ROUNDS = 8           # the pass repeats until nothing is flagged (removing a needle lowers the percentile
                            # its neighbours are judged against); real clusters need two rounds
 SPIKE_CFG = [SPIKE_WINDOW, SPIKE_EXCESS_M, SPIKE_SKIRT_M, SPIKE_SKIRT, "p75", "land-median-v2", SPIKE_ROUNDS]
+# Downward needles (region option `sources.height.despikeBelow`): a land vertex more than SPIKE_EXCESS_M BELOW the
+# MEDIAN of its window. The Oman Terrarium tiles carry rows of corrupt values along an SRTM tile boundary (19.0 N,
+# 56.8-57.0 E: -3,633 m to +440 m under a 110 m plateau), which the bake's tent average turns into a straight trench
+# two or three vertices wide; such a trench fills a third of the window, so the median (not the 25th percentile)
+# is the ground it cuts. The foot of a straight cliff keeps fewer than half of its window above it and is not
+# flagged.
+SPIKE_BELOW_CFG = ["p50", SPIKE_EXCESS_M, SPIKE_SKIRT_M]
 
 
 def _p75(a: np.ndarray) -> np.ndarray:
@@ -170,7 +177,16 @@ def _p75(a: np.ndarray) -> np.ndarray:
     return ndimage.percentile_filter(a, 75, size=SPIKE_WINDOW, mode="nearest")
 
 
-def spike_mask(h: np.ndarray, excess_m: float = SPIKE_EXCESS_M) -> np.ndarray:
+def _p50(a: np.ndarray) -> np.ndarray:
+    from scipy import ndimage
+    return ndimage.median_filter(a, size=SPIKE_WINDOW, mode="nearest")
+
+
+def region_despikes_below(region: dict) -> bool:
+    return bool(region["sources"]["height"].get("despikeBelow", False))
+
+
+def spike_mask(h: np.ndarray, excess_m: float = SPIKE_EXCESS_M, below: bool = False) -> np.ndarray:
     """Land samples standing more than excess_m above the 75th percentile of their neighbourhood. No natural
     surface does at this posting: on a slope, a cliff edge or a ridge crest at least a quarter of the window
     is as high as the sample; a cone would need flanks steeper than 45 degrees all round. NaN = no data
@@ -179,10 +195,13 @@ def spike_mask(h: np.ndarray, excess_m: float = SPIKE_EXCESS_M) -> np.ndarray:
     nan = np.isnan(h)
     filled = np.where(nan, -1e9, h)
     judged = ~ndimage.binary_dilation(nan, iterations=SPIKE_WINDOW // 2) if nan.any() else np.ones(h.shape, bool)
-    return judged & (filled > 0.0) & (filled - _p75(filled) > excess_m)
+    out = judged & (filled > 0.0) & (filled - _p75(filled) > excess_m)
+    if below:
+        out |= judged & (filled > 0.0) & (_p50(filled) - filled > excess_m)
+    return out
 
 
-def despike_field(h: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def despike_field(h: np.ndarray, below: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """(h without needles, mask of the samples changed). A needle is replaced by the median of the land
     samples of its window that are not needles themselves (regsrc.MIN_LAND_M when there are none: it stays
     land, so the coastline and the water mask do not move). A second, tighter pass takes the skirt a removed
@@ -201,28 +220,29 @@ def despike_field(h: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             changed[j, i] = True
 
     for _ in range(SPIKE_ROUNDS):
-        first = spike_mask(out)
+        first = spike_mask(out, below=below)
         if not first.any():
             return out, changed
         replace(first)
         near = ndimage.binary_dilation(first, structure=np.ones((3, 3), bool), iterations=SPIKE_SKIRT) & ~first
-        skirt = near & spike_mask(out, SPIKE_SKIRT_M)
+        skirt = near & spike_mask(out, SPIKE_SKIRT_M, below=below)
         if skirt.any():
             replace(skirt)
-    if spike_mask(out).any():
+    if spike_mask(out, below=below).any():
         raise ValueError("despike: needles remain after the last round")
     return out, changed
 
 
 def _despike_scan_unit(u: tuple) -> list:
     """Tiles of a chunk that may hold a needle (the test on the tile's own 259 x 259 grid, lower threshold)."""
-    _region_id, level, tl = u
+    region_id, level, tl = u
+    below = region_despikes_below(regmod.load(region_id))
     out = []
     for face, x, y in tl:
         h = tiles.read_height(face, level, x, y).astype(np.float64)
         if float(h.max()) <= SPIKE_SCAN_M:
             continue
-        if ((h > 0.0) & (h - _p75(h) > SPIKE_SCAN_M)).any():
+        if ((h > 0.0) & (h - _p75(h) > SPIKE_SCAN_M)).any() or                 (below and ((h > 0.0) & (_p50(h) - h > SPIKE_SCAN_M)).any()):
             out.append((face, x, y))
     return out
 
@@ -263,7 +283,7 @@ def despike_level(region_id: str, level: int, scale: float, candidates: list) ->
                 if t is not None:
                     mos[j * 256:j * 256 + 257, i * 256:i * 256 + 257] = t[1:258, 1:258]
         sub = mos[lo:hi, lo:hi]
-        fixed, changed = despike_field(sub)
+        fixed, changed = despike_field(sub, below=region_despikes_below(reg))
         c = changed[M_MARGIN:M_MARGIN + 257, M_MARGIN:M_MARGIN + 257]
         for jj, ii in zip(*np.nonzero(c)):
             key = (f, y * 256 + int(jj), x * 256 + int(ii))
@@ -446,7 +466,8 @@ def _level_cfg(reg: dict, level: int) -> dict:
             "softM": regsrc.SOFT_M, "inlandMaxDevM": regsrc.INLAND_MAX_DEV_M, "openPx": regsrc.OPEN_PX,
             "fillPits": [PIT_MAX_VERTICES, PIT_RIM_M, "every level", 4, "spill4"],
             "minLandM": regsrc.MIN_LAND_M, "minSeaM": regsrc.MIN_SEA_M,
-            "keepSign": True, "despike": SPIKE_CFG}
+            "keepSign": True, "despike": SPIKE_CFG,
+            **({"despikeBelow": SPIKE_BELOW_CFG} if region_despikes_below(reg) else {})}
 
 
 def region_is_baked(region_id: str) -> bool:

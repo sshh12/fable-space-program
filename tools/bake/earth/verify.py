@@ -703,7 +703,7 @@ def check_regional_needles(regions: list[str] | None = None) -> None:
                     if (f, x - 1 + i, y - 1 + j) in have:
                         mos[j * 256:j * 256 + 257, i * 256:i * 256 + 257] = tiles.read_height(f, finest, x - 1 + i, y - 1 + j)[1:258, 1:258]
             sub = mos[256 - m:513 + m, 256 - m:513 + m]
-            mask = heights.spike_mask(sub)[m:m + 257, m:m + 257]
+            mask = heights.spike_mask(sub, below=heights.region_despikes_below(reg))[m:m + 257, m:m + 257]
             needles += int(mask.sum())
             filled = np.where(np.isnan(sub), -1e9, sub)
             excess = (filled - heights._p75(filled))[m:m + 257, m:m + 257]
