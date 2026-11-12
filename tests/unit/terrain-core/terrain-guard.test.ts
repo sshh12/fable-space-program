@@ -24,6 +24,10 @@ import {
   latLonOf,
   loadRealDefs,
   openTerrain,
+  PAD_LAYOUT,
+  PAD_POINTS,
+  padDirections,
+  padZoneOf,
   PLACE_POINTS,
   sampleHeights,
   seedOf,
@@ -34,6 +38,7 @@ import {
   UNIFORM_POINTS,
   type GuardBodyHeights,
   type GuardHeights,
+  type GuardPad,
   type GuardTiles,
 } from './terrain-guard';
 
@@ -61,7 +66,7 @@ describe('terrain guard', () => {
     expect(directionsOf(directionsHex(dirs))).toEqual(dirs);
   });
 
-  it('the stored directions are unit vectors laid out in their groups: 2,800 on Earth and 2,000 on the Moon today', () => {
+  it('the stored directions are unit vectors laid out in their groups: 4,200 on Earth and 2,000 on the Moon today', () => {
     expect(recordedHeights.format).toBe(2);
     for (const [bodyId, body] of Object.entries(recordedHeights.bodies)) {
       const dirs = directionsOf(body.directions);
@@ -84,16 +89,90 @@ describe('terrain guard', () => {
         start += g.count;
       }
     }
-    expect(Object.fromEntries(Object.entries(recordedHeights.bodies).map(([id, b]) => [id, b.groups.reduce((n, g) => n + g.count, 0)]))).toMatchObject({ earth: 2800, moon: 2000 });
+    expect(Object.fromEntries(Object.entries(recordedHeights.bodies).map(([id, b]) => [id, b.groups.reduce((n, g) => n + g.count, 0)]))).toMatchObject({ earth: 4200, moon: 2000 });
     // Groups are only ever appended: the two of the first recording, then the place added with the Madrakah
     // region (site-bake, 2026-11-12), about the reference pad the site had then. Its directions never move;
     // its heights are those of the tile set named in `recordedOn` (the region was re-baked on GLO-30 the same
     // day and the group, and only the group, re-recorded).
     const earth = recordedHeights.bodies['earth']!;
-    expect(earth.groups.map((g) => g.key)).toEqual(['uniform', 'site:ka-lae-lc1', 'site:madrakah']);
+    expect(earth.groups.map((g) => g.key)).toEqual(['uniform', 'site:ka-lae-lc1', 'site:madrakah', 'pads:ka-lae', 'pads:madrakah']);
     expect(earth.groups[1]).toEqual({ key: 'site:ka-lae-lc1', count: PLACE_POINTS, latDeg: 18.987556, lonDeg: -155.603239 });
     expect(earth.groups[2]).toEqual({ key: 'site:madrakah', count: PLACE_POINTS, latDeg: 18.996043, lonDeg: 57.793818, recordedOn: 'f5e6ef420bda7cea' });
     expect(recordedHeights.bodies['moon']!.groups.map((g) => g.key)).toEqual(['uniform', 'landing:0.661471,23.435999']);
+    // Then one pad-field group per site, laid over the pads as site-bake resolved them (2026-11-12): the pads
+    // and the radii of their class are stored in the group.
+    const classes = (pads: GuardPad[]): string => [450, 300, 150].map((flat) => pads.filter((p) => p.flatRadius === flat).length).join('/');
+    const kaLae = earth.groups[3]!;
+    const madrakah = earth.groups[4]!;
+    expect([kaLae.count, kaLae.pads!.length, classes(kaLae.pads!), kaLae.recordedOn]).toEqual([9 * PAD_POINTS, 9, '2/2/5', 'f5e6ef420bda7cea']);
+    expect([madrakah.count, madrakah.pads!.length, classes(madrakah.pads!), madrakah.recordedOn]).toEqual([16 * PAD_POINTS, 16, '4/6/6', 'f5e6ef420bda7cea']);
+    // LC-1 is the first pad of Ka Lae's field, where it has always been; its own place group is still there.
+    expect(kaLae.pads![0]).toEqual({ id: 'lc-1', latDeg: 18.987556, lonDeg: -155.603239, flatRadius: 450, blendRadius: 900 });
+    expect(madrakah.pads![0]).toEqual({ id: 'lc-1', latDeg: 19.078241, lonDeg: 57.786868, flatRadius: 450, blendRadius: 900 });
+    for (const g of [kaLae, madrakah]) for (const p of g.pads!) expect([p.flatRadius, p.blendRadius], `${g.key} ${p.id}`).toEqual(p.flatRadius === 450 ? [450, 900] : p.flatRadius === 300 ? [300, 600] : [150, 300]);
+  });
+
+  it('a pad-field group has points at every pad: its centre, the flat disc, either side of both rims, the blend ring and the ground beyond', () => {
+    expect(PAD_POINTS).toBe(56);
+    expect(PAD_LAYOUT.map((r) => `${r.ring} ${r.count}`).join(', ')).toBe('centre 1, flat 11, flatRimIn 4, flatRimOut 4, blend 12, outerRimIn 4, outerRimOut 4, beyond 12, far 4');
+    let groups = 0;
+    for (const [bodyId, body] of Object.entries(recordedHeights.bodies)) {
+      const dirs = directionsOf(body.directions);
+      let start = 0;
+      for (const g of body.groups) {
+        if (g.pads) {
+          groups++;
+          expect(g.key.startsWith('pads:'), g.key).toBe(true);
+          expect(g.count, g.key).toBe(g.pads.length * PAD_POINTS);
+          g.pads.forEach((pad, k) => {
+            const where = `${bodyId} ${g.key} ${pad.id}`;
+            const points = dirs.slice(start + k * PAD_POINTS, start + (k + 1) * PAD_POINTS).map(latLonOf);
+            const own = points.map((p) => distanceTo(p, pad.latDeg, pad.lonDeg, body.radius));
+            // The first point is the centre itself (a great-circle distance near zero is good to a decimetre:
+            // the arc cosine of a number next to one); nothing lies further than four blend radii.
+            expect(own[0]!, where).toBeLessThan(0.5);
+            expect(Math.max(...own), where).toBeLessThanOrEqual(4 * pad.blendRadius * 1.001);
+            // Against its OWN disc: 16 points in the flat disc, 20 in the blend ring, 20 beyond.
+            expect([own.filter((d) => d <= pad.flatRadius).length, own.filter((d) => d > pad.flatRadius && d <= pad.blendRadius).length, own.filter((d) => d > pad.blendRadius).length], where).toEqual([16, 20, 20]);
+            // No point sits ON a radius: the nearest is 2 % away, so rounding never decides the side.
+            expect(Math.min(...own.map((d) => Math.abs(d - pad.flatRadius))) / pad.flatRadius, where).toBeGreaterThan(0.019);
+            expect(Math.min(...own.map((d) => Math.abs(d - pad.blendRadius))) / pad.blendRadius, where).toBeGreaterThan(0.019);
+            // Both rims are sampled all the way round: one point in every quarter, inside and outside.
+            for (const [name, radius] of [['flat', pad.flatRadius], ['outer', pad.blendRadius]] as const) {
+              for (const side of [0.98, 1.02]) {
+                const ring = points.filter((_, i) => Math.abs(own[i]! / radius - side) < 0.002);
+                expect(ring.length, `${where} ${name} rim x ${side}`).toBe(4);
+                const quarters = new Set(ring.map((p) => Math.floor((((Math.atan2((p.lonDeg - pad.lonDeg) * Math.cos(pad.latDeg * (Math.PI / 180)), p.latDeg - pad.latDeg) + 2 * Math.PI) % (2 * Math.PI)) / (Math.PI / 2)))));
+                expect(quarters.size, `${where} ${name} rim x ${side}`).toBe(4);
+              }
+            }
+            // Against the discs of the WHOLE field (a neighbour's disc may hold some of the far points): still
+            // points on both sides, which is what "only points inside new flatten discs may change" needs.
+            const zones = points.map((p) => padZoneOf(g.pads!, p, body.radius)!.zone);
+            expect(zones.filter((z) => z === 'flat').length, where).toBeGreaterThanOrEqual(16);
+            expect(zones.filter((z) => z === 'outside').length, where).toBeGreaterThanOrEqual(12);
+          });
+          // The stored points of a pad are those the generator gives for that pad alone: no pad depends on another.
+          const alone = padDirections(bodyId, g.key, g.pads[g.pads.length - 1]!, body.radius);
+          const stored = dirs.slice(start + (g.pads.length - 1) * PAD_POINTS, start + g.pads.length * PAD_POINTS);
+          expect(Math.max(...alone.map((d, i) => Math.hypot(d.x - stored[i]!.x, d.y - stored[i]!.y, d.z - stored[i]!.z))), g.key).toBeLessThan(1e-12);
+        }
+        start += g.count;
+      }
+    }
+    expect(groups).toBe(2);
+    // The zone of a point against a list of discs: the innermost zone wins where two discs overlap.
+    const pads: GuardPad[] = [{ id: 'a', latDeg: 0, lonDeg: 0, flatRadius: 100, blendRadius: 200 }, { id: 'b', latDeg: 0, lonDeg: 0.003, flatRadius: 100, blendRadius: 200 }];
+    const R = 6_371_000;
+    const east = (m: number): { latDeg: number; lonDeg: number } => ({ latDeg: 0, lonDeg: (m / R) * (180 / Math.PI) });
+    expect(padZoneOf(pads, east(0), R)).toMatchObject({ pad: 'a', zone: 'flat' });
+    expect(padZoneOf(pads, east(150), R)).toMatchObject({ pad: 'a', zone: 'blend' });
+    // 333.6 m east is pad b's centre: 250 m east is outside a's disc and inside b's flat disc.
+    expect(padZoneOf(pads, east(250), R)).toMatchObject({ pad: 'b', zone: 'flat' });
+    expect(padZoneOf(pads, east(-250), R)).toMatchObject({ pad: 'a', zone: 'outside' });
+    expect(padZoneOf(pads, east(-250), R)!.distance).toBeCloseTo(250, 3);
+    expect(padZoneOf([], east(0), R)).toBeNull();
+    expect(() => padDirections('earth', 'pads:x', { id: 'p', latDeg: 0, lonDeg: 0, flatRadius: 300, blendRadius: 300 }, R)).toThrow(/0 < flatRadius < blendRadius/);
   });
 
   it('a group is a function of the body id, its key and its place only: other bodies and other places do not move it', () => {

@@ -49,9 +49,13 @@
  * 840 directories and the manifest differ, nothing else): the summary re-recorded by --tiles-replaced and
  * the heights of `site:madrakah` alone by --resample-group (497 of its 800 points on the collision query).
  * That group is centred on the reference pad of the FIRST pad layout (18.996 N 57.794 E); the pads have
- * since moved 9-41 km north along the coast. STILL TO COME: the flatten discs of the new pads exist only
- * once fleet-data writes the site files; the heights are then re-recorded (`--resample`) by the lead under
- * the rule "only points inside new flatten discs may change".
+ * since moved 9-41 km north along the coast. 2026-11-12, 11:30: site-bake closed with 16 pads at Madrakah
+ * and 9 at Ka Lae; one PAD-FIELD group per site appended, `pads:madrakah` and `pads:ka-lae`
+ * (`--add-pads`): PAD_POINTS points about every pad, inside its future flatten disc, either side of both
+ * rims and beyond (`PAD_LAYOUT`), with the pads and radii stored in the group. STILL TO COME: the flatten
+ * discs of the new pads exist only once fleet-data writes the site files; the heights are then re-recorded
+ * (`--resample`) by the lead under the rule "only points inside new flatten discs may change"
+ * (`padZoneOf` says on which side a changed point lies; LC-1's disc exists already and does not move).
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -77,13 +81,50 @@ export const UNIFORM_POINTS = 1200;
 export const PLACE_POINTS = 800;
 /** Radii of the discs about a named place, m: a quarter of a place group's points in each. */
 export const CLUSTER_RADII = [200_000, 20_000, 2_000, 200] as const;
+/**
+ * The points about ONE pad of a pad-field group, ring by ring, with radii as `f x F + b x B` of the pad's
+ * flat radius F and blend radius B (a flatten disc is flat inside F and blended back to the natural terrain
+ * by B). A ring whose two radii are equal is a circle; the others are filled uniformly by area. The rims
+ * are sampled 2 % inside and 2 % outside, never ON a radius, where rounding would decide the side.
+ *   centre       the pad's centre itself
+ *   flat         the flat disc
+ *   flatRimIn    just inside the flat rim            flatRimOut   just outside it (the blend begins)
+ *   blend        the blend ring
+ *   outerRimIn   just inside the outer rim           outerRimOut  just outside it: must NOT change
+ *   beyond, far  the ground outside the disc, out to twice and four times the blend radius: must NOT change
+ */
+export const PAD_LAYOUT = [
+  { ring: 'centre', count: 1, inner: [0, 0], outer: [0, 0] },
+  { ring: 'flat', count: 11, inner: [0, 0], outer: [0.95, 0] },
+  { ring: 'flatRimIn', count: 4, inner: [0.98, 0], outer: [0.98, 0] },
+  { ring: 'flatRimOut', count: 4, inner: [1.02, 0], outer: [1.02, 0] },
+  { ring: 'blend', count: 12, inner: [1.05, 0], outer: [0, 0.95] },
+  { ring: 'outerRimIn', count: 4, inner: [0, 0.98], outer: [0, 0.98] },
+  { ring: 'outerRimOut', count: 4, inner: [0, 1.02], outer: [0, 1.02] },
+  { ring: 'beyond', count: 12, inner: [0, 1.05], outer: [0, 2] },
+  { ring: 'far', count: 4, inner: [0, 2], outer: [0, 4] },
+] as const;
+/** Points per pad of a pad-field group. */
+export const PAD_POINTS = PAD_LAYOUT.reduce((n, r) => n + r.count, 0);
 /** Band limits of the two band-limited queries, m. */
 export const BAND_LIMITS = [25, 1000] as const;
 /** Radius loaded about each point before it is asked, m. */
 const LOAD_RADIUS = 40;
 
+/** One pad of a pad-field group: its centre and the radii of its flatten disc as the layout was resolved, m. */
+export interface GuardPad {
+  id: string;
+  latDeg: number;
+  lonDeg: number;
+  flatRadius: number;
+  blendRadius: number;
+}
+
 export interface GuardGroup {
-  /** 'uniform', or a place: 'site:<id>' / 'landing:<lat>,<lon>' as the place was called when it was recorded. */
+  /**
+   * 'uniform'; a place: 'site:<id>' / 'landing:<lat>,<lon>' as the place was called when it was recorded; or
+   * a pad field: 'pads:<site id>'.
+   */
   key: string;
   /** Number of points; they are the next `count` points of the body, in group order. */
   count: number;
@@ -95,6 +136,12 @@ export interface GuardGroup {
    * is of the body's first recording (`GuardBodyHeights.tilesetContentHash`).
    */
   recordedOn?: string;
+  /**
+   * A pad-field group: the pads it is laid over, in order, PAD_POINTS points each (`PAD_LAYOUT`). The pads
+   * and their radii are those the layout was RESOLVED for; the discs that a site file later states are held
+   * against these points, not the other way round.
+   */
+  pads?: GuardPad[];
 }
 
 export interface GuardBodyHeights {
@@ -179,6 +226,7 @@ export function seedOf(text: string): number {
  * and the body's radius. Used only when a group is CREATED; afterwards the stored directions are the truth.
  */
 export function groupDirections(bodyId: string, group: GuardGroup, radius: number): Vec3[] {
+  if (group.pads) return group.pads.flatMap((pad) => padDirections(bodyId, group.key, pad, radius));
   const rng = new Prng(seedOf(`${bodyId}:${group.key}`));
   const u = (): number => rng.nextU32() / 4294967296;
   const out: Vec3[] = [];
@@ -200,6 +248,54 @@ export function groupDirections(bodyId: string, group: GuardGroup, radius: numbe
     out.push(offset(centre, rho * Math.sin(az), rho * Math.cos(az), radius));
   }
   return out;
+}
+
+/**
+ * The PAD_POINTS directions about one pad of a pad-field group: a pure function of the body id, the group
+ * key and the pad (its id, centre and two radii), seeded from `<bodyId>:<key>:<pad id>`, so a pad's points
+ * do not depend on the other pads of the field. Azimuths are spread over the ring (one point per equal
+ * sector, placed at random inside it), so every side of a rim is sampled.
+ */
+export function padDirections(bodyId: string, key: string, pad: GuardPad, radius: number): Vec3[] {
+  if (!(pad.flatRadius > 0 && pad.blendRadius > pad.flatRadius)) throw new Error(`pad ${pad.id}: needs 0 < flatRadius < blendRadius`);
+  const rng = new Prng(seedOf(`${bodyId}:${key}:${pad.id}`));
+  const u = (): number => rng.nextU32() / 4294967296;
+  const centre = dirOf(pad.latDeg, pad.lonDeg);
+  const out: Vec3[] = [];
+  for (const ring of PAD_LAYOUT) {
+    const r0 = ring.inner[0] * pad.flatRadius + ring.inner[1] * pad.blendRadius;
+    const r1 = ring.outer[0] * pad.flatRadius + ring.outer[1] * pad.blendRadius;
+    for (let i = 0; i < ring.count; i++) {
+      if (r1 === 0) {
+        out.push(centre);
+        continue;
+      }
+      const rho = Math.sqrt(r0 * r0 + u() * (r1 * r1 - r0 * r0));
+      const az = (2 * Math.PI * (i + u())) / ring.count;
+      out.push(offset(centre, rho * Math.sin(az), rho * Math.cos(az), radius));
+    }
+  }
+  return out;
+}
+
+/** Where a point lies with respect to a flatten disc: flat (inside F), blend (between F and B) or outside (beyond B). */
+export type PadZone = 'flat' | 'blend' | 'outside';
+
+/**
+ * A point against the flatten discs of a list of pads: the pad whose disc holds it and the zone there (the
+ * innermost zone wins where two discs overlap), else the nearest pad and 'outside'. Distances are great
+ * circles on the sphere of `radius`. This is what "only points inside new flatten discs may change" is
+ * decided with.
+ */
+export function padZoneOf(pads: readonly GuardPad[], point: { latDeg: number; lonDeg: number }, radius: number): { pad: string; zone: PadZone; distance: number } | null {
+  let best: { pad: string; zone: PadZone; distance: number } | null = null;
+  const rank = { flat: 0, blend: 1, outside: 2 } as const;
+  for (const pad of pads) {
+    const distance = distanceTo(point, pad.latDeg, pad.lonDeg, radius);
+    const zone: PadZone = distance <= pad.flatRadius ? 'flat' : distance <= pad.blendRadius ? 'blend' : 'outside';
+    if (!best || rank[zone] < rank[best.zone] || (rank[zone] === rank[best.zone] && distance < best.distance)) best = { pad: pad.id, zone, distance };
+  }
+  return best;
 }
 
 /** The named places of a body as the library has them now (for creating groups; the guard never re-derives them). */

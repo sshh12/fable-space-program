@@ -7,6 +7,12 @@
  *   node tools/dev/heavy.mjs --class=cpu  -- npx tsx tests/unit/terrain-core/terrain-guard.record.ts --add-place <bodyId> <key> <latDeg> <lonDeg>
  *       APPEND a group of points in discs about a new place (a new site: key `site:<id>`); every existing
  *       point keeps its index, direction and recorded height
+ *   node tools/dev/heavy.mjs --class=cpu  -- npx tsx tests/unit/terrain-core/terrain-guard.record.ts --add-pads <bodyId> <key> <pads.json>
+ *       APPEND a PAD-FIELD group (key `pads:<site id>`) laid over the pads of a resolved layout
+ *       (data/staged/sites/<site>.pads.json: every pad's centre, and the flat and blend radii of its class
+ *       from `rule.padRadii`): PAD_POINTS points per pad, at its centre, inside its future flatten disc,
+ *       either side of both rims and beyond. Refused unless the file was resolved on the live tile set.
+ *       Every existing point keeps its index, direction and recorded height.
  *   node tools/dev/heavy.mjs --class=bake -- npx tsx tests/unit/terrain-core/terrain-guard.record.ts --tiles-additions [--changed <tileset>/<dir> ...]
  *       AFTER A BAKE THAT ADDED TILES: read every file once, hold the result against the recording, and
  *       write the new summary ONLY IF every recorded directory is byte-identical (files, names, bytes and
@@ -43,9 +49,12 @@ import {
   directionsOf,
   groupDirections,
   HEIGHTS_FILE,
+  latLonOf,
   loadRealDefs,
   namedPlaces,
   openTerrain,
+  PAD_POINTS,
+  padZoneOf,
   PLACE_POINTS,
   REPO_ROOT,
   sampleHeights,
@@ -57,6 +66,7 @@ import {
   type GuardBodyHeights,
   type GuardGroup,
   type GuardHeights,
+  type GuardPad,
   type GuardTiles,
 } from './terrain-guard';
 
@@ -110,6 +120,41 @@ if (argv.includes('--new-heights')) {
   body.directions += directionsHex(dirs);
   body.collision += sampled.collision;
   for (const l of BAND_LIMITS) body.band[String(l)] += sampled.band[String(l)]!;
+  writeHeights(heights);
+} else if (argv.includes('--add-pads')) {
+  const [bodyId, key, file] = argv.slice(argv.indexOf('--add-pads') + 1);
+  if (!bodyId || !key || !file) throw new Error('usage: --add-pads <bodyId> <key> <pads.json>');
+  const heights = readHeights();
+  const body: GuardBodyHeights | undefined = heights.bodies[bodyId];
+  if (!body) throw new Error(`${bodyId} has no recorded directions`);
+  if (body.groups.some((g) => g.key === key)) throw new Error(`${bodyId} already has a group ${key}`);
+  const tileset = bakedTerrainBodies(defs).find((b) => b.bodyId === bodyId)?.tileset;
+  if (!tileset) throw new Error(`${bodyId} has no baked tile set on this machine`);
+  const layout = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+    site: string; bodyId: string; tilesetContentHash?: string;
+    rule: { padRadii: Record<string, { flat: number; blend: number }> };
+    pads: { id: string; class: string; latDeg: number; lonDeg: number }[];
+  };
+  if (layout.bodyId !== bodyId) throw new Error(`${file}: the layout is of ${layout.bodyId}, not of ${bodyId}`);
+  if (layout.tilesetContentHash !== contentHash(tileset)) throw new Error(`${file}: resolved on tile set ${String(layout.tilesetContentHash)}, the live one is ${contentHash(tileset)}: resolve the pads again first`);
+  const pads: GuardPad[] = layout.pads.map((p) => {
+    const radii = layout.rule.padRadii[p.class];
+    if (!radii) throw new Error(`${file}: pad ${p.id} is of class ${p.class}, which rule.padRadii does not state`);
+    return { id: p.id, latDeg: p.latDeg, lonDeg: p.lonDeg, flatRadius: radii.flat, blendRadius: radii.blend };
+  });
+  if (pads.length === 0 || new Set(pads.map((p) => p.id)).size !== pads.length) throw new Error(`${file}: no pads, or two pads with one id`);
+  const group: GuardGroup = { key, count: pads.length * PAD_POINTS, recordedOn: contentHash(tileset), pads };
+  const dirs = groupDirections(bodyId, group, body.radius);
+  if (dirs.length !== group.count) throw new Error('the pad layout did not give PAD_POINTS points per pad');
+  const sampled = await sampleHeights(await openTerrain(defs), bodyId, dirs);
+  // Where the points lie against the discs of the whole field: the two sides the later rule needs.
+  const zones = { flat: 0, blend: 0, outside: 0 };
+  for (const d of dirs) zones[padZoneOf(pads, latLonOf(d), body.radius)!.zone]++;
+  body.groups.push(group);
+  body.directions += directionsHex(dirs);
+  body.collision += sampled.collision;
+  for (const l of BAND_LIMITS) body.band[String(l)] += sampled.band[String(l)]!;
+  console.log(`terrain guard: ${bodyId} ${key}: ${pads.length} pads of ${layout.site} x ${PAD_POINTS} points = ${group.count}; against the discs of the field: ${zones.flat} in a flat disc, ${zones.blend} in a blend ring, ${zones.outside} outside every disc`);
   writeHeights(heights);
 } else if (argv.includes('--resample-group')) {
   const [bodyId, key] = argv.slice(argv.indexOf('--resample-group') + 1);
@@ -261,6 +306,6 @@ if (argv.includes('--new-heights')) {
   fs.writeFileSync(TILES_FILE, `${JSON.stringify(tiles)}\n`);
   console.log(`terrain guard: wrote ${path.relative(REPO_ROOT, TILES_FILE)}`);
 } else {
-  console.error('usage: terrain-guard.record.ts --resample | --add-place <bodyId> <key> <latDeg> <lonDeg> | --resample-group <bodyId> <key> [--dry-run] | --tiles-additions [--changed <tileset>/<dir> ...] | --tiles-replaced --footprint <file.json> [--changed <tileset>/<dir> ...] | --tiles | --new-heights');
+  console.error('usage: terrain-guard.record.ts --resample | --add-place <bodyId> <key> <latDeg> <lonDeg> | --add-pads <bodyId> <key> <pads.json> | --resample-group <bodyId> <key> [--dry-run] | --tiles-additions [--changed <tileset>/<dir> ...] | --tiles-replaced --footprint <file.json> [--changed <tileset>/<dir> ...] | --tiles | --new-heights');
   process.exit(2);
 }
