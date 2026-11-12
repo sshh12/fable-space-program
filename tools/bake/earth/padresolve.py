@@ -148,7 +148,10 @@ class Resolver:
         self.allowed = [CLASS[c] for c in BARE]
         self.ground = Ground(region)
 
-    def evaluate(self, lat: float, lon: float) -> dict:
+    def evaluate(self, lat: float, lon: float, full: bool = True) -> dict:
+        """The rule at one point. full=False stops after the disc tests (height, slope, relief, dry, latitude) when
+        one of them fails: the shore window and the ocean rays cost twenty times more, and a failed candidate is
+        never reported."""
         c = self.cfg
         g = self.ground
         out: dict = {"latDeg": lat, "lonDeg": lon}
@@ -176,6 +179,9 @@ class Resolver:
         out["centreClass"] = CLASS_NAME.get(cls, str(cls))
         out["centreAllowed"] = cls in self.allowed
         out["centreDry"] = cls not in WET
+        disc_failures = [f for f in self.failures(out) if f not in ("shore",) and not f.startswith("ocean")]
+        if disc_failures and not full:
+            return {**out, "failures": disc_failures, "pass": False, "partial": True}
         k2 = np.arange(-3000.0, 3000.0 + 1e-6, 10.0)
         E2, N2 = np.meshgrid(k2, k2)
         la2, lo2 = destination(lat, lon, E2.ravel(), N2.ravel())
@@ -218,7 +224,7 @@ class Resolver:
         f = []
         if e["height"] < c["minHeightM"]:
             f.append("height")
-        if e["shoreDistanceM"] < c["minShoreDistanceM"]:
+        if "shoreDistanceM" in e and e["shoreDistanceM"] < c["minShoreDistanceM"]:
             f.append("shore")
         if e["slopeDeg"] >= c["maxSlopeDeg"]:
             f.append("slope")
@@ -228,7 +234,7 @@ class Resolver:
             f.append("dry")
         if e["latDeg"] >= c["maxLatDeg"]:
             f.append("latitude")
-        if self.strict:
+        if self.strict and "oceanRays" in e:
             f += [k for k, ok in self.site_tests(e, c).items() if not ok]
         return f
 
@@ -260,6 +266,11 @@ class Resolver:
         bx = signal.fftconvolve(H, (kx * disc)[::-1, ::-1], mode="same") / sxx
         by = signal.fftconvolve(H, (ky * disc)[::-1, ::-1], mode="same") / sxx
         slope = np.degrees(np.arctan(np.hypot(bx, by)))
+        # RMS deviation from the plane through the disc (the disc's 1, e, n are orthogonal): the largest deviation,
+        # which the rule bounds by maxReliefM, is never smaller than it
+        mean = signal.fftconvolve(H, disc, mode="same") / nd
+        ss = signal.fftconvolve(H * H, disc, mode="same") - nd * mean ** 2 - sxx * (bx ** 2 + by ** 2)
+        plane_rms = np.sqrt(np.maximum(ss, 0.0) / nd)
         dry = np.isin(LC, self.allowed)
         frac = signal.fftconvolve(dry.astype(np.float64), disc, mode="same") / nd
         dist = np.hypot(E, N)
@@ -267,6 +278,7 @@ class Resolver:
             "height": H >= c["minHeightM"],
             "shore": shore >= c["minShoreDistanceM"] - g,
             "slope": slope < c["maxSlopeDeg"] + 0.5,
+            "relief": plane_rms <= c["maxReliefM"],
             "dry": dry & (frac >= c["minAllowedFraction"] - 0.05),
             "latitude": LA.reshape(E.shape) < c["maxLatDeg"],
             "search": dist <= self.search_m,
@@ -317,7 +329,7 @@ def place(res: Resolver, grid: dict, classes: dict, fixed: list[dict]) -> tuple[
                 i = int(i)
                 la, lo = float(clat[i]), float(clon[i])
                 if i not in evaluated:
-                    e = res.evaluate(la, lo)
+                    e = res.evaluate(la, lo, full=False)
                     evaluated[i] = e
                     tally["explicit"] += 1
                     for f in e["failures"]:
