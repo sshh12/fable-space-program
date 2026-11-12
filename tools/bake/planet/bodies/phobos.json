@@ -1,0 +1,66 @@
+{
+ "id": "phobos",
+ "name": "Phobos",
+ "kind": "solid",
+ "radii": {
+  "mean": 11080.0,
+  "a": 13000.0,
+  "b": 11400.0,
+  "c": 9100.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-phobos-viking"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Phobos_Viking_Mosaic_40ppd_DLRcontrol.tif",
+   "bytes": 103738243,
+   "md5": "559afb850819eaa4ba413aa84c82b517",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 14400,
+   "height": 7200,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-phobos-viking"
+  }
+ },
+ "amplification": {
+  "model": "rocky-generic",
+  "seed": 4104,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 3,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": [
+   1.0,
+   0.95,
+   0.9
+  ],
+  "calibration": {
+   "meanAlbedo": 0.07,
+   "region": null,
+   "ref": "geometric albedo [unverified in solar-system.md 2.5]"
+  },
+  "procedural": null
+ },
+ "landmarks": []
+}

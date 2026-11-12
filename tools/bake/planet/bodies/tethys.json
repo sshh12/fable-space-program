@@ -1,0 +1,66 @@
+{
+ "id": "tethys",
+ "name": "Tethys",
+ "kind": "solid",
+ "radii": {
+  "mean": 531100.0,
+  "a": 538400.0,
+  "b": 528300.0,
+  "c": 526300.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-tethys-cassini"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Tethys_Cassini_mosaic_global_293m.tif",
+   "bytes": 66401923,
+   "md5": "ad9a34b70df32f19dca71107432804d2",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 11520,
+   "height": 5760,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-tethys-cassini"
+  }
+ },
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4112,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 4,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": [
+   1.0,
+   0.99,
+   0.97
+  ],
+  "calibration": {
+   "meanAlbedo": 0.8,
+   "region": null,
+   "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
+  },
+  "procedural": null
+ },
+ "landmarks": []
+}

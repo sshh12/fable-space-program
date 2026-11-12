@@ -1,0 +1,266 @@
+{
+ "naif-pck00011": {
+  "title": "Planetary constants kernel pck00011 (IAU WGCCRE 2015 radii and orientation)",
+  "author": "NASA/JPL NAIF; IAU Working Group on Cartographic Coordinates and Rotational Elements (Archinal et al. 2018)",
+  "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+  "licence": "Public domain (NASA)",
+  "licenceUrl": "https://naif.jpl.nasa.gov/naif/rules.html",
+  "attribution": "Body radii and orientation: NASA/JPL NAIF pck00011 (IAU WGCCRE)"
+ },
+ "usgs-mercury-mdis-bdr": {
+  "title": "Mercury MESSENGER MDIS Basemap BDR global mosaic, 166 m",
+  "author": "NASA/Johns Hopkins University Applied Physics Laboratory/Carnegie Institution of Washington; USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Mercury_MESSENGER_MDIS_Basemap_BDR_Mosaic_Global_166m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Mercury imagery: NASA/JHUAPL/Carnegie Institution of Washington (MESSENGER MDIS); USGS Astrogeology"
+ },
+ "usgs-mercury-dem": {
+  "title": "Mercury MESSENGER global DEM, 665 m, v2 (Becker et al. 2016)",
+  "author": "NASA/JHUAPL/Carnegie Institution of Washington; USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Mercury_Messenger_USGS_DEM_Global_665m_v2.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Mercury topography: MESSENGER global DEM (Becker et al. 2016), NASA/JHUAPL/CIW; USGS Astrogeology"
+ },
+ "usgs-venus-magellan-mdir": {
+  "title": "Venus Magellan C3-MDIR global radar mosaic, 2025 m",
+  "author": "NASA/JPL (Magellan); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Venus_Magellan_C3-MDIR_Global_Mosaic_2025m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Venus surface: NASA/JPL Magellan radar mosaic (C3-MDIR); USGS Astrogeology"
+ },
+ "usgs-venus-magellan-topo": {
+  "title": "Venus Magellan global topography, 4641 m, v02",
+  "author": "NASA/JPL (Magellan altimetry); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Venus_Magellan_Topography_Global_4641m_v02.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Venus topography: NASA/JPL Magellan altimetry; USGS Astrogeology"
+ },
+ "usgs-mars-viking-mdim21": {
+  "title": "Mars Viking MDIM 2.1 global mosaic, 232 m",
+  "author": "NASA/JPL (Viking Orbiter); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Mars_Viking_MDIM21_Mosaic_global_232m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Mars imagery: NASA/JPL Viking Orbiter MDIM 2.1; USGS Astrogeology"
+ },
+ "usgs-mars-viking-colour": {
+  "title": "Mars Viking colour mosaic, 925 m",
+  "author": "NASA/JPL (Viking Orbiter); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Mars_Viking_ClrMosaic_global_925m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Mars colour: NASA/JPL Viking Orbiter colour mosaic; USGS Astrogeology"
+ },
+ "usgs-mars-mola": {
+  "title": "Mars MGS MOLA global DEM, 463 m",
+  "author": "NASA/GSFC MOLA Science Team (Mars Global Surveyor); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Mars_MGS_MOLA_DEM_mosaic_global_463m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Mars topography: NASA/GSFC MGS MOLA Science Team; USGS Astrogeology"
+ },
+ "usgs-phobos-viking": {
+  "title": "Phobos Viking global mosaic, 40 ppd (DLR control network)",
+  "author": "NASA/JPL (Viking Orbiter); DLR; USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Phobos_Viking_Mosaic_40ppd_DLRcontrol.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Phobos imagery: NASA/JPL Viking Orbiter, DLR control network; USGS Astrogeology"
+ },
+ "usgs-io-galileo-voyager": {
+  "title": "Io Galileo SSI / Voyager global colour merge, 1 km",
+  "author": "NASA/JPL (Galileo SSI, Voyager); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Io imagery: NASA/JPL Galileo SSI and Voyager; USGS Astrogeology"
+ },
+ "usgs-europa-voyager-galileo": {
+  "title": "Europa Voyager / Galileo SSI global mosaic, 500 m",
+  "author": "NASA/JPL (Voyager, Galileo SSI); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Europa_Voyager_GalileoSSI_global_mosaic_500m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Europa imagery: NASA/JPL Voyager and Galileo SSI; USGS Astrogeology"
+ },
+ "usgs-ganymede-voyager-galileo": {
+  "title": "Ganymede Voyager / Galileo SSI global mosaic, 1 km",
+  "author": "NASA/JPL (Voyager, Galileo SSI); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Ganymede_Voyager_GalileoSSI_global_mosaic_1km.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Ganymede imagery: NASA/JPL Voyager and Galileo SSI; USGS Astrogeology"
+ },
+ "usgs-ganymede-colour": {
+  "title": "Ganymede Voyager / Galileo SSI global colour mosaic, 1435 m",
+  "author": "NASA/JPL (Voyager, Galileo SSI); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Ganymede colour: NASA/JPL Voyager and Galileo SSI colour mosaic; USGS Astrogeology"
+ },
+ "usgs-callisto-voyager-galileo": {
+  "title": "Callisto Voyager / Galileo SSI global mosaic, 1 km",
+  "author": "NASA/JPL (Voyager, Galileo SSI); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Callisto_Voyager_GalileoSSI_global_mosaic_1km.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Callisto imagery: NASA/JPL Voyager and Galileo SSI; USGS Astrogeology"
+ },
+ "usgs-enceladus-cassini": {
+  "title": "Enceladus Cassini ISS global mosaic, 100 m (high-pass filtered)",
+  "author": "NASA/JPL-Caltech/Space Science Institute (Cassini ISS); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Enceladus_Cassini_ISS_Global_Mosaic_100m_HPF.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Enceladus imagery: NASA/JPL-Caltech/Space Science Institute (Cassini ISS); USGS Astrogeology"
+ },
+ "usgs-tethys-cassini": {
+  "title": "Tethys Cassini global mosaic, 293 m",
+  "author": "NASA/JPL-Caltech/Space Science Institute (Cassini ISS); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Tethys_Cassini_mosaic_global_293m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Tethys imagery: NASA/JPL-Caltech/Space Science Institute (Cassini ISS); USGS Astrogeology"
+ },
+ "usgs-dione-cassini-voyager": {
+  "title": "Dione Cassini / Voyager global mosaic, 154 m",
+  "author": "NASA/JPL-Caltech/Space Science Institute (Cassini ISS), NASA/JPL (Voyager); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Dione_Cassini_Voyager_mosaic_global_154m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Dione imagery: NASA/JPL-Caltech/Space Science Institute (Cassini ISS) and Voyager; USGS Astrogeology"
+ },
+ "usgs-rhea-cassini-voyager": {
+  "title": "Rhea Cassini / Voyager global mosaic, 417 m",
+  "author": "NASA/JPL-Caltech/Space Science Institute (Cassini ISS), NASA/JPL (Voyager); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Rhea_Cassini_Voyager_mosaic_global_417m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Rhea imagery: NASA/JPL-Caltech/Space Science Institute (Cassini ISS) and Voyager; USGS Astrogeology"
+ },
+ "usgs-titan-cassini-iss": {
+  "title": "Titan Cassini ISS global mosaic at 938 nm, 4 km",
+  "author": "NASA/JPL-Caltech/Space Science Institute (Cassini ISS); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Titan_ISS_P19658_Mosaic_Global_4km.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Titan surface: NASA/JPL-Caltech/Space Science Institute (Cassini ISS, 938 nm); USGS Astrogeology"
+ },
+ "usgs-iapetus-cassini-voyager": {
+  "title": "Iapetus Cassini / Voyager global mosaic, 783 m",
+  "author": "NASA/JPL-Caltech/Space Science Institute (Cassini ISS), NASA/JPL (Voyager); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Iapetus_Cassini_Voyager_mosaic_global_783m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Iapetus imagery: NASA/JPL-Caltech/Space Science Institute (Cassini ISS) and Voyager; USGS Astrogeology"
+ },
+ "usgs-triton-voyager": {
+  "title": "Triton Voyager 2 global colour mosaic (filled), 600 m",
+  "author": "NASA/JPL (Voyager 2); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Triton_Voyager2_ClrMosaic_GlobalFill_600m.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Triton imagery: NASA/JPL Voyager 2; USGS Astrogeology"
+ },
+ "usgs-pluto-new-horizons": {
+  "title": "Pluto New Horizons LORRI/MVIC global mosaic, 300 m (July 2017)",
+  "author": "NASA/Johns Hopkins University Applied Physics Laboratory/Southwest Research Institute; USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Pluto_NewHorizons_Global_Mosaic_300m_Jul2017_8bit.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Pluto imagery: NASA/JHUAPL/SwRI (New Horizons); USGS Astrogeology"
+ },
+ "usgs-pluto-new-horizons-dem": {
+  "title": "Pluto New Horizons global DEM, 300 m (July 2017; Schenk et al. 2018)",
+  "author": "NASA/JHUAPL/SwRI (New Horizons); Lunar and Planetary Institute; USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Pluto_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Pluto topography: NASA/JHUAPL/SwRI New Horizons (Schenk et al. 2018); USGS Astrogeology"
+ },
+ "usgs-charon-new-horizons": {
+  "title": "Charon New Horizons LORRI/MVIC global mosaic, 300 m (July 2017)",
+  "author": "NASA/JHUAPL/SwRI (New Horizons); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Charon_NewHorizons_Global_Mosaic_300m_Jul2017_8bit.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Charon imagery: NASA/JHUAPL/SwRI (New Horizons); USGS Astrogeology"
+ },
+ "usgs-charon-new-horizons-dem": {
+  "title": "Charon New Horizons global DEM, 300 m (July 2017; Schenk et al. 2018)",
+  "author": "NASA/JHUAPL/SwRI (New Horizons); Lunar and Planetary Institute; USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Charon_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Charon topography: NASA/JHUAPL/SwRI New Horizons (Schenk et al. 2018); USGS Astrogeology"
+ },
+ "usgs-ceres-dawn-fc": {
+  "title": "Ceres Dawn FC global mosaic, 20 ppd (DLR, October 2015)",
+  "author": "NASA/JPL-Caltech/UCLA/MPS/DLR/IDA (Dawn Framing Camera); USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Ceres_Dawn_FC_DLR_global_20ppd_Oct2015.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Ceres imagery: NASA/JPL-Caltech/UCLA/MPS/DLR/IDA (Dawn FC); USGS Astrogeology"
+ },
+ "nasa-pia07782-jupiter": {
+  "title": "Cassini global map of Jupiter, December 2000 (NASA Photojournal PIA07782)",
+  "author": "NASA/JPL/Space Science Institute",
+  "url": "https://science.nasa.gov/photojournal/ (PIA07782)",
+  "licence": "Public domain (NASA/JPL: may be used for any purpose with credit)",
+  "licenceUrl": "https://www.jpl.nasa.gov/jpl-image-use-policy",
+  "attribution": "Jupiter cloud map: NASA/JPL/Space Science Institute (Cassini ISS, PIA07782)"
+ },
+ "pds-cassini-iss-saturn-map": {
+  "title": "Cassini ISS RGB global colour map of Saturn, August 2011 (PDS4 bundle co_iss_global-maps, doi:10.17189/rkkb-6y30)",
+  "author": "NASA/JPL-Caltech/Space Science Institute (Cassini ISS); NASA PDS Atmospheres Node",
+  "url": "https://atmos.nmsu.edu/PDS/data/PDS4/co_iss_global-maps/",
+  "licence": "Public domain (NASA Planetary Data System)",
+  "licenceUrl": "https://pds.nasa.gov/datastandards/about/",
+  "attribution": "Saturn cloud map: NASA/JPL-Caltech/Space Science Institute (Cassini ISS global maps, PDS doi:10.17189/rkkb-6y30)"
+ },
+ "pds-rings-cassini-uvis-betcen": {
+  "title": "Cassini UVIS beta Centauri ring occultation (2008-231), normal optical depth in 10 km bins (COUVIS_8001)",
+  "author": "NASA/JPL-Caltech/University of Colorado LASP (Cassini UVIS); NASA PDS Ring-Moon Systems Node",
+  "url": "https://pds-rings.seti.org/holdings/volumes/COUVIS_8xxx/COUVIS_8001/",
+  "licence": "Public domain (NASA Planetary Data System)",
+  "licenceUrl": "https://pds.nasa.gov/datastandards/about/",
+  "attribution": "Saturn ring optical depth: NASA/JPL-Caltech/LASP (Cassini UVIS); PDS Ring-Moon Systems Node"
+ },
+ "nssdc-saturn-rings": {
+  "title": "Saturnian Rings Fact Sheet (ring radii and albedos)",
+  "author": "NASA Space Science Data Coordinated Archive (D. R. Williams)",
+  "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/satringfact.html",
+  "licence": "Public domain (NASA)",
+  "licenceUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+  "attribution": "Saturn ring albedos: NASA NSSDCA Saturnian Rings Fact Sheet"
+ },
+ "hst-opal-uranus-2014a": {
+  "title": "Hubble OPAL global map of Uranus, 2014 (HLSP opal, doi:10.17909/T9G593)",
+  "author": "NASA/ESA Hubble Space Telescope, OPAL programme (PI A. Simon, GO13937)",
+  "url": "https://archive.stsci.edu/hlsps/opal/",
+  "licence": "CC BY 4.0",
+  "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "attribution": "Uranus map: NASA/ESA Hubble Space Telescope, OPAL program (PI: Simon, GO13937), doi:10.17909/T9G593 (CC BY 4.0)"
+ },
+ "hst-opal-neptune-2015a": {
+  "title": "Hubble OPAL global map of Neptune, 2015 (HLSP opal, doi:10.17909/T9G593)",
+  "author": "NASA/ESA Hubble Space Telescope, OPAL programme (PI A. Simon, GO13937)",
+  "url": "https://archive.stsci.edu/hlsps/opal/",
+  "licence": "CC BY 4.0",
+  "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "attribution": "Neptune map: NASA/ESA Hubble Space Telescope, OPAL program (PI: Simon, GO13937), doi:10.17909/T9G593 (CC BY 4.0)"
+ },
+ "usgs-ceres-dawn-hamo-dtm": {
+  "title": "Ceres Dawn FC HAMO global DTM, 60 ppd (DLR, October 2016; Preusker et al. 2016)",
+  "author": "NASA/JPL-Caltech/UCLA/MPS/DLR/IDA (Dawn Framing Camera); DLR; USGS Astrogeology Science Center",
+  "url": "https://planetarymaps.usgs.gov/mosaic/Ceres_Dawn_FC_HAMO_DTM_DLR_Global_60ppd_Oct2016.tif",
+  "licence": "Public domain (U.S. Government work)",
+  "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+  "attribution": "Ceres topography: Dawn FC HAMO DTM (Preusker et al. 2016), NASA/JPL-Caltech/DLR; USGS Astrogeology"
+ }
+}

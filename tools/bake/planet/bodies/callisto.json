@@ -1,0 +1,87 @@
+{
+ "id": "callisto",
+ "name": "Callisto",
+ "kind": "solid",
+ "radii": {
+  "mean": 2410300.0,
+  "a": 2410300.0,
+  "b": 2410300.0,
+  "c": 2410300.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-callisto-voyager-galileo"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Callisto_Voyager_GalileoSSI_global_mosaic_1km.tif",
+   "bytes": 114640717,
+   "md5": "9ed1464d118067cce0a5c9eaa3207bf7",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "west",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 15138,
+   "height": 7569,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-callisto-voyager-galileo"
+  }
+ },
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4109,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 5,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": [
+   1.0,
+   0.92,
+   0.82
+  ],
+  "calibration": {
+   "meanAlbedo": 0.19,
+   "region": null,
+   "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "Valhalla bright centre",
+   "kind": "albedoContrast",
+   "latDeg": 14.7,
+   "lonDegE": 304.0,
+   "radiusKm": 300,
+   "sense": "brighter",
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 6284 (14.7 N, 56 W, 3,000 km); bright inner region about 600 km (PIA01649)"
+  },
+  {
+   "name": "Asgard bright centre",
+   "kind": "albedoContrast",
+   "latDeg": 32.2,
+   "lonDegE": 220.1,
+   "radiusKm": 150,
+   "sense": "brighter",
+   "minRatio": 1.05,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 420 (32.2 N, 139.9 W, 1,400 km); bright central zone (PIA01634)"
+  }
+ ]
+}

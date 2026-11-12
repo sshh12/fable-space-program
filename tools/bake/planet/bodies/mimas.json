@@ -1,0 +1,74 @@
+{
+ "id": "mimas",
+ "name": "Mimas",
+ "kind": "solid",
+ "radii": {
+  "mean": 198200.0,
+  "a": 207800.0,
+  "b": 196700.0,
+  "c": 190600.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011"
+ ],
+ "sources": {},
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4110,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": {
+   "maxDiameterRadii": 0.4,
+   "named": [
+    {
+     "name": "Herschel",
+     "latDeg": -1.38,
+     "lonDegE": 248.24,
+     "diameterKm": 139,
+     "depthKm": 8.0,
+     "rimKm": 2.0,
+     "ref": "IAU Gazetteer of Planetary Nomenclature, feature 2478 (1.38 S, 111.76 W, 139 km); floor up to 10 km deep, walls about 5 km high (NASA Cassini)"
+    }
+   ]
+  }
+ },
+ "albedo": {
+  "maxLevel": 3,
+  "source": null,
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": null,
+  "calibration": {
+   "meanAlbedo": 0.6,
+   "region": null,
+   "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
+  },
+  "procedural": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "freshBrightening": 0.35,
+   "ref": "approximate colour of Voyager/Viking images; brightening of fresh crater interiors and ejecta"
+  }
+ },
+ "landmarks": [
+  {
+   "name": "Herschel",
+   "kind": "craterDepth",
+   "latDeg": -1.38,
+   "lonDegE": 248.24,
+   "diameterKm": 139,
+   "minDepthM": 6000,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 2478 (1.38 S, 111.76 W, 139 km); floor about 10 km deep, walls about 5 km (NASA Cassini)"
+  }
+ ]
+}

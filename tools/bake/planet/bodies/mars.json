@@ -1,0 +1,144 @@
+{
+ "id": "mars",
+ "name": "Mars",
+ "kind": "solid",
+ "radii": {
+  "mean": 3389500.0,
+  "a": 3396190.0,
+  "b": 3396190.0,
+  "c": 3376200.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-mars-viking-mdim21",
+  "usgs-mars-viking-colour",
+  "usgs-mars-mola"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mars_Viking_MDIM21_Mosaic_global_232m.tif",
+   "bytes": 4247470869,
+   "md5": "43917a6043aa02575c973459142617a9",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 92160,
+   "height": 46080,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-mars-viking-mdim21"
+  },
+  "colour": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mars_Viking_ClrMosaic_global_925m.tif",
+   "bytes": 797888177,
+   "md5": "a0e0bbf33ecb0ff65ece9cfa8e08813e",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 23059,
+   "height": 11530,
+   "bands": [
+    1,
+    2,
+    3
+   ],
+   "nodata": null,
+   "credit": "usgs-mars-viking-colour"
+  },
+  "dem": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mars_MGS_MOLA_DEM_mosaic_global_463m.tif",
+   "bytes": 2125771142,
+   "md5": "e7920a303f46707d57fe72eab5f6b1aa",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 46080,
+   "height": 23040,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-mars-mola"
+  }
+ },
+ "amplification": {
+  "model": "rocky-generic",
+  "seed": 4103,
+  "params": {
+   "craterEquilibriumFraction": 0.004
+  }
+ },
+ "height": {
+  "maxLevel": 5,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": {
+   "source": "dem",
+   "scale": 1.0,
+   "offset": 0.0
+  },
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 6,
+  "source": "albedo",
+  "colourSource": "colour",
+  "transfer": "srgb",
+  "tint": null,
+  "calibration": {
+   "meanAlbedo": 0.17,
+   "region": null,
+   "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "Olympus Mons",
+   "kind": "demHeight",
+   "latDeg": 18.65,
+   "lonDegE": 226.2,
+   "expectM": 21000,
+   "toleranceM": 2500,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 4453 (18.65 N, 226.2 E, MDIM 2.1); summit 21.2-21.3 km above the MOLA datum (solar-system.md 5.1, PGDA product 62)"
+  },
+  {
+   "name": "Arsia Mons summit",
+   "kind": "demHeight",
+   "latDeg": -9.14,
+   "lonDegE": 238.48,
+   "expectM": 17755,
+   "toleranceM": 1500,
+   "ref": "PDS MOLA MEGDR 32 ppd maximum near Arsia Mons (Gazetteer 394: 8.26 S, 239.91 E)"
+  },
+  {
+   "name": "Badwater crater, lowest point (Hellas)",
+   "kind": "demHeight",
+   "latDeg": -32.86,
+   "lonDegE": 62.2,
+   "expectM": -8206,
+   "toleranceM": 800,
+   "ref": "PDS MOLA MEGDR 32 ppd minimum, inside Badwater crater (Gazetteer 15314); MOLA catalogue: Hellas -8.2 km"
+  },
+  {
+   "name": "Syrtis Major (dark)",
+   "kind": "albedoContrast",
+   "latDeg": 9.88,
+   "lonDegE": 70.0,
+   "radiusKm": 300,
+   "sense": "darker",
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 5795 (classical albedo feature, 9.88 N, 70.0 E); one of the darkest regions on Mars (PIA03823)"
+  }
+ ]
+}

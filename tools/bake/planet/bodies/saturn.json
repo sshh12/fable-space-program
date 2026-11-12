@@ -1,0 +1,152 @@
+{
+ "id": "saturn",
+ "name": "Saturn",
+ "kind": "giant",
+ "radii": {
+  "mean": 58232000,
+  "a": 60268000,
+  "b": 60268000,
+  "c": 54364000,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015), 1-bar level; mean radius: JPL planetary physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "pds-cassini-iss-saturn-map",
+  "pds-rings-cassini-uvis-betcen",
+  "nssdc-saturn-rings"
+ ],
+ "sources": {
+  "cassini": {
+   "url": "https://atmos.nmsu.edu/PDS/data/PDS4/co_iss_global-maps/data_derived/Cassini_ISS_RGB_Saturn_global_color_map_original.fits",
+   "bytes": 77829120,
+   "md5": null,
+   "sha256": null,
+   "format": "fits",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 3601,
+   "height": 1801,
+   "bands": [
+    1,
+    2,
+    3
+   ],
+   "nodata": null,
+   "credit": "pds-cassini-iss-saturn-map",
+   "registration": "point"
+  },
+  "uvis": {
+   "url": "https://pds-rings.seti.org/holdings/volumes/COUVIS_8xxx/COUVIS_8001/data/UVIS_HSP_2008_231_BETCEN_I_TAU10KM.TAB",
+   "bytes": 953964,
+   "md5": null,
+   "sha256": null,
+   "format": "table",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 1,
+   "height": 7884,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "pds-rings-cassini-uvis-betcen",
+   "table": {
+    "radiusColumn": 1,
+    "tauColumn": 5,
+    "opaqueValue": null
+   }
+  }
+ },
+ "globals": [
+  {
+   "name": "cloudTop",
+   "source": "cassini",
+   "kind": "equirect",
+   "width": 4096,
+   "height": 2048,
+   "channels": [
+    "r",
+    "g",
+    "b"
+   ],
+   "format": "webp",
+   "note": "Cassini ISS RGB global map, 11 Aug 2011; ring-shadow and polar gaps filled zonally"
+  },
+  {
+   "name": "rings",
+   "source": "uvis",
+   "kind": "radial",
+   "width": 2048,
+   "height": 1,
+   "channels": [
+    "r",
+    "g",
+    "b",
+    "a"
+   ],
+   "format": "png",
+   "innerKm": 74490,
+   "outerKm": 140220,
+   "note": "Saturn's main rings from the C ring's inner edge to the F ring: alpha = normal opacity from the Cassini UVIS beta Cen occultation (10 km bins), colour = NSSDC ring-region albedo with an approximate tint",
+   "albedoRegions": [
+    {
+     "name": "C ring",
+     "innerKm": 74490,
+     "outerKm": 91975,
+     "albedo": 0.2,
+     "tint": [
+      0.95,
+      0.93,
+      0.92
+     ]
+    },
+    {
+     "name": "B ring",
+     "innerKm": 91975,
+     "outerKm": 117507,
+     "albedo": 0.5,
+     "tint": [
+      1.0,
+      0.88,
+      0.74
+     ]
+    },
+    {
+     "name": "Cassini Division",
+     "innerKm": 117507,
+     "outerKm": 122340,
+     "albedo": 0.3,
+     "tint": [
+      0.95,
+      0.92,
+      0.9
+     ]
+    },
+    {
+     "name": "A ring",
+     "innerKm": 122340,
+     "outerKm": 136780,
+     "albedo": 0.5,
+     "tint": [
+      1.0,
+      0.92,
+      0.82
+     ]
+    },
+    {
+     "name": "F ring",
+     "innerKm": 136780,
+     "outerKm": 140220,
+     "albedo": 0.6,
+     "tint": [
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   ]
+  }
+ ]
+}

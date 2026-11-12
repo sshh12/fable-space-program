@@ -1,0 +1,107 @@
+{
+ "id": "ceres",
+ "name": "Ceres",
+ "kind": "solid",
+ "radii": {
+  "mean": 469700.0,
+  "a": 487300.0,
+  "b": 487300.0,
+  "c": 446000.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-ceres-dawn-fc",
+  "usgs-ceres-dawn-hamo-dtm"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Dawn_FC_DLR_global_20ppd_Oct2015.tif",
+   "bytes": 27280830,
+   "md5": "6c11580eaa3aac698db295474414c279",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 7383,
+   "height": 3691,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-ceres-dawn-fc"
+  },
+  "dem": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ceres_Dawn_FC_HAMO_DTM_DLR_Global_60ppd_Oct2016.tif",
+   "bytes": 466647217,
+   "md5": "cc69ce90ce83b475369c6d004c87b13e",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 21600,
+   "height": 10800,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-ceres-dawn-hamo-dtm"
+  }
+ },
+ "amplification": {
+  "model": "rocky-generic",
+  "seed": 4125,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 4,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": {
+   "sphere": 470000.0
+  },
+  "dem": {
+   "source": "dem",
+   "scale": 1.0,
+   "offset": 0.0
+  },
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 4,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": null,
+  "calibration": {
+   "meanAlbedo": 0.09,
+   "region": null,
+   "ref": "geometric albedo [unverified in solar-system.md 2.5]"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "Cerealia Facula (Occator)",
+   "kind": "albedoContrast",
+   "latDeg": 19.7,
+   "lonDegE": 239.6,
+   "radiusKm": 7,
+   "sense": "brighter",
+   "minRatio": 1.3,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 15530 (19.70 N, 239.60 E, 14 km); the brightest area on Ceres (JPL 2017)"
+  },
+  {
+   "name": "Haulani bright streaks",
+   "kind": "albedoContrast",
+   "latDeg": 5.8,
+   "lonDegE": 10.77,
+   "radiusKm": 17,
+   "sense": "brighter",
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 15338 (5.8 N, 10.77 E, 34 km); bright streaks (PIA20129)"
+  }
+ ]
+}

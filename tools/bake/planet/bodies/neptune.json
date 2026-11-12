@@ -1,0 +1,54 @@
+{
+ "id": "neptune",
+ "name": "Neptune",
+ "kind": "giant",
+ "radii": {
+  "mean": 24622000,
+  "a": 24764000,
+  "b": 24764000,
+  "c": 24341000,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015), 1-bar level; mean radius: JPL planetary physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "hst-opal-neptune-2015a"
+ ],
+ "sources": {
+  "opal": {
+   "url": "https://archive.stsci.edu/hlsps/opal/cycle22/neptune/hlsp_opal_hst_wfc3-uvis_neptune-2015a_f467m-f547m-f657n_v1_globalmap.tif",
+   "bytes": 801448,
+   "md5": null,
+   "sha256": null,
+   "format": "image",
+   "latitude": "planetographic",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 721,
+   "height": 361,
+   "bands": [
+    1,
+    2,
+    3
+   ],
+   "nodata": 0,
+   "credit": "hst-opal-neptune-2015a",
+   "registration": "point"
+  }
+ },
+ "globals": [
+  {
+   "name": "cloudTop",
+   "source": "opal",
+   "kind": "equirect",
+   "width": 1024,
+   "height": 512,
+   "channels": [
+    "r",
+    "g",
+    "b"
+   ],
+   "format": "png",
+   "note": "Hubble OPAL 2015 (F467M, F547M, F657N), colours as composited by OPAL (strongly cyan); the north beyond about 64 N is outside the observation and filled zonally"
+  }
+ ]
+}

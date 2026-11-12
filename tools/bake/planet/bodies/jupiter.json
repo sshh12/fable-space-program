@@ -1,0 +1,54 @@
+{
+ "id": "jupiter",
+ "name": "Jupiter",
+ "kind": "giant",
+ "radii": {
+  "mean": 69911000,
+  "a": 71492000,
+  "b": 71492000,
+  "c": 66854000,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015), 1-bar level; mean radius: JPL planetary physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "nasa-pia07782-jupiter"
+ ],
+ "sources": {
+  "cassini": {
+   "url": "https://assets.science.nasa.gov/content/dam/science/psd/photojournal/pia/pia07/pia07782/PIA07782.tif",
+   "bytes": 19456427,
+   "md5": null,
+   "sha256": null,
+   "format": "image",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 3601,
+   "height": 1801,
+   "bands": [
+    1,
+    2,
+    3
+   ],
+   "nodata": null,
+   "credit": "nasa-pia07782-jupiter",
+   "registration": "point"
+  }
+ },
+ "globals": [
+  {
+   "name": "cloudTop",
+   "source": "cassini",
+   "kind": "equirect",
+   "width": 4096,
+   "height": 2048,
+   "channels": [
+    "r",
+    "g",
+    "b"
+   ],
+   "format": "webp",
+   "note": "Cassini ISS, 11-12 Dec 2000 (750 and 451 nm). Longitude origin as published by NASA (System III not confirmed by the source); zonal drift moves features relative to System III anyway"
+  }
+ ]
+}

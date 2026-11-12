@@ -1,0 +1,54 @@
+{
+ "id": "umbriel",
+ "name": "Umbriel",
+ "kind": "solid",
+ "radii": {
+  "mean": 584700.0,
+  "a": 584700.0,
+  "b": 584700.0,
+  "c": 584700.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011"
+ ],
+ "sources": {},
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4119,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": {
+   "maxDiameterRadii": 0.4,
+   "named": []
+  }
+ },
+ "albedo": {
+  "maxLevel": 3,
+  "source": null,
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": null,
+  "calibration": {
+   "meanAlbedo": 0.21,
+   "region": null,
+   "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
+  },
+  "procedural": {
+   "color": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "freshBrightening": 0.35,
+   "ref": "approximate colour of Voyager/Viking images; brightening of fresh crater interiors and ejecta"
+  }
+ },
+ "landmarks": []
+}

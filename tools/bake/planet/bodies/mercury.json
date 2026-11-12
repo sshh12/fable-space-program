@@ -1,0 +1,110 @@
+{
+ "id": "mercury",
+ "name": "Mercury",
+ "kind": "solid",
+ "radii": {
+  "mean": 2439400.0,
+  "a": 2440530.0,
+  "b": 2440530.0,
+  "c": 2438260.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-mercury-mdis-bdr",
+  "usgs-mercury-dem"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mercury_MESSENGER_MDIS_Basemap_BDR_Mosaic_Global_166m.tif",
+   "bytes": 4247470901,
+   "md5": "42d08e1ecfc400f547040f212c3903af",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 92160,
+   "height": 46080,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-mercury-mdis-bdr"
+  },
+  "dem": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mercury_Messenger_USGS_DEM_Global_665m_v2.tif",
+   "bytes": 530934581,
+   "md5": "3f23d69ddfaff704d4aa1a6f1ca53fa3",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 23040,
+   "height": 11520,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-mercury-dem"
+  }
+ },
+ "amplification": {
+  "model": "rocky-generic",
+  "seed": 4101,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 5,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": {
+   "sphere": 2439400.0
+  },
+  "dem": {
+   "source": "dem",
+   "scale": 0.5,
+   "offset": 0.0
+  },
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 5,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": [
+   1.0,
+   0.93,
+   0.85
+  ],
+  "calibration": {
+   "meanAlbedo": 0.142,
+   "region": null,
+   "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "Rachmaninoff basin floor",
+   "kind": "demHeight",
+   "latDeg": 27.66,
+   "lonDegE": 57.37,
+   "expectM": -4000,
+   "toleranceM": 2000,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 14653 (27.66 N, 302.63 W); floor holds Mercury's lowest point, 5.38 km below the average (JHUAPL 2016-05-06)"
+  },
+  {
+   "name": "Hokusai rays",
+   "kind": "albedoContrast",
+   "latDeg": 57.84,
+   "lonDegE": 16.65,
+   "radiusKm": 57,
+   "sense": "brighter",
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 14644 (57.84 N, 343.35 W, 114 km); rays up to 1,000 km (PIA13508)"
+  }
+ ]
+}

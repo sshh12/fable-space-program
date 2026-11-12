@@ -1,0 +1,77 @@
+{
+ "id": "io",
+ "name": "Io",
+ "kind": "solid",
+ "radii": {
+  "mean": 1821490.0,
+  "a": 1829400.0,
+  "b": 1819400.0,
+  "c": 1815700.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-io-galileo-voyager"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif",
+   "bytes": 196637696,
+   "md5": "eb9e79199ee38816bb17277a0d3598de",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "west",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 11445,
+   "height": 5723,
+   "bands": [
+    1,
+    2,
+    3
+   ],
+   "nodata": null,
+   "credit": "usgs-io-galileo-voyager"
+  }
+ },
+ "amplification": {
+  "model": "rocky-generic",
+  "seed": 4106,
+  "params": {
+   "craterEquilibriumFraction": 1e-06
+  }
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 5,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "linear",
+  "tint": null,
+  "calibration": {
+   "meanAlbedo": 0.62,
+   "region": null,
+   "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "Loki Patera (dark)",
+   "kind": "albedoContrast",
+   "latDeg": 13.01,
+   "lonDegE": 51.21,
+   "radiusKm": 100,
+   "sense": "darker",
+   "minRatio": 1.2,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 3459 (13.01 N, 308.79 W, 227 km); dark horseshoe (PIA01223)"
+  }
+ ]
+}

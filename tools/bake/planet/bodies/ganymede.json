@@ -1,0 +1,113 @@
+{
+ "id": "ganymede",
+ "name": "Ganymede",
+ "kind": "solid",
+ "radii": {
+  "mean": 2631200.0,
+  "a": 2631200.0,
+  "b": 2631200.0,
+  "c": 2631200.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-ganymede-voyager-galileo",
+  "usgs-ganymede-colour"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_global_mosaic_1km.tif",
+   "bytes": 136844537,
+   "md5": "7045e1290162777b8d823d4eca9b8126",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "west",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 16539,
+   "height": 8270,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-ganymede-voyager-galileo"
+  },
+  "colour": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
+   "bytes": 199204541,
+   "md5": "ff7800a2f79d14fec4263d17fa209d9d",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 11520,
+   "height": 5760,
+   "bands": [
+    1,
+    2,
+    3
+   ],
+   "nodata": null,
+   "credit": "usgs-ganymede-colour"
+  }
+ },
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4108,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 5,
+  "source": "albedo",
+  "colourSource": "colour",
+  "transfer": "linear",
+  "tint": null,
+  "calibration": {
+   "meanAlbedo": 0.44,
+   "region": null,
+   "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "Galileo Regio (dark)",
+   "kind": "albedoContrast",
+   "latDeg": 45.0,
+   "lonDegE": 233.0,
+   "radiusKm": 1000,
+   "sense": "darker",
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 2076 (45 N, 127 W, 4,439 km); dark terrain (PIA00278)"
+  },
+  {
+   "name": "Osiris rays",
+   "kind": "albedoContrast",
+   "latDeg": -38.0,
+   "lonDegE": 193.69,
+   "radiusKm": 54,
+   "sense": "brighter",
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 4509 (38 S, 166.31 W, 107 km); bright rays (EPSC2018-855)"
+  },
+  {
+   "name": "Tros rays",
+   "kind": "albedoContrast",
+   "latDeg": 11.14,
+   "lonDegE": 332.74,
+   "radiusKm": 47,
+   "sense": "brighter",
+   "minRatio": 1.1,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 6091 (11.14 N, 27.26 W, 94 km); bright ray crater (EPSC2018-855)"
+  }
+ ]
+}

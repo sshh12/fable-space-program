@@ -1,0 +1,112 @@
+{
+ "id": "venus",
+ "name": "Venus",
+ "kind": "solid",
+ "radii": {
+  "mean": 6051800.0,
+  "a": 6051800.0,
+  "b": 6051800.0,
+  "c": 6051800.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-venus-magellan-mdir",
+  "usgs-venus-magellan-topo"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Venus_Magellan_C3-MDIR_Global_Mosaic_2025m.tif",
+   "bytes": 176335453,
+   "md5": "f9b317ff09fec5812f5aa38618a7e1a7",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 18775,
+   "height": 9388,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-venus-magellan-mdir"
+  },
+  "dem": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Venus_Magellan_Topography_Global_4641m_v02.tif",
+   "bytes": 67142279,
+   "md5": "3fa4d3a173adc13de1c012bfb1131423",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 8192,
+   "height": 4096,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-venus-magellan-topo"
+  }
+ },
+ "amplification": {
+  "model": "rocky-generic",
+  "seed": 4102,
+  "params": {
+   "craterEquilibriumFraction": 0.0002
+  }
+ },
+ "height": {
+  "maxLevel": 4,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": {
+   "sphere": 6051000.0
+  },
+  "dem": {
+   "source": "dem",
+   "scale": 1.0,
+   "offset": 0.0
+  },
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 4,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": [
+   1.0,
+   0.9,
+   0.8
+  ],
+  "calibration": {
+   "meanAlbedo": 0.15,
+   "region": null,
+   "ref": "Venera surface panoramas: dark basaltic rock; the radar map gives the pattern only"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "Maxwell Montes",
+   "kind": "demHeight",
+   "latDeg": 65.2,
+   "lonDegE": 3.3,
+   "expectM": 8500,
+   "toleranceM": 3500,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 3766 (65.2 N, 3.3 E); highest point of Venus, more than 10 km above the lowlands (PIA00093)"
+  },
+  {
+   "name": "Alpha Regio (radar-bright)",
+   "kind": "albedoContrast",
+   "latDeg": -25.5,
+   "lonDegE": 0.3,
+   "radiusKm": 650,
+   "sense": "brighter",
+   "minRatio": 1.05,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 203 (25.5 S, 0.3 E, 1,897 km); radar-bright upland (PIA00147)"
+  }
+ ]
+}

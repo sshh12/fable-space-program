@@ -1,0 +1,87 @@
+{
+ "id": "iapetus",
+ "name": "Iapetus",
+ "kind": "solid",
+ "radii": {
+  "mean": 734300.0,
+  "a": 745700.0,
+  "b": 745700.0,
+  "c": 712100.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-iapetus-cassini-voyager"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Iapetus_Cassini_Voyager_mosaic_global_783m.tif",
+   "bytes": 16612487,
+   "md5": "bfd94a66da7929f6ff9d7c47b0febee0",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "west",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 5760,
+   "height": 2880,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-iapetus-cassini-voyager"
+  }
+ },
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4116,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 4,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": [
+   1.0,
+   0.93,
+   0.85
+  ],
+  "calibration": {
+   "meanAlbedo": 0.5,
+   "region": {
+    "latDeg": 37.0,
+    "lonDegE": 120.5,
+    "radiusKm": 400
+   },
+   "ref": "NSSDC: geometric albedo 0.05 (dark leading) / 0.5 (bright trailing); calibrated on the bright Roncevaux Terra"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "bright trailing hemisphere against Cassini Regio",
+   "kind": "albedoCompare",
+   "brighter": {
+    "latDeg": 37.0,
+    "lonDegE": 120.5,
+    "radiusKm": 400
+   },
+   "darker": {
+    "latDeg": 0.0,
+    "lonDegE": 270.0,
+    "radiusKm": 500
+   },
+   "minRatio": 3.0,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 5181 Roncevaux Terra (37 N, 239.5 W), 1047 Cassini Regio (dark, about 4 %, centred near 0 N 90 W: PIA06166)"
+  }
+ ]
+}

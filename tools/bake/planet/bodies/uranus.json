@@ -1,0 +1,54 @@
+{
+ "id": "uranus",
+ "name": "Uranus",
+ "kind": "giant",
+ "radii": {
+  "mean": 25362000,
+  "a": 25559000,
+  "b": 25559000,
+  "c": 24973000,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015), 1-bar level; mean radius: JPL planetary physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "hst-opal-uranus-2014a"
+ ],
+ "sources": {
+  "opal": {
+   "url": "https://archive.stsci.edu/hlsps/opal/cycle22/uranus/hlsp_opal_hst_wfc3-uvis_uranus-2014a_f467m-f547m-f658n_v1_globalmap.tif",
+   "bytes": 262448,
+   "md5": null,
+   "sha256": null,
+   "format": "image",
+   "latitude": "planetographic",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 721,
+   "height": 361,
+   "bands": [
+    1,
+    2,
+    3
+   ],
+   "nodata": 0,
+   "credit": "hst-opal-uranus-2014a",
+   "registration": "point"
+  }
+ },
+ "globals": [
+  {
+   "name": "cloudTop",
+   "source": "opal",
+   "kind": "equirect",
+   "width": 1024,
+   "height": 512,
+   "channels": [
+    "r",
+    "g",
+    "b"
+   ],
+   "format": "png",
+   "note": "Hubble OPAL 2014 (F467M, F547M, F658N); the south beyond about 65 S is outside the observation and filled zonally"
+  }
+ ]
+}

@@ -1,0 +1,54 @@
+{
+ "id": "deimos",
+ "name": "Deimos",
+ "kind": "solid",
+ "radii": {
+  "mean": 6200.0,
+  "a": 7800.0,
+  "b": 6000.0,
+  "c": 5100.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011"
+ ],
+ "sources": {},
+ "amplification": {
+  "model": "rocky-generic",
+  "seed": 4105,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 2,
+  "preferredScale": 0.5,
+  "residentLevel": 2,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": {
+   "maxDiameterRadii": 0.4,
+   "named": []
+  }
+ },
+ "albedo": {
+  "maxLevel": 2,
+  "source": null,
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": null,
+  "calibration": {
+   "meanAlbedo": 0.07,
+   "region": null,
+   "ref": "geometric albedo [unverified in solar-system.md 2.5]"
+  },
+  "procedural": {
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "freshBrightening": 0.35,
+   "ref": "approximate colour of Voyager/Viking images; brightening of fresh crater interiors and ejecta"
+  }
+ },
+ "landmarks": []
+}

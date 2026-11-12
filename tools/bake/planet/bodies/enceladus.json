@@ -1,0 +1,66 @@
+{
+ "id": "enceladus",
+ "name": "Enceladus",
+ "kind": "solid",
+ "radii": {
+  "mean": 252100.0,
+  "a": 256600.00000000003,
+  "b": 251400.0,
+  "c": 248300.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-enceladus-cassini"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Enceladus_Cassini_ISS_Global_Mosaic_100m_HPF.tif",
+   "bytes": 125516825,
+   "md5": "e91a5385b37331407a1c066b770942a7",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 15840,
+   "height": 7920,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-enceladus-cassini"
+  }
+ },
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4111,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 4,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": [
+   0.97,
+   0.99,
+   1.0
+  ],
+  "calibration": {
+   "meanAlbedo": 0.9,
+   "region": null,
+   "ref": "NSSDC geometric albedo 1.0, capped at 0.9 to keep detail in 8-bit sRGB"
+  },
+  "procedural": null
+ },
+ "landmarks": []
+}

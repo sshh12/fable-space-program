@@ -4,7 +4,9 @@
  */
 import type { TerrainAmplificationDef } from '../../core/contracts/defs';
 import { createEarthLandcover } from './earthLandcover';
+import { createIcyGeneric } from './icyGeneric';
 import { createLunarRegolith } from './lunarRegolith';
+import { createRockyGeneric } from './rockyGeneric';
 import type { AmplificationModel, ModelContext } from './types';
 
 export type AmplificationFactory = (def: TerrainAmplificationDef, ctx: ModelContext) => AmplificationModel;
@@ -33,6 +35,8 @@ const registry = new Map<string, AmplificationFactory>([
   ['none', createNoAmplification],
   ['lunar-regolith', createLunarRegolith],
   ['earth-landcover', createEarthLandcover],
+  ['rocky-generic', createRockyGeneric],
+  ['icy-generic', createIcyGeneric],
 ]);
 
 export function registerAmplificationModel(name: string, factory: AmplificationFactory): void {

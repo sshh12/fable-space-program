@@ -1,0 +1,116 @@
+{
+ "id": "pluto",
+ "name": "Pluto",
+ "kind": "solid",
+ "radii": {
+  "mean": 1188300.0,
+  "a": 1188300.0,
+  "b": 1188300.0,
+  "c": 1188300.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-pluto-new-horizons",
+  "usgs-pluto-new-horizons-dem"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Pluto_NewHorizons_Global_Mosaic_300m_Jul2017_8bit.tif",
+   "bytes": 309806463,
+   "md5": "3a137d75e3a1a325f3de037a27563ffa",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetographic",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 24888,
+   "height": 12444,
+   "bands": [
+    1
+   ],
+   "nodata": 0,
+   "credit": "usgs-pluto-new-horizons"
+  },
+  "dem": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Pluto_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif",
+   "bytes": 619512743,
+   "md5": "021eae79f778d4c9260d0a94f5bfaaa6",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetographic",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 24888,
+   "height": 12444,
+   "bands": [
+    1
+   ],
+   "nodata": -32768,
+   "credit": "usgs-pluto-new-horizons-dem"
+  }
+ },
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4123,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 5,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": {
+   "sphere": 1188300.0
+  },
+  "dem": {
+   "source": "dem",
+   "scale": 1.0,
+   "offset": 0.0
+  },
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 5,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": [
+   1.0,
+   0.85,
+   0.7
+  ],
+  "calibration": {
+   "meanAlbedo": 0.52,
+   "region": null,
+   "ref": "geometric albedo (approximate; New Horizons whole-disc 0.5-0.7)"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "Sputnik Planitia brighter than Belton Regio (Cthulhu)",
+   "kind": "albedoCompare",
+   "brighter": {
+    "latDeg": 19.51,
+    "lonDegE": 178.69,
+    "radiusKm": 400
+   },
+   "darker": {
+    "latDeg": -9.21,
+    "lonDegE": 91.42,
+    "radiusKm": 500
+   },
+   "minRatio": 1.5,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 15669 Sputnik Planitia (19.51 N, 178.69 E, bright ice), 16257 Belton Regio (9.21 S, 91.42 E, the dark former Cthulhu Macula) (Schenk et al. 2018)"
+  },
+  {
+   "name": "Sputnik Planitia floor",
+   "kind": "demHeight",
+   "latDeg": 19.51,
+   "lonDegE": 178.69,
+   "expectM": -2000,
+   "toleranceM": 1000,
+   "ref": "Schenk et al. 2018 (Icarus 314): the ice sheet lies about 2 km below the mean radius"
+  }
+ ]
+}

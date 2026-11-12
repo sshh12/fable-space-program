@@ -1,0 +1,66 @@
+{
+ "id": "triton",
+ "name": "Triton",
+ "kind": "solid",
+ "radii": {
+  "mean": 1352600.0,
+  "a": 1352600.0,
+  "b": 1352600.0,
+  "c": 1352600.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-triton-voyager"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Triton_Voyager2_ClrMosaic_GlobalFill_600m.tif",
+   "bytes": 299994887,
+   "md5": "639d45b53604aa4395eccd17e4a9c0df",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 14138,
+   "height": 7069,
+   "bands": [
+    1,
+    2,
+    3
+   ],
+   "nodata": null,
+   "credit": "usgs-triton-voyager"
+  }
+ },
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4122,
+  "params": {
+   "craterEquilibriumFraction": 0.002
+  }
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 4,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": null,
+  "calibration": {
+   "meanAlbedo": 0.76,
+   "region": null,
+   "ref": "geometric albedo [unverified in solar-system.md 2.5]"
+  },
+  "procedural": null
+ },
+ "landmarks": []
+}

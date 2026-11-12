@@ -1,0 +1,90 @@
+{
+ "id": "charon",
+ "name": "Charon",
+ "kind": "solid",
+ "radii": {
+  "mean": 606000.0,
+  "a": 606000.0,
+  "b": 606000.0,
+  "c": 606000.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-charon-new-horizons",
+  "usgs-charon-new-horizons-dem"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Charon_NewHorizons_Global_Mosaic_300m_Jul2017_8bit.tif",
+   "bytes": 80613890,
+   "md5": "fe2e0831fe603d62925a40ddbd537ddf",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetographic",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 12693,
+   "height": 6347,
+   "bands": [
+    1
+   ],
+   "nodata": 0,
+   "credit": "usgs-charon-new-horizons"
+  },
+  "dem": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Charon_NewHorizons_Global_DEM_300m_Jul2017_16bit.tif",
+   "bytes": 161176369,
+   "md5": "91195719a1f9459605351aaba92349fd",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetographic",
+   "lonPositive": "east",
+   "lonLeftEdgeDeg": -180.0,
+   "width": 12693,
+   "height": 6347,
+   "bands": [
+    1
+   ],
+   "nodata": -32768,
+   "credit": "usgs-charon-new-horizons-dem"
+  }
+ },
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4124,
+  "params": {}
+ },
+ "height": {
+  "maxLevel": 4,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": {
+   "sphere": 606000.0
+  },
+  "dem": {
+   "source": "dem",
+   "scale": 1.0,
+   "offset": 0.0
+  },
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 4,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "srgb",
+  "tint": [
+   1.0,
+   0.95,
+   0.9
+  ],
+  "calibration": {
+   "meanAlbedo": 0.35,
+   "region": null,
+   "ref": "geometric albedo [unverified in solar-system.md 2.5]"
+  },
+  "procedural": null
+ },
+ "landmarks": []
+}

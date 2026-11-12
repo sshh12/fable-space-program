@@ -1,0 +1,89 @@
+{
+ "id": "europa",
+ "name": "Europa",
+ "kind": "solid",
+ "radii": {
+  "mean": 1560800.0,
+  "a": 1562600.0,
+  "b": 1560300.0,
+  "c": 1559500.0,
+  "source": "radii: NAIF pck00011.tpc (IAU WGCCRE 2015); mean radius: JPL planetary/satellite physical parameters"
+ },
+ "credits": [
+  "naif-pck00011",
+  "usgs-europa-voyager-galileo"
+ ],
+ "sources": {
+  "albedo": {
+   "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Europa_Voyager_GalileoSSI_global_mosaic_500m.tif",
+   "bytes": 192777263,
+   "md5": "fc303afbf4e5c2e2f5384b9700b3c4ad",
+   "sha256": null,
+   "format": "geotiff",
+   "latitude": "planetocentric",
+   "lonPositive": "west",
+   "lonLeftEdgeDeg": 0.0,
+   "width": 19631,
+   "height": 9816,
+   "bands": [
+    1
+   ],
+   "nodata": null,
+   "credit": "usgs-europa-voyager-galileo"
+  }
+ },
+ "amplification": {
+  "model": "icy-generic",
+  "seed": 4107,
+  "params": {
+   "craterEquilibriumFraction": 0.0005
+  }
+ },
+ "height": {
+  "maxLevel": 3,
+  "preferredScale": 0.5,
+  "residentLevel": 3,
+  "reference": "ellipsoid",
+  "dem": null,
+  "craters": null
+ },
+ "albedo": {
+  "maxLevel": 5,
+  "source": "albedo",
+  "colourSource": null,
+  "transfer": "linear",
+  "tint": [
+   1.0,
+   0.96,
+   0.88
+  ],
+  "calibration": {
+   "meanAlbedo": 0.68,
+   "region": null,
+   "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
+  },
+  "procedural": null
+ },
+ "landmarks": [
+  {
+   "name": "Thrace Macula (dark)",
+   "kind": "albedoContrast",
+   "latDeg": -45.9,
+   "lonDegE": 187.9,
+   "radiusKm": 90,
+   "sense": "darker",
+   "minRatio": 1.05,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 5984 (45.9 S, 172.1 W, 180 km); macula = dark spot"
+  },
+  {
+   "name": "Tyre (dark)",
+   "kind": "albedoContrast",
+   "latDeg": 33.6,
+   "lonDegE": 213.4,
+   "radiusKm": 75,
+   "sense": "darker",
+   "minRatio": 1.05,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 6170 (33.6 N, 146.6 W, 149 km); formerly Tyre Macula"
+  }
+ ]
+}
