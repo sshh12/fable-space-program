@@ -55,7 +55,7 @@ struct SmokeU {
   lightColor: vec4f,  // rgb = plume light intensity (cd), w = strength of the cloud's shadow on the ground 0..1
   smokeAlbedo: vec4f, // rgb, w = erosion amount
   steamAlbedo: vec4f, // rgb, w = erosion noise scale (1/m)
-  misc: vec4f,        // x = 1: clear the grid, y = time (s)
+  misc: vec4f,        // x = 1: clear the grid, y = time (s), z = view depth of the far end of the cloud (m)
   glow: vec4f,        // rgb = colour x luminance of gas fresh from the plume (cd/m^2)
   cloud: vec4f,       // a cylinder that holds the cloud: xy = centre (east, north), z = radius (m), w = height (m)
   jetTop: vec4f,      // xyz = where the jets leave the vehicle, site frame, w = radius of the jet there (m)
@@ -294,8 +294,13 @@ struct MarchOut {
   }
   var tE = 3.0e38;
   if (mg > 1e-4) { tE = exp2(mr / mg); }
-  let zNear = min(viewZFromDepth(dNear), 1.0e7);
-  let zFar = min(viewZFromDepth(dFar), 1.0e7);
+  // Scene depths beyond the far end of the cloud are all the same to it: a ray that ends on the ground twenty
+  // kilometres away, one that ends thirty kilometres away and one that ends in the sky hold the same smoke.
+  // Kept apart, the rows of rays next to the horizon (where the ground's depth doubles from one row to the
+  // next) were never mixed, and a cloud top that lay there was drawn in level steps four pixels high: a
+  // ruler-straight edge along the horizon.
+  let zNear = min(viewZFromDepth(dNear), su.misc.z);
+  let zFar = min(viewZFromDepth(dFar), su.misc.z);
   var out: MarchOut;
   out.frontNear = vec4f(0.0, 0.0, 0.0, 1.0);
   out.backNear = vec4f(0.0, 0.0, 0.0, 1.0);
@@ -513,7 +518,8 @@ struct CombineOut {
   }
   // The four nearest rays of the quarter-resolution march, each with its two depth cuts: weighted by the
   // bilinear weight and by how well the cut matches the depth this pixel was meant to be marched to.
-  let z = min(viewZFromDepth(textureLoad(sceneDepthHalfTex, pix, 0).r), 1.0e7);
+  // (Depths beyond the far end of the cloud count as that end, as in the march.)
+  let z = min(viewZFromDepth(textureLoad(sceneDepthHalfTex, pix, 0).r), su.misc.z);
   let size = vec2i(textureDimensions(auxTex));
   let st = in.uv * vec2f(size) - 0.5;
   let base = floor(st);
@@ -871,7 +877,7 @@ export class SmokeSystem implements VolumeCombiner {
     u.set([light?.intensity[0] ?? 0, light?.intensity[1] ?? 0, light?.intensity[2] ?? 0, S.groundShadow], 48);
     u.set([...S.smoke.albedo, S.erosion], 52);
     u.set([...S.steam.albedo, S.erosionScale], 56);
-    u.set([this.needsClear ? 1 : 0, effectTime, 0, 0], 60);
+    u.set([this.needsClear ? 1 : 0, effectTime, 1e7, 0], 60);
     u.set([S.glow.color[0] * S.glow.luminance, S.glow.color[1] * S.glow.luminance, S.glow.color[2] * S.glow.luminance, 0], 64);
     // The cloud front runs out with the wall jet (r ~ sqrt(2 U0 r0 t)), rises on its heat and drifts with the wind.
     const age = effectTime - this.firstSource;
@@ -881,6 +887,10 @@ export class SmokeSystem implements VolumeCombiner {
     const cx = foot.x * (weight > 0 ? 1 : 0) + Math.sin(wh) * drift;
     const cz = foot.z * (weight > 0 ? 1 : 0) + Math.cos(wh) * drift;
     u.set([cx, cz, radius, height], 68);
+    // View depth of the far end of the cylinder, from the eye's distance to its axis (generous: what matters
+    // is that it lies behind all of the cloud and in front of the distant ground).
+    const eyeSite = toSite(v3.zero());
+    u[62] = 1.25 * (Math.hypot(eyeSite.x - cx, eyeSite.z - cz) + radius) + Math.abs(eyeSite.y) + height;
     if (light && weight > 0 && age > 1) {
       // A night launch is exposed for the cloud the flame lights (in every photograph of one the cloud is
       // orange and holds its shape, the flame is burnt out and the ground beyond the pad is nearly black):

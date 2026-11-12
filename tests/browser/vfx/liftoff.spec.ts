@@ -4,9 +4,10 @@
  * switched off and on again, and the difference of the HDR target on the jet axis below the nozzles is what
  * the plume (and the smoke it lights in front of itself) adds to the picture, in cd/m^2.
  */
+import { PNG } from 'pngjs';
 import type {} from '../../../labs/vfx/main';
 import { expect, expectNoErrors, saveScreenshot, test, waitIdle } from '../harness';
-import { openLab } from './helpers';
+import { openLab, runAndSettle } from './helpers';
 
 test.describe.configure({ timeout: 600_000 });
 
@@ -87,3 +88,54 @@ for (const night of [false, true]) {
     });
   }
 }
+
+/**
+ * Straight level lines in a picture: for every row, the columns in which the luminance steps by more than
+ * `threshold` (8-bit) from this row to the next AND by 2.5 times less on either side of that step (a one-pixel
+ * edge, not a gradient). Returns the row with the most such columns, and the longest unbroken run of them.
+ */
+function levelLines(buffer: Buffer, threshold = 10): { row: number; columns: number; run: number } {
+  const im = PNG.sync.read(buffer);
+  const L = (x: number, y: number): number => {
+    const a = (y * im.width + x) * 4;
+    return 0.2126 * im.data[a]! + 0.7152 * im.data[a + 1]! + 0.0722 * im.data[a + 2]!;
+  };
+  let worst = { row: -1, columns: 0, run: 0 };
+  for (let y = 2; y < im.height - 3; y++) {
+    let run = 0;
+    let longest = 0;
+    let columns = 0;
+    for (let x = 0; x < im.width; x++) {
+      const d = Math.abs(L(x, y + 1) - L(x, y));
+      const beside = Math.max(Math.abs(L(x, y) - L(x, y - 1)), Math.abs(L(x, y + 2) - L(x, y + 1)));
+      if (d > threshold && d > 2.5 * beside) {
+        run++;
+        columns++;
+        longest = Math.max(longest, run);
+      } else run = 0;
+    }
+    if (columns > worst.columns) worst = { row: y, columns, run: longest };
+  }
+  return worst;
+}
+
+// The pad cloud ended on a ruler-straight, one-pixel-sharp line along the horizon (critics of round 2): the
+// rows of rays next to the horizon were kept apart by the depth of the ground behind the cloud. Seen at night
+// (the cloud is the only thing in the picture besides the vehicle) from the pad camera, whose eye is level
+// with the top of the cloud at T+10 s, and from 26 m lower, where the body of the cloud crosses the horizon:
+// no row of the picture holds a level edge. Before the fix the horizon row held 67 and 41 such columns.
+test('the pad cloud has no level edge along the horizon', async ({ page, pageLog }) => {
+  for (const cam of [
+    { name: 'eye level with the top of the cloud', query: '', file: 'level' },
+    { name: 'eye 26 m lower', query: '&pitch=-2', file: 'low' },
+  ]) {
+    await openLab(page, `scene=pad&night=1${cam.query}`);
+    await runAndSettle(page, 14);
+    const shot = await saveScreenshot(page, 'vfx/liftoff-probe', `horizon-${cam.file}`);
+    const lines = levelLines(shot.buffer);
+    console.log(`pad cloud at T+10 s, ${cam.name}: most columns with a one-pixel level edge in one row: ${lines.columns} (row ${lines.row}, longest run ${lines.run})`);
+    expect(lines.columns, `${cam.name}: columns of row ${lines.row} with a one-pixel level edge`).toBeLessThan(24);
+    expect(lines.run, `${cam.name}: longest run of such columns in row ${lines.row}`).toBeLessThan(12);
+  }
+  await expectNoErrors(page, pageLog);
+});

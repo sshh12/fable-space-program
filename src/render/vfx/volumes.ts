@@ -47,17 +47,49 @@ const COMPOSITE_WGSL = /* wgsl */ `
 #include "upsample"
 @group(2) @binding(0) var volumeTex: texture_2d<f32>;
 @group(2) @binding(1) var momentTex: texture_2d<f32>;
+/// The core's depth-aware 4-tap upsample, with every scene depth beyond 'zCap' counted as 'zCap'.
+fn volumeUpsample(uv: vec2f, fullDepth: f32, zCap: f32) -> vec4f {
+  let size = vec2i(textureDimensions(volumeTex));
+  let st = uv * vec2f(size) - 0.5;
+  let base = floor(st);
+  let f = st - base;
+  let zFull = min(viewZFromDepth(fullDepth), zCap);
+  var sum = vec4f(0.0);
+  var wsum = 0.0;
+  var best = vec4f(0.0);
+  var bestDiff = 3.0e38;
+  for (var k = 0; k < 4; k++) {
+    let o = vec2i(k & 1, k >> 1);
+    let ip = clamp(vec2i(base) + o, vec2i(0), size - 1);
+    let z = min(viewZFromDepth(textureLoad(sceneDepthHalfTex, ip, 0).r), zCap);
+    let diff = min(abs(z - zFull) / max(min(z, zFull), 1e-3), 1000.0);
+    let bil = select(1.0 - f.x, f.x, o.x == 1) * select(1.0 - f.y, f.y, o.y == 1);
+    let w = (bil + 0.01) / (1.0 + diff * 200.0) * step(diff, 0.25);
+    let v = textureLoad(volumeTex, ip, 0);
+    sum += v * w;
+    wsum += w;
+    if (diff < bestDiff) { bestDiff = diff; best = v; }
+  }
+  if (wsum < 1e-4) { return best; }
+  return sum / wsum;
+}
 @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
   let d = textureLoad(sceneDepthTex, vec2i(in.position.xy), 0);
-  var v = upsampleDepthAware(volumeTex, sceneDepthHalfTex, in.uv, d, false);
+  let m = textureSampleLevel(momentTex, linearClamp, in.uv, 0.0).rg;
+  let rayLen = length(viewRay(in.uv));
+  // The image knows how far away what it shows is. Surfaces well behind that are all one background to it:
+  // the ground next to the horizon (whose depth doubles from one row of pixels to the next) and the sky above
+  // it are no edge for a cloud that stands in front of both, and treating them as one would draw the cloud in
+  // rows of half-resolution pixels there.
+  var zCap = 3.0e38;
+  if (m.g > 1e-3) { zCap = 1.5 * exp2(m.r / m.g) / rayLen; }
+  var v = volumeUpsample(in.uv, d, zCap);
   // Along the edge of a hull the half-resolution depth is the hull's in one pixel and the background's in the
   // next: a volume that lies BEHIND the hull would be drawn over its edge (scallops at a separation, steps
-  // beside a thruster). The image knows how far away what it shows is: what lies behind this pixel's own
-  // surface is not drawn on it.
+  // beside a thruster): what lies behind this pixel's own surface is not drawn on it.
   if (d > 0.0) {
-    let m = textureSampleLevel(momentTex, linearClamp, in.uv, 0.0).rg;
     if (m.g > 1e-3) {
-      let surface = viewZFromDepth(d) * length(viewRay(in.uv));
+      let surface = viewZFromDepth(d) * rayLen;
       // (Only what is clearly behind: a volume that hugs the ground is as far away as the ground is.)
       v *= 1.0 - smoothstep(1.1, 1.35, exp2(m.r / m.g) / surface);
     }
@@ -78,21 +110,25 @@ const DENOISE_WGSL = /* wgsl */ `
 #include "vfx_common"
 @group(2) @binding(0) var volumeTex: texture_2d<f32>;
 @group(2) @binding(1) var momentTex: texture_2d<f32>;
-fn denoiseZ(p: vec2i) -> f32 {
+fn denoiseZ(p: vec2i, zCap: f32) -> f32 {
   let d = textureLoad(sceneDepthHalfTex, p, 0).r;
-  return select(1e7, clamp(viewZFromDepth(d), 1e-3, 1e7), d > 0.0);
+  return min(select(1e7, clamp(viewZFromDepth(d), 1e-3, 1e7), d > 0.0), zCap);
 }
 @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
   let size = vec2i(textureDimensions(volumeTex)) - 1;
   let dsize = vec2i(textureDimensions(sceneDepthHalfTex)) - 1;
   let c = vec2i(in.position.xy);
-  let zc = denoiseZ(min(c, dsize));
+  // (Surfaces well behind what the image shows here are one background, as in the composite.)
+  let mc = textureLoad(momentTex, min(c, vec2i(textureDimensions(momentTex)) - 1), 0).rg;
+  var zCap = 1e7;
+  if (mc.g > 1e-3) { zCap = 1.5 * exp2(mc.r / mc.g) / length(viewRay((vec2f(c) + 0.5) * vfx.half.zw)); }
+  let zc = denoiseZ(min(c, dsize), zCap);
   var sum = vec4f(0.0);
   var wsum = 0.0;
   for (var y = -1; y <= 1; y++) {
     for (var x = -1; x <= 1; x++) {
       let p = clamp(c + vec2i(x, y), vec2i(0), size);
-      let z = denoiseZ(min(p, dsize));
+      let z = denoiseZ(min(p, dsize), zCap);
       let w = f32((2 - abs(x)) * (2 - abs(y))) * exp(-6.0 * abs(log2(z / zc)));
       sum += textureLoad(volumeTex, p, 0) * w;
       wsum += w;
