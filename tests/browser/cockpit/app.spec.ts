@@ -9,6 +9,7 @@
  * The seat view is turned with a mouse drag on the scene (the camera's own binding: 0.005 rad per pixel).
  */
 import type { Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import { assertDiscreteGpu, expect, openPage, saveScreenshot, test, waitIdle } from '../harness';
 
@@ -16,12 +17,26 @@ test.use({ viewport: { width: 1600, height: 900 } });
 
 const BOOT_MS = 300_000;
 
+/**
+ * The couch the app's cockpit rig sits in. The rig (src/camera/cockpitRig.ts, not the cockpit's code) takes the
+ * craft's own camera seat, the commander's (a field of the simulation's hashed state: it cannot change);
+ * request cockpit-21 asks it to take the cockpit layout's `camera.defaultSeat` first (the pilot's centre couch)
+ * and to let the player change seats. The views below are aimed for either couch; this tells which one the
+ * rig of this tree uses: the layout's default once the rig reads it (its source then names `defaultSeat`), the
+ * commander's until then. Every test logs the seat and its source.
+ */
+function appSeat(): { seat: 'cdr' | 'plt'; source: string } {
+  const rig = readFileSync('src/camera/cockpitRig.ts', 'utf8');
+  const layout = JSON.parse(readFileSync('data/defs/visuals/cockpits/kestrel.json', 'utf8')) as { camera?: { defaultSeat?: string } };
+  if (rig.includes('defaultSeat') && layout.camera?.defaultSeat === 'plt') return { seat: 'plt', source: "the cockpit layout's camera.defaultSeat, read by the rig" };
+  return { seat: 'cdr', source: "the craft's own camera seat (the rig does not read the layout's default yet: request cockpit-21)" };
+}
+
 interface AppView {
   name: string;
   scenario: string;
-  /** Look from the seat: degrees to the right and up (mouse drags). */
-  yaw?: number;
-  pitch?: number;
+  /** Look from the seat, per couch the rig may sit in: degrees to the right and up (mouse drags). */
+  look?: { cdr: [number, number]; plt: [number, number] };
   /** Toggle the lights command first (the player's "lights" action). */
   lights?: boolean;
   /** The cabin is in the dark apart from its own lamps (a darker picture is right). */
@@ -31,20 +46,20 @@ interface AppView {
 }
 
 const VIEWS: AppView[] = [
-  // Parking orbit, straight from the seat (the vehicle's cockpit seat: the pilot's centre couch since request
-  // cockpit-18), nothing touched: the picture of the mission run (06-earth-orbit-cockpit).
+  // Parking orbit, straight from the seat the rig sits in (appSeat), nothing touched: the picture of the
+  // mission run (06-earth-orbit-cockpit).
   { name: 'app-leo-seat', scenario: 'qa-leo' },
   // Along the console to both sides: where its ends meet the hull (request cockpit-lead-1).
   // (Angles are drags from the rig's rest view, which is pitched 20 degrees up since request cockpit-18.)
-  { name: 'app-leo-console-left', scenario: 'qa-leo', yaw: -55, pitch: -22 },
-  { name: 'app-leo-console-right', scenario: 'qa-leo', yaw: 55, pitch: -22 },
+  { name: 'app-leo-console-left', scenario: 'qa-leo', look: { cdr: [-30, -22], plt: [-55, -22] } },
+  { name: 'app-leo-console-right', scenario: 'qa-leo', look: { cdr: [62, -16], plt: [55, -22] } },
   // The lights action on: the floods at full.
   { name: 'app-leo-seat-floods', scenario: 'qa-leo', lights: true },
   // On the Moon after touchdown (10-lunar-touchdown-cockpit).
   { name: 'app-lunar-surface-seat', scenario: 'qa-lunar-surface' },
   // Out of the window from the seat in orbit: in this scenario's attitude the Earth's limb stands in the
   // commander's side window (the forward windows look into space).
-  { name: 'app-leo-window-left', scenario: 'qa-leo', yaw: -76, pitch: -28, window: true },
+  { name: 'app-leo-window-left', scenario: 'qa-leo', look: { cdr: [-58, -32], plt: [-76, -28] }, window: true },
 ];
 
 const lum = (r: number, g: number, b: number): number => 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -88,10 +103,13 @@ for (const v of VIEWS) {
     await page.evaluate(() => window.__test!.setPaused!(true));
     if (v.lights) await page.evaluate(() => window.__test!.commands!.toggleLights());
     await page.evaluate(() => window.__test!.waitFrames(5));
-    if (v.yaw || v.pitch) {
+    const eye = appSeat();
+    console.log(`${v.name}: eye at the ${eye.seat} couch (${eye.source})`);
+    if (v.look) {
       // A drag on the scene: yaw right = pointer to the right, pitch up = pointer up.
-      const dx = Math.round((((v.yaw ?? 0) * Math.PI) / 180) / 0.005);
-      const dy = -Math.round((((v.pitch ?? 0) * Math.PI) / 180) / 0.005);
+      const [yaw, pitch] = v.look[eye.seat];
+      const dx = Math.round(((yaw * Math.PI) / 180) / 0.005);
+      const dy = -Math.round(((pitch * Math.PI) / 180) / 0.005);
       await page.mouse.move(800, 450);
       await page.mouse.down();
       const steps = 12;

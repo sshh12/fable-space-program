@@ -62,8 +62,8 @@ describe('cockpit raster load from the seat', () => {
     const positions = new Float32Array(mesh.vertexCount * 3);
     for (let i = 0; i < mesh.vertexCount; i++) positions.set(f32.subarray((i * VERTEX_STRIDE) / 4, (i * VERTEX_STRIDE) / 4 + 3), i * 3);
     const vehicle = Object.values(defs.vehicles).find((v) => v.cockpit)!;
-    const seat = seatFrames(model.mould).find((s) => s.id === vehicle.cameras.cockpit.seat)!;
-    // The perf spec's view (cockpit lab, scene leo): the rest view from the vehicle's cockpit seat, pitched 20 degrees up.
+    const seat = seatFrames(model.mould).find((s) => s.id === (model.layout.camera?.defaultSeat ?? vehicle.cameras.cockpit.seat))!;
+    // The perf spec's view (cockpit lab, scene leo): the rest view from the layout's default seat, pitched 20 degrees up.
     const yaw = 0;
     const pitch = (20 * Math.PI) / 180;
     const fwd = v3.normalize(v3.add(v3.add(v3.scale(seat.L, Math.cos(pitch) * Math.cos(yaw)), v3.scale(seat.R, Math.cos(pitch) * Math.sin(yaw))), v3.scale(seat.U, Math.sin(pitch))));

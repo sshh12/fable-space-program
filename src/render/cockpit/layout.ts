@@ -354,6 +354,14 @@ export interface FixturesDef {
 export interface CockpitLayoutDef {
   /** Section key of the capsule mould line this interior is built inside. */
   mouldLine: string;
+  /**
+   * Where the cockpit view puts the player's eye when the view is entered: `defaultSeat` is the id of a seat
+   * of the mould line (CapsuleMouldLineDef.seats, the same ids as the command part's seats). Presentation
+   * only: nothing of the simulation reads it. A layout that names none leaves the eye at the craft's own
+   * camera seat (CraftSnapshot.cockpit.cameraSeat), and the player may change seats in the view (the seats
+   * in the mould line's order: cockpitSeatIds). Request cockpit-18.
+   */
+  camera?: { defaultSeat: string };
   materials: Record<string, CockpitMaterialDef>;
   shell: ShellDef;
   couches: CouchesDef;
@@ -378,6 +386,22 @@ export function cockpitLayouts(defs: DefLibrary): Record<string, CockpitLayoutDe
   return listSections<CockpitLayoutDef>(defs, 'visuals/cockpits/');
 }
 
+/**
+ * The seat the cockpit view starts in for the cockpit `cockpitId` (CraftSnapshot.cockpit.id): the layout's
+ * `camera.defaultSeat`, or `fallback` (the craft's own camera seat, CraftSnapshot.cockpit.cameraSeat) when
+ * the layout names none or there is no such layout. Reads the layout section only, never a vehicle.
+ */
+export function cockpitDefaultSeat(defs: DefLibrary, cockpitId: string | null, fallback: string | null): string | null {
+  if (cockpitId === null) return fallback;
+  return cockpitLayouts(defs)[cockpitId]?.camera?.defaultSeat ?? fallback;
+}
+
+/** The seats a player can sit in, in the order a cycle-seat action steps through them (the mould line's). */
+export function cockpitSeatIds(defs: DefLibrary, cockpitId: string | null): string[] {
+  const layout = cockpitId === null ? undefined : cockpitLayouts(defs)[cockpitId];
+  return layout ? getSection<CapsuleMouldLineDef>(defs, layout.mouldLine).seats.map((s) => s.id) : [];
+}
+
 /** One layout, validated, with the mould line it names. Throws a DefError naming the file. */
 export function loadCockpitLayout(defs: DefLibrary, id: string): { layout: CockpitLayoutDef; mould: CapsuleMouldLineDef } {
   const file = `visuals/cockpits/${id}.json`;
@@ -392,6 +416,7 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
   const fail = (msg: string): never => {
     throw new DefError(file, msg);
   };
+  if (l.camera && !mould.seats.some((s) => s.id === l.camera!.defaultSeat)) fail(`camera.defaultSeat "${l.camera.defaultSeat}" is not a seat of the mould line (${mould.seats.map((s) => s.id).join(', ')})`);
   const mats = l.materials;
   for (const [name, m] of Object.entries(mats)) {
     if (m.albedo.length !== 3 || m.albedo.some((c) => !(c >= 0 && c <= 1))) fail(`material "${name}": albedo must be three values in 0..1`);

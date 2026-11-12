@@ -10,7 +10,8 @@
  *                                        target=<point>: looking in along the line from that cabin point out
  *                                        through the window (the sun's way in, reversed)
  *   look=<yawDeg>,<pitchDeg>             seat look direction (yaw right, pitch up), fov=<deg>
- *   seat=cdr|plt|ms                      the seat the eye is at (default: the vehicle's cockpit camera seat)
+ *   seat=cdr|plt|ms                      the seat the eye is at (default: the cockpit layout's camera.defaultSeat,
+ *                                        else the vehicle's cockpit camera seat)
  *   eye=<right>,<headUp>,<forward>       eye offset from that seat's eye point in its axes, m (a crew member
  *                                        leaning over or lifting the head off the head rest); at=<x>,<y>,<z>
  *                                        places the eye anywhere in the cabin (part frame, m), seat axes kept
@@ -33,7 +34,7 @@ import { getSection } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { createLabApp, createLabPlanetFeature, enuAt, lookRotation } from '@/render/core/lab';
-import { bakeVertex, createCockpitFeature, loadCockpitLayout, occlusionAt, occlusionSources, unpackOcclusion, type CockpitFeature } from '@/render/cockpit';
+import { bakeVertex, cockpitDefaultSeat, createCockpitFeature, loadCockpitLayout, occlusionAt, occlusionSources, unpackOcclusion, type CockpitFeature } from '@/render/cockpit';
 import { seatFrames } from '@/render/cockpit/cabin/context';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { createMfdPainter, createNavballRenderer, describeFlight, formatMet } from '@/ui';
@@ -59,8 +60,8 @@ interface LabScene {
 }
 const SCENES: Record<string, LabScene> = {
   // On the pad and during entry the crew have the cabin lights on.
-  // (Looks are from the vehicle's cockpit seat, the pilot's centre couch: [0, 20] is the game's rest view, the
-  // camera rig's rest pitch.)
+  // (Looks are from the cockpit's default seat, the pilot's centre couch (the layout's camera.defaultSeat):
+  // [0, 20] is the game's rest view, the camera rig's rest pitch.)
   pad: { fake: 'pad', fired: 0, sun: { site: [205, 64] }, lights: true, look: [-14, 44] },
   leo: { fake: 'lowOrbit', fired: 4, attitude: { roll: -90 }, sun: { window: 'side-right', target: 'mfd0' }, lights: false, look: [0, 20] },
   // Earth through the left side window, its axis turned toward the horizon ahead (the limb in view), the sun
@@ -285,7 +286,8 @@ async function boot(): Promise<void> {
   const model = feature.model(vehicle.cockpit!)!;
 
   // ---- seat camera
-  const seat = seatFrames(mould).find((s) => s.id === (params.get('seat') ?? vehicle.cameras.cockpit.seat))!;
+  // (The eye's seat: &seat=, else the layout's default seat, else the craft's own camera seat.)
+  const seat = seatFrames(mould).find((s) => s.id === (params.get('seat') ?? cockpitDefaultSeat(defs, vehicle.cockpit, vehicle.cameras.cockpit.seat)))!;
   const qSeat = lookRotation(seat.L, seat.U);
   const eo = params.get('eye')?.split(',').map(Number) ?? [0, 0, 0];
   const at = params.get('at')?.split(',').map(Number);

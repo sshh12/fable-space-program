@@ -1,5 +1,6 @@
 {
   "mouldLine": "visuals/shared/kestrel-mouldline",
+  "camera": { "defaultSeat": "plt" },
   "materials": {
     "structure": { "shading": "standard", "albedo": [0.5, 0.515, 0.49], "roughness": 0.48, "detail": "paint", "detailStrength": 0.6, "wear": { "amount": 0.3, "albedo": [0.5, 0.51, 0.5], "metallic": 0.85 }, "grime": 0.6, "variation": 0.08 },
     "floor": { "shading": "standard", "albedo": [0.07, 0.075, 0.08], "roughness": 0.78, "detail": "paint", "detailStrength": 1.0, "wear": { "amount": 0.5, "albedo": [0.3, 0.31, 0.32], "metallic": 0.6 }, "grime": 0.9, "variation": 0.06 },

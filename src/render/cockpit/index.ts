@@ -6,7 +6,7 @@ export { ABLATE, createCockpitFeature, type CockpitFeature, type CockpitFeatureO
 export { DisplayPacer, type PacingRule } from './pacing';
 export { createCockpitControls, type CockpitControlsImpl } from './controls';
 export { buildCockpitModel, buildCockpitModelFrom, displayVertices, meshBvh, meshPositions, LOD_RANGES, type CockpitModel, type LodName } from './build';
-export { cockpitLayouts, loadCockpitLayout, validateLayout, type CockpitLayoutDef, type InstrumentBinding, type ReadoutBinding } from './layout';
+export { cockpitDefaultSeat, cockpitLayouts, cockpitSeatIds, loadCockpitLayout, validateLayout, type CockpitLayoutDef, type InstrumentBinding, type ReadoutBinding } from './layout';
 export { bindingState, controlStates, digitMask, instrumentSource, readoutText, updateMemory, type ControlState, type InstrumentMemory, type InstrumentSource } from './instruments';
 export { cabinSources, castCabinRay, glassTransmittance, windowQuad, MAX_CABIN_POLYS, type CabinPoly, type CabinSources } from './lighting';
 export { insideDistance, innerOutline, mouldOf, openingsOf, conePointAt, type Mould, type Opening } from './mould';

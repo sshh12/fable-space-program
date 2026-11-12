@@ -66,3 +66,22 @@ What follows from it, checked:
   (`out/screens/cockpit/world-leo-pilot-seat.png`, vessel rolled 180 degrees, heads-down as crews fly) the
   Earth fills both panes. The attitude belongs to the scenario's data, not to the cockpit: a heads-down roll
   in `qa-leo` (and in the mission's parking orbit) would give the player that view.
+
+## Resolution (lead, round 6, second word): the seat change in the vehicle data is taken back; the default eye point is the cockpit's own layout data
+The change of `cameras.cockpit.seat` to `plt` (commit 01c4d2f, authorised then) moved the mission's golden
+hash and broke the codec's corpus of old save blobs: the vehicle definition is inside the simulation's hashed
+state. The lead's records agent reverted that field to `cdr` (and its pin in
+`tests/unit/sim-vessel/data.test.ts`); the cockpit does not touch either file again. The note above about the
+golden's state hash stands as the reason.
+
+The goal stands and is met through presentation:
+- `data/defs/visuals/cockpits/kestrel.json`: `"camera": { "defaultSeat": "plt" }`: the seat the cockpit view
+  starts in, validated against the mould line's seats (`validateLayout`); the craft's own camera seat
+  (`CraftSnapshot.cockpit.cameraSeat`) is the fallback when a layout names none
+  (`cockpitDefaultSeat`, `cockpitSeatIds` in `src/render/cockpit/layout.ts`).
+- The cockpit's lab scenes, world recipes and perf view sit in that seat.
+- The app's rig and the cycle-seat action are not the cockpit's code: request `cockpit-21` (src/camera,
+  src/input, src/app) asks for them with the exact change. Until it is answered the app's cockpit view is
+  from the commander's couch, and `tests/browser/cockpit/app.spec.ts` says so in its log.
+Status of this request: the rig's rest pitch is built (799354c / 6f2bd6e); the default seat continues in
+`cockpit-21`.

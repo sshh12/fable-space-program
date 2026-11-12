@@ -13,6 +13,7 @@ import type { CapsuleMouldLineDef } from '@/core/contracts/defs';
 import { getSection } from '@/core/defs/loader';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { displayVertices, type CockpitModel } from '@/render/cockpit/build';
+import { cockpitDefaultSeat, cockpitSeatIds, validateLayout } from '@/render/cockpit/layout';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { testDefs, testModel, vertexPosition } from './helpers';
 
@@ -27,9 +28,11 @@ const norm = (a: V): V => scale(a, 1 / len(a));
 
 let model: CockpitModel;
 let def: CapsuleMouldLineDef;
+let allDefs: Awaited<ReturnType<typeof testDefs>>;
 
 beforeAll(async () => {
   const defs = await testDefs();
+  allDefs = defs;
   model = await testModel('kestrel');
   def = getSection<CapsuleMouldLineDef>(defs, model.layout.mouldLine);
 });
@@ -221,7 +224,21 @@ describe('cockpit interior geometry (shared mould line)', () => {
   });
 
   // The commander (the brief's criterion) through the left forward window; the pilot's centre couch, which is
-  // the vehicle's cockpit seat and so the player's eye (request cockpit-18), through both forward windows.
+  // the cockpit's default seat (the layout's camera.defaultSeat) and so the player's eye when the view is
+  // entered (request cockpit-18), through both forward windows.
+  it('names the pilot\'s centre couch as the default eye point in its own layout, with the craft\'s seat as the fallback', () => {
+    expect(model.layout.camera?.defaultSeat).toBe('plt');
+    expect(def.seats.map((s) => s.id)).toContain(model.layout.camera!.defaultSeat);
+    expect(cockpitDefaultSeat(allDefs, model.layoutId, 'cdr')).toBe('plt');
+    // No such layout, or no cabin: the craft's own camera seat.
+    expect(cockpitDefaultSeat(allDefs, 'no-such-cockpit', 'cdr')).toBe('cdr');
+    expect(cockpitDefaultSeat(allDefs, null, null)).toBeNull();
+    // The seats a cycle-seat action steps through: the mould line's, in its order.
+    expect(cockpitSeatIds(allDefs, model.layoutId)).toEqual(def.seats.map((s) => s.id));
+    // A layout that names a seat the capsule does not have is refused.
+    expect(() => validateLayout({ ...model.layout, camera: { defaultSeat: 'nobody' } }, def, 'test.json')).toThrow(/defaultSeat/);
+  });
+
   it.each([
     ['cdr', ['fwd-left']],
     ['plt', ['fwd-left', 'fwd-right']],

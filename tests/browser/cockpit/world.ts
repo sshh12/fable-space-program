@@ -94,11 +94,13 @@ export async function applyRecipe(page: Page, recipe: Recipe): Promise<Placed> {
     const vessel = snap.vessels.find((v) => v.id === snap.activeVesselId)!;
     const vehicle = Object.values(defs.vehicles).find((d) => d.cockpit && vessel.parts.some((p) => p.instanceId === d.cameras.cockpit.part));
     const part = vessel.parts.find((p) => p.instanceId === vehicle?.cameras.cockpit.part);
-    type Model = { windows: { id: string; centre: V; inward: V }[]; displays: { frame: { o: V } }[]; mould: { seats: { id: string; pos: number[]; lookDir: number[]; upDir: number[] }[] } };
+    type Model = { layout: { camera?: { defaultSeat: string } }; windows: { id: string; centre: V; inward: V }[]; displays: { frame: { o: V } }[]; mould: { seats: { id: string; pos: number[]; lookDir: number[]; upDir: number[] }[] } };
     const feature = (lab.handles['cockpit.createCockpitFeature'] as { feature?: { model(id: string): Model | undefined } } | undefined)?.feature;
     const model = vehicle?.cockpit ? feature?.model(vehicle.cockpit) : undefined;
     if (!vehicle || !part || !model) return { ok: false, why: 'no cockpit vessel or cabin model', layout: null };
-    const seatDef = model.mould.seats.find((s) => s.id === vehicle.cameras.cockpit.seat)!;
+    // The eye's seat: the cockpit layout's default seat (presentation data, the pilot's centre couch), else the
+    // craft's own camera seat.
+    const seatDef = model.mould.seats.find((s) => s.id === (model.layout.camera?.defaultSeat ?? vehicle.cameras.cockpit.seat))!;
     const t3 = (a: number[]): V => ({ x: a[0]!, y: a[1]!, z: a[2]! });
     const L = norm(t3(seatDef.lookDir));
     const U = norm(sub(t3(seatDef.upDir), scale(L, dot(t3(seatDef.upDir), L))));
