@@ -156,6 +156,9 @@ class Raster:
         if m0["kind"] == "tiff":
             base = np.memmap(m0["path"], dtype=np.dtype(m0["dtype"]), mode="r", offset=m0["offset"], shape=tuple(m0["shape"]))
             mips.append(_Channels(base, m0["channels"]))
+        elif m0["kind"] == "u8":
+            shape = (h, w) if c == 1 else (h, w, c)
+            mips.append(np.memmap(self.dir / "m0.u8", dtype=np.uint8, mode="r", shape=shape))
         else:
             shape = (h, w) if c == 1 else (h, w, c)
             mips.append(np.memmap(self.dir / "m0.f32", dtype=vdt, mode="r", shape=shape))
@@ -256,8 +259,11 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
     nodata = src["nodata"]
     if nodata is not None and g["nodata"] is not None and float(g["nodata"]) != float(nodata):
         raise ValueError(f"{body.id}.{key}: file nodata {g['nodata']} != config {nodata}")
+    dec = int(src.get("decimate", 1))
+    if dec > 1 and (not exact or g["height"] % dec or np.dtype(g["dtype"]) != np.uint8):
+        raise ValueError(f"{body.id}.{key}: decimate needs an exact 8-bit grid whose height divides by {dec}")
     if exact:
-        h, w = g["height"], g["width"]
+        h, w = g["height"] // dec, g["width"] // dec
         lon_left = g["lonLeftEdgeDeg"]
     else:
         # canonical grid: about the source's pixel size, rows a multiple of 64 (six exact mips)
@@ -267,16 +273,41 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
     K = _mip_chain_depth(h)
     # 8-bit imagery keeps its mips (and any copy) in float16: exact to 1/8 of a level, half the disk of float32
     vdt = np.dtype(np.float16) if np.dtype(g["dtype"]) == np.uint8 else np.dtype(np.float32)
-    est = int(h * w * c * vdt.itemsize * (0 if (nodata is None and exact) else 1) + h * w * c * vdt.itemsize / 3)
+    est = int(h * w * c * (1 if dec > 1 else vdt.itemsize) * (0 if (nodata is None and exact and dec == 1) else 1)
+              + h * w * c * vdt.itemsize / 3)
     rt.check_disk(est)
     meta = {"width": w, "height": h, "channels": c, "mips": K, "lonLeftEdgeDeg": lon_left, "regridded": not exact,
             "valueDtype": vdt.name, "fingerprint": source_fingerprint(body, key),
             "georef": {k: v for k, v in g.items() if k != "crs"}, "fileBytes": path.stat().st_size}
-    mm = _strip_memmap(path, src) if (nodata is None and exact) else None
+    mm = _strip_memmap(path, src) if (nodata is None and exact and dec == 1) else None
     rt.log(f"{body.id}.{key}: {g['width']} x {g['height']} x {c} ({g['dtype']}), lon edge {g['lonLeftEdgeDeg']:.4f}, "
            f"grid {w} x {h}, {K} mips, mip 0 {'memory-mapped' if mm is not None else ('copied' if exact else 'regridded')}")
     level_w = None
-    if not exact:
+    if dec > 1:
+        # area mean of dec x dec blocks into an 8-bit mip 0 (the full-resolution file is read in row bands and
+        # can be deleted as soon as this is written: the bake never needs it again)
+        dst = np.memmap(out / "m0.u8", dtype=np.uint8, mode="w+", shape=(h, w) if c == 1 else (h, w, c))
+        valid = 0
+        for r0 in range(0, h, BAND_ROWS // dec):
+            r1 = min(h, r0 + BAND_ROWS // dec)
+            blk = _read_band_rows(path, bands, r0 * dec, r1 * dec).astype(np.float64)
+            ok = np.ones(blk.shape[:2], bool) if nodata is None else np.all(blk != nodata, axis=-1)
+            wv = ok.reshape(r1 - r0, dec, w, dec).astype(np.float64)
+            vv = (blk * ok[..., None]).reshape(r1 - r0, dec, w, dec, c).sum(axis=(1, 3))
+            ws = wv.sum(axis=(1, 3))
+            mean = np.where(ws[..., None] > 0, vv / np.maximum(ws, 1)[..., None], 0.0)
+            valid += int((ws > 0).sum())
+            q = np.clip(np.floor(mean + 0.5), 0, 255).astype(np.uint8)
+            dst[r0:r1] = q[..., 0] if c == 1 else q
+        dst.flush()
+        meta["mip0"] = {"kind": "u8", "decimate": dec}
+        meta["validFraction"] = valid / (h * w)
+        if valid < h * w:
+            raise ValueError(f"{body.id}.{key}: decimated source has {h * w - valid} empty pixels; decimate assumes full coverage")
+
+        def rows0(r0, r1):
+            return np.asarray(dst[r0:r1], dtype=np.float32), None
+    elif not exact:
         dst = np.memmap(out / "m0.f32", dtype=vdt, mode="w+", shape=(h, w) if c == 1 else (h, w, c))
         mask = np.memmap(out / "m0.mask", dtype=np.uint8, mode="w+", shape=(h, w)) if nodata is not None else None
         valid = _regrid(path, bands, g, nodata, dst, mask)

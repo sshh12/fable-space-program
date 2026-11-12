@@ -31,7 +31,8 @@
     1
    ],
    "nodata": null,
-   "credit": "usgs-mars-viking-mdim21"
+   "credit": "usgs-mars-viking-mdim21",
+   "decimate": 2
   },
   "colour": {
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mars_Viking_ClrMosaic_global_925m.tif",

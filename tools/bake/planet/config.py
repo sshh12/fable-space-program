@@ -63,7 +63,7 @@ SOURCE_KEYS = ("url", "bytes", "md5", "sha256", "format", "latitude", "lonPositi
                "height", "bands", "nodata", "credit")
 
 
-SOURCE_OPTIONAL = ("registration", "table", "validLatDeg")
+SOURCE_OPTIONAL = ("registration", "table", "validLatDeg", "decimate")
 
 
 def _check_source(key: str, s: dict, where: str) -> None:

@@ -43,23 +43,35 @@ def fingerprint(body: config.Body, step: str) -> str:
     return h.hexdigest()[:16]
 
 
-def source_keys(body: config.Body) -> list[str]:
-    return sorted(body.raw["sources"])
+def source_keys(body: config.Body, steps: list[str] | None = None) -> list[str]:
+    """Sources the given steps read (all when steps is None): the height step its DEM, the albedo step its
+    luminance and colour maps. Lets a body with big sources be baked in passes that each hold only theirs."""
+    if steps is None:
+        return sorted(body.raw["sources"])
+    keys = set()
+    if "height" in steps and body.height["dem"]:
+        keys.add(body.height["dem"]["source"])
+    if "albedo" in steps:
+        keys |= {k for k in (body.albedo["source"], body.albedo["colourSource"]) if k}
+    return sorted(keys)
 
 
-def step_fetch(body: config.Body, record: bool) -> None:
-    for key in source_keys(body):
+def step_fetch(body: config.Body, record: bool, steps: list[str] | None = None) -> None:
+    for key in source_keys(body, steps):
         if source.is_prepared(body, key):
             continue
         fetch.ensure(body, key, record=record)
 
 
-def step_prepare(body: config.Body) -> None:
-    for key in source_keys(body):
+def step_prepare(body: config.Body, steps: list[str] | None = None) -> None:
+    for key in source_keys(body, steps):
         if source.is_prepared(body, key):
             continue
         t0 = time.time()
         meta = source.prepare(body, key, fetch.local_path(body, key))
+        if body.source(key).get("decimate", 1) > 1:
+            rt.remove_tree(rt.dl_dir(body.id, key))
+            rt.log(f"{body.id}: deleted the full-resolution {key} download (decimated copy written)")
         rt.log(f"{body.id}: prepared {key} in {time.time() - t0:.0f} s (valid {meta.get('validFraction', 1.0):.4f})")
 
 
@@ -107,22 +119,22 @@ def step_manifest(body: config.Body, hstats: dict, astats: dict) -> Path:
 def bake_solid(body: config.Body, steps: list[str], record: bool, force: bool) -> None:
     rt.work_dir(body.id).mkdir(parents=True, exist_ok=True)
     t_all = time.time()
-    state = rt.load_state(body.id)
-    for step in steps:
+    compute = [s for s in steps if s not in ("fetch", "prepare")]
+    pending = [s for s in compute if force or not rt.is_done(body.id, s, fingerprint(body, s))]
+    # sources: those the pending compute steps read (all of them for an explicit fetch/prepare-only run)
+    need = pending if compute else None
+    if "fetch" in steps or pending:
+        step_fetch(body, record, need)
+    if "prepare" in steps or pending:
+        step_prepare(body, need)
+    for step in compute:
         fp = fingerprint(body, step)
-        if step in ("fetch",):
-            if "prepare" in state and state["prepare"].get("fingerprint") == fingerprint(body, "prepare") and not force:
-                continue
-            step_fetch(body, record)
-            continue
-        if not force and rt.is_done(body.id, step, fp):
+        if step not in pending:
             rt.log(f"{body.id}: {step} already done")
             continue
         t0 = time.time()
         info: dict = {}
-        if step == "prepare":
-            step_prepare(body)
-        elif step == "procedural":
+        if step == "procedural":
             if body.height["craters"] is None:
                 continue
             info = procedural.run(body)
@@ -137,7 +149,6 @@ def bake_solid(body: config.Body, steps: list[str], record: bool, force: bool) -
             info = {"manifest": str(path)}
         info["seconds"] = round(time.time() - t0, 1)
         rt.mark_done(body.id, step, fp, info)
-        state = rt.load_state(body.id)
         rt.log(f"{body.id}: {step} done in {info['seconds']} s")
     rt.log(f"{body.id}: bake finished in {time.time() - t_all:.0f} s; tile set {rt.dir_size(rt.tileset_dir(body.id)) / 1e6:.1f} MB")
 

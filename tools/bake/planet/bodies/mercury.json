@@ -30,7 +30,8 @@
     1
    ],
    "nodata": null,
-   "credit": "usgs-mercury-mdis-bdr"
+   "credit": "usgs-mercury-mdis-bdr",
+   "decimate": 2
   },
   "dem": {
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mercury_Messenger_USGS_DEM_Global_665m_v2.tif",
