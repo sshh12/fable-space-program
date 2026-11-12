@@ -144,6 +144,8 @@ export interface HudImpl extends Hud {
    * capture is on; without the lock when the browser refused it). Default for `fullscreen`: `locked`.
    */
   setKeyboardLocked(locked: boolean, fullscreen?: boolean): void;
+  /** A notification: 'caution' (default, amber edge: refusals, failures) or 'info' (a seat change, a milestone). */
+  notify(message: string, tone?: 'caution' | 'info'): void;
   /** Show or hide the keyboard-capture switch (clean footage); the key-help button stays. */
   setCaptureControlVisible(visible: boolean): void;
   toggleKeyHelp(force?: boolean): void;
@@ -1363,7 +1365,7 @@ export function createHud(opts: HudOptions): HudImpl {
       visible = v;
       root.hidden = !v;
     },
-    notify: (m) => notify(m),
+    notify: (m, tone) => notify(m, tone ?? 'caution'),
     setKeyboardLocked(locked, fullscreen = locked) {
       setCapture(locked, fullscreen);
     },

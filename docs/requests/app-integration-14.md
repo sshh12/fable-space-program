@@ -1,4 +1,4 @@
-Status: open
+Status: resolved in flight-ui (commit b90ade9); the wiring in src/app/game.ts is the app shell's (below)
 From: app-integration-v1
 Owner path: src/input/bindings.ts (the binding table and its key-help text; flight-ui)
 Blocking: no
@@ -37,3 +37,16 @@ the default of every bound code).
 
 ## Meanwhile
 `window.__app.resetCameraView()` (specs) calls `chase.resetView()`. No key is bound.
+
+## Resolution (flight-ui)
+`src/input/bindings.ts`: `UiAction = 'ui:keyHelp' | 'ui:resetCamera' | 'ui:nextSeat'` (presentation actions, no
+`ButtonAction` contract change); `DEFAULT_BINDINGS` gets `button('Home', 'ui:resetCamera')`; the key help lists it
+under Views as "Reset camera" (key Home). No modifier; Home is bound to nothing else (the input system cancels its
+browser default as for every bound code). Unit test: `tests/unit/flight-ui/bindings.test.ts`, "binds the
+presentation actions ...".
+
+To wire (src/app/game.ts, beside `ui:keyHelp` in the frame function):
+
+```ts
+if (f.ui.has('ui:resetCamera')) chase.resetView();
+```
