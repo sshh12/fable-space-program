@@ -17,49 +17,49 @@
           "albedoHeight": "fine-regolith-near.ah.webp",
           "normalRoughAo": "fine-regolith-near.nra.webp",
           "meanAlbedo": [
-            0.11936,
-            0.11426,
-            0.10918
+            0.11888,
+            0.11379,
+            0.10882
           ],
           "meanRoughness": 0.9487,
-          "reliefM": 0.02362,
-          "meanHeight": 0.5768
+          "reliefM": 0.03008,
+          "meanHeight": 0.4428
         },
         {
           "albedoHeight": "fine-regolith-mid.ah.webp",
           "normalRoughAo": "fine-regolith-mid.nra.webp",
           "meanAlbedo": [
-            0.11991,
-            0.11483,
-            0.11006
+            0.12016,
+            0.11508,
+            0.11032
           ],
           "meanRoughness": 0.949,
-          "reliefM": 0.21761,
-          "meanHeight": 0.8612
+          "reliefM": 0.21529,
+          "meanHeight": 0.8003
         },
         {
           "albedoHeight": "fine-regolith-far.ah.webp",
           "normalRoughAo": "fine-regolith-far.nra.webp",
           "meanAlbedo": [
-            0.12097,
-            0.11588,
-            0.11112
+            0.12163,
+            0.11653,
+            0.11171
           ],
           "meanRoughness": 0.949,
-          "reliefM": 2.31133,
-          "meanHeight": 0.867
+          "reliefM": 3.15881,
+          "meanHeight": 0.84
         },
         {
           "albedoHeight": "fine-regolith-aerial.ah.webp",
           "normalRoughAo": "fine-regolith-aerial.nra.webp",
           "meanAlbedo": [
-            0.12038,
-            0.11529,
-            0.11046
+            0.12104,
+            0.11594,
+            0.11106
           ],
           "meanRoughness": 0.949,
-          "reliefM": 15.9827,
-          "meanHeight": 0.8687
+          "reliefM": 18.07785,
+          "meanHeight": 0.8049
         }
       ]
     },
@@ -87,8 +87,8 @@
             0.12215
           ],
           "meanRoughness": 0.9353,
-          "reliefM": 0.17966,
-          "meanHeight": 0.316
+          "reliefM": 0.17685,
+          "meanHeight": 0.3103
         },
         {
           "albedoHeight": "blocky-ejecta-far.ah.webp",
@@ -99,8 +99,8 @@
             0.12044
           ],
           "meanRoughness": 0.9393,
-          "reliefM": 1.06727,
-          "meanHeight": 0.402
+          "reliefM": 1.28332,
+          "meanHeight": 0.5239
         },
         {
           "albedoHeight": "blocky-ejecta-aerial.ah.webp",
@@ -111,8 +111,8 @@
             0.12025
           ],
           "meanRoughness": 0.9408,
-          "reliefM": 8.658,
-          "meanHeight": 0.606
+          "reliefM": 8.82503,
+          "meanHeight": 0.6399
         }
       ]
     },
@@ -152,8 +152,8 @@
             0.10088
           ],
           "meanRoughness": 0.9412,
-          "reliefM": 2.19309,
-          "meanHeight": 0.8647
+          "reliefM": 1.40612,
+          "meanHeight": 0.869
         },
         {
           "albedoHeight": "compacted-soil-aerial.ah.webp",
@@ -164,8 +164,8 @@
             0.10095
           ],
           "meanRoughness": 0.9412,
-          "reliefM": 10.33222,
-          "meanHeight": 0.8663
+          "reliefM": 17.925,
+          "meanHeight": 0.8562
         }
       ]
     },
@@ -176,49 +176,49 @@
           "albedoHeight": "boulder-near.ah.webp",
           "normalRoughAo": "boulder-near.nra.webp",
           "meanAlbedo": [
-            0.14313,
-            0.13822,
-            0.13321
+            0.14693,
+            0.14155,
+            0.13665
           ],
           "meanRoughness": 0.9106,
-          "reliefM": 0.03148,
-          "meanHeight": 0.4214
+          "reliefM": 0.0166,
+          "meanHeight": 0.4964
         },
         {
           "albedoHeight": "boulder-mid.ah.webp",
           "normalRoughAo": "boulder-mid.nra.webp",
           "meanAlbedo": [
-            0.14515,
-            0.14005,
-            0.13491
+            0.14771,
+            0.1423,
+            0.13738
           ],
           "meanRoughness": 0.9109,
-          "reliefM": 0.26726,
-          "meanHeight": 0.54
+          "reliefM": 0.13143,
+          "meanHeight": 0.5221
         },
         {
           "albedoHeight": "boulder-far.ah.webp",
           "normalRoughAo": "boulder-far.nra.webp",
           "meanAlbedo": [
-            0.14091,
-            0.13605,
-            0.13106
+            0.14564,
+            0.14032,
+            0.13551
           ],
           "meanRoughness": 0.911,
-          "reliefM": 1.12021,
-          "meanHeight": 0.5682
+          "reliefM": 0.69275,
+          "meanHeight": 0.5416
         },
         {
           "albedoHeight": "boulder-aerial.ah.webp",
           "normalRoughAo": "boulder-aerial.nra.webp",
           "meanAlbedo": [
-            0.14613,
-            0.14098,
-            0.13569
+            0.1485,
+            0.14305,
+            0.13815
           ],
           "meanRoughness": 0.91,
-          "reliefM": 5.07214,
-          "meanHeight": 0.5009
+          "reliefM": 3.55385,
+          "meanHeight": 0.4951
         }
       ]
     }
@@ -235,6 +235,7 @@
       0.01
     ]
   },
+  "classTone": {},
   "channelGain": {
     "blocky-ejecta": 2.6,
     "fine-regolith": -0.6
@@ -250,6 +251,7 @@
   "shoreGain": {},
   "gloss": {},
   "anchorAlbedo": {},
+  "toneMax": {},
   "chroma": {},
   "hexBlend": [
     10.0,
@@ -259,7 +261,5 @@
   "cover": null,
   "apronMaterial": null,
   "gravelMaterial": null,
-  "rockMaterial": "boulder",
-  "classTone": {},
-  "toneMax": {}
+  "rockMaterial": "boulder"
 }

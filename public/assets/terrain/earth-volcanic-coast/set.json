@@ -22,7 +22,7 @@
             0.05532
           ],
           "meanRoughness": 0.72,
-          "reliefM": 0.02765,
+          "reliefM": 0.03267,
           "meanHeight": 0.3999
         },
         {
@@ -34,7 +34,7 @@
             0.05499
           ],
           "meanRoughness": 0.72,
-          "reliefM": 0.1672,
+          "reliefM": 0.25081,
           "meanHeight": 0.7084
         },
         {
@@ -46,7 +46,7 @@
             0.05507
           ],
           "meanRoughness": 0.72,
-          "reliefM": 0.6269,
+          "reliefM": 1.04483,
           "meanHeight": 0.4311
         },
         {
@@ -58,7 +58,7 @@
             0.05482
           ],
           "meanRoughness": 0.72,
-          "reliefM": 2.98672,
+          "reliefM": 3.7334,
           "meanHeight": 0.5874
         }
       ]
@@ -123,49 +123,49 @@
           "albedoHeight": "black-sand-near.ah.webp",
           "normalRoughAo": "black-sand-near.nra.webp",
           "meanAlbedo": [
-            0.05181,
+            0.0518,
             0.05004,
-            0.0486
+            0.04859
           ],
           "meanRoughness": 0.8784,
-          "reliefM": 0.01358,
-          "meanHeight": 0.1728
+          "reliefM": 0.03318,
+          "meanHeight": 0.1625
         },
         {
           "albedoHeight": "black-sand-mid.ah.webp",
           "normalRoughAo": "black-sand-mid.nra.webp",
           "meanAlbedo": [
-            0.05163,
-            0.05007,
-            0.04861
+            0.05165,
+            0.05006,
+            0.04857
           ],
           "meanRoughness": 0.8784,
-          "reliefM": 0.06757,
-          "meanHeight": 0.2712
+          "reliefM": 0.13282,
+          "meanHeight": 0.2863
         },
         {
           "albedoHeight": "black-sand-far.ah.webp",
           "normalRoughAo": "black-sand-far.nra.webp",
           "meanAlbedo": [
-            0.05204,
-            0.05014,
+            0.05205,
+            0.05015,
             0.04762
           ],
           "meanRoughness": 0.8784,
-          "reliefM": 0.1967,
-          "meanHeight": 0.5173
+          "reliefM": 0.28331,
+          "meanHeight": 0.4997
         },
         {
           "albedoHeight": "black-sand-aerial.ah.webp",
           "normalRoughAo": "black-sand-aerial.nra.webp",
           "meanAlbedo": [
-            0.05168,
+            0.05166,
             0.05028,
-            0.04803
+            0.048
           ],
           "meanRoughness": 0.8784,
-          "reliefM": 0.72753,
-          "meanHeight": 0.5596
+          "reliefM": 0.7837,
+          "meanHeight": 0.5683
         }
       ]
     },
@@ -424,6 +424,28 @@
       0.01
     ]
   },
+  "classTone": {
+    "trees": [
+      0.5,
+      0.7
+    ],
+    "shrub": [
+      0.75,
+      0.35
+    ],
+    "grass": [
+      0.85,
+      0.2
+    ],
+    "wetland": [
+      0.6,
+      0.6
+    ],
+    "crop": [
+      0.9,
+      0.3
+    ]
+  },
   "channelGain": {
     "aa": 0.6,
     "scrub-soil": -0.3,
@@ -490,20 +512,24 @@
       0.038
     ],
     "pahoehoe": [
-      0.039,
+      0.036,
       0.043,
-      0.05
+      0.055
     ],
     "aa": [
+      0.025,
       0.027,
-      0.027,
-      0.029
+      0.031
     ],
     "black-sand": [
       0.036,
       0.036,
       0.037
     ]
+  },
+  "toneMax": {
+    "pasture": 1.45,
+    "scrub-soil": 1.3
   },
   "chroma": {
     "pahoehoe": 0.15,
@@ -707,31 +733,5 @@
   },
   "apronMaterial": "concrete-apron",
   "gravelMaterial": "black-sand",
-  "rockMaterial": "aa",
-  "toneMax": {
-    "pasture": 1.45,
-    "scrub-soil": 1.3
-  },
-  "classTone": {
-    "trees": [
-      0.5,
-      0.7
-    ],
-    "shrub": [
-      0.75,
-      0.35
-    ],
-    "grass": [
-      0.85,
-      0.2
-    ],
-    "wetland": [
-      0.6,
-      0.6
-    ],
-    "crop": [
-      0.9,
-      0.3
-    ]
-  }
+  "rockMaterial": "aa"
 }
