@@ -26,17 +26,19 @@ function keyHelpEntries(table): KeyHelpEntry[];         // { group, text, keys[]
 // DOM input system.
 function createInputSystem(canvas: HTMLElement, opts?: {
   bindings?: readonly Binding[];
-  captureKeyboard?: boolean;                // default TRUE: first real gesture -> fullscreen + navigator.keyboard.lock()
+  captureKeyboard?: boolean;                // default FALSE (round 6): true = the app's opt-in to ask on the first real gesture
   fullscreenElement?: () => Element;        // default document.documentElement (HUD stays visible)
   isOverUi?: (target: EventTarget | null) => boolean;   // PointerState.overUi; default: an element other than the canvas
 }): InputSystem;
 interface InputSystem {
   readonly bindings: readonly Binding[];
-  readonly keyboardLocked: boolean;
+  readonly keyboardLocked: boolean;         // fullscreen AND the lock granted
+  readonly fullscreen: boolean;             // the capture is on (with or without the lock)
   sample(): FlightInputFrame;               // InputFrame + `ui: ReadonlySet<UiAction>`; call once per frame
   trigger(action: ButtonAction | UiAction): void;     // on-screen controls -> next frame's `pressed`
   requestKeyboardCapture(): Promise<boolean>;         // call from a click handler; never rejects
-  onKeyboardLockChange(listener: (locked: boolean) => void): () => void;
+  releaseKeyboardCapture(): void;                      // leave fullscreen + unlock (the switch's second click)
+  onKeyboardLockChange(listener: (locked: boolean, fullscreen: boolean) => void): () => void;
   heldCodes(): string[];
   dispose(): void;
 }
@@ -183,6 +185,8 @@ interface HudOptions {
   defs: DefLibrary; gpu: GpuHandle; navball: NavballRendererImpl;
   dispatch: (action: ButtonAction) => void;                  // connect InputSystem.trigger
   requestKeyboardCapture?: () => void;                       // connect InputSystem.requestKeyboardCapture
+  releaseKeyboardCapture?: () => void;                       // connect InputSystem.releaseKeyboardCapture
+  showCaptureControl?: boolean;                              // default true; false = no capture switch (footage)
   keyHelp: readonly HudKeyHelpEntry[];                       // keyHelpEntries(input.bindings)
   keyFor?: (action: ButtonAction) => string | null;          // key caps on buttons / stage tile
   commands?: () => PlayerCommands | null;                    // target selection on the pad
@@ -191,7 +195,8 @@ interface HudOptions {
 interface HudFailureAction { label: string; key?: string; title?: string; run(): void }
 interface HudImpl extends Hud {
   readonly root: HTMLElement; readonly visible: boolean; readonly keyHelpOpen: boolean;
-  setKeyboardLocked(locked: boolean): void; toggleKeyHelp(force?: boolean): void;
+  setKeyboardLocked(locked: boolean, fullscreen?: boolean): void;   // fullscreen defaults to locked
+  setCaptureControlVisible(visible: boolean): void; toggleKeyHelp(force?: boolean): void;
   readonly lastUpdateMs: number; readonly meanUpdateMs: number;   // JavaScript of update() only (see section 4)
   readonly textUpdates: number;                                     // updates that refreshed the text readouts
   landingTargetRows(): [string, string][] | null; notifications(): string[];
@@ -462,13 +467,13 @@ form around the 100 km lunar parking orbit; distances m below 10 km, km with two
 ## 2. How the app wires it (ARCHITECTURE section 5)
 
 ```ts
-const input = createInputSystem(canvas);                       // captureKeyboard defaults to true
+const input = createInputSystem(canvas);                       // windowed and uncaptured until the player asks
 const navball = createNavballRenderer(gpu, { perf });           // resources.publish('ui.navball', navball.view)
 const hud = createHud({ defs, gpu, navball, dispatch: (a) => input.trigger(a),
-  requestKeyboardCapture: () => void input.requestKeyboardCapture(), keyHelp: keyHelpEntries(input.bindings),
-  keyFor, commands: () => sim.commands });
-hud.mount(document.getElementById('ui-root')!); hud.setKeyboardLocked(input.keyboardLocked);
-input.onKeyboardLockChange((l) => hud.setKeyboardLocked(l));
+  requestKeyboardCapture: () => void input.requestKeyboardCapture(), releaseKeyboardCapture: () => input.releaseKeyboardCapture(),
+  showCaptureControl: settings.capturePill, keyHelp: keyHelpEntries(input.bindings), keyFor, commands: () => sim.commands });
+hud.mount(document.getElementById('ui-root')!); hud.setKeyboardLocked(input.keyboardLocked, input.fullscreen);
+input.onKeyboardLockChange((l, fs) => hud.setKeyboardLocked(l, fs));
 const controller = createFlightController({ notify: (m) => hud.notify(m) });
 const views = createViewManager([createChaseRig({ defs, terrain }), createCockpitRig({ defs }), createMapRig({ defs })], { defs, terrain, initialMode: 'chase' });
 const mapper = createCameraInputMapper();
@@ -574,7 +579,7 @@ a stage-stack test checks the active stage's tile against the snapshot.
 | Period / comma / slash change warp; refusal shows a notification | met ("Cannot warp faster here" toast at the physics-warp cap; one refused press = one toast without a count, a second press reads "×2") |
 | Clicking SAS buttons, toggles, the stage tile (and the speed readout) works | met; lockout blocks the tile |
 | Blur releases all keys | met |
-| captureKeyboard: a real click leaves `keyboardLocked` a boolean, no error | met (either answer accepted; the HUD shows the matching pill) |
+| captureKeyboard: a real click leaves `keyboardLocked` a boolean, no error | met (either answer accepted; the HUD's switch shows the state granted). Round 6: capture is opt-in (user feedback): with no option nothing asks; a click on the switch asks, a second click or Esc leaves |
 | PointerState edges and doubleClick exactly once | met (click: 1 / 1 / 0; double click: 2 / 2 / 1) |
 | Navball: zenith at the reticle for nose-up; heading 090 wings level horizontal horizon with sky on top; roll right raises the horizon's right end by tan(roll) | met on the CPU reference (unit) and on the GPU texture (readback spec) |
 | Marker positions match an independent projection within 1 px | met: < 1e-6 px over 2,000 random directions (`navball.test.ts`) |

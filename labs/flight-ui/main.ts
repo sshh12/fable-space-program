@@ -484,6 +484,11 @@ async function boot(): Promise<void> {
     return out === lt ? s : { ...s, readouts: { ...r, landingTarget: out } };
   };
 
+  // milestone=<id>[&soi=<from>,<to>][&scenarioId=<id>]: the HUD receives that milestone of the scenario (default
+  // the mission's, lunar-direct) once, a few frames in, with the sphere-of-influence change it hangs on (toast check).
+  const milestoneParam = params.get('milestone');
+  const soiParam = params.get('soi')?.split(',') ?? null;
+  let decorated = 0;
   const decorate = (raw: SimSnapshot): SimSnapshot => {
     let s = sceneState(tagLabVehicle(raw));
     if (doseParam !== null) s = { ...s, readouts: { ...s.readouts, gDose: Number(doseParam) } };
@@ -508,6 +513,14 @@ async function boot(): Promise<void> {
     }
     if (params.get('terrainPending') === '1') s = { ...s, terrain: { ...s.terrain, pending: true, complete: false } };
     if (params.get('lockout') === '1') s = { ...s, staging: { ...s.staging, lockout: true } };
+    if (milestoneParam !== null) {
+      s = { ...s, scenario: { ...s.scenario, id: params.get('scenarioId') ?? 'lunar-direct' } };
+      if (++decorated === 5) {
+        const base = { ut: s.ut, vesselId: s.activeVesselId };
+        const soi = soiParam && soiParam.length === 2 ? [{ ...base, type: 'soiChange' as const, fromBodyId: soiParam[0]!, toBodyId: soiParam[1]! }] : [];
+        s = { ...s, events: [...s.events, ...soi, { ...base, type: 'milestone' as const, milestone: { id: milestoneParam, ut: s.ut, data: {} } }] };
+      }
+    }
     return landingState(s);
   };
 

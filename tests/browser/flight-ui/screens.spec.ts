@@ -361,6 +361,25 @@ test.describe('flight-ui over a near-white backdrop (720p)', () => {
   }
 });
 
+test.describe('flight-ui milestones (720p)', () => {
+  test.use({ viewport: { width: 1280, height: 720 } });
+  test('a milestone is announced by its name, once, with the sphere-of-influence change it hangs on', async ({ page, pageLog }) => {
+    // The mission's MOON_SOI_ENTER arrives with the sim's soiChange (out/screens/mission/08 showed both, the
+    // milestone title-cased as "Moon Soi Enter").
+    await openPage(page, '/labs/flight-ui/?scene=translunar&milestone=MOON_SOI_ENTER&soi=earth,moon');
+    await page.waitForFunction(() => document.querySelectorAll('.hud .toast').length > 0);
+    await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+    await expect(page.locator('.hud .toast')).toHaveCount(1);
+    await expect(page.locator('.hud .toast')).toHaveText('Entered the Moon sphere of influence');
+    await saveScreenshot(page, 'flight-ui', 'milestone-soi-720p');
+    await expectNoErrors(page, pageLog);
+    await openPage(page, '/labs/flight-ui/?scene=lowOrbit&milestone=TLI_COMPLETE');
+    await page.waitForFunction(() => document.querySelectorAll('.hud .toast').length > 0);
+    await expect(page.locator('.hud .toast')).toHaveText('Moon encounter predicted');
+    await expectNoErrors(page, pageLog);
+  });
+});
+
 test.describe('flight-ui stage stack (720p)', () => {
   test.use({ viewport: { width: 1280, height: 720 } });
   test('the mass is that of the parts carried: it falls as the stack is staged, and the MFD shows it', async ({ page, pageLog }) => {
