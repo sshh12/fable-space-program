@@ -26,6 +26,13 @@ brighter, with an edge), the particle streaks (measured in simulated time), flak
 dust sheet, the base flow of the reentry, `'vfx.plasmaWindow'`, the spec that flies the real game
 (`appshots.spec.ts`). Where section 9 disagrees with the sections before it, section 9 is right.
 
+**Round 3 of the visual close-out is section 10, and it is the current state** where it differs: the pad
+cloud (two low jets out of the trench, no level edge along the horizon, a sharpened outline), the splash crown
+(a sheet at full resolution), the lunar dust sheet (bounded, single scattering), the reentry layer (a crescent
+with an edge), plume lights that follow what the plume emits in vacuum, two new specs (`lunar.spec.ts`, the
+level-edge test in `liftoff.spec.ts`), requests `vfx-9` (ocean: ring waves and foam at a splash, open) and
+`vfx-10`.
+
 ## 0. What the review round changed
 
 An independent review of the first build found three blockers, seven majors and three minors. What was done:
@@ -849,3 +856,180 @@ lab's flat ground. What should no longer be raised: no flame at lift-off, the fl
 streaks across the frame and the line ahead of the capsule, white rectangles, quilted canopies, the cream cloud
 and the black hull of a night launch, the white ball of a night entry, detached plume copies, the glitter and
 the rods of the explosion, the dust painted on the ground.
+
+## 10. Visual close-out, round 3
+
+Work list of the round: `docs/qa/wave2/vfx.r2.combined.json` (photo 5.5 / 10, artifact 6 / 10; 3 blockers, 13
+majors, 6 minors). Same owner as section 9. Where this section disagrees with sections 0 to 9, it is right.
+Pictures: the sheets under `out/screens/vfx/` (matrix), `out/screens/vfx/dev/a8-*.png` (the real game, flown by
+the test pilot), `out/screens/vfx/dev/i8-*.png` (integration lab), `out/screens/vfx/lunar-probe/`,
+`out/screens/vfx/liftoff-probe/horizon-*.png`.
+
+### 10.1 The three blockers
+
+**Pad cloud cut along the horizon (finding 3).** Cause found, not one of the three candidates as such: the
+quarter-resolution march of the cloud keeps the scene depth of every ray (to mix the rays of a pixel only with
+rays that ended on the same surface), and so did the combine, the denoise filter and the composite. Next to
+the horizon the depth of the ground behind the cloud doubles from one row of pixels to the next and the sky
+above it has none, so the rows of rays there were never mixed with each other: where the top of the cloud lay
+at eye level (it does in `liftoff/t10-*`, by coincidence of the lab camera's height) it was drawn in level
+steps four pixels high, the sharpest of them on the row where the ground ends. Diagnosis by the critic's test
+(`out/screens/vfx/dev/d1..d5-cut-*.png`): the edge follows the horizon row when the camera is lowered, stays
+without the atmosphere, and the flame is untouched by it. Fix: scene depths behind what a volume shows are one
+background to it. In `smoke.ts` the march and the combine clamp every depth to the far end of the cloud's
+cylinder (`SmokeU.misc.z`); in `volumes.ts` the composite has its own depth-aware upsample (`volumeUpsample`)
+and the denoise filter its own depth weights, both with depths clamped to 1.5 times the distance of what the
+image shows at that pixel (the image's moment); the smoke behind a flame now has a distance in that moment
+too (without it the edge stayed beside the flame, found in the second run). New spec in `liftoff.spec.ts`,
+"the pad cloud has no level edge along the horizon": at night, from the camera of the finding (yaw 152) and
+from 26 m lower, no row of the picture holds 24 or more columns with a one-pixel level edge, nor a run of 12
+(before: 67 columns / run 25 at eye level, 41 / 7 from below; after: 10 columns / run 4 at eye level, 18 / 6 from below).
+
+**Lunar dust (finding 2).** Two different things. (a) The haze above the horizon in the vfx lab was the dust
+sheet's exponential height profile (an endless tail). The sheet now has a top: nothing above the cone of the
+steepest grain (`dust.elevationDeg[1]`, 4 degrees), a profile 3 (1 - h / H)^2 / H integrated in closed form
+over each stretch of the ray, a column that falls as 1 / r^1.5 and faster than 1 / r^3 beyond ten radii of
+the scoured spot, a cap of one half on the veil along any line of sight, and it is lit as what it is: single
+scattering by dark grains (albedo 0.36 -> x phase / 4 pi; it was lit like a white Lambert surface without the
+cosine, six times brighter than the ground under a low sun). `out/screens/vfx/lunar.png`: black sky down to
+the horizon in every tile, the ground and its shadows seen through radial streaks. (b) The "full grey-out in
+the integration-lab hover" is not dust: it is there with the engine off. The lab's lunar scene lay in the
+dark at its epoch (terrain under 0.5 cd/m^2, the meter at EV100 -0.58: a night exposure that looks like a
+grey day), a camera that looked towards the sun below that horizon was washed out by the lens flare of the
+hidden sun (`dev/i6-lunar-off-a.png`: all white, engine off), and with the engine on the lander's own plume
+light decided the exposure (EV100 +2.5: the terrain went black, `dev/i6-lunar-on-b.png`). Request `vfx-10`
+(resolved within the round: the scene has a morning sun by default; the flare of a hidden sun went on to the
+sky package as `core-3`). On the vfx side the light a plume casts now follows what the plume emits: a
+`light.vacuum` share per look (0.12 for the lander's engine: its jet is all but invisible on the Moon and
+must not light the legs like neon tubes), and the thrusters' light is 20 cd/N, not 140. New spec
+`tests/browser/vfx/lunar.spec.ts` (integration lab, real terrain and lander, pinned low sun, engine on against
+engine off): with the engine on the sky 5 to 10 degrees above the horizon is at 0.04 % of white (0.05 % with it off; bound 2 %), 2,064 of 2,358 blocks of ground keep at least half of their local contrast (88 %; bound 50 %), the ground is 4 % brighter on average and the meter does not move (EV100 12.64 on and off; terrain 2,060 / 2,036 cd/m^2, the ground under the lander 1,617 / 934). `lunar-probe/hover-engine-on.png`, `dev/i8-lunar-on-upsun.png` (against the sun: the sheet shines in radial streaks, the ground shows through).
+
+**Splash (finding 1).** The crown's sheet of water is drawn at full resolution in the transparent pass
+(`SHEET_WGSL` in `splash.ts`): a surface with a thickness, followed along the view ray in 36 steps of the
+signed distance to its middle, the water crossed in each step being the closed-form integral of the sheet's
+bell profile (erf), so there is no march noise to filter and no half-resolution blur; rim, tears and ligaments
+are thresholds on noise at the resolution of the screen, lit by which face the eye sees. The half-resolution
+volume keeps only the fine spray, which is gone within 1.1 flight times of the rim (`MIST_LIFE`, was 3): no
+puffs hanging at +5 s. Spray drops are smaller (4 to 50 mm), clear water rather than white paint (a third of
+the sunlit white, with glints), the long-lived mist sprites are a tenth of what they were and live under a
+second. `out/screens/vfx/splash/close-0.4s.png`, `impact-0.4s.png`, `impact-1s.png`, `impact-1.8s.png`: a
+crown of sheets and ligaments that has collapsed by +1.8 s, then the foam patch. What must move the water
+itself is the ocean package's: request `vfx-9` (ring waves, cavity and rebound, a foam patch in the ocean's
+own foam at the `'splash'` event, with the numbers; vfx's side is built: `splash.foamDecal` in `plumes.json`
+switches the vfx foam decal off once the ocean draws the foam). Open at the end of the round: the sea still
+does not move.
+
+### 10.2 The other findings
+
+| Finding | What was done | Where to look |
+|---|---|---|
+| 4 Reentry (airbrushed lobe, white ellipse, ring) | The layer glows from the bow shock inwards: nothing in front of the shock (a clean outer edge the standoff from the wall, standoff 0.045 nose radii), brightest right behind it; it wraps the windward face as a crescent from shoulder to shoulder; turbulence drawn out six to one along the flow; white-hot at the stagnation point, the gas colour over the face, towards orange round the shoulder; held one stop over the meter's white (was three: everything clipped); wake glow 0.12 of the layer (was 0.05) with stronger fine streaks | `reentry-views.png`, `reentry.png`, `dev/i8-reentry*.png` |
+| 5, 15 Pad cloud in the game | The exhaust leaves the trench both ways (double wedge) as two collimated, low, fast sheets that lift off and billow only beyond the exits (`away` in `smokeVelocity`): the space round the vehicle is clear and the flame is seen from the default chase camera, which looks along the trench; sources at the exits (`trenchLength` 78 m, the site's); the trench keeps the jet while the vehicle is low (focus fades over 150 m, was 40: a ring stood round the pad and rose into an arch); sunlit steam as bright as a white surface in the sun with a floor of scattered light (no brown folds); thin gas keeps no hard lumps (the detached arcs and puffs); the outline is sharpened at half resolution in the combine (the ramp of eight pixels between rays steepened to about three about a noise threshold that rides with the cloud); gas between the eye and the flame glows more (inside the cloud at night the flame's side is brighter) | `dev/a8-liftoff-*.png` (game: default camera at T+1, +3, +6; from the side at +6, +10), `liftoff.png`, `liftoff-chase.png` |
+| 6 Booster flame a white stick | Brightest in its first third, falling by most of a stop towards a ragged tip (large eddies move it by a quarter of its length, no detached islands), narrower eddies at its edge | `engine-atlas-9m.png`, `dev/a8-liftoff-t6.png` |
+| 7 Cut-away canopies as jellyfish | Collapse to 8 % of the inflation within 0.6 s, keel over at 0.6 rad/s, sink at 9 m/s, lines trail above the cloth | `splash/cut-away-1s.png`, `cut-away-6s.png` |
+| 8 Mains: no light through the cloth | Cavity light through the cloth raised by a half (outside face) and a third (inside face against the sun). Reefed shape and cluster spacing unchanged (see 10.5) | `chutes.png`, `dev/i8-chutes.png` |
+| 9, 10 Solid motors: cream, even; grain in the fans | Smoke albedo 0.96 (was 0.9), glow confined to 26 exit radii (was 60); in a free expansion no turbulence and striation 0.04 (was 0.3): the fans at 30 km, 60 km and in vacuum are smooth | `engine-solids.png` |
+| 11 Point-lit surfaces | Plume lights follow what the plume emits (`light.vacuum`), solid motors 10 cd/N (was 22), thrusters 20 (was 140), the line of light starts 9 exit radii down (was 6) with 2.5 % of the intensity in its first stretch (was 4 %) | `engine-solids.png` (capsule base), `lunar.png` (night tiles), `rcs.png` |
+| 12 RCS as blobs | Cone of 30 degrees (was 40), core a third as bright and 3 exit radii long, more of the light in the fan | `rcs.png` |
+| 13 Explosion fire weak | Peak luminance 3.5 million cd/m^2 (was 1.2), fragments with four times the drag (curved trails) | `explosion.png` |
+| 16 Splash drops as sprites | See 10.1 | `splash/close-*.png` |
+| 20 Inside the cloud a flat fill | Forward scattering towards the flame (night); by day unchanged | `liftoff-chase/inside-cloud-t6-*.png` |
+
+### 10.3 Measured
+
+Final run of the round: `tests/browser/vfx`, functional and perf projects in one slot of the GPU gate, 56 tests, 17.5 min, 2026-11-12 05:17: 55 passed, 1 failed (the sheet of the chase-camera lift-off: its tile from inside the cloud by day was one flat colour, 3 colour buckets where the sheet asks for more than 6; fixed after the run, see the note under the tables).
+Earlier runs of the round: `out/vfx-r3/run1.log` .. `run3.log` (waits for the one GPU slot: 19, 57 and 78 minutes).
+
+| What | Result | Spec |
+|---|---|---|
+| Flame luminance on the jet axis (engines on minus off), 12 m / 30 m below the nozzles | by day, pad camera: 2.38 / (0.01) million cd/m^2 at T+2 s, 2.56 / 0.47 at T+4, 2.41 / 0.78 at T+6, 2.55 / 0.80 at T+8; chase camera 1.83 to 1.97 / 0.50 to 0.78; at night the same within 3 % (bound 0.24 million; at T+2 the point 30 m down is in the mount) | `liftoff.spec.ts` |
+| Pad cloud, level edge along the horizon | 10 columns (run 4) at eye level, 18 (run 6) from 26 m lower; bounds 24 and 12; before the fix 67 (25) and 41 (7) | `liftoff.spec.ts` |
+| Lunar hover, integration lab | sky 0.04 % of white (bound 2 %), 88 % of the ground blocks keep half of their contrast (bound 50 %) | `lunar.spec.ts` |
+| Exposure by day: pad, nine engines lit | EV100 15.02 on, 14.58 off (0.45 EV; bound 0.5) | `exposure.spec.ts` |
+| Exposure by day: chase camera, T+0 to T+10 s | EV100 15.39, 15.49, 15.47, 15.02 (0.47 EV; bound 0.5) | `exposure.spec.ts` |
+| Sky through the splash and beside a fireball | within 3 % (bound 5 %) | `exposure.spec.ts` |
+| Night pad, T+10 s | EV100 13.52; ground 739 / 283 / 456 cd/m^2 at 100 / 200 / 300 m (the jets of the trench light the ground beside them now) | `exposure.spec.ts` |
+| Half-angle and cell spacing against the formulas | unchanged: -7.65 deg vs -8.00, -0.62 vs -0.65, 13.05 vs 13.20; 5.214 m vs 5.213, 8.187 vs 8.187, 18.635 vs 18.634 | `plumes.spec.ts` |
+| Light proportional to thrust; HDR ceiling at EV -3 | 7.5653 cd/N at every throttle; max 60,000, 0 NaN | `plumes.spec.ts` |
+| Particles deterministic; canopy area follows inflation | staging 517 alive, lunar 1,129, hashes equal over two runs; 0.184, 0.393, 0.597, 0.797 | `effects.spec.ts` |
+| Half-resolution volumes stable under a static camera | engine: 99.99 % of the channels within 6 / 255; pad: within 8 / 255 | `effects.spec.ts` |
+
+GPU time at 2560 x 1440 (`vfx.perf.spec.ts`; p99 of each of the four windows, ms):
+
+| Scenario | Budget | Mean | p99 of the four windows |
+|---|---|---|---|
+| Lift-off, worst case (pad camera) | 1.3 | 0.622 | 0.877, 0.894, 0.925, 0.848 |
+| Lift-off, chase camera at 150 m | 1.3 | 0.833 | 1.153, 0.989, 1.075, 1.235 |
+| Lift-off from inside the cloud | 1.3 | 0.723 | 0.889, 1.083, 1.262, 0.891 |
+| Ascent | 1.0 | 0.198 | 0.206, 0.211, 0.213, 0.212 |
+| Vacuum burn | 0.6 | 0.290 | 0.380, 0.344, 0.265, 0.268 |
+| Lunar descent with dust | 0.9 | 0.266 | 0.491, 0.562, 0.569, 0.563 |
+| Reentry | 1.2 | 0.443 | 0.633, 0.741, 0.631, 0.977 |
+| Chutes and splash | 0.9 | 0.098 | 0.366, 0.375, 0.036, 0.034 |
+
+The vacuum burn's first window, the one line over budget at the end of round 2 (0.616), is at 0.380: smoky jets in
+vacuum are followed 160 exit radii instead of 400. The crown's sheet at full resolution costs under 0.38 ms in the
+windows that hold the splash.
+
+After that run, two changes to `smoke.ts` (commit `5d0ea70`): the light scattered about inside the cloud comes
+from above and from the sun's side when the eye is inside it (the flat tile of the failed sheet), and the gas
+a jet draws in dries out what rises beside the jet column (in the game at T+6 s the exhaust of the first
+seconds stood round the vehicle as a ring, seen as an arch of cloud behind it: `dev/a8-liftoff-t6.png` of the
+05:17 run). PENDING_FINAL_RUN
+
+### 10.4 Requests
+
+- `vfx-9` (filed, open): ocean, ring waves and a foam patch at a splash. The interface is in the request; vfx's
+  side is the switch `splash.foamDecal`.
+- `vfx-10` (filed, resolved in part within the round): the integration lab's lunar scene has a morning sun by
+  default; the lens flare of a sun the terrain hides was passed on to the sky package as `core-3`.
+- `cockpit-13` (vfx part): what the published `'vfx.plasmaWindow'` values mean (cd/m^2, not pre-exposed,
+  radiance of the pane as a light source, a = plasma intensity and "there is a sheath" flag, how it scales),
+  and the values after this round's wake change: 317 / 1,664 / 7,288 cd/m^2 at intensity 0.3 / 0.6 / 1.0.
+
+### 10.5 Not fixed, and why
+
+- The water at a splash does not move (ocean, `vfx-9`). Not checked on the real ocean either: a splash in the
+  game needs the whole mission flown, which does not fit a slot of the one GPU gate this round (waits of 20 to
+  57 minutes per run), and the integration lab's chute scene does not reach the water in the time tried.
+- Reefed mains (finding 8: "gourds", a third canopy "in the mouth of another"): the reefed profile and the
+  cluster geometry are as in round 2. The canopies do not intersect (centres 1.27 projected diameters apart);
+  what the critic saw is the perspective of a cluster of three. A cloth simulation of the reefed stage is
+  beyond this round.
+- Solid-motor smoke is still lit without a shadow march of its own (finding 9: brighter and whiter, the glow
+  confined, but one side of a trail is not darker than the other).
+- Staging jets and the ignition puff (finding 14): only what the changes to the solid looks and to the lights
+  do for them. Not looked at closely.
+- Half-resolution volumes beside sharp geometry (finding 15): done for the pad cloud's outline only; flames
+  and trails are as they were.
+- The minors 17 (half-stop exposure step), 18 (lone puff in the lyra tiles), 19 (dark bar on a fragment
+  trail), 21 (haze trail, hydrolox wake) and 22 (night halo, canopy polish): not touched.
+- The crown's drops are still particles drawn over the sheet, not attenuated by it.
+
+### 10.6 What changed in code, data and specs (for the next owner)
+
+- `smoke.ts`: `SmokeU.misc.z` (view depth of the far end of the cloud; march and combine clamp scene depths to
+  it); two-sided, collimated trench flow with `away` (low near the pad); sources at the exits; `hard` gated by
+  the gas's own density; the combine tracks the smoke's own opacity and steepens its outline; the moment of
+  the image counts the smoke behind the emitters; focus decay 150 m; forward scattering of the plume light.
+- `volumes.ts`: `volumeUpsample` (the core's depth-aware upsample with a cap on depths) and capped depths in
+  the denoise filter.
+- `dust.ts`: bounded sheet, closed-form height integral, 1 / r^1.5 column, veil cap, single-scattering light.
+- `splash.ts`: `CROWN_SHARED_WGSL`, `SHEET_WGSL` and its pipeline (drawn in `FoamRenderer.draw`, after the
+  foam decals); the volume is mist only; `splash.foamDecal`.
+- `plasma.ts`: layer profile, face law, streak anisotropy, colour by temperature, hint one stop over white;
+  `plasmaWindowRadiance` follows (`wakeGain`, streamer mean 0.99).
+- `plumes.ts` / `plumeModel.ts`: flame grading and tip; no turbulence in a free expansion; smoky jets in
+  vacuum followed 160 exit radii (was 400).
+- `feature.ts`: plume lights scaled by `look.light.vacuum` and the air; `LIGHT_START_RE` 9; first light
+  stretch 2.5 %.
+- `chutes.ts`: cut-away canopies (collapse, keel, lines above), more cavity light.
+- `data.ts` / `plumes.json`: `light.vacuum` per look, `splash.foamDecal`, the values named above.
+- `labs/vfx/scenes.ts`: the pad camera stands east-south-east of the pad (yaw 112, was 152): beside the
+  trench, where both jets and the flame between them are seen (a camera on the trench axis stands in a jet).
+- Specs: `liftoff.spec.ts` (level edge), `lunar.spec.ts` (new).
+
+### 10.7 My own score
+
+PENDING_SCORE
