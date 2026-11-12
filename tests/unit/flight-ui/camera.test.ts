@@ -12,6 +12,7 @@ import { v3, type Vec3 } from '@/core/math/vec3';
 import {
   buildAudioListener,
   chaseDistanceLimits,
+  COCKPIT_REST_PITCH,
   createChaseRig,
   createCockpitRig,
   createMapRig,
@@ -257,7 +258,7 @@ describe('cockpit rig', () => {
     const src = sim('lowOrbit');
     const s = src.snap();
     const v = s.vessels[0]!;
-    const rig = createCockpitRig({ defs });
+    const rig = createCockpitRig({ defs, restPitch: 0 });
     expect(rig.isAvailable(s)).toBe(true);
     rig.activate(null, s);
     const c = rig.update(s, IDLE, DT);
@@ -274,6 +275,36 @@ describe('cockpit rig', () => {
     expect(c.kind).toBe('interior');
     expect(c.insideVesselId).toBe(v.id);
     expect(resolveSeatPose(defs, v)!.eyeVes).toEqual(eyeVes);
+  });
+
+  it('starts the seat view at the rest pitch, towards the seat\'s head-up side, and comes back to it when the view is taken again (request cockpit-18)', () => {
+    const s = sim('lowOrbit').snap();
+    const v = s.vessels[0]!;
+    const seat = defs.parts['lab-capsule']!.modules.find((m) => m.type === 'command')!;
+    if (seat.type !== 'command') throw new Error('no command module');
+    const cdr = seat.seats.find((x) => x.id === 'cdr')!;
+    const capsule = v.parts.find((p) => p.instanceId === 'capsule')!;
+    const toRoot = (d: [number, number, number]): Vec3 => quat.rotate(v.q, quat.rotate(capsule.localRot, v3.normalize(v3.fromTuple(d))));
+    const look = toRoot(cdr.lookDir);
+    const up = toRoot(cdr.upDir);
+    const rig = createCockpitRig({ defs, restPitch: COCKPIT_REST_PITCH });
+    rig.activate(null, s);
+    const c = rig.update(s, IDLE, DT);
+    expect(rig.lookPitch).toBe(COCKPIT_REST_PITCH);
+    const f = viewForward(c.qViewToRoot);
+    expect(v3.angle(f, look) / DEG).toBeCloseTo(COCKPIT_REST_PITCH / DEG, 6);
+    expect(v3.dot(f, up)).toBeGreaterThan(0);
+    // The limits are the seat's (75 up, 60 down from its look direction), not shifted by the rest pitch.
+    rig.update(s, { yaw: 0, pitch: 10, zoom: 1 }, DT);
+    expect(rig.lookPitch).toBeCloseTo(75 * DEG, 9);
+    rig.update(s, { yaw: 0.3, pitch: -10, zoom: 1 }, DT);
+    expect(rig.lookPitch).toBeCloseTo(-60 * DEG, 9);
+    rig.activate(null, s);
+    rig.update(s, IDLE, DT);
+    expect(rig.lookPitch).toBe(COCKPIT_REST_PITCH);
+    expect(rig.lookYaw).toBe(0);
+    // A rest pitch beyond the limits is held at them.
+    expect(createCockpitRig({ defs, restPitch: 2 }).lookPitch).toBeCloseTo(75 * DEG, 9);
   });
 
   it('limits mouse look and sways the head under a sudden acceleration, then settles', () => {

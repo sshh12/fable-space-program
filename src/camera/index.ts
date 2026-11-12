@@ -4,7 +4,7 @@
  * See docs/handoff/flight-ui.md.
  */
 export { activeVessel, lookRotation, smoothBlend, vesselComRoot, viewForward, viewUp, type FlightCameraRig } from './cameraMath';
-export { createCockpitRig, findCockpitSeat, resolveSeatPose, type CockpitRigOptions, type SeatPose } from './cockpitRig';
+export { COCKPIT_REST_PITCH, createCockpitRig, findCockpitSeat, resolveSeatPose, type CockpitRigOptions, type SeatPose } from './cockpitRig';
 export {
   CHASE_AUTO_SECONDS,
   CHASE_BODY_BLEND_SECONDS,

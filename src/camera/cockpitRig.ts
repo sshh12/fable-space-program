@@ -3,7 +3,8 @@
  * `VehicleDef.cameras.cockpit` ({ part instance id, seat id }), resolved every frame through the active
  * vessel's part pose (PartSnapshot.localPos/localRot) and the seat of that part's `command` module, so the
  * eye follows the capsule through staging. Mouse look rotates about the seat's up and right axes within
- * limits; the wheel narrows / widens the field of view. A small head sway follows the proper acceleration
+ * limits, starting from the rest pitch (`restPitch`: a couch lies on its back and its windows stand above the
+ * couch's own line of sight; request cockpit-18); the wheel narrows / widens the field of view. A small head sway follows the proper acceleration
  * (the head lags behind sudden accelerations and settles back; sustained thrust leaves a few millimetres).
  *
  * Poses come from the snapshot as given (already interpolated to presentation time); positions are float64
@@ -25,6 +26,12 @@ export interface CockpitRigOptions {
   fovRange?: [number, number];
   /** Look limits: |yaw| and pitch up / down, rad. */
   lookLimits?: { yaw: number; up: number; down: number };
+  /**
+   * Pitch of the view the seat starts with and `activate` returns to, rad up from the seat's look direction
+   * (inside the look limits). Default while the view is being proved in the game: 0, unless the page's server
+   * was started with VITE_CORE_SEAT_PITCH=1 (then COCKPIT_REST_PITCH).
+   */
+  restPitch?: number;
   /** Head displacement per m/s^2 of transient proper acceleration, m (0.004), and its cap, m (0.05). */
   swayGain?: number;
   swayMax?: number;
@@ -67,6 +74,11 @@ export function resolveSeatPose(defs: DefLibrary, vessel: VesselSnapshot): SeatP
 
 const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x);
 
+/** Rest pitch of the seat's view, rad: the forward windows in the upper third of the frame, the displays in its lower half (request cockpit-18). */
+export const COCKPIT_REST_PITCH = 20 * DEG;
+/** The default of `CockpitRigOptions.restPitch` (the env of the page's Vite server; undefined elsewhere). */
+const REST_PITCH_DEFAULT = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_CORE_SEAT_PITCH === '1' ? COCKPIT_REST_PITCH : 0;
+
 export function createCockpitRig(opts: CockpitRigOptions): FlightCameraRig & { readonly lookYaw: number; readonly lookPitch: number } {
   const defs = opts.defs;
   const fovDefault = opts.fovY ?? 70 * DEG;
@@ -74,9 +86,10 @@ export function createCockpitRig(opts: CockpitRigOptions): FlightCameraRig & { r
   const limits = opts.lookLimits ?? { yaw: 150 * DEG, up: 75 * DEG, down: 60 * DEG };
   const swayGain = opts.swayGain ?? 0.004;
   const swayMax = opts.swayMax ?? 0.05;
+  const restPitch = clamp(opts.restPitch ?? REST_PITCH_DEFAULT, -limits.down, limits.up);
 
   let lookYaw = 0;
-  let lookPitch = 0;
+  let lookPitch = restPitch;
   let fov = fovDefault;
   // Head sway: low-passed acceleration (what the body has settled into) and a damped spring on the offset.
   let accSlow: Vec3 | null = null;
@@ -85,7 +98,7 @@ export function createCockpitRig(opts: CockpitRigOptions): FlightCameraRig & { r
 
   const reset = (): void => {
     lookYaw = 0;
-    lookPitch = 0;
+    lookPitch = restPitch;
     fov = fovDefault;
     accSlow = null;
     sway = v3.zero();
