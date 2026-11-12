@@ -829,6 +829,11 @@ export type MilestoneTrigger =
 export interface MilestoneRuleDef {
   /** Free-form id recorded in MilestoneRecord.id, unique within the scenario. */
   id: string;
+  /**
+   * What the HUD announces when the milestone is reached, in the scenario author's words ("TLI complete");
+   * absent = worded from the trigger and the definitions' names (request flight-ui-5). Non-empty when present.
+   */
+  title?: string;
   trigger: MilestoneTrigger;
   /** Ids that must already be recorded before this rule is armed (default: none). Each rule fires once. */
   after?: string[];

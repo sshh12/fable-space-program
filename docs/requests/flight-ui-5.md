@@ -39,3 +39,11 @@ ENTRY_INTERFACE "Entry interface", DROGUE_DEPLOY "Drogues deployed", MAIN_DEPLOY
 SPLASHDOWN "Splashdown". Must not change: the ids (the mission tests, the pilot and the flight records key on
 them), the triggers, the evaluator. The HUD (`milestoneTitle` in `src/ui/model.ts`) will prefer `title` and keep
 the trigger wording for rules without one; flight-ui wires it once the field exists.
+
+## Lead decision (2026-11-11, lead-baseline-v2)
+Accepted. The contract part is done: `MilestoneRuleDef.title?: string` is in `src/core/contracts/defs.ts`
+(optional, so every scenario file still loads and nothing else changes). Still open, with their owners: the
+loader's check that a title is a non-empty string (`src/core/defs/loader.ts`, shared-code maintainer; in wave
+3 `sim-core-v2`), and the titles in `data/defs/scenarios/*.json` (scenario data; the wording proposed above is
+approved as written). The ids, the triggers and the evaluator do not change, so the mission state hash does
+not move. The request stays open until those two are in.
