@@ -119,7 +119,10 @@ test('a fireball by day does not darken the sky around it (within 5 %)', async (
   const rows: { t: number; value: number }[] = [];
   for (const t of [0.9, 1.03, 1.2, 1.6, 2.5, 4.5]) {
     await page.evaluate((x) => window.__vfx!.runTo(x), t);
-    await waitIdle(page, 60);
+    // (The first picture is the reference: the meter is given time to settle on the scene before the
+    // explosion, as in the splash test above. After 60 frames it was still on its way from the page's first
+    // frame, and the step measured was that, not the fireball.)
+    await waitIdle(page, t === 0.9 ? 240 : 60);
     rows.push({ t, value: (await patch(page, sky)).value });
   }
   console.log(`explosion by day: sky (pre-exposed) ${rows.map((r) => `${r.t} s: ${r.value.toFixed(4)}`).join(', ')}`);

@@ -30,15 +30,20 @@ async function particleHash(page: Page): Promise<{ hash: string; alive: number; 
 
 test('particles are deterministic given the same event stream (presentation time frozen)', async ({ page, pageLog }) => {
   // Staging: a decoupling with gas puffs, sparks and ice in a scripted event stream. Lunar: a continuous dust source.
-  for (const scene of ['scene=staging', 'scene=lunar&h=8']) {
+  // (Staging is hashed 0.27 s after the separation at 2.56 s of lab time, while the sheet of gas, which is
+  // gone within a third of a second, is still in the air with the ice and the sparks.)
+  for (const [scene, count] of [
+    ['scene=staging', 170],
+    ['scene=lunar&h=8', 200],
+  ] as const) {
     const runs: { hash: string; alive: number; kinds: number[]; finite: boolean }[] = [];
-    for (const frames of [200, 200, 201]) {
+    for (const frames of [count, count, count + 1]) {
       await openLab(page, scene);
       await page.evaluate((n) => window.__vfx!.renderExact(n, true), frames);
       runs.push(await particleHash(page));
       await expectNoErrors(page, pageLog);
     }
-    console.log(`${scene}: ${runs[0]!.alive} particles alive after 200 frames (by kind: ${runs[0]!.kinds.join(' ')}), state hash ${runs[0]!.hash} / ${runs[1]!.hash}; after 201 frames ${runs[2]!.hash}`);
+    console.log(`${scene}: ${runs[0]!.alive} particles alive after ${count} frames (by kind: ${runs[0]!.kinds.join(' ')}), state hash ${runs[0]!.hash} / ${runs[1]!.hash}; after ${count + 1} frames ${runs[2]!.hash}`);
     expect(runs[0]!.alive).toBeGreaterThan(500);
     expect(runs[0]!.finite).toBe(true);
     expect(runs[1]!.hash).toBe(runs[0]!.hash);

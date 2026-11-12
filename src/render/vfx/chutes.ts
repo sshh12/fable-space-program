@@ -70,7 +70,7 @@ fn canopyPoint(I: CanopyInst, s: f32, gc: f32) -> vec3f {
   r *= 1.0 + (0.012 + 0.012 * taut) * sin(PI * u);
   let slack = 1.0 - 0.94 * smoothstep(0.02, 0.6, infl);
   let pleat = (abs(sin(PI * u)) - 0.637) * select(-1.0, 1.0, (u32(floor(gc)) & 1u) == 0u);
-  r *= 1.0 + slack * 0.3 * pleat * (0.35 + 0.65 * s);
+  r *= 1.0 + slack * 0.2 * pleat * (0.35 + 0.65 * s);
   // Breathing of the whole canopy (two slow beats), flutter of the skirt (more when slack) and cloth waves
   // that travel down the gores and round the canopy.
   r *= 1.0 + gain * (0.03 * sin(time * 1.9 + seed * 6.28) + 0.014 * sin(time * 3.3 + seed * 2.1));

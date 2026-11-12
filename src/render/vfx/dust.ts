@@ -129,7 +129,10 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     let s1 = vfxNoiseLod(vec3f(ang * 5.3, 0.22 * (r - S.shape.w) / r0 + seed), lod * 0.5);
     let s2 = vfxNoiseLod(vec3f(ang * 19.0, 0.7 * (r - 1.6 * S.shape.w) / r0 + seed * 3.1), lod * 1.8);
     let streak = (0.7 + 0.6 * s1.g) * (0.8 + 0.4 * s2.b);
-    let amount = S.shape.z * mix(0.5, 1.0, smoothstep(0.3 * r0, 1.25 * r0, r)) * (r0 / max(r, r0)) * (1.0 - smoothstep(0.55 * rMax, rMax, r));
+    // (Seen from above the sheet is translucent: the ground, its rocks and the lander's shadow show through
+    // it. It thins a little more slowly than 1 / r, so that along a level line of sight, through hundreds of
+    // metres of it, it still adds up to a veil over the horizon.)
+    let amount = S.shape.z * mix(0.5, 1.0, smoothstep(0.3 * r0, 1.25 * r0, r)) * pow(r0 / max(r, r0), 0.7) * (1.0 - smoothstep(0.55 * rMax, rMax, r));
     let tau = amount * streak * column;
     let stepT = exp(-tau);
     let rel = f.origin + f.X * p.x + f.Y * p.y + f.Z * p.z;

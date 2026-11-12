@@ -30,7 +30,7 @@ const FLOW_CYCLE = 0.4;
  * Emission of the base flow behind the back shell (the recirculating gas inside the sheath) per shoulder
  * radius of path, relative to the luminance of the shock layer, at plasmaIntensity 1 (it goes with its square).
  */
-const BASE_GLOW = 0.02;
+const BASE_GLOW = 0.05;
 
 export interface ReentryProxy {
   /** Centre of the shoulder plane (where the windward cap meets the afterbody) and the unit axis from the cap towards the lee end, vessel frame. */
@@ -463,10 +463,11 @@ export class PlasmaRenderer {
       // The sheath is Rw + 3 wS wide at the far end (see the shader).
       // ... and the envelope of hot gas around the head reaches a radius and a half beyond the body.
       const boxRadius = 1.15 * Math.max(extent + 1.5 * proxy.radius, 0.5 * proxy.radius * (1 + (0.02 * boxLength) / proxy.radius) + 3 * (0.12 * proxy.radius + 0.012 * boxLength));
-      // (The shock layer is what a camera exposes for in the dark: it is held four stops over the meter's
-      // white whatever the hour. Capped like a flame, at a night exposure it was six hundred times over: one
-      // white ball of glare a quarter of the frame wide.)
-      this.hints.push({ rel: origin, a: extent + standoff, b: extent + standoff, luminance: 0.5 * luminance, cap: Infinity });
+      // (The shock layer is what a camera exposes for in the dark: it is held three stops over the meter's
+      // white whatever the hour, so that the stagnation region clips and the layer round it keeps its colour
+      // and its streaks. Capped like a flame, at a night exposure it was six hundred times over: one white
+      // ball of glare a quarter of the frame wide.)
+      this.hints.push({ rel: origin, a: extent + standoff, b: extent + standoff, luminance: 0.5 * luminance, clipStops: 2, cap: Infinity });
       const o = this.placed.length * INST_FLOATS;
       D.set([origin.x, origin.y, origin.z, boxLength], o);
       D.set([wind.x, wind.y, wind.z, boxRadius], o + 4);

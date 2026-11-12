@@ -184,10 +184,11 @@ export function jetShape(look: PlumeLookDef, nozzle: NozzleGeometry, throttle: n
   const mixDev = 30 * re;
   const window = smoothstep(0.8 * CELL_ETA_MIN, 1.2 * CELL_ETA_MIN, eta) * (1 - smoothstep(0.75 * CELL_ETA_MAX, CELL_ETA_MAX, eta));
   const cellAmp = window * Math.min(1, 0.25 + Math.abs(Math.log(eta)) / 0.4);
-  // Afterburning needs air dense enough to hold a flame: gone below about 1 kPa. Up to there the fuel-rich
-  // exhaust still finds the air it needs, in a longer and wider flame: at 15 km (12 kPa, where the vehicle
-  // passes its greatest dynamic pressure) the flame is a third as bright as at the pad, not a sixth.
-  const oxygen = Math.pow(pRel, 0.5) * smoothstep(600, 4000, ambientPressure);
+  // Afterburning needs air dense enough to hold a flame. Low in the atmosphere the fuel-rich exhaust finds the
+  // air it needs in a longer and wider flame: at 15 km (12 kPa, where the vehicle passes its greatest dynamic
+  // pressure) the flame is a third as bright as at the pad, not a sixth. Above that it dies quickly: at 20 km
+  // a twentieth, and from 1.5 kPa (28 km) on the jet is the pale fan of a free expansion with no flame in it.
+  const oxygen = Math.pow(pRel, 0.5) * smoothstep(1500, 9000, ambientPressure);
   const vacuum = 1 - Math.pow(pRel, 0.35) * (ambientPressure > 1 ? 1 : 0);
   const lenThr = Math.pow(thr, 0.4);
   const coreLength = lengthRadius * (look.core.lengthRe + (look.core.vacuumLengthRe - look.core.lengthRe) * vacuum) * lenThr;

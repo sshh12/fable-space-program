@@ -236,11 +236,14 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
     let tip = 1.0 - smoothstep(0.45, 1.0, s + (n3.r - 0.5) * 1.3 * grow + (n3.a - 0.5) * 0.5 * grow + (n.r - 0.5) * 0.3 * turb);
     if (tip > 0.0) {
       let rf = g.rb * (1.0 + 0.55 * big * grow);
-      let body = 1.0 - smoothstep(0.4 * rf, 1.12 * rf, rr);
+      // (The flame has an edge: it ends within a third of its radius, on an outline that the eddies and the
+      // fine turbulence move about. Fading over most of the radius it was a soft glow with no outline at all.)
+      let body = 1.0 - smoothstep(0.66 * rf, 1.1 * rf, rr);
       // (The flame stands a few exit radii off the nozzle: the fuel-rich gas lights where the shear layer has
-      // mixed air into it. From a camera at the pad that is right under the vehicle: a flame that began only
-      // sixteen radii down left the first ten metres below the engines dark at lift-off.)
-      let begin = smoothstep(2.0 * re, 9.0 * re, xc);
+      // mixed air into it, and the first Mach disc shows in the translucent core before the flame covers it.
+      // From a camera at the pad that is right under the vehicle: a flame that only began sixteen radii down
+      // left the first ten metres below the engines dim at lift-off.)
+      let begin = smoothstep(3.0 * re, 12.0 * re, xc);
       let cool = mix(vec3f(1.0), vec3f(1.0, 0.6, 0.3), saturate(1.25 * s));
       let tex = mix(1.0, (0.45 + 1.1 * n3.b) * (0.6 + 0.8 * n.g) * (0.75 + 0.5 * n2.b), min(1.0, grow + turb));
       // The middle of the flame is the hottest and brightest (white-yellow); its skin is the colour of the look.
