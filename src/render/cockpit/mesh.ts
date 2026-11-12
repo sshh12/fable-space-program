@@ -94,6 +94,13 @@ export interface BuiltMesh {
   /** Vertex ranges of the same parts (each LOD's vertices are contiguous). */
   vertexRanges: Record<string, { start: number; count: number }>;
   bounds: { min: Vec3; max: Vec3 };
+  /**
+   * The assembly every vertex belongs to (MeshBuilder.group): an index into groupNames per vertex. A
+   * triangle belongs to the assembly of its first vertex. The penetration check (penetration.ts) tests the
+   * assemblies against the hull and against each other.
+   */
+  groupNames: string[];
+  vertexGroup: Uint16Array;
 }
 
 export class MeshBuilder {
@@ -112,6 +119,22 @@ export class MeshBuilder {
   /** Longest edge of a flat face before it is subdivided (m; Infinity = never), so baked occlusion has vertices to live on. */
   maxEdge = Infinity;
   private partSeed = 0;
+  private grp: number[] = [];
+  private readonly groupNames: string[] = [''];
+  private currentGroup = 0;
+
+  /**
+   * Name the assembly the following vertices belong to (a console, one couch, its harness, a locker...): what
+   * is bolted or sewn together and may overlap itself, but must not run into another assembly or the hull.
+   */
+  group(name: string): void {
+    let i = this.groupNames.indexOf(name);
+    if (i < 0) i = this.groupNames.push(name) - 1;
+    this.currentGroup = i;
+  }
+  get groupName(): string {
+    return this.groupNames[this.currentGroup]!;
+  }
 
   /** Start a new part: the following vertices get a new seed. */
   part(): void {
@@ -168,6 +191,7 @@ export class MeshBuilder {
     } else this.uv1.push(0, 0);
     this.misc.push(a.mat, Math.round(255 * Math.max(0, Math.min(1, a.ao ?? 1))), (a.flags ?? 0) | (a.label ? FLAG_LABEL : 0), a.label ? (a.ink ?? 0) : (this.partSeed >>> 16) & 255);
     this.ctl.push(a.ctl ?? 0, a.sub ?? 0);
+    this.grp.push(this.currentGroup);
     return i;
   }
 
@@ -702,6 +726,6 @@ export class MeshBuilder {
       u16[(o + 44) / 2 + 1] = this.ctl[i * 2 + 1]!;
     }
     if (this.rangeStart < this.idx.length) this.mark('rest');
-    return { vertices: buf, vertexCount: count, indices: Uint32Array.from(this.idx), ranges: { ...this.ranges }, vertexRanges: { ...this.vertexRanges }, bounds: { min, max } };
+    return { vertices: buf, vertexCount: count, indices: Uint32Array.from(this.idx), ranges: { ...this.ranges }, vertexRanges: { ...this.vertexRanges }, bounds: { min, max }, groupNames: [...this.groupNames], vertexGroup: Uint16Array.from(this.grp) };
   }
 }

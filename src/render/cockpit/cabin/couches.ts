@@ -9,6 +9,7 @@
  * from -U (toward the feet) toward +L: the thigh pan runs at beta = thighDeg from the hip.
  */
 import { DEG, v3, type Vec3 } from '@/core/math';
+import { buildBvh, bvhRay, type Bvh } from '../bvh';
 import type { SeatLayoutDef } from '../layout';
 import { frameAt, local, type Attr, type Frame } from '../mesh';
 import { FLAG_OVERLAY, seatFrames, seatPoint, type CabinContext, type SeatFrame } from './context';
@@ -19,6 +20,9 @@ export const faceL = (p: Vec3, s: SeatFrame): Frame => frameAt(p, v3.neg(s.R), s
 
 /** Unit direction at angle beta (deg) in a seat's (U, L) plane. */
 export const seatDir = (s: SeatFrame, betaDeg: number): Vec3 => v3.add(v3.scale(s.U, -Math.cos(betaDeg * DEG)), v3.scale(s.L, Math.sin(betaDeg * DEG)));
+
+/** Share of a couch's knee shift by which the hip end of its leg trough already stands inboard. */
+const HIP_SHARE = 0.15;
 
 export interface CouchPoints {
   hip: Vec3;
@@ -35,13 +39,14 @@ export interface CouchPoints {
 
 export function couchPoints(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef): CouchPoints {
   const c = ctx.layout.couches;
-  const hip = seatPoint(s, 0, c.hipU, -c.backOffset);
+  // Outboard couches turn their legs toward the centre line: the knee by `kneeShift`, the hip end of the leg
+  // trough by a share of it (the cone's wall closes in on the outboard hip).
+  const inboard = -Math.sign(s.eye.x) * cfg.kneeShift;
+  const hip = seatPoint(s, HIP_SHARE * inboard, c.hipU, -c.backOffset);
   const thigh = seatDir(s, cfg.thighDeg);
   const betaShin = cfg.thighDeg - (180 - cfg.kneeDeg);
   const shin = seatDir(s, betaShin);
-  // Outboard couches turn their knees toward the centre line.
-  const inboard = -Math.sign(s.eye.x) * cfg.kneeShift;
-  const knee = v3.add(v3.addScaled(hip, thigh, c.thighLength), v3.scale(s.R, inboard));
+  const knee = v3.add(v3.addScaled(hip, thigh, c.thighLength), v3.scale(s.R, (1 - HIP_SHARE) * inboard));
   const foot = v3.addScaled(knee, shin, cfg.shinLength);
   return { hip, knee, foot, thigh, shin, thighN: seatDir(s, cfg.thighDeg + 90), shinN: seatDir(s, betaShin + 90), kneeShift: inboard };
 }
@@ -134,6 +139,8 @@ export function buildCouches(ctx: CabinContext): void {
     const cfg = c.seats[s.id]!;
     const pts = couchPoints(ctx, s, cfg);
     const hw = cfg.halfWidth;
+    b.group(`couch:${s.id}`);
+    const padStart = b.idx.length;
     const cush = ctx.m('cushion');
     const sewn = ctx.m('cushionSewn');
     const backPlane = -c.backOffset;
@@ -187,6 +194,7 @@ export function buildCouches(ctx: CabinContext): void {
       b.box({ ...shinF, o: local(shinF, 0, sl - 0.06, 0.06) }, legHw - 0.03, 0.022, 0.004, 0.002, ctx.m('webbing'));
     }
 
+    const padEnd = b.idx.length;
     // ---- side rails, cross members and struts
     const rail = ctx.m('couchFrame');
     if (d < 2) {
@@ -213,15 +221,20 @@ export function buildCouches(ctx: CabinContext): void {
     b.tube(headCross, 0.016, 8, rail);
     b.tube(hipCross, 0.016, 8, rail);
     if (d < 2) {
-      for (const top of [headCross[0]!, headCross[1]!, hipCross[0]!, hipCross[1]!]) strut(ctx, top, ctx.mould.floorY);
+      // The attenuator struts carry the pallet's beams (under the couch's cross tubes): from the beam's far
+      // face to the floor, part of the pallet.
+      b.group('couchPallet');
+      for (const top of [headCross[0]!, headCross[1]!, hipCross[0]!, hipCross[1]!]) strut(ctx, v3.addScaled(top, s.L, -(PALLET_DROP - 0.045 + PALLET_HALF + 0.003)), ctx.mould.floorY);
+      b.group(`couch:${s.id}`);
     }
 
     // ---- armrests and hand controllers
     if (d < 2) {
       for (const k of [0, 1]) {
         const x = cfg.armrests[k]!;
-        const p0 = seatPoint(s, x, -0.28, backPlane + 0.07);
-        const p1 = seatPoint(s, x, c.hipU + 0.02, backPlane + 0.07);
+        const rise = armRise(ctx, cfg, x);
+        const p0 = seatPoint(s, x, -0.28, backPlane + 0.07 + rise);
+        const p1 = seatPoint(s, x, c.hipU + 0.02, backPlane + 0.07 + rise);
         const armF = faceL(v3.lerp(p0, p1, 0.5), s);
         cushion(ctx, { ...armF, o: local(armF, 0, 0, -0.022) }, 0.03, v3.dist(p0, p1) / 2, 0.044, cush);
         if (d === 0) {
@@ -234,9 +247,25 @@ export function buildCouches(ctx: CabinContext): void {
       }
     }
     if (cfg.controllers && d === 0) handControllers(ctx, s, cfg);
-    if (d === 0) harness(ctx, s, cfg, backF, backHy);
+    if (d === 0) {
+      b.group(`harness:${s.id}`);
+      harness(ctx, s, cfg, backF, backHy, padSurface(ctx, padStart, padEnd, backF));
+    }
   }
+  b.group('couchPallet');
   if (d < 2) pallet(ctx, seats);
+}
+
+/**
+ * How far an arm rest at lateral position x (from the seat's centre line) stands above the usual height:
+ * one that lies within the couch's own width sits over the back's bolster, clear of it and of the lap belt
+ * that runs across the bolster under it.
+ */
+function armRise(ctx: CabinContext, cfg: SeatLayoutDef, x: number): number {
+  if (Math.abs(x) >= cfg.halfWidth + 0.03) return 0;
+  // Bolster top (0.004 + cushion + 0.025 over the back frame's plane, which lies 8 mm behind the back plane)
+  // plus the webbing and a finger's clearance, against the arm rest pad's underside at 0.048 over the back plane.
+  return 0.004 + ctx.layout.couches.cushion + 0.025 - 0.008 + 0.012 - 0.048;
 }
 
 function rotateAboutY(f: Frame, angle: number): Frame {
@@ -248,51 +277,67 @@ function rotateAboutY(f: Frame, angle: number): Frame {
 /** Load-attenuator strut from a couch frame point straight down to the floor. */
 function strut(ctx: CabinContext, top: Vec3, floorY: number): void {
   const b = ctx.b;
-  const bottom = { x: top.x * 1.04, y: floorY, z: top.z * 1.04 };
+  // (The foot stands a few millimetres proud of the floor on its flange: the leaning tube's rim stays above it.)
+  const bottom = { x: top.x * 1.04, y: floorY + 0.004, z: top.z * 1.04 };
   const axis = v3.normalize(v3.sub(top, bottom));
   const len = v3.dist(top, bottom);
   const det = ctx.detail;
   b.cylinder(bottom, axis, 0.024, len * 0.55, det === 0 ? 14 : 8, ctx.m('anodized'));
   b.cylinder(v3.addScaled(bottom, axis, len * 0.55), axis, 0.011, len * 0.45, det === 0 ? 10 : 6, ctx.m('steel'));
   if (det === 0) {
-    b.cylinder(bottom, axis, 0.034, 0.02, 14, ctx.m('aluminium'));
-    b.box(frameAt(v3.addScaled(top, axis, -0.01), v3.anyOrthogonal(axis), axis), 0.018, 0.02, 0.012, 0.003, ctx.m('aluminium'));
+    b.cylinder({ x: bottom.x, y: floorY, z: bottom.z }, { x: 0, y: 1, z: 0 }, 0.036, 0.012, 14, ctx.m('aluminium'));
+    b.box(frameAt(v3.addScaled(top, axis, -0.022), v3.anyOrthogonal(axis), axis), 0.018, 0.02, 0.012, 0.003, ctx.m('aluminium'));
   }
 }
+
+/** The pallet's beams lie this far behind the couches' back plane (their centre line), and are this thick (half). */
+const PALLET_DROP = 0.09;
+const PALLET_HALF = 0.025;
 
 /** Transverse pallet beams under the couches, anchored to the wall at both ends. */
 function pallet(ctx: CabinContext, seats: SeatFrame[]): void {
   const c = ctx.layout.couches;
   const s = seats[0]!;
   for (const u of [0.1, c.hipU + 0.05]) {
-    const p = seatPoint({ ...s, eye: { x: 0, y: s.eye.y, z: s.eye.z } }, 0, u, -c.backOffset - 0.09);
+    const p = seatPoint({ ...s, eye: { x: 0, y: s.eye.y, z: s.eye.z } }, 0, u, -c.backOffset - PALLET_DROP);
     const r = ctx.mould.innerRadius(p.y);
     const half = Math.sqrt(Math.max(0, r * r - p.z * p.z)) - 0.12;
     const f = frameAt(p, { x: 1, y: 0, z: 0 }, s.U);
-    ctx.b.box(f, half, 0.03, 0.025, 0.004, ctx.m('couchFrame'));
+    ctx.b.group('couchPallet');
+    ctx.b.box(f, half, 0.03, PALLET_HALF, 0.004, ctx.m('couchFrame'));
     if (ctx.detail === 0) {
-      for (const side of [-1, 1]) ctx.b.box(frameAt({ x: side * (half + 0.035), y: p.y, z: p.z }, { x: 1, y: 0, z: 0 }, s.U), 0.035, 0.035, 0.025, 0.004, ctx.m('aluminium'));
+      // The end fittings reach through the insulation to the hard points on the wall: mounts.
+      ctx.b.group('mount:couchPallet');
+      for (const side of [-1, 1]) {
+        ctx.b.box(frameAt({ x: side * (half + 0.035), y: p.y, z: p.z }, { x: 1, y: 0, z: 0 }, s.U), 0.035, 0.035, PALLET_HALF, 0.004, ctx.m('aluminium'));
+        ctx.b.cylinder({ x: side * (half + 0.07), y: p.y, z: p.z }, { x: side, y: 0, z: 0 }, 0.016, 0.03, 10, ctx.m('steel'));
+      }
+      ctx.b.group('couchPallet');
     }
   }
 }
 
 /**
- * Height of an upholstered pad's surface (cushion(): squircle top panel, crowned or dished, channels, the
- * roll over its edge) over its frame's plane at frame coordinates (x, y); 0 beyond its footprint.
+ * The surface of a couch's pads and pans as built (the builder's triangles from `start` to `end`), as a
+ * height over the back frame's plane at frame coordinates (x, y): what a strap laid on the couch rests on
+ * (the back cushion and its bolsters, the hip cushion, the head rest), 0 where nothing lies under it.
  */
-function padHeight(x: number, y: number, hx: number, hy: number, thick: number, dish: number, sewn: boolean): number {
-  const roll = Math.min(thick * 0.6, hx * 0.4, hy * 0.4);
-  const ax = hx - roll;
-  const ay = hy - roll;
-  const p = 5;
-  const rho = (Math.abs(x / ax) ** p + Math.abs(y / ay) ** p) ** (1 / p);
-  if (rho <= 1) {
-    const crown = 1 - dish * 0.5 * (1 - rho * rho);
-    const relief = sewn ? upholsteryHeight(y) * Math.min(1, ((1 - rho) * Math.min(ax, ay)) / 0.025) : 0;
-    return thick * crown + Math.max(relief, 0);
+function padSurface(ctx: CabinContext, start: number, end: number, backF: Frame): (x: number, y: number) => number {
+  const b = ctx.b;
+  const idx = b.idx.slice(start, end);
+  const positions = new Float32Array(b.vertexCount * 3);
+  for (const v of new Set(idx)) {
+    const p = b.position(v);
+    positions.set([p.x, p.y, p.z], v * 3);
   }
-  const d = Math.hypot(x - x / rho, y - y / rho);
-  return d < roll ? thick - roll + Math.sqrt(roll * roll - d * d) : 0;
+  const bvh: Bvh = buildBvh(positions, Uint32Array.from(idx), 0, idx.length, () => 0);
+  // (From just above the bolsters: the thigh pad leans over the lower back higher up.)
+  const top = 0.12;
+  const down = v3.neg(backF.n);
+  return (x, y) => {
+    const h = bvhRay(bvh, local(backF, x, y, top), down, 0, top + 0.05, false);
+    return h ? Math.max(0, top - h.t) : 0;
+  };
 }
 
 /**
@@ -301,18 +346,12 @@ function padHeight(x: number, y: number, hx: number, hy: number, thick: number, 
  * along its path it is set on the highest surface under it (back cushion, bolsters) plus a little slack, so
  * the crowned and channelled pads never show through it, and it bridges their grooves as webbing does.
  */
-function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Frame, backHy: number): void {
+function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Frame, backHy: number, under: (x: number, y: number) => number): void {
   const c = ctx.layout.couches;
   const hw = cfg.halfWidth;
   const web = ctx.m('webbing', { flags: FLAG_OVERLAY });
   const b = ctx.b;
   const thickW = 0.0016;
-  // The surface under the webbing, over the back frame's plane.
-  const under = (x: number, y: number): number =>
-    Math.max(
-      padHeight(x, y, hw - 0.035, backHy, c.cushion, 0.25, true),
-      ...[-1, 1].map((side) => 0.004 + padHeight(x - side * (hw - 0.02), y, 0.03, backHy - 0.02, c.cushion + 0.025, 0, false)),
-    );
   /** A strap along a polyline of (x, y) frame coordinates: resampled every 6 mm, laid on the pads. */
   const strap = (path: [number, number][], w: number, minLift = 0): void => {
     const xy: [number, number][] = [];
@@ -351,9 +390,9 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
   const yb = -backHy;
   for (const side of [-1, 1]) {
     strap([[side * 0.1, backHy + 0.02], [side * 0.1, backHy - 0.02], [side * 0.07, -backHy * 0.2], [side * 0.02, yb + 0.12]], 0.045, 0.01);
-    strap([[side * (hw - 0.01), yb - 0.02], [side * 0.12, yb + 0.06], [side * 0.03, yb + 0.09]], 0.045);
+    strap([[side * (hw - 0.012), yb + 0.05], [side * 0.12, yb + 0.08], [side * 0.03, yb + 0.1]], 0.045);
   }
-  strap([[0, yb - 0.035], [0, yb + 0.05]], 0.04, c.cushion * 0.9);
+  strap([[0, yb + 0.03], [0, yb + 0.07]], 0.04, c.cushion * 0.9);
   // Rotary buckle: a brushed steel body with the four tongues' slots, a turning knob, a red release tab.
   const buckle = local(backF, 0, yb + 0.1, Math.max(under(0, yb + 0.1), under(0.03, yb + 0.1), under(-0.03, yb + 0.1)) + 0.0035);
   const bf = faceL(buckle, s);
@@ -391,7 +430,8 @@ function handControllers(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef): v
   const backPlane = -c.backOffset;
   // ---- RHC: base on the right armrest end, rubber boot, stick and an ergonomic grip
   const rx = cfg.armrests[1]!;
-  const rBase = seatPoint(s, rx, -0.36, backPlane + 0.1);
+  const rRise = armRise(ctx, cfg, rx);
+  const rBase = seatPoint(s, rx, -0.36, backPlane + 0.1 + rRise);
   const baseF = faceL(rBase, s);
   b.box({ ...baseF, o: local(baseF, 0, 0, 0.015) }, 0.042, 0.055, 0.02, 0.008, ctx.m('anodized'));
   const pivot = local(baseF, 0, 0, 0.038);
@@ -439,7 +479,8 @@ function handControllers(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef): v
   b.tube(trig, 0.0042, 8, mv('anodized'), { caps: true });
   // ---- THC: T-handle on the left armrest end
   const lx = cfg.armrests[0]!;
-  const tBase = seatPoint(s, lx, -0.36, backPlane + 0.1);
+  const lRise = armRise(ctx, cfg, lx);
+  const tBase = seatPoint(s, lx, -0.36, backPlane + 0.1 + lRise);
   const tF = faceL(tBase, s);
   b.box({ ...tF, o: local(tF, 0, 0, 0.015) }, 0.04, 0.05, 0.02, 0.008, ctx.m('anodized'));
   bellows(ctx, local(tF, 0, 0, 0.034), tF.n, 0.026, 0.011, 0.022, s.R);
@@ -455,12 +496,12 @@ function handControllers(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef): v
   }
   b.lathe(v3.addScaled(local(tF, 0, 0, 0.082), s.R, -0.045), s.R, barrel, 20, tv('knob'), { ref: tF.n });
   // ---- throttle quadrant beside the THC
-  const qF = frameAt(seatPoint(s, lx - Math.sign(lx) * 0.05, -0.47, backPlane + 0.1), s.U, tF.n);
+  const qF = frameAt(seatPoint(s, lx - Math.sign(lx) * 0.05, -0.47, backPlane + 0.1 + lRise), s.U, tF.n);
   b.box({ ...qF, o: local(qF, 0, 0.012, 0) }, 0.05, 0.012, 0.005, 0.002, ctx.m('anodized'));
   const thr = ctx.control(`throttle:${s.id}`, () => ({ kind: 'throttle', pivot: local(qF, -0.04, 0.012, 0), axis: s.R, binding: 'none', seat: s.id }));
   const lever = local(qF, -0.04, 0.06, 0);
   b.tube([local(qF, -0.04, 0.012, 0), lever], 0.005, 8, ctx.m('steel', { ctl: thr.index }));
   b.cylinder(v3.addScaled(lever, s.R, -0.015), s.R, 0.012, 0.03, 14, ctx.m('caution', { ctl: thr.index }));
-  ctx.labelQuad(frameAt(seatPoint(s, rx, -0.43, backPlane + 0.13), s.R, v3.neg(s.U)), 0, 0, 0.05, 0.007, 'ROT', 'anodized', { color: 0 });
-  ctx.labelQuad(frameAt(seatPoint(s, lx, -0.43, backPlane + 0.13), s.R, v3.neg(s.U)), 0, 0, 0.05, 0.007, 'TRANS', 'anodized', { color: 0 });
+  ctx.labelQuad(frameAt(seatPoint(s, rx, -0.43, backPlane + 0.13 + rRise), s.R, v3.neg(s.U)), 0, 0, 0.05, 0.007, 'ROT', 'anodized', { color: 0 });
+  ctx.labelQuad(frameAt(seatPoint(s, lx, -0.43, backPlane + 0.13 + lRise), s.R, v3.neg(s.U)), 0, 0, 0.05, 0.007, 'TRANS', 'anodized', { color: 0 });
 }

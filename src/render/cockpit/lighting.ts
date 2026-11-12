@@ -125,9 +125,11 @@ export interface CabinSources {
 
 /**
  * The polygon sources of one frame (part frame). Windows always come first (the shader uses the first
- * `windows.length` polygons for the inter-reflection term).
+ * `windows.length` polygons for the inter-reflection term). `floods`: the flood lights' level, 0..1 of their
+ * full flux (true = full, false = off; see floodLevel).
  */
-export function cabinSources(model: CockpitModel, sun: SunInput | null, lightsOn: boolean, covered: readonly boolean[] = []): CabinSources {
+export function cabinSources(model: CockpitModel, sun: SunInput | null, floods: boolean | number, covered: readonly boolean[] = []): CabinSources {
+  const level = typeof floods === 'number' ? Math.max(0, Math.min(1, floods)) : floods ? 1 : 0;
   const polys: CabinPoly[] = [];
   const T = glassTransmittance(model);
   const quads = model.windows.map((w) => windowQuad(w));
@@ -150,17 +152,17 @@ export function cabinSources(model: CockpitModel, sun: SunInput | null, lightsOn
     const along = v3.normalize(v3.sub(f.p1, f.p0));
     const across = v3.scale(v3.normalize(v3.cross(f.n, along)), 0.018);
     const area = v3.dist(f.p0, f.p1) * 0.036;
-    const L = f.lumens / (Math.PI * area);
+    const L = (f.lumens * level) / (Math.PI * area);
     polys.push({
       kind: POLY_FLOOD,
       corners: [v3.sub(f.p0, across), v3.sub(f.p1, across), v3.add(f.p1, across), v3.add(f.p0, across)],
       normal: f.n,
       radiance: [L * f.color[0], L * f.color[1], L * f.color[2]],
       area,
-      on: lightsOn,
+      on: level > 0,
       index: model.floods.indexOf(f),
     });
-    if (lightsOn) lampFlux += f.lumens;
+    lampFlux += f.lumens * level;
   }
   for (const d of model.displays) {
     if (polys.length >= MAX_CABIN_POLYS) break;
@@ -173,11 +175,19 @@ export function cabinSources(model: CockpitModel, sun: SunInput | null, lightsOn
   return { polys, sunFlux, lampFlux };
 }
 
-/** Luminance (cd/m^2, linear colour) of a floodlight's diffuser when it is on. */
-export function floodLuminance(model: CockpitModel, i: number): [number, number, number] {
+/**
+ * The flood lights' level (0..1 of their full flux): full with the vessel's lights command on, the layout's
+ * standby share otherwise. A crewed cabin is never flown dark: the lights command brightens it.
+ */
+export function floodLevel(model: CockpitModel, lightsOn: boolean): number {
+  return lightsOn ? 1 : Math.max(0, Math.min(1, model.layout.lighting.floodStandby));
+}
+
+/** Luminance (cd/m^2, linear colour) of a floodlight's diffuser at `level` of its full flux. */
+export function floodLuminance(model: CockpitModel, i: number, level = 1): [number, number, number] {
   const f = model.floods[i];
   if (!f) return [0, 0, 0];
   const area = v3.dist(f.p0, f.p1) * 0.036;
-  const L = f.lumens / (Math.PI * area);
+  const L = (f.lumens * level) / (Math.PI * area);
   return [L * f.color[0], L * f.color[1], L * f.color[2]];
 }

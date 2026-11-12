@@ -13,6 +13,7 @@ import { quat, v3 } from '@/core/math';
 import { createCockpitControls } from '@/render/cockpit/controls';
 import { bindingState, controlStates, digitMask, instrumentSource, RATE_FULL_SCALE, readoutText, updateMemory, type InstrumentMemory, type InstrumentSource } from '@/render/cockpit/instruments';
 import { validateLayout, type AlarmsDef, type CockpitLayoutDef, type ReadoutDef } from '@/render/cockpit/layout';
+import { floodLevel, floodLuminance } from '@/render/cockpit/lighting';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { buildMfdPage, describeFlight, describeOrbit, formatMet, landingTargetRows, describeLandingTarget, MFD_PAGES } from '@/ui';
 import { testDefs, testModel } from './helpers';
@@ -124,13 +125,24 @@ describe('instrument bindings', () => {
     expect(readoutText(g, act(s), { lastStageUt: null })).toBe(' 05');
     expect(bindingState('gLimit', src, defs, alarms).on).toBe(true);
     expect(bindingState('gLimit', act(s), defs, alarms).on).toBe(false);
-    // Hand controllers rest and floods stay dark on a vessel that is not being flown.
+    // Hand controllers rest on a vessel that is not being flown; its floods burn at whatever level the feature
+    // gives them (the callback's luminance: standby, or nothing when it is 0).
     const flown = { ...s, appliedControls: { ...s.appliedControls, pitch: 1, throttle: 1 } };
     const st = controlStates(model.controls, instrumentSource(flown, other), defs, alarms, 0, { lastStageUt: null }, () => ({ R: v3.unitX(), U: v3.unitZ(), L: v3.unitY() }), () => [100, 100, 100]);
     model.controls.forEach((c, i) => {
       if (c.kind === 'rhc' || c.kind === 'throttle') expect(quat.angleBetween(st[i]!.rot, quat.identity())).toBeLessThan(1e-9);
-      if (c.kind === 'flood') expect(st[i]!.lit).toBe(0);
+      if (c.kind === 'flood') expect(st[i]!.lit).toBe(1);
     });
+    const dark = controlStates(model.controls, instrumentSource(flown, other), defs, alarms, 0, { lastStageUt: null }, () => ({ R: v3.unitX(), U: v3.unitZ(), L: v3.unitY() }), () => [0, 0, 0]);
+    model.controls.forEach((c, i) => {
+      if (c.kind === 'flood') expect(dark[i]!.lit).toBe(0);
+    });
+    // The floods' level: the layout's standby share with the lights command off, full with it on.
+    expect(floodLevel(model, false)).toBe(model.layout.lighting.floodStandby);
+    expect(floodLevel(model, false)).toBeGreaterThan(0.05);
+    expect(floodLevel(model, false)).toBeLessThan(1);
+    expect(floodLevel(model, true)).toBe(1);
+    expect(floodLuminance(model, 0, floodLevel(model, false))[1]).toBeCloseTo(floodLuminance(model, 0)[1] * model.layout.lighting.floodStandby, 6);
   });
 
   it('moves the hand controllers with the applied controls', async () => {

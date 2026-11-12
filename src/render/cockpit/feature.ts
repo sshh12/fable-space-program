@@ -31,7 +31,7 @@ import { MfdDisplays } from './displays';
 import { controlStates, instrumentSource, updateMemory, type ControlState, type InstrumentMemory } from './instruments';
 import { cockpitLayouts, DETAIL_KINDS, MAX_WINDOWS } from './layout';
 import { CabinProbe, PROBE_DEPTH_FORMAT, PROBE_FORMAT } from './probe';
-import { cabinSources, coveredWindows, floodLuminance, glassTransmittance, MAX_CABIN_POLYS, type CabinPoly } from './lighting';
+import { cabinSources, coveredWindows, floodLevel, floodLuminance, glassTransmittance, MAX_CABIN_POLYS, type CabinPoly } from './lighting';
 import { VERTEX_STRIDE } from './mesh';
 import { insideDistance, mouldOf } from './mould';
 import { bakeOcclusion, OCC_STRIDE, occlusionAt, occlusionSources, type VertexOcclusion } from './occlusion';
@@ -507,7 +507,9 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       // ---- instruments
       updateMemory(gm.memory, frame.snapshot, vessel.id);
       const seats = new Map(seatFrames(model.mould).map((s) => [s.id, { R: s.R, U: s.U, L: s.L }]));
-      const states = controlStates(model.controls, src, defs, model.layout.alarms, clock, gm.memory, (id) => seats.get(id)!, (i) => floodLuminance(model, i));
+      // The floods: full with the lights command of the active vessel, at their standby level otherwise.
+      const floods = floodLevel(model, src.active && frame.snapshot.readouts.lightsOn);
+      const states = controlStates(model.controls, src, defs, model.layout.alarms, clock, gm.memory, (id) => seats.get(id)!, (i) => floodLuminance(model, i, floods));
       writeControls(ctx, gm, states);
       lastStates = states;
 
@@ -515,7 +517,6 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const vesselPos = v3.add(vessel.rRoot, quat.rotate(vessel.q, part.localPos));
       const sunVis = frame.sun.illuminance > 0 ? sunVisibilityAt(vesselPos, frame.snapshot, defs) : 0;
       const sunPart = quat.rotateInv(q, frame.sun.dirRoot);
-      const lightsOn = src.active && frame.snapshot.readouts.lightsOn;
       // Windows another part of this vessel covers (the boost cover on the pad): they let nothing in.
       const covered = coveredWindows(
         model.windows.map((w) => w.id),
@@ -523,7 +524,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
         defs as unknown as Parameters<typeof coveredWindows>[2],
       );
       st.covered = model.windows.filter((_, i) => covered[i]).map((w) => w.id);
-      const sources = cabinSources(model, sunVis > 0 ? { dirPart: sunPart, illuminance: frame.sun.illuminance * sunVis, color: frame.sun.color } : null, lightsOn, covered);
+      const sources = cabinSources(model, sunVis > 0 ? { dirPart: sunPart, illuminance: frame.sun.illuminance * sunVis, color: frame.sun.color } : null, floods, covered);
       st.polys = sources.polys.length;
       st.patches = sources.polys.filter((x) => x.kind === 1).length;
       // The sun reaches the cabin when it shines and some open window faces it: then the cabin's sun map is drawn.
@@ -574,7 +575,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
 
       // ---- the lit cabin seen from outside: its light spills through the panes onto the window wells and the
       // hull around them (a local light in each well; the cabin itself is lit by the cockpit's own shader).
-      if (!inside && lightsOn && sources.lampFlux > 0) {
+      if (!inside && sources.lampFlux > 0) {
         const rho = model.layout.lighting.cabinAlbedo;
         const area = model.layout.lighting.cabinArea;
         // Mean cabin luminance under the lamps (integrating sphere), and what a pane sends outward.

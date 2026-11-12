@@ -208,7 +208,6 @@ export function controlStates(
 ): ControlState[] {
   const s = src.snapshot;
   const c = src.active ? s.appliedControls : { pitch: 0, yaw: 0, roll: 0, throttle: 0, translate: v3.zero() };
-  const lightsOn = src.active && s.readouts.lightsOn;
   const texts = new Map<ReadoutDef, string>();
   return controls.map((ctl): ControlState => {
     const st = ident();
@@ -271,8 +270,9 @@ export function controlStates(
         break;
       }
       case 'flood': {
-        st.emit = lightsOn ? floodLuminance(ctl.flood ?? 0) : [0, 0, 0];
-        st.lit = lightsOn ? 1 : 0;
+        // (The caller's luminance is at the floods' level of this frame: standby or full.)
+        st.emit = floodLuminance(ctl.flood ?? 0);
+        st.lit = st.emit[0] + st.emit[1] + st.emit[2] > 0 ? 1 : 0;
         break;
       }
     }

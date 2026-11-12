@@ -89,6 +89,31 @@ export function wallInward(ctx: CabinContext, az: number, y: number): Vec3 {
   return y >= ctx.mould.tunnelJoinY ? v3.neg(radialDir(az)) : v3.neg(coneNormal(ctx.mould, az));
 }
 
+/** How far a hard close-out panel's face stands off the wall, and the head of its fasteners above the face (m). */
+const CLOSEOUT_INSET = 0.012;
+const CLOSEOUT_FASTENER = 0.002;
+/** A blanket's liner and the most its fill sags outward (m), on top of its thickness and its quilting's crowns. */
+const BLANKET_LINER = 0.003;
+const BLANKET_SAG = 0.0036;
+
+/**
+ * Greatest height (m, along the wall's normal) of what lies on the inner wall between the heights y0 and y1:
+ * stringers everywhere, a ring frame where one crosses the band, insulation blankets above the close-out
+ * zone, hard close-out panels in it. Whatever is mounted on the wall stands at least this far off it (the
+ * fixtures and the console take their clearance from here; the penetration check holds them to it).
+ */
+export function skinHeight(ctx: CabinContext, y0: number, y1: number): number {
+  const sh = ctx.layout.shell;
+  const m = ctx.mould;
+  let h = sh.stringer.depth;
+  const hf = sh.frame.width / 2;
+  // A frame's depth is radial; its flange's far edge stands a little higher off the sloping wall.
+  for (const yf of sh.ringFramesY) if (yf + hf > y0 && yf - hf < y1) h = Math.max(h, (sh.frame.depth + Math.abs(m.cone.slope) * hf) * m.cone.nR);
+  if (y1 > sh.closeoutTopY) h = Math.max(h, BLANKET_LINER + sh.blanket.thickness + BLANKET_SAG + QUILT.height);
+  if (y0 < sh.closeoutTopY) h = Math.max(h, CLOSEOUT_INSET + CLOSEOUT_FASTENER);
+  return h;
+}
+
 /** Free azimuth intervals at height band [ya, yb] after removing regions that overlap the band. */
 function freeIntervals(regions: Region[], ya: number, yb: number, gap: number): [number, number][] {
   let free: [number, number][] = [[0, TWO_PI]];
@@ -297,6 +322,7 @@ export function buildShell(ctx: CabinContext): Region[] {
   if (detail === 2) return regions;
 
   // ---- ring frames (horizontal T sections), interrupted at the openings
+  b.group('skin:frames');
   const fd = sh.frame.depth;
   const fw = sh.frame.width;
   for (const yf of sh.ringFramesY) {
@@ -328,6 +354,7 @@ export function buildShell(ctx: CabinContext): Region[] {
       const gapAz = (sh.stringer.width * 0.5 + (closeout ? sh.blanket.inset : 0.0015)) / m.innerRadius((ya + yb) / 2);
       // Bays are clipped against the opening regions band by band.
       const intervals = clipInterval([s0 * TWO_PI + gapAz, s1 * TWO_PI - gapAz], freeIntervals(regions, ya, yb, 0.012 / m.innerRadius((ya + yb) / 2)));
+      b.group(closeout ? 'skin:closeouts' : 'skin:blankets');
       for (const [a0, a1] of intervals) {
         if ((a1 - a0) * m.innerRadius(yb) < 0.08) continue;
         if (closeout) closeoutPanel(ctx, a0, a1, ya, yb);
@@ -351,6 +378,7 @@ export function buildShell(ctx: CabinContext): Region[] {
   }
 
   // ---- floor tie-down rails
+  b.group('floorRails');
   if (detail === 0) {
     const alu = ctx.m('aluminium');
     for (const z of [-0.95, 0.95]) {

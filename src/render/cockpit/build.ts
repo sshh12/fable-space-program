@@ -73,12 +73,18 @@ export function buildCockpitModelFrom(layoutId: string, layout: CockpitLayoutDef
     ctx.detail = detail;
     // Full detail subdivides large flat faces so that the per-vertex occlusion bake resolves them.
     ctx.b.maxEdge = detail === 0 ? layout.transport.maxEdge : Infinity;
+    // Every builder names the assemblies it makes (MeshBuilder.group): what the penetration check tests.
+    ctx.b.group('console');
     buildConsole(ctx);
     buildCouches(ctx);
     buildFixtures(ctx);
+    ctx.b.group('hatch');
     buildHatch(ctx);
+    ctx.b.group('dockingHatch');
     buildDockingHatch(ctx);
+    ctx.b.group('windows');
     buildWindows(ctx);
+    ctx.b.group('shell');
     const r = buildShell(ctx);
     if (detail === 0) regions = r;
     ctx.b.mark(LOD_RANGES[detail]);
@@ -111,6 +117,7 @@ export function buildCockpitModelFrom(layoutId: string, layout: CockpitLayoutDef
   }
   // Shadow-only geometry for the core's cascades (apertures.ts): the window openings closed.
   b.maxEdge = Infinity;
+  b.group('shell');
   buildPlugs(ctx);
   b.mark('plugs');
   const mesh = ctx.b.build();

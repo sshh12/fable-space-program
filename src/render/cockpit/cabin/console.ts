@@ -13,6 +13,7 @@ import type { ConsoleSectionDef, LampDef, ReadoutDef, RotaryDef, SwitchDef } fro
 import { EDGE_SPAN, FLAG_EDGE, frameAt, local, localDir, offsetFrame, tiltFrame, type Attr, type Frame } from '../mesh';
 import { insideDistance } from '../mould';
 import { FLAG_EMISSIVE, FLAG_OVERLAY, FLAG_SEGMENT, seatFrames, type CabinContext } from './context';
+import { skinHeight } from './shell';
 
 export interface SectionFrame {
   def: ConsoleSectionDef;
@@ -46,12 +47,52 @@ export function consoleFrameAt(ctx: CabinContext, sections: SectionFrame[], x: n
   return offsetFrame(sec.frame, x, u - sec.uHinge, 0);
 }
 
-/** How far the console stays off the inner wall: clear of the insulation blankets' pillows (16 mm and their quilting). */
-const MARGIN = 0.032;
+/**
+ * How the console meets the hull (request cockpit-lead-1). The face plate of every section ends where the
+ * conical wall closes in: its hull-side edge follows the wall's curvature at a constant stand-off, clear of
+ * the insulation blankets' crowns, and carries a seal bead toward the wall. The body behind the plate stands
+ * a little further off, clear of the ring frames it passes, and follows the wall back as the cone narrows:
+ * both are limited ROW BY ROW along the cabin's width (the wall is a surface of revolution about the part's
+ * Y axis and the console's x axis is the part's X: at a given height on the panel and depth behind it, the
+ * console may reach a half-width that the wall decides). Nothing is pulled about or cut diagonally.
+ */
+const FACE_GAP = 0.012;
+const BODY_GAP = 0.004;
+/** Thickness of a section's face plate (m): the chamfer plus a square return. */
+const PLATE = 0.012;
+/** Seal bead along the hull-side edge of a face plate: radius and how far its centre stands outboard of the edge. */
+const BEAD_RADIUS = 0.005;
+const BEAD_OUT = 0.004;
 
-/** Shrink a corner point toward `toward` until it is MARGIN inside the inner wall. */
-function fitInside(ctx: CabinContext, p: Vec3, toward: Vec3): Vec3 {
-  const need = ctx.def.wallThickness + MARGIN;
+/** Stand-off of the face plates (clear of the blankets) and of the bodies (clear of the frames) from the inner wall. */
+export function consoleStandoff(ctx: CabinContext): { face: number; body: number } {
+  const sh = ctx.layout.shell;
+  // The plates lie between two ring frames (blankets under their edges); the bodies cross frames.
+  const blankets = skinHeight(ctx, sh.closeoutTopY + 0.1, sh.closeoutTopY + 0.11);
+  const frames = Math.max(...sh.ringFramesY.map((y) => skinHeight(ctx, y, y)));
+  return { face: blankets + FACE_GAP, body: Math.max(frames, blankets) + BODY_GAP };
+}
+
+/**
+ * Largest |x| (m) at which the point (x, u, c) of a frame (x across the cabin) stands `standoff` inside the
+ * inner wall; 0 when even the centre line does not.
+ */
+function hullHalfWidth(ctx: CabinContext, f: Frame, u: number, c: number, standoff: number): number {
+  const need = ctx.def.wallThickness + standoff;
+  if (insideDistance(ctx.def, local(f, 0, u, c)) < need) return 0;
+  let lo = 0;
+  let hi = 2.5;
+  for (let k = 0; k < 32; k++) {
+    const mid = (lo + hi) / 2;
+    if (insideDistance(ctx.def, local(f, mid, u, c)) >= need) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** A point slid from p toward `toward` until it stands `standoff` inside the inner wall. */
+function fitToward(ctx: CabinContext, p: Vec3, toward: Vec3, standoff: number): Vec3 {
+  const need = ctx.def.wallThickness + standoff;
   if (insideDistance(ctx.def, p) >= need) return p;
   let lo = 0;
   let hi = 1;
@@ -69,6 +110,8 @@ export interface Footprint {
   x1: number;
   u0: number;
   u1: number;
+  /** What it is (for the message when it does not fit on the panel). */
+  name?: string;
 }
 
 /**
@@ -86,15 +129,24 @@ function gridLines(a: number, b: number, step: number, exact: number[]): number[
   return [...out, ...ex].sort((p, q) => p - q);
 }
 
+/** A closed loop without its repeated points (rows that the hull limits to the same point). */
+function dedupe(loop: Vec3[]): Vec3[] {
+  const out: Vec3[] = [];
+  for (const p of loop) if (out.length === 0 || v3.dist(out[out.length - 1]!, p) > 1e-5) out.push(p);
+  while (out.length > 1 && v3.dist(out[0]!, out[out.length - 1]!) <= 1e-5) out.pop();
+  return out;
+}
+
 /**
- * The console section slabs: face clipped to the wall (corners cut where the cone closes in), a chamfered
- * edge, and a closed body that runs back to the wall (the layout's depth reaches it): side cheeks and a back
- * cover, so nothing of the cabin shows under or behind the console.
+ * One console section: a face plate fitted to the hull, a chamfered edge with a square return, and a closed
+ * body behind it that follows the wall back (side cheeks, a back cover), so nothing of the cabin shows under
+ * or behind the console and nothing of the console reaches into the wall or what lies on it.
  *
  * The face is a regular grid (the baked occlusion lives on its vertices), with grid lines laid along the
  * outline of every large part mounted on it and again a few millimetres off: the contact shadow of a bezel
- * or a housing is then a band of even width that follows the part, the same for identical parts, instead
- * of whatever a mesh that knows nothing of the parts interpolates.
+ * or a housing is then a band of even width that follows the part, the same for identical parts. Where the
+ * wall limits a row, the grid points beyond the limit lie ON the limit: the plate's hull-side edge is the
+ * wall's own curve at the face stand-off.
  */
 function sectionSlab(ctx: CabinContext, sec: SectionFrame, parts: Footprint[], skirt = false): void {
   const b = ctx.b;
@@ -102,6 +154,7 @@ function sectionSlab(ctx: CabinContext, sec: SectionFrame, parts: Footprint[], s
   const [u0, u1] = sec.def.u;
   const f = sec.frame;
   const depth = sec.def.depth ?? ctx.layout.console.depth;
+  const so = consoleStandoff(ctx);
   const pt = (x: number, u: number, c = 0): Vec3 => local(f, x, u - sec.uHinge, c);
   const centre = pt((x0 + x1) / 2, (u0 + u1) / 2);
   const fine = ctx.detail === 0;
@@ -114,15 +167,19 @@ function sectionSlab(ctx: CabinContext, sec: SectionFrame, parts: Footprint[], s
   const panelMat = ctx.m('panel');
   const n = f.n;
   const ch = 0.006;
+  // Per row: how far the hull lets the face reach to either side.
+  const limit = U.map((u) => hullHalfWidth(ctx, f, u - sec.uHinge, 0, so.face));
+  const xAt = (i: number, j: number): number => Math.max(-limit[j]!, Math.min(limit[j]!, X[i]!));
+  const clipped = (i: number, j: number): boolean => Math.abs(X[i]!) > limit[j]! + 1e-9;
+  const outlineAt = (i: number, j: number): Vec3 => pt(xAt(i, j), U[j]!);
   const shrinkTo = (p: Vec3, d: number): Vec3 => v3.add(p, v3.scale(v3.normalize(v3.sub(centre, p)), d));
-  // Every grid point is pulled toward the section's centre where the wall is in the way; the border row is
-  // the outline (chamfered: the face ends `ch` inside it).
+  // The grid: the border row and every point on the hull's limit are the outline (chamfered: the face ends
+  // `ch` inside it).
   b.part();
   const first = b.vertexCount;
-  const outlineAt = (i: number, j: number): Vec3 => fitInside(ctx, pt(X[i]!, U[j]!), centre);
   for (let j = 0; j <= nu; j++) {
     for (let i = 0; i <= nx; i++) {
-      const border = i === 0 || j === 0 || i === nx || j === nu;
+      const border = i === 0 || j === 0 || i === nx || j === nu || clipped(i, j);
       const q = border ? shrinkTo(outlineAt(i, j), ch) : outlineAt(i, j);
       const d = v3.sub(q, centre);
       b.vertex(q, n, f.x, [v3.dot(d, f.x), v3.dot(d, f.y)], panelMat);
@@ -130,55 +187,123 @@ function sectionSlab(ctx: CabinContext, sec: SectionFrame, parts: Footprint[], s
   }
   for (let j = 0; j < nu; j++) {
     for (let i = 0; i < nx; i++) {
+      // (A cell wholly beyond the hull's limit has no area.)
+      if (xAt(i + 1, j) - xAt(i, j) < 1e-6 && xAt(i + 1, j + 1) - xAt(i, j + 1) < 1e-6) continue;
       const k = first + j * (nx + 1) + i;
       b.quad(k, k + 1, k + nx + 2, k + nx + 1);
     }
   }
-  // The outline, counter-clockwise seen from the crew.
-  const poly: Vec3[] = [];
-  for (let i = 0; i < nx; i++) poly.push(outlineAt(i, 0));
-  for (let j = 0; j < nu; j++) poly.push(outlineAt(nx, j));
-  for (let i = nx; i > 0; i--) poly.push(outlineAt(i, nu));
-  for (let j = nu; j > 0; j--) poly.push(outlineAt(0, j));
+  // The outline, counter-clockwise seen from the crew, as (column, row) of the grid.
+  const ring: [number, number][] = [];
+  for (let i = 0; i < nx; i++) ring.push([i, 0]);
+  for (let j = 0; j < nu; j++) ring.push([nx, j]);
+  for (let i = nx; i > 0; i--) ring.push([i, nu]);
+  for (let j = nu; j > 0; j--) ring.push([0, j]);
+  // The body's outline behind the plate, row by row at the body's stand-off, and its back, as deep as the
+  // layout asks and as wide as the wall leaves there.
+  const bodyAt = (i: number, j: number, c: number): Vec3 => {
+    const u = U[j]! - sec.uHinge;
+    const w = hullHalfWidth(ctx, f, u, c, so.body);
+    // (Where the cone has closed over this row altogether the body ends on the centre line's last clear depth.)
+    if (w <= 0) return fitToward(ctx, local(f, 0, u, c), local(f, 0, u, -PLATE), so.body);
+    return local(f, Math.max(-w, Math.min(w, X[i]!)), u, c);
+  };
+  const keep: number[] = [];
+  {
+    const pts = ring.map(([i, j]) => outlineAt(i, j));
+    pts.forEach((p, k) => {
+      if (keep.length === 0 || v3.dist(pts[keep[keep.length - 1]!]!, p) > 1e-5) keep.push(k);
+    });
+    while (keep.length > 1 && v3.dist(pts[keep[0]!]!, pts[keep[keep.length - 1]!]!) <= 1e-5) keep.pop();
+  }
+  const loop = keep.map((k) => ring[k]!);
+  const poly = loop.map(([i, j]) => outlineAt(i, j));
+  const out = (k: number): Vec3 => v3.normalize(v3.sub(poly[k]!, centre));
   const faceLoop = poly.map((p) => shrinkTo(p, ch));
   const chamferBack = poly.map((p) => v3.addScaled(p, n, -ch));
-  ringLoops(ctx, faceLoop, chamferBack, ctx.m('panel', { flags: FLAG_EDGE }), (i) => v3.normalize(v3.add(n, v3.normalize(v3.sub(poly[i]!, centre)))));
-  // Quarter-turn fasteners at the panel's corners (where the corner is not cut by the wall).
-  if (ctx.detail === 0) {
+  const plateBack = poly.map((p) => v3.addScaled(p, n, -PLATE));
+  ringLoops(ctx, faceLoop, chamferBack, ctx.m('panel', { flags: FLAG_EDGE }), (k) => v3.normalize(v3.add(n, out(k))));
+  ringLoops(ctx, chamferBack, plateBack, ctx.m('panel'), out);
+  const bodyFront = loop.map(([i, j]) => bodyAt(i, j, -PLATE));
+  const bodyBack = loop.map(([i, j]) => bodyAt(i, j, -depth));
+  const bodyMat = ctx.m('consoleBody', { ao: 0.6 });
+  // The plate's back, from its edge in to the body (the overhang by which the plate reaches closer to the wall).
+  ringLoops(ctx, plateBack, bodyFront, ctx.m('consoleBody', { ao: 0.5 }), () => v3.neg(n));
+  ringLoops(ctx, bodyFront, bodyBack, bodyMat, out);
+  // Back cover.
+  {
+    const bc = v3.scale(bodyBack.reduce((a, p) => v3.add(a, p), v3.zero()), 1 / bodyBack.length);
+    const cover = ctx.m('consoleBody', { ao: 0.5 });
+    const bci = b.vertex(bc, v3.neg(n), f.x, [0, 0], cover);
+    const bfirst = b.vertexCount;
+    for (const p of bodyBack) b.vertex(p, v3.neg(n), f.x, [0, 0], cover);
+    for (let k = 0; k < bodyBack.length; k++) if (v3.dist(bodyBack[k]!, bodyBack[(k + 1) % bodyBack.length]!) > 1e-5) b.tri(bci, bfirst + ((k + 1) % bodyBack.length), bfirst + k);
+  }
+  // Quarter-turn fasteners at the panel's corners (where the hull has not taken the corner).
+  if (fine) {
     for (const [x, u] of [[x0 + 0.012, u0 + 0.012], [x1 - 0.012, u0 + 0.012], [x1 - 0.012, u1 - 0.012], [x0 + 0.012, u1 - 0.012]] as [number, number][]) {
-      const p = pt(x, u);
-      if (insideDistance(ctx.def, p) < ctx.def.wallThickness + MARGIN + 0.01) continue;
+      if (Math.abs(x) + 0.012 > hullHalfWidth(ctx, f, u - sec.uHinge, 0, so.face)) continue;
       fastener(ctx, offsetFrame(f, x, u - sec.uHinge, 0));
     }
   }
-  // Body: each back corner as deep as fits.
-  const backLoop = chamferBack.map((p) => fitInside(ctx, v3.addScaled(p, n, -depth), p));
-  ringLoops(ctx, chamferBack, backLoop, ctx.m('consoleBody', { ao: 0.6 }), (i) => v3.normalize(v3.sub(poly[i]!, centre)));
-  // Back face.
-  const bc = v3.addScaled(centre, n, -depth * 0.9);
-  const bci = b.vertex(fitInside(ctx, bc, centre), v3.neg(n), f.x, [0, 0], ctx.m('consoleBody', { ao: 0.5 }));
-  const bfirst = b.vertexCount;
-  for (const p of backLoop) b.vertex(p, v3.neg(n), f.x, [0, 0], ctx.m('consoleBody', { ao: 0.5 }));
-  for (let i = 0; i < backLoop.length; i++) b.tri(bci, bfirst + ((i + 1) % backLoop.length), bfirst + i);
-  // The lowest section closes the space under the console: a skirt from its lower edge, down and back to the
-  // wall (a close-out panel with a row of fasteners), so the eye does not run on under the console.
+  // Where the hull limits the plate: a seal bead along that edge toward the wall, and brackets from the
+  // body's cheek to the structure. Both reach toward the hull by design: a mount.
+  if (ctx.detail < 2) {
+    for (const side of [-1, 1]) {
+      const col = side < 0 ? 0 : nx;
+      const rows: number[] = [];
+      for (let j = 0; j <= nu; j++) if (clipped(col, j)) rows.push(j);
+      if (rows.length < 2) continue;
+      b.group('mount:console');
+      const path = rows.map((j) => v3.add(pt(xAt(col, j), U[j]!, -PLATE / 2), v3.scale(f.x, side * BEAD_OUT)));
+      b.tube(path, BEAD_RADIUS, fine ? 10 : 6, ctx.m('seal'), { caps: true });
+      if (fine) {
+        for (const t of [0.22, 0.78]) {
+          const j = rows[Math.round(t * (rows.length - 1))]!;
+          const from = v3.lerp(bodyAt(col, j, -PLATE), bodyAt(col, j, -depth), 0.3);
+          const az = Math.atan2(from.x, from.z);
+          // (The post ends a rim's slope short of the sloping wall: its foot does not reach into it.)
+          const reach = v3.dist(from, fitWallAlong(ctx, from, { x: Math.sin(az), y: 0, z: Math.cos(az) })) - 0.01;
+          if (reach > 0.01) b.cylinder(from, { x: Math.sin(az), y: 0, z: Math.cos(az) }, 0.011, reach, 10, ctx.m('aluminium'));
+        }
+      }
+      b.group('console');
+    }
+  }
+  // The lowest section closes the space under the console: a skirt from its lower edge, down and back
+  // toward the wall (a close-out panel with a row of fasteners), so the eye does not run on under the
+  // console. It ends at the body's stand-off from the wall.
   if (skirt) {
     const down = v3.normalize(v3.add(v3.scale(f.y, -0.75), v3.scale(n, -0.65)));
-    const top: Vec3[] = [];
-    for (let i = 0; i <= nx; i++) top.push(v3.addScaled(outlineAt(i, 0), n, -ch));
-    const bottom = top.map((p) => fitInside(ctx, v3.addScaled(p, down, 0.7), p));
+    const cols: number[] = [];
+    for (let i = 0; i <= nx; i++) if (i === 0 || xAt(i, 0) - xAt(cols[cols.length - 1]!, 0) > 1e-6) cols.push(i);
+    const top = cols.map((i) => v3.addScaled(outlineAt(i, 0), n, -ch));
+    const bottom = top.map((p) => fitToward(ctx, v3.addScaled(p, down, 0.7), p, so.body));
     const skirtMat = ctx.m('panel', { ao: 0.7 });
     const sn = v3.normalize(v3.cross(down, f.x));
     const first2 = b.vertexCount;
-    for (let i = 0; i <= nx; i++) {
-      b.vertex(top[i]!, sn, f.x, [X[i]!, 0], skirtMat);
-      b.vertex(bottom[i]!, sn, f.x, [X[i]!, v3.dist(top[i]!, bottom[i]!)], skirtMat);
-    }
-    for (let i = 0; i < nx; i++) b.quad(first2 + 2 * i, first2 + 2 * i + 1, first2 + 2 * i + 3, first2 + 2 * i + 2);
-    if (ctx.detail === 0) {
-      for (let i = 1; i < nx; i += 4) fastener(ctx, frameAt(v3.lerp(top[i]!, bottom[i]!, 0.06), f.x, v3.neg(down)), 0.8);
+    cols.forEach((i, k) => {
+      b.vertex(top[k]!, sn, f.x, [xAt(i, 0), 0], skirtMat);
+      b.vertex(bottom[k]!, sn, f.x, [xAt(i, 0), v3.dist(top[k]!, bottom[k]!)], skirtMat);
+    });
+    for (let k = 0; k + 1 < cols.length; k++) b.quad(first2 + 2 * k, first2 + 2 * k + 1, first2 + 2 * k + 3, first2 + 2 * k + 2);
+    if (fine) {
+      for (let k = 1; k + 1 < cols.length; k += 4) fastener(ctx, frameAt(v3.lerp(top[k]!, bottom[k]!, 0.06), f.x, v3.neg(down)), 0.8);
     }
   }
+}
+
+/** The point where the ray from p along the unit direction d (toward the wall) reaches the inner wall. */
+function fitWallAlong(ctx: CabinContext, p: Vec3, d: Vec3): Vec3 {
+  const need = ctx.def.wallThickness + 0.0005;
+  let lo = 0;
+  let hi = 0.4;
+  for (let k = 0; k < 30; k++) {
+    const mid = (lo + hi) / 2;
+    if (insideDistance(ctx.def, v3.addScaled(p, d, mid)) > need) lo = mid;
+    else hi = mid;
+  }
+  return v3.addScaled(p, d, lo);
 }
 
 /** Quarter-turn panel fastener: dimpled cup washer, slotted stud head (an overlay: it does not bury the panel's vertices). */
@@ -220,15 +345,25 @@ export function buildConsole(ctx: CabinContext): void {
   const sections = sectionFrames(ctx);
   const con = ctx.layout.console;
   // Footprints of the large parts: the panels' meshes follow their outlines (sectionSlab).
-  const rect = (x: number, u: number, hx: number, hu: number): Footprint => ({ x0: x - hx, x1: x + hx, u0: u - hu, u1: u + hu });
+  const rect = (x: number, u: number, hx: number, hu: number, name = ''): Footprint => ({ x0: x - hx, x1: x + hx, u0: u - hu, u1: u + hu, name });
   const ann = con.annunciator;
   const parts: Footprint[] = [
-    ...con.displays.map((d) => rect(d.x, d.u, d.activeWidth / 2 + d.border, d.activeHeight / 2 + d.border * 0.8)),
-    rect(con.navball.x, con.navball.u, con.navball.housing / 2, con.navball.housing / 2),
-    rect(ann.x, ann.u, (ann.columns * ann.cell[0]) / 2 + 0.006, (Math.ceil(ann.lamps.length / ann.columns) * ann.cell[1]) / 2 + 0.006),
-    ...con.masterAlarms.map((m) => rect(m.x, m.u, m.size / 2 + 0.005, m.size / 2 + 0.005)),
-    ...con.readouts.map((r) => rect(r.x, r.u, ...readoutHalf(r.digitHeight, r.readout))),
+    ...con.displays.map((d, i) => rect(d.x, d.u, d.activeWidth / 2 + d.border, d.activeHeight / 2 + d.border * 0.8, `display ${i + 1}`)),
+    rect(con.navball.x, con.navball.u, con.navball.housing / 2, con.navball.housing / 2, 'attitude indicator'),
+    rect(ann.x, ann.u, (ann.columns * ann.cell[0]) / 2 + 0.006, (Math.ceil(ann.lamps.length / ann.columns) * ann.cell[1]) / 2 + 0.006, 'annunciator'),
+    ...con.masterAlarms.map((m, i) => rect(m.x, m.u, m.size / 2 + 0.005, m.size / 2 + 0.005, `master alarm ${i + 1}`)),
+    ...con.readouts.map((r) => {
+      const [hx, hu] = readoutHalf(r.digitHeight, r.readout);
+      return rect(r.x, r.u, hx, hu, `readout ${r.readout.label}`);
+    }),
   ];
+  // The small parts too (their bodies and their nomenclature), for the fit check only.
+  const small: Footprint[] = [
+    ...con.switchRows.flatMap((row) => row.switches.map((sw, i) => rect(row.x + i * row.pitch, row.u, 0.019, 0.038, `switch ${sw.label}`))),
+    ...con.rotaries.map((r) => rect(r.x, r.u, r.radius * 1.35 + 0.02, r.radius * 1.35 + 0.014, `selector ${r.selector.label}`)),
+    ...con.lamps.map((l) => rect(l.x, l.u, l.size / 2 + 0.003, l.size * 0.35 + 0.003, `lamp ${l.lamp.label}`)),
+  ];
+  if (ctx.detail === 0) assertPartsFit(ctx, sections, [...parts, ...small]);
   const lowest = sections.reduce((a, s) => (s.def.u[0] < a.def.u[0] ? s : a), sections[0]!);
   for (const s of sections) sectionSlab(ctx, s, parts, s === lowest);
   const at = (x: number, u: number): Frame => consoleFrameAt(ctx, sections, x, u);
@@ -251,15 +386,24 @@ export function buildConsole(ctx: CabinContext): void {
   for (const r of con.rotaries) rotary(ctx, at(r.x, r.u), r.radius, r.selector, `rot:${r.x}:${r.u}`);
   for (const r of con.readouts) readout(ctx, at(r.x, r.u), r.digitHeight, r.readout, `ro:${r.x}:${r.u}`);
   for (const l of con.lamps) singleLamp(ctx, at(l.x, l.u), l.size, l.lamp, `lamp:${l.x}:${l.u}`);
-  // Mounting struts from the console top corners to the wall.
-  for (const s of sections) {
-    const f = s.frame;
-    for (const x of [s.def.x[0] + 0.05, s.def.x[1] - 0.05]) {
-      const top = local(f, x, s.def.u[1] - s.uHinge - 0.02, -con.depth * 0.5);
-      const dir = v3.normalize(v3.add(v3.scale(f.n, -1), v3.scale(f.y, 0.6)));
-      let end = v3.addScaled(top, dir, 0.6);
-      end = fitInsideAlong(ctx, top, end);
-      if (v3.dist(top, end) > 0.05) ctx.b.tube([top, end], 0.01, 8, ctx.m('couchFrame'));
+}
+
+/**
+ * Every part mounted on the console lies on its section's face inside the hull's limit (with the chamfer's
+ * width to spare): a layout whose instruments hang over the panel's hull-side edge is refused with the
+ * part's name, instead of being built into the wall.
+ */
+function assertPartsFit(ctx: CabinContext, sections: SectionFrame[], parts: Footprint[]): void {
+  const so = consoleStandoff(ctx);
+  for (const p of parts) {
+    const xc = (p.x0 + p.x1) / 2;
+    const uc = (p.u0 + p.u1) / 2;
+    const sec = sections.find((s) => xc >= s.def.x[0] - 1e-6 && xc <= s.def.x[1] + 1e-6 && uc >= s.def.u[0] - 1e-6 && uc <= s.def.u[1] + 1e-6);
+    if (!sec) throw new Error(`cockpit console: no section contains the ${p.name} at (x ${xc.toFixed(3)}, u ${uc.toFixed(3)})`);
+    for (const u of [p.u0, p.u1]) {
+      const w = hullHalfWidth(ctx, sec.frame, u - sec.uHinge, 0, so.face) - 0.008;
+      const reach = Math.max(Math.abs(p.x0), Math.abs(p.x1));
+      if (reach > w) throw new Error(`cockpit console: the ${p.name} reaches x ${reach.toFixed(3)} m at u ${u.toFixed(3)}, but the hull leaves the panel ${w.toFixed(3)} m there: move it inboard`);
     }
   }
 }
@@ -286,8 +430,9 @@ function consoleJoints(ctx: CabinContext, sections: SectionFrame[]): void {
     if (!s.def.tiltDeg) continue;
     const f = s.frame;
     const mid = local(f, (s.def.x[0] + s.def.x[1]) / 2, 0, -0.011);
-    const p0 = fitInsideAlong(ctx, mid, local(f, s.def.x[0] + 0.004, 0, -0.011), 0.016);
-    const p1 = fitInsideAlong(ctx, mid, local(f, s.def.x[1] - 0.004, 0, -0.011), 0.016);
+    const reach = consoleStandoff(ctx).face + 0.014;
+    const p0 = fitInsideAlong(ctx, mid, local(f, s.def.x[0] + 0.004, 0, -0.011), reach);
+    const p1 = fitInsideAlong(ctx, mid, local(f, s.def.x[1] - 0.004, 0, -0.011), reach);
     b.cylinder(p0, v3.sub(p1, p0), 0.0125, v3.dist(p0, p1), ctx.detail === 0 ? 14 : 8, body, { caps: 'both', ref: f.n });
   }
   if (ctx.detail > 0) return;

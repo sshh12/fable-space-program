@@ -64,27 +64,27 @@
     "hipU": -0.68,
     "thighLength": 0.42,
     "seats": {
-      "cdr": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": true, "halfWidth": 0.2, "legHalfWidth": 0.15, "shinLength": 0.34, "armrests": [-0.145, 0.25] },
+      "cdr": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": true, "halfWidth": 0.168, "legHalfWidth": 0.14, "shinLength": 0.29, "armrests": [-0.145, 0.25] },
       "plt": { "thighDeg": 100, "kneeDeg": 70, "kneeShift": 0, "controllers": true, "halfWidth": 0.22, "legHalfWidth": 0.17, "shinLength": 0.38, "armrests": [-0.25, 0.25] },
-      "ms": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": false, "halfWidth": 0.2, "legHalfWidth": 0.15, "shinLength": 0.34, "armrests": [-0.25, 0.145] }
+      "ms": { "thighDeg": 105, "kneeDeg": 40, "kneeShift": 0.22, "controllers": false, "halfWidth": 0.168, "legHalfWidth": 0.14, "shinLength": 0.29, "armrests": [-0.25, 0.145] }
     }
   },
   "console": {
-    "distance": 0.55,
-    "depth": 0.6,
+    "distance": 0.54,
+    "depth": 0.32,
     "sections": [
-      { "id": "left", "x": [-0.8, -0.27], "u": [-0.17, 0.22] },
-      { "id": "centre", "x": [-0.27, 0.27], "u": [-0.17, 0.17] },
-      { "id": "right", "x": [0.27, 0.8], "u": [-0.17, 0.22] },
-      { "id": "upper", "x": [-0.27, 0.27], "u": [0.17, 0.34], "tiltDeg": 14, "depth": 0.6 },
-      { "id": "lower", "x": [-0.78, 0.78], "u": [-0.36, -0.17], "tiltDeg": -30 }
+      { "id": "left", "x": [-0.77, -0.25], "u": [-0.17, 0.22] },
+      { "id": "centre", "x": [-0.25, 0.25], "u": [-0.17, 0.17] },
+      { "id": "right", "x": [0.25, 0.77], "u": [-0.17, 0.22] },
+      { "id": "upper", "x": [-0.25, 0.25], "u": [0.17, 0.34], "tiltDeg": 14 },
+      { "id": "lower", "x": [-0.76, 0.76], "u": [-0.36, -0.17], "tiltDeg": -30 }
     ],
     "displays": [
-      { "x": -0.43, "u": 0.0, "activeWidth": 0.248, "activeHeight": 0.186, "border": 0.032, "keys": 6 },
+      { "x": -0.415, "u": 0.0, "activeWidth": 0.248, "activeHeight": 0.186, "border": 0.032, "keys": 6 },
       { "x": 0.0, "u": 0.0, "activeWidth": 0.248, "activeHeight": 0.186, "border": 0.032, "keys": 6 },
-      { "x": 0.43, "u": 0.0, "activeWidth": 0.248, "activeHeight": 0.186, "border": 0.032, "keys": 6 }
+      { "x": 0.415, "u": 0.0, "activeWidth": 0.248, "activeHeight": 0.186, "border": 0.032, "keys": 6 }
     ],
-    "navball": { "x": -0.69, "u": 0.0, "ballRadius": 0.05, "housing": 0.148 },
+    "navball": { "x": -0.655, "u": 0.0, "ballRadius": 0.05, "housing": 0.148 },
     "annunciator": {
       "x": 0.0,
       "u": 0.25,
@@ -112,8 +112,8 @@
       ]
     },
     "masterAlarms": [
-      { "x": -0.585, "u": 0.165, "size": 0.04 },
-      { "x": 0.66, "u": 0.165, "size": 0.04 }
+      { "x": -0.535, "u": 0.165, "size": 0.04 },
+      { "x": 0.645, "u": 0.165, "size": 0.04 }
     ],
     "switchRows": [
       { "x": -0.72, "u": -0.3, "pitch": 0.042, "switches": [{ "label": "CAB FAN 1", "binding": "none", "kind": "toggle", "up": "ON", "down": "OFF", "fixed": 0 }, { "label": "CAB FAN 2", "binding": "none", "kind": "toggle", "up": "ON", "down": "OFF", "fixed": 1 }, { "label": "SUIT FAN", "binding": "none", "kind": "toggle", "up": "ON", "down": "OFF", "fixed": 0 }, { "label": "GLY PUMP", "binding": "none", "kind": "toggle", "up": "A", "down": "B", "fixed": 0 }, { "label": "CO2 SCRB", "binding": "none", "kind": "toggle", "up": "A", "down": "B", "fixed": 1 }, { "label": "O2 FLOW", "binding": "none", "kind": "toggle", "up": "HI", "down": "NORM", "fixed": 1 }, { "label": "N2 FLOW", "binding": "none", "kind": "toggle", "up": "AUTO", "down": "OFF", "fixed": 0 }, { "label": "H2O SEP", "binding": "none", "kind": "toggle", "up": "ON", "down": "OFF", "fixed": 0 }] },
@@ -162,13 +162,13 @@
       { "x": 0.17, "u": -0.3, "digitHeight": 0.017, "readout": { "label": "DELTA-V", "binding": "deltaV", "digits": 4, "color": [1.0, 0.24, 0.06], "luminance": 140 } }
     ],
     "lamps": [
-      { "x": -0.75, "u": 0.165, "size": 0.03, "lamp": { "label": "SAS", "binding": "sas", "color": [0.25, 1.0, 0.45], "luminance": 220 } },
-      { "x": -0.71, "u": 0.165, "size": 0.03, "lamp": { "label": "RCS", "binding": "rcs", "color": [0.25, 1.0, 0.45], "luminance": 220 } },
-      { "x": -0.67, "u": 0.165, "size": 0.03, "lamp": { "label": "ENG", "binding": "engineFiring", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
-      { "x": 0.72, "u": 0.1, "size": 0.03, "lamp": { "label": "CAB P", "binding": "none", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
-      { "x": 0.72, "u": 0.06, "size": 0.03, "lamp": { "label": "CO2 HI", "binding": "none", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
-      { "x": 0.72, "u": 0.02, "size": 0.03, "lamp": { "label": "O2 FLOW", "binding": "none", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
-      { "x": 0.72, "u": -0.02, "size": 0.03, "lamp": { "label": "ABLATOR", "binding": "heatShield", "color": [1.0, 0.12, 0.06], "luminance": 320 } }
+      { "x": -0.685, "u": 0.165, "size": 0.03, "lamp": { "label": "SAS", "binding": "sas", "color": [0.25, 1.0, 0.45], "luminance": 220 } },
+      { "x": -0.645, "u": 0.165, "size": 0.03, "lamp": { "label": "RCS", "binding": "rcs", "color": [0.25, 1.0, 0.45], "luminance": 220 } },
+      { "x": -0.605, "u": 0.165, "size": 0.03, "lamp": { "label": "ENG", "binding": "engineFiring", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
+      { "x": 0.69, "u": 0.1, "size": 0.03, "lamp": { "label": "CAB P", "binding": "none", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
+      { "x": 0.69, "u": 0.06, "size": 0.03, "lamp": { "label": "CO2 HI", "binding": "none", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
+      { "x": 0.69, "u": 0.02, "size": 0.03, "lamp": { "label": "O2 FLOW", "binding": "none", "color": [1.0, 0.62, 0.1], "luminance": 260 } },
+      { "x": 0.69, "u": -0.02, "size": 0.03, "lamp": { "label": "ABLATOR", "binding": "heatShield", "color": [1.0, 0.12, 0.06], "luminance": 320 } }
     ]
   },
   "wallPanels": [
@@ -216,6 +216,30 @@
       ]
     }
   ],
+  "fixtures": {
+    "handholds": [[147, 1.12, 0.3], [213, 1.12, 0.3], [-143, 1.47, 0.26], [68, 1.38, 0.24]],
+    "lockers": [
+      { "azDeg": -135, "y": 0.55, "width": 0.36, "height": 0.28, "label": "B1 · FOOD" },
+      { "azDeg": -160, "y": 0.55, "width": 0.3, "height": 0.28, "label": "B2 · HYGIENE" },
+      { "azDeg": 135, "y": 0.55, "width": 0.36, "height": 0.28, "label": "B3 · MEDICAL" },
+      { "azDeg": 160, "y": 0.55, "width": 0.3, "height": 0.28, "label": "B4 · SURVIVAL" },
+      { "azDeg": -45, "y": 0.52, "width": 0.42, "height": 0.24, "label": "A1 · CAMERAS" },
+      { "azDeg": 45, "y": 0.52, "width": 0.42, "height": 0.24, "label": "A2 · LiOH SPARES" },
+      { "azDeg": -10, "y": 0.5, "width": 0.3, "height": 0.22, "label": "A3 · TOOLS" },
+      { "azDeg": 10, "y": 0.5, "width": 0.3, "height": 0.22, "label": "A4 · CLOTHING" }
+    ],
+    "cables": [
+      { "y": 0.87, "az": [-72, -30], "r": 0.008, "mat": "cableGrey" },
+      { "y": 0.87, "az": [30, 72], "r": 0.008, "mat": "cableGrey" }
+    ],
+    "extinguisher": { "azDeg": 152, "y": 0.82 },
+    "dataFile": { "azDeg": 0, "y": 1.05 },
+    "bags": [
+      { "azDeg": -42, "y": 1.1, "width": 0.27, "height": 0.2, "strap": "webbingOrange", "label": "CREW PREF KIT" },
+      { "azDeg": 42, "y": 1.1, "width": 0.27, "height": 0.2, "strap": "webbing", "label": "WET WIPES" }
+    ],
+    "checklist": { "azDeg": -68, "y": 1.36 }
+  },
   "windows": {
     "bezelWidth": 0.045,
     "bezelDepth": 0.032,
@@ -230,13 +254,14 @@
   "hatch": { "thickness": 0.075, "latches": 10, "handleSide": 1, "dockingHatchY": 2.4 },
   "lighting": {
     "floods": [
-      { "azDeg": 32, "y": 2.02, "length": 0.22, "aim": [0.1, 1.55, 0.35], "lumens": 120, "cct": 4600 },
-      { "azDeg": -32, "y": 2.02, "length": 0.22, "aim": [-0.1, 1.55, 0.35], "lumens": 120, "cct": 4600 },
-      { "azDeg": 148, "y": 1.98, "length": 0.22, "aim": [0.35, 1.05, 0.0], "lumens": 120, "cct": 4600 },
-      { "azDeg": -148, "y": 1.98, "length": 0.22, "aim": [-0.35, 1.05, 0.0], "lumens": 120, "cct": 4600 },
-      { "azDeg": 90, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 65, "cct": 4600 },
-      { "azDeg": -90, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 65, "cct": 4600 }
+      { "azDeg": 52, "y": 1.32, "length": 0.2, "aim": [0.15, 1.5, 0.2], "lumens": 120, "cct": 4600 },
+      { "azDeg": -52, "y": 1.32, "length": 0.2, "aim": [-0.15, 1.5, 0.2], "lumens": 120, "cct": 4600 },
+      { "azDeg": 108, "y": 1.52, "length": 0.22, "aim": [0.3, 1.0, -0.25], "lumens": 120, "cct": 4600 },
+      { "azDeg": -108, "y": 1.52, "length": 0.22, "aim": [-0.3, 1.0, -0.25], "lumens": 120, "cct": 4600 },
+      { "azDeg": 66, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 65, "cct": 4600 },
+      { "azDeg": -66, "y": 0.62, "length": 0.18, "aim": [0.0, 0.3, 0.0], "lumens": 65, "cct": 4600 }
     ],
+    "floodStandby": 0.3,
     "displayLuminance": 450,
     "displayMinBrightness": 0.06,
     "displayFullAmbient": 3000,

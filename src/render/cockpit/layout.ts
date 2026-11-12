@@ -247,6 +247,11 @@ export interface LightingDef {
   displayFullAmbient: number;
   /** Integral lighting of the attitude indicator (luminance of its white at night, cd/m^2). */
   fdaiLighting: number;
+  /**
+   * The cabin floods with the vessel's lights command OFF, as a share of their full flux (the crew's dimmed
+   * setting: a cabin is never flown dark); the lights command brings them to full.
+   */
+  floodStandby: number;
   /** Back-lit legends of the panels (cd/m^2) and their colour. */
   legendLuminance: number;
   legendColor: [number, number, number];
@@ -312,6 +317,24 @@ export interface LightTransportDef {
   probeSize: number;
 }
 
+/**
+ * What is mounted on the wall besides the panels and the floods: where each fixture sits (azimuth in degrees
+ * about +Y from +Z toward +X, height y in the part frame). The builder seats every one clear of the
+ * insulation, the frames and the floor (cabin/fixtures.ts).
+ */
+export interface FixturesDef {
+  /** Handholds: [azimuth, y, length (m)]. */
+  handholds: [number, number, number][];
+  lockers: { azDeg: number; y: number; width: number; height: number; label: string }[];
+  /** Cable bundles along the wall at height y between two azimuths: radius of the main cable (m) and its material. */
+  cables: { y: number; az: [number, number]; r: number; mat: string }[];
+  extinguisher: { azDeg: number; y: number };
+  dataFile: { azDeg: number; y: number };
+  /** Soft stowage bags: size (m), the material of their straps, the name on their tag. */
+  bags: { azDeg: number; y: number; width: number; height: number; strap: string; label: string }[];
+  checklist: { azDeg: number; y: number };
+}
+
 export interface CockpitLayoutDef {
   /** Section key of the capsule mould line this interior is built inside. */
   mouldLine: string;
@@ -320,6 +343,7 @@ export interface CockpitLayoutDef {
   couches: CouchesDef;
   console: ConsoleDef;
   wallPanels: WallPanelDef[];
+  fixtures: FixturesDef;
   windows: WindowsDef;
   hatch: HatchDef;
   lighting: LightingDef;
@@ -379,6 +403,11 @@ export function validateLayout(l: CockpitLayoutDef, mould: CapsuleMouldLineDef, 
   const [p0, p1] = l.displays.pixelStructure;
   if (!(p0 > 0 && p1 > p0)) fail('displays.pixelStructure: two increasing positive values');
   if (!(l.displays.tabSpan > 0.2 && l.displays.tabSpan <= 1)) fail('displays.tabSpan: the share of the screen width the page tabs span, in (0.2, 1]');
+  const fx = l.fixtures;
+  if (!fx || !Array.isArray(fx.handholds) || !Array.isArray(fx.lockers) || !Array.isArray(fx.cables) || !Array.isArray(fx.bags) || !fx.extinguisher || !fx.dataFile || !fx.checklist) fail('fixtures: handholds, lockers, cables, bags, extinguisher, dataFile and checklist are required');
+  for (const c of fx.cables) if (!mats[c.mat]) fail(`fixtures.cables: material "${c.mat}" is not defined`);
+  for (const b of fx.bags) if (!mats[b.strap]) fail(`fixtures.bags: strap material "${b.strap}" is not defined`);
+  if (!(l.lighting.floodStandby >= 0 && l.lighting.floodStandby <= 1)) fail('lighting.floodStandby: the share of the floods\' flux with the lights command off, in 0..1');
 }
 
 /** Occlusion slots per vertex (occlusion.ts): windows including the hatch window, and displays. */

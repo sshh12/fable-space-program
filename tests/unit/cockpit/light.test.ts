@@ -79,10 +79,18 @@ describe('occlusion bake', () => {
   const up = { x: 0, y: 1, z: 0 };
 
   it('hides the flood lights from the floor under the couches and occludes the corner at the wall', () => {
+    // The floods that stand above the couches (higher than the seats' eye points) are hidden from the floor
+    // under the pilot's back and hips, and seen from the open floor ahead of the couches. (The low floods by
+    // the floor shine across it, under the couches: they are no part of this.)
     const plt = seatFrames(model.mould).find((s) => s.id === 'plt')!;
-    const under = occlusionAt(model, model.bvh, sources, floorPoint(plt.eye.x, plt.eye.z - 0.1), up, 1);
-    const side = occlusionAt(model, model.bvh, sources, floorPoint(1.2, 0), up, 2);
-    expect(side.flood).toBeGreaterThan(under.flood + 0.3);
+    const overhead = model.floods.map((f, i) => (Math.min(f.p0.y, f.p1.y) > plt.eye.y ? i : -1)).filter((i) => i >= 0);
+    expect(overhead.length).toBeGreaterThanOrEqual(2);
+    const mean = (o: { floods: number[] }): number => overhead.reduce((s, i) => s + o.floods[i]!, 0) / overhead.length;
+    const floorR = model.mesh.bounds.max.x;
+    const under = occlusionAt(model, model.bvh, sources, floorPoint(plt.eye.x, plt.eye.z + plt.U.z * model.layout.couches.hipU * 0.8), up, 1);
+    const open = occlusionAt(model, model.bvh, sources, floorPoint(0, 0.7 * floorR), up, 2);
+    expect(mean(open)).toBeGreaterThan(mean(under) + 0.3);
+    expect(mean(under)).toBeLessThan(0.25);
     // Where the floor meets the sloping wall, the wall takes a large part of the hemisphere.
     const r = model.mould.heatShield.maxDiameter / 2;
     const corner = occlusionAt(model, model.bvh, sources, floorPoint(0.3, -(r - 0.4)), up, 3);
