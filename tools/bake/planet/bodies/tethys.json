@@ -18,7 +18,7 @@
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Tethys_Cassini_mosaic_global_293m.tif",
    "bytes": 66401923,
    "md5": "ad9a34b70df32f19dca71107432804d2",
-   "sha256": null,
+   "sha256": "40723c3ebfaaa52a657827b37309bc84234811db1cf26a21d086e26aba2b3640",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "east",

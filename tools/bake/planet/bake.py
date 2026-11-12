@@ -186,6 +186,7 @@ def main() -> None:
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--credits", action="store_true")
     ap.add_argument("--clean", action="store_true")
+    ap.add_argument("--keep-going", action="store_true", help="bake the remaining bodies when one fails (exit 1 at the end)")
     a = ap.parse_args()
     rt.check_python()
     rt.below_normal_priority()
@@ -195,19 +196,31 @@ def main() -> None:
     ids = config.all_ids(a.kind) if (a.all or a.kind) else a.ids
     if not ids:
         ap.error("no body given")
+    failed = []
     for bid in ids:
         body = config.load(bid)
         if a.clean:
             clean(body)
             continue
-        if body.kind == "giant":
-            giants.bake(body, record=a.record_checksums)
-            continue
-        steps = a.steps.split(",") if a.steps else list(SOLID_STEPS)
-        bad = [s for s in steps if s not in SOLID_STEPS]
-        if bad:
-            ap.error(f"unknown steps {bad}")
-        bake_solid(body, steps, a.record_checksums, a.force)
+        try:
+            if body.kind == "giant":
+                giants.bake(body, record=a.record_checksums)
+                continue
+            steps = a.steps.split(",") if a.steps else list(SOLID_STEPS)
+            bad = [s for s in steps if s not in SOLID_STEPS]
+            if bad:
+                ap.error(f"unknown steps {bad}")
+            bake_solid(body, steps, a.record_checksums, a.force)
+        except Exception:
+            if not a.keep_going:
+                raise
+            import traceback
+            traceback.print_exc()
+            failed.append(bid)
+            rt.log(f"{bid}: FAILED (continuing with the next body)")
+    if failed:
+        rt.log(f"failed: {failed}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

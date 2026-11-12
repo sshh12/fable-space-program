@@ -18,7 +18,7 @@
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Titan_ISS_P19658_Mosaic_Global_4km.tif",
    "bytes": 8169529,
    "md5": "2c17d0118929e77e67245dfd16a16560",
-   "sha256": null,
+   "sha256": "ca0fe5f6f9bdba1b6d03245969a42336a010ddc17d636e5e06fffa939d10ca83",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "west",

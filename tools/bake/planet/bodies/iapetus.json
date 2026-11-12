@@ -18,7 +18,7 @@
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Iapetus_Cassini_Voyager_mosaic_global_783m.tif",
    "bytes": 16612487,
    "md5": "bfd94a66da7929f6ff9d7c47b0febee0",
-   "sha256": null,
+   "sha256": "eb8acdbed3af495102b6ec6d3efce1f03dc6bc39bb43323c23231ce590494d6e",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "west",

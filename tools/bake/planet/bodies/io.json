@@ -18,7 +18,7 @@
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif",
    "bytes": 196637696,
    "md5": "eb9e79199ee38816bb17277a0d3598de",
-   "sha256": null,
+   "sha256": "135f88cb645bfdb4e045b380971ab2ba14e230590c96c9c86cfe7310fda881ac",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "west",

@@ -18,7 +18,7 @@
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Rhea_Cassini_Voyager_mosaic_global_417m.tif",
    "bytes": 66401915,
    "md5": "beb4fcce091fc4c262b5ddd893997fb2",
-   "sha256": null,
+   "sha256": "ce537c3c93670a0d4ea5a64b99bffb76ff308727eb3eabeee0a38cf9f6f1abc7",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "west",

@@ -18,7 +18,7 @@
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Triton_Voyager2_ClrMosaic_GlobalFill_600m.tif",
    "bytes": 299994887,
    "md5": "639d45b53604aa4395eccd17e4a9c0df",
-   "sha256": null,
+   "sha256": "f20ed332e85df469725629b81d3a73ad026897fe561ec59d6245d249a09507db",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "east",

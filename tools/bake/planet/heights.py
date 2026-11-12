@@ -4,10 +4,11 @@
                                                         sphere a DEM is given against (a DEM's own datum)
             [+ procedural crater relief]               bodies with no map (procedural.ts)
 
-Finest level F: the full-weighting tent (earth/hpyramid.tent_of_function) of the DEM sampled with the area
-filter at the vertex spacing of level F+1 (source.Raster.sample), plus the analytic reference term; bodies
-without a DEM take the analytic term (and the procedural relief) at the vertices. Coarser levels: the
-existing full-weighting pyramid (earth/hpyramid.downsample_tile), seamless across tile and cube-face edges.
+Finest level F: at every vertex the DEM area-filtered over the level's local vertex spacing
+(source.Raster.sample: mips + Catmull-Rom + longitude taps, a pure function of the direction, so shared edge
+vertices are bit-identical across tiles and cube faces, as in the Moon's global levels), plus the analytic
+reference term; bodies without a DEM take the analytic term (and the procedural relief) at the vertices.
+Coarser levels: the existing full-weighting pyramid (earth/hpyramid.downsample_tile).
 """
 from __future__ import annotations
 
@@ -60,11 +61,9 @@ def _proc_relief(body: config.Body, face: int, x: int, y: int) -> np.ndarray:
 def finest_tile(body: config.Body, face: int, x: int, y: int) -> np.ndarray:
     F = int(body.height["maxLevel"])
     d = cube.height_tile_dirs(face, F, x, y)
-    if body.height["dem"] is not None:
-        def fn(p):
-            return reference_term(body, p) + dem_metres(body, p, F + 1)
-        return hpyramid.tent_of_function(face, F, x, y, fn)
     h = reference_term(body, d)
+    if body.height["dem"] is not None:
+        return h + dem_metres(body, d.reshape(-1, 3), F).reshape(259, 259)
     if body.height["craters"] is not None:
         h = h + _proc_relief(body, face, x, y)
     return h

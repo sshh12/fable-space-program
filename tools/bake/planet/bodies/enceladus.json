@@ -18,7 +18,7 @@
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Enceladus_Cassini_ISS_Global_Mosaic_100m_HPF.tif",
    "bytes": 125516825,
    "md5": "e91a5385b37331407a1c066b770942a7",
-   "sha256": null,
+   "sha256": "a15d944acf7da25e89f8f1ece6694632521980e77af024db7746cb33d05fb04b",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "east",

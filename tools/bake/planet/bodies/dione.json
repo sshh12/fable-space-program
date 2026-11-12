@@ -18,7 +18,7 @@
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Dione_Cassini_Voyager_mosaic_global_154m.tif",
    "bytes": 265490551,
    "md5": "c04cf8a950ad7726fbf1cc314b28b879",
-   "sha256": null,
+   "sha256": "5c5d796c02e3c99fde5dd034e01dd1f25905699a4885843aed445ded955e08b5",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "east",

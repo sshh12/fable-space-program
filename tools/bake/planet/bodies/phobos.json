@@ -18,7 +18,7 @@
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Phobos_Viking_Mosaic_40ppd_DLRcontrol.tif",
    "bytes": 103738243,
    "md5": "559afb850819eaa4ba413aa84c82b517",
-   "sha256": null,
+   "sha256": "d7934d5b209e5f31ed26297e1e85a4713d8d0aa2906111ffe4b3d60d02ae0ccb",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "east",
