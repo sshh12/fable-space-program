@@ -14,17 +14,18 @@ vertex grid, i.e. the collision surface and the rendered surface (ARCHITECTURE 1
 level or water mask >= 50 % (the coastline of the ocean and inland water); land cover = level-12 classes.
 Beyond the finest coverage (ocean rays far out) the global level 7 answers.
 
-The rule per pad is the brief's "flat, dry, clear of the shore" with the numbers of the rule that placed LC-1 (the
-region's siteResolution; LC-1's are those of earth-ka-lae.json):
+The rule per pad is the brief's "flat, dry, clear of the shore": the ground tests of the rule that placed LC-1, with
+its numbers (the region's siteResolution; LC-1's are those of earth-ka-lae.json):
   FLAT   plane through the heights of the disc of radius discRadiusM (10 m grid): slope < maxSlopeDeg and no point
          further than maxReliefM from the plane;
-  DRY    the centre and at least minAllowedFraction of the disc are dry land (land cover neither water nor wetland);
+  DRY    bare, dry ground as LC-1's land-cover test: the centre and at least minAllowedFraction of the disc are
+         WorldCover "bare / sparse vegetation" or "moss and lichen" (site.ALLOWED_WC), which the regional land
+         cover stores as bareRock, sand or sparseScrub (never water, wetland, trees, crops, grass or built-up);
   CLEAR OF THE SHORE  nearest water (sea or inland, 10 m grid) >= minShoreDistanceM, natural height at the centre
          >= minHeightM; and latitude < maxLatDeg.
-LC-1's two site-selection tests are evaluated and REPORTED per pad, not gated: the share of the disc in
-allowedLandcover (bare ground) and the open ocean sector (every azimuth of oceanAzimuthDeg reaches the sea within
-oceanReachKm, then no land out to openOceanKm). With both gated, no second pad exists within 45 km of LC-1 (the
-hand-off, "Pads", has the numbers).
+LC-1's site-selection test, the open ocean sector (every azimuth of oceanAzimuthDeg reaches the sea within
+oceanReachKm, then no land out to openOceanKm), is evaluated and REPORTED per pad, not gated: with it gated no
+second pad exists within 45 km of LC-1 (the hand-off, "Pads", has the numbers). --strict gates it too (a measurement).
 Spacing (ARCHITECTURE 9.3): heavy pads at least 2.5 km apart, medium 1.5 km, light 1 km. Each pad owns a disc of
 half its class spacing and no two discs overlap, i.e. pads of classes a and b are at least (s_a + s_b) / 2 apart:
 exactly the class spacing between pads of one class, 1.75 km between a heavy and a light pad.
@@ -181,7 +182,7 @@ class Resolver:
         wat = g.water(la2, lo2)
         dist = np.hypot(E2.ravel(), N2.ravel())
         out["shoreDistanceM"] = float(dist[wat].min()) if wat.any() else 3000.0
-        out["shoreBeyondWindow"] = not bool(wat.any())
+        out["shoreBeyondWindow"] = not bool(wat.any())          # no water in the 6 x 6 km window: farther than 3 km
         out["oceanRays"] = self.rays(lat, lon)
         out["failures"] = self.failures(out)
         out["pass"] = not out["failures"]
@@ -212,7 +213,7 @@ class Resolver:
         return {"ok": True, "maxCoastDistanceM": worst}
 
     def failures(self, e: dict) -> list[str]:
-        """The gates: flat (slope, relief), dry, clear of the shore (shore, height), latitude."""
+        """The gates: flat (slope, relief), dry (bare ground), clear of the shore (shore, height), latitude."""
         c = self.cfg
         f = []
         if e["height"] < c["minHeightM"]:
@@ -223,7 +224,7 @@ class Resolver:
             f.append("slope")
         if e["reliefM"] > c["maxReliefM"]:
             f.append("relief")
-        if not e["centreDry"] or e["dryFraction"] < c["minAllowedFraction"]:
+        if not e["centreAllowed"] or e["allowedFraction"] < c["minAllowedFraction"]:
             f.append("dry")
         if e["latDeg"] >= c["maxLatDeg"]:
             f.append("latitude")
@@ -233,9 +234,8 @@ class Resolver:
 
     @staticmethod
     def site_tests(e: dict, c: dict) -> dict:
-        """LC-1's site-selection tests, reported: bare ground and the open ocean sector."""
-        return {"bareGround": bool(e["centreAllowed"] and e["allowedFraction"] >= c["minAllowedFraction"]),
-                "oceanSector": bool(e["oceanRays"]["ok"])}
+        """LC-1's site-selection test, reported: the open ocean sector."""
+        return {"oceanSector": bool(e["oceanRays"]["ok"])}
 
     # -- gridded pre-filter (necessary conditions, cheap) ---------------------------------------------------
     def grid(self) -> dict:
@@ -260,7 +260,7 @@ class Resolver:
         bx = signal.fftconvolve(H, (kx * disc)[::-1, ::-1], mode="same") / sxx
         by = signal.fftconvolve(H, (ky * disc)[::-1, ::-1], mode="same") / sxx
         slope = np.degrees(np.arctan(np.hypot(bx, by)))
-        dry = ~np.isin(LC, WET)
+        dry = np.isin(LC, self.allowed)
         frac = signal.fftconvolve(dry.astype(np.float64), disc, mode="same") / nd
         dist = np.hypot(E, N)
         tests = {
@@ -390,6 +390,7 @@ def run(region_id: str, args) -> dict:
             "report": {"naturalHeightM": round(e["height"], 2), "slopeDeg": round(e["slopeDeg"], 3),
                        "reliefM": round(e["reliefM"], 2), "planeRmsM": round(e["planeRmsM"], 3),
                        "roughness10M": round(e["roughness10M"], 3), "shoreDistanceM": round(e["shoreDistanceM"], 0),
+                       "shoreBeyondWindow": e["shoreBeyondWindow"],
                        "dryFraction": round(e["dryFraction"], 3), "bareFraction": round(e["allowedFraction"], 3),
                        "centreClass": e["centreClass"], "oceanRays": e["oceanRays"],
                        "siteTests": Resolver.site_tests(e, res.cfg), "passes": e["pass"], "failures": e["failures"],
@@ -408,15 +409,16 @@ def run(region_id: str, args) -> dict:
         "liveManifestContentHash": content_hash,
         "rule": {**{k: v for k, v in res.cfg.items() if k not in ("nominal", "allowedLandcover")},
                  "searchRadiusKm": res.search_m / 1000.0,
-                 "gates": "flat (slope, relief over the disc), dry (centre and minAllowedFraction of the disc neither "
-                          "water nor wetland), clear of the shore (minShoreDistanceM to any water, minHeightM), latitude",
-                 "reported": f"bare ground ({', '.join(BARE)} on minAllowedFraction of the disc) and the open ocean sector",
+                 "gates": f"flat (slope, relief over the disc), dry (the centre and minAllowedFraction of the disc bare "
+                          f"ground: {', '.join(BARE)}, i.e. WorldCover 60/100 as LC-1 was placed), clear of the shore "
+                          f"(minShoreDistanceM to any water, minHeightM), latitude",
+                 "reported": "the open ocean sector (oceanAzimuthDeg, oceanReachKm, openOceanKm)",
                  "classes": classes, "spacing": "pads of classes a and b at least (spacing_a + spacing_b) / 2 apart"},
         "referencePad": ref["id"],
         "pads": pads,
     }
     if res.strict:
-        doc["rule"]["gates"] += "; STRICT: bare ground and the open ocean sector gated too (a measurement, not the rule)"
+        doc["rule"]["gates"] += "; STRICT: the open ocean sector gated too (a measurement, not the rule)"
     else:
         STAGED_SITES.mkdir(parents=True, exist_ok=True)
         write_json(STAGED_SITES / f"{args.site}.pads.json", doc)
@@ -436,6 +438,6 @@ def report_table(doc: dict) -> str:
         oc = "open" if r["oceanRays"]["ok"] else f"no: {r['oceanRays']['failAzimuthDeg']:.0f} deg, {r['oceanRays']['reason']}"
         rows.append(f"| {p['id']}{' (fixed)' if p['fixed'] else ''} | {p['class']} | {p['latDeg']:.6f}, {p['lonDeg']:.6f} | "
                     f"{p['padElevation']:.2f} | {r['slopeDeg']:.2f} | {r['reliefM']:.1f} | {r['roughness10M']:.2f} | "
-                    f"{r['planeRmsM']:.2f} | {r['shoreDistanceM']:.0f} | {r['dryFraction']:.2f} | {r['bareFraction']:.2f} | "
+                    f"{r['planeRmsM']:.2f} | {'> ' if r['shoreBeyondWindow'] else ''}{r['shoreDistanceM']:.0f} | {r['dryFraction']:.2f} | {r['bareFraction']:.2f} | "
                     f"{r['centreClass']} | {oc} | {r['distanceFromNominalM'] / 1000:.2f} |")
     return "\n".join(rows)

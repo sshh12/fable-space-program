@@ -27,8 +27,13 @@ Status: IN PROGRESS. This file is the running log of the package; the final sect
   test of LC-1's rule gated (incl. bare land cover and the open-ocean sector 60-130 deg), NO second pad fits; LC-1
   itself reaches the bare-ground share exactly (0.80). Flat + dry + clear of the shore: 16 pads within 4.8 km of
   LC-1; + bare land cover: 16 pads 7-13 km west on the Kahuku lava flows (sector to the east blocked by the
-  island); + ocean sector without land cover: 5 pads. Decision (brief's own words, and its acceptance names only
-  slope and distance): the pad gates are flat, dry, clear of the shore with LC-1's numbers; bare ground and the
-  ocean sector are reported per pad. Section "Pads" has the measured numbers.
+  island); + ocean sector without land cover: 5 pads. First decision: gates flat, dry (= not water or wetland),
+  clear of the shore; bare ground and the ocean sector reported.
+- 01:22. Revised after LOOKING at the Ka Lae overview of that run: those 16 pads sit on pasture and tree cover on
+  slopes of up to 4 deg at 60-260 m (LC-1 is the only one on bare lava). "Dry" in the brief is LC-1's land-cover test
+  (bare, dry ground: WorldCover bare / sparse vegetation, the reason LC-1 is on lava), and the brief's own clause
+  "if no acceptable ground exists near the nominal point, move along the coast and say so" covers exactly this.
+  Final rule: flat + dry (bare ground) + clear of the shore + height + latitude, i.e. every test of LC-1's rule except
+  the open-ocean sector, which is reported per pad (`--strict` gates it as a measurement).
 - 01:14. Commit 08b23d2 (pad resolver, ground-quality tool, `verify.py --region`, tests). Swap atomicity test
   green (2 of 2).

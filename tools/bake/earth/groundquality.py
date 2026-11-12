@@ -7,11 +7,14 @@ region meets the v1 standard (Ka Lae, 10 m 3DEP) there.
 
 Reads data/staged/sites/<site>.pads.json (padresolve.py) and, for the first pad of each class:
   - height detail: structure function of the level-12 collision surface (RMS height difference of points 10, 30,
-    100 m apart) within 2 km, and the RMS of the band finer than about 30 m (surface minus its 15 m Gaussian);
+    100 m apart) within 2 km, RMS second differences at 10 and 30 m and their ratio (the slope removed: about 0.4
+    for real relief, about 0.1 for a surface interpolated from 30 m samples), and the RMS of the band finer than
+    about 30 m (surface minus its 15 m Gaussian);
   - slope histogram within 2 km of the pad (10 m grid);
   - albedo detail: RMS luminance difference of neighbouring texels (the imagery's own detail) within 1 km;
   - top-down renders of the baked tiles at pad level (600 m across, 1 m pixels), 2 km across and 20 km across:
-    imagery | hillshade (sun from the north-west, 45 deg) | imagery lit by that sun | land cover, the 500 m disc of
+    imagery | hillshade (relief x3, sun from the north-west, 45 deg) | imagery lit by that sun (relief x1) | land
+    cover, the 500 m disc of
     the pad rule in red and the other pads in yellow;
 and an overview of every pad of the site. Writes out/bake/earth/site-bake/quality-<site>*.png and quality-<site>.json.
 """
@@ -55,6 +58,13 @@ def height_detail(h_field: Field, lat: float, lon: float) -> dict:
         de = (H[:, lag:] - H[:, :-lag])[land[:, lag:] & land[:, :-lag]]
         dn = (H[lag:, :] - H[:-lag, :])[land[lag:, :] & land[:-lag, :]]
         out[f"rmsDiff{lag * 10}m"] = round(float(np.sqrt(np.mean(np.concatenate([de, dn]) ** 2))), 3)
+    # second differences remove the slope: real relief keeps about lag^0.8 of its curvature from 30 m to 10 m
+    # (ratio ~0.4), a surface interpolated from 30 m samples keeps ~lag^2 (ratio ~0.1)
+    for lag in (1, 3):
+        ce = (H[:, 2 * lag:] - 2 * H[:, lag:-lag] + H[:, :-2 * lag])[land[:, 2 * lag:] & land[:, :-2 * lag] & land[:, lag:-lag]]
+        cn = (H[2 * lag:, :] - 2 * H[lag:-lag, :] + H[:-2 * lag, :])[land[2 * lag:, :] & land[:-2 * lag, :] & land[lag:-lag, :]]
+        out[f"rmsCurvature{lag * 10}m"] = round(float(np.sqrt(np.mean(np.concatenate([ce, cn]) ** 2))), 3)
+    out["curvatureRatio10to30"] = round(out["rmsCurvature10m"] / max(out["rmsCurvature30m"], 1e-9), 3)
     fine = H - ndimage.gaussian_filter(H, 1.5)         # sigma 15 m
     out["rmsFinerThan30m"] = round(float(np.sqrt(np.mean(fine[land] ** 2))), 3)
     gy, gx = np.gradient(H, 10.0)
@@ -86,7 +96,7 @@ def panels(lv: int, h_field: Field, lat: float, lon: float, half_m: float, n: in
     alb = Sampler("albedo", lv)(d).reshape(n, n, 3)
     H = h_field(la, lo).reshape(n, n)
     shade = hillshade(H, px)
-    hs = np.clip(np.stack([shade * 200] * 3, -1), 0, 255)
+    hs = np.clip(np.stack([hillshade(H, px, exag=3.0) * 200] * 3, -1), 0, 255)       # relief x3, to show the detail
     lit = np.clip(alb * (shade[..., None] / 0.88), 0, 255)
     lc = LC_PALETTE[np.clip(Field("landcover", lv)(la, lo).reshape(n, n).astype(int), 0, 11)]
     wm = Field("watermask", lv)(la, lo).reshape(n, n) >= 128
@@ -155,12 +165,14 @@ def run(region_id: str, args) -> dict:
             img = panels(lv, h, la, lo, half, n, marks)
             res["pictures"].append(save(img, f"quality-{args.site}-{p['id']}-{tag}.png",
                                         f"{args.site} {p['id']} ({p['class']}) {2 * half / 1000:g} km across, level {lv}: "
-                                        f"imagery | hillshade | lit imagery | land cover; red = 500 m pad-rule disc"))
+                                        f"imagery | hillshade x3 | lit imagery | land cover; red = 500 m pad-rule disc"))
         res["pads"][p["id"]] = entry
         log(f"quality {args.site} {p['id']}: {entry}")
-    ref = pads[0]
-    img = panels(lv, h, ref["latDeg"], ref["lonDeg"], 12000.0, 1601, marks_all)
+    cla = float(np.mean([q["latDeg"] for q in pads]))
+    clo = float(np.mean([q["lonDeg"] for q in pads]))
+    half = max(6000.0, max(gc_distance_m(cla, clo, q["latDeg"], q["lonDeg"]) for q in pads) + 2500.0)
+    img = panels(lv, h, cla, clo, half, 1601, marks_all)
     res["pictures"].append(save(img, f"quality-{args.site}-overview.png",
-                                f"{args.site}: every pad (yellow: 500 m discs), 24 km across"))
+                                f"{args.site}: every pad (yellow: 500 m discs), {2 * half / 1000:.0f} km across, centred on the pads"))
     write_json(OUT / f"quality-{args.site}.json", res)
     return res
