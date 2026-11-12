@@ -21,7 +21,7 @@ import { atmosphereLayers, FINE_TILE_SIZE, fitsFineTile, scissorOf, selectMarchB
 import { CLOUD_SHADOW_WGSL, COMPOSITE_BLEND, compositeFineFsWgsl, compositeFsWgsl, marchFsWgsl } from './shaders/march';
 import { ATMOSPHERE_MODEL_WGSL } from './shaders/model';
 import { AtmosphereTables } from './tables';
-import { ATMO_UNIFORM_BYTES, AtmoUniforms } from './uniforms';
+import { ATMO_UNIFORM_BYTES, ATMO_UNIFORM_FIELDS, AtmoUniforms } from './uniforms';
 
 export interface AtmosphereFeatureOptions {
   /** Feature id (prefix of the pass names) and order within each hook. */
@@ -52,6 +52,8 @@ export interface AtmosphereDebug {
   selection(): { bodies: { bodyId: string; bodyIndex: number; layer: number; steps: number }[]; cloudBodyId: string | null; scissor: [number, number, number, number] | null; fine: boolean };
   /** The cloud system (null when clouds are off or no frame body has clouds). */
   clouds(): CloudSystem | null;
+  /** A copy of the package's uniform block as the last frame uploaded it, and the names of its vec4 fields in order. */
+  uniformBlock(): { fields: readonly string[]; data: Float32Array };
 }
 
 /**
@@ -555,6 +557,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         };
       },
       clouds: () => clouds,
+      uniformBlock: () => ({ fields: ATMO_UNIFORM_FIELDS, data: new Float32Array(uniforms.buffer.slice(0)) }),
     },
   };
   return feature;

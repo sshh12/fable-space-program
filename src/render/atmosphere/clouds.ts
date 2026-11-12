@@ -414,7 +414,8 @@ export class CloudSystem {
       this.momentScratch.destroy();
     }
     this.shadowSize = size;
-    const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+    // (COPY_SRC: `readShadowMaps`, for tests and diagnosis.)
+    const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC;
     const make = (label: string): GPUTexture => this.core.createTextureChecked({ label, format: 'rgba32float', size: [size, size], usage });
     this.shadowTex = make(`${this.id}.cloudShadow`);
     this.shadowScratch = make(`${this.id}.cloudShadow.scratch`);
@@ -1304,6 +1305,24 @@ export class CloudSystem {
     for (let i = 0; i < half.length; i++) radiance[i] = f16ToF32(half[i]!);
     const geometry = new Float32Array(await readTexturePixels(this.device, this.fineGeom, rect, 16));
     return { width: rect.width, height: rect.height, radiance, geometry };
+  }
+
+  /**
+   * Read back what a frame's cloud passes worked with (tests and diagnosis), row 0 first: the shadow map as
+   * marched (`map`: total optical depth as the ground sees it, front distance, extinction, beam share), the
+   * map the render core reads (`published`: the same after the tent filter), and this frame's marched
+   * quarter of the pixels before the resolve (`fresh`, rgba: radiance and transmittance).
+   */
+  async readShadowMaps(): Promise<{ size: number; map: Float32Array; published: Float32Array; fresh: { width: number; height: number; radiance: Float32Array } }> {
+    const size = this.shadowSize;
+    const rect = { x: 0, y: 0, width: size, height: size };
+    const map = new Float32Array(await readTexturePixels(this.device, this.shadowTex, rect, 16));
+    const published = new Float32Array(await readTexturePixels(this.device, this.shadowPub, rect, 16));
+    const [width, height] = this.quarterColor.size;
+    const half = new Uint16Array(await readTexturePixels(this.device, this.quarterColor.texture, { x: 0, y: 0, width, height }, 8));
+    const radiance = new Float32Array(half.length);
+    for (let i = 0; i < half.length; i++) radiance[i] = f16ToF32(half[i]!);
+    return { size, map, published, fresh: { width, height, radiance } };
   }
 
   /** Tunables of the body whose clouds are being drawn. */

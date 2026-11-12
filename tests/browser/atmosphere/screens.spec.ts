@@ -53,6 +53,26 @@ async function render(page: import('@playwright/test').Page, s: Scene): Promise<
     { s: { name: s.name, view: s.view, sun: s.sun, space: s.space, ev: s.ev, moon: s.moon }, pad: PAD },
   );
   await waitIdle(page, s.frames ?? 40);
+  if (s.ev === undefined) {
+    // The core's own exposure: the picture is taken where the meter settles, not at a point on its way there
+    // from the scene before (40 frames after a change of scene it can stand stops away: the twilight
+    // pictures of the pad were taken three stops under the exposure they settle at).
+    const read = (): Promise<{ ev: number; target: number }> =>
+      page.evaluate(() => {
+        const e = window.__atmo!.app.renderer.exposureInfo();
+        return { ev: e.ev100, target: e.targetEv100 };
+      });
+    let e = await read();
+    const before = e.ev;
+    let waited = 0;
+    while (Math.abs(e.ev - e.target) > 0.02 && waited < 1500) {
+      await page.evaluate(() => window.__test!.waitFrames(30));
+      waited += 30;
+      e = await read();
+    }
+    console.log(`[${s.name}] exposure: EV100 ${before.toFixed(2)} after ${s.frames ?? 40} frames, ${e.ev.toFixed(2)} (target ${e.target.toFixed(2)}) after ${waited} more`);
+    expect.soft(Math.abs(e.ev - e.target), `${s.name}: the exposure has settled`).toBeLessThanOrEqual(0.02);
+  }
   const saved = await shot(page, s.name);
   const clipped = clippedFraction(saved.buffer);
   console.log(`[${s.name}] mean luma ${saved.stats.meanLuma.toFixed(1)}, clipped ${(clipped * 100).toFixed(2)} %`);

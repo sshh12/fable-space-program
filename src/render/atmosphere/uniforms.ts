@@ -60,6 +60,8 @@ const FIELDS = [
 export type AtmoField = (typeof FIELDS)[number][0];
 
 export const ATMO_UNIFORM_FLOATS = FIELDS.length * 4;
+/** Names of the block's vec4 fields in order (diagnosis: `AtmosphereDebug.uniformBlock`). */
+export const ATMO_UNIFORM_FIELDS: readonly string[] = FIELDS.map(([name]) => name);
 export const ATMO_UNIFORM_BYTES = ATMO_UNIFORM_FLOATS * 4;
 
 const OFFSETS = new Map<string, { offset: number; type: FieldType }>(FIELDS.map(([name, type], i) => [name, { offset: i * 4, type }]));
