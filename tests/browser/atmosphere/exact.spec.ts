@@ -9,11 +9,15 @@
  *   node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/atmosphere/exact.spec.ts --project=functional
  *
  * A capture that differs is written to out/screens/atmosphere/exact-<view>-<comparison>.diff.png.
+ *
+ * The last test is the same with every package drawing (the integration lab's low-orbit page, the lead's
+ * `leo-day` reference checkpoint): exactIntegrated.ts.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { assertDiscreteGpu, captureDeterministic, expect, expectNoErrors, imageDifference, openPage, test } from '../harness';
+import { defineIntegratedExact } from './exactIntegrated';
 import { PAD } from './lab';
 
 test.describe.configure({ timeout: 600_000 });
@@ -100,3 +104,5 @@ for (const v of VIEWS) {
     await expectNoErrors(page, pageLog);
   });
 }
+
+defineIntegratedExact();
