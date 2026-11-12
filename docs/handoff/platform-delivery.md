@@ -397,3 +397,14 @@ was re-recorded in format 2 during this work; the browser terrain check reads it
 - 02:00 boot pack budget on the deployed shell (EGRESS_BOOT_BYTES_PER_DAY=1 for one deployment, CDN purged):
   first request 200 (20 MB, MISS), the next 302 to the presigned bucket copy, which served all 19,969,602
   bytes; the budget restored to its default (1 GB) and shell redeployed at 02:01.
+- 02:01-02:35 Modal `fsp-offsite` deployed (nightly `copy_dump`; run once: the dump 20261112T100751Z-none.dump is
+  on the volume `fsp-dumps`). The hourly dump at 10:07:51 UTC wrote dumps/20261112T100751Z-none.dump (915 bytes,
+  pg_dump 18 against server 18; no `meta` table yet, so no skip marker) and pruned 205 of the 240
+  retention-probe objects, keeping 36 (24 hourly + daily + weekly). buildId 5c50250b3dab3d80, as CI's.
+- 02:35 every pack uploaded: 100 objects, 13.96 GB in 3,382 s (33 Mbit/s average, 24-40 per object), resumable
+  per object; `tools/pack/cli.ts verify`: all 100 present with their sizes. deploy/pack-sets.json lists earth,
+  moon, sky and assets (2472dc9); game redeployed with it; `copy_packs` to the Modal volume `fsp-packs` follows.
+- 02:37 bucket probe from Modal (moon packs: 21,665 real tile ranges, mean 26 kB; 15 minutes per level):
+  20 fetchers (1 container): 71,126 requests, 0 errors, first byte p50 223 ms / p95 378 ms / p99 733 ms,
+  16.5 Mbit/s: PASS. 500 fetchers (10 containers): 4,688,661 requests, 0.018 % errors (714 truncated bodies,
+  111 timeouts), first byte p50 48 / p95 233 / p99 388 ms, 1.07 Gbit/s sustained: PASS. 2,000 running.
