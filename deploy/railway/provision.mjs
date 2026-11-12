@@ -13,7 +13,8 @@
  *                                                   (OPEN_QUESTIONS Q5)
  *   node deploy/railway/provision.mjs ids           print the project, environment and service ids
  *   node deploy/railway/provision.mjs ops <role>    run an operator job role once in a temporary service `ops`
- *                                                   (pgsettings: ALTER SYSTEM to production's values)
+ *                                                   (pgsettings: ALTER SYSTEM to production's values;
+ *                                                   derating: the D7 benchmark at 8 vCPU / 8 GB)
  *   node deploy/railway/provision.mjs ops-delete    delete the temporary service
  *
  * Nothing here touches another project: every call names the project id below.
@@ -206,8 +207,12 @@ function deploy(service) {
 function opsJob(role) {
   const id = ensureService('ops');
   update(id, { multiRegionConfig: { [REGION]: { numReplicas: 1 } }, dockerfilePath: 'deploy/Dockerfile', restartPolicyType: 'NEVER' });
-  limits(id, 1, 0.5);
-  setVars(id, { ROLES: role, DATABASE_URL: '${{postgres.DATABASE_URL}}' });
+  // The derating benchmark (D7) runs at the largest Hobby replica, 8 vCPU / 8 GB, for the minutes it takes;
+  // the service is deleted afterwards (ops-delete), so nothing stays at that size.
+  const bench = role === 'derating';
+  limits(id, bench ? 8 : 1, bench ? 8 : 0.5);
+  const gameDomain = domainOf(services().game, 'game');
+  setVars(id, { ROLES: role, DATABASE_URL: '${{postgres.DATABASE_URL}}', ...(bench ? { BENCH_PACK_LIST: `https://${gameDomain}/packs.json`, BENCH_DEFS_DIR: '/app/client/defs', BENCH_WORKERS: '1,2,4,8', BENCH_SECONDS: '30', BENCH_IDLE_S: '20' } : {}) });
   deploy('ops');
   console.log(`ops: deployed ROLES=${role}; read its log with: railway logs --service ops, then: node deploy/railway/provision.mjs ops-delete`);
 }

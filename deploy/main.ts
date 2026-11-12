@@ -17,6 +17,7 @@
  * variable is set; production never sets it).
  */
 import http from 'node:http';
+import { isMainThread, workerData } from 'node:worker_threads';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readBuildIdentity } from './buildInfo';
@@ -31,7 +32,9 @@ import type { RoleContext, RoleHandle, RouteHandler } from './roles/types';
 const env = process.env;
 const self = fileURLToPath(import.meta.url);
 const build = readBuildIdentity(self);
-const roles = parseRoles(env.ROLES);
+// A worker thread started from this bundle (the derating benchmark's) runs its own module, not the roles.
+const workerKind = isMainThread ? null : (workerData as { kind?: string } | null)?.kind ?? null;
+const roles = workerKind ? [] : parseRoles(env.ROLES);
 const log = createLogger({ roles: roles.map((r) => r.name).join(','), build: build.buildId });
 
 function packListService(): PackListService | null {
@@ -117,7 +120,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((e: unknown) => {
-  log.error('fatal', { error: (e as Error).message });
-  process.exit(1);
-});
+if (workerKind === 'derating-worker') void import('./bench/derating');
+else if (workerKind === null) {
+  main().catch((e: unknown) => {
+    log.error('fatal', { error: (e as Error).message });
+    process.exit(1);
+  });
+}
