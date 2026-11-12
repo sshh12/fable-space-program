@@ -291,6 +291,14 @@ export interface EmissiveHint {
   luminance: number;
   /** Fraction of the frame it covers over pixels with no geometry behind it, 0..1. */
   coverage: number;
+  /**
+   * The hint is for an INTERIOR view (request cockpit-19): an emitter seen through the cabin's windows (an
+   * entry sheath, a plume passing the panes). `luminance` is what the panes show of it, `coverage` the share
+   * of the frame those panes cover. It counts as part of the outside seen through the windows (the far
+   * level, the cabin's key, the far gain), and exterior and map views ignore it. Without the flag a hint is
+   * for exterior and map views, and an interior view ignores it: its provider does not know the windows.
+   */
+  inside?: boolean;
 }
 /** Emitter coverage from which the prior exposes fully for the emitter (below it: in proportion). */
 export const EMISSIVE_FULL = 0.01;
@@ -312,7 +320,7 @@ export interface MeterInput {
   /** CameraState.exposureCompensation (EV, positive = brighter image) and CameraState.minEv100. */
   exposureCompensation: number;
   minEv100: number | null;
-  /** Emitters over sky pixels this frame (exterior and map views; an interior view meters its cabin). */
+  /** Emitters this frame: over sky pixels for exterior and map views; those marked `inside` for an interior view. */
   emissive?: readonly EmissiveHint[];
   /**
    * Illuminance (lux) of the sun at the camera AFTER the air it crosses, when its disc is in the frame and the
@@ -408,6 +416,15 @@ export function meterExposure(m: MeterInput): MeterResult {
       SEEN[i] = FAR[i]! + (m.histogramSky ? m.histogramSky[i]! : 0);
       total += SEEN[i]!;
     }
+    // Emitters the panes show (request cockpit-19) are part of what is seen beyond the cabin: the histogram
+    // is taken before the transparent pass and does not hold them.
+    for (const e of m.emissive ?? []) {
+      if (!e.inside || !(e.luminance >= LUMINANCE_FLOOR) || !(e.coverage > 0)) continue;
+      const pixels = Math.min(1, e.coverage) * m.sampleCount;
+      const bin = luminanceBin(e.luminance);
+      SEEN[bin] = SEEN[bin]! + pixels;
+      total += pixels;
+    }
     far = histogramStats(FAR, m.sampleCount);
     seen = histogramStats(SEEN, m.sampleCount);
     if (total > 0) farLevel = binLuminance(percentileBin(SEEN, 0, total, 0.9));
@@ -418,7 +435,7 @@ export function meterExposure(m: MeterInput): MeterResult {
   if (!interior && m.emissive && m.emissive.length > 0) {
     const h = Float64Array.from(m.histogram);
     for (const e of m.emissive) {
-      if (!(e.luminance >= LUMINANCE_FLOOR) || !(e.coverage > 0)) continue;
+      if (e.inside || !(e.luminance >= LUMINANCE_FLOOR) || !(e.coverage > 0)) continue;
       const coverage = Math.min(1, e.coverage);
       h[luminanceBin(e.luminance)] = h[luminanceBin(e.luminance)]! + coverage * m.sampleCount;
       emitterCoverage += coverage;

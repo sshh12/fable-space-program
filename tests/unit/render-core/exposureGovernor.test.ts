@@ -991,6 +991,41 @@ describe('interior metering: the world in the windows of the seat view (request 
     fill(dusk, 10, 60, 0.03 * N);
     expect(interior(v, { histogramSky: dusk }).targetEv100).toBe(closed.targetEv100);
   });
+
+  it('an emitter the panes show (an entry sheath) is the outside too, when its hint is marked for the interior (request cockpit-19)', () => {
+    // No geometry and no sky beyond the cabin (space above the wake); the sheath at 1,664 cd/m^2 in panes that cover 6 % of the frame.
+    const v = seat(0);
+    const closed = interior(v);
+    const sheath = { luminance: 1664, coverage: 0.06, inside: true };
+    const r = interior(v, { emissive: [sheath] });
+    expect(r.farWeight).toBe(1);
+    expect(r.farLevel).toBeGreaterThan(1500);
+    expect(r.farLevel).toBeLessThan(1850);
+    // The cabin falls low-key beside it, and the panes are shown three stops over mid-grey instead of nearly seven.
+    expect(r.targetEv100 - closed.targetEv100).toBeCloseTo(INTERIOR_OUTSIDE_KEY_EV, 6);
+    const gain = interiorFarGain(r.farLevel, r.targetEv100, r.farWeight);
+    expect(gain).toBeGreaterThan(0.2);
+    expect(gain).toBeLessThan(0.35);
+    expect(stopsOverMidGrey(1664, r.targetEv100, gain)).toBeGreaterThan(2.6);
+    expect(stopsOverMidGrey(1664, r.targetEv100, gain)).toBeLessThan(3.2);
+    expect(stopsOverMidGrey(1664, closed.targetEv100)).toBeGreaterThan(4.5);
+    // By the share of the frame the panes cover, as for a sunlit world: nothing at 0.2 %, half at 0.5 %.
+    expect(interior(v, { emissive: [{ ...sheath, coverage: 0.002 }] }).targetEv100).toBe(closed.targetEv100);
+    expect(interior(v, { emissive: [{ ...sheath, coverage: 0.005 }] }).farWeight).toBeCloseTo(0.5, 6);
+    // A faint glow at the start of entry (40 cd/m^2, no brighter than the cabin) changes nothing.
+    expect(interior(v, { emissive: [{ ...sheath, luminance: 40 }] }).targetEv100).toBe(closed.targetEv100);
+    // A hint that is not marked is for exterior views (its provider does not know the windows): ignored here.
+    const unmarked = interior(v, { emissive: [{ luminance: 1664, coverage: 0.06 }] });
+    expect(unmarked.targetEv100).toBe(closed.targetEv100);
+    expect(unmarked.farWeight).toBe(0);
+    expect(unmarked.farLevel).toBe(0);
+    // And an exterior view of the same frame ignores the marked one.
+    expect(meter(v.all, { histogramNear: v.near, emissive: [sheath] }).targetEv100).toBe(meter(v.all, { histogramNear: v.near }).targetEv100);
+    // With a sunlit Earth in other panes the brighter of the two sets the level.
+    const both = interior(seat(0.02), { emissive: [sheath] });
+    expect(both.farLevel).toBeGreaterThan(1500);
+    expect(both.farWeight).toBe(1);
+  });
 });
 
 describe('interior metering: what fills the frame through the windows (request cockpit-7)', () => {

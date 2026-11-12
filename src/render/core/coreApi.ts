@@ -72,8 +72,13 @@ export interface CoreApi {
    * visible part in cd/m^2 (not pre-exposed), `coverage` the fraction of the frame it covers.
    * Rule: docs/RENDER_API.md section 13 (under the sun a hint cannot raise the exposure target further
    * than half a stop above sunny 16).
+   * `inside` (request cockpit-19): the hint is for an INTERIOR view, from whoever knows the cabin's windows:
+   * `luminance` is what the panes show of the emitter, `coverage` the share of the frame those panes cover.
+   * It then counts as part of the outside seen through the windows (the cabin is keyed low beside it and the
+   * panes are shown at their own exposure, as a sunlit world in them is); exterior and map views ignore it,
+   * as an interior view ignores a hint without the flag.
    */
-  addEmissiveHint(luminance: number, coverage: number): void;
+  addEmissiveHint(luminance: number, coverage: number, inside?: boolean): void;
   /**
    * The current frame's place in the temporal sequences: `frame.frameIndex` until the first frame-exact
    * capture, afterwards the frames since the sequences last started (0 in the first frame of a capture and

@@ -442,8 +442,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     setCloudShadowParams(p) {
       cloudShadow = { ...cloudShadow, ...p };
     },
-    addEmissiveHint(luminance, coverage) {
-      if (Number.isFinite(luminance) && Number.isFinite(coverage) && luminance > 0 && coverage > 0) emissiveHints.push({ luminance, coverage });
+    addEmissiveHint(luminance, coverage, inside = false) {
+      if (Number.isFinite(luminance) && Number.isFinite(coverage) && luminance > 0 && coverage > 0) emissiveHints.push(inside ? { luminance, coverage, inside } : { luminance, coverage });
     },
     createTextureChecked: (desc) => createTextureChecked(device, desc, reportError),
     sequenceIndex: () => frameIndex - sequenceStart,
