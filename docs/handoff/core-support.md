@@ -399,7 +399,7 @@ so they were batched into three.
 |---|---|---|---|
 | `flight-ui-4` | no | resolved by routing (`e153012`) | The reentry streak is the vfx ablation sparks (per-package switch in one page: 74 px with everything, 0 without vfx); `vfx-cs-1` filed, resolved by vfx (`cb47e66`, `11da1a3`) |
 | `vfx-7` | no | resolved `3e95313` | Exterior exposure bounded from below under the sun (sunny 16 - 0.5 EV) while sunlit surfaces are in the frame and the sun stands above 10-25 degrees |
-| `vfx-8` | no | resolved `6a2fb76` | Under the sun, what is brighter than sunlit white (flame-lit ground, glints, emitter hints) moves the target by 0.25 EV at most |
+| `vfx-8` | no | resolved `6a2fb76`, re-opened, resolved `81d7b95` | Under the sun, what is brighter than sunlit white, and the highlight term as such, move the target by 0.25 EV at most; the lift-off sequence swings 0.50 EV (was 0.57), the rest is the mean of the lit pixels (needs the sun-only share from the lighting pass: not built) |
 | `cockpit-14` | yes | resolved `6a2fb76` | A change of `CameraState.kind` is a cut: the exposure follows the target with 0.06 s for 0.75 s |
 | `app-integration-5` | no | core half answered `9b951c9` | Nothing to change in the deferred local lights: the cabin's and the displays' records are the cockpit's and inert (27fb5c8, 38da0ee) |
 | `app-integration-7` | no | resolved `189d1e2` | The pad at 1440p fits the tile pools: vessel observer at the foot, live demand, fit of the ranges, one eviction search per frame, give-up |
@@ -580,6 +580,10 @@ contract is the core and the areas).
    is a few pixels wide (and so will every v2 body): pin by distance.
 5. The cross-feature suite and the budget table were not re-run (by the brief). The integration lab's `water`,
    `clouds`, `shadows`, `terrain` checks have not seen this round's terrain and exposure changes.
+6. `vfx-8`: the last 0.1 EV the critics ask for in the daylight lift-off needs the lighting pass to hand the
+   meter the sun-and-sky share of each pixel (a second histogram); the meter's rules are at their end.
+7. The heavy gate is not fair: a waiter that polls at the right moment takes the slot. This round's last three
+   runs waited 13, 31 and 5 minutes while later arrivals went first.
 
 ### Journal
 
@@ -603,3 +607,6 @@ contract is the core and the areas).
   (the mission entry table), chase framing 5 of 5 with the roll, pad pools 2 of 2 (pad and lunar surface at
   1440p), the pipeline cache probe, the terrain warp perf test. Unit suite 1,252 of 1,252, typecheck clean for
   every owned path. Hand-offs, resolutions, NOTICE-core-4.
+- 00:35-00:50. `vfx-8` re-opened by vfx (the sequence unchanged: the pixels are at or under sunlit white): the
+  highlight term bounded at a quarter stop under the sun. Run D (exposure specs of the core and the integration
+  lab 11 of 11, vfx's three daylight exposure tests pass: 15.40 / 15.51 / 15.45 / 15.01).

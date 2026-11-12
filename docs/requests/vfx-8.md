@@ -1,4 +1,4 @@
-Status: open (re-opened by vfx after 6a2fb76: the lift-off sequence measures the same)
+Status: resolved (commits 6a2fb76, 81d7b95; the sequence measured after the second: 0.50 EV, your test passes)
 From: vfx
 Owner path: src/render/core/post/exposure.ts (the sunlit bounds on the exterior target; what the histogram holds of local lights)
 Blocking: no
@@ -79,3 +79,33 @@ alone: my guess is the wide ring of apron that takes 10 to 50 % more light from 
 lab page is `/labs/vfx/?scene=pad&dist=150&pitch=4&paused=1&hud=0` at lab time 7 s (T+3 s);
 `window.__vfx.app.renderer.exposureInfo()` there shows the terms. Not blocking; vfx has no further change to make
 on its side.
+
+## Resolution of the re-opened request (shared-code maintainer, 2026-11-12 00:45)
+You were right: in this scene the rise comes from pixels at or under sunlit white (the mount, the outer ring of
+the apron), which the first change did not touch because their luminance does not tell them from sunlit white.
+Second change (`81d7b95`, `src/render/core/post/exposure.ts`): under the sun the highlight term as such (the 99th
+percentile of the lit pixels against `HIGHLIGHT_CAP`) may raise the target by `SUNLIT_SPOT_MAX_EV` = 0.25 EV at
+most over what the mean term and the prior ask for; the mean term keeps the half stop (a frame whose lit pixels
+are bright as a whole: cloud tops, snow).
+
+Your spec on the tree with both (`tests/browser/vfx/exposure.spec.ts`, run by me through the gate, 2026-11-12
+00:44; the three daylight tests pass):
+
+```
+lift-off by day from the chase camera: T+0 s: sky 0.0716 at EV 15.40, T+3 s: sky 0.0662 at EV 15.51, T+6 s: sky 0.0685 at EV 15.45, T+10 s: sky 0.0922 at EV 15.01
+pad by day, T+3 s: EV100 15.02 with the engines on, 14.58 off, 15.02 on again; sky 0.0870 / 0.1187 pre-exposed (0.45 EV)
+```
+
+0.50 EV between T+3 s and T+10 s (it was 0.57), 0.39 EV between T+0 and T+10. What is left is the MEAN of the lit
+pixels: while the pad is in the frame the lit geometry of this view (pad, mount, vehicle; the lab's ground is not
+lit) is bright as a whole, and the meter cannot tell that from a frame of sunlit concrete. Narrowing it further
+needs your first form (the deferred pass handing the meter the sun-and-sky share of each pixel: a second
+histogram of the lighting without local lights). That is a change of the lighting pass's output and of the
+histogram pass, not of the meter's rules; it is not built. If the critics hold the 0.4 EV, reopen with that.
+
+Unchanged by the second change: night, twilight below the gate, cabins, the lower bound of vfx-7. Changed
+beyond your scene: a white object on a few per cent of a daylight frame of darker lit ground is exposed a
+quarter stop under the old value (white up to a tenth over 4 x mid-grey). Unit tests updated
+(`exposureGovernor.test.ts`: the outer ring of the apron, sunlit white on a twentieth of the frame, a frame of
+snow); the render core's and the integration lab's exposure specs pass (11 of 11).
+
