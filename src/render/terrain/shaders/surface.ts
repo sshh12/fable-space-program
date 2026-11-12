@@ -1076,9 +1076,13 @@ ${DETAIL_WGSL}
   // A boundary between two classes is a band, not a line: grass thins out into lava through scattered
   // patches, over some tens of metres. Where a pixel resolves patches of 9 m and 3 m the lookup is thrown
   // about by noise of those sizes, much further than their own length (so near the boundary every patch
-  // falls on one side or the other); where it does not, the classes of two points on either side are averaged.
+  // falls on one side or the other). Where it does not, the bilinear weights of the raster and the mixture
+  // of all materials under the pixel (terrainDetail) make the change a gradient one class texel wide; only
+  // a coarse raster seen from afar (cells of 60 m and more, a few pixels each) is averaged over four more
+  // points, or the corners of its cells show. (Averaging at every distance cost 0.5 ms of the G-buffer on
+  // the ground and at 10 km, measured: most of a frame at eye height is beyond what resolves the patches.)
   let band = min(2.5 * classTexel, 28.0);
-  let patches = smoothstep(1.5, 3.0, 9.0 / footLong);
+  let patches = select(0.0, smoothstep(1.5, 3.0, 9.0 / footLong), mat.p7.x > 0.0);
   if (patches > 0.0) {
     let cp0 = noiseAt(classLattice.yzx * (5.0 * c0) + vec3f(6.1, 0.4, 9.9));
     classWarp += patches * band * vec2f(cp0.a, clamp(0.5 * cp0.g, -1.0, 1.0));
@@ -1091,26 +1095,19 @@ ${DETAIL_WGSL}
   classWarp /= tileSize;
   let classSharp = smoothstep(3.0, 8.0, classTexel / footLong);
   var cb = classBlend(t, uv, k, warp + classWarp, classSharp);
-  if (patches < 1.0 && mat.p7.x > 0.0 && calibrated > 0.0) {
-    // (Across the boundary's own direction as often as along it: the two points lie on a line that turns with
-    // the ground, by noise of 45 m.)
+  if (classTexel > 60.0 && mat.p7.x > 0.0 && calibrated > 0.0) {
+    // (Two points along a line that turns with the ground, by noise of 45 m, and two across it, each over
+    // half a class texel.)
     let turn = 6.2832 * noiseAt(classLattice * c0 + vec3f(8.8, 3.3, 5.5)).a;
-    // (At least over half a class texel: from afar the raster's cells are a few pixels each, and the weights
-    // of one bilinear lookup drew their corners.)
-    let reach = max((1.0 - patches) * band, 0.55 * classTexel * (1.0 - classSharp)) * vec2f(cos(turn), sin(turn)) / tileSize;
+    let reach = 0.55 * classTexel * (1.0 - classSharp) * vec2f(cos(turn), sin(turn)) / tileSize;
+    let across = vec2f(-reach.y, reach.x);
     let ca = classBlend(t, uv, k, warp + classWarp + reach, classSharp);
     let cc = classBlend(t, uv, k, warp + classWarp - reach, classSharp);
-    cb.w0 = 0.5 * cb.w0 + 0.25 * (ca.w0 + cc.w0);
-    cb.w1 = 0.5 * cb.w1 + 0.25 * (ca.w1 + cc.w1);
-    cb.orb = 0.5 * cb.orb + 0.25 * (ca.orb + cc.orb);
-    if (classTexel > band) {
-      let across = vec2f(-reach.y, reach.x);
-      let cd = classBlend(t, uv, k, warp + classWarp + across, classSharp);
-      let ce = classBlend(t, uv, k, warp + classWarp - across, classSharp);
-      cb.w0 = 0.6 * cb.w0 + 0.2 * (cd.w0 + ce.w0);
-      cb.w1 = 0.6 * cb.w1 + 0.2 * (cd.w1 + ce.w1);
-      cb.orb = 0.6 * cb.orb + 0.2 * (cd.orb + ce.orb);
-    }
+    let cd = classBlend(t, uv, k, warp + classWarp + across, classSharp);
+    let ce = classBlend(t, uv, k, warp + classWarp - across, classSharp);
+    cb.w0 = 0.4 * cb.w0 + 0.15 * (ca.w0 + cc.w0 + cd.w0 + ce.w0);
+    cb.w1 = 0.4 * cb.w1 + 0.15 * (ca.w1 + cc.w1 + cd.w1 + ce.w1);
+    cb.orb = 0.4 * cb.orb + 0.15 * (ca.orb + cc.orb + cd.orb + ce.orb);
   }
   let steep = smoothstep(mat.p0.x, mat.p0.y, tn.slopeMag);
 
@@ -1313,7 +1310,12 @@ ${DETAIL_WGSL}
   // quads of this tile's level: filtered over one such quad its edge is the smooth curve of the rim, not the
   // polygon (no gear teeth from orbit). Near the eye it is left to the lookup's own filter: a vessel's or a
   // tower's shadow there stays as sharp as the sun makes it.
-  packed.extra.a = encodeShadowSoftness(4.0 * normalTexel * smoothstep(40.0, 160.0, dist));
+  // A slope that the sun grazes (within a few degrees) is at the limit of what a shadow map can decide: the
+  // lookup flips from texel to texel, and the slope is a mottled stain (the ink blot under a low sun). There
+  // the filter is some shadow texels wide whatever the tile's level: the stain becomes the even half-shade of
+  // a slope near its own terminator, which the surface's cosine and its facets darken smoothly.
+  let grazing = 1.0 - smoothstep(0.03, 0.14, muTerrain);
+  packed.extra.a = encodeShadowSoftness(max(4.0 * normalTexel * smoothstep(40.0, 160.0, dist), grazing * clamp(0.02 * dist, 0.25, 40.0)));
   return packed;
 }
 `;
