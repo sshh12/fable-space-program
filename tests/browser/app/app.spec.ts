@@ -72,11 +72,17 @@ async function openGame(page: Page, query = ''): Promise<void> {
 }
 
 /**
- * Share of blue-dominant pixels (open water under a daylight sky) in the band of the pad view between the horizon
- * and the site, left and right of the stack and the tower: lava plain and scrub there, never sea.
+ * Share of water-like pixels in the band of the pad view between the horizon and the site, left and right of
+ * the stack and the tower, where lava plain and scrub are and never sea. Open water under a daylight sky is
+ * both smooth (luminance within 2 of 255 of its right and lower neighbours together) and bluish (blue at least
+ * 3 above red); the ground is textured and neutral to brown. Measured on the pictures of this spec and of the
+ * browser mission: 0.49 on the frame in which the land around the pad was drawn as sea
+ * (out/screens/mission/00-pad-chase.png of 2026-11-11), 0.06-0.07 on the land (the colour alone does not tell
+ * them apart: the fresh lava of the site bake is blue-grey in places).
  */
 function seaShare(png: Buffer): number {
   const img = PNG.sync.read(png);
+  const lum = (i: number): number => 0.2126 * img.data[i]! + 0.7152 * img.data[i + 1]! + 0.0722 * img.data[i + 2]!;
   let sea = 0;
   let n = 0;
   for (const [x0, x1] of [
@@ -86,7 +92,9 @@ function seaShare(png: Buffer): number {
     for (let y = Math.floor(0.36 * img.height); y < Math.floor(0.5 * img.height); y++) {
       for (let x = Math.floor(x0 * img.width); x < Math.floor(x1 * img.width); x++) {
         const i = (y * img.width + x) * 4;
-        if (img.data[i + 2]! > img.data[i]! + 8) sea++;
+        const l = lum(i);
+        const smooth = Math.abs(l - lum(i + 4)) + Math.abs(l - lum(i + img.width * 4)) <= 2;
+        if (smooth && img.data[i + 2]! - img.data[i]! >= 3) sea++;
         n++;
       }
     }
@@ -258,9 +266,9 @@ test('the loading screen shows real progress and stays until the view at the pad
   const diff = pngDiff(first.buffer, later.buffer);
   const after = await page.evaluate(() => ({ stream: window.__app!.terrainStats().stream, busy: window.__app!.busyFeatures(), ut: window.__app!.brief().ut }));
   console.log(
-    `first revealed frame: sea share ${seaFirst.toFixed(4)} of the land band (10 s later ${seaLater.toFixed(4)}); mean abs difference to the later frame ${diff.meanAbsDiff.toFixed(2)} of 255, differing ${diff.differingFraction.toFixed(3)}; uploaded since the reveal ${after.stream['uploadedTotal']! - samples[samples.length - 1]!.game!.stream['uploadedTotal']!} tiles; busy ${JSON.stringify(after.busy)}`,
+    `first revealed frame: water-like share ${seaFirst.toFixed(4)} of the land band (10 s later ${seaLater.toFixed(4)}); mean abs difference to the later frame ${diff.meanAbsDiff.toFixed(2)} of 255, differing ${diff.differingFraction.toFixed(3)}; uploaded since the reveal ${after.stream['uploadedTotal']! - samples[samples.length - 1]!.game!.stream['uploadedTotal']!} tiles; busy ${JSON.stringify(after.busy)}`,
   );
-  expect(seaFirst, 'sea-coloured share of the land band in the first revealed frame').toBeLessThan(0.1);
+  expect(seaFirst, 'water-like share of the land band in the first revealed frame (0.49 when it was sea, 0.06 on land)').toBeLessThan(0.25);
   expect(Math.abs(seaLater - seaFirst), 'the land band does not change after the reveal').toBeLessThan(0.05);
   expect(diff.meanAbsDiff, 'first revealed frame against the frame ten seconds later').toBeLessThan(6);
   expect(after.ut, 'the simulation runs once the screen has gone').toBeGreaterThan([...uts][0] ?? 0);

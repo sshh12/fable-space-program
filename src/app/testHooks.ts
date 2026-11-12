@@ -8,6 +8,7 @@ import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import type { TestApiController } from '@/core/testing/testApi';
 import { coreOf, type ExposureInfo } from '@/render/core';
+import { discInFrame } from './framing';
 import type { Game } from './game';
 import type { LoadingReport } from './loading';
 import type { FrameBreakdown, FrameStage, FrameTrace, WindowStats } from './timing';
@@ -37,9 +38,10 @@ export interface AppDebug {
   /** Back to the chase rig's default framing (what a reset key does). */
   resetCameraView(): void;
   /**
-   * Bodies whose disc is at least partly inside the presented frame: id, whether it is the star, angular radius
-   * (rad), centre in normalised device coordinates (x right, y up, -1..1 inside; null when the centre is behind
-   * the image plane and only the limb reaches in) and the share of the frame's half-height its radius spans.
+   * Bodies whose disc is at least partly inside the presented frame (framing.ts): id, whether it is the star,
+   * angular radius (rad), centre in normalised device coordinates (x right, y up, -1..1 inside; null when the
+   * centre is behind the image plane and only the limb reaches in) and the angular radius as a share of the
+   * frame's vertical half-angle.
    */
   bodiesInFrame(): { id: string; star: boolean; angularRadius: number; x: number | null; y: number | null; heightShare: number }[];
   /** What the camera's selection of the active vessel's body wants and has: tiles and levels (null without terrain). */
@@ -190,16 +192,8 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
         const distance = Math.hypot(d.x, d.y, d.z);
         if (distance <= def.radius) continue;
         const angularRadius = Math.asin(def.radius / distance);
-        const heightShare = Math.tan(Math.min(angularRadius, 1.5)) / tanY;
-        if (d.z < 0) {
-          // Centre in front of the image plane: the disc against the frame's rectangle.
-          const x = d.x / (-d.z * tanX);
-          const y = d.y / (-d.z * tanY);
-          if (Math.abs(x) < 1 + Math.tan(Math.min(angularRadius, 1.5)) / tanX && Math.abs(y) < 1 + heightShare) out.push({ id: b.id, star: b.id === s.starId, angularRadius, x, y, heightShare });
-        } else if (Math.acos(Math.max(-1, Math.min(1, -d.z / distance))) - angularRadius < Math.atan(tanY)) {
-          // Centre behind it (the ground under an eye that looks up): the limb against the vertical half-angle.
-          out.push({ id: b.id, star: b.id === s.starId, angularRadius, x: null, y: null, heightShare });
-        }
+        const f = discInFrame(d, angularRadius, tanX, tanY);
+        if (f.inFrame) out.push({ id: b.id, star: b.id === s.starId, angularRadius, x: f.x, y: f.y, heightShare: f.heightShare });
       }
       return out;
     },
