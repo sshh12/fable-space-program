@@ -14,13 +14,18 @@ test.describe.configure({ timeout: 600_000 });
 const ALL = ['midday', 'sunset', 'overcast', 'down150', 'alt500', 'alt3k', 'alt10k', 'alt30k', 'alt100k', 'leo', 'shore', 'shoreAlong', 'coast60', 'refraction', 'splash', 'night'];
 const NATIVE = ['splash', 'shore', 'alt10k'];
 const only = process.env.OCEAN_PRESETS?.split(',').filter(Boolean);
+/**
+ * Frames of running sea before the shot (default 90). The view straight down runs for seven seconds: a whitecap
+ * lasts a second or two and leaves a streak for several more, which a sea that has only just begun does not have.
+ */
+const WARM_UP: Record<string, number> = { down150: 420 };
 
 async function shoot(page: import('@playwright/test').Page, pageLog: { messages: string[] }, preset: string, name: string): Promise<void> {
   await openPage(page, `/labs/ocean/?preset=${preset}`);
   await assertDiscreteGpu(page);
   await page.evaluate(() => document.body.classList.add('shot'));
   // Let exposure adapt and TAA converge with live waves, then freeze presentation for the shot.
-  await page.evaluate(() => window.__test!.waitFrames(90));
+  await page.evaluate((n) => window.__test!.waitFrames(n), WARM_UP[preset] ?? 90);
   await page.evaluate(() => window.__test!.setDeterministic(true));
   await waitIdle(page, 40);
   const hdr = await page.evaluate(() => window.__test!.hdrStats());

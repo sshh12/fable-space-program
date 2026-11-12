@@ -151,10 +151,16 @@ fn foam(@builtin(global_invocation_id) id: vec3u) {
     // have left here. A crest that breaks now at p + v t passed over p t seconds ago (as it is now: the shape of a
     // breaking crest changes more slowly than it travels), so foam trails behind every breaker, and around it lies
     // the old foam such breakers leave on average.
-    left = max(fresh, fm.misc.w * saturate((c - (fm.rates.z - fm.misc.z)) / fm.rates.w));
+    // (With a history a crest goes on breaking below the threshold once it has begun, which this texel cannot
+    // know. From the second frame on it has that history, so only a long hold needs a lower threshold here:
+    // measured, 0.16 sigma for a hold of 0.85 and none for 0.35.)
+    let thr = fm.rates.z - 0.32 * max(fm.misc.y - 0.35, 0.0);
+    breaker = saturate((c - thr) / fm.rates.w);
+    breaking = breaker;
+    left = max(breaker, fm.misc.w * saturate((c - (thr - fm.misc.z)) / fm.rates.w));
     for (var k = 1u; k <= FOAM_TRAIL_STEPS; k++) {
       let age = FOAM_TRAIL_STEP * f32(k);
-      let was = saturate((foamCriterion(p + fm.trail.xy * age, lv.z, id.z) - fm.rates.z) / fm.rates.w);
+      let was = saturate((foamCriterion(p + fm.trail.xy * age, lv.z, id.z) - thr) / fm.rates.w);
       breaker = max(breaker, was * exp(-fm.trail.z * age));
       left = max(left, was * exp(-fm.trail.w * age));
     }

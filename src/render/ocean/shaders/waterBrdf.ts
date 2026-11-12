@@ -348,7 +348,7 @@ export function buildWaterBrdfWgsl(bodies: readonly (WaterBody | null)[], option
         `vec4f(${f(t.backscatter[0])}, ${f(t.backscatter[1])}, ${f(t.backscatter[2])}, ${f(t.imageryTint)})`,
         `vec4f(${f(t.foamAlbedo)}, ${f(Math.sin(t.windDir))}, ${f(Math.cos(t.windDir))}, ${f(1 / b.fieldMean)})`,
         `vec4f(${f(t.windVariability)}, ${f(t.slickStrength)}, ${f(t.gustVariability)}, ${f(t.filamentStrength)})`,
-        `vec4f(${f(t.glintFacetSize * t.glintFacetSize)}, 0.0, 0.0, 0.0)`,
+        `vec4f(${f(t.glintFacetSize * t.glintFacetSize)}, ${f(Math.max(t.unresolvedFloor, 1e-6))}, 0.0, 0.0)`,
       );
       if (b.farWaves.length !== FAR_WAVE_COUNT) throw new Error(`ocean: the far-wave bank of ${t.bodyId} has ${b.farWaves.length} components, expected ${FAR_WAVE_COUNT}`);
       for (const w of b.farWaves) {
@@ -357,7 +357,7 @@ export function buildWaterBrdfWgsl(bodies: readonly (WaterBody | null)[], option
         farB.push(`vec4f(${f(w.kAlong / k)}, ${f(w.kAcross / k)}, ${f(k)}, ${f(w.phase)})`);
       }
     } else {
-      rows.push('vec4f(0.002, 0.003, 0.0045, 0.0)', 'vec4f(0.7, 0.0, 1.0, 1.0)', 'vec4f(0.0)', 'vec4f(0.0025, 0.0, 0.0, 0.0)');
+      rows.push('vec4f(0.002, 0.003, 0.0045, 0.0)', 'vec4f(0.7, 0.0, 1.0, 1.0)', 'vec4f(0.0)', 'vec4f(0.0025, 0.001, 0.0, 0.0)');
       for (let k = 0; k < FAR_WAVE_COUNT; k++) {
         farA.push('vec4f(0.0)');
         farB.push('vec4f(1.0, 0.0, 1.0, 0.0)');
@@ -374,7 +374,7 @@ const WATER_GGX_KAPPA = ${GGX_KAPPA};
 const WATER_DIRECT_SPECULAR = ${options.directSpecular === false ? '0.0' : '1.0'};
 // Per frame body: (backscatter rgb per m, imagery tint), (foam albedo, sin / cos of the compass direction the wind
 // blows toward, 1 / mean of the raw roughness field), (wind variability, slick strength, gust variability,
-// filament strength), (area of a glitter facet in m^2, 0, 0, 0).
+// filament strength), (area of a glitter facet in m^2, slope variance left to the lobe below every wave layer, 0, 0).
 const WATER_BODY = array<vec4f, ${MAX_BODIES * BODY_ROWS}>(${rows.join(', ')});
 // The far-wave bank per frame body: (k along the wind, k across it (rad per chart m), slope amplitude, omega) and
 // (unit direction along / across, |k|, phase at t = 0).
@@ -504,9 +504,13 @@ fn waterPoint(s: Surface) -> WaterPoint {
     let lv = max(log2(fpGeo / WATER_GLINT_BASE) - 1.0, 0.0);
     let l0 = floor(lv);
     pt.glintT = lv - l0;
-    let facet = max(waterBodyParam(s, 3u).x, 1e-6);
-    // A pixel smaller than a facet resolves it: the lobe on the resolved normal is the glint itself, nothing is drawn.
-    pt.glintW = smoothstep(1.0, 6.0, fpMinor * fpMajor / facet);
+    let gp = waterBodyParam(s, 3u);
+    let facet = max(gp.x, 1e-6);
+    // Glitter is drawn where the pixel does NOT resolve the slopes that mirror the light: where the shading normal
+    // carries all but the capillary remainder of them (close to the eye) the lobe on that normal is the glint
+    // itself, a filled highlight on each ripple; from where the unresolved slopes are a few times that remainder,
+    // they are facets inside the pixel, and the lobe is their expectation.
+    pt.glintW = smoothstep(1.6, 4.0, waterCoxMunk(s) * pt.field * (1.0 - pt.resolved) / gp.y);
     if (pt.glintW > 0.0) {
       let tk = frame.time.x * WATER_GLINT_RATE;
       for (var k = 0u; k < 2u; k++) {
@@ -524,7 +528,8 @@ fn waterPoint(s: Surface) -> WaterPoint {
         pt.glintU[k] = (f32(h2 >> 8u) + 0.5) / 16777216.0;
         // The facets the pixel integrates: those of its whole footprint on the sea (at a grazing angle many cells
         // long), or of the cell where the pixel is smaller than one. The cell's draw stands for the pixel.
-        pt.glintN[k] = max(cs * cs, fpMinor * fpMajor) / facet;
+        // (At least four: slopes a pixel does not resolve vary within it.)
+        pt.glintN[k] = max(max(cs * cs, fpMinor * fpMajor) / facet, 4.0);
       }
     }
   }

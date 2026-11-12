@@ -41,7 +41,7 @@ import { OceanVessels, type VesselFrame } from './vessels';
 
 export const OCEAN_FEATURE_ID = 'ocean';
 /** Debug views of the near-field surface: one shading term each (lab diagnostics). */
-export const OCEAN_DEBUG_VIEWS = { none: 0, skyReflection: 1, body: 2, sunSpecular: 3, foam: 4, normal: 5, roughness: 6, foamMap: 7, refraction: 8 } as const;
+export const OCEAN_DEBUG_VIEWS = { none: 0, skyReflection: 1, body: 2, sunSpecular: 3, foam: 4, normal: 5, roughness: 6, foamMap: 7, refraction: 8, surf: 9 } as const;
 /** Seed of the foam lace texture (one texture for every body). */
 const LACE_SEED = 7;
 const MAX_PATCHES = 4096;
