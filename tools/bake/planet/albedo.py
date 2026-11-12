@@ -92,7 +92,13 @@ def gain(body: config.Body) -> float:
     else:
         r = _raster(body, al["source"])
         rc = _raster(body, al["colourSource"]) if al["colourSource"] else None
-        if rc is not None:
+        if rc is not None and al.get("colourMode") == "detail":
+            # the colour map sets the albedo; the mono map only adds detail with a mean ratio of 1
+            def col_fn(a):
+                return _to_linear_colour(body, a) @ LUMA
+            mean = float(rc.coarse_mean(col_fn, cal["region"]))
+            r = rc
+        elif rc is not None:
             # chroma has unit luminance: the luminance source alone sets the mean
             def lum_fn(a):
                 return _to_linear(body, al["source"], a)
@@ -110,7 +116,7 @@ def gain(body: config.Body) -> float:
         tmax = float(np.max(_tint(body))) if r.channels == 1 and rc is None else 1.0
 
         def peak_fn(a):
-            lin = _to_linear(body, al["source"], a)
+            lin = _to_linear_colour(body, a) if r is rc else _to_linear(body, al["source"], a)
             return (lin.max(axis=-1) if lin.ndim == 3 else lin) * tmax
         p995 = r.coarse_percentile(peak_fn, 99.5)
         if p995 > 0 and g * p995 > CLIP_LIMIT:
@@ -181,6 +187,15 @@ def finest_linear(body: config.Body, face: int, x: int, y: int) -> np.ndarray:
         rc = _raster(body, al["colourSource"])
         # chroma at the colour map's own resolution at least (no ringing from upsampling chroma)
         col = rc.sample(d, np.maximum(fp, rc.pyramid.px_deg0 * np.pi / 180.0 * body.radius))
+    if al["colourSource"] and al.get("colourMode") == "detail":
+        # albedo and colour from the colour map; the mono map's detail as a ratio to itself at the colour
+        # map's resolution (for a mono mosaic whose brightness was normalised and lost the albedo pattern)
+        rc = _raster(body, al["colourSource"])
+        fpc = np.maximum(fp, rc.pyramid.px_deg0 * np.pi / 180.0 * body.radius)
+        m_fine = _to_linear(body, al["source"], v)
+        m_low = _to_linear(body, al["source"], _raster(body, al["source"]).sample(d, fpc))
+        detail = m_fine / np.maximum(m_low, 1e-4)
+        return np.clip(_to_linear_colour(body, col) * detail[..., None] * gain(body), 0.0, 1.0)
     if al.get("lowFrequency"):
         return np.clip(linear_colour(body, v, col) * low_frequency_factor(body, d)[..., None], 0.0, 1.0)
     return np.clip(linear_colour(body, v, col) * gain(body), 0.0, 1.0)

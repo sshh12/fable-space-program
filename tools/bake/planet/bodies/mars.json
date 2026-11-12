@@ -101,7 +101,8 @@
    "region": null,
    "ref": "NASA NSSDC fact sheet geometric albedo (solar-system.md 2.5)"
   },
-  "procedural": null
+  "procedural": null,
+  "colourMode": "detail"
  },
  "landmarks": [
   {
