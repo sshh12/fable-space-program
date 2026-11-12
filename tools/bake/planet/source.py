@@ -118,6 +118,54 @@ def check_nodata(body_id: str, key: str, configured, declared) -> None:
         raise ValueError(f"{body_id}.{key}: config nodata {configured} disagrees with the nodata {declared} the file declares")
 
 
+def _feather_wrap(dst: np.ndarray, mask, width_deg: float) -> dict:
+    """Remove the step between a grid's two ends at the +-180 meridian (a DEM stitched there from halves that
+    disagree): per row, the valid pixels within width_deg of the seam on each side are shifted toward each
+    other, by half the step at the last valid column before the seam and by nothing width_deg from it, so the
+    two ends meet; the masked columns between them (edgeColumnsInvalid) are bridged linearly along the row and
+    become valid (a pull-push fill there would sag toward the far side's mean). Returns the step statistics."""
+    h, w = dst.shape[:2]
+    n = max(4, int(round(width_deg / 360.0 * w)))
+    x = np.arange(w)
+    steps = []
+    for r in range(h):
+        row = np.asarray(dst[r], dtype=np.float64)
+        ok = np.ones(w, bool) if mask is None else np.asarray(mask[r]) > 0
+        east = np.nonzero(ok[:n])[0]                 # valid columns just east of the seam (from -180)
+        west = np.nonzero(ok[w - n:])[0] + (w - n)   # valid columns just west of it (to +180)
+        if east.size == 0 or west.size == 0:
+            continue
+        e0, w0 = int(east[0]), int(west[-1])
+        d = float(row[east[:3]].mean() - row[west[-3:]].mean())
+        steps.append(d)
+        adj = -0.5 * d * np.clip(1.0 - (x - e0) / n, 0.0, 1.0) * (x < e0 + n)
+        adj += 0.5 * d * np.clip(1.0 - (w0 - x) / n, 0.0, 1.0) * (x > w0 - n)
+        out = row + adj * ok
+        gap = (w - 1 - w0) + e0                      # masked columns w0+1 .. w-1, 0 .. e0-1
+        if gap > 0 and mask is not None:
+            a0, a1 = out[w0], out[e0]
+            for i in range(1, gap + 1):
+                col = (w0 + i) % w
+                out[col] = a0 + (a1 - a0) * i / (gap + 1)
+            cols = [(w0 + i) % w for i in range(1, gap + 1)]
+            mask[r, cols] = 1
+        dst[r] = out.astype(dst.dtype)
+    dst.flush()
+    if mask is not None:
+        mask.flush()
+    a = np.abs(np.asarray(steps)) if steps else np.zeros(1)
+    return {"widthDeg": width_deg, "meanAbsStep": round(float(a.mean()), 2), "maxAbsStep": round(float(a.max()), 2)}
+
+
+def _drop_edges(ok: np.ndarray, edges) -> None:
+    """Mark the first edges[0] and last edges[1] columns invalid (a source's stitch columns at its wrap)."""
+    left, right = int(edges[0]), int(edges[1])
+    if left:
+        ok[:, :left] = False
+    if right:
+        ok[:, ok.shape[1] - right:] = False
+
+
 def _dilate_invalid(ok: np.ndarray, px: int) -> np.ndarray:
     """Shrink the valid mask by px pixels around every invalid pixel (the dark fringe of resampled dropouts)."""
     if px <= 0 or ok.all():
@@ -260,9 +308,10 @@ def _down2(a: np.ndarray, w: np.ndarray | None):
     return v, ws / 4.0
 
 
-def _decimate_rows(rows_src, r0: int, r1: int, dst: np.ndarray, dec: int, nodata) -> int:
+def _decimate_rows(rows_src, r0: int, r1: int, dst: np.ndarray, dec: int, nodata, empty: list) -> int:
     """Decimated rows r0..r1 of dst: block means of the valid pixels; a block with none takes the nearest valid
-    block of its row (dropouts in otherwise complete mosaics). rows_src(a, b) gives full-resolution rows a..b.
+    block of its row (dropouts in otherwise complete mosaics); a row with none at all (a polar gap) is appended
+    to `empty` and filled afterwards by _fill_empty_rows. rows_src(a, b) gives full-resolution rows a..b.
     Returns the number of blocks with data."""
     w = dst.shape[1]
     valid = 0
@@ -282,12 +331,32 @@ def _decimate_rows(rows_src, r0: int, r1: int, dst: np.ndarray, dec: int, nodata
         for j in np.nonzero(~good.all(axis=1))[0]:
             idx = np.nonzero(good[j])[0]
             if idx.size == 0:
-                raise ValueError(f"decimated row {q0 + j} has no valid pixel")
+                empty.append(q0 + j)
+                continue
             for ch in range(c):
                 mean[j, :, ch] = np.interp(np.arange(w), idx, mean[j, idx, ch], period=w)
         q = np.clip(np.floor(mean + 0.5), 0, 255).astype(np.uint8)
         dst[q0:q1] = q[..., 0] if c == 1 else q
     return valid
+
+
+def _fill_empty_rows(dst: np.ndarray, empty: list) -> None:
+    """Each decimated row without any valid pixel (a polar gap) takes the mean of the nearest row with data
+    (a flat zonal cap; never more than a few rows next to a pole in the sources that need it)."""
+    if not empty:
+        return
+    bad = set(empty)
+    h = dst.shape[0]
+    for r in sorted(bad):
+        for d in range(1, h):
+            for q in (r - d, r + d):
+                if 0 <= q < h and q not in bad:
+                    v = np.asarray(dst[q], dtype=np.float64).mean(axis=0)
+                    dst[r] = np.clip(np.floor(v + 0.5), 0, 255).astype(np.uint8)
+                    break
+            else:
+                continue
+            break
 
 
 class _HttpFile:
@@ -412,7 +481,7 @@ def prepare_streamed(body: config.Body, key: str, record: bool = False) -> dict:
     K = _mip_chain_depth(h)
     rt.check_disk(int(h * w * (1 + 2 / 3)))
     dst = np.memmap(out / "m0.u8", dtype=np.uint8, mode="w+", shape=(h, w))
-    st = {"buf": np.zeros((0, W), np.uint8), "row": 0, "valid": 0}
+    st = {"buf": np.zeros((0, W), np.uint8), "row": 0, "valid": 0, "empty": []}
     band = max(1, BAND_ROWS // dec) * dec
 
     def drain(final: bool) -> None:
@@ -422,7 +491,7 @@ def prepare_streamed(body: config.Body, key: str, record: bool = False) -> dict:
             st["buf"] = st["buf"][take:]
             r0 = st["row"] // dec
             base = st["row"]
-            st["valid"] += _decimate_rows(lambda a, b: rows[a - base:b - base], r0, r0 + take // dec, dst, dec, src["nodata"])
+            st["valid"] += _decimate_rows(lambda a, b: rows[a - base:b - base], r0, r0 + take // dec, dst, dec, src["nodata"], st["empty"])
             st["row"] += take
 
     def on_rows(arr):
@@ -432,6 +501,7 @@ def prepare_streamed(body: config.Body, key: str, record: bool = False) -> dict:
     rt.log(f"{body.id}.{key}: streaming {src['bytes'] / 1e6:.0f} MB into a 1/{dec} 8-bit mip 0 (no local copy)")
     m, sh, _ = stream_rows(url, src["bytes"], on_rows, want_md5, src["sha256"])
     drain(True)
+    _fill_empty_rows(dst, st["empty"])
     if src["sha256"] is None:
         fetch._record(body, key, m, sh)
         body = config.load(body.id)
@@ -440,7 +510,7 @@ def prepare_streamed(body: config.Body, key: str, record: bool = False) -> dict:
     meta = {"width": w, "height": h, "channels": 1, "mips": K, "lonLeftEdgeDeg": g["lonLeftEdgeDeg"], "regridded": False,
             "valueDtype": "float16", "fingerprint": source_fingerprint(body, key), "streamed": {"md5": m, "sha256": sh},
             "georef": {k: v for k, v in g.items() if k != "crs"}, "mip0": {"kind": "u8", "decimate": dec},
-            "validFraction": st["valid"] / (h * w)}
+            "validFraction": st["valid"] / (h * w), "emptyRowsFilled": len(st["empty"])}
     m0 = np.memmap(out / "m0.u8", dtype=np.uint8, mode="r", shape=(h, w))
 
     def prev_rows(r0, r1):
@@ -474,6 +544,8 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
     c = len(bands)
     nodata = src["nodata"]
     check_nodata(body.id, key, nodata, g["nodata"])
+    if (src.get("edgeColumnsInvalid") or src.get("nodataDilatePx")) and nodata is None:
+        raise ValueError(f"{body.id}.{key}: edgeColumnsInvalid / nodataDilatePx need a source with nodata (the fill uses its mask)")
     dec = int(src.get("decimate", 1))
     if dec > 1 and (not exact or g["height"] % dec or np.dtype(g["dtype"]) != np.uint8):
         raise ValueError(f"{body.id}.{key}: decimate needs an exact 8-bit grid whose height divides by {dec}")
@@ -502,7 +574,10 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
         # area mean of the valid pixels of dec x dec blocks into an 8-bit mip 0 (the full-resolution file is read
         # in row bands; prepare_streamed never stores it at all)
         dst = np.memmap(out / "m0.u8", dtype=np.uint8, mode="w+", shape=(h, w) if c == 1 else (h, w, c))
-        valid = _decimate_rows(lambda r0, r1: _read_band_rows(path, bands, r0, r1), 0, h, dst, dec, nodata)
+        empty: list = []
+        valid = _decimate_rows(lambda r0, r1: _read_band_rows(path, bands, r0, r1), 0, h, dst, dec, nodata, empty)
+        _fill_empty_rows(dst, empty)
+        meta["emptyRowsFilled"] = len(empty)
         dst.flush()
         meta["mip0"] = {"kind": "u8", "decimate": dec}
         meta["validFraction"] = valid / (h * w)
@@ -512,7 +587,7 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
     elif not exact:
         dst = np.memmap(out / "m0.f32", dtype=vdt, mode="w+", shape=(h, w) if c == 1 else (h, w, c))
         mask = np.memmap(out / "m0.mask", dtype=np.uint8, mode="w+", shape=(h, w)) if nodata is not None else None
-        valid = _regrid(path, bands, g, nodata, dst, mask, int(src.get("nodataDilatePx", 0)))
+        valid = _regrid(path, bands, g, nodata, dst, mask, int(src.get("nodataDilatePx", 0)), src.get("edgeColumnsInvalid", (0, 0)))
         meta["mip0"] = {"kind": "f32"}
         meta["validFraction"] = valid / (h * w) if mask is not None else 1.0
 
@@ -538,7 +613,9 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
             blk = _read_band_rows(path, bands, q0, q1).astype(np.float32)
             okd = None
             if mask is not None:
-                okd = _dilate_invalid(np.all(blk != nodata, axis=-1) & np.all(np.isfinite(blk), axis=-1), dl)[r0 - q0:r1 - q0]
+                okd = np.all(blk != nodata, axis=-1) & np.all(np.isfinite(blk), axis=-1)
+                _drop_edges(okd, src.get("edgeColumnsInvalid", (0, 0)))
+                okd = _dilate_invalid(okd, dl)[r0 - q0:r1 - q0]
             blk = blk[r0 - q0:r1 - q0]
             if mask is not None:
                 ok = okd
@@ -553,6 +630,10 @@ def prepare(body: config.Body, key: str, path: Path) -> dict:
         def rows0(r0, r1):
             return np.asarray(dst[r0:r1]), (np.asarray(mask[r0:r1], dtype=np.float32) if mask is not None else None)
         level_w = mask
+    if src.get("wrapFeatherDeg"):
+        if meta["mip0"]["kind"] != "f32" or abs(meta["lonLeftEdgeDeg"] + 180.0) > 1e-9 or c != 1:
+            raise ValueError(f"{body.id}.{key}: wrapFeatherDeg needs a single-band copied or regridded grid starting at -180")
+        meta["wrapFeather"] = _feather_wrap(dst, mask, float(src["wrapFeatherDeg"]))
     # mips 1..K (weighted by validity when there is nodata)
     prev_rows = rows0
     weights = []
@@ -597,8 +678,8 @@ def _zonal_box(row: np.ndarray, n: int) -> np.ndarray:
 
 def _polar_smooth(out: Path, meta: dict, cfg: dict) -> None:
     """Toward the poles, south of cfg["southDeg"] and north of cfg["northDeg"], mip 0 pixels are replaced by
-    their row's circular longitude box mean, the window growing linearly from nothing at the limit to the whole
-    row at the pole, then (cfg["meridionalDeg"], optional) by the mean of the rows within a latitude window
+    their row's circular longitude box mean, the window growing from nothing at the limit to the whole row at
+    the pole (linearly, or with cfg["profile"] = "quadratic" as the square of the distance), then (cfg["meridionalDeg"], optional) by the mean of the rows within a latitude window
     growing likewise to +-meridionalDeg at the pole: the source's radial streaks ('pinwheels', cfg["pixels"] =
     "all") or the fill's flat polygons ("filled": only the pixels the nodata fill made) become a smooth cap,
     without the rings that row-to-row differences of zonal means alone would leave. The mips are then rebuilt
@@ -615,6 +696,9 @@ def _polar_smooth(out: Path, meta: dict, cfg: dict) -> None:
     mask = np.memmap(out / "m0.mask", dtype=np.uint8, mode="r", shape=(h, w)) if cfg["pixels"] == "filled" else None
     lat = 90.0 - (np.arange(h) + 0.5) * 180.0 / h
     mer = float(cfg.get("meridionalDeg", 0.0))
+    profile = cfg.get("profile", "linear")
+    if profile not in ("linear", "quadratic"):
+        raise ValueError(f"polarSmooth.profile {profile!r} is not 'linear' or 'quadratic'")
     rows = 0
     # each zone: its rows, contiguous, the pole's first
     for limit, zone in ((float(cfg["northDeg"]), np.nonzero(lat > float(cfg["northDeg"]))[0]),
@@ -622,6 +706,10 @@ def _polar_smooth(out: Path, meta: dict, cfg: dict) -> None:
         if zone.size == 0:
             continue
         t = (np.abs(lat[zone]) - abs(limit)) / (90.0 - abs(limit))
+        if profile == "quadratic":
+            # gentler start: near a high-latitude limit a linear ramp already averages tens of degrees of
+            # longitude a degree inside it, which leaves a hard rim
+            t = t * t
         orig = [np.asarray(m0[i], dtype=np.float64) for i in zone]
         orig = [r if r.ndim == 2 else r[:, None] for r in orig]
         zon = np.stack([_zonal_box(r, int(round(tt * w))) if int(round(tt * w)) >= 2 else r for r, tt in zip(orig, t)]).astype(np.float32)
@@ -658,7 +746,7 @@ def _polar_smooth(out: Path, meta: dict, cfg: dict) -> None:
     meta["polarSmoothRows"] = rows
 
 
-def _regrid(path: Path, bands: list[int], g: dict, nodata, dst: np.ndarray, mask, dilate: int = 0) -> int:
+def _regrid(path: Path, bands: list[int], g: dict, nodata, dst: np.ndarray, mask, dilate: int = 0, edges=(0, 0)) -> int:
     """Bilinear resampling of a nearly global grid onto the canonical one (row 0 at +90, column 0 at -180),
     read in row bands; nodata taps are left out of the weights. Returns the number of valid pixels."""
     h, w = dst.shape[:2]
@@ -682,6 +770,7 @@ def _regrid(path: Path, bands: list[int], g: dict, nodata, dst: np.ndarray, mask
         ok = np.all(np.isfinite(band), axis=-1)
         if nodata is not None:
             ok &= np.all(band != nodata, axis=-1)
+        _drop_edges(ok, edges)
         ok = _dilate_invalid(ok, dilate)[lo - m0:hi - m0]
         band = band[lo - m0:hi - m0]
         band[~ok] = 0.0

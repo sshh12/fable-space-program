@@ -47,7 +47,12 @@
     1
    ],
    "nodata": -32768,
-   "credit": "dlr-phobos-hrsc-dem"
+   "credit": "dlr-phobos-hrsc-dem",
+   "edgeColumnsInvalid": [
+    2,
+    3
+   ],
+   "wrapFeatherDeg": 15.0
   }
  },
  "amplification": {

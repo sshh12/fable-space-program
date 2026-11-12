@@ -31,10 +31,11 @@
    "nodata": 0,
    "credit": "usgs-rhea-cassini-voyager",
    "polarSmooth": {
-    "southDeg": -82.0,
+    "southDeg": -78.0,
     "northDeg": 90.0,
     "pixels": "all",
-    "meridionalDeg": 2.0
+    "meridionalDeg": 4.0,
+    "profile": "quadratic"
    }
   }
  },

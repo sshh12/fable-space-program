@@ -12,11 +12,11 @@
   },
   "callisto": {
    "meanLinearRgb": [
-    0.15272,
-    0.1318,
-    0.10887
+    0.1526,
+    0.1317,
+    0.10878
    ],
-   "meanLuminance": 0.13459,
+   "meanLuminance": 0.13449,
    "colourBasis": "MONOCHROME map x the config's tint [1.1715, 1.0, 0.8241]"
   },
   "ceres": {
@@ -66,11 +66,11 @@
   },
   "europa": {
    "meanLinearRgb": [
-    0.45748,
+    0.45747,
     0.38938,
-    0.31762
+    0.3176
    ],
-   "meanLuminance": 0.39868,
+   "meanLuminance": 0.39867,
    "colourBasis": "MONOCHROME map x the config's tint [1.1803, 1.0, 0.8166]"
   },
   "ganymede": {
@@ -93,29 +93,29 @@
   },
   "io": {
    "meanLinearRgb": [
-    0.44507,
-    0.30843,
-    0.14181
+    0.44415,
+    0.30782,
+    0.14158
    ],
-   "meanLuminance": 0.32545,
+   "meanLuminance": 0.3248,
    "colourBasis": "colour map"
   },
   "mars": {
    "meanLinearRgb": [
-    0.32771,
-    0.12887,
-    0.10236
+    0.28123,
+    0.11046,
+    0.08805
    ],
-   "meanLuminance": 0.16923,
+   "meanLuminance": 0.14515,
    "colourBasis": "colour map (detail mode with a mono map)"
   },
   "mercury": {
    "meanLinearRgb": [
-    0.16706,
-    0.15579,
-    0.14266
+    0.16021,
+    0.14948,
+    0.13667
    ],
-   "meanLuminance": 0.15724,
+   "meanLuminance": 0.15084,
    "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.93, 0.85]"
   },
   "mimas": {
@@ -165,11 +165,11 @@
   },
   "rhea": {
    "meanLinearRgb": [
-    0.34247,
-    0.34332,
-    0.33237
+    0.34354,
+    0.34439,
+    0.33342
    ],
-   "meanLuminance": 0.34235,
+   "meanLuminance": 0.34342,
    "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.99, 0.97]"
   },
   "tethys": {

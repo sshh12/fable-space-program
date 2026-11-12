@@ -18,8 +18,8 @@
   "albedo": {
    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mercury_MESSENGER_MDIS_Basemap_LOI_Mosaic_Global_166m.tif",
    "bytes": 4247471083,
-   "md5": null,
-   "sha256": null,
+   "md5": "51a4a93923b191e5b266e06d1238374b",
+   "sha256": "8ce6dc7e57e727af8d2f07bbf7b929ba29081d15399ede7311cbc5cb2c9c398a",
    "format": "geotiff",
    "latitude": "planetocentric",
    "lonPositive": "east",

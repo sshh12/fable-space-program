@@ -37,7 +37,9 @@ the log are the hand-off proper.
 - 01:45 THE LONGITUDE TRAP, caught before any bake: the USGS GeoTIFFs whose ISIS label says
   `LongitudeDirection = PositiveWest` (Io, Europa, Ganymede, Callisto, Rhea, Titan, Iapetus) are laid out with
   east to the right like every other file; the label only numbers the longitudes westward. Proof
-  (`scratchpad preview_both.py`, both readings with Gazetteer landmarks): in the east-increasing reading Pele's
+  (a scratch preview of both readings with Gazetteer landmarks, since lost; the check it made is now
+  permanent: verify.py runs every body's landmarks on the map mirrored and shifted by 180 deg and requires
+  them to fail, and `tools/bake/planet/views.py` renders the close views): in the east-increasing reading Pele's
   red plume ring and Loki's dark horseshoe sit on their Gazetteer positions, Ganymede's Tros rays and Galileo
   Regio, Callisto's Valhalla and Asgard, Titan's Xanadu, Belet and Shangri-La, Europa's dark trailing
   hemisphere around Pwyll, Iapetus' bright trailing hemisphere (brightest 60-degree band centred at 81 E); the
@@ -82,6 +84,31 @@ the log are the hand-off proper.
   site-bake's Madrakah additions to the earth set (earth manifest, earth/albedo/2/10/175-185), which that
   package states and the lead re-records; heights bit-exact; this tool never writes earth or moon.
 
+- 13:00-15:00 UTC: the independent review's findings (coordinator), each fixed and re-baked through the
+  gate (decisions 12-21; details in sections 4-6):
+  (1) dark +-180 seams in Mars' and Venus' albedo: a nodata value declared by the file but not by the config
+  is now an error (Mars albedo/colour/DEM and Mercury albedo/DEM corrected), Venus' 1-px dark fringe around
+  dropouts is dropped before the fill, verify.py measures every body's +-180 and 0 meridians (old Mars 0.49,
+  every body now 0.985-1.012; Mars and Venus at +-180 looked at, `out/bake/planet/views/`); (2) every body's landmarks must fail on the map mirrored and shifted by 180 deg
+  (verify.py and a new vitest file); new asymmetric landmarks: Venus Maat Mons, Pluto Burney, Charon Dorothy
+  and Argo Chasma, Phobos Stickney's depth, Enceladus Dunyazad, Zumurrud, the long axis and a basin;
+  (3) Phobos and Enceladus have their global DEMs (Phobos -2,928..+2,939 m, Enceladus -4,470..+4,726 m:
+  request planet-bake-1 to bodies-ephemeris); (4) Mercury's albedo is the low-incidence basemap (streamed,
+  valid 0.952: its polar gaps filled along rows and, for the 24 empty rows at the south pole, zonally); (5) the clip cap is measured at the
+  finest sampling, the lowFrequency path capped, every body now at most 0.5 % clipped (Iapetus was 3.7 %);
+  (6) polar pinwheels and fills smoothed (Io, Rhea, Ceres, Europa, Callisto), valid fractions listed;
+  (7) giant seams: point-registered edge columns averaged, Uranus' and Neptune's hemisphere seams and
+  Saturn's 0-deg seam feathered, a step-and-line seam check; (8) OPAL credits say "modified"; (9) step
+  fingerprints chain (and fold in the prepared sources); (10) the weights test now checks run time +
+  bake = the whole population through CraterField.add; albedo landmarks and the mirror self-test run in
+  vitest; (11) inherited mosaic boundaries listed, Triton white-balanced to B-V 0.70, Enceladus' unfiltered
+  mosaic evaluated and not used. The lost scratch preview of 01:45 is replaced by `views.py` and the
+  mirror self-test. Mars and Mercury heights were accepted, not re-baked (decision 21: their DEMs, streamed
+  and hashed, hold no pixel of the nodata value now stated); Mars' MDIM valid 0.9976, colour 1.0000.
+  Verify 814 checks, 2 failed (only the staged-section cross-check of request planet-bake-1); vitest 119 of
+  119 with the terrain guard. Consequence to note: the strict clip cap makes the bright moons darker than
+  their geometric albedo (section 6). Disk 30.7 GB free at the end.
+
 ## 1. What consumers get
 
 ### Tile sets `data/tiles/<id>/` (served at `/tiles/<id>/`), one per solid body
@@ -93,7 +120,7 @@ Standard layout and `TileManifest` (`src/core/contracts/terrain.ts`), written th
 |---|---|
 | Frame | the body-fixed frame of the IAU rotation model (pck00011): +Z north pole, +X prime meridian, east longitude, planetocentric latitude. Every source is re-registered to it (west-positive maps mirrored, planetographic latitudes converted, point/cell registration honoured) and the landmark tests prove it |
 | `radius` | the body's MEAN radius (= `BodyDef.radius`, the datum sphere) |
-| `height` | `frt1-height`, global levels `0..maxLevel` (no sparse levels), `heightScales` 0.5 m. Height = reference surface - mean radius + DEM: the reference is the triaxial ellipsoid of the config's radii, or for a DEM given against a sphere that sphere (Mercury 2,439.4 km, Venus 6,051.0, Ceres 470.0, Pluto 1,188.3, Charon 606.0); Mars' MOLA heights are on the areoid and are added to the IAU ellipsoid (the brief's rule; the areoid's +-2 km undulation is not modelled). So physics and rendering see the body's shape (Phobos' 13 x 11.4 x 9.1 km, Iapetus' 20 km flattening, Mars' 20 km) as an ordinary heightfield. Additive field `elevation: {min, max}` (finest level, m above `radius`) and `build` (content hash) |
+| `height` | `frt1-height`, global levels `0..maxLevel` (no sparse levels), `heightScales` 0.5 m. Height = reference surface - mean radius + DEM: the reference is the triaxial ellipsoid of the config's radii, or for a DEM given against a sphere that sphere (Mercury 2,439.4 km, Venus 6,051.0, Ceres 470.0, Pluto 1,188.3, Charon 606.0, Phobos 11.1, Enceladus 251.5); Mars' MOLA heights are on the areoid and are added to the IAU ellipsoid (the brief's rule; the areoid's +-2 km undulation is not modelled). So physics and rendering see the body's shape (Phobos' 8.2-14.0 km radii, Iapetus' 20 km flattening, Mars' 20 km) as an ordinary heightfield. Additive field `elevation: {min, max}` (finest level, m above `radius`) and `build` (content hash) |
 | `albedo` | `webp` 256 x 256 opaque RGB, global levels `0..maxLevel`; sRGB base colour, calibrated so the area-weighted mean luminance (linear) equals the configured albedo (NSSDC geometric albedo, solar-system.md 2.5; Iapetus on its bright hemisphere). Additive `calibration` and `build` |
 | `globals.albedoLowRes` | `globals/albedo-lowres.png`, 1024 x 512 equirect (row 0 north, column 0 at 180 W), as the Moon's |
 | `residentHeightLevel` | min(3, height maxLevel) |
@@ -118,7 +145,10 @@ the chromaticity (request bodies-ephemeris-5).
 `{ formatVersion: 1, generatedBy, note, entries: [{ id, title, author, url, licence, licenceUrl,
 attribution, bodies: [names] }] }`, one entry per source of every config (the source list is
 `tools/bake/planet/credits.json`). `attribution` is the line for the Credits screen. Every licence is public
-domain (NASA/USGS/PDS) or CC BY 4.0 (Hubble OPAL); no map whose author forbids redistribution is used.
+domain (NASA/USGS/PDS) or CC BY 4.0 (Hubble OPAL, credited as modified), except the Phobos DEM: a DLR/ESA
+Mars Express product distributed by USGS whose metadata states no access or use constraints (credited to
+ESA/DLR/FU Berlin; the lead may prefer to confirm it, see section 8). No map whose author forbids
+redistribution is used.
 
 ### Amplification models
 
@@ -147,16 +177,22 @@ node tools/dev/heavy.mjs --class=bake --label=planet -- data\cache\earth\venv\Sc
 data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/bake.py --credits          # data/staged/credits.json
 node tools/dev/heavy.mjs --class=cpu -- data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/verify.py --all
 data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/sheets.py --all            # out/bake/planet/<id>.png
+data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/views.py --all             # out/bake/planet/views/<id>.png: +-180, 0, poles
 data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/bake.py <id> --clean       # delete downloads + intermediates
-npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts
+node tools/dev/heavy.mjs --class=cpu -- npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts
 ```
+
+`--accept-height` (decision 21) marks a height step done without re-baking, only after streaming the DEM
+and proving it holds no pixel of the (newly stated) nodata value.
 
 Steps of a solid body: `fetch` (resumable range download into `data/cache/planets/<id>/dl/<source>/`,
 provider MD5 and the config's sha256 checked; `--record-checksums` fills them on a first download),
 `prepare` (windowed reads into a memory-mapped mip chain: the TIFF itself when it is an uncompressed strip
-file, else a float32 copy, regridded onto an exact 2:1 global grid when the file is not one, nodata filled by
-pull-push), `procedural` (map-less bodies: `procedural.ts` through `npx tsx`, up to 6 parts),
-`height`, `albedo`, `manifest`. Each step records a fingerprint (config + code version) in
+file without nodata, else a float32/float16 copy, regridded onto an exact 2:1 global grid when the file is
+not one, nodata filled by pull-push, optional polar smoothing; a decimated source is streamed instead and
+never stored; the download is deleted once a copy is prepared), `procedural` (map-less bodies: `procedural.ts` through `npx tsx`, up to 6 parts),
+`height`, `albedo`, `manifest`. Each step records a fingerprint (the config it reads, the prepared
+sources' fingerprints, its code version and its upstream steps' fingerprints) in
 `data/cache/planets/<id>/work/state.json` and is skipped when unchanged, so an interrupted bake resumes.
 At most 6 worker processes, below-normal priority (`moon/rt.pool`). Adding a body or deepening one is a
 config change only (levels, sources, landmarks).
@@ -176,7 +212,7 @@ config change only (levels, sources, landmarks).
    surface + DEM, the reference being the surface the DEM is given against: the IAU ellipsoid for bodies
    without a DEM and for Mars (MOLA's areoid is replaced by the ellipsoid, the brief's rule), and the DEM's
    own sphere where the product says so in its label (Mercury 2,439.4 km, Venus 6,051.0 km, Ceres 470.0 km,
-   Pluto 1,188.3 km, Charon 606.0 km). Adding the ellipsoid to a sphere-referenced DEM would count the
+   Pluto 1,188.3 km, Charon 606.0 km, Phobos 11.1 km, Enceladus 251.5 km: decision 16). Adding the ellipsoid to a sphere-referenced DEM would count the
    body's flattening twice (Ceres: 41 km).
 4. **Procedural bodies** (Deimos, Mimas, Miranda, Ariel, Umbriel, Titania, Oberon): the crater population of
    their amplification model, at the diameters the run-time model does not draw (above 4 postings of the
@@ -213,19 +249,62 @@ config change only (levels, sources, landmarks).
     the baked crater depth is scaled to Schenk's (1989) complex fit d = 0.366 D^0.559 km, blended over
     D_t..2 D_t (request bodies-ephemeris-5); the run-time model's craters (below 4 postings) are unaffected.
 12. **Landmark kinds**: `demHeight`, `albedoContrast`, `albedoCompare`, `craterDepth` and `albedoTexture`
-    (luminance standard deviation, for craters in shaded mosaics where the mean says nothing).
+    (luminance standard deviation, for craters in shaded mosaics where the mean says nothing). Every body's
+    set must also FAIL on its map mirrored east-west and shifted by 180 deg (verify.py and
+    `tests/unit/planet-bake/landmarks.test.ts`): a set that passes either way proves nothing (review 2).
+13. **Nodata is the file's.** A source's `nodata` must equal the value its file declares, null only when the
+    file declares none; anything else stops the prepare (review 1: Mars' and Mercury's configs said null
+    against a declared 0 / -32768, so Mars' Viking colour map's empty first column was drawn as black).
+    `nodataDilatePx` also drops the dark resampling fringe around dropouts (Venus' radar map: the pixels next
+    to nodata have a median of 60 DN against 140 two pixels away; 1 px).
+14. **Polar smoothing** (`polarSmooth`, Io, Ceres, Rhea, Europa, Callisto): toward the poles past a
+    configured latitude, the prepared mip 0 is replaced by its row's circular longitude mean, the window
+    growing from nothing at that latitude to the whole row at the pole (as the square of the distance: a
+    linear ramp left a hard rim a degree inside a high limit), then by the mean over a latitude window growing
+    likewise to +-2-4 deg (without it, row-to-row differences of the zonal means left a bull's-eye of rings
+    at Rhea's south pole), for all pixels (Io's and Rhea's
+    pinwheels, which are source data) or only the filled ones (Ceres' fill disc, Europa's and Callisto's
+    flat fill polygons). A smooth zonal cap instead of an artefact; nothing is invented.
+15. **Big mono maps are streamed** (Mercury, Mars): the 4.25 GB file is read once over HTTP in order, every
+    byte hashed against the config's md5 and sha256, and decimated on the fly; it never touches the disk.
+16. **Enceladus and Phobos DEMs** (review 3): Phobos the HRSC global DEM (Willner et al. 2010; heights about
+    its own 11.1 km sphere, label `A_AXIS_RADIUS`; the ellipsoid fitted to DEM + 11.1 km is 12.94 x 11.32 x
+    9.09 km against the IAU 13.0 x 11.4 x 9.1; its last three and first two columns, a stitch with duplicated
+    columns and a 300-500 m trench along 179.4-179.9 E, count as nodata (`edgeColumnsInvalid`) and are
+    filled; verify's height-seam check found it); Enceladus the Bland et al. (2020) shape model, its RADIUS
+    product (radius minus 251.5 km, per its label) on that 251.5 km sphere, not its topography product,
+    whose best-fit ellipsoid (fitted here: 256.3 x 251.2 x 248.3 km) differs from the IAU radii by up to 0.3 km.
+17. **Mercury's albedo** is the MDIS low-incidence basemap (LOI, review 4): the morphology basemap (BDR) is
+    taken at high incidence for shading and double-shaded under the DEM's normals.
+18. **Enceladus' albedo stays the high-pass-filtered mosaic** (review 11 asked to evaluate the unfiltered
+    `Enceladus_Cassini_mosaic_global_110m.tif`): looked at both at 0.5 deg (`out/bake/planet/eval-enceladus.png`);
+    the unfiltered one's large-scale pattern is image-to-image brightness and illumination steps with hard
+    edges, not albedo (Enceladus' albedo is nearly uniform), so it would paint mosaic tiles across the body.
+19. **Triton's colour map is white-balanced** to its disc-integrated B-V 0.70 (HST, Pascu et al.) with the
+    rule of decision 10 (`albedo.tint` on a 3-band map is a per-channel white balance): factors 1.115, 1,
+    1.353 on the Voyager composite, whose violet/green/orange filters made it green.
+20. **Clip cap measured where it bites**: the gain cap (decision 7) now takes the 99.5th percentile of the
+    brightest channel at the finest level's own footprint (200,000 equal-area directions), not on a coarse
+    mip that had averaged the bright spots away, and the `lowFrequency` path (Iapetus) is capped too.
+    verify.py measures the clipped fraction (any channel >= 254 DN, solid-angle weighted, finest level).
+21. **Step fingerprints chain**: a step's fingerprint folds in the fingerprints of the steps it reads
+    (procedural -> height, albedo -> manifest), so a re-bake of the height or albedo always re-writes the
+    manifest (review 9); states written before the change are accepted only where the step's code is
+    unchanged and its old fingerprint matches. `--accept-height` marks a height done WITHOUT re-baking only
+    after proving the change cannot alter it (used for Mars and Mercury: the DEM, streamed and hashed,
+    contains no pixel of the nodata value the config now states).
 
 ## 4. Measured against the acceptance criteria
 
 | Criterion | Result |
 |---|---|
 | Terrain guard green before and after; no earth/moon file changed | Before: 4 of 4 (00:41, as recorded then). After the last bake of this package (12:58 UTC): heights bit-exact; the directory summary lists only site-bake's Madrakah additions to the earth set (the earth manifest and earth/albedo/2/10/175-185), which that package declares and the lead re-records, no moon change and nothing of this tool's. After the first full set of bakes: 6 of 6 (`tests/unit/terrain-core/terrain-guard.test.ts`, re-recorded by the coordinator on stored directions in between, cde7b30): heights at the fixed points bit-exact, file counts and names of every earth/moon directory unchanged. The tool cannot write them (`rt.FORBIDDEN_TILESETS`; configs named earth/moon are rejected). |
-| Landmark tests per baked body catch a flipped or shifted map | 35 landmark tests over the 18 map bodies + Mimas' Herschel, all pass (verify.py; the DEM ones also through the TerrainProvider in `tilesets.test.ts`). Examples: Olympus Mons DEM part 20,014 m at the Gazetteer centre (brief: about 21 km; the summit is 1.3 deg south), Arsia Mons 17,711 m (MEGDR 17,755), Badwater/Hellas -8,189 m (MOLA -8,206), Rachmaninoff -5,287 m (lowest point of Mercury -5.38 km), Maxwell Montes 10,676 m, Occator's Cerealia Facula 2.0 x its ring, Pele/Loki (Loki 1.8 x darker), Tros, Galileo Regio, Valhalla, Xanadu 17 x Belet, Iapetus 6.4 x, Sputnik Planitia 17 x Belton Regio and 1.7 km deep, Herschel 9.3 km deep. Procedural bodies (Deimos, Miranda, Ariel, Umbriel, Titania, Oberon) have no map to flip and no landmark. |
+| Landmark tests per baked body catch a flipped or shifted map | 50 landmark tests over the 18 map bodies + Mimas' Herschel, all pass, and every body's set FAILS on its map mirrored east-west and on its map shifted by 180 deg (38 self-test checks; verify.py, and in vitest `landmarks.test.ts`: heights through the TerrainProvider, albedo on the low-res global map). New after the review: Maat Mons 9.0 km (mirrored 0.5, shifted -0.1), Burney 2.1 km deep, Dorothy 3.5 km, Argo Chasma -4.6 km, Stickney 1.1 km, Enceladus' Dunyazad and Zumurrud, its long axis +4.9 km and a 0.86 km basin. Examples: Olympus Mons DEM part 20,014 m at the Gazetteer centre (brief: about 21 km; the summit is 1.3 deg south), Arsia Mons 17,711 m (MEGDR 17,755), Badwater/Hellas -8,189 m (MOLA -8,206), Rachmaninoff -5,287 m (lowest point of Mercury -5.38 km), Maxwell Montes 10,676 m, Occator's Cerealia Facula 2.0 x its ring, Pele/Loki (Loki 1.8 x darker), Tros, Galileo Regio, Valhalla, Xanadu 17 x Belet, Iapetus 6.4 x, Sputnik Planitia 17 x Belton Regio and 1.7 km deep, Herschel 9.3 km deep. Procedural bodies (Deimos, Miranda, Ariel, Umbriel, Titania, Oberon) have no map to flip and no landmark. Also per body: no seam along the +-180 and 0 meridians in the albedo (66 checks; Mars was 0.49 there, Venus about 0.35, now 0.99 and 1.00) and in every DEM (Phobos' stitch found and removed), at most 0.5 % at the 8-bit ceiling (25 checks; Iapetus was 3.7 %). |
 | Manifests promise only tiles that exist; no zero-length tile | verify.py: for every body and layer, promised = on disk exactly (no missing, no extra, no empty, no stray or `.partial` file); every height tile decodes to finite heights and shares its in-face edges with its neighbours to one quantisation step; every albedo tile is a 256 x 256 opaque RGB WebP |
-| Every tile set loads through the TerrainProvider, lazily, one body at a time | `tests/unit/planet-bake/tilesets.test.ts`: for each of the 25 bodies a provider for that body alone, collision and band-limited heights at 24 points finite and inside the recorded range, residency complete after `ensureLoaded`, only that body's tiles cached; with `PLANET_BAKE_REQUIRE=1` a configured body that is not baked fails. 77 of 77 tests pass (with the generic-model and staged-output tests and the terrain guard) |
-| data/ under 22 GB with raw downloads deleted; >= 25 GB free; sizes per body | Baked data (rule 13d: tiles, sky, staged, defs) 16.65 GB, of which the 25 new tile sets 2.82 GB (planned about 2.8; 147,612 tiles, planned about 148,000); every raw download and intermediate deleted (`data/cache/planets` holds only the resume state files). Disk 32.4 GB free at the end. The floor was breached twice for minutes during the bakes (24.2 GB in batch 1 when other packages' data/packs (14 GB) and caches grew under it; 24 GB in batch 3 while Mars' MOLA copy was written): each time the batch stopped or the step finished and its clean-up restored it; since then a bake fetches and prepares one source at a time and big bodies bake in two passes |
+| Every tile set loads through the TerrainProvider, lazily, one body at a time | `tests/unit/planet-bake/tilesets.test.ts`: for each of the 25 bodies a provider for that body alone, collision and band-limited heights at 24 points finite and inside the recorded range, residency complete after `ensureLoaded`, only that body's tiles cached; with `PLANET_BAKE_REQUIRE=1` a configured body that is not baked fails. all pass (counts in the self-verify row) |
+| data/ under 22 GB with raw downloads deleted; >= 25 GB free; sizes per body | Baked data (rule 13d: tiles, sky, staged, defs) 17.05 GB after the review re-bakes (16.65 before), of which the 25 new tile sets 2.76 GB (147,612 tiles); the review's lowest disk point was 26.2 GB free (decimal GB, while Mars' colour map was prepared; other packages' data moved it between 24 and 34 GB), 30.7 GB at the end; every raw download and intermediate deleted (`data/cache/planets` holds only the resume state files). Disk 32.4 GB free at the end. The floor was breached twice for minutes during the bakes (24.2 GB in batch 1 when other packages' data/packs (14 GB) and caches grew under it; 24 GB in batch 3 while Mars' MOLA copy was written): each time the batch stopped or the step finished and its clean-up restored it; since then a bake fetches and prepares one source at a time and big bodies bake in two passes |
 | Bakes through the gate, at most 6 worker processes | Every bake ran as `node tools/dev/heavy.mjs --class=bake -- ...` (three batches plus the Mars albedo re-run), pools of 6 below-normal workers (`moon/rt.pool`); downloads, verification, sheets and the giants' maps (single processes) under `--class=cpu` |
-| Self-verify | `python -I tools/bake/planet/verify.py --all`: 666 checks, 0 failed (75 s; `out/bake/planet/verify.txt`); `npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts`: 77 of 77 |
+| Self-verify | After the review: `python -I tools/bake/planet/verify.py --all`: 814 checks, 2 failed, both the cross-check of bodies-ephemeris' staged terrain sections against the new Phobos and Enceladus DEM ranges (request planet-bake-1; nothing to fix on this side) (161 s; `out/bake/planet/verify.txt`); `npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts` (with `PLANET_BAKE_REQUIRE=1`): 119 of 119, the terrain guard's 7 included. Before the review: 666 of 666, 77 of 77 |
 
 Also checked (verify.py): radii of every config = `data/staged/bodies/radii.json` (mean, a, b, c, to 0.5 m);
 every staged terrain section of bodies-ephemeris names the tile set and carries exactly the resolved
@@ -234,21 +313,21 @@ every source with a public-domain or CC BY licence.
 
 ## 5. Bodies, sources, sizes
 
-Levels per solar-system.md 5.2 (at most 6 albedo, 5 height). Sizes are the tile files (`du`), measured before the bodies-ephemeris-5 re-bake of nine bodies (each changed by under 3 MB; `out/bake/planet/verify.json` has the current ones).
+Levels per solar-system.md 5.2 (at most 6 albedo, 5 height). Sizes are the tile files (`du`) of the first bake; Mercury, Phobos and Enceladus updated after the review (`out/bake/planet/verify.json` has the current ones).
 
 | Body | Height levels | Albedo levels | Height tiles / MB | Albedo tiles / MB | Albedo source (USGS unless noted) | Height source | Model |
 |---|---|---|---|---|---|---|---|
-| Mercury | 0-5 | 0-5 | 8,190 / 491.8 | 8,190 / 189.4 | MDIS BDR 166 m mono (read at 332 m), tint | MESSENGER DEM 665 m (sphere 2,439.4 km) | rocky |
+| Mercury | 0-5 | 0-5 | 8,190 / 491.8 | 8,190 / 151.1 | MDIS low-incidence basemap (LOI) 166 m mono (read at 332 m, streamed), tint | MESSENGER DEM 665 m (sphere 2,439.4 km) | rocky |
 | Venus | 0-4 | 0-4 | 2,046 / 158.2 | 2,046 / 15.3 | Magellan C3-MDIR 2,025 m radar, tint | Magellan topography 4,641 m (sphere 6,051.0 km) | rocky |
 | Mars | 0-5 | 0-6 | 8,190 / 564.8 | 32,766 / 331.5 | Viking colour 925 m x MDIM 2.1 232 m detail (read at 464 m) | MGS MOLA 463 m on the IAU ellipsoid | rocky |
-| Phobos | 0-3 | 0-3 | 510 / 2.3 | 510 / 4.5 | Viking 40 ppd (DLR), tint | ellipsoid 13.0 x 11.4 x 9.1 km | rocky |
+| Phobos | 0-3 | 0-3 | 510 / 10.8 | 510 / 4.5 | Viking 40 ppd (DLR), tint | HRSC global DEM 100 m (DLR, sphere 11.1 km) | rocky |
 | Deimos | 0-2 | 0-2 | 126 / 1.6 | 126 / 0.1 | procedural | ellipsoid + procedural craters | rocky |
 | Io | 0-3 | 0-5 | 510 / 3.7 | 8,190 / 21.0 | Galileo SSI / Voyager colour 1 km | ellipsoid | rocky |
 | Europa | 0-3 | 0-5 | 510 / 2.4 | 8,190 / 50.1 | Voyager / Galileo 500 m mono, tint | ellipsoid | icy |
 | Ganymede | 0-3 | 0-5 | 510 / 0.1 | 8,190 / 59.5 | Voyager / Galileo 1 km mono x colour 1,435 m | sphere | icy |
 | Callisto | 0-3 | 0-5 | 510 / 0.1 | 8,190 / 49.6 | Voyager / Galileo 1 km mono, tint | sphere | icy |
 | Mimas | 0-3 | 0-3 | 510 / 22.3 | 510 / 1.2 | procedural | ellipsoid + procedural craters + Herschel | icy |
-| Enceladus | 0-3 | 0-4 | 510 / 3.1 | 2,046 / 35.9 | Cassini ISS 100 m (high-pass), tint | ellipsoid | icy |
+| Enceladus | 0-3 | 0-4 | 510 / 25.8 | 2,046 / 33.4 | Cassini ISS 100 m (high-pass), tint | Bland et al. 2020 shape model, 2 ppd (sphere 251.5 km) | icy |
 | Tethys | 0-3 | 0-4 | 510 / 3.7 | 2,046 / 20.1 | Cassini 293 m, tint | ellipsoid | icy |
 | Dione | 0-3 | 0-4 | 510 / 2.4 | 2,046 / 24.7 | Cassini / Voyager 154 m, tint | ellipsoid | icy |
 | Rhea | 0-3 | 0-4 | 510 / 2.3 | 2,046 / 13.9 | Cassini / Voyager 417 m, tint | ellipsoid | icy |
@@ -259,11 +338,11 @@ Levels per solar-system.md 5.2 (at most 6 albedo, 5 height). Sizes are the tile 
 | Umbriel | 0-3 | 0-3 | 510 / 28.0 | 510 / 0.8 | procedural | sphere + procedural craters | icy |
 | Titania | 0-3 | 0-3 | 510 / 29.9 | 510 / 0.9 | procedural | sphere + procedural craters | icy |
 | Oberon | 0-3 | 0-3 | 510 / 29.5 | 510 / 0.9 | procedural | sphere + procedural craters | icy |
-| Triton | 0-3 | 0-4 | 510 / 0.1 | 2,046 / 7.4 | Voyager 2 colour 600 m (filled) | sphere | icy |
+| Triton | 0-3 | 0-4 | 510 / 0.1 | 2,046 / 7.4 | Voyager 2 colour 600 m (filled), white-balanced | sphere | icy |
 | Pluto | 0-5 | 0-5 | 8,190 / 285.9 | 8,190 / 40.6 | New Horizons 300 m mono, tint | New Horizons DEM 300 m (sphere 1,188.3 km) | icy |
 | Charon | 0-4 | 0-4 | 2,046 / 56.1 | 2,046 / 8.7 | New Horizons 300 m mono, tint | New Horizons DEM 300 m (sphere 606.0 km) | icy |
 | Ceres | 0-4 | 0-4 | 2,046 / 145.0 | 2,046 / 13.7 | Dawn FC 20 ppd (DLR) | Dawn HAMO DTM 60 ppd (sphere 470.0 km) | rocky |
-| **25 bodies** | | | **41,550 / 1,893** | **106,062 / 914** | | | |
+| **25 bodies** | | | **41,550 / 1,915** | **106,062 / 834** | | | |
 
 Plus `globals/albedo-lowres.png` per body (15.7 MB in all). Giants (`data/staged/render`, 8.3 MB, tracked):
 Jupiter 4096 x 2048 WebP (NASA PIA07782), Saturn 4096 x 2048 WebP (Cassini ISS, PDS), Uranus and Neptune
@@ -273,24 +352,36 @@ the credit line. Nothing from Bjorn Jonsson (no-copy request) or Solar System Sc
 
 Timings (6 workers, other agents' jobs running): small bodies 3-60 s each, Ganymede 3.7 min, Mercury 1.2 +
 3.6 min, Mars 4.3 min (height) + 17.6 min (albedo, level 6), Pluto 1.3 + 1.5 min; downloads at about 60 MB/s from the USGS bucket.
-Disk peak of a pass about 5.3 GB (Mercury's 4.25 GB BDR plus its 8-bit half-resolution copy, minutes).
+Disk peak of a pass about 5.3 GB in the first bake (Mercury's 4.25 GB download plus its 8-bit half-resolution copy); the 4.25 GB maps are now streamed, never stored, so a pass peaks at the decimated copy and its mips (about 1.8 GB for Mars' MDIM) plus the other sources of that pass.
 
 ## 6. Known limits (say plainly)
 
 - **Placeholder-quality surfaces, by the expansion's allowance**: global levels only (albedo 2-6, height
   2-5); no regional pyramids, no de-shading (decision 8), shaded mosaics double-shade under the renderer's
   normals on DEM bodies.
-- **Unobserved terrain is filled, not invented**: Pluto (DEM 46 % and map 68 % covered by New Horizons),
-  Charon (DEM 46 %, map 66 %), Triton (Voyager saw 61 %), Venus' DEM (92 %): nodata pixels are filled by
-  pull-push from the mip chain (smooth, uniform colour; `validFraction` in each source's prepare log). Giants:
-  Uranus south of -25 deg and Neptune north of +32 deg are zonal fills of the nearest clean latitude.
+- **Unobserved terrain is filled, not invented**: nodata pixels are filled by pull-push from the mip chain
+  (smooth, uniform colour). Valid fraction of each source (pixels of the prepared grid, from the prepare
+  logs of the review re-bakes): Pluto map 0.681 (DEM 0.46), Charon map 0.660 (DEM 0.46), Triton 0.614,
+  Venus radar map 0.917 (with the 1-px fringe dropped) and DEM 0.917, Enceladus DEM 0.927, Europa 0.957,
+  Callisto 0.962, Ceres map 0.964 (DEM 0.9999), Ganymede 0.965 (colour 0.964), Dione 0.998, Tethys 0.9996,
+  Phobos map 0.9997 (DEM 1.0 before its 5 stitch columns are dropped), Io 0.9999, Titan 0.9998, Rhea, Iapetus
+  and Enceladus' map 1.0; Mercury and Mars in the running log. Giants: Uranus south of -25 deg and Neptune
+  north of +32 deg are zonal fills of the nearest clean latitude.
 - **Colour**: mono maps carry a tint: from a published colour index for Europa, Callisto and Iapetus, an
   approximate one (config) for the others; Triton's Voyager colour is
   greenish as composited; Neptune's OPAL map is strongly cyan as composited (planet-render may regrade);
   Venus' surface is the Magellan RADAR backscatter as luminance (the visible surface is under the clouds).
-- **Bright icy bodies**: the gain cap (decision 7) keeps detail at the cost of a lower mean than the
-  geometric albedo where the mosaic's range is narrow (the manifest's `layers.albedo.calibration` has the
-  gain; verify reports the achieved values).
+- **Bright bodies are darker than their geometric albedo** (decision 20: at most 0.5 % at the 8-bit
+  ceiling, measured at the finest level, now holds). Level-0 mean linear luminance against the configured
+  albedo: Enceladus 0.256 / 0.90, Pluto 0.143 / 0.52, Tethys 0.274 / 0.80, Dione 0.267 / 0.70, Iapetus
+  0.188 / 0.50, Rhea 0.343 / 0.70, Ganymede 0.224 / 0.44, Io 0.325 / 0.62, Triton 0.423 / 0.76, Europa 0.399
+  / 0.68, Charon 0.231 / 0.35, Callisto 0.134 / 0.19, Mars 0.145 / 0.17; the dark bodies reach their target
+  (Mercury, Venus, Ceres, Phobos, Titan within 6 %). The first bake's coarse cap had them 20-40 % brighter
+  and 1-4 % clipped. The far disc is unaffected (bodies-ephemeris takes the chromaticity from
+  albedo-means.json and scales it to the geometric albedo). A soft highlight knee instead of the linear cap
+  (full gain, highlights compressed toward 1, the cap only where more than 0.5 % would still reach 254 DN)
+  would recover part of the mean; it is a small change in `albedo.gain`/`finest_linear` and a re-bake of the
+  13 capped bodies (about 30 min of bake slot); left for the lead to choose.
 - **Mercury and Mars albedo** are read at 332 m and 464 m (decimated by 2, disk floor), so their finest
   level's texels near cube corners (206 m and 143 m) are upsampled; at face centres (468 m, 325 m) they are not.
 - **Jupiter's** map longitude origin is as NASA published PIA07782 (System III not confirmed by the source);
@@ -299,6 +390,16 @@ Disk peak of a pass about 5.3 GB (Mercury's 4.25 GB BDR plus its 8-bit half-reso
   are off by up to about 2 km at long wavelengths; Olympus Mons still reads its 21 km DEM part.
 - **Procedural bodies** have no landmark (nothing to flip); Mimas has Herschel (a craterDepth landmark).
 - **No Venus cloud-top map** (decision 2).
+- **Mosaic boundaries inherited from the sources** (the providers' image-to-image brightness steps, not
+  bake errors; no de-shading or re-balancing is attempted): Mars a diagonal dark band at about 112-135 E,
+  18-38 N (Viking colour mosaic); Ganymede seams near 43 W and 56 E; Callisto near 90 E, and a bright smeared
+  low-resolution patch near 60 S 0-20 E (no longer clipped: Callisto 0.47 % at the ceiling); Europa near 74 W;
+  Rhea a brightness step along 180 E and a large smooth low-resolution patch at the north pole; Titan's
+  938 nm map is a patchwork of observations; Saturn's map has a 13 DN step at 0 deg between 70 and 74 N
+  (feathered, still visible).
+- **Polar regions** where the sources are thin: Io's and Rhea's poles and the fills of Ceres (south),
+  Europa and Callisto (both) are smooth zonal caps (decision 14), not observed detail; Enceladus' DEM is a
+  smooth pull-push fill north of about 80 N, where the shape model has few points (valid 92.7 % overall).
 
 ## 7. For the next packages
 
@@ -347,6 +448,13 @@ reproducible with the commands of section 2); the packer (platform-delivery) pic
   `data/packs` grew to 14 GB and the site-bake caches grew at the same time; a package cannot see another's
   planned peak. The gate's free-space check is for memory; a disk reservation in the gate would make the
   floor enforceable across packages.
+- **Request planet-bake-1** (to bodies-ephemeris, open): regenerate the staged body files from the new
+  manifests (Phobos and Enceladus elevation ranges; verify's cross-check of the staged sections fails for
+  those two until then), mean colours and credits.
+- **Licence of the Phobos DEM (for the lead)**: DLR/ESA's HRSC product, distributed by USGS/PDS; its
+  metadata states "Access_Constraints: None, Use_Constraints: None". It is credited (ESA/DLR/FU Berlin,
+  Willner et al. 2010) and accepted by the tool's licence check as a third class beside public domain and
+  CC BY. If only those two are wanted, remove the `dem` source from `phobos.json` (back to the ellipsoid).
 - **Venus cloud tops** (decision 2) and **Uranian moons' Voyager images** (partial coverage; the design
   chose procedural) are left as they are by design.
 
@@ -355,13 +463,17 @@ reproducible with the commands of section 2); the packer (platform-delivery) pic
 `tools/bake/planet/`: `config.py` (strict schema; unknown keys are errors), `fetch.py` (resumable range
 download from moon/fetch.py, provider MD5 sidecar, sha256 in the config), `source.py` (GeoTIFF georeference
 from the file and checked against the config; exact grids memory-mapped, others copied or regridded onto a
-canonical 2:1 grid; nodata pull-push fill; float16 mips for 8-bit data; optional decimation), `heights.py`
+canonical 2:1 grid; the config's nodata must equal the file's; nodata pull-push fill; float16 mips for 8-bit
+data; streamed decimation; `nodataDilatePx`, `edgeColumnsInvalid`, `wrapFeatherDeg`, `polarSmooth`), `heights.py`
 (finest level from the reference surface + area-filtered DEM or procedural relief; full-weighting pyramid
 from earth/hpyramid.py), `albedo.py` (finest level area-filtered, calibration gain with the clip cap,
 `colourMode` chroma or detail, `lowFrequency` percentile mapping; 2 x 2 linear box pyramid computed
 depth-first per level-2 subtree), `procedural.py` + `procedural.ts` (the crater population of the body's
 generic model, complementary weights), `giants.py` (equirect re-orientation, point/cell registration,
 planetographic latitude, zonal fill; ring strip from an occultation table), `bake.py` (driver, step
-fingerprints, `--split-passes`, `--clean-after`, `--credits`), `verify.py`, `sheets.py`.
+fingerprints chained through the steps and the prepared sources, `--split-passes`, `--clean-after`,
+`--accept-height`, `--credits`), `verify.py` (also the mirror/shift landmark self-test, meridian seams in
+albedo and height, the clip fraction, giant seams), `sheets.py`, `views.py` (close views of the +-180 and 0
+meridians and the poles).
 Adding a body: a config (sources with url/bytes/md5, conventions, levels, landmarks with Gazetteer refs),
 `--record-checksums` on the first run, then `verify.py <id>` and `sheets.py <id>`, and LOOK at the sheet.

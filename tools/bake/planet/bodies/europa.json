@@ -34,7 +34,8 @@
     "southDeg": -60.0,
     "northDeg": 60.0,
     "pixels": "filled",
-    "meridionalDeg": 3.0
+    "meridionalDeg": 3.0,
+    "profile": "quadratic"
    }
   }
  },

@@ -6,8 +6,11 @@ Per solid body: the manifest (contract fields, radius and levels from the config
 attribution); the tile files against the manifest's promises (every promised tile present, none extra, none
 empty, no `.partial` left over); every height tile decodes to finite heights and shares its in-face edges with
 its neighbours to one quantisation step; every albedo tile is a 256 x 256 opaque image; the landmark tests of
-the config (a flipped or shifted map fails them); the radii and the amplification section against the staged
-files of bodies-ephemeris when those exist. Per giant: the staged maps. Globally: data/staged/credits.json
+the config, and the same landmarks on the map mirrored east-west and shifted by 180 deg, which must fail; no
+seam along the +-180 and 0 meridians in the albedo (luminance on the meridian against beside it) or in a DEM
+height (curvature across it against meridians beside it); at most 0.5 % of the surface at the 8-bit ceiling;
+the radii and the amplification section against the staged files of bodies-ephemeris when those exist. Per
+giant: the staged maps and no step or line at their +-180 and 0 meridians. Globally: data/staged/credits.json
 lists every source of every config, data/ stays under 22 GB, the disk keeps 25 GB free, and the Earth and
 Moon tile sets are untouched (their manifests' content hashes and tile counts against the terrain guard).
 Writes out/bake/planet/verify.json and verify.txt; exits 1 when any check fails.
@@ -111,6 +114,31 @@ def clip_fraction(bid: str, level: int, stride: int = 3) -> float:
                 clipped += float((wgt * (a.max(axis=-1) >= CLIP_DN)).sum())
                 total += float(wgt.sum())
     return clipped / total
+
+
+SEAM_FLOOR_M = 2.0
+
+
+def height_seams(body: config.Body, hr, level: int):
+    """Median over latitude (a seam runs pole to pole; a crater does not) of |second difference across the
+    meridian| of the height at the +-180 and 0 meridians against the same
+    at eight control meridians 2-5 deg either side (the same terrain and data coverage), at two steps (two
+    vertex spacings of the finest level, and 0.5 deg for a seam a few source pixels wide), the control floored
+    at SEAM_FLOOR_M (smooth filled terrain): a DEM's edge columns that disagree (a stitch trench or ridge) give
+    a ratio well above 1. Yields (meridian, worst ratio, its control in m)."""
+    lat = np.radians(np.arange(-80.0, 80.01, 0.25))
+
+    def d2(lon0, step):
+        hs = [hr.bicubic(cube.lat_lon_to_dir(lat, np.full(lat.shape, np.radians(lon0 + k * step))), level) for k in (-1, 0, 1)]
+        return float(np.median(np.abs(hs[1] - 0.5 * (hs[0] + hs[2]))))
+    for lon0 in (180.0, 0.0):
+        worst = (0.0, 0.0)
+        for step in (2.0 * 90.0 / (2 ** level * 256), 0.5):
+            control = max(SEAM_FLOOR_M, float(np.mean([d2(lon0 + o, step) for o in (-5.0, -4.0, -3.0, -2.0, 2.0, 3.0, 4.0, 5.0)])))
+            r = d2(lon0, step) / control
+            if r > worst[0]:
+                worst = (r, control)
+        yield lon0, worst[0], worst[1]
 
 
 class Report:
@@ -334,6 +362,10 @@ def verify_solid(body: config.Body, rep: Report, quick: bool) -> dict:
         landmark(body, lm, hr, ar, rep)
     if lms:
         landmark_self_test(body, lms, hr, ar, rep)
+    if body.height["dem"] is not None:
+        for lon0, ratio, control in height_seams(body, hr, int(hl["globalMaxLevel"])):
+            rep.check(bid, f"height: no seam along the {lon0:.0f} deg meridian", ratio <= 3.0,
+                      f"curvature across it / at eight meridians 2-5 deg beside it = {ratio:.2f} (<= 3; control {control:.1f} m)", value=ratio)
     cf = clip_fraction(bid, int(al["globalMaxLevel"]))
     rep.check(bid, f"albedo: at most {CLIP_MAX_FRACTION:.1%} of the surface at the 8-bit ceiling (any channel >= {CLIP_DN} DN, finest level)",
               cf <= CLIP_MAX_FRACTION, f"{cf:.3%} (solid-angle weighted)", value=cf)

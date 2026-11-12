@@ -27,7 +27,10 @@ Source: { url, bytes, md5, sha256, format: "geotiff" | "image", latitude: "plane
           nodata must be exactly the value the file declares (null only when it declares none).
           optional: decimate (n: an n x n block mean as mip 0, streamed, never stored at full size),
           nodataDilatePx (n: also drop the n pixels around every nodata pixel, a dark resampling fringe),
-          polarSmooth ({ southDeg, northDeg, pixels: "all" | "filled", meridionalDeg? }: smoothing toward the poles),
+          edgeColumnsInvalid ([left, right]: the file's first / last columns count as nodata, a stitch at its wrap),
+          wrapFeatherDeg (d: the step between the grid's two ends at +-180 is feathered out over d degrees),
+          polarSmooth ({ southDeg, northDeg, pixels: "all" | "filled", meridionalDeg?, profile?: "linear" | "quadratic" }:
+                      smoothing toward the poles),
           registration, table, validLatDeg (giants)
           albedo.tint on a 3-band map is a white balance (per-channel factors)
 """
@@ -69,7 +72,7 @@ SOURCE_KEYS = ("url", "bytes", "md5", "sha256", "format", "latitude", "lonPositi
                "height", "bands", "nodata", "credit")
 
 
-SOURCE_OPTIONAL = ("registration", "table", "validLatDeg", "decimate", "nodataDilatePx", "polarSmooth")
+SOURCE_OPTIONAL = ("registration", "table", "validLatDeg", "decimate", "nodataDilatePx", "polarSmooth", "edgeColumnsInvalid", "wrapFeatherDeg")
 
 
 def _check_source(key: str, s: dict, where: str) -> None:
