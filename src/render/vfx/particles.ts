@@ -413,8 +413,9 @@ struct VOut {
     let rs = r / lobes;
     fall = exp(-3.0 * rs * rs) * (1.0 - smoothstep(0.7, 1.0, rs));
   }
-  if (kind == KIND_DUST || kind == KIND_DROPLET) {
-    // A soft streak: no edge across it, and it thins out towards both ends.
+  if (kind == KIND_DUST || kind == KIND_DROPLET || kind == KIND_SPARK) {
+    // A soft streak: no edge across it, and it thins out towards both ends. (A spark with a flat profile and
+    // round ends is a gold bar: a shower of them is confetti.)
     let u = in.local.x / (in.half + 1.0);
     let ends = 1.0 - u * u;
     fall = exp(-3.2 * in.local.y * in.local.y) * (1.0 - smoothstep(0.75, 1.0, abs(in.local.y))) * ends * ends;

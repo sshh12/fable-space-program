@@ -40,3 +40,13 @@ is 0 (no vfx feature, or no sheath). The vfx package publishes it: `docs/request
 (`ctx.resources.publish('vfx.plasmaWindow', buffer)` once, `queue.writeBuffer` in prepare from
 `plasmaWindowRadiance`). Checked: the render-core spec "every default SharedResource works with no feature
 present" binds every set with the defaults (3 of 3 with the shell specs). RENDER_API section 11 and 18.
+
+The vfx part (commits `cb47e66`, `1e88202`): `src/render/vfx/plasma.ts` creates the 16-byte uniform buffer, publishes
+it once as `'vfx.plasmaWindow'` and writes it in `prepare` whenever the value changes: rgb = the colour of the gas
+times `plasmaWindowRadiance(...)` for the ACTIVE vessel (the cabin camera sits in it), a = its plasmaIntensity; all
+zero while that vessel has no sheath (below `reentry.minIntensity`, or slower than 500 m/s). With the round-2 model
+(the sheath one radius behind the shoulder plus half a radius of the base flow behind the back shell) the value at
+7.6 km/s and the lab's heat flux is 212 / 861 / 3,231 cd/m^2 at plasmaIntensity 0.3 / 0.6 / 1.0, colour (1.49, 0.85,
+1.05) at unit luminance: close to the 3,020 of the cockpit-9 resolution at full intensity, lower below it (the wake
+now cools faster with falling intensity). Not seen from the cabin by vfx in this round (the cockpit's own pictures
+are the check).
