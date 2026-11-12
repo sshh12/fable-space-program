@@ -234,6 +234,16 @@ heavy-job gate, no placeholders, secrets only in build-time tools and in provide
   arguments. An event instant (sphere-of-influence crossing, encounter) keeps a float64 second inside its
   tick for the hand-over, as v1 does. Rails warp and jumps land on whole ticks.
 - `PHYSICS_DT = 1/120 s` is one tick. A control tick is `CONTROL_TICK_STEPS = 4` ticks (30 Hz).
+- **State at a tick is a function of the tick** (tick-pure state; lead decision of 2026-11-12). Everything
+  the simulation derives from time is a fixed function of the tick, never of how a session arrived there:
+  the orientation of every body at tick `k` is the orientation at `ut = k / 120`; which ticks are control
+  ticks is fixed by the tick number; and the ticks at which the sun-visibility sample is taken are fixed by
+  the tick number. None of the three depends on the scenario start, on the last rails landing, on a jump or
+  on any other part of a session's history. So the state of an island at a tick is a function of that tick
+  and of its vessels alone, and there is **no clock base**: nothing carries one, neither a clock (5.2) nor
+  the island codec (7.2). (v1, and the tick-grid step after it, evaluated orientation as "a base plus whole
+  steps" with the base moving at every rails landing, so the orientation at a tick depended on that history
+  in the last bits. The guard and the golden hash were re-recorded once for this change, MIGRATION_V2.)
 - Timers have exactly three bases, and every timer in this file names one. **Universe ticks**: pad
   occupancy and safing, soft-capture, port cooldown and U5 clearing timers; they stop when their clock
   stops. **Directory up-time** (the persisted counter behind the live clock, 5.2; frozen while the universe
@@ -286,14 +296,16 @@ nose toward +Z, yaw + = nose toward +X, roll + = about +Y). They apply in the CT
 **Ids.** Lower-kebab strings for definitions. Engine code never mentions a specific body, vehicle, part,
 site, scenario, milestone or rule value. Runtime ids are issued by the directory, are universe-unique, and
 are deterministic functions of ids and ticks so that a replay issues the same ones. The local universe
-issues craft ids from a seeded counter, so tests are reproducible.
+issues craft ids from a seeded counter, so tests are reproducible. A craft id and a part's instance id
+contain neither `/` nor `~`: `/` joins the two into the part key and `~` separates the fields of the ids
+derived from them, so a string with a `/` is always a part key and every id parses without a table.
 
 | Thing | Id | Rule |
 |---|---|---|
-| Craft | `craftId` | Never changes; never reused; never names a vessel of several craft |
-| Part | `craftId/instanceId` | `instanceId` is unique within the craft |
+| Craft | `craftId` | **Universe-unique**: at no tick do two craft carry the same id, in one vessel or in two. Never changes; never reused; never names a vessel of several craft |
+| Part | `craftId/instanceId` (the part key) | `instanceId` is unique within the craft. The key is the one form in which a part is named outside its craft; events carry it in that one form from the tighten step after sub-wave 3.2 (until then an event in a vessel of one craft carries the bare instance id) |
 | Whole single craft (holds its craft's root part) | `vesselId = craftId` | One row per id for ever: the row is a tombstone while the craft is docked and is reopened when it undocks alone |
-| Piece of one craft without that craft's root | `<craftId>~<root part instance id of the piece>` | Staging debris, fragments |
+| Piece that departs from a craft at a separation (staging debris, a fragment) | a **new** `craftId`, with its lineage: the craft it came from and the tick | The piece that keeps the command root keeps the craft's id; every departing piece is a craft of its own from that tick, and its vessel id is its craft id like any whole single craft |
 | Vessel of two or more craft (assembly, or a fragment spanning craft) | `a~<lowest vessel id of the two that first docked>~<tick>` | Issued at the first dock; kept while craft join (the arriving vessel's row becomes a tombstone); when two assemblies dock the base's id is kept |
 | Pieces after an undock or a break | each whole single craft: its `craftId`; the piece with the most craft (tie: the lowest craft id) keeps the assembly id if it still has two or more craft; every other multi-craft piece: `a~<its lowest craft id>~<tick>` | An assembly id whose last multi-craft piece is gone becomes a tombstone |
 
@@ -304,9 +316,14 @@ issues craft ids from a seeded counter, so tests are reproducible.
   `split_into` to the vessel that now holds the targeted craft (a target is stored with its craft id); a
   plan belongs to its craft and travels with it; a pad slot stays with the piece that holds the pad
   interface.
+- **Craft identity** (lead decision of 2026-11-12; the rule is in 7.2). At assembly every part tree that a
+  dock link joins to another is its own craft. At a separation the piece that keeps the command root keeps
+  the craft id and each departing piece gets a new craft id with lineage. Re-docking former pieces of one
+  craft is ordinary docking: two craft and a link.
 - Tests (`tests/universe`): dock, undock of the base craft alone, re-dock, a break that splits an assembly
-  into three: ids unique at every tick, no primary-key reuse while a row is live, echoes intact for a
-  viewer behind each operation, identical ids in a replay.
+  into three, a staging followed by a re-dock of the separated stage: craft ids and vessel ids unique at
+  every tick, no primary-key reuse while a row is live, echoes intact for a viewer behind each operation,
+  identical ids in a replay.
 
 **Determinism.** `src/sim`, `src/terrain`, `src/universe` and `src/pilot` iterate in defined order (vessels
 by id, parts by index, bodies by sorted id) and use only the seeded hash / PRNG of `src/core/math/hash.ts`.
@@ -388,6 +405,12 @@ up-time (section 3). Server and clients evaluate the same closed form from the s
 reports time. `untilTick` is the earliest of: any member's sphere-of-influence crossing, horizon, screened
 encounter and target approach; the lead cap; the **carry limit**; and the end of the computed forecast chain
 of anything the clock has been screened against. Nobody is drawn past an event the server will stop at.
+
+A clock decides only **which tick** its members are at. What is computed at that tick does not depend on
+the clock's past: body orientation, the control tick and the sun-visibility sample are fixed functions of
+the tick (section 3), so two islands that hold the same vessels at tick `k` are in the same state bit for
+bit, whether they came there at 1x, by rails warp or by a jump. A clock has no base for the step grid, and
+an island keeps none.
 
 | Kind | Rate | Members | Who is bound |
 |---|---|---|---|
@@ -942,7 +965,8 @@ attitude and nothing steers, stages or plans automatically.
 
 ```ts
 interface CraftRuntime {
-  craftId: string;                 // issued by the directory; never changes
+  craftId: string;                 // issued by the directory; universe-unique; never changes
+                                   // a craft that departed from another at a separation also records its lineage (below)
   vehicleId: string; vehicle: VehicleDef;   // a shipped vehicle today; a stored design later (section 32)
   ownerId: string | null;          // account; null = nobody
   name: string;
@@ -963,10 +987,23 @@ interface Vessel {
 - **Forest plus links.** Each craft keeps its own part tree with its own root. Docked joints are links,
   never parent pointers, so decouplers keep cutting the same joint, a tree is never re-rooted by docking,
   and rings are expressible. `separateVessel` computes connected components over tree edges and links.
+- **Craft identity** (lead decision of 2026-11-12; recorded as decided, the form of the new id and of the
+  lineage record are in `docs/handoff/sim-core-v2.md`). A craft id is universe-unique: at no tick do two
+  craft carry the same id, in one vessel or in two. **At assembly** (a vessel built from a vehicle
+  definition) every part tree that a dock link joins to another is its own craft, so a vehicle with
+  pre-mated ports is an assembly of that many craft from its first tick, each with its own id, stage stack
+  and owner record. **At a separation** (staging, a break, anything that cuts a tree) the piece that keeps
+  the command root keeps the craft id; each departing piece becomes a new craft with a new id and a lineage
+  that names the craft it came from and the tick, and it keeps the owner for attribution and expiry.
+  **Re-docking** former pieces of one craft is ordinary docking: two craft and a link, never a merge back
+  into one tree. (This replaces the earlier rule that a piece without its craft's root carried a copy of
+  the craft record under the same craft id, which gave two vessels one craft id.)
 - **Per craft**: stage stack, abort sequence, action groups, pending timed actions, owner, lend policy.
   **Per command part**: crew, seats, hatch, cockpit interior id, the `remote` flag. `VehicleDef.cockpit`,
   `VehicleDef.crew` and `VehicleDef.cameras.cockpit` remain as authoring conveniences that the assembler
-  copies onto the command part; consumers read the command part.
+  copies onto the command part; consumers read the command part. The snapshot states the result per craft
+  (`CraftSnapshot.cockpit`: cockpit id, camera seat, sensor mount), so that the cockpit eye is the viewer's
+  own command part and no consumer indexes the vehicle library by a runtime id.
 - **Flow.** A flow group is `(craft, stageGroup)`. Docking never pools propellant. Transfer is a commanded
   pump between two flow groups joined by docked ports that carry the resource; an owner may always pump out
   of their own tanks; pumping out of someone else's needs `lendPropellant`. Cross-feed across a port needs
@@ -995,7 +1032,10 @@ interface Vessel {
   (born-overlapping) pairs; U5 pairs with their clearing timers; soft-capture constraints with their clamp
   and timeout timers and the hard-dock dwell timer; threshold-watch flags; admitted copies with their old
   heads and reservation state; a pending merge tick; per pilot the latched controls, the open latch and
-  dead-man timers and the inputs queued in the jitter buffer. `islandHash` hashes this output. The island
+  dead-man timers and the inputs queued in the jitter buffer. It carries **no clock base** and no phase of
+  the control tick or of the sun-visibility sample: those are fixed functions of the tick (section 3), so
+  the state of an island at a tick is a function of the tick, its vessels and the items of this list alone.
+  `islandHash` hashes this output. The island
   codec is what `island_ckpt.state`, migration between workers, `IslandEnter` and the lane-equivalence,
   replay and audit comparisons use; a checkpoint taken at a staging tick restores the stage and its booster
   still ignoring each other.
@@ -1095,8 +1135,10 @@ interface Vessel {
   tree, adds the link, recomputes mass properties, and conserves linear and angular momentum by
   construction. The heavier vessel is the base (equal mass: the lower id). The merged vessel's id follows
   section 3 (an assembly id issued at the first dock; the absorbed rows become tombstones that keep their
-  worldlines). The directory makes that change, with the island checkpoint and the journal up to the dock
-  tick, in one transaction before the `docked` event is released.
+  worldlines); every craft keeps its craft id, and two craft that were once one (a stage that returns to
+  what it separated from) dock like any two craft (7.2, craft identity). The directory makes that change,
+  with the island checkpoint and the journal up to the dock tick, in one transaction before the `docked`
+  event is released.
 - **One helm or none.** The helm's inputs steer the vessel through its own craft and through actuators
   other craft have lent. An arriving craft goes to docked free drift: engines, thrusters and wheels
   inhibited until its owner's policy admits them (`lendAttitude` on by default, `lendEngines` and
@@ -1114,7 +1156,7 @@ interface Vessel {
   any owner in the assembly (15.5).
 - **Craft sovereignty.** Each owner's commands for their own craft are always accepted: fire their own
   stage stack, abort, arm and release their own ports, pump out of their own tanks, change their lend
-  policy. Staging while docked separates the pieces physically.
+  policy. Staging while docked separates the pieces physically; each departing piece is a new craft (7.2).
 - **Joint strength.** A link breaks when the force or torque needed to accelerate the lighter side exceeds
   the port's `hard` limits for 0.2 s. The rule players learn: do not burn hard through a docking port.
 - **Undock.** The owner of either port commands it (or a stage action does). At a tick the island removes
@@ -1304,9 +1346,15 @@ get real cabins is the user's decision (OPEN_QUESTIONS Q15).
 ### 9.3 Sites and pads
 
 - `LaunchSiteDef.pads: PadDef[]` replaces the single pad: id, name, east/north offset, azimuth, class
-  (`light`, `medium`, `heavy`; a pad hosts its class and anything smaller), mass and diameter limits, flat
-  and blend radii, mount height, keep-out radius, structures. Flatten-disc terrain modifiers are derived
-  from the pads at load.
+  (`light`, `medium`, `heavy`; a pad hosts its class and anything smaller), flat and blend radii, mount
+  height, keep-out radius, structures. Flatten-disc terrain modifiers are derived from the pads at load.
+- **Mass and diameter limits are rules data, per class**: `UniverseRules.pads.classLimits` gives the
+  largest lift-off mass and stack diameter of each class, and a pad states `maxLiftoffMass` /
+  `maxDiameter` only to override its class. No pad is without a limit (`Infinity` appears nowhere). The
+  defaults are **provisional** and the lead's to set from `fleet-data`'s table of the fleet: heavy 3,000 t
+  and 9.5 m (what LC-1 states today: 8.7 % over the 2,760 t lunar stack; 9.5 m is under the 9.56 m opening
+  of LC-1's own launch mount, to be settled with the table), medium 700 t and 7 m, light 70 t and 2.5 m
+  (the research's Solstice and Azimuth sheets rounded up; neither vehicle exists yet).
 - **Ka Lae** (site id `ka-lae`, the v1 site renamed in one sweep): sixteen pads inside the existing 100 km
   region (4 heavy, 6 medium, 6 light), heavy pads at least 2.5 km apart, medium 1.5 km, light 1 km. LC-1
   stays where it is.
@@ -1647,7 +1695,7 @@ assemblies/{id}.json    AssemblyDef: a launcher or spacecraft sub-assembly (same
 vehicles/{id}.json      VehicleDef: flat part graph, or `uses` of assemblies; stages, abort, cameras
 scenarios/{id}.json     ScenarioDef: a spawn recipe plus optional objectives (local sessions, labs, tests)
 rules/{id}.json         UniverseRules documents: `default` (production), `staging` (lifetimes of minutes),
-                        `local` (offline play and tests)
+                        `local` (offline play and tests); each file states its overrides of the default
 resources.json          ResourceDef[]
 render/, terrain/       section files pulled in by "$ref"
 visuals/, audio/        section directories, also exposed as DefLibrary.sections
@@ -1678,7 +1726,9 @@ Adding content later:
 - **A vehicle**: part files, assemblies, a vehicle file, visuals. New part behaviour is a new `ModuleDef`
   member with its implementation in `src/sim/vessel/modules`.
 - **A site or a pad**: data, a region bake where the site is new, structures from the generator library.
-- **A rule change**: a new `UniverseRules` version; clients show when it changed.
+- **A rule change**: a new `UniverseRules` version; clients show when it changed. A rules file is stored
+  as overrides of the default document (id, version and the fields in which it differs; the library holds
+  the complete document), so a field the contract gains needs no change to a file.
 
 ---
 
