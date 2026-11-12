@@ -58,3 +58,25 @@ A decision per group; the generator can carry any of them in a line of `tools/bo
 4. Earth and the Moon stay pinned (ARCHITECTURE 8.2); please confirm that the validation reports them without
    gating (Earth 0.42-0.84 deg from Horizons in ICRF; the Moon's frozen ellipse 162 deg).
 Until a decision the staged files follow the brief exactly and `validate.mjs` exits 1 listing these bodies.
+
+## Lead decision (2026-11-12, relayed by the coordinator; recorded by bodies-ephemeris)
+The published tables stay as provenance and starting values; the elements the game uses are FITTED to
+Horizons, with tolerances that say honestly what a precessing Kepler ellipse can do. Purpose: a recognisably
+real solar system on a rails model (launch windows within about a day of reality, every moon within about a
+degree of an almanac wherever the model can do that), not an ephemeris service.
+1. Method, for every body except Earth and the Moon: fit a, e, i, node, argument of periapsis, mean anomaly
+   at epoch, mean motion and linear node and apsis rates to Horizons state vectors over 2029-09-01 to
+   2060-01-01 (dense enough to resolve each period; epoch = the lobby epoch 938240818), starting from the
+   table values; Phobos, Deimos and Triton get a starting rate from Horizons itself.
+2. Tolerances, judged on the fit's residual over the window, in a tracked table `tools/bodies/tolerances.json`
+   (one row per body): planets 0.1 deg in heliocentric direction and 0.2 % in distance; moons and dwarf
+   planets 1 deg in orbital longitude and 2 % of the orbit radius. A body over its class tolerance needs a row
+   with its measured bound AND the physical reason a steady ellipse cannot follow it; the validator fails on
+   any body over its class tolerance without a reasoned row. A body far off for no nameable reason is reported
+   as such.
+3. Earth and the Moon stay pinned (v1 Sun formula, frozen lunar ellipse); the two measured discrepancies go
+   into the hand-off as an item for bodies-activation (4.4), which decides whether to move them.
+4. Mean colours of the nine grey bodies from the global colour maps planet-bake bakes (request to planet-bake
+   or computed from the same source maps); radiative heating of non-air atmospheres stays unmodelled and is
+   recorded as a seam for the landing update.
+Requests -1 and -3 are passed to their owners by the lead.
