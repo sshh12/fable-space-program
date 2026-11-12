@@ -34,6 +34,16 @@
  *
  * A bake that ADDS tiles makes the summary of the directories it adds to differ; that is the point: the
  * package states which directories it changed, and the lead re-records after checking that nothing else did.
+ * The check and the re-recording are one act: `terrain-guard.record.ts --tiles-additions --changed
+ * <tileset>/.` reads every file, refuses to write if a recorded directory is gone or differs in files,
+ * names, bytes or content (`auditAdditions`), and lists what was added.
+ *
+ * History of the recordings. 2026-11-11: Earth and Moon, 2,000 points each. 2026-11-12: the Madrakah
+ * region was added to the Earth set (840 directories on face 2, levels 8-12; request site-bake-1): the
+ * summary re-recorded by --tiles-additions, and the place group `site:madrakah` appended to Earth (2,800
+ * points). STILL TO COME: the flatten discs of the fifteen new Ka Lae pads and the sixteen Madrakah pads
+ * exist only once fleet-data writes the site files; the heights are then re-recorded (`--resample`) by the
+ * lead under the rule "only points inside new flatten discs may change".
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -72,6 +82,11 @@ export interface GuardGroup {
   /** A place group's centre, degrees (information; the directions are what is compared). */
   latDeg?: number;
   lonDeg?: number;
+  /**
+   * Content hash of the tile set's manifest when this group was APPENDED (information). Absent = the group
+   * is of the body's first recording (`GuardBodyHeights.tilesetContentHash`).
+   */
+  recordedOn?: string;
 }
 
 export interface GuardBodyHeights {
@@ -335,4 +350,55 @@ export function tileDifferences(recorded: Record<string, DirSummary>, current: R
     if (out.length >= max) break;
   }
   return out;
+}
+
+export interface AdditionsAudit {
+  /** What a bake that only adds tiles may not do: a recorded directory gone or different, an expected change that is none. */
+  violations: string[];
+  /** The directories the package named as changed, with what changed in them. */
+  changed: string[];
+  /** New directories, sorted. */
+  added: string[];
+  /** Recorded directories that are byte-identical (files, names, bytes, content). */
+  unchanged: number;
+}
+
+/**
+ * The check the lead makes before re-recording the tile summary after a bake that ADDS tiles: every recorded
+ * directory is still there with the same files, names, bytes and CONTENT (the full form on both sides),
+ * except the directories the package names as changed (`expectChanged`: a tile set's root with its
+ * manifest), which must be there on both sides and must in fact differ. Everything else that is new is an
+ * added directory. Nothing is truncated: every violation and every added directory is returned.
+ */
+export function auditAdditions(recorded: Record<string, DirSummary>, current: Record<string, DirSummary>, expectChanged: readonly string[] = []): AdditionsAudit {
+  const audit: AdditionsAudit = { violations: [], changed: [], added: [], unchanged: 0 };
+  const describe = (a: DirSummary, b: DirSummary): string | null => {
+    if (a.files !== b.files || a.names !== b.names) return `${a.files} files recorded, ${b.files} now (names ${a.names} -> ${b.names})`;
+    if (a.bytes !== b.bytes) return `${a.bytes} bytes recorded, ${b.bytes} now`;
+    if (a.content === undefined || b.content === undefined) return 'no content hash on one side: the audit needs the full form of both';
+    if (a.content !== b.content) return `content changed (${a.content} -> ${b.content})`;
+    return null;
+  };
+  for (const k of Object.keys(recorded).sort()) {
+    const a = recorded[k]!;
+    const b = current[k];
+    const expected = expectChanged.includes(k);
+    if (!b) {
+      audit.violations.push(`${k}: directory is gone (had ${a.files} files)`);
+      continue;
+    }
+    const difference = describe(a, b);
+    if (expected) {
+      if (difference === null) audit.violations.push(`${k}: named as changed, but it is byte-identical`);
+      else if (/no content hash/.test(difference)) audit.violations.push(`${k}: ${difference}`);
+      else audit.changed.push(`${k}: ${difference}`);
+    } else if (difference !== null) audit.violations.push(`${k}: ${difference}`);
+    else audit.unchanged++;
+  }
+  for (const k of expectChanged) if (!(k in recorded)) audit.violations.push(`${k}: named as changed, but it was never recorded`);
+  audit.added = Object.keys(current)
+    .filter((k) => !(k in recorded))
+    .sort();
+  for (const k of audit.added) if (current[k]!.content === undefined) audit.violations.push(`${k}: no content hash: the audit needs the full form`);
+  return audit;
 }

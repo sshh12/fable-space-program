@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '../../../src/core/contracts/defs';
 import {
+  auditAdditions,
   BAND_LIMITS,
   bakedTerrainBodies,
   bitsHex,
@@ -58,7 +59,7 @@ describe('terrain guard', () => {
     expect(directionsOf(directionsHex(dirs))).toEqual(dirs);
   });
 
-  it('the stored directions are unit vectors laid out in their groups: 2,000 per body today', () => {
+  it('the stored directions are unit vectors laid out in their groups: 2,800 on Earth and 2,000 on the Moon today', () => {
     expect(recordedHeights.format).toBe(2);
     for (const [bodyId, body] of Object.entries(recordedHeights.bodies)) {
       const dirs = directionsOf(body.directions);
@@ -81,7 +82,14 @@ describe('terrain guard', () => {
         start += g.count;
       }
     }
-    expect(Object.fromEntries(Object.entries(recordedHeights.bodies).map(([id, b]) => [id, b.groups.reduce((n, g) => n + g.count, 0)]))).toMatchObject({ earth: 2000, moon: 2000 });
+    expect(Object.fromEntries(Object.entries(recordedHeights.bodies).map(([id, b]) => [id, b.groups.reduce((n, g) => n + g.count, 0)]))).toMatchObject({ earth: 2800, moon: 2000 });
+    // Groups are only ever appended: the two of the first recording, then the place added with the Madrakah
+    // region (site-bake, 2026-11-12), about its reference pad, sampled on the tile set that holds the region.
+    const earth = recordedHeights.bodies['earth']!;
+    expect(earth.groups.map((g) => g.key)).toEqual(['uniform', 'site:ka-lae-lc1', 'site:madrakah']);
+    expect(earth.groups[1]).toEqual({ key: 'site:ka-lae-lc1', count: PLACE_POINTS, latDeg: 18.987556, lonDeg: -155.603239 });
+    expect(earth.groups[2]).toEqual({ key: 'site:madrakah', count: PLACE_POINTS, latDeg: 18.996043, lonDeg: 57.793818, recordedOn: 'f70a61d55dca902f' });
+    expect(recordedHeights.bodies['moon']!.groups.map((g) => g.key)).toEqual(['uniform', 'landing:0.661471,23.435999']);
   });
 
   it('a group is a function of the body id, its key and its place only: other bodies and other places do not move it', () => {
@@ -121,6 +129,32 @@ describe('terrain guard', () => {
     expect(changed[0]).toMatchObject({ index: 2, group: 'site:s', recorded: 7, current: 7.5 });
     expect(changed[0]!.latDeg).toBeCloseTo(90, 9);
     expect(distanceTo({ latDeg: 0, lonDeg: 0 }, 0, 90, 1000)).toBeCloseTo((1000 * Math.PI) / 2, 6);
+  });
+
+  it('the audit of a bake that adds tiles: a recorded directory gone or changed is a violation, the named root may change, the rest is added', () => {
+    const dir = (files: number, bytes: number, content: string): { files: number; names: string; bytes: number; content: string } => ({ files, names: `n${files}`, bytes, content });
+    const recorded = { '.': dir(1, 15109, 'm1'), 'height/2/7/40': dir(3, 300, 'a'), 'albedo/2/7/40': dir(3, 900, 'b'), 'globals': dir(2, 50, 'g') };
+    const additive = { ...recorded, '.': dir(1, 21925, 'm2'), 'height/2/8/43': dir(9, 900, 'c'), 'height/2/8/44': dir(9, 900, 'd') };
+    const ok = auditAdditions(recorded, additive, ['.']);
+    expect(ok.violations).toEqual([]);
+    expect(ok.unchanged).toBe(3);
+    expect(ok.changed).toEqual(['.: 15109 bytes recorded, 21925 now']);
+    expect(ok.added).toEqual(['height/2/8/43', 'height/2/8/44']);
+    // The manifest changed and nobody said so.
+    expect(auditAdditions(recorded, additive).violations).toEqual(['.: 15109 bytes recorded, 21925 now']);
+    // An existing tile rewritten with the same size: only the content hash sees it.
+    const rewritten = { ...additive, 'albedo/2/7/40': dir(3, 900, 'B') };
+    expect(auditAdditions(recorded, rewritten, ['.']).violations).toEqual(['albedo/2/7/40: content changed (b -> B)']);
+    // A file added to an existing directory, a directory removed, a named change that is none, a name never recorded.
+    expect(auditAdditions(recorded, { ...additive, 'height/2/7/40': dir(4, 400, 'a2') }, ['.']).violations).toEqual(['height/2/7/40: 3 files recorded, 4 now (names n3 -> n4)']);
+    const without = Object.fromEntries(Object.entries(additive).filter(([k]) => k !== 'globals'));
+    expect(auditAdditions(recorded, without, ['.']).violations).toEqual(['globals: directory is gone (had 2 files)']);
+    expect(auditAdditions(recorded, { ...additive, '.': recorded['.'] }, ['.']).violations).toEqual(['.: named as changed, but it is byte-identical']);
+    expect(auditAdditions(recorded, additive, ['.', 'night']).violations).toEqual(['night: named as changed, but it was never recorded']);
+    // The every-commit form (no content hashes) cannot answer the question.
+    const statOnly = Object.fromEntries(Object.entries(additive).map(([k, d]) => [k, { files: d.files, names: d.names, bytes: d.bytes }]));
+    expect(auditAdditions(recorded, statOnly, ['.']).violations.length).toBeGreaterThan(0);
+    expect(auditAdditions(recorded, statOnly, ['.']).violations.every((v) => /no content hash/.test(v))).toBe(true);
   });
 
   it('heights at the stored directions are bit-identical to the recording: collision and band-limited queries', async () => {
