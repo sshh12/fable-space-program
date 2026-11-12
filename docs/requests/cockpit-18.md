@@ -58,3 +58,11 @@ What follows from it, checked:
 - Unit tests that read the seat from the vehicle pass (`tests/unit/sim-vessel/crafts.test.ts`, `tests/unit/sim-world/snapshotV2.test.ts`, `tests/unit/flight-ui/camera.test.ts`, the cockpit's own).
 - The browser mission spec (`tests/browser/mission/lunar-direct.spec.ts`) takes its two cockpit pictures through the view manager (`setViewAndWait`), not from a named seat: nothing in it names a seat. It was NOT run (45 minutes of the one GPU slot); the app's cockpit views were (`tests/browser/cockpit/app.spec.ts`).
 - The cockpit's lab scenes, world recipes and app views are re-aimed for the centre couch; the geometry test now also holds the centre couch's line of sight through BOTH forward windows and to all three displays.
+
+## What is left for the lead after the seat change (cockpit, round 6, seen in the app's pictures)
+- `out/screens/cockpit/app-leo-seat.png` (scenario `qa-leo`, the mission's picture 06): from the centre couch the
+  console and both forward windows are in view, but the panes are black: the scenario's attitude points the
+  forward windows at space. In the cockpit's own world picture of the same orbit
+  (`out/screens/cockpit/world-leo-pilot-seat.png`, vessel rolled 180 degrees, heads-down as crews fly) the
+  Earth fills both panes. The attitude belongs to the scenario's data, not to the cockpit: a heads-down roll
+  in `qa-leo` (and in the mission's parking orbit) would give the player that view.

@@ -45,7 +45,7 @@ const shots: { name: string; url: string; dark?: boolean; dir?: string }[] = [
   // The side hatch from low between the pilot's and the specialist's couches (it lies beyond the crew's feet).
   { name: 'hatch-mechanism', url: 'scene=leo&at=0.36,0.8,-0.75&aim=hatchDoor&fov=75' },
   // Up the tunnel from the couch: the docking hatch's inner face (round 6: its face was a star of spokes).
-  { name: 'look-up-docking-hatch', url: 'scene=leo&aim=hatch&fov=70&lights=1' },
+  { name: 'look-up-docking-hatch', url: 'scene=leo&look=0,78&fov=70&lights=1' },
   { name: 'closeup-mfd', url: 'scene=leo&aim=mfd0&fov=24' },
   // The attitude indicator under its integral lighting and the floods, out of the sun (the sun patch on the
   // display beside it makes the meter stop the cabin down: the instrument would be shown in the dark).

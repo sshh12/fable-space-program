@@ -960,9 +960,18 @@ fn sunMapVisibility(p: vec3f, ng: vec3f, NoL: f32, wi: u32) -> f32 {
     lit = (1.0 - wide) * sum / f32(nAx * nAx);
   }
   if (wide > 0.0) {
+    // The sixteen gathers are turned by an angle of the surface point's own (cells of 0.4 mm) and of the
+    // frame: on a receiver the light grazes, sixteen fixed taps showed as a comb of copies of the edge beside
+    // a bezel (round 6, first pass); turned per point and per frame they are a fine grain the temporal
+    // resolve averages to the ramp.
+    let cell = vec3i(floor(p * 2500.0));
+    let turn = 6.2831853 * hash_to_unit(hash4(cell.x, cell.y, cell.z, i32(frame.counts.z & 15u) + 71));
+    let rc = cos(turn);
+    let rs = sin(turn);
     var open = 0.0;
     for (var k = 0u; k < 16u; k++) {
-      let o = SUN_TAPS[k] * penUv;
+      let tap = SUN_TAPS[k];
+      let o = vec2f(tap.x * rc - tap.y * rs, tap.x * rs + tap.y * rc) * penUv;
       let d4 = textureGather(cabinSunMap, nearestClamp, clamp(q.xy + o, lo, hi));
       open += dot(select(vec4f(0.0), vec4f(1.0), d4 >= vec4f(q.z + dot(o, dzduv) - bias)), vec4f(1.0));
     }
@@ -1000,8 +1009,8 @@ fn cabinSunIlluminance(amb: CabinAmbient) -> vec3f {
 /// logarithmic shoulder, as a negative does: each stop adds SUN_SHOULDER_GAIN x ln 2 of the knee, so the patch
 /// stays the brightest thing in the cabin and what it falls on keeps its tones and its texture. (Not applied
 /// in the cabin probe: the light a patch throws back into the cabin is its true light.)
-const SUN_SHOULDER_KNEE = 0.8;
-const SUN_SHOULDER_GAIN = 0.5;
+const SUN_SHOULDER_KNEE = 0.7;
+const SUN_SHOULDER_GAIN = 0.4;
 fn sunShoulder(L: vec3f) -> vec3f {
   let x = luminance(L) * frame.exposure.x;
   if (x <= SUN_SHOULDER_KNEE) { return L; }
