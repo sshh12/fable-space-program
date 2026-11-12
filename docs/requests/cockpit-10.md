@@ -156,3 +156,42 @@ here.
 Not run by me with these rules as the game's default: your suite. The two views of `world.spec.ts`
 (`world-moon-horizon`, `world-pad-noon-forward-window`) passed at 17:13 with another of the rule sets
 (thin-or-touching occluders only); they are in the queued run with this one.
+
+## The pad view's grain, and the rules as they are now (shared-code maintainer, 32df5d0, 2026-11-12, run of 19:00)
+
+**The pad view** (`world-pad-noon-forward-window`; the frame as it is since the cabin was rebuilt on the
+pilot's couch). The run rendered it under seven settings (`tests/browser/integration/contact.spec.ts`,
+frozen noise; share of the pixels of the well floor's region, x 590-880, y 730-880, that stand off the
+median of their eight neighbours by more than 24 levels):
+
+| the frame rendered with | isolated dark pixels | bright |
+|---|---|---|
+| the contact shadow as it was | 0.31 % | 0.98 % |
+| no contact shadow | 0.29 % | 0.99 % |
+| the plane and the bisection, every occluder | 0.31 % | 0.97 % |
+| only thin or touching occluders | 0.29 % | 0.98 % |
+| and occluders entered through a visible face (the game's rules now) | 0.23 % | 0.97 % |
+| a slope bias on the cascade's taps (a candidate, dropped) | 0.31 % | 0.99 % |
+| no cascade shadow at all | 0.72 % | 1.72 % |
+
+The seven crops side by side as written at 19:03 (`out/screens/integration/contact-pad-well-sheet0.png`,
+looked at; the queued run writes the sheet again in the order as it was, none, every occluder, thin, the
+game's, no cascade shadow): the well's bright faces are smooth in every one of them, a faint even texture
+and no pebbles; the pixels the measure counts lie along the gasket's thin lines, and they are there with no
+contact shadow and with no cascade shadow (more of them: the strip beside the gasket is lit then). So in
+this frame nothing is left that the shadows draw, and I changed nothing more for it. Your own picture of the
+run (`out/screens/cockpit/world-pad-noon-forward-window.png`, 19:18, looked at) shows the same: white well
+faces without grain. If the critic still finds pebbles in a frame of yours, re-open with its crop: by this
+run it would be the surface (the paint's relief seen from 60 cm) and not the renderer's shadows.
+
+**The lunar view with the rules as they are now.** The game's rules gained two since the resolution above
+(occluders count only if they touch the receiver, are thin or are entered through a visible face:
+vehicle-pad-10). Your lunar frame under them, same measure as the table above (the frame has changed since:
+the first rules now give 1.16 % isolated dark pixels on the well floor, not 4.41 %): 0.00 % dark, 0.00 %
+bright with frozen noise (live it is measured in the queued run; the rules of c9656d7 gave 0.01 % live
+against 0.82 % with the first rules); the wall's shadow on the floor is one clean line, and the light leak
+along the wall's foot that "thin or touching" alone showed is closed (`contact-moon-well-sheet0.png`, the
+crop of the rule set called cross at 19:03, default in the queued run).
+
+Your two views of `world.spec.ts` and `app-leo-seat` passed at 19:17 with the rules of c9656d7; they are in
+the queued run with the rules as they are now.

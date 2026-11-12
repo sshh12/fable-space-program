@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (32df5d0: frost is a coat with a thickness, the requester's text; at weight 0.35 the steps between neighbouring pixels 0.47 -> 0.046 of the way from paint to coat; the sparkle is not built)
 From: vehicle-pad
 Owner path: src/render/core/mesh/meshSystem.ts (G-buffer shader, the frost layer of MATERIAL_STANDARD: `layerCoverage`, the veil and the three lines after `let frostCover = ...`)
 Blocking: yes (critique round 2, finding 1, major on both lenses: "frost reads as blotchy grey whitewash with birch-bark dashes"; what is mine is done, the coat itself is drawn here)
@@ -41,3 +41,39 @@ Workaround in my paths: weights are kept out of the in-between range where I can
 above, lanes at 0.12, markings under a veil of at most 0.33, the intertank at 0.85), and the tank barrels are
 painted light grey so that the coat is the brightest thing on the stage. Edges of lanes and frost lines still
 break into dashes until this lands.
+
+## Resolution (shared-code maintainer, 32df5d0, 2026-11-12)
+
+Your text is the frost block of the mesh G-buffer shader (`src/render/core/mesh/meshSystem.ts`), as you
+wrote it: `frostDensity = saturate(weight x (0.75 + 0.5 x layerStreaks(uvm, (0.08, 1.2), 19)))`,
+`frostCover = smoothstep(0, 0.6, frostDensity)`, albedo to (0.90, 0.94, 1.0), roughness to 0.95, metal out,
+the clear coat by `(1 - smoothstep(0, 0.35, soot)) x (1 - frostCover)`. `layerCoverage` and the veil under
+its cells are gone. `MeshInstance.frost` and mask a mean what they meant; soot and the MATERIAL_TERRAIN
+branch are untouched. RENDER_API section 10; NOTICE-core-6.
+
+Measured beside the mask on the core's layers panel (one page each, `tests/browser/render-core/mesh.spec.ts`,
+"frost is a coat with a thickness", 2026-11-12 19:05; luminance against the clean paint's; steps between
+neighbouring pixels in units of the way from paint to full coat):
+
+| weight | mask: mean (darkest .. brightest), 99 % of the steps under | coat: the same |
+|---|---|---|
+| 0.12 | 1.13 (1.10 .. 1.54), 0.000 | 1.24 (1.12 .. 1.46), 0.013 |
+| 0.35 | 1.87 (1.72 .. 3.23), 0.473 | 2.35 (1.96 .. 2.72), 0.046 |
+| 0.5 | 2.50 (2.10 .. 3.23), 0.482 | 2.97 (2.59 .. 3.16), 0.046 |
+| 0.75 | 3.16 (2.21 .. 3.23), 0.371 | 3.16 (3.16 .. 3.16), 0.000 |
+| 1 | 3.22 | 3.16 |
+
+At an in-between weight the mask had pixels of the full coat beside pixels a quarter of the way there
+(the dashes); the coat has neither bare nor full pixels at 0.35 and no step larger than a twentieth. The
+far-away mean: 3 % lower at weight 1 (the cooler white), higher in between (2.35 against 1.87 at 0.35): the
+coat covers more at a given weight than the mask's mean did, so a weight that was chosen for the mask may
+want to come down.
+
+Your pictures with it (`tests/browser/vehicle/screens.spec.ts`, "frost on the cryogenic tanks", your test
+passes; 19:19): `out/screens/vehicle/frost-line-prelaunch.png` looked at: the intertank band and the
+barrel without dashes, soft runnels, "LOX" and the caution label under a haze. `frost-prelaunch.png` is
+yours to judge.
+
+Not built: the sparkle (a few per cent of the coat's texels returning the sun at grazing incidence). It
+needs a term in the deferred pass for MATERIAL_STANDARD pixels with frost, which has no channel for "frost"
+today (RT4's coat goes to 0 under it); a request of its own if the coat alone is not brilliant enough.

@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (c9656d7, 32df5d0: within 8 m of the camera the contact shadow counts occluders two cascade texels thick that are thin, touch the receiver or are entered through a visible face; the band beside the grab bar 28.5 px and ragged -> a line of 15.3 px; its edge is still half resolution, see the resolution)
 From: vehicle-pad
 Owner path: src/render/core/lighting/ao.ts (screen-space contact shadow march), deferred.ts (its upsample)
 Blocking: no (critique item 11 of `docs/qa/wave2/vehicle-pad.r1.combined.json`, major; worked round on my side for the one fitting in the hero view)
@@ -49,3 +49,49 @@ contact target for the near field). (Corrected 2026-11-12: this note first said 
 half-resolution depth; it does not.)
 Cost to watch: the `core.ao` line at 1440p (`tests/browser/render-core/core.perf.spec.ts`); an interior
 view has the whole frame within those few metres.
+
+## Resolution (shared-code maintainer, c9656d7 and 32df5d0, 2026-11-12)
+
+The march has rules for the near field now (`src/render/core/lighting/ao.ts`, `ContactShadowParams`;
+RENDER_API section 13, "The contact shadow near the camera"). Your three points, and what was built:
+
+1. *Full-resolution depth.* It had it (my first note here was wrong, corrected above): the march reads
+   `'scene.depthOpaque'`. Its RESULT is still half resolution, one bit per pixel. Not changed: see what is
+   left, below.
+2. *The offset from a sequence the resolve integrates.* In place before (`blueNoise().z`).
+3. *A thickness test.* This was the fault. The rule was "a sample that lies behind a surface by less than
+   18 cm is shadowed": everything whose ray passed within 18 cm BEHIND the rail's silhouette, as the camera
+   sees it, was shadowed (the band wider than the rail), or not, by where the ten 3 cm steps fell (the furry
+   edge). Within 8 m of the camera now: an occluder is two texels of the finest sun cascade thick (2.3 cm
+   outside); it counts only if it is thin (the ray is seen again within two thicknesses), touches the
+   receiver (a contact line), or the ray enters its visible face (the cascade draws the shadows of the
+   rest); where the ray goes behind a surface between two samples, the place is found by bisection; a
+   surface point in the receiver's own plane never occludes; 20 samples. Beyond 8 m the march is as it was
+   (its reach of max(0.3 m, 1.5 % of the distance) is unchanged everywhere).
+
+Measured on your view (`tests/browser/integration/contact.spec.ts`: the vehicle lab,
+`stage=8&sunv=0.85,0.45,-0.1&eye=1.0,1.8,-3.4&at=0,1.2,-1.2&fov=40`, live, 90 frames per rule set; the dark
+band beside the left grab bar, x 395-485, y 270-535, pixels under 40 % of the row's bright level; run of
+19:00, your bar as it is since your last round):
+
+| rules | band, px | spread over the rows, px | picture (`out/screens/integration/`) |
+|---|---|---|---|
+| as it was | 28.5 | 7.8 | `contact-hatch-legacy.png` |
+| no contact shadow | 10.6 (the bar's own dark side: it casts no shadow at all, the cascade does not see it) | 3.8 | `contact-hatch-off.png` |
+| the plane, the bisection, 2 texels, every occluder | 23.6, a speckled gap between bar and shadow | 6.3 | `contact-hatch-refine.png` |
+| and only thin or touching occluders | 15.5 | 4.3 | `contact-hatch-thin.png` |
+| the game's rules (and occluders entered through a visible face) | 15.3 | 4.4 | `contact-hatch-default.png` (written by the run that is queued; the same rule set is `contact-hatch-cross.png` of 19:00) |
+
+The crops side by side: `contact-hatch-sheet0.png`. The shadow is a line as wide as the bar, standing off
+it by the gap the bar stands off the hull, with an L at its foot.
+
+Cost (the `core.ao` pass): 0.118 ms at 1440p under load (`core.perf.spec.ts`, line 0.6); on your view, idle
+GPU, 0.048 -> 0.059 ms. Nothing changes beyond 8 m.
+
+What is left. The line's edge is not razor-sharp: it is one bit per half-resolution pixel, smoothed by the
+resolve (live) or rough by a pixel (frozen noise: `contact-hatch-frozen-sheet0.png`). A full-resolution
+contact term for the near field would cure that; it is not built (a second march or a full-resolution
+target: the cost is the whole frame from a cabin). Re-open with a frame if it shows.
+
+Your workaround (the solid pull bar) is not needed for the shadow any more. I did not run your suite; your
+`capsule-hatch.png` is in the queued run with the game's rules.
