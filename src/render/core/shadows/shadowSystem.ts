@@ -66,6 +66,11 @@ export class ShadowSystem {
     resources.publish('shadow.uniforms', this.uniformBuffer);
   }
 
+  /** Drop every cascade capture: the next frame renders all of them from nothing (CoreRenderer.renderExact). */
+  restart(): void {
+    this.scheduler.reset();
+  }
+
   /** Plan this frame's cascades in float64 and upload every matrix. Returns the cascades to RENDER this frame. */
   update(frame: FrameContext, snapshot: SimSnapshot, camera: CameraState, defs: DefLibrary): ShadowPassTarget[] {
     const input: PlanInput = {

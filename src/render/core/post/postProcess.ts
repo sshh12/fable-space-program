@@ -312,10 +312,9 @@ export class PostProcess {
     this.taaUniform = device.createBuffer({ label: 'core.taa', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   }
 
-  warm(): void {
-    this.taaPipeline.get();
-    this.downPipeline.get();
-    this.upPipeline.get();
+  /** The stage's tracked pipelines, for `shaders.warm`. */
+  pipelines(): Tracked<unknown>[] {
+    return [this.taaPipeline, this.downPipeline, this.upPipeline];
   }
 
   /** (Re)allocate the display-resolution history and the bloom chain. */

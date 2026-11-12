@@ -365,6 +365,32 @@ describe('cascade scheduler', () => {
     expect(texelV.get('cam:7')!).toBeLessThan((2 * 1500000) / MAP / 4); // only the ground inside the horizon needs covering
   });
 
+  it('after a reset the same frame gives the same captures whatever came before (frame-exact capture, request lead-3)', () => {
+    const spin = 7.2921e-5;
+    const at = (f: number): PlanInput => {
+      const angle = spin * (f / 60);
+      const q = quat.fromAxisAngle({ x: 0, y: 0, z: 1 }, angle);
+      return input(f, [body('earth', R_EARTH, v3.zero(), quat.rotate(q, { x: R_EARTH + 2, y: 0, z: 0 }), angle, sun)]);
+    };
+    const summary = (frames: ReturnType<CascadeScheduler['update']>): string =>
+      JSON.stringify(frames.map((c) => ({ key: c.desired.key, layer: c.layer, render: c.render, focus: c.capture.focus, lz: c.capture.lz, texel: c.capture.texelSize, viewProj: [...c.matrices.viewProj] })));
+    // One scheduler has a history (37 frames, then a camera 300 m away for a while), the other has none; both
+    // are reset and then run the same eight frames from an aligned frame index.
+    const used = new CascadeScheduler();
+    for (let f = 0; f < 37; f++) used.update(at(f));
+    for (let f = 37; f < 50; f++) used.update(input(f, [body('earth', R_EARTH, v3.zero(), { x: R_EARTH + 300, y: 40, z: 0 }, 0, sun)]));
+    const fresh = new CascadeScheduler();
+    used.reset();
+    fresh.reset();
+    for (let k = 0; k < 8; k++) {
+      const a = used.update({ ...at(120), frame: 8192 + k });
+      const b = fresh.update({ ...at(120), frame: 4096 + k });
+      expect(summary(a)).toBe(summary(b));
+      // The first frame after a reset renders every cascade, as the first frame of a session does.
+      if (k === 0) expect(a.every((c) => c.render)).toBe(true);
+    }
+  });
+
   it('fits staggered cascades to the ground they shadow at low sun, covering every receiver, with a stable grid', () => {
     // Low lunar orbit: 100 km above a Moon-sized body with the sun 14 deg above the horizon below the camera,
     // flying 1.6 km/s. The 200 km cascade must become a band along v (finer texels along the light).

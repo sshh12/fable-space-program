@@ -92,6 +92,12 @@ export interface FrameUniformExtras {
   spotShadowIndex?: ReadonlyMap<LocalLight, number>;
   defs: DefLibrary;
   near: number;
+  /**
+   * Frames since the temporal sequences last started at their origin (`time.z` and `counts.z`). It is the
+   * frame index until a frame-exact capture restarts the sequences (CoreRenderer.renderExact); default
+   * `frame.frameIndex`.
+   */
+  sequenceIndex?: number;
 }
 
 /** Octahedral encoding of a direction (normalised here) into [-1, 1]^2; the WGSL `lightAxisDecode` of chunk local_lights inverts it. */
@@ -173,7 +179,7 @@ export function packFrameUniforms(f: Float32Array, u: Uint32Array, frame: FrameC
   f.set([rw, rh, 1 / rw, 1 / rh], OFFSET.renderSize);
   f.set([dw, dh, 1 / dw, 1 / dh], OFFSET.displaySize);
   f.set([frame.jitterPx[0], frame.jitterPx[1], p.jitterNdc[0], p.jitterNdc[1]], OFFSET.jitter);
-  f.set([frame.realTime, frame.realDt, frame.frameIndex, frame.animate ? 1 : 0], OFFSET.time);
+  f.set([frame.realTime, frame.realDt, x.sequenceIndex ?? frame.frameIndex, frame.animate ? 1 : 0], OFFSET.time);
   f.set([frame.exposure, frame.ev100, frame.qualityScale, x.renderScale], OFFSET.exposure);
   put3(f, OFFSET.sunDir, frame.sun.dirRoot, frame.sun.angularRadius);
   const e = frame.sun.illuminance;
@@ -194,7 +200,7 @@ export function packFrameUniforms(f: Float32Array, u: Uint32Array, frame: FrameC
   const lightCount = Math.min(MAX_LIGHTS, frame.lights.length);
   u[OFFSET.counts] = bodyCount;
   u[OFFSET.counts + 1] = lightCount;
-  u[OFFSET.counts + 2] = frame.frameIndex >>> 0;
+  u[OFFSET.counts + 2] = (x.sequenceIndex ?? frame.frameIndex) >>> 0;
   u[OFFSET.counts + 3] = starIndex;
 
   const cn = x.cloudShadow.near;

@@ -350,6 +350,7 @@ export class DeferredLighting {
   private readonly sceneLayout: GPUBindGroupLayout;
   private readonly gbufferLayout: GPUBindGroupLayout;
   private readonly pipeline: Tracked<GPURenderPipeline>;
+  private readonly hapkeLut: GPUTexture;
   private readonly hapkeView: GPUTextureView;
   private readonly spotLayout: GPUBindGroupLayout;
   private spotGroup: GPUBindGroup | null = null;
@@ -361,8 +362,6 @@ export class DeferredLighting {
   constructor(
     private readonly ctx: RenderContext,
     shaders: CoreShaderLibrary,
-    defs: DefLibrary,
-    bodyIds: string[],
   ) {
     const device = ctx.device;
     this.bindings = createSceneBindings(ctx, 1, 0, ['shadow', 'atmosphereLuts', 'env', 'cloudShadow', 'sceneDepthOpaque']);
@@ -376,16 +375,11 @@ export class DeferredLighting {
       })),
     });
 
-    // Albedo -> single-scattering albedo, one row per frame body (rows of non-Hapke bodies use the default parameters).
-    const lut = new Uint16Array(256 * MAX_BODIES);
-    for (let b = 0; b < MAX_BODIES; b++) {
-      const params = defs.bodies[bodyIds[b] ?? '']?.render.surface?.hapke ?? DEFAULT_HAPKE;
-      const row = buildHapkeLut(params);
-      for (let i = 0; i < 256; i++) lut[b * 256 + i] = f32ToF16(row[i]!);
-    }
-    const tex = device.createTexture({ label: 'lighting.hapkeLut', format: 'r16float', size: [256, MAX_BODIES], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
-    device.queue.writeTexture({ texture: tex }, lut, { bytesPerRow: 512 }, [256, MAX_BODIES]);
-    this.hapkeView = tex.createView();
+    // Albedo -> single-scattering albedo, one row per frame body: written by setBodies, when the first
+    // snapshot says which bodies the session has. (The stage itself exists from the renderer's creation,
+    // so that its pipeline can be created ahead: CoreRenderer.warm.)
+    this.hapkeLut = device.createTexture({ label: 'lighting.hapkeLut', format: 'r16float', size: [256, MAX_BODIES], usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    this.hapkeView = this.hapkeLut.createView();
 
     this.spotLayout = device.createBindGroupLayout({
       label: 'lighting.spotShadows',
@@ -418,9 +412,23 @@ export class DeferredLighting {
     this.gbufferGroup = null;
   }
 
-  /** Force the pipeline to exist (and report compile errors) before the first frame. */
-  warm(): void {
-    this.pipeline.get();
+  /** The bodies of the session in frame order: their rows of the Hapke table (rows of non-Hapke bodies use the default parameters). */
+  setBodies(defs: DefLibrary, bodyIds: readonly string[]): void {
+    const lut = new Uint16Array(256 * MAX_BODIES);
+    for (let b = 0; b < MAX_BODIES; b++) {
+      const params = defs.bodies[bodyIds[b] ?? '']?.render.surface?.hapke ?? DEFAULT_HAPKE;
+      const row = buildHapkeLut(params);
+      for (let i = 0; i < 256; i++) lut[b * 256 + i] = f32ToF16(row[i]!);
+    }
+    this.ctx.device.queue.writeTexture({ texture: this.hapkeLut }, lut, { bytesPerRow: 512 }, [256, MAX_BODIES]);
+  }
+
+  /**
+   * The stage's tracked pipeline, for `shaders.warm`. It includes chunks that features replace in their
+   * `init` (the water, terrain and regolith BRDFs), so it is final only when the last feature was added.
+   */
+  pipelines(): Tracked<unknown>[] {
+    return [this.pipeline];
   }
 
   draw(pass: GPURenderPassEncoder): void {

@@ -240,6 +240,55 @@ when a chunk they included is registered again (call `.get()` each frame to obta
 | `transparency` | `applyAtmosphere(uv, distance, colour, alpha)` | `aerialPerspectiveTex`, `cloudsScreenTex`, `cloudsDepthTex`, `aerialTransmittanceTex` (binding set `transparency`) |
 | `upsample` | `upsampleDepthAware(src, depthHalf, uv, fullDepth, useNearest)` | - |
 
+### Pipelines created ahead (`shaders.warm`)
+
+`device.createRenderPipeline` returns at once, but the GPU process compiles the pipeline on its main thread
+when the command reaches it, one pipeline after the other, and everything behind it in the queue waits: the
+frames, the uploads, the read-backs. On the pad the game created some eighty pipelines that way while it
+started; the queue took 18 s to drain (the loading screen's "shader modules compiled" row, 2.1 s to 20.4 s
+after navigation, 2026-11-12) and the first frame stood for 4.3 s inside the first hook that wrote to the
+queue. `createRenderPipelineAsync` compiles on the browser's worker threads, several at a time, and leaves
+the queue free. `coreOf(ctx).shaders.warm(items)` gets a tracked item's pipelines created that way without
+changing the item (request `app-integration-11`):
+
+```ts
+// end of init(), where `a.get(); b.get(); c.get();` stood:
+await coreOf(ctx).shaders.warm([a, b, c]);
+```
+
+- `items` are what `shaders.tracked(...)` and `fullscreenPipeline(...)` return. For each one that is not
+  built, its build is run once without keeping the result, with `device.createRenderPipeline` and
+  `createComputePipeline` replaced for the length of that call by functions that start the asynchronous
+  creation of the same descriptor. When all of them exist (every item's pipelines in parallel), the items are
+  built by their ordinary `get()`, whose synchronous creations the device answers from its cache. `get()`
+  returns what it would have returned without `warm`; an item that is built costs nothing.
+- A build must be repeatable (it is: it runs again whenever one of its chunks is replaced) and must not
+  depend on anything but shader modules, layouts and the descriptor. A build that reads from a pipeline it
+  has just created (`getBindGroupLayout`) is run again when that pipeline exists; a chunk replaced while
+  the pipelines are being created (another feature's `init`) is followed, the pipelines of the new source
+  are created ahead as well.
+- Errors arrive where they did: an asynchronous creation that fails is left to `get()`, a build that throws
+  makes `warm` reject with that error.
+- Awaited at the end of `init` it keeps the order you had (the pipelines exist when `init` returns). Started
+  earlier and awaited at the end, it runs beside the rest of your `init`:
+  `const ahead = shaders.warm([a, b]); ...; await ahead;`. Not awaited at all it is still correct (a `get()`
+  that comes first builds synchronously, as before), and `renderer.warm()` waits for it.
+- `shaders.pendingCompilations()` and `compilations()` count pipelines that are being created ahead, so a
+  loading screen that waits for 0 waits for them, and `renderer.isIdle()` is false meanwhile.
+- A pipeline that is not created through a tracked item is wrapped in one:
+  `const p = shaders.tracked(() => device.createRenderPipeline({...})); await shaders.warm([p]);` and
+  `p.get()` where the pipeline was used. Pipelines with `layout: 'auto'` are answered from the cache as well
+  (measured: 3 ms left for six of them against 0.6 ms with explicit layouts).
+
+The core creates its own pipelines this way: tone map, AO, TAA, bloom, the exposure histogram, the half
+depth and the mesh system's G-buffer and shadow pipelines from `createRenderer` on (not awaited: your
+features start meanwhile), the lighting pipeline after every `addFeature` (it includes the BRDF chunks that
+features replace). `await renderer.warm()` after the last `addFeature` resolves when all of that and
+everything the features started exists: the first frame then compiles nothing of it (`createLabApp` does
+this). `RendererOptions.pipelineWarm: false`, or `warm=0` in the address of any page, switches the creation
+ahead off (every pipeline is compiled where it is first needed, as before): for comparison, and to rule the
+asynchronous compiles out when a driver misbehaves.
+
 ### Overridable BRDF chunks (fixed signatures)
 
 The deferred lighting module includes `brdf_terrain`, `brdf_regolith` and `brdf_water` after `brdf`.
@@ -683,14 +732,22 @@ function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | nu
 - Culling: view frustum per instance for the G-buffer; cascade footprint and half-texel size for shadows.
 - Specular anti-aliasing: Kaplanyan-Hill roughness widening from the screen-space normal derivatives.
 - Wear / soot / frost / wetness are applied for `standard` and `terrain` shading. On `standard` materials
-  (request `vehicle-pad-1`) soot and frost lie ON the paint: the layer's weight (instance value x vertex
-  mask) is broken up in texture space, so it arrives as streaks and patches along v with a soft edge
+  (request `vehicle-pad-1`) soot and frost lie ON the paint. Frost: the layer's weight (instance value x
+  vertex mask) is broken up in texture space, so it arrives as streaks and patches along v with a soft edge
   (value noise of the mesh UV before `uvScale`, cells 3 cm in u and 25 cm in v plus an octave four times
   that: author UVs in metres, u round the part and v along it; where a cell is smaller than a pixel the
-  pattern gives way to a plain blend), 0 at weight 0 and complete at weight 1; soot is brown-black
-  (0.030, 0.024, 0.019) at roughness 0.92, frost white (0.93, 0.95, 0.97) at roughness 0.85; and the clear
-  coat and the anisotropy written to RT4 are multiplied by `(1 - soot) x (1 - frost)`: a sooted or frosted
-  tank has no mirror on top. Under the frost cells lies a veil that follows the weight itself (request
+  pattern gives way to a plain blend), 0 at weight 0 and complete at weight 1, white (0.93, 0.95, 0.97) at
+  roughness 0.85. Soot is a DENSITY, continuous in the weight (request `vehicle-pad-7`):
+  `density = saturate(weight x (0.67 + 0.66 x streaks))`, the streaks a noise in [0, 1] of cells 6 cm x 1.5 m
+  (and 24 cm x 6 m) along v that gives way to its mean under a pixel. A thin deposit is a brown veil (the
+  albedo is multiplied towards (0.50, 0.38, 0.26) by `smoothstep(0, 0.5, density)`: tiles, seams and
+  markings still show), a thick one near black (towards (0.030, 0.024, 0.019) by
+  `0.94 x smoothstep(0.3, 1, density)`); roughness goes to 0.92 by `smoothstep(0, 0.7, density)` and the
+  metalness out by `smoothstep(0.15, 0.9, density)`. Weight 0.25 is a tan veil (about two thirds of the
+  paint's luminance), 0.5 brown, 1 near black; nothing has an edge unless the weight has one. The clear
+  coat and the anisotropy written to RT4 are multiplied by
+  `(1 - smoothstep(0, 0.35, soot density)) x (1 - frost)`: a sooted or frosted tank has no mirror on top.
+  Under the frost cells lies a veil that follows the weight itself (request
   `vehicle-pad-6`): `0.55 x smoothstep(0, 0.6, weight)` of the way to frost everywhere (0.34 at weight
   0.35), and the coat is covered by `max(cells, 0.8 x veil)`: a thin coat is an even matte haze in which a
   marking keeps its edges and loses contrast; weight 0 is bare paint and weight 1 the solid coat as before.
@@ -714,7 +771,8 @@ Primitive builders for labs and props: `boxMesh`, `sphereMesh`, `planeMesh`, `cy
 interface CoreApi {
   meshes: MeshSystem;
   shaders: CoreShaderLibrary;                 // + has(), chunkVersion(), expand(), tracked(build), pendingCompilations(),
-                                              //   compilations(): { pending, total } (modules created so far / still compiling)
+                                              //   compilations(): { pending, total } (modules and pipelines started / still compiling),
+                                              //   warm(items): Promise<void>, warmed(), warming(): { pending, total } (section 5)
   mips: MipGenerator;                         // mips.generate(texture): render-based mip chain (needs RENDER_ATTACHMENT)
   shadowPassLayout: GPUBindGroupLayout;       // group 1 of drawShadow pipelines
   reportError(message: string): void;         // -> window.__test.errors
@@ -806,7 +864,12 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   alone (sunny 16 x sun visibility at the camera when a lit body, a lit vessel, any lit geometry or the
   unoccluded solar disc itself is in view; EV -6, the dark-adapted floor `EV_DARK_FLOOR`, otherwise: the
   Milky Way then lies two stops under mid-grey; the target is clamped to `EV_MIN` = -7 after compensation);
-  between 0.5 % and 10 % the two are blended. `CameraState.exposureCompensation` (EV, positive = brighter),
+  between 0.5 % and 10 % the two are blended. The sun of the prior (and of the bounds under the sun) is the
+  sun at the camera: above every atmosphere after the air on the way (request `sky-lighting-10`), inside one
+  after its air less what a clear air mass under a high sun takes (`sunThroughAir`: the transmittance
+  towards the sun, luminance-weighted, over `SUN_AIR_CLEAR` = 0.75, capped at 1; request
+  `atmosphere-clouds-10`): unchanged with the sun 35 degrees up and more, a stop lower at 10 degrees, two at
+  1 degree seen from 7 km, five on the ground at sunrise, so a frame of dawn sky is not exposed as noon. `CameraState.exposureCompensation` (EV, positive = brighter),
   `minEv100` (lower bound of EV100) and `kind: 'interior'` are honoured. An interior view meters the
   geometry within 8 m by its LOG-AVERAGE over everything above the floor, without the 10 EV range
   (request `cockpit-3`), with two terms on top (requests `cockpit-5`, `cockpit-6`): a night key (the target
@@ -852,6 +915,30 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   the frame the camera is half-way in EV: the cabin dark and the Earth still clipped), so aim views at one
   or the other. `exposureInfo()` reports `outsideFraction`, `evOutside` and `outsideWeight`. Lab:
   `window.__integration.sitAtWindowBelow(lean)` puts the eye `lean` of the way from the seat to the window.
+- **The world in the windows of the seat's view** (request `cockpit-16`). From the seat the windows are
+  2-8 % of the frame and a sunlit Earth, the lunar ground or a noon sky in them stand nine to ten stops over
+  a cabin keyed to mid-grey: no single exposure and no tone curve shows both. Two things happen, both driven
+  by "the outside": lit geometry beyond `INTERIOR_RANGE` plus the sky pixels between `LUMINANCE_FLOOR` and
+  `SKY_METER_MAX` = 200,000 cd/m^2 (a THIRD histogram, of sky pixels only: a daylight sky, not black space,
+  not the solar disc; it is used for nothing else). Its weight (`exposureInfo().farWeight`) is
+  `smoothstep(INTERIOR_OUTSIDE_FROM = 0.2 %, INTERIOR_OUTSIDE_FULL = 0.8 % of the frame)` x
+  `smoothstep(INTERIOR_OUTSIDE_OVER_FROM = 3, INTERIOR_OUTSIDE_OVER_FULL = 6 stops)` of its log-average over
+  the cabin's: a night side, black space or a twilight no brighter than the cabin's lamps weigh nothing.
+  (1) The key: the cabin's target is raised by `INTERIOR_OUTSIDE_KEY_EV` = 2.25 EV x the weight (the cabin's
+  log-average at Y 0.04, as in photographs taken in a cabin: Apollo 7 and LM interiors sit at 0.03); the
+  other interior rules only ever ask for more, the larger stop-down counts. (2) The outside's own exposure:
+  the pixels beyond `INTERIOR_RANGE` (the sky included) are multiplied by `interiorFarGain(farLevel, ev100,
+  farWeight)` <= 1, which puts the 90th percentile of the outside (`farLevel`) `INTERIOR_FAR_STOPS` = 3
+  stops over mid-grey, just under the tone curve's white: cloud tops and a noon sky bright, sea and land in
+  the mid-tones, the limb against black. It is one fullscreen triangle at the depth of the range with a
+  multiplying blend (pass `core.interiorFar`, after `drawTransparent`, before the resolve and the bloom): the
+  depth test is the mask, per pixel and jittered with the frame, so the window's edge is anti-aliased by
+  the resolve and nothing is blurred into a halo; the bloom sees the window as it is shown. The gain follows
+  its target over a quarter of a second (at once after a cut) and is 1 again once the windows fill the
+  frame and the exposure itself is the outside's (the rule above). For feature authors: what you draw in
+  `drawTransparent` over far pixels (glass, its reflections and dirt) is scaled with them; the HDR target
+  after the frame holds the scaled values; the histograms are taken before (absolute luminance, unscaled).
+  Sunlit hull within 8 m of the eye is cabin to the meter and stays clipped.
 - **The meter sees what is lit, not what emits** (request `vfx-4`). The histogram is taken before the
   transparent pass: terrain, water, clouds, hulls and whatever a plume LIGHTS are in it; the flame, the
   splash crown and the fireball are not, whether they stand in front of geometry or of the sky. And while
@@ -968,6 +1055,63 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   when the measured GPU time exceeds 92 % of the 11 ms budget and only when it is at 0.5 lowers the
   internal resolution (`QualitySettings.renderScaleMin..Max`, steps of 1/16); recovery below 72 % runs in
   the opposite order. It is 1 in deterministic mode.
+
+### Frame-exact capture (`renderExact`)
+
+A reference image must be the same picture on every load (ARCHITECTURE 31.3; request `lead-3`). Everything
+that integrates over frames is at another phase after another number of frames, so a capture "N frames after
+idle" is not: `window.__test.renderExact(frames)` (contract `TestApi`; every page made with `createLabApp`
+has it) restarts the sequences, renders exactly `frames` frames and holds the last one. It is
+`CoreRenderer.renderExact(frames, renderFrame)`, where `renderFrame` is the page's own frame function at the
+fixed deterministic step (it must end in exactly one `render`); a page with a loop of its own calls it from
+its test hook and skips its frame while `renderer.holding` is true (the core refuses `render` during a hold
+anyway). Precondition: deterministic mode, presentation time frozen, `isIdle()`.
+
+What the core does, in this order:
+
+1. **Restart.** `frame.frameIndex` moves to the next multiple of `SEQUENCE_ALIGN` (4096): it stays monotonic
+   (caches are stamped with it), a phase taken from it with a power of two (`frameIndex & 3`,
+   `frameIndex % 64`) starts at 0, and a continuity test (`last === frameIndex - 1`) fails once. The frame
+   uniforms' `time.z` / `counts.z` count from 0 (they are the frames since the restart; the same as the frame
+   index until the first restart). The TAA jitter index is 0 and the history is dropped; the blue-noise
+   offset is at its origin; `frame.realTime` is 0; the first frame is its own predecessor (`prevSnapshot`,
+   `prevCamera`); the sun-shadow cascades forget their captures (every cascade is rendered in the first
+   frame, the stagger starts over); the emitter hints of the frame before are dropped. Then every feature's
+   `resetTemporal()` is called (below).
+2. **Exposure.** Metered from nothing over `EXACT_METER_FRAMES` (16) frames of the restarted sequences: each
+   waits for the histogram of the one before and takes its target at once, which is the value the scene
+   settles at (not where the frames before the capture had left the adaptation). The value is then held for
+   the capture. An exposure override (`setExposureOverride`, the labs' `ev=`) stays as it is.
+3. **The frames.** The sequences restart once more (features are told again) and exactly `frames` frames are
+   rendered in ONE task: nothing that arrives meanwhile (a tile, a decoded texture, a compiled module, a
+   read-back) is taken in between them. `idle` in the result is false when the renderer was not idle before
+   or after them: the harness then waits for idle and asks again.
+4. **Hold.** `render` draws nothing until `renderExact` is called again or `setDeterministic(false)`;
+   `waitFrames` keeps counting the display's frames. The promise resolves two animation frames after the
+   last submit, when the held frame is on screen.
+
+**What a feature must do** (`TemporalFeature`, exported by the core; add `resetTemporal?(): void` to your
+feature object). The rule: after `resetTemporal()` the next frames depend on the scene and on the count of
+frames since, never on the frames before. Reset there
+
+- every history you blend with: reprojected clouds or volumes, accumulated foam or wetness, a progressive
+  map that is refined over frames (shadow or coverage maps updated in rounds, an environment probe that
+  converges), temporal filters of your own;
+- every phase: a round robin (`face = n % 6`), a rotation of a noise or sample pattern, a jitter index, a
+  stagger of updates. Take phases from `frame.frameIndex` with a power of two (aligned by the restart) or
+  from a counter you set to 0 in `resetTemporal`; in a shader use `frame.time.z` (0 in the first frame);
+- smoothed values that approach a target (a level-of-detail factor, an eased brightness): snap them to the
+  target.
+
+Nothing needs resetting that is a function of the snapshot and the camera alone, of `frame.realTime` (0 in
+the capture) or of a history the core owns (`'scene.colorCopy'`, the TAA history, the shadow cascades, the
+exposure). A feature whose history is keyed on frame continuity (`valid = last === frameIndex - 1`) and
+whose phases are powers of two of `frame.frameIndex` is restarted by the core's step 1 alone. Work that a
+reset starts (a map that is baked again) makes `isIdle()` false until it is done; the harness waits.
+
+Checked by `tests/browser/render-core/exact.spec.ts` (the same picture, to the bit, after another history
+and on a fresh load; the hold) and `tests/unit/render-core/cascades.test.ts` (the scheduler after a reset);
+the lead's proof over the integration lab is `tests/browser/shell/baseline-tooling.spec.ts`.
 
 ---
 
@@ -1313,6 +1457,32 @@ own transparent glazing, so the pane must go or the chase camera sees a black sh
 should show. Without a cockpit feature keep the default, or the capsule has holes. Checked by
 `tests/browser/integration/lab.spec.ts` ("the capsule windows belong to the cockpit").
 
+### 17.8 Create your pipelines off the main thread (`shaders.warm`)
+
+What it is for and how it works: section 5, "Pipelines created ahead". The change in a feature is its `init`:
+
+```ts
+async init(ctx) {
+  const core = coreOf(ctx);
+  const march = core.fullscreenPipeline({ label: 'my.march', fragment: MARCH_FS, targets: [{ format: 'rgba16float' }], layouts: [marchLayout] });
+  const draw = core.shaders.tracked(() => device.createRenderPipeline({ ...explicit layout, modules from core.shaders.createModule... }));
+  // was: march.get(); draw.get();
+  const ahead = core.shaders.warm([march, draw]);   // the asynchronous creations start here
+  await loadMyData();                               // the rest of init runs beside them
+  await ahead;                                      // the items are built: get() from now on costs nothing
+}
+```
+
+- Keep `march.get()` where you draw (it is how a replaced chunk reaches you); only the forcing calls at the
+  end of `init` go.
+- Pipelines you make on first use (the first plume, the first splash) belong in the same list: created
+  ahead they cost the frame that first draws them nothing.
+- A pipeline you need INSIDE `init` (a bake pass) stays a plain `get()` before you use it, or is awaited
+  first: `await core.shaders.warm([bake]); runBake(bake.get());`.
+- Check: `?warm=0` gives the old behaviour for an A/B of your load; `tests/browser/render-core/warm.spec.ts`
+  shows the measurement (six pipelines of 260 statements each: 886 ms one after the other, 184 ms ahead, and
+  0.6 ms left for the GPU process when `get()` then creates them synchronously).
+
 ---
 
 ## 18. Changes in wave 2
@@ -1321,6 +1491,11 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| `CoreShaderLibrary.warm(items)`, `warmed()`, `warming()`; `pendingCompilations()` / `compilations()` count pipelines that are being created ahead; `CoreRenderer.warm()`; `RendererOptions.pipelineWarm` and `warm=0` in a page's address; the core's own pipelines are created ahead (the lighting stage exists from `createRenderer` on), sections 5 and 17.8 | `app-integration-11` | every package that creates pipelines; src/app (the loading screen waits for them through `pendingCompilations()`) | None forced. To adopt: `await coreOf(ctx).shaders.warm([...])` where the forcing `get()`s of `init` stood (17.8) |
+| Frame-exact capture: `CoreRenderer.renderExact(frames, renderFrame)`, `holding`, `exactInfo()`; `window.__test.renderExact` on every `createLabApp` page; `TemporalFeature.resetTemporal?()`; at a restart `frame.frameIndex` moves to the next multiple of `SEQUENCE_ALIGN` (4096), the frame uniforms' `time.z` / `counts.z` count from 0 and `frame.realTime` is 0; section 13 | `lead-3` | every feature with accumulation of its own (reprojection, progressive maps, round robins); src/app (its test hook) | None without a history of your own. With one: add `resetTemporal()` (what must reset: section 13); a shader that used `frame.time.z` as an absolute frame count now gets frames since the last restart (the same number until a restart) |
+| Interior views: a bright outside in the windows keys the cabin up to `INTERIOR_OUTSIDE_KEY_EV` (2.25) lower and is shown at its own exposure (pass `core.interiorFar`: a gain on the pixels beyond `INTERIOR_RANGE`, sky included, before the resolve and the bloom); a third histogram of sky pixels (`MeterInput.histogramSky`, `SKY_METER_MAX`); `MeterResult.farLevel / farWeight`, `interiorFarGain`, `exposureInfo().farGain / farLevel / farWeight`; section 13 | `cockpit-16` | cockpit (the seat's view shows the world in the windows; the cabin is about two stops darker there); anything drawn in `drawTransparent` over far pixels of an interior view is scaled with them | None in code; tests that read the HDR target of an interior view read the scaled values beyond 8 m |
+| Mesh G-buffer shader, `standard` shading: soot is a density (continuous in the weight: a brown veil when thin, near black when thick, streaks of 6 cm x 1.5 m), `layerStreaks`; roughness, metalness and clear coat follow the density; section 10 | `vehicle-pad-7` | vehicle-pad (graded deposits instead of a mask); every `standard` material with a soot weight | None in code; a weight that had an edge at 0.36-0.63 by the old mask is graded (0.25: tan veil, 0.5: brown, 1: near black) |
+| The meter's sun inside an atmosphere: the prior and the bounds under the sun use the sun through the camera's air, less what clear air under a high sun takes (`sunThroughAir`, `SUN_AIR_CLEAR` = 0.75) | `atmosphere-clouds-10` (part 1) | atmosphere, vfx, every daylight view at a low sun | None; unchanged with the sun 35 degrees up and more, up to a stop brighter at 10 degrees, two to five at dawn |
 | `CoreShaderLibrary.compilations(): { pending, total }`, `MeshSystem.loads(): { pending, total }` (sections 10, 11); terrain: `TerrainDebug.residency(bodyId)`, `setUploadBudget(tiles, ms)`, `stats().lodScale / demand`, `StreamStats.stalled / droppedTotal / demandTiles / demandImages / lodScale` | `app-integration-11`, `-7` | the app's loading screen | None |
 | Exposure after a cut: when `CameraState.kind` changes, the exposure follows the target with `CUT_ADAPT_TAU` (0.06 s) for `CUT_ADAPT_SECONDS` (0.75 s) (`adaptEv100Cut`), section 13 | `cockpit-14` | cockpit (the cabin is exposed a third of a second after C, not three to four seconds), map view, every screenshot taken shortly after a view change | None. Inside a view the adaptation rates are unchanged |
 | Exposure under the sun: pixels and emitter hints above `SUNLIT_OVER_WHITE` (1.5) x sunlit white, and the highlight term (99th percentile) as such, raise the exterior target by at most `SUNLIT_SPOT_MAX_EV` (0.25 EV) over what the rest of the frame (its mean, the prior) asks for, section 13 | `vfx-8` | vfx (daylight lift-off: the flame-lit apron and the flame's hint no longer hold the meter on the +0.5 EV bound), ocean (sun glint), anything brighter than sunlit white by day | None in code. Daylight frames with a few per cent of white or brighter are up to 0.25 EV brighter than before (white sits up to a tenth over 4 x mid-grey); night, twilight below the gate and cabins unchanged |

@@ -3,7 +3,9 @@
  *
  * The GPU builds two 256-bin log-luminance histograms of ABSOLUTE luminance (cd/m^2) over geometry pixels
  * only (depth != 0) above an absolute floor: every such pixel, and those within INTERIOR_RANGE of the eye
- * (interior metering). This module turns a histogram into a target EV100.
+ * (interior metering); and a third over the sky pixels between the floor and SKY_METER_MAX (what an interior
+ * view sees of the daylight sky through its windows; never metered as lit geometry). This module turns the
+ * histograms into a target EV100.
  */
 import type { ViewKind } from '@/core/contracts/render';
 
@@ -13,6 +15,11 @@ export const HISTOGRAM_MIN_LOG2 = -12;
 export const HISTOGRAM_RANGE_LOG2 = 32;
 /** Pixels darker than this (cd/m^2) are never metered: unlit sides, deep shadow in vacuum. */
 export const LUMINANCE_FLOOR = 0.008;
+/**
+ * Sky pixels brighter than this (cd/m^2) are not in the sky histogram: the solar disc and its glare, which no
+ * exposure holds (sunlit cloud tops and the brightest daylight sky are a fifth of it).
+ */
+export const SKY_METER_MAX = 200000;
 /** Pixels more than this many EV below the brightest lit pixels are not part of the lit range either. */
 export const LIT_RANGE_EV = 10;
 /** Geometry nearer than this (m) is "interior" for CameraState.kind === 'interior'. */
@@ -148,6 +155,33 @@ export const INTERIOR_BRIGHT_HOPELESS_EV = 3;
 export const INTERIOR_WINDOW_FROM = 0.1;
 export const INTERIOR_WINDOW_FULL = 0.4;
 /**
+ * The world in the windows of the seat's view (request cockpit-16). From the seat the windows are 2-8 % of
+ * the frame and the sunlit Earth, the lunar ground or the pad in them stand nine to ten stops over a cabin
+ * keyed to mid-grey: no single exposure and no tone curve shows both, and a photograph taken in a cabin does
+ * two things about it. It keys the cabin low (Apollo 7 and LM interiors: the cabin two to two and a half
+ * stops under mid-grey), and its film holds the window on the shoulder. Here:
+ * "The outside" here is what the view shows beyond the cabin: lit geometry beyond INTERIOR_RANGE and the sky
+ * (the third histogram: a daylight sky, not black space, not the solar disc).
+ *  - the key: the cabin's target is raised by up to INTERIOR_OUTSIDE_KEY_EV as the outside takes
+ *    INTERIOR_OUTSIDE_FROM to INTERIOR_OUTSIDE_FULL of the frame and its log-average stands
+ *    INTERIOR_OUTSIDE_OVER_FROM to INTERIOR_OUTSIDE_OVER_FULL stops over the cabin's. A window onto the
+ *    night side or onto black space changes nothing; the other interior rules only ever ask for more (the
+ *    larger stop-down counts).
+ *  - the outside's own exposure: it is shown with its brightest tenth (the 90th percentile) at
+ *    INTERIOR_FAR_STOPS over mid-grey, just under the tone curve's white: cloud tops and a noon sky bright,
+ *    sea and land in the mid-tones, the limb against black. By a gain under 1 on the pixels beyond
+ *    INTERIOR_RANGE, before the resolve and the bloom (`interiorFarGain`; the render core's pass
+ *    'core.interiorFar'). It is the exposure a second frame for the window would have, with the depth buffer
+ *    as its mask: local, without the halo of a blurred mask. Once the windows fill the frame the exposure
+ *    itself is the outside's (INTERIOR_WINDOW_FROM / _FULL) and the gain is back at 1.
+ */
+export const INTERIOR_OUTSIDE_FROM = 0.002;
+export const INTERIOR_OUTSIDE_FULL = 0.008;
+export const INTERIOR_OUTSIDE_OVER_FROM = 3;
+export const INTERIOR_OUTSIDE_OVER_FULL = 6;
+export const INTERIOR_OUTSIDE_KEY_EV = 2.25;
+export const INTERIOR_FAR_STOPS = 3;
+/**
  * The sun in the frame, seen from space (request sky-lighting-10). The histogram holds lit geometry only, so a
  * frame that is mostly night side with the sun and its lit limb arc over the sky pixels was exposed for the
  * night side, the arc burned white and the sun's glare flooded the frame. A camera exposes such a frame for
@@ -155,6 +189,22 @@ export const INTERIOR_WINDOW_FULL = 0.4;
  * air on the way (the limb's air at sunrise: a few per cent), less this margin. Exterior views only.
  */
 export const SUN_IN_FRAME_MARGIN_EV = 1;
+/**
+ * The sun as a camera INSIDE an atmosphere has it (request atmosphere-clouds-10). The photometric prior and
+ * the bounds under the sun are sunny 16 of the sun's illuminance at the camera. Above every atmosphere that
+ * is the illuminance after the air on the way (request sky-lighting-10). Inside one it was the illuminance
+ * outside the air, which is right for a high sun and four to six stops too much at sunrise: a frame of dawn
+ * sky, with no lit geometry to correct it, was exposed for full sunlight. Now the air counts there too, but
+ * only what it takes beyond a clear air mass under a high sun: the transmittance towards the sun from the
+ * camera (luminance-weighted) divided by SUN_AIR_CLEAR and capped at 1. With the sun 35 degrees up and more
+ * over clear air nothing changes (pad, ascent: the daylight rules were tuned on those frames); at 10 degrees
+ * the prior is a stop lower, at 1 degree from 7 km two, on the ground at sunrise four and more.
+ */
+export const SUN_AIR_CLEAR = 0.75;
+export function sunThroughAir(illuminance: number, transmittance: number, aboveTheAir: boolean): number {
+  const t = Math.max(0, Math.min(1, transmittance));
+  return illuminance * (aboveTheAir ? t : Math.min(1, t / SUN_AIR_CLEAR));
+}
 /** Adaptation speed, EV per second: fast when the scene gets brighter, slower when it gets darker. */
 export const ADAPT_UP = 2.5;
 export const ADAPT_DOWN = 0.8;
@@ -246,6 +296,8 @@ export interface MeterInput {
   /** Histogram of all lit geometry and of geometry within INTERIOR_RANGE. */
   histogram: ArrayLike<number>;
   histogramNear: ArrayLike<number>;
+  /** Histogram of the sky pixels between LUMINANCE_FLOOR and SKY_METER_MAX (interior views; absent: none). */
+  histogramSky?: ArrayLike<number>;
   /** Number of pixels the GPU sampled (lit or not). */
   sampleCount: number;
   /** Unoccluded illuminance of the star at the camera (lux) and the fraction of its disc visible there. */
@@ -288,10 +340,19 @@ export interface MeterResult {
   outsideWeight: number;
   /** Weight of the bound from below under the sun (SUNLIT_SHADOW_MIN_EV), 0..1; 0 in interior views. */
   sunlitFloor: number;
+  /**
+   * Interior views (request cockpit-16): the 90th percentile luminance of what the view shows beyond the
+   * cabin (lit geometry beyond INTERIOR_RANGE and the sky), cd/m^2 (0 = none), and the weight, 0..1, with
+   * which that counts as a bright outside seen through the windows (its share of the frame and how far it
+   * stands over the cabin): the cabin's key and `interiorFarGain` follow it. Both 0 in exterior and map views.
+   */
+  farLevel: number;
+  farWeight: number;
 }
 
-/** Scratch: the far histogram of an interior view, and an exterior frame without what is brighter than sunlit white. */
+/** Scratch: the far histogram of an interior view, the same with the sky, and an exterior frame without what is brighter than sunlit white. */
 const FAR = new Float64Array(HISTOGRAM_BINS);
+const SEEN = new Float64Array(HISTOGRAM_BINS);
 const SUNLIT = new Float64Array(HISTOGRAM_BINS);
 
 const smooth = (a: number, b: number, x: number): number => {
@@ -332,6 +393,22 @@ const smooth = (a: number, b: number, x: number): number => {
  */
 export function meterExposure(m: MeterInput): MeterResult {
   const interior = m.kind === 'interior';
+  // Interior: what lies beyond the cabin (the far histogram), for the key, the far exposure and the window rule.
+  let far: HistogramStats | null = null;
+  let seen: HistogramStats | null = null;
+  let farLevel = 0;
+  let farWeight = 0;
+  if (interior) {
+    let total = 0;
+    for (let i = 0; i < HISTOGRAM_BINS; i++) {
+      FAR[i] = Math.max(0, m.histogram[i]! - m.histogramNear[i]!);
+      SEEN[i] = FAR[i]! + (m.histogramSky ? m.histogramSky[i]! : 0);
+      total += SEEN[i]!;
+    }
+    far = histogramStats(FAR, m.sampleCount);
+    seen = histogramStats(SEEN, m.sampleCount);
+    if (total > 0) farLevel = binLuminance(percentileBin(SEEN, 0, total, 0.9));
+  }
   let histogram = m.histogram;
   let emitterCoverage = 0;
   let emitterLuminance = 0;
@@ -379,6 +456,11 @@ export function meterExposure(m: MeterInput): MeterResult {
       const evBase = evHistogram + keyEv;
       const evHigh = Math.log2(stats.p99 / (INTERIOR_HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K));
       evHistogram = Math.min(Math.max(evBase, evHigh), evBase + INTERIOR_HIGHLIGHT_MAX_EV);
+      // A bright world in the windows keys the cabin low, as a photograph taken in it is (request cockpit-16).
+      if (seen && seen.logMean > 0) {
+        farWeight = smooth(INTERIOR_OUTSIDE_FROM, INTERIOR_OUTSIDE_FULL, seen.litFraction) * smooth(INTERIOR_OUTSIDE_OVER_FROM, INTERIOR_OUTSIDE_OVER_FULL, Math.log2(seen.logMean / stats.logMean));
+        evHistogram = Math.max(evHistogram, evBase + INTERIOR_OUTSIDE_KEY_EV * farWeight);
+      }
       // Bright areas, near and far (request cockpit-12): their share of the frame tightens the cap and
       // loosens the bound, and the 99th percentile of every lit pixel takes part. Only where that brings them
       // into the shoulder: highlights that would still stand more than INTERIOR_BRIGHT_HOPELESS_EV over the
@@ -447,9 +529,7 @@ export function meterExposure(m: MeterInput): MeterResult {
   let outsideFraction = 0;
   let evOutside = ev;
   let outsideWeight = 0;
-  if (interior) {
-    for (let i = 0; i < HISTOGRAM_BINS; i++) FAR[i] = Math.max(0, m.histogram[i]! - m.histogramNear[i]!);
-    const far = histogramStats(FAR, m.sampleCount);
+  if (far) {
     outsideFraction = far.litFraction;
     outsideWeight = far.mean > 0 ? smooth(INTERIOR_WINDOW_FROM, INTERIOR_WINDOW_FULL, far.litFraction) : 0;
     if (outsideWeight > 0) {
@@ -468,7 +548,19 @@ export function meterExposure(m: MeterInput): MeterResult {
   ev -= m.exposureCompensation;
   ev = Math.max(EV_MIN, Math.min(EV_MAX, ev));
   if (m.minEv100 !== null) ev = Math.max(ev, m.minEv100);
-  return { targetEv100: ev, litFraction: stats.litFraction, histogramWeight: w, evHistogram, evPrior, outsideFraction, evOutside, outsideWeight, sunlitFloor };
+  return { targetEv100: ev, litFraction: stats.litFraction, histogramWeight: w, evHistogram, evPrior, outsideFraction, evOutside, outsideWeight, sunlitFloor, farLevel, farWeight };
+}
+
+/**
+ * The gain on what an interior view sees beyond INTERIOR_RANGE (request cockpit-16; `MeterResult.farLevel`
+ * and `farWeight`, the exposure the frame is rendered with): at full weight the brightest tenth of the
+ * outside is displayed INTERIOR_FAR_STOPS over mid-grey. Never above 1: a dim outside is left as the cabin's
+ * exposure shows it.
+ */
+export function interiorFarGain(farLevel: number, ev100: number, weight: number): number {
+  if (!(farLevel > 0) || !(weight > 0)) return 1;
+  const over = Math.log2((farLevel * exposureFromEv100(ev100)) / MID_GREY) - INTERIOR_FAR_STOPS;
+  return over > 0 ? 2 ** (-over * Math.min(1, weight)) : 1;
 }
 
 /**

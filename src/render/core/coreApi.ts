@@ -32,6 +32,17 @@ export interface FullscreenPipelineDesc {
   depthStencil?: GPUDepthStencilState;
 }
 
+/**
+ * What a feature with accumulation of its own adds to its RenderFeature (request lead-3; RENDER_API section
+ * 13, "Frame-exact capture"). The core calls `resetTemporal` when every temporal sequence starts again at
+ * its origin (CoreRenderer.renderExact), before the first frame of the restarted sequences: the feature drops
+ * its histories (reprojection, accumulation, foam, progressive maps) and restarts its phases (round robins,
+ * noise rotations) so that the frames that follow depend on the scene alone, not on the frames before.
+ */
+export interface TemporalFeature {
+  resetTemporal?(): void;
+}
+
 export interface CoreApi {
   readonly meshes: MeshSystem;
   readonly shaders: CoreShaderLibrary;

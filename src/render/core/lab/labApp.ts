@@ -106,6 +106,8 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
     window.addEventListener('resize', fit);
     const featureList = typeof options.features === 'function' ? options.features(defs, sim) : (options.features ?? []);
     for (const f of featureList) await renderer.addFeature(f);
+    // Every pipeline that was started ahead exists before the first frame (RENDER_API section 5).
+    await renderer.warm();
 
     const controls = { ...NEUTRAL_CONTROLS, translate: v3.zero() };
     let snapshot = sim.snapshot();
@@ -159,7 +161,11 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
       if (disposed) return;
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
-      if (looping) {
+      if (renderer.holding) {
+        // A frame-exact capture is on screen (or being made): nothing of the page moves; the display's
+        // frames still count for waitFrames.
+        testApi.frameDone();
+      } else if (looping) {
         try {
           renderFrame(dt);
         } catch (e) {
@@ -216,6 +222,9 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
       resetPerf: () => renderer.resetPerf(),
       hdrStats: () => renderer.readHdrStats(),
       setDeterministic: (on) => app.setDeterministic(on),
+      // Frame-exact capture for the reference images (TestApi.renderExact, request lead-3): the core restarts
+      // the temporal sequences, renders exactly `frames` of this page's frames at the fixed step and holds the last.
+      renderExact: (frames) => renderer.renderExact(frames, () => renderFrame(1 / 60)),
       setPaused: (p) => app.setPaused(p),
       camera: () => structuredClone(cameraState),
       setCameraOrbit: (yaw, pitch, distance) => camera.setOrbit(yaw, pitch, distance),

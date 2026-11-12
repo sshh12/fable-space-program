@@ -166,7 +166,7 @@ test("mesh system: 'ocean.wetness' wets a hull below its wet line and nothing ab
   await expectNoErrors(page, pageLog);
 });
 
-test('soot and frost lie on the paint: broken up in texture space, and the clear coat under them is covered (request vehicle-pad-1)', async ({ page, pageLog }) => {
+test('soot and frost lie on the paint: frost in streaks and patches, soot as a graded density, and the clear coat under them is covered (requests vehicle-pad-1, -7)', async ({ page, pageLog }) => {
   await openPage(page, '/labs/render-core/?probe=inputs,layers&sun=180,40&hud=0&paused=1&ev=13');
   await assertDiscreteGpu(page);
   await page.evaluate(() => {
@@ -204,10 +204,14 @@ test('soot and frost lie on the paint: broken up in texture space, and the clear
   // The clean paint is even: no pattern of its own.
   expect(Math.max(...clean.luma) / Math.min(...clean.luma)).toBeLessThan(1.3);
 
-  // Full layers: the soot's brown-black (albedo 0.03 against 0.3) and the frost's white (0.95), even again.
+  // Full layers: the soot's brown-black (albedo 0.03 against 0.3) and the frost's white (0.95).
   const sooted = await face(1, 0);
+  await saveScreenshot(page, 'render-core', 'mesh-soot-full');
   const frosted = await face(0, 1);
-  // Half the weight: the layer is there in streaks and patches, not as a half-strength film.
+  // Soot is a density (request vehicle-pad-7). A quarter of the weight: a tan veil, the paint shows through.
+  const quarter = await face(0.25, 0);
+  await saveScreenshot(page, 'render-core', 'mesh-soot-quarter');
+  // Half the weight: brown, in streaks along the flow, with no bare paint and no black cut-out in it.
   const half = await face(0.5, 0);
   await saveScreenshot(page, 'render-core', 'mesh-soot-half');
   const halfFrost = await face(0, 0.5);
@@ -260,16 +264,27 @@ test('soot and frost lie on the paint: broken up in texture space, and the clear
   await page.evaluate(() => window.__rc!.probes.setLayers(0, 0));
 
   console.log(
-    `soot and frost on clear-coated paint: full soot ${(mean(sooted.luma) / level).toFixed(3)}, full frost ${(mean(frosted.luma) / level).toFixed(2)} of the clean level; half soot: ${(100 * covered).toFixed(0)} % of the face under half the clean level, ` +
+    `soot and frost on clear-coated paint: quarter soot ${(mean(quarter.luma) / level).toFixed(2)} (${(Math.min(...quarter.luma) / level).toFixed(2)} .. ${(Math.max(...quarter.luma) / level).toFixed(2)}), half soot ${(Math.min(...half.luma) / level).toFixed(2)} .. ${(Math.max(...half.luma) / level).toFixed(2)}, full soot ${(Math.min(...sooted.luma) / level).toFixed(3)} .. ${(Math.max(...sooted.luma) / level).toFixed(3)}; ` +
+      `full soot ${(mean(sooted.luma) / level).toFixed(3)}, full frost ${(mean(frosted.luma) / level).toFixed(2)} of the clean level; half soot: ${(100 * covered).toFixed(0)} % of the face under half the clean level, ` +
       `mean ${(mean(half.luma) / level).toFixed(2)}, neighbour difference across / along the streaks ${(across / along).toFixed(2)}; half frost mean ${(mean(halfFrost.luma) / level).toFixed(2)}; thin frost (0.35) min ${(Math.min(...thinFrost.luma) / level).toFixed(2)} mean ${(mean(thinFrost.luma) / level).toFixed(2)}; ` +
       `environment mirrored at 80 degrees: clean ${coatClean.toFixed(0)} cd/m^2, sooted ${coatSoot.toFixed(0)}, frosted ${coatFrost.toFixed(0)}`,
   );
+  // Thick soot is near black everywhere (its streaks are a third of the density: brown-black to black).
   expect(mean(sooted.luma) / level).toBeLessThan(0.3);
+  expect(Math.max(...sooted.luma) / level, 'the lightest pixel under full soot').toBeLessThan(0.45);
   expect(mean(frosted.luma) / level).toBeGreaterThan(2.3);
-  expect(Math.max(...sooted.luma) / Math.min(...sooted.luma)).toBeLessThan(1.3);
-  expect(covered, 'share of the face that half-weight soot covers').toBeGreaterThan(0.2);
-  expect(covered).toBeLessThan(0.8);
-  expect(half.luma.filter((v) => v > 0.85 * level).length / half.luma.length, 'share of the face left clean at half weight').toBeGreaterThan(0.1);
+  // A quarter of the weight is a veil: every pixel darker than the paint, none dark, the mean about two thirds.
+  expect(Math.max(...quarter.luma) / level, 'the barest pixel under a quarter of the soot').toBeLessThan(0.97);
+  expect(Math.min(...quarter.luma) / level, 'the darkest pixel under a quarter of the soot').toBeGreaterThan(0.4);
+  expect(mean(quarter.luma) / level).toBeGreaterThan(0.55);
+  expect(mean(quarter.luma) / level).toBeLessThan(0.9);
+  // Half the weight: between the two, graded: no bare paint, no black, and darker than the quarter everywhere it counts.
+  expect(Math.max(...half.luma) / level, 'the barest pixel under half the soot').toBeLessThan(0.8);
+  expect(Math.min(...half.luma) / level, 'the darkest pixel under half the soot').toBeGreaterThan(0.12);
+  expect(mean(half.luma)).toBeLessThan(mean(quarter.luma));
+  expect(mean(half.luma)).toBeGreaterThan(mean(sooted.luma));
+  expect(covered, 'share of the face under half the clean level at half weight').toBeGreaterThan(0.05);
+  // The streaks run along v (up the panel): neighbours differ more across than along.
   expect(across / along).toBeGreaterThan(1.5);
   expect(mean(halfFrost.luma) / level).toBeGreaterThan(1.3);
   expect(Math.min(...thinFrost.luma) / level, 'the barest pixel under thin frost').toBeGreaterThan(1.3);

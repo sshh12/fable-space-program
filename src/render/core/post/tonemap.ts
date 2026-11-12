@@ -187,8 +187,9 @@ export class Tonemap {
     });
   }
 
-  warm(): void {
-    this.pipeline.get();
+  /** The stage's tracked pipelines, for `shaders.warm`. */
+  pipelines(): Tracked<unknown>[] {
+    return [this.pipeline];
   }
 
   /** `scene`: pre-exposed linear image at any resolution; `bloom`: blurred image to mix in (or a black texture). */

@@ -458,6 +458,14 @@ export class CascadeScheduler {
     return this.byKey.get(key)?.capture ?? null;
   }
 
+  /**
+   * Forget every capture and layer (frame-exact capture, CoreRenderer.renderExact): the next update assigns
+   * the layers in the order of the plan and renders every cascade, as the first frame of a session does.
+   */
+  reset(): void {
+    this.byKey.clear();
+  }
+
   update(input: PlanInput, desired: DesiredCascade[] = planCascades(input)): CascadeFrame[] {
     // Release layers of cascades that are gone, then give new cascades the free layers.
     const wanted = new Set(desired.map((d) => d.key));

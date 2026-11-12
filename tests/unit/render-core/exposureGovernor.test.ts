@@ -18,9 +18,14 @@ import {
   INTERIOR_HIGHLIGHT_CAP,
   INTERIOR_HIGHLIGHT_MAX_EV,
   INTERIOR_BRIGHT_MAX_EV,
+  INTERIOR_FAR_STOPS,
   INTERIOR_NIGHT_KEY_EV,
+  INTERIOR_OUTSIDE_FROM,
+  INTERIOR_OUTSIDE_FULL,
+  INTERIOR_OUTSIDE_KEY_EV,
   INTERIOR_WINDOW_FROM,
   INTERIOR_WINDOW_FULL,
+  interiorFarGain,
   LUMINANCE_FLOOR,
   luminanceBin,
   SUNLIT_ELEVATION_FULL,
@@ -28,7 +33,9 @@ import {
   SUNLIT_HIGHLIGHT_MAX_EV,
   SUNLIT_SHADOW_MIN_EV,
   SUNLIT_SPOT_MAX_EV,
+  SUN_AIR_CLEAR,
   SUN_IN_FRAME_MARGIN_EV,
+  sunThroughAir,
   meterExposure,
   sunny16Ev,
   type MeterInput,
@@ -237,9 +244,14 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     const interior = meter(all, { histogramNear: near, kind: 'interior' });
     const exterior = meter(all, { histogramNear: near, kind: 'external' });
     expect(interior.targetEv100).toBeLessThan(exterior.targetEv100 - 5);
+    // The cabin is keyed low under windows that bright (request cockpit-16): about two stops under mid-grey.
     const cabinMean = histogramStats(near, N).mean;
-    expect(cabinMean * exposureFromEv100(interior.targetEv100)).toBeGreaterThan(0.08);
-    expect(cabinMean * exposureFromEv100(interior.targetEv100)).toBeLessThan(0.4);
+    expect(cabinMean * exposureFromEv100(interior.targetEv100)).toBeGreaterThan(0.03);
+    expect(cabinMean * exposureFromEv100(interior.targetEv100)).toBeLessThan(0.1);
+    // Without windows it sits around mid-grey.
+    const closed = meter(near, { histogramNear: near, kind: 'interior' });
+    expect(cabinMean * exposureFromEv100(closed.targetEv100)).toBeGreaterThan(0.08);
+    expect(cabinMean * exposureFromEv100(closed.targetEv100)).toBeLessThan(0.4);
   });
 
   it('an emitter over the sky sets the exposure by its coverage (request vfx-1)', () => {
@@ -819,6 +831,168 @@ describe('interior metering: bright areas of a few per cent of the frame (reques
   });
 });
 
+describe('the sun through the air of the camera (request atmosphere-clouds-10)', () => {
+  it('inside an atmosphere a high sun over clear air is the sun as before; a low one is what the air leaves of it', () => {
+    expect(SUN_AIR_CLEAR).toBe(0.75);
+    // Noon on the pad, the ascent: transmittance 0.8 and more.
+    for (const t of [1, 0.9, 0.82, 0.75]) expect(sunThroughAir(SUN, t, false)).toBe(SUN);
+    // 10 degrees up over clear air (0.41): nearly a stop; 1 degree up from 7 km (0.2): two; sunrise on the ground (0.02): five.
+    expect(Math.log2(SUN / sunThroughAir(SUN, 0.41, false))).toBeCloseTo(0.87, 1);
+    expect(Math.log2(SUN / sunThroughAir(SUN, 0.2, false))).toBeCloseTo(1.9, 1);
+    expect(Math.log2(SUN / sunThroughAir(SUN, 0.02, false))).toBeGreaterThan(5);
+    // Monotonic and continuous at the join.
+    expect(sunThroughAir(SUN, 0.7499, false)).toBeGreaterThan(sunThroughAir(SUN, 0.74, false));
+    expect(sunThroughAir(SUN, 0.7499, false) / SUN).toBeGreaterThan(0.999);
+    // Behind the planet: none. Above every atmosphere: the air on the way, all of it (request sky-lighting-10).
+    expect(sunThroughAir(SUN, 0, false)).toBe(0);
+    expect(sunThroughAir(SUN, 0.9, true)).toBeCloseTo(0.9 * SUN, 6);
+    expect(sunThroughAir(SUN, 0.03, true)).toBeCloseTo(0.03 * SUN, 6);
+  });
+
+  it('a frame of dawn sky with nothing lit in it is exposed for the dawn, not for noon', () => {
+    // No lit geometry (the camera looks up past the canopies): the target is the prior alone.
+    const empty = new Uint32Array(HISTOGRAM_BINS);
+    const noon = meter(empty, { litObjectInView: true }).targetEv100;
+    const dawn = meter(empty, { litObjectInView: true, sunIlluminance: sunThroughAir(SUN, 0.2, false) }).targetEv100;
+    expect(noon).toBeCloseTo(sunny16Ev(SUN), 6);
+    expect(noon - dawn).toBeCloseTo(1.9, 1);
+    // A clear dawn sky of 225 cd/m^2: five stops under mid-grey at the noon exposure, three at the dawn's.
+    const under = (ev: number): number => Math.log2(0.18 / (225 * exposureFromEv100(ev)));
+    expect(under(noon)).toBeGreaterThan(4.8);
+    expect(under(dawn)).toBeLessThan(3.3);
+  });
+});
+
+describe('interior metering: the world in the windows of the seat view (request cockpit-16)', () => {
+  /** A cabin (5-40 cd/m^2 over 85 % of the frame, as in the app's seat views at EV 5) and lit geometry beyond it. */
+  const seat = (far: number, farLo = 3000, farHi = 16000, cabinLo = 5, cabinHi = 40): { all: Uint32Array; near: Uint32Array } => {
+    const near = new Uint32Array(HISTOGRAM_BINS);
+    fill(near, cabinLo, cabinHi, 0.85 * N);
+    const all = Uint32Array.from(near);
+    if (far > 0) fill(all, farLo, farHi, far * N);
+    return { all, near };
+  };
+  const interior = (v: { all: Uint32Array; near: Uint32Array }, over: Partial<MeterInput> = {}): ReturnType<typeof meterExposure> => meter(v.all, { histogramNear: v.near, kind: 'interior', ...over });
+  const stopsOverMidGrey = (luminance: number, ev: number, gain = 1): number => Math.log2((luminance * gain * exposureFromEv100(ev)) / 0.18);
+
+  it('a sunlit Earth in 2 % of the frame keys the cabin two stops and a quarter low', () => {
+    const closed = interior(seat(0));
+    expect(closed.farWeight).toBe(0);
+    expect(closed.farLevel).toBe(0);
+    const r = interior(seat(0.02));
+    expect(r.farWeight).toBe(1);
+    expect(r.outsideWeight).toBe(0);
+    expect(r.targetEv100 - closed.targetEv100).toBeCloseTo(INTERIOR_OUTSIDE_KEY_EV, 6);
+    // The cabin's log-average: at mid-grey without the window, at Y 0.04 with it (the photographs: 0.03).
+    const cabin = histogramStats(seat(0).near, N, Infinity).logMean;
+    expect(Math.abs(stopsOverMidGrey(cabin, closed.targetEv100))).toBeLessThan(0.6);
+    expect(cabin * exposureFromEv100(r.targetEv100)).toBeGreaterThan(0.025);
+    expect(cabin * exposureFromEv100(r.targetEv100)).toBeLessThan(0.07);
+  });
+
+  it('comes in with the window share (0.2 to 0.8 % of the frame) and with how far the outside stands over the cabin (3 to 6 stops)', () => {
+    expect(INTERIOR_OUTSIDE_FROM).toBe(0.002);
+    expect(INTERIOR_OUTSIDE_FULL).toBe(0.008);
+    const closed = interior(seat(0)).targetEv100;
+    let last = closed;
+    for (const far of [0.002, 0.003, 0.004, 0.005, 0.006, 0.008, 0.02]) {
+      const r = interior(seat(far));
+      expect(r.targetEv100).toBeGreaterThanOrEqual(last);
+      last = r.targetEv100;
+    }
+    expect(interior(seat(0.002)).targetEv100).toBe(closed);
+    expect(interior(seat(0.005)).farWeight).toBeCloseTo(0.5, 6);
+    expect(last - closed).toBeCloseTo(INTERIOR_OUTSIDE_KEY_EV, 6);
+    // An outside two stops over the cabin (a lit hangar wall, an overcast pad): nothing. Five stops: partly.
+    const cabin = histogramStats(seat(0).near, N, Infinity).logMean;
+    expect(interior(seat(0.02, 3 * cabin, 5 * cabin)).farWeight).toBe(0);
+    const five = interior(seat(0.02, 24 * cabin, 40 * cabin)).farWeight;
+    expect(five).toBeGreaterThan(0.5);
+    expect(five).toBeLessThan(1);
+  });
+
+  it('a night side or black space in the windows leaves the cabin and its night key alone', () => {
+    const night = { sunVisibility: 0 };
+    // City lights and moonlit cloud in 5 % of the frame of a cabin lit by its floods.
+    const lit = interior(seat(0, 0, 0, 2, 12), night);
+    const withNight = interior(seat(0.05, 0.02, 0.5, 2, 12), night);
+    expect(withNight.farWeight).toBe(0);
+    expect(withNight.targetEv100).toBe(lit.targetEv100);
+    expect(interiorFarGain(withNight.farLevel, withNight.targetEv100, withNight.farWeight)).toBe(1);
+  });
+
+  it('the outside is shown at its own exposure: its brightest tenth three stops over mid-grey, cloud under white, sea in the mid-tones', () => {
+    expect(INTERIOR_FAR_STOPS).toBe(3);
+    const r = interior(seat(0.02));
+    // The level is the 90th percentile of what is seen beyond the cabin (3,000-16,000 cd/m^2 here).
+    expect(r.farLevel).toBeGreaterThan(11000);
+    expect(r.farLevel).toBeLessThan(16000);
+    const gain = interiorFarGain(r.farLevel, r.targetEv100, r.farWeight);
+    expect(gain).toBeLessThan(1 / 16);
+    expect(stopsOverMidGrey(r.farLevel, r.targetEv100, gain)).toBeCloseTo(INTERIOR_FAR_STOPS, 6);
+    // Without it the same pixels stand nearly eight stops over mid-grey: four over the tone curve's white.
+    expect(stopsOverMidGrey(r.farLevel, r.targetEv100)).toBeGreaterThan(7.5);
+    // Cloud tops (16,000 cd/m^2) and sea (3,000) through the display transform: apart, neither clipped.
+    const level = (luminance: number): number => {
+      const v = luminance * gain * exposureFromEv100(r.targetEv100);
+      return 255 * srgbEncode(displayLinear([v, v, v])[1]);
+    };
+    expect(level(16000)).toBeLessThan(225);
+    expect(level(3000)).toBeGreaterThan(100);
+    expect(level(16000) - level(3000)).toBeGreaterThan(55);
+    // The cabin's own tones are not touched by it (the gain is for what lies beyond the cabin).
+    expect(interiorFarGain(0, r.targetEv100, 1)).toBe(1);
+  });
+
+  it('the gain follows the weight, never brightens, and is gone once the windows fill the frame', () => {
+    const half = interior(seat(0.005));
+    const g = interiorFarGain(half.farLevel, half.targetEv100, half.farWeight);
+    const full = interiorFarGain(half.farLevel, half.targetEv100, 1);
+    expect(g).toBeGreaterThan(full);
+    expect(g).toBeLessThan(1);
+    expect(Math.log2(g)).toBeCloseTo(0.5 * Math.log2(full), 6);
+    // A dim outside is not brightened.
+    expect(interiorFarGain(1, 8, 1)).toBe(1);
+    // At the window (45 % of the frame) the exposure itself is the outside's: nothing left to do.
+    const near = new Uint32Array(HISTOGRAM_BINS);
+    fill(near, 20, 120, 0.5 * N);
+    const all = Uint32Array.from(near);
+    fill(all, 2000, 9000, 0.45 * N);
+    const at = meter(all, { histogramNear: near, kind: 'interior' });
+    expect(at.outsideWeight).toBe(1);
+    expect(interiorFarGain(at.farLevel, at.targetEv100, at.farWeight)).toBe(1);
+    // Exterior and map views never have one.
+    const exterior = meter(all, { histogramNear: near });
+    expect(exterior.farLevel).toBe(0);
+    expect(exterior.farWeight).toBe(0);
+  });
+
+  it('the daylight sky in the windows is the outside too (the sky histogram): the pad seen from the seat', () => {
+    // No geometry beyond the cabin, a noon sky (4,000-9,000 cd/m^2) in 3 % of the frame.
+    const v = seat(0);
+    const sky = new Uint32Array(HISTOGRAM_BINS);
+    fill(sky, 4000, 9000, 0.03 * N);
+    const closed = interior(v);
+    const r = interior(v, { histogramSky: sky });
+    expect(r.farWeight).toBe(1);
+    expect(r.targetEv100 - closed.targetEv100).toBeCloseTo(INTERIOR_OUTSIDE_KEY_EV, 6);
+    expect(r.farLevel).toBeGreaterThan(7000);
+    expect(r.farLevel).toBeLessThan(9500);
+    const gain = interiorFarGain(r.farLevel, r.targetEv100, r.farWeight);
+    expect(stopsOverMidGrey(8000, r.targetEv100, gain)).toBeGreaterThan(2.5);
+    expect(stopsOverMidGrey(8000, r.targetEv100, gain)).toBeLessThan(3.2);
+    // The sky is not lit geometry: it does not weigh as the outside that fills the frame (request cockpit-7),
+    // and an exterior view of the same pixels does not see it at all.
+    expect(r.outsideFraction).toBe(0);
+    expect(r.outsideWeight).toBe(0);
+    expect(meter(v.all, { histogramNear: v.near, histogramSky: sky }).targetEv100).toBe(meter(v.all, { histogramNear: v.near }).targetEv100);
+    // A twilight sky no brighter than the cabin's own lights changes nothing.
+    const dusk = new Uint32Array(HISTOGRAM_BINS);
+    fill(dusk, 10, 60, 0.03 * N);
+    expect(interior(v, { histogramSky: dusk }).targetEv100).toBe(closed.targetEv100);
+  });
+});
+
 describe('interior metering: what fills the frame through the windows (request cockpit-7)', () => {
   /** A cabin by day (20-120 cd/m^2 over `cabin` of the frame) and lit geometry beyond it over `far` of the frame. */
   const view = (cabin: number, far: number, farLo = 2000, farHi = 9000): { all: Uint32Array; near: Uint32Array } => {
@@ -835,8 +1009,8 @@ describe('interior metering: what fills the frame through the windows (request c
     expect(INTERIOR_WINDOW_FROM).toBe(0.1);
     expect(INTERIOR_WINDOW_FULL).toBe(0.4);
     const alone = interior(view(0.9, 0));
-    // Under a per cent of the frame nothing moves.
-    expect(interior(view(0.9, 0.005)).targetEv100).toBe(alone.targetEv100);
+    // Under INTERIOR_OUTSIDE_FROM of the frame nothing moves (a sliver of the Earth at a window's edge).
+    expect(interior(view(0.9, 0.001)).targetEv100).toBe(alone.targetEv100);
     let last = alone.targetEv100;
     for (const far of [0.02, 0.05, 0.08, 0.1]) {
       const r = interior(view(0.9, far));

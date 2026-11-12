@@ -158,8 +158,9 @@ export class AmbientOcclusion {
     this.group = null;
   }
 
-  warm(): void {
-    this.pipeline.get();
+  /** The stage's tracked pipelines, for `shaders.warm`. */
+  pipelines(): Tracked<unknown>[] {
+    return [this.pipeline];
   }
 
   run(encoder: GPUCommandEncoder, _frame: FrameContext, perf: Perf, frameGroup: GPUBindGroup, normal: GPUTextureView): void {

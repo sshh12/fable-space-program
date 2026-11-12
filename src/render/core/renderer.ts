@@ -18,9 +18,10 @@ import {
   type VesselPose,
 } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
+import type { ExactFrame } from '@/core/contracts/testApi';
 import type { GpuHandle } from '@/core/gpu/device';
 import { HASH_WGSL, mat4, v3, type Mat4 } from '@/core/math';
-import { registerCore, type CoreApi, type FullscreenPipelineDesc, type ManagedTarget } from './coreApi';
+import { registerCore, type CoreApi, type FullscreenPipelineDesc, type ManagedTarget, type TemporalFeature } from './coreApi';
 import { atmosphereTransmittanceAlong, buildBodyPoses, buildProjection, buildVesselPoses, cameraBasis, jitterSequenceLength, nearestBody, planetshineAt, sunAt, sunVisibilityAt, taaJitter, type ShineLight } from './frame/math';
 import { FRAME_UNIFORM_FLOATS, packFrameUniforms, type CloudShadowParams } from './frame/uniforms';
 import { AmbientOcclusion } from './lighting/ao';
@@ -29,7 +30,8 @@ import { createMeshSystem, SHADOW_PASS_WGSL } from './mesh/meshSystem';
 import { TextureManager } from './mesh/textures';
 import { Perf } from './perf';
 import { ExposureMeter } from './post/exposureMeter';
-import { CUT_ADAPT_SECONDS, EV_DARK_FLOOR, exposureFromEv100, type EmissiveHint } from './post/exposure';
+import { FarExposure } from './post/farExposure';
+import { CUT_ADAPT_SECONDS, CUT_ADAPT_TAU, EV_DARK_FLOOR, exposureFromEv100, interiorFarGain, sunThroughAir, type EmissiveHint } from './post/exposure';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorConfig, type GovernorState } from './post/governor';
 import { PostProcess } from './post/postProcess';
 import { Tonemap } from './post/tonemap';
@@ -37,7 +39,7 @@ import { createSharedResources, type CoreSharedResources } from './resources';
 import { createSceneBindings } from './sceneBindings';
 import { BLUE_NOISE_SIZE, FRAME_WGSL, FULLSCREEN_WGSL, GBUFFER_WGSL, MAX_BODIES, NOISE_WGSL, SHINE_RECEIVERS } from './shaders/chunksFrame';
 import { ATMOSPHERE_COMMON_WGSL, BRDF_REGOLITH_WGSL, BRDF_TERRAIN_WGSL, BRDF_WATER_WGSL, BRDF_WGSL, CLOUD_SHADOW_WGSL, ECLIPSE_WGSL, LOCAL_LIGHTS_WGSL, SHADOWS_WGSL, TRANSPARENCY_WGSL, UPSAMPLE_WGSL } from './shaders/chunksLighting';
-import { createShaderLibrary, type CoreShaderLibrary } from './shaders/library';
+import { createShaderLibrary, type CoreShaderLibrary, type Tracked } from './shaders/library';
 import { SpotShadows, pickShadowedSpots } from './shadows/spotShadows';
 import { ShadowSystem } from './shadows/shadowSystem';
 import { createTextureChecked, f16ToF32, generateBlueNoise, MipGenerator, readTexturePixels } from './util/gpu';
@@ -55,6 +57,13 @@ export interface RendererOptions {
    */
   perfFeatures?: boolean;
   governor?: Partial<GovernorConfig>;
+  /**
+   * Create pipelines ahead on the browser's worker threads (`shaders.warm`, `CoreRenderer.warm`; RENDER_API
+   * section 5). False: every pipeline is compiled synchronously where it is first needed, as before the
+   * request app-integration-11 (for comparison, and to rule the asynchronous compiles out when a driver
+   * misbehaves). Default: true, unless the page's address carries `warm=0`.
+   */
+  pipelineWarm?: boolean;
 }
 
 export interface HdrPixels {
@@ -78,6 +87,10 @@ export interface ExposureInfo {
   outsideWeight: number;
   /** Weight of the bound from below under the sun (request vfx-7): 1 = held at sunny 16 - 0.5 EV or above. */
   sunlitFloor: number;
+  /** Interior views: the gain on what lies beyond the cabin (1 = none; request cockpit-16) and what it follows. */
+  farGain: number;
+  farLevel: number;
+  farWeight: number;
   sunVisibility: number;
   override: number | null;
 }
@@ -98,6 +111,35 @@ export interface CoreRenderer extends Renderer {
   setDeterministic(on: boolean, opts?: { cycleNoise?: boolean }): void;
   /** Switch the sub-pixel TAA jitter off / on (off: consecutive frames are pixel-identical, for A/B readbacks). */
   setJitter(enabled: boolean): void;
+  /**
+   * Frame-exact rendering, what a page's `window.__test.renderExact` calls (request lead-3; RENDER_API
+   * section 13, "Frame-exact capture"). Needs deterministic mode; the caller has frozen its presentation
+   * time and found the page idle. `renderFrame` is the page's own frame function at the fixed deterministic
+   * step: every call must end in exactly one `render`. In this order:
+   *  1. every temporal sequence starts again at its origin (the TAA jitter and history, the frame index of
+   *     the frame uniforms, the blue-noise offset, the presentation time, the shadow cascades' captures and
+   *     stagger, the emitter hints; `frame.frameIndex` moves to the next multiple of SEQUENCE_ALIGN; every
+   *     feature's `resetTemporal`), and the exposure is metered from nothing over EXACT_METER_FRAMES frames,
+   *     each of which waits for the histogram of the one before, and then held (an exposure override stays);
+   *  2. the sequences start again and exactly `frames` frames are rendered at that exposure in one task, so
+   *     nothing that arrives (a tile, a decoded texture, a compiled module) is taken in between them;
+   *  3. the last frame is held: `render` draws nothing until `renderExact` is called again or deterministic
+   *     mode is switched off (`holding`). Resolves two animation frames after the last submit, when the held
+   *     frame is on screen.
+   * `idle` is false when the renderer was not idle before or after the frames of step 2 (the frames
+   * themselves started work, or work was under way): the frame is then not the reference frame, and it is
+   * NOT held: the page renders on, so that the work can finish and the caller can wait for idle and ask
+   * again. `exactInfo()` says who was busy.
+   */
+  renderExact(frames: number, renderFrame: () => void): Promise<ExactFrame>;
+  /** True from the start of a `renderExact` until its hold ends: `render` draws nothing (the page's loop may skip its frame). */
+  readonly holding: boolean;
+  /**
+   * Of the last `renderExact`: the ids of the features that were not idle before and after its frames
+   * ('core' = a shader, pipeline or texture of the core's), for finding the feature that a restart of the
+   * temporal sequences sets to work. Null before the first capture.
+   */
+  exactInfo(): { busyBefore: string[]; busyAfter: string[] } | null;
   /** Force EV100 (null = automatic). */
   setExposureOverride(ev100: number | null): void;
   exposureInfo(): ExposureInfo;
@@ -106,6 +148,15 @@ export interface CoreRenderer extends Renderer {
   readHdrStats(target?: 'hdr' | 'resolved'): Promise<{ maxLuminance: number; meanLuminance: number; nanPixels: number }>;
   /** Read back the reversed-Z scene depth copy ('scene.depth'), row 0 = top. */
   readDepth(): Promise<{ width: number; height: number; data: Float32Array }>;
+  /**
+   * Resolves when every pipeline that is being created ahead exists: the core's own (started when the
+   * renderer is created; the lighting pipeline after every `addFeature`, because features replace chunks it
+   * includes) and those the features started with `shaders.warm` in their `init`. Call it once after the
+   * last `addFeature`, before the first frame: that frame then compiles nothing. Without the call nothing
+   * breaks: a frame that comes earlier builds what is missing synchronously, as it always did, and
+   * `isIdle()` is false while pipelines are being created. RENDER_API section 5 and recipe 17.8.
+   */
+  warm(): Promise<void>;
   resetPerf(): void;
   /** p50 / p99 / mean (amortised over all frames) of every GPU pass over the measurement window, ms. */
   passStats(): Record<string, { p50: number; p99: number; mean: number }>;
@@ -160,7 +211,19 @@ struct Out { @location(0) minMax: vec4f }
 }
 `;
 
+/**
+ * `frame.frameIndex` moves to the next multiple of this when the temporal sequences restart (renderExact):
+ * it stays monotonic for the features that stamp caches with it, a phase taken from it by a power of two up
+ * to this starts at 0, and "the frame after my last one" is false once.
+ */
+export const SEQUENCE_ALIGN = 4096;
+/** Frames over which the exposure of a frame-exact capture is metered before it is held. */
+export const EXACT_METER_FRAMES = 16;
+/** Time constant with which the gain on the outside of an interior view follows its target, s. */
+const FAR_GAIN_TAU = 0.25;
+
 export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, defs: DefLibrary, opts: RendererOptions = {}): Promise<CoreRenderer> {
+  const createdFrom = performance.now();
   const device = gpu.device;
   const reportError =
     opts.onError ??
@@ -173,7 +236,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   context.configure({ device, format: gpu.canvasFormat, alphaMode: 'opaque' });
 
   // ----------------------------------------------------------------------------------- shader library
-  const shaders: CoreShaderLibrary = createShaderLibrary(device, reportError);
+  const pipelineWarm = opts.pipelineWarm ?? new URLSearchParams(globalThis.location?.search ?? '').get('warm') !== '0';
+  const shaders: CoreShaderLibrary = createShaderLibrary(device, reportError, { warm: pipelineWarm });
   shaders.register('hash', HASH_WGSL);
   shaders.register('frame', FRAME_WGSL);
   shaders.register('fullscreen', FULLSCREEN_WGSL);
@@ -312,15 +376,41 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
 
   // ------------------------------------------------------------------------------------ core passes
   const snapshotBodyIds: string[] = [];
-  let lighting: DeferredLighting | null = null;
+  let bodiesKnown = false;
+  const lighting = new DeferredLighting(ctx, shaders);
+  lighting.setSpotShadows(spotShadows.arrayView, spotShadows.uniform);
   const ao = new AmbientOcclusion(ctx, shaders, core);
   const tonemap = new Tonemap(ctx, shaders);
   const post = new PostProcess(ctx, shaders, core, gpu.hasFeature('rg11b10ufloat-renderable'));
   const meter = new ExposureMeter(ctx, shaders);
+  const farExposure = new FarExposure(ctx, shaders);
   const depthHalfLayout = device.createBindGroupLayout({ label: 'core.depthHalf', entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } }] });
   const depthHalfPipeline = fullscreenPipeline({ label: 'core.depthHalf', fragment: DEPTH_HALF_FS, targets: [{ format: 'rg32float' }], layouts: [depthHalfLayout] });
   let depthHalfGroup: GPUBindGroup | null = null;
   let depthHalfSource: GPUTextureView | null = null;
+
+  /**
+   * The core's pipelines created ahead (shaders.warm; one that is built costs nothing). The lighting
+   * pipeline joins once a feature has been added: it includes chunks that features replace in their `init`,
+   * so before that it would be created for nothing. One run at a time, at most one waiting: a chunk replaced
+   * while a run is under way is followed by the library, one replaced later by the next run.
+   */
+  let lightingAhead = false;
+  let coreWarm: Promise<void> = Promise.resolve();
+  let coreWarmWaiting = false;
+  const warmCore = (): Promise<void> => {
+    if (!pipelineWarm || coreWarmWaiting) return coreWarm;
+    coreWarmWaiting = true;
+    coreWarm = coreWarm
+      .catch(() => {})
+      .then(() => {
+        coreWarmWaiting = false;
+        const list: Tracked<unknown>[] = [...tonemap.pipelines(), ...ao.pipelines(), ...post.pipelines(), ...meter.pipelines(), ...farExposure.pipelines(), depthHalfPipeline, ...meshes.pipelines()];
+        if (lightingAhead) list.push(...lighting.pipelines());
+        return shaders.warm(list);
+      });
+    return coreWarm;
+  };
 
   // ----------------------------------------------------------------------------------------- features
   const features: RenderFeature[] = [];
@@ -385,7 +475,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     resources.reset('post.reactive');
     for (const m of managed) m.make();
     ao.resize(w, h);
-    lighting?.setInputs({ albedo: views.albedo, normal: views.normal, material: views.material, extra: views.extra, emissive: views.hdrAux, ao: ao.view, aoDepth: ao.depthView });
+    lighting.setInputs({ albedo: views.albedo, normal: views.normal, material: views.material, extra: views.extra, emissive: views.hdrAux, ao: ao.view, aoDepth: ao.depthView });
     depthHalfGroup = null;
   };
   const ensureColorCopy = (which: 'colorCopy' | 'colorCopyTransparent'): GPUTexture => {
@@ -426,6 +516,21 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   let disposed = false;
   let historyReset = true;
   let jitterEnabled = true;
+  /** The gain on what an interior view shows beyond its cabin (1 = none), following its target as the exposure does. */
+  let farGain = 1;
+  // Frame-exact capture (renderExact): the frame index at which the temporal sequences last started, the
+  // exposure held for the capture (and the order to take it from the next metering), whether `render` is
+  // refused (a held frame, or the lead-in of a capture) unless the capture itself calls, and the capture's
+  // number (a newer one takes over).
+  let sequenceStart = 0;
+  let evHeld: number | null = null;
+  let holdNext = false;
+  let holding = false;
+  let inExact = false;
+  let exactRun = 0;
+  let exactBusy: { busyBefore: string[]; busyAfter: string[] } | null = null;
+  /** Who is not idle: feature ids, and 'core' for the core's own compilations and texture loads. */
+  const busy = (): string[] => [...(shaders.pendingCompilations() > 0 || !meshes.isIdle() ? ['core'] : []), ...features.filter((f) => f.isIdle !== undefined && !f.isIdle()).map((f) => f.id)];
 
   const runCpu = <T>(name: string, fn: () => T): T => {
     perf.cpuBegin(name);
@@ -526,9 +631,37 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     return Math.abs(v3.dot(dir, basis.right)) / z < tanY * aspect + m && Math.abs(v3.dot(dir, basis.up)) / z < tanY + m;
   };
 
+  /**
+   * Every temporal sequence of the core back at its origin, and the features told (renderExact). With
+   * `meterToo` false the exposure meter keeps what it has read: the frames of the capture are rendered with
+   * the exposure metered over the lead-in.
+   */
+  const restartTemporal = (meterToo: boolean): void => {
+    frameIndex = (Math.floor(frameIndex / SEQUENCE_ALIGN) + 1) * SEQUENCE_ALIGN;
+    sequenceStart = frameIndex;
+    jitterIndex = 0;
+    realTime = 0;
+    historyReset = true;
+    historyExposure = 0;
+    // The first frame is its own predecessor, as the first frame of a session is.
+    prevSnapshot = null;
+    prevCamera = null;
+    emissiveHints = [];
+    meteredKind = null;
+    cutAdapt = 0;
+    shadows.restart();
+    if (meterToo) {
+      meter.restart();
+      evInitialised = false;
+    }
+    for (const f of features) (f as RenderFeature & TemporalFeature).resetTemporal?.();
+  };
+
   // ------------------------------------------------------------------------------------------ render
   const render = (snapshot: SimSnapshot, camera: CameraState, observers: LodObserver[], realDt: number): void => {
     if (disposed) return;
+    // A frame-exact capture is on screen, or being made: only its own frames are rendered.
+    if (holding && !inExact) return;
     const now = performance.now();
     perf.beginFrame(now);
     perf.cpuBegin('core.render');
@@ -538,10 +671,10 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       prevCamera = camera;
       historyReset = true;
     }
-    if (!lighting) {
+    if (!bodiesKnown) {
+      bodiesKnown = true;
       snapshotBodyIds.push(...snapshot.bodies.slice(0, MAX_BODIES).map((b) => b.id));
-      lighting = new DeferredLighting(ctx, shaders, defs, snapshotBodyIds);
-      lighting.setSpotShadows(spotShadows.arrayView, spotShadows.uniform);
+      lighting.setBodies(defs, snapshotBodyIds);
     }
 
     // Governor and dynamic resolution (off while deterministic).
@@ -572,14 +705,12 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     // A camera in space meters with the sun's illuminance AFTER the air between it and the sun (request
     // sky-lighting-10: just over the limb that air leaves a few per cent; what is near the camera is lit by
     // the same light); with the disc in the frame that light is also a floor of the exposure. A camera inside
-    // an atmosphere keeps the unattenuated value (its scene is lit through other air than its own line of sight).
-    let sunAtCamera = sun.illuminance;
-    let sunInFrame: number | undefined;
-    if (aboveEveryAtmosphere(camera.positionRoot, snapshot, defs)) {
-      const t = atmosphereTransmittanceAlong(camera.positionRoot, sun.dirRoot, snapshot, defs);
-      sunAtCamera = sun.illuminance * (0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2]);
-      if (sunDiscInView) sunInFrame = sunAtCamera * sunVisibility;
-    }
+    // an atmosphere has the sun through its air as well, less what clear air under a high sun takes (request
+    // atmosphere-clouds-10, exposure.ts sunThroughAir: noon is unchanged, dawn is no longer exposed as noon).
+    const inSpace = aboveEveryAtmosphere(camera.positionRoot, snapshot, defs);
+    const air = atmosphereTransmittanceAlong(camera.positionRoot, sun.dirRoot, snapshot, defs);
+    const sunAtCamera = sunThroughAir(sun.illuminance, 0.2126 * air[0] + 0.7152 * air[1] + 0.0722 * air[2], inSpace);
+    const sunInFrame: number | undefined = inSpace && sunDiscInView ? sunAtCamera * sunVisibility : undefined;
     // Elevation of the sun over the ground under the camera (the bound from below under the sun, request vfx-7).
     const below = nearestBody(camera.positionRoot, snapshot, defs);
     const sunElevationSin = below ? v3.dot(v3.normalize(v3.sub(camera.positionRoot, below.body.rRoot)), sun.dirRoot) : undefined;
@@ -601,10 +732,21 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     const stepDt = Math.min(realDt, 0.1);
     if (meteredKind !== null && meteredKind !== camera.kind) cutAdapt = CUT_ADAPT_SECONDS;
     meteredKind = camera.kind;
+    // A frame-exact capture holds what its lead-in frames metered (renderExact).
+    if (holdNext) {
+      holdNext = false;
+      evHeld = metering.targetEv100;
+    }
     if (evOverride !== null) ev100 = evOverride;
+    else if (evHeld !== null) ev100 = evHeld;
     else if (!evInitialised) ev100 = metering.targetEv100;
     else if (cutAdapt > 0) ev100 = meter.adaptAfterCut(ev100, metering.targetEv100, stepDt);
     else ev100 = meter.adapt(ev100, metering.targetEv100, stepDt);
+    // The outside of an interior view at its own exposure (request cockpit-16): at once in the first frame
+    // and after a cut, with the cut's time constant while its window lasts, else over a quarter of a second.
+    const farTarget = camera.kind === 'interior' ? interiorFarGain(metering.farLevel, ev100, metering.farWeight) : 1;
+    if (!evInitialised || evHeld !== null || camera.kind !== 'interior') farGain = farTarget;
+    else farGain *= (farTarget / farGain) ** (1 - Math.exp(-stepDt / (cutAdapt > 0 ? CUT_ADAPT_TAU : FAR_GAIN_TAU)));
     cutAdapt = Math.max(0, cutAdapt - stepDt);
     evInitialised = true;
     const exposure = exposureFromEv100(ev100);
@@ -678,6 +820,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       shine,
       defs,
       near: NEAR_PLANE,
+      sequenceIndex: frameIndex - sequenceStart,
     });
     device.queue.writeBuffer(frameUniformBuffer, 0, frameUniformData);
     perf.cpuEnd('core.uniforms');
@@ -856,6 +999,18 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       );
     }
 
+    // 9b. the outside of an interior view at its own exposure (what lies beyond the cabin, the sky included).
+    if (farGain < 0.999) {
+      const pass = encoder.beginRenderPass({
+        label: 'interiorFar',
+        colorAttachments: [color(T.views.hdr, true)],
+        depthStencilAttachment: { view: T.views.depth, depthReadOnly: true },
+        timestampWrites: perf.gpuPass('core.interiorFar'),
+      });
+      farExposure.draw(pass, farGain);
+      pass.end();
+    }
+
     // 10. TAA / TAAU, bloom, tonemap; 11. LDR overlay
     const warp = snapshot.warp.factor;
     const viewTurn = 2 * Math.acos(Math.min(1, Math.abs(camera.qViewToRoot.x * prevCamera.qViewToRoot.x + camera.qViewToRoot.y * prevCamera.qViewToRoot.y + camera.qViewToRoot.z * prevCamera.qViewToRoot.z + camera.qViewToRoot.w * prevCamera.qViewToRoot.w)));
@@ -927,6 +1082,10 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       featureSeq.set(feature, seq++);
       features.push(feature);
       sortFeatures();
+      // From the first feature on the lighting pipeline is worth creating ahead, and again whenever a
+      // feature has replaced a chunk it includes (a pipeline that is current costs nothing).
+      lightingAhead = true;
+      void warmCore().catch(() => {});
     },
     resize(w, h) {
       displayW = Math.max(1, Math.floor(w));
@@ -937,6 +1096,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     render,
     isIdle() {
+      // (Pipelines that are being created ahead count as compilations: shaders.warm.)
       if (shaders.pendingCompilations() > 0 || !meshes.isIdle()) return false;
       return features.every((f) => (f.isIdle ? f.isIdle() : true));
     },
@@ -974,6 +1134,13 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       cycleNoise = cycle;
       jitterIndex = 0;
       historyReset = true;
+      if (!on) {
+        // The hold of a frame-exact capture ends with deterministic mode; the exposure adapts again.
+        exactRun++;
+        holding = false;
+        holdNext = false;
+        evHeld = null;
+      }
     },
     setExposureOverride(ev) {
       evOverride = ev;
@@ -981,9 +1148,80 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     setJitter(enabled) {
       jitterEnabled = enabled;
     },
+    get holding() {
+      return holding;
+    },
+    exactInfo: () => exactBusy,
+    async renderExact(frames, renderFrame) {
+      if (!deterministic) throw new Error('render core: renderExact needs deterministic mode (setDeterministic(true)) with the presentation time frozen');
+      if (!Number.isInteger(frames) || frames < 1) throw new Error(`render core: renderExact(${frames}): a whole number of frames, at least 1`);
+      const run = ++exactRun;
+      holding = true;
+      holdNext = false;
+      evHeld = null;
+      const exact = (): void => {
+        inExact = true;
+        try {
+          renderFrame();
+        } finally {
+          inExact = false;
+        }
+      };
+      const taken = (): ExactFrame => ({ frames: 0, idle: false, renderScale: governor.renderScale });
+      try {
+        // Reads of frames before the capture arrive first (the meter takes three at a time).
+        await meter.settled();
+        if (run !== exactRun) return taken();
+        // 1. The exposure of the capture: from nothing, each frame metered with the histogram of the one
+        // before and applied at once, which is the value the scene settles at; then held.
+        restartTemporal(true);
+        if (evOverride === null) {
+          for (let i = 0; i < EXACT_METER_FRAMES; i++) {
+            evInitialised = false;
+            exact();
+            await meter.settled();
+            if (run !== exactRun) return taken();
+          }
+          holdNext = true;
+        }
+        // 2. Exactly `frames` frames from the origin of every sequence, in this task.
+        restartTemporal(false);
+        const busyBefore = busy();
+        const first = frameIndex;
+        for (let i = 0; i < frames; i++) exact();
+        const rendered = frameIndex - first;
+        const busyAfter = busy();
+        exactBusy = { busyBefore, busyAfter };
+        const idle = busyBefore.length === 0 && busyAfter.length === 0;
+        if (!idle) {
+          // Not the reference frame: the page renders on (held, the work that makes it busy could not finish).
+          holding = false;
+          holdNext = false;
+          evHeld = null;
+          return { frames: rendered, idle, renderScale: governor.renderScale };
+        }
+        // 3. The held frame is on screen after the frame that follows its submission has been composited.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        if (run !== exactRun) return taken();
+        return { frames: rendered, idle, renderScale: governor.renderScale };
+      } catch (e) {
+        if (run === exactRun) {
+          holding = false;
+          holdNext = false;
+          evHeld = null;
+        }
+        throw e;
+      }
+    },
     exposureInfo() {
       const m = meter.last();
-      return { ev100, targetEv100: m.targetEv100, exposure: exposureFromEv100(ev100), litFraction: m.litFraction, histogramWeight: m.histogramWeight, evPrior: m.evPrior, evHistogram: m.evHistogram, outsideFraction: m.outsideFraction, evOutside: m.evOutside, outsideWeight: m.outsideWeight, sunlitFloor: m.sunlitFloor, sunVisibility: meter.lastSunVisibility(), override: evOverride };
+      return { ev100, targetEv100: m.targetEv100, exposure: exposureFromEv100(ev100), litFraction: m.litFraction, histogramWeight: m.histogramWeight, evPrior: m.evPrior, evHistogram: m.evHistogram, outsideFraction: m.outsideFraction, evOutside: m.evOutside, outsideWeight: m.outsideWeight, sunlitFloor: m.sunlitFloor, farGain, farLevel: m.farLevel, farWeight: m.farWeight, sunVisibility: meter.lastSunVisibility(), override: evOverride };
+    },
+    async warm() {
+      if (!pipelineWarm) return;
+      lightingAhead = true;
+      await warmCore();
+      await shaders.warmed();
     },
     resetPerf: () => perf.reset(),
     passStats: () => perf.passStats(),
@@ -994,10 +1232,17 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
   };
 
-  // Compile the core pipelines now so that shader errors surface before the first frame.
-  tonemap.warm();
-  ao.warm();
-  post.warm();
-  meter.warm();
+  if (pipelineWarm) {
+    // The core's pipelines are created from here on, all at once, on the browser's worker threads (request
+    // app-integration-11: they were compiled one after the other on the main thread, the mesh and lighting
+    // pipelines inside the first frame). Not awaited: the features start meanwhile, `renderer.warm()` waits
+    // for all of it, and a frame that comes first builds what is missing as before.
+    void warmCore().catch(() => {});
+  } else {
+    // As before: the post pipelines now (shader errors surface before the first frame), the rest on first use.
+    for (const t of [...tonemap.pipelines(), ...ao.pipelines(), ...post.pipelines(), ...meter.pipelines()]) t.get();
+  }
+  // How long the renderer took to create, in the page's performance timeline (the load timeline reads it).
+  performance.measure('render-core.create', { start: createdFrom, end: performance.now() });
   return renderer;
 }

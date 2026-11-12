@@ -156,6 +156,15 @@ fn layerCoverage(w: f32, uvm: vec2f, seed: i32) -> f32 {
   let g = 0.6 * fine + 0.4 * coarse;
   return select(smoothstep(g - 0.18, g + 0.18, 1.35 * w - 0.17), 0.0, w <= 0.0);
 }
+/// Streak noise of a layer in texture space, in [0, 1] about 0.5: cells of 'cell' metres, long along v, and an
+/// octave four times larger; gives way to its mean where a cell is under a pixel (no shimmer far away).
+fn layerStreaks(uvm: vec2f, cell: vec2f, seed: i32) -> f32 {
+  let p = uvm / cell;
+  let footprint = max(fwidth(p.x), fwidth(p.y));
+  let fine = mix(latticeNoise2(p, seed), 0.5, smoothstep(0.5, 2.0, footprint));
+  let coarse = mix(latticeNoise2(p * 0.25, seed + 31), 0.5, smoothstep(0.5, 2.0, footprint * 0.25));
+  return 0.55 * fine + 0.45 * coarse;
+}
 
 /// Black-body emission (cd/m^2, linear sRGB) from the 256-entry table: T = 500 .. 5000 K.
 fn blackbody(T: f32) -> vec3f {
@@ -202,17 +211,23 @@ fn blackbody(T: f32) -> vec3f {
   // What lies ON the paint (soot, frost) covers its clear coat and its brushed highlight: 1 = bare.
   var coat = 1.0;
   if (shading == MATERIAL_STANDARD) {
-    // Edge wear exposes bare, slightly rough metal; soot and frost are driven per instance and arrive as
-    // streaks and patches in texture space (request vehicle-pad-1).
+    // Edge wear exposes bare, slightly rough metal; soot and frost are driven per instance: frost arrives as
+    // streaks and patches in texture space (request vehicle-pad-1), soot as a density (request vehicle-pad-7).
     let wear = v.masks.r * 0.6;
     albedo = mix(albedo, vec3f(0.56, 0.57, 0.58), wear);
     metallic = mix(metallic, 1.0, wear);
     roughness = mix(roughness, 0.42, wear);
     let uvm = v.uv / max(abs(material.misc.zw), vec2f(1e-6));
-    let soot = layerCoverage(saturate(I.params.y * v.masks.b), uvm, 7);
-    albedo = mix(albedo, vec3f(0.030, 0.024, 0.019), soot * 0.92);
-    roughness = mix(roughness, 0.92, soot);
-    metallic *= 1.0 - soot;
+    // Soot is a density, not a mask: the weight, modulated by a third in streaks of 6 cm x 1.5 m (and
+    // 24 cm x 6 m) along the flow. A thin deposit is a brown veil over the surface (its albedo is multiplied,
+    // so tiles, seams and markings still show); a thick one is near black. Roughness, metalness and the clear
+    // coat follow the density continuously: nothing has an edge unless the weight has one.
+    let sootDensity = saturate(saturate(I.params.y * v.masks.b) * (0.67 + 0.66 * layerStreaks(uvm, vec2f(0.06, 1.5), 7)));
+    let sootVeil = smoothstep(0.0, 0.5, sootDensity);
+    let soot = smoothstep(0.3, 1.0, sootDensity);
+    albedo = mix(albedo * mix(vec3f(1.0), vec3f(0.50, 0.38, 0.26), sootVeil), vec3f(0.030, 0.024, 0.019), soot * 0.94);
+    roughness = mix(roughness, 0.92, smoothstep(0.0, 0.7, sootDensity));
+    metallic *= 1.0 - smoothstep(0.15, 0.9, sootDensity);
     let frostWeight = saturate(I.params.z * v.masks.a);
     let frost = layerCoverage(frostWeight, uvm, 19);
     // A thin coat is a veil under the cells (request vehicle-pad-6): an even matte haze that follows the
@@ -223,7 +238,7 @@ fn blackbody(T: f32) -> vec3f {
     albedo = mix(albedo, vec3f(0.93, 0.95, 0.97), frostCover);
     roughness = mix(roughness, 0.85, frostCover);
     metallic *= 1.0 - frostCover;
-    coat = (1.0 - soot) * (1.0 - max(frost, 0.8 * veil));
+    coat = (1.0 - smoothstep(0.0, 0.35, sootDensity)) * (1.0 - max(frost, 0.8 * veil));
     param = max(param, max(I.params.w, hullWetness(v.pos)));
   } else if (shading == MATERIAL_TERRAIN) {
     // Site structures: soot is grime and frost is rime, plain blends of the vertex masks.
@@ -398,6 +413,8 @@ export interface MeshSystem {
   isIdle(): boolean;
   /** Texture loads started so far and still outstanding, for a progress display (request app-integration-11). */
   loads(): { pending: number; total: number };
+  /** The system's tracked pipelines (G-buffer both cull modes, shadow, cut-out shadow), for `shaders.warm`. */
+  pipelines(): Tracked<unknown>[];
 }
 
 interface GpuMaterial {
@@ -615,6 +632,7 @@ export function createMeshSystem(args: {
     registerProceduralTexture: (id, texture) => textures.registerProcedural(id, texture),
     isIdle: () => textures.pendingLoads() === 0,
     loads: () => ({ pending: textures.pendingLoads(), total: textures.startedLoads() }),
+    pipelines: () => [gbufferPipelines, shadowPipeline, shadowCutoutPipeline],
 
     createModel(data, options = {}) {
       if (data.lods.length === 0) throw new Error(`model ${data.name}: no LODs`);
