@@ -624,14 +624,14 @@ Not passing:
 
 | Scenario | Budget (ms) | Mean | p99 of the four windows | Steady passes of the last window (mean) |
 |---|---|---|---|---|
-| Lift-off, worst case (pad camera) | 1.3 | **1.048** (asserted < 1.04) | 0.876, **2.581**, **101.9**, **1.301** | smoke.march 0.21, volumes 0.16, smoke.sim 0.12, transparent 0.05, combine 0.03: 0.58 |
-| Lift-off, chase camera at 150 m | 1.3 | 0.771 | 1.124, **1.507**, **1.440**, **1.335** | smoke.march 0.42, volumes 0.36, smoke.sim 0.07, transparent 0.05, combine 0.03: 0.94 |
-| Lift-off, inside the cloud | 1.3 | 0.684 | **1.326**, **1.350**, 1.240, **1.390** | volumes 0.33, smoke.sim 0.09, smoke.march 0.08, transparent 0.05: 0.58 |
-| Ascent | 1.0 | 0.177 | 0.188, 0.194, 0.191, 0.192 | volumes 0.14, transparent 0.04 |
-| Vacuum burn | 0.6 | 0.323 | 0.564, 0.467, 0.243, 0.244 | volumes 0.20, transparent 0.04 |
-| Lunar descent with dust | 0.9 | 0.516 | **1.475**, **2.616**, **1.180**, **1.184** | volumes 0.39, particles.sim 0.09 (p99 0.75), transparent 0.05 |
-| Reentry | 1.2 | 0.751 | **1.309**, **3.246**, **1.676**, **33.2** | volumes 0.40, particles.sim 0.95 (p99 32.8: one stalled frame), transparent 0.04 |
-| Chutes and splash | 0.9 | 0.153 | 0.378, **1.128**, **2.249**, 0.506 | transparent 0.04, volumes 0.04, probe 0.01 (p99 0.42) |
+| Lift-off, worst case (pad camera) | 1.3 | 0.559 | 0.812, 0.897, 0.894, 0.798 |
+| Lift-off, chase camera at 150 m | 1.3 | 0.764 | 0.910, 1.067, 1.088, 1.156 |
+| Lift-off from inside the cloud | 1.3 | 0.737 | 1.169, 1.118, 1.172, 0.901 |
+| Ascent | 1 | 0.197 | 0.210, 0.212, 0.209, 0.216 |
+| Vacuum burn | 0.6 | 0.297 | 0.377, 0.351, 0.270, 0.270 |
+| Lunar descent with dust | 0.9 | 0.261 | 0.556, 0.453, 0.492, 0.561 |
+| Reentry | 1.2 | 0.455 | 0.738, 0.736, 0.742, 0.743 |
+| Chutes and splash | 0.9 | 0.087 | 0.358, 0.376, 0.036, 0.034 |
 
 The steady costs are those of run B (the plasma march is about 0.04 ms dearer: the streaks of the sheath
 and the test for an eye in the body). The pad-camera mean is over its 0.8 x budget line because one window
@@ -925,7 +925,7 @@ does not move.
 | Finding | What was done | Where to look |
 |---|---|---|
 | 4 Reentry (airbrushed lobe, white ellipse, ring) | The layer glows from the bow shock inwards: nothing in front of the shock (a clean outer edge the standoff from the wall, standoff 0.045 nose radii), brightest right behind it; it wraps the windward face as a crescent from shoulder to shoulder; turbulence drawn out six to one along the flow; white-hot at the stagnation point, the gas colour over the face, towards orange round the shoulder; held one stop over the meter's white (was three: everything clipped); wake glow 0.12 of the layer (was 0.05) with stronger fine streaks | `reentry-views.png`, `reentry.png`, `dev/i8-reentry*.png` |
-| 5, 15 Pad cloud in the game | The exhaust leaves the trench both ways (double wedge) as two collimated, low, fast sheets that lift off and billow only beyond the exits (`away` in `smokeVelocity`): the space round the vehicle is clear and the flame is seen from the default chase camera, which looks along the trench; sources at the exits (`trenchLength` 78 m, the site's); the trench keeps the jet while the vehicle is low (focus fades over 150 m of nozzle height, was 40); the gas a jet draws in dries out what rises beside its column (the space round the hull stays clear); sunlit steam as bright as a white surface in the sun with a floor of scattered light (no brown folds); thin gas keeps no hard lumps (the detached arcs and puffs); the outline is sharpened at half resolution in the combine (the ramp of eight pixels between rays steepened to about three about a noise threshold that rides with the cloud); gas between the eye and the flame glows more; marched in 30 steps (was 42). Still there: from the game's default camera, which looks along the trench, the fan-shaped front of the far jet stands behind the vehicle as an arch of cloud at T+5 to T+8 s (`dev/a8-liftoff-t6.png`; from the side it is one of two banks of steam: request `vfx-11`) | `dev/a8-liftoff-*.png` (game: default camera at T+1, +3, +6; from the side at +6, +10), `liftoff.png`, `liftoff-chase.png` |
+| 5, 15 Pad cloud in the game | The exhaust leaves the trench both ways (double wedge) as two collimated, low, fast sheets that lift off and billow only beyond the exits (`away` in `smokeVelocity`): the space round the vehicle is clear and the flame is seen from the default chase camera, which looks along the trench; sources at the exits (`trenchLength` 78 m, the site's); the trench keeps the jet while the vehicle is low (focus fades over 150 m of nozzle height, was 40); the gas a jet draws in dries out what rises beside its column (the space round the hull stays clear); sunlit steam as bright as a white surface in the sun with a floor of scattered light (no brown folds); thin gas keeps no hard lumps (the detached arcs and puffs); the outline is sharpened at half resolution in the combine (the ramp of eight pixels between rays steepened to about three about a noise threshold that rides with the cloud); gas between the eye and the flame glows more; marched in 30 steps (was 42). The game's default chase view stood on the trench axis, where the fan-shaped front of the far jet was an arch of cloud behind the vehicle at T+5 to T+8 s; request `vfx-11` was resolved within the round (the default view now stands 70 degrees off the trench) and the `a8` pictures of the last run are from it: two banks of steam to the left and right, the vehicle and its flame clear between them | `dev/a8-liftoff-*.png` (game: default camera at T+1, +3, +6; from the side at +6, +10), `liftoff.png`, `liftoff-chase.png` |
 | 6 Booster flame a white stick | Brightest in its first third, falling by most of a stop towards a ragged tip (large eddies move it by a quarter of its length, no detached islands), narrower eddies at its edge | `engine-atlas-9m.png`, `dev/a8-liftoff-t6.png` |
 | 7 Cut-away canopies as jellyfish | Collapse to 8 % of the inflation within 0.6 s, keel over at 0.6 rad/s, sink at 9 m/s, lines trail above the cloth | `splash/cut-away-1s.png`, `cut-away-6s.png` |
 | 8 Mains: no light through the cloth | Cavity light through the cloth raised by a half (outside face) and a third (inside face against the sun). Reefed shape and cluster spacing unchanged (see 10.5) | `chutes.png`, `dev/i8-chutes.png` |
@@ -968,7 +968,7 @@ GPU time at 2560 x 1440 (`vfx.perf.spec.ts`; p99 of each of the four windows, ms
 | Reentry | 1.2 | 0.443 | 0.633, 0.741, 0.631, 0.977 |
 | Chutes and splash | 0.9 | 0.098 | 0.366, 0.375, 0.036, 0.034 |
 
-The vacuum burn's first window, the one line over budget at the end of round 2 (0.616), is at 0.380: smoky jets in
+The vacuum burn's first window, the one line over budget at the end of round 2 (0.616), is at 0.377: smoky jets in
 vacuum are followed 160 exit radii instead of 400. The crown's sheet at full resolution costs under 0.38 ms in the
 windows that hold the splash.
 
@@ -988,7 +988,7 @@ whole suite again at 07:15 (56 tests, 16.7 min): 53 passed, 3 failed.
   05:17 run had 1.235 as its worst). The two jets cover more of that frame than the old cloud did. The pad
   cloud is marched in 34 steps now (`padSmoke.steps`, was 42).
 
-PENDING_LAST_RUN
+The tests these changes touch and the perf spec again at 08:52 (19 tests: 18 passed) and, after one more change (`839845c`: the flame's glow seen from inside the cloud as a forward lobe, the cloud marched in 30 steps), at 10:40 (19 tests, 6.0 min: 18 passed, 1 failed). The GPU times of the table above are from this last run, with the final code: every window of every scenario is inside its budget. What still fails: the sheet of the chase-camera lift-off, on its tile from inside the cloud by day (see 10.5). The functional tests that the commits after 07:15 do not touch were last run at 07:15 and passed there.
 
 ### 10.4 Requests
 
@@ -999,7 +999,8 @@ PENDING_LAST_RUN
 - `cockpit-13` (vfx part): what the published `'vfx.plasmaWindow'` values mean (cd/m^2, not pre-exposed,
   radiance of the pane as a light source, a = plasma intensity and "there is a sheath" flag, how it scales),
   and the values after this round's wake change: 317 / 1,664 / 7,288 cd/m^2 at intensity 0.3 / 0.6 / 1.0.
-- `vfx-11` (filed, open): camera, the default chase view at lift-off off the axis of the flame trench.
+- `vfx-11` (filed, resolved within the round, `98b39b0` and `6f2bd6e`): camera, the default chase view at a pad
+  stands 70 degrees off the axis of the flame trench.
 
 ### 10.5 Not fixed, and why
 
@@ -1019,10 +1020,16 @@ PENDING_LAST_RUN
 - The minors 17 (half-stop exposure step), 18 (lone puff in the lyra tiles), 19 (dark bar on a fragment
   trail), 21 (haze trail, hydrolox wake) and 22 (night halo, canopy polish): not touched.
 - The crown's drops are still particles drawn over the sheet, not attenuated by it.
-- The arch of cloud behind the vehicle in the game's default view at T+5 to T+8 s (the far jet seen end-on):
-  request `vfx-11` asks the camera for a default azimuth off the trench; nothing was changed in the cloud for it
-  (a first guess, a ring rolled up by the flow about the foot of the jet, was wrong: drying the gas beside the
-  jet column did not touch it).
+- The view from inside the pad cloud by day: one tan fill, and the sheet of the chase-camera lift-off fails on
+  that tile (5 colour buckets, the sheet asks for more than 6; it passed before this round). The lab's camera
+  for it stands on the trench axis 75 m north of the pad, which is inside a jet since this round. Three
+  attempts (light from above for an eye inside the cloud, the flame's glow as a forward lobe, both dimmer) did
+  not move the picture at all: the fill is not the term I took it for. Not found; the next thing to look at is
+  whether `eyeIn` in the march is ever above zero there, and what else draws at that camera (trail, plume
+  haze).
+- A first guess at the arch in the game's old default view (a ring rolled up by the flow about the foot of the
+  jet) was wrong: drying the gas beside the jet column did not touch it. It was the far jet seen end-on; the
+  drying stays (it keeps the space round the hull clear) and the camera moved (`vfx-11`).
 
 ### 10.6 What changed in code, data and specs (for the next owner)
 
@@ -1051,4 +1058,15 @@ PENDING_LAST_RUN
 
 ### 10.7 My own score
 
-PENDING_SCORE
+Photo lens **6.5 / 10**, artifact lens **7 / 10**: still short of the bar of 8. Of the three blockers of the
+round-2 critique two are gone as I see them (the level edge of the pad cloud, the lunar haze and grey-out);
+the splash is half done: the crown is a crown now, the sea still does not move, and a critic who holds to
+"the water never moves" will keep it a blocker until `vfx-9` is answered. What a critic will find first: the
+static water and the drops drawn over the crown; the pad cloud's softness at a quarter of the resolution
+away from its outline; the reentry from the front (a mottled, nearly white disc) and from
+straight behind; the solid-motor smoke (white now, still lit without a shadow of its own); reefed mains;
+staging jets; the lunar sheet seen down-sun (faint: it is as bright as the ground it veils); the view from
+inside the pad cloud by day (one tan fill; its sheet's sanity check fails on that tile). What should no longer be raised: the ruler-straight edge along the
+horizon, haze above the Moon's horizon and the grey-out of the hover, the blurred bowl and the puffs that hung
+for five seconds, the airbrushed lobe of the entry, grey blobs round the hull at lift-off, grain in the
+solid-motor fans at altitude, neon legs on the Moon, the vacuum burn over its budget.
