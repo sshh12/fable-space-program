@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MEASURED_SLICE_BYTES } from '../packs/packList';
 import { startBucketStandIn } from './bucketStandIn';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -91,7 +92,7 @@ export async function runCompose(o: ComposeRun): Promise<number> {
   const dataDir = path.join(REPO, 'data', 'stack', o.name);
   fs.mkdirSync(dataDir, { recursive: true });
   let started = false;
-  const standIn = await startBucketStandIn({ packsDir: path.join(REPO, 'data', 'packs'), bucket: 'packs', accessKeyId: 'stack-local', secretAccessKey: 'stack-local-secret', sliceBytes: 2 * 1024 * 1024, host: '0.0.0.0', port: 47201 });
+  const standIn = await startBucketStandIn({ packsDir: path.join(REPO, 'data', 'packs'), bucket: 'packs', accessKeyId: 'stack-local', secretAccessKey: 'stack-local-secret', sliceBytes: MEASURED_SLICE_BYTES, host: '0.0.0.0', port: 47201 });
   const env = { ...process.env, COMPOSE_PROJECT_NAME: project };
   try {
     started = await ensureDaemon(o.say);

@@ -1,0 +1,87 @@
+{
+ "at": "2026-11-12T09:48:09.335Z",
+ "trace": "docs/capacity/traces/first-session-2026-11-12.json",
+ "rows": [
+  {
+   "variant": "ranges, gap 64 KiB",
+   "tileReads": 26023,
+   "requests": 2508,
+   "fewerBy": 10.375996810207337,
+   "received": 213656232,
+   "needed": 189475434,
+   "bytesPerByteNeeded": 1.127619699765406
+  },
+  {
+   "variant": "ranges, gap 128 KiB",
+   "tileReads": 26023,
+   "requests": 2097,
+   "fewerBy": 12.40963280877444,
+   "received": 250825327,
+   "needed": 189475434,
+   "bytesPerByteNeeded": 1.3237881117612322
+  },
+  {
+   "variant": "ranges, gap 256 KiB",
+   "tileReads": 26023,
+   "requests": 1930,
+   "fewerBy": 13.48341968911917,
+   "received": 282325643,
+   "needed": 189475434,
+   "bytesPerByteNeeded": 1.490038244219037
+  },
+  {
+   "variant": "ranges, gap 1 MiB",
+   "tileReads": 26023,
+   "requests": 1643,
+   "fewerBy": 15.838709677419354,
+   "received": 430111875,
+   "needed": 189475434,
+   "bytesPerByteNeeded": 2.270013932254669
+  },
+  {
+   "variant": "slices 2 MiB",
+   "tileReads": 26023,
+   "requests": 299,
+   "fewerBy": 87.03344481605352,
+   "received": 621003427,
+   "needed": 189475434,
+   "bytesPerByteNeeded": 3.277487819344433
+  },
+  {
+   "variant": "slices 1 MiB",
+   "tileReads": 26023,
+   "requests": 398,
+   "fewerBy": 65.38442211055276,
+   "received": 415920762,
+   "needed": 189475434,
+   "bytesPerByteNeeded": 2.1951170830937374
+  },
+  {
+   "variant": "slices 512 KiB",
+   "tileReads": 26023,
+   "requests": 600,
+   "fewerBy": 43.37166666666667,
+   "received": 313922870,
+   "needed": 189475434,
+   "bytesPerByteNeeded": 1.6567998466756382
+  },
+  {
+   "variant": "slices 256 KiB",
+   "tileReads": 26023,
+   "requests": 999,
+   "fewerBy": 26.04904904904905,
+   "received": 261231926,
+   "needed": 189475434,
+   "bytesPerByteNeeded": 1.378711321489835
+  },
+  {
+   "variant": "slices 128 KiB",
+   "tileReads": 26023,
+   "requests": 1806,
+   "fewerBy": 14.409191583610188,
+   "received": 236566514,
+   "needed": 189475434,
+   "bytesPerByteNeeded": 1.2485339603444319
+  }
+ ]
+}

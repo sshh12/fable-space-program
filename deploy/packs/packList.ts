@@ -35,6 +35,15 @@ export interface PackSetsDoc {
 
 export const PACK_SETS_FILE = 'deploy/pack-sets.json';
 
+/**
+ * The mirror's slice size, from measurement D5 (docs/capacity/2026-11-12-platform.md): Railway's CDN does not
+ * cache ranged responses, so the mirror serves slices; over the recorded first session (with the client's
+ * cache on) 2 MiB slices sent 3.28 bytes per byte needed, 1 MiB 2.20, 512 KiB 1.66 and 256 KiB 1.38, the
+ * first under the 1.5 the design allows. A default only: MIRROR_SLICE_BYTES sets it, the pack list carries
+ * it to the clients, and nothing compiles it in.
+ */
+export const MEASURED_SLICE_BYTES = 256 * 1024;
+
 export function readPackSetsFile(file: string): PackSetsDoc {
   const doc = JSON.parse(fs.readFileSync(file, 'utf8')) as PackSetsDoc;
   if (doc.v !== 1 || typeof doc.sets !== 'object') throw new Error(`${file}: not a pack-sets document`);
@@ -131,7 +140,7 @@ export function mirrorFromEnv(env: Record<string, string | undefined> = process.
   if (!env.MIRROR_BASE) return null;
   const mode = env.MIRROR_MODE ?? 'slices';
   if (mode !== 'ranges' && mode !== 'slices') throw new Error(`MIRROR_MODE must be ranges or slices, not ${mode}`);
-  const sliceBytes = Number(env.MIRROR_SLICE_BYTES ?? 2 * 1024 * 1024);
+  const sliceBytes = Number(env.MIRROR_SLICE_BYTES ?? MEASURED_SLICE_BYTES);
   if (!(sliceBytes > 0)) throw new Error('MIRROR_SLICE_BYTES must be positive');
   return { base: env.MIRROR_BASE, mode, sliceBytes };
 }

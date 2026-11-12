@@ -23,6 +23,7 @@ import type http from 'node:http';
 import path from 'node:path';
 import { getBytes, packKey, presignGet, s3For, bucketFromEnv, type BucketConfig } from '../packs/bucket';
 import { addressHeaders, clientAddress, empty, IMMUTABLE, ISOLATION, json, SHARED_BYTES, splitUrl } from './http';
+import { MEASURED_SLICE_BYTES } from '../packs/packList';
 import { createMirrorHandler } from './packs';
 import type { RoleContext, RoleHandle, RoleModule } from './types';
 
@@ -225,7 +226,7 @@ const shellRole: RoleModule = {
       ctx.egress.request('client');
       return sendStatic(req, res, decodeURIComponent(p.slice(1)), hashed ? IMMUTABLE : 'no-cache', true);
     });
-    ctx.http.add(createMirrorHandler({ client, bucket, sliceBytes: Number(env.MIRROR_SLICE_BYTES ?? 2 * 1024 * 1024), egress: ctx.egress, log: ctx.log }));
+    ctx.http.add(createMirrorHandler({ client, bucket, sliceBytes: Number(env.MIRROR_SLICE_BYTES ?? MEASURED_SLICE_BYTES), egress: ctx.egress, log: ctx.log }));
     ctx.log.info('shell-ready', { staticDir, clientBuild, bootPack: boot.hash, endpoints: { gate: endpoints.gate.length, api: endpoints.api.length, pub: endpoints.pub.length } });
 
     return {

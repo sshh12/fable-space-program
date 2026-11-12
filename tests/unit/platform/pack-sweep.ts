@@ -32,11 +32,11 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const TILES = path.join(REPO, 'data', 'tiles');
 const PACKS = path.join(REPO, 'data', 'packs');
 const STATE = process.env.STACK_STATE;
-if (!STATE) {
+if (!STATE && process.argv[2] !== 'trace-local') {
   console.error('pack-sweep: run inside the local stack (npm run stack -- -- npx tsx tests/unit/platform/pack-sweep.ts ...)');
   process.exit(2);
 }
-const state = JSON.parse(fs.readFileSync(STATE, 'utf8')) as StackState;
+const state = (STATE ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : null) as StackState;
 const [cmd, arg] = process.argv.slice(2);
 const opt = (name: string): string | undefined => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 
@@ -217,5 +217,65 @@ async function trace(file: string): Promise<number> {
   return ok ? 0 : 1;
 }
 
-const code = cmd === 'sweep' ? await sweep() : cmd === 'trace' ? await trace(arg ?? '') : (console.error('usage: pack-sweep.ts sweep [--sets=a,b] | trace <file>'), 2);
+/**
+ * The trace replayed against whole packs on disk (no stack), for any addressing: ranges with several coalescing
+ * gaps and slices of several sizes. The bytes a slice mirror sends are exactly its slices, so this gives the
+ * mirror's bytes sent per byte needed for a slice size the running mirror is not configured with.
+ */
+async function traceLocal(file: string): Promise<number> {
+  const doc = JSON.parse(fs.readFileSync(path.resolve(REPO, file), 'utf8')) as { entries: TraceEntry[] };
+  const reads = doc.entries
+    .filter((e) => e.path.startsWith('/tiles/') && e.status === 200)
+    .map((e) => /^\/tiles\/([^/]+)\/([^/]+)\/(\d)\/(\d+)\/(\d+)\/(\d+)\./.exec(e.path))
+    .filter((m): m is RegExpExecArray => m !== null);
+  const t = doc.entries.filter((e) => e.path.startsWith('/tiles/') && e.status === 200).map((e) => e.t);
+  const rows: Record<string, unknown>[] = [];
+  const variants: { name: string; mode: 'ranges' | 'slices'; gap?: number; slice?: number }[] = [
+    { name: 'ranges, gap 64 KiB', mode: 'ranges', gap: 64 * 1024 },
+    { name: 'ranges, gap 128 KiB', mode: 'ranges', gap: 128 * 1024 },
+    { name: 'ranges, gap 256 KiB', mode: 'ranges', gap: 256 * 1024 },
+    { name: 'ranges, gap 1 MiB', mode: 'ranges', gap: 1024 * 1024 },
+    { name: 'slices 2 MiB', mode: 'slices', slice: 2 * 1024 * 1024 },
+    { name: 'slices 1 MiB', mode: 'slices', slice: 1024 * 1024 },
+    { name: 'slices 512 KiB', mode: 'slices', slice: 512 * 1024 },
+    { name: 'slices 256 KiB', mode: 'slices', slice: 256 * 1024 },
+    { name: 'slices 128 KiB', mode: 'slices', slice: 128 * 1024 },
+  ];
+  for (const v of variants) {
+    const list = { v: 1 as const, signedDay: null, refreshAfterS: 86400, mirrors: [v.mode === 'slices' ? { id: 'm', mode: 'slices' as const, base: 'http://local.packs.invalid/p/', sliceBytes: v.slice! } : { id: 'm', mode: 'ranges' as const, base: 'http://local.packs.invalid/p/' }], sets: Object.fromEntries(packedSets(PACKS).map((s) => [s.set, { index: s.index, indexBytes: s.indexBytes }])) };
+    const inner = createLocalPackFetch(PACKS, { sliceBytes: v.slice });
+    const f = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      return url.endsWith('/packs.json') ? new Response(JSON.stringify(list)) : inner(input, init);
+    }) as typeof fetch;
+    // An in-memory cache keyed like the OPFS one: a tile read twice in the session is needed once, as on a
+    // client with the cache on, so "needed" is the session's unique bytes.
+    const mem = new Map<string, Uint8Array>();
+    const cache = { get: async (k: string) => mem.get(k) ?? null, put: async (k: string, b: Uint8Array) => void mem.set(k, b), usage: () => ({ entries: mem.size, bytes: 0 }), flush: async () => undefined };
+    const src = createPackTileSource({ packListUrl: 'http://local.packs.invalid/packs.json', fetch: f, coalesceGapBytes: v.gap, cache });
+    const sets = new Set(reads.map((m) => m[1]!));
+    for (const s of sets) await src.manifest(s);
+    const before = src.stats();
+    let i = 0;
+    while (i < reads.length) {
+      const t0 = t[i]!;
+      const win: RegExpExecArray[] = [];
+      while (i < reads.length && t[i]! - t0 <= 50) win.push(reads[i++]!);
+      await Promise.all(win.map((m) => src.tile(m[1]!, m[2]!, { face: Number(m[3]) as FaceId, level: Number(m[4]), x: Number(m[5]), y: Number(m[6]) })));
+    }
+    const a = src.stats();
+    const requests = (a.requests.m ?? 0) - (before.requests.m ?? 0);
+    const received = (a.bytesReceived.m ?? 0) - (before.bytesReceived.m ?? 0);
+    const needed = a.bytesNeeded - before.bytesNeeded;
+    const row = { variant: v.name, tileReads: reads.length, requests, fewerBy: reads.length / requests, received, needed, bytesPerByteNeeded: received / needed };
+    rows.push(row);
+    console.log(`${v.name}: ${reads.length} tile reads -> ${requests} requests (${(reads.length / requests).toFixed(1)}x fewer); ${(received / 1e6).toFixed(1)} MB for ${(needed / 1e6).toFixed(1)} MB needed (${(received / needed).toFixed(3)})`);
+  }
+  fs.mkdirSync(path.join(REPO, 'out', 'platform'), { recursive: true });
+  fs.writeFileSync(path.join(REPO, 'out', 'platform', 'trace-local.json'), JSON.stringify({ at: new Date().toISOString(), trace: file, rows }, null, 1));
+  return 0;
+}
+
+const code =
+  cmd === 'sweep' ? await sweep() : cmd === 'trace' ? await trace(arg ?? '') : cmd === 'trace-local' ? await traceLocal(arg ?? '') : (console.error('usage: pack-sweep.ts sweep [--sets=a,b] | trace <file> | trace-local <file>'), 2);
 process.exitCode = code;

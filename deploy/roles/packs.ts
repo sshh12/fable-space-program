@@ -4,7 +4,8 @@
  * role adds this handler to its router); from stage 3 it is its own service (ROLES=packs).
  *
  *   GET|HEAD /p/<hash>        ranges mode: the client's Range is passed to the bucket
- *   GET|HEAD /p/<hash>/<n>    slices mode: fixed aligned slice n of MIRROR_SLICE_BYTES (the last one shorter)
+ *   GET|HEAD /p/<hash>/<n>    slices mode: fixed aligned slice n of MIRROR_SLICE_BYTES (the last one shorter;
+ *                             default the measured 256 KiB)
  *
  * Both forms are always served; the pack list says which one clients use. Rules (16.2): a request with a
  * query string gets 404 with no body (the CDN keys on the query string, so cache-busting variants would
@@ -15,6 +16,7 @@
 import { GetObjectCommand, HeadObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import type { Readable } from 'node:stream';
 import { bucketFromEnv, packKey, s3For, type BucketConfig } from '../packs/bucket';
+import { MEASURED_SLICE_BYTES } from '../packs/packList';
 import type { EgressMeter } from './egress';
 import { clientAddress, empty, IMMUTABLE, SHARED_BYTES, splitUrl } from './http';
 import type { Logger } from './log';
@@ -103,7 +105,7 @@ export function createMirrorHandler(o: MirrorOptions): RouteHandler {
 export function mirrorOptionsFromEnv(ctx: RoleContext): MirrorOptions {
   const bucket = bucketFromEnv('PACKS', ctx.env);
   if (!bucket) throw new Error('the packs mirror needs the PACKS_* bucket variables');
-  const sliceBytes = Number(ctx.env.MIRROR_SLICE_BYTES ?? 2 * 1024 * 1024);
+  const sliceBytes = Number(ctx.env.MIRROR_SLICE_BYTES ?? MEASURED_SLICE_BYTES);
   if (!(sliceBytes > 0)) throw new Error('MIRROR_SLICE_BYTES must be positive');
   return { client: s3For(bucket), bucket, sliceBytes, egress: ctx.egress, log: ctx.log };
 }
@@ -113,7 +115,7 @@ const packsRole: RoleModule = {
   kind: 'service',
   async start(ctx): Promise<RoleHandle> {
     ctx.http.add(createMirrorHandler(mirrorOptionsFromEnv(ctx)));
-    ctx.log.info('packs-ready', { sliceBytes: Number(ctx.env.MIRROR_SLICE_BYTES ?? 2 * 1024 * 1024) });
+    ctx.log.info('packs-ready', { sliceBytes: Number(ctx.env.MIRROR_SLICE_BYTES ?? MEASURED_SLICE_BYTES) });
     return { health: () => ({ ok: true }), drain: async () => undefined };
   },
 };

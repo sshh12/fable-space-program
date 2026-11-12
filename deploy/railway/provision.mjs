@@ -158,7 +158,7 @@ function provisionServices() {
     ADMISSION_CAP: '20',
     MIRROR_BASE: `https://${shellDomain}/p/`,
     MIRROR_MODE: 'slices',
-    MIRROR_SLICE_BYTES: String(2 * 1024 * 1024),
+    MIRROR_SLICE_BYTES: String(256 * 1024),
     ...bucketVars('PACKS', packs),
   });
   setVars(shellId, {
@@ -167,7 +167,7 @@ function provisionServices() {
     ENDPOINT_GATE: `https://${gameDomain}`,
     ENDPOINT_API: `https://${gameDomain}`,
     ENDPOINT_PUB: `https://${gameDomain}`,
-    MIRROR_SLICE_BYTES: String(2 * 1024 * 1024),
+    MIRROR_SLICE_BYTES: String(256 * 1024),
     ...bucketVars('PACKS', packs),
   });
   setVars(dumpId, { ROLES: 'dump', DATABASE_URL: '${{postgres.DATABASE_URL}}', DUMP_BUDGET_BYTES_PER_DAY: '1500000000', ...bucketVars('DUMPS', dumps) });

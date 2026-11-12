@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { StackState } from '../../../deploy/local/launcher';
+import { pgBinaries, type StackState } from '../../../deploy/local/launcher';
 
 const STATE = process.env.STACK_STATE;
 const state = (): StackState => JSON.parse(fs.readFileSync(STATE!, 'utf8')) as StackState;
@@ -96,7 +96,7 @@ describe.skipIf(!STATE)('inside the local stack (needs STACK_STATE: run it with 
     clients.splice(clients.indexOf(c), 1);
     const pid = Number(fs.readFileSync(`${s.postgres.dir}/postmaster.pid`, 'utf8').split(/\r?\n/)[0]);
     spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
-    const { pg_ctl } = await import('@embedded-postgres/windows-x64');
+    const { pg_ctl } = await pgBinaries();
     const log = `${s.dataDir}/logs/postgres.log`;
     const fd = fs.openSync(`${s.dataDir}/logs/pg_ctl-restart.log`, 'a');
     const t0 = performance.now();

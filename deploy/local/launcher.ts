@@ -18,7 +18,8 @@
  *   --profile=acceptance|load       load: refuses to start with less than 16 GB of physical memory free
  *   --rules=<name>                  the rule set the server roles load (passed as RULES)
  *   --fresh                         a new database (the data directory is deleted first)
- *   --mirror=slices|ranges          the mirror mode the stack's pack list announces (default slices, 2 MiB)
+ *   --mirror=slices|ranges          the mirror mode the stack's pack list announces (default slices of the
+ *                                   measured size, MEASURED_SLICE_BYTES)
  *   --db=docker                     Postgres 18 in a container instead of the embedded one (needs Docker)
  *   --compose                       the high-fidelity form: deploy/local/compose.yml (needs Docker)
  *   STACK_NAME                      state under data/stack/<name> (default `default`)
@@ -42,6 +43,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { clusterFacts, type ClusterFacts } from '../roles/hello';
+import { MEASURED_SLICE_BYTES } from '../packs/packList';
 import { startBucketStandIn, type StandIn } from './bucketStandIn';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -69,7 +71,7 @@ const PG_USER = 'postgres';
 const PG_PASSWORD = 'stack-local';
 const PG_DB = 'fsp';
 const STAND_IN = { bucket: 'packs', accessKeyId: 'stack-local', secretAccessKey: 'stack-local-secret' };
-const SLICE_BYTES = 2 * 1024 * 1024;
+const SLICE_BYTES = MEASURED_SLICE_BYTES;
 
 type Shape = 'combined' | 'split' | 'launch';
 interface Options {
@@ -271,10 +273,17 @@ function releaseLock(): void {
 
 // ------------------------------------------------------------------------------------------- postgres
 
-async function pgBinaries(): Promise<{ pg_ctl: string; initdb: string; postgres: string }> {
-  if (process.platform === 'win32' && process.arch === 'x64') return import('@embedded-postgres/windows-x64');
-  if (process.platform === 'linux' && process.arch === 'x64') return import('@embedded-postgres/linux-x64' as string) as Promise<{ pg_ctl: string; initdb: string; postgres: string }>;
-  throw new Error(`no embedded Postgres binaries for ${process.platform}-${process.arch}`);
+/**
+ * The embedded package's binaries for this platform. The package name is computed: each machine installs only
+ * its own platform's package (CI on Linux has no windows-x64 one), so the type checker must not resolve it.
+ */
+export async function pgBinaries(): Promise<{ pg_ctl: string; initdb: string; postgres: string }> {
+  const pkg = `@embedded-postgres/${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}`;
+  try {
+    return (await import(pkg)) as { pg_ctl: string; initdb: string; postgres: string };
+  } catch (e) {
+    throw new Error(`no embedded Postgres binaries for ${process.platform}-${process.arch} (${pkg}: ${(e as Error).message})`);
+  }
 }
 
 export const pgUrl = (db = PG_DB): string => `postgres://${PG_USER}:${PG_PASSWORD}@127.0.0.1:${PORTS.pg}/${db}`;

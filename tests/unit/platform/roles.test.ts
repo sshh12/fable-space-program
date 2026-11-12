@@ -157,6 +157,7 @@ describe('the shell role against the bucket stand-in', () => {
         PACKS_ACCESS_KEY_ID: 'k',
         PACKS_SECRET_ACCESS_KEY: 's',
         PACKS_PATH_STYLE: '1',
+        MIRROR_SLICE_BYTES: String(2 * 1024 * 1024),
         ENDPOINT_GATE: 'https://gate-a.example,https://gate-b.example',
         ENDPOINT_API: 'https://api.example',
         ENDPOINT_PUB: 'https://pub.example',

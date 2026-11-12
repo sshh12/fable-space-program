@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { PORTS, portOpen, shapeProcesses, type StackState } from '../../../deploy/local/launcher';
+import { pgBinaries, PORTS, portOpen, shapeProcesses, type StackState } from '../../../deploy/local/launcher';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const LOCK = path.join(REPO, 'data', 'stack', '.launcher.lock');
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
     const dir = path.join(REPO, 'data', 'stack', 'fsp-pd-selftest-c', 'pg');
     fs.rmSync(path.dirname(dir), { recursive: true, force: true });
     fs.mkdirSync(path.dirname(dir), { recursive: true });
-    const { initdb } = await import('@embedded-postgres/windows-x64');
+    const { initdb } = await pgBinaries();
     const pw = path.join(path.dirname(dir), 'pw.txt');
     fs.writeFileSync(pw, 'stack-local\n');
     const r = spawnSync(initdb, [`--pgdata=${dir}`, '--auth=scram-sha-256', '--username=postgres', `--pwfile=${pw}`], { encoding: 'utf8' });
