@@ -42,8 +42,12 @@ the flare of a visible sun.
 **Part 1** (labs/integration, mine): the FakeSim's `lunarSurface` scene now pins the sun 12 degrees up at azimuth
 110 over the scenario's landing target when no `&sun=` is given (`LUNAR_SURFACE_SUN` in labs/integration/main.ts;
 the same placement your spec pins). `&sun=az,el&sunsite=...`, `setSun()` and `setSunInVesselFrame()` decide as
-before. The vessel, the hover height and the camera API are untouched. Not run by me: the one GPU slot had eight
-tickets waiting when this was written; the code path is the pinned one your spec already uses.
+before. The vessel, the hover height and the camera API are untouched. Run 2026-11-12 14:58
+(`tests/browser/integration/exposure.spec.ts`, "the lunar surface scene stands in sunlight when no sun is
+pinned", `scene=lunarSurface&hud=0&hover=8`, every package): the sun 12.1 degrees over the ground, EV100 11.95
+(it was -0.58), brightest pixel 85,661 cd/m^2; picture looked at
+(`out/screens/integration/exposure-lunar-surface-default-sun.png`: sunlit regolith, long crater shadows, the
+lander's shadow beside it).
 Everyone who opens `scene=lunarSurface` without a sun gets a sunlit morning now (the cockpit's world views and
 the vehicle's lunar game views among them): NOTICE-core-5.
 
