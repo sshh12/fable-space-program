@@ -1,158 +1,16 @@
 {
+  "$comment": "Local: offline play and tests. The time and physics rules are the default; every retention on the wall clock is the largest value a number carries exactly, so nothing expires. Derived by tools/sim/writeRules.ts.",
   "id": "local",
   "version": 1,
-  "effectiveWallMs": 0,
-  "time": {
-    "leadCap": 7889400000,
-    "advanceGuardBand": 631152000,
-    "advanceLimitDefault": 2592000,
-    "advanceLimitStation": 189345600,
-    "physicsWarpMax": 4,
-    "launchRangeRadius": 150000,
-    "launchRangeAltitude": 100000,
-    "encounterLeadTime": 10,
-    "encounterMargin": 10,
-    "targetApproachSteps": [
-      {
-        "timeBefore": 60,
-        "maxRate": 50
-      },
-      {
-        "timeBefore": 10,
-        "maxRate": 1
-      }
-    ],
-    "readyCheckTime": 15,
-    "openProposalsPerClock": 1,
-    "proposalInterval": 30,
-    "idleTime": 120,
-    "stopWindow": 0.5,
-    "roundTripAllowance": 0.25,
-    "jumpArrivalClearance": 50,
-    "jumpArrivalLookahead": 30,
-    "jumpAlternativeLead": 10,
-    "advanceRetryInterval": 300,
-    "openAdvanceRequestsPerGroup": 1,
-    "departureContactLookahead": 30,
-    "departureNoticeTime": 10,
-    "forecastMaxPatches": 16,
-    "joinCooldown": 60,
-    "joinCooldownAfterFork": 1800,
-    "resumeWindow": 30,
-    "resumeWindowBuildChange": 90,
-    "cohortBucket": 300,
-    "cohortHorizon": 1209600,
-    "cohortOfferWait": 60,
-    "lagCap": 0
-  },
-  "claim": {
-    "joinDistanceBase": 1000,
-    "joinClosingTime": 2,
-    "islandPartFactor": 2,
-    "armedMarginBase": 200,
-    "armedClosingTime": 2,
-    "reservationReleaseDelay": 10,
-    "materialiseReachTime": 30,
-    "materialiseClearance": 5,
-    "clearingTime": 15,
-    "clearingAccelMax": 0.5,
-    "clearingTimeout": 30
-  },
-  "disconnect": {
-    "pingInterval": 1,
-    "lossTimeout": 3,
-    "soloLatchTime": 10,
-    "sharedRotationLatch": 0.25,
-    "sharedThrottleLatch": 2,
-    "reconnectGrace": 120
-  },
-  "contact": {
-    "subSteps": 4,
-    "solverIterations": 8,
-    "restitution": 0.2,
-    "restitutionMinSpeed": 0.3,
-    "friction": 0.5,
-    "speculativeTravelFraction": 0.25,
-    "nascentClearance": 0.05,
-    "hypervelocitySpeed": 250,
-    "hypervelocitySpecificEnergy": 40000,
-    "explosionImpulsePerKg": 150,
-    "maxFragmentsPerCollision": 12,
-    "fragmentMassLimit": 50,
-    "fragmentLifetime": 60,
-    "defaultCrashTolerance": 6
-  },
-  "docking": {
-    "hardDockOffset": 0.003,
-    "hardDockAngleDeg": 0.1,
-    "hardDockSpeed": 0.003,
-    "hardDockDwell": 0.5,
-    "softCaptureClampTime": 0.5,
-    "linkBreakTime": 0.2,
-    "portCooldownTime": 10,
-    "portCooldownDistance": 1,
-    "helmRequestTimeout": 30,
-    "defaultLendPolicy": {
-      "lendAttitude": true,
-      "lendEngines": false,
-      "lendPropellant": false,
-      "helm": "crew"
-    },
-    "maxCraftPerAssembly": 32,
-    "maxPartsPerAssembly": 600,
-    "islandVesselBudget": 64
-  },
-  "terrain": {
-    "requestRadarAltitude": 2000,
-    "requestAltitude": 50000,
-    "requestSpeed": 200
-  },
-  "pads": {
-    "reservationHold": 90,
-    "maxStay": 300,
-    "stayExtension": 120,
-    "maxStayUpTime": 600,
-    "disconnectGrace": 60,
-    "clearAltitude": 1500,
-    "clearDistance": 1000,
-    "safingTime": 20,
-    "keepOutRadius": {
-      "light": 300,
-      "medium": 450,
-      "heavy": 600
-    },
-    "restRecoveryTime": 60,
-    "rangeSafetyAltitude": 5000
-  },
   "expiry": {
-    "craftRetention": 1209600,
-    "shipSlots": 10,
-    "unownedAssemblyRetention": 172800,
-    "unownedCraftRetention": 172800,
-    "debrisRetention": 7200,
-    "debrisPerAccount": 24,
-    "unownedPerSoi": 5000,
-    "wreckRetention": 7200,
-    "lostDistance": 14959787070000,
-    "arcRetention": 86400,
-    "accountRetention": 7776000,
-    "lobbyObjectCap": 50000,
-    "pressureStart": 0.7,
-    "pressureFloorSingleSession": 86400,
-    "pressureFloor": 259200,
-    "sweepInterval": 60,
-    "outageExtensionThreshold": 3600
-  },
-  "limits": {
-    "inputsPerSecond": 60,
-    "commandsPerSecond": 20,
-    "timeMessages": 6,
-    "timeMessageWindow": 10,
-    "subscriptionsPerSecond": 5,
-    "accountsPerAddressPerHour": 10
-  },
-  "planning": {
-    "workerMaxEstimateMs": 50,
-    "weakClientCpuScore": null
+    "accountRetention": 9007199254740991,
+    "arcRetention": 9007199254740991,
+    "craftRetention": 9007199254740991,
+    "debrisRetention": 9007199254740991,
+    "pressureFloor": 9007199254740991,
+    "pressureFloorSingleSession": 9007199254740991,
+    "unownedAssemblyRetention": 9007199254740991,
+    "unownedCraftRetention": 9007199254740991,
+    "wreckRetention": 9007199254740991
   }
 }

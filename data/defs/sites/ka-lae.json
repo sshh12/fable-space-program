@@ -10,6 +10,7 @@
       "offsetEnu": [0, 0],
       "azimuthDeg": 90,
       "class": "heavy",
+      "$comment": "maxLiftoffMass and maxDiameter are PROVISIONAL: the limits of the heavy class (DEFAULT_PAD_CLASS_LIMITS of the rules contract), stated here as they were written from the one vehicle that exists (2,760 t at lift-off; a 9.0 m stack in a mount that opens 9.56 m). The lead settles them with the fleet's table.",
       "maxLiftoffMass": 3000000,
       "maxDiameter": 9.5,
       "flatRadius": 450,

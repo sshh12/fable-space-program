@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { fsDefSource } from './fsSource';
 import type { CapsuleMouldLineDef } from '../contracts/defs';
-import { DEFAULT_UNIVERSE_RULES, UNIVERSE_RULE_TIMERS } from '../contracts/net';
+import { DEFAULT_PAD_CLASS_LIMITS, DEFAULT_UNIVERSE_RULES, UNIVERSE_RULE_TIMERS } from '../contracts/net';
+import { padLimitsOf } from './sites';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DefError, getSection, listSections, loadDefs, overlayDefSource, resolveRefs, TABLE_FILES, type DefSource } from './loader';
@@ -135,7 +136,9 @@ describe('definition loader', () => {
       const k = (await load(site)).sites['k']!;
       expect(k.pads).toHaveLength(1);
       expect(k.pads![0]).toMatchObject({ id: 'pad', name: 'K', offsetEnu: [0, 0], azimuthDeg: 45, class: 'heavy', flatRadius: 30, blendRadius: 90, mountHeight: 4, structures: [] });
-      expect(k.pads![0]!.maxLiftoffMass).toBe(Number.POSITIVE_INFINITY);
+      // No pad is without a limit: the single pad states none of its own, so it takes what its class takes.
+      expect(k.pads![0]!.maxLiftoffMass).toBeUndefined();
+      expect(padLimitsOf(k.pads![0]!)).toEqual(DEFAULT_PAD_CLASS_LIMITS.heavy);
       expect(k.location.pads).toEqual({ pad: { latDeg: 10, lonDeg: 20, padElevation: 'terrain' } });
       expect(k.pad.clampHeight).toBe(4);
     });
@@ -150,9 +153,61 @@ describe('definition loader', () => {
       await expect(load({ ...base, pads: [pad('m'), pad('m')] })).rejects.toThrow(/pad "m" \(pads\[1\]\): duplicate pad id/);
       await expect(load({ ...base, pads: [pad('m', { class: 'huge' })] })).rejects.toThrow(/pad "m" \(pads\[0\]\): "class" must be one of light, medium, heavy/);
       await expect(load({ ...base, pads: [pad('m', { blendRadius: 100 })] })).rejects.toThrow(/needs 0 <= flatRadius < blendRadius/);
-      await expect(load({ ...base, pads: [pad('m', { maxLiftoffMass: 0 })] })).rejects.toThrow(/"maxLiftoffMass" must be a positive number/);
+      await expect(load({ ...base, pads: [pad('m', { maxLiftoffMass: 0 })] })).rejects.toThrow(/"maxLiftoffMass" must be a positive finite number when present/);
       await expect(load({ ...base, pads: [pad('m', { structures: undefined })] })).rejects.toThrow(/"structures" must be an array/);
       await expect(load({ ...base, pads: [{ name: 'nameless' }] })).rejects.toThrow(/pads\[0\] must be an object with a non-empty string "id"/);
+    });
+
+    it('the limits of a pad are those of its class, each replaced by the pad\'s own where it states one', async () => {
+      const base = { id: 'k', name: 'K', bodyId: 'a', recoveryZones: [], location: { latDeg: 10, lonDeg: 20, padElevation: 30 } };
+      const none = { ...pad('m', { class: 'medium' }) };
+      delete none['maxLiftoffMass'];
+      delete none['maxDiameter'];
+      const k = (await load({ ...base, pads: [none] })).sites['k']!;
+      expect(padLimitsOf(k.pads![0]!)).toEqual(DEFAULT_PAD_CLASS_LIMITS.medium);
+      const own = (await load({ ...base, pads: [{ ...none, maxDiameter: 5 }] })).sites['k']!;
+      expect(padLimitsOf(own.pads![0]!)).toEqual({ maxLiftoffMass: DEFAULT_PAD_CLASS_LIMITS.medium.maxLiftoffMass, maxDiameter: 5 });
+      // A rules document that states class limits is where they come from.
+      const rules = { ...DEFAULT_UNIVERSE_RULES, pads: { ...DEFAULT_UNIVERSE_RULES.pads, classLimits: { ...DEFAULT_PAD_CLASS_LIMITS, medium: { maxLiftoffMass: 9e5, maxDiameter: 8 } } } };
+      expect(padLimitsOf(k.pads![0]!, rules)).toEqual({ maxLiftoffMass: 9e5, maxDiameter: 8 });
+      expect(padLimitsOf(own.pads![0]!, rules)).toEqual({ maxLiftoffMass: 9e5, maxDiameter: 5 });
+      // The repository's pad: the heavy class's limits, stated on the pad as provisional numbers.
+      const lib = await loadDefs(fsDefSource());
+      for (const site of Object.values(lib.sites)) for (const p of site.pads!) {
+        const limits = padLimitsOf(p, lib.rules!['default']);
+        expect(Number.isFinite(limits.maxLiftoffMass) && limits.maxLiftoffMass > 0, p.id).toBe(true);
+        expect(Number.isFinite(limits.maxDiameter) && limits.maxDiameter > 0, p.id).toBe(true);
+        expect('$comment' in p, 'a note in the file is not part of the pad').toBe(false);
+      }
+    });
+
+    it('a pad stated twice is one place: its offset from the reference point and its resolved coordinates agree', async () => {
+      const earthLike = { id: 'a', name: 'A', parent: null, mu: 1, radius: 6_000_000, orbit: null };
+      const site = (offsetEnu: [number, number]) => ({
+        id: 'k', name: 'K', bodyId: 'a', recoveryZones: [],
+        location: { latDeg: 10, lonDeg: 20, padElevation: 30, pads: { n: { latDeg: 10.1, lonDeg: 20.05, padElevation: 31 } } },
+        pads: [pad('m'), pad('n', { offsetEnu })],
+      });
+      const onEarth = (s: unknown) => loadDefs(memorySource({ 'bodies/a.json': earthLike, 'sites/k.json': s }));
+      // 0.1 degrees north and 0.05 degrees east of the reference point on a 6,000 km sphere.
+      const north = 0.1 * (Math.PI / 180) * 6_000_000;
+      const east = 0.05 * (Math.PI / 180) * Math.cos(10 * (Math.PI / 180)) * 6_000_000;
+      expect((await onEarth(site([Math.round(east / 10) * 10, Math.round(north / 10) * 10]))).sites['k']!.pads).toHaveLength(2);
+      await expect(onEarth(site([0, 0]))).rejects.toThrow(/pad "n": offsetEnu .0, 0. and its resolved coordinates .* are 11[0-9]+.[0-9] m apart .allowed 2[0-9].[0-9] m.: one place is stated twice and the two disagree/);
+      await expect(onEarth(site([east + 60, north]))).rejects.toThrow(/are 60\.0 m apart/);
+      // The first pad is the reference point: its offset is zero.
+      const first = site([east, north]);
+      first.pads[0] = pad('m', { offsetEnu: [100, 0] });
+      await expect(onEarth(first)).rejects.toThrow(/pad "m": offsetEnu \[100, 0\]/);
+    });
+
+    it('an id that composes runtime ids is refused where the vehicle is read', async () => {
+      const files = (vehicle: unknown, name = 'v') => ({ 'bodies/a.json': body, 'parts/p.json': { id: 'p' }, [`vehicles/${name}.json`]: vehicle });
+      expect((await loadDefs(memorySource(files({ id: 'v', parts: [{ id: 'core-1', def: 'p', parent: null }] })))).vehicles['v']!.parts).toHaveLength(1);
+      await expect(loadDefs(memorySource(files({ id: 'v', parts: [{ id: 'core/1', def: 'p', parent: null }] })))).rejects.toThrow(/vehicles\/v\.json: part instance id "core\/1" contains '\/'/);
+      await expect(loadDefs(memorySource(files({ id: 'v', parts: [{ id: 'core~1', def: 'p', parent: null }] })))).rejects.toThrow(/contains '~'/);
+      await expect(loadDefs(memorySource(files({ id: 'v', parts: [{ id: 'core.1', def: 'p', parent: null }] })))).rejects.toThrow(/contains '\.'/);
+      await expect(loadDefs(memorySource(files({ id: 'v~2', parts: [{ id: 'core', def: 'p', parent: null }] }, 'v~2')))).rejects.toThrow(/the vehicle id contains '~'/);
     });
 
     it('a scenario names a pad of its site, or none (the first pad)', async () => {
@@ -167,54 +222,85 @@ describe('definition loader', () => {
   describe('rules documents', () => {
     const plain = (x: unknown): unknown => JSON.parse(JSON.stringify(x));
     const body = { id: 'a', name: 'A', parent: null, mu: 1, radius: 1, orbit: null };
+    const load = (rules: unknown, name = 'default') => loadDefs(memorySource({ 'bodies/a.json': body, [`rules/${name}.json`]: rules }));
 
-    it('the three documents of the repository: default is the contract default, staging has lifetimes of minutes, local is the default', async () => {
+    it('a rules file is stored as overrides of the default: the library holds the complete document', async () => {
+      // Its id and version alone: the default document.
+      expect((await load({ id: 'default', version: 1 })).rules!['default']).toEqual(plain(DEFAULT_UNIVERSE_RULES));
+      expect((await loadDefs(memorySource({ 'bodies/a.json': body }))).rules).toEqual({});
+      // A number, a field of a nested object, a list, a policy, a nullable number: each replaces the default's
+      // value at its place and nothing else; a note for the reader of the file is not part of the document.
+      const stated = {
+        $comment: 'a soak',
+        id: 'soak',
+        version: 3,
+        expiry: { debrisRetention: 5 },
+        pads: { keepOutRadius: { heavy: 700 } },
+        time: { targetApproachSteps: [{ timeBefore: 5, maxRate: 1 }] },
+        docking: { defaultLendPolicy: { helm: ['a'] } },
+        planning: { weakClientCpuScore: 12 },
+      };
+      const doc = (await load(stated, 'soak')).rules!['soak']!;
+      expect('$comment' in doc).toBe(false);
+      expect([doc.id, doc.version]).toEqual(['soak', 3]);
+      expect(doc.expiry).toEqual({ ...DEFAULT_UNIVERSE_RULES.expiry, debrisRetention: 5 });
+      expect(doc.pads.keepOutRadius).toEqual({ ...DEFAULT_UNIVERSE_RULES.pads.keepOutRadius, heavy: 700 });
+      expect(doc.time).toEqual({ ...DEFAULT_UNIVERSE_RULES.time, targetApproachSteps: [{ timeBefore: 5, maxRate: 1 }] });
+      expect(doc.docking.defaultLendPolicy).toEqual({ ...DEFAULT_UNIVERSE_RULES.docking.defaultLendPolicy, helm: ['a'] });
+      expect(doc.planning.weakClientCpuScore).toBe(12);
+      for (const group of ['claim', 'disconnect', 'contact', 'terrain', 'limits'] as const) expect(doc[group]).toEqual(DEFAULT_UNIVERSE_RULES[group]);
+      // The default document itself is not touched by a file that was laid over a copy of it.
+      expect(DEFAULT_UNIVERSE_RULES.expiry.debrisRetention).toBe(2 * 3600);
+      // The class limits of pads are a field the default does not state yet: a file may state them, whole.
+      const limits = { light: { maxLiftoffMass: 5e4, maxDiameter: 2 }, medium: { maxLiftoffMass: 5e5, maxDiameter: 6 }, heavy: { maxLiftoffMass: 4e6, maxDiameter: 12 } };
+      expect((await load({ id: 'default', version: 1, pads: { classLimits: limits } })).rules!['default']!.pads.classLimits).toEqual(limits);
+    });
+
+    it('the three files of the repository: production, staging with lifetimes of minutes, local where nothing expires', async () => {
       const lib = await loadDefs(fsDefSource());
       expect(Object.keys(lib.rules!).sort()).toEqual(['default', 'local', 'staging']);
       expect(lib.rules!['default']).toEqual(plain(DEFAULT_UNIVERSE_RULES));
-      expect(lib.rules!['local']).toEqual({ ...(plain(DEFAULT_UNIVERSE_RULES) as object), id: 'local' });
-      // Staging differs from the default in its id and in the timers on the wall clock, and in nothing else.
-      const staging = lib.rules!['staging']! as unknown as Record<string, Record<string, number>>;
-      const standard = plain(DEFAULT_UNIVERSE_RULES) as Record<string, Record<string, number>>;
       const wall = Object.keys(UNIVERSE_RULE_TIMERS).filter((p) => UNIVERSE_RULE_TIMERS[p] === 'wall');
-      expect(wall.length).toBeGreaterThan(5);
-      const restored = plain(staging) as Record<string, Record<string, number>>;
-      (restored as unknown as { id: string }).id = 'default';
-      for (const p of wall) {
-        const [group, field] = p.split('.') as [string, string];
-        const seconds = staging[group]![field]!;
-        // Minutes: from one minute to an hour and a half, never longer than the default.
-        expect(seconds, p).toBeGreaterThanOrEqual(60);
-        expect(seconds, p).toBeLessThanOrEqual(90 * 60);
-        expect(seconds, p).toBeLessThanOrEqual(standard[group]![field]!);
-        restored[group]![field] = standard[group]![field]!;
-      }
-      expect(restored).toEqual(standard);
-      // The order of the lifetimes is kept: a craft outlives an unowned one, which outlives debris.
-      const e = (lib.rules!['staging']!).expiry;
-      expect(e.craftRetention).toBeGreaterThan(e.unownedCraftRetention);
-      expect(e.unownedCraftRetention).toBeGreaterThan(e.debrisRetention);
-      expect(e.pressureFloor).toBeGreaterThan(e.pressureFloorSingleSession);
-      expect(e.accountRetention).toBeGreaterThan(e.craftRetention);
+      expect(wall.length).toBe(11);
+      const differing = (id: string): string[] => {
+        const doc = plain(lib.rules![id]) as Record<string, Record<string, unknown>>;
+        const standard = plain(DEFAULT_UNIVERSE_RULES) as Record<string, Record<string, unknown>>;
+        const out: string[] = [];
+        for (const group of Object.keys(standard)) {
+          if (typeof standard[group] !== 'object' || standard[group] === null) continue;
+          for (const field of Object.keys(standard[group]!)) if (JSON.stringify(doc[group]![field]) !== JSON.stringify(standard[group]![field])) out.push(`${group}.${field}`);
+        }
+        return out.sort();
+      };
+      // Staging differs from production in the timers on the wall clock, all of them, and in nothing else.
+      expect(differing('staging')).toEqual([...wall].sort());
+      const e = lib.rules!['staging']!.expiry;
+      expect(e).toMatchObject({ craftRetention: 840, unownedAssemblyRetention: 120, unownedCraftRetention: 120, debrisRetention: 5, wreckRetention: 5, arcRetention: 60, accountRetention: 5400, pressureFloorSingleSession: 60, pressureFloor: 180, outageExtensionThreshold: 2.5 });
+      expect(e.sweepInterval).toBeCloseTo(60 / 1440, 12);
+      // Every lifetime is at least two sweeps, and the thresholds that a 60 s floor made one number are apart.
+      for (const p of wall) if (p !== 'expiry.sweepInterval') expect((e as unknown as Record<string, number>)[p.split('.')[1]!], p).toBeGreaterThanOrEqual(2 * e.sweepInterval);
+      expect(new Set([e.outageExtensionThreshold, e.debrisRetention, e.arcRetention, e.unownedCraftRetention, e.pressureFloor, e.craftRetention, e.accountRetention]).size).toBe(7);
+      // Local: the time and physics rules of production; every retention on the wall clock never runs out.
+      const local = lib.rules!['local']!;
+      const retentions = wall.filter((p) => /Retention$|^expiry\.pressureFloor/.test(p));
+      expect(retentions).toHaveLength(9);
+      expect(differing('local')).toEqual([...retentions].sort());
+      for (const p of retentions) expect((local.expiry as unknown as Record<string, number>)[p.split('.')[1]!], p).toBe(Number.MAX_SAFE_INTEGER);
+      for (const group of ['time', 'claim', 'disconnect', 'contact', 'docking', 'terrain', 'pads', 'limits', 'planning'] as const) expect(local[group]).toEqual(lib.rules!['default']![group]);
     });
 
-    it('a document that lacks a field, has an unknown one or a wrong value fails by the name of the field', async () => {
-      const doc = plain(DEFAULT_UNIVERSE_RULES) as Record<string, Record<string, unknown>>;
-      const load = (rules: unknown, name = 'default') => loadDefs(memorySource({ 'bodies/a.json': body, [`rules/${name}.json`]: rules }));
-      expect((await load(doc)).rules!['default']).toEqual(doc);
-      expect((await loadDefs(memorySource({ 'bodies/a.json': body }))).rules).toEqual({});
-      const without = plain(doc) as typeof doc;
-      delete without['expiry']!['wreckRetention'];
-      await expect(load(without)).rejects.toThrow(/rules\/default\.json: "expiry\.wreckRetention" is missing/);
-      const extra = plain(doc) as typeof doc;
-      extra['pads']!['launchFee'] = 3;
-      await expect(load(extra)).rejects.toThrow(/rules\/default\.json: "pads\.launchFee" is not a field of UniverseRules/);
-      const text = plain(doc) as typeof doc;
-      text['pads']!['keepOutRadius'] = { light: 300, medium: '450', heavy: 600 };
-      await expect(load(text)).rejects.toThrow(/"pads\.keepOutRadius\.medium" must be a finite number, got "450"/);
-      const draft = { ...(plain(doc) as object), version: 0 };
-      await expect(load(draft)).rejects.toThrow(/"version" must be an integer from 1/);
-      await expect(load(doc, 'other')).rejects.toThrow(/rules\/other\.json: id "default" must equal the file name "other"/);
+    it('a file states only fields of the rules, with values of their kind, under its own name', async () => {
+      await expect(load({ id: 'default', version: 1, pads: { launchFee: 3 } })).rejects.toThrow(/rules\/default\.json: "pads\.launchFee" is not a field of UniverseRules/);
+      await expect(load({ id: 'default', version: 1, expiri: {} })).rejects.toThrow(/"expiri" is not a field of UniverseRules/);
+      await expect(load({ id: 'default', version: 1, pads: { keepOutRadius: { medium: '450' } } })).rejects.toThrow(/"pads\.keepOutRadius\.medium" must be a finite number, got "450"/);
+      await expect(load({ id: 'default', version: 1, expiry: 7 })).rejects.toThrow(/"expiry" must be an object/);
+      await expect(load({ id: 'default', version: 1, time: { targetApproachSteps: 3 } })).rejects.toThrow(/"time\.targetApproachSteps" must be an array/);
+      await expect(load({ id: 'default', version: 1, docking: { defaultLendPolicy: { lendEngines: 1 } } })).rejects.toThrow(/"docking\.defaultLendPolicy\.lendEngines" must be true or false/);
+      await expect(load({ id: 'default', version: 0 })).rejects.toThrow(/"version" must be an integer from 1/);
+      await expect(load({ id: 'default' })).rejects.toThrow(/"version" must be an integer from 1/);
+      await expect(load({ id: 'default', version: 1 }, 'other')).rejects.toThrow(/rules\/other\.json: id "default" must equal the file name "other"/);
+      await expect(load({ id: 'default', version: 1, pads: { classLimits: { light: { maxLiftoffMass: 1, maxDiameter: 1 }, heavy: { maxLiftoffMass: 3, maxDiameter: 3 } } } })).rejects.toThrow(/"pads\.classLimits\.medium" is missing/);
+      await expect(load({ id: 'default', version: 1, pads: { classLimits: { light: { maxLiftoffMass: 1, maxDiameter: 1 }, medium: { maxLiftoffMass: 0, maxDiameter: 2 }, heavy: { maxLiftoffMass: 3, maxDiameter: 3 } } } })).rejects.toThrow(/"pads\.classLimits\.medium\.maxLiftoffMass" must be a positive finite number/);
     });
   });
 

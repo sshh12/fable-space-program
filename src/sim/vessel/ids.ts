@@ -23,6 +23,7 @@
  * Every id is a deterministic function of ids and ticks: a replay, a rollback and a re-run of a split
  * issue the same ones (a piece craft's id does not come from the counter of a source).
  */
+import { ID_SEPARATORS } from '@/core/defs/loader';
 import type { CraftRuntime, PartRuntime, Vessel } from './types';
 
 /** Issues the ids of launched craft. The universe injects one; ids are unique within it and never reused. */
@@ -31,8 +32,8 @@ export interface CraftIdSource {
   next(vehicleId: string): string;
 }
 
-/** The characters that compose ids: none of them may be inside an issued craft id or an instance id. */
-export const ID_SEPARATORS: readonly string[] = ['/', '~', '.'];
+/** The characters that compose ids (one list, with the definitions loader): none of them may be inside an issued craft id or an instance id. */
+export { ID_SEPARATORS };
 
 /** Throws unless `id` is usable as an issued craft id or an instance id: not empty, none of the separators inside. */
 export function assertIssuedId(id: string, what: string): void {

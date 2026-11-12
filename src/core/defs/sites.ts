@@ -12,6 +12,7 @@
  * on), the terrain's flatten discs (one per pad) and the surface targets.
  */
 import type { LaunchSiteDef, PadDef } from '../contracts/defs';
+import { DEFAULT_PAD_CLASS_LIMITS, type PadClassLimits, type UniverseRules } from '../contracts/net';
 
 /** Where a pad is: planetocentric latitude and east longitude, deg, and the pad surface elevation above the reference radius, m ('terrain' = natural height at the pad centre). */
 export interface PadLocation {
@@ -27,8 +28,8 @@ const derived = new WeakMap<LaunchSiteDef, PadDef[]>();
 
 /**
  * The deprecated single pad of a site as a `PadDef`: at the reference point, facing `padAzimuthDeg`, with
- * the single pad's disc, mount height and structures. v1 stated no class and no limits: the pad hosts
- * every class and has none.
+ * the single pad's disc, mount height and structures. v1 stated no class: the pad is of the largest class
+ * and takes what that class takes (`padLimitsOf`); there is no pad without a limit.
  */
 export function singlePadOf(site: LaunchSiteDef): PadDef {
   return {
@@ -37,8 +38,6 @@ export function singlePadOf(site: LaunchSiteDef): PadDef {
     offsetEnu: [0, 0],
     azimuthDeg: site.padAzimuthDeg,
     class: 'heavy',
-    maxLiftoffMass: Number.POSITIVE_INFINITY,
-    maxDiameter: Number.POSITIVE_INFINITY,
     flatRadius: site.pad.flatRadius,
     blendRadius: site.pad.blendRadius,
     ...(site.pad.shape ? { shape: site.pad.shape } : {}),
@@ -78,6 +77,16 @@ export function padLocationOf(site: LaunchSiteDef, padId?: string): PadLocation 
   if (resolved) return resolved;
   if (pad === padsOf(site)[0]) return { latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, padElevation: site.location.padElevation };
   throw new Error(`sites/${site.id}.json: pad "${pad.id}" has no resolved coordinates (location.pads["${pad.id}"], written by the site-resolve bake tool)`);
+}
+
+/**
+ * The largest lift-off mass (kg) and stack diameter (m) a pad takes: the limits of its class in the rules
+ * document (`UniverseRules.pads.classLimits`; the contract's DEFAULT_PAD_CLASS_LIMITS while a document does
+ * not state them), each replaced by the pad's own value where the pad states one.
+ */
+export function padLimitsOf(pad: PadDef, rules?: UniverseRules): PadClassLimits {
+  const byClass = (rules?.pads.classLimits ?? DEFAULT_PAD_CLASS_LIMITS)[pad.class];
+  return { maxLiftoffMass: pad.maxLiftoffMass ?? byClass.maxLiftoffMass, maxDiameter: pad.maxDiameter ?? byClass.maxDiameter };
 }
 
 /** What a pad is called in full: "<site>, <pad>"; the site's name alone for a site that states the single pad only. */

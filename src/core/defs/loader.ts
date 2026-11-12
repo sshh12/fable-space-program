@@ -4,7 +4,10 @@
  *
  * Layout (paths relative to data/defs):
  *   bodies/*.json  sites/*.json  parts/*.json  vehicles/*.json  scenarios/*.json   one definition per file
- *   rules/*.json                                                                    one UniverseRules document per file
+ *   rules/*.json                                                                    one UniverseRules document per file, stored as
+ *                                                                                   overrides of the default document (completeRules)
+ * A key that starts with '$' other than "$ref" annotates a file ("$comment": JSON has no comments) and is
+ * dropped: it is not part of the definition.
  *   resources.json                                                                  array of ResourceDef
  *   audio/**.json  visuals/**.json                                                  sections (DefLibrary.sections)
  * Only files whose name has no extra dot segment are definitions ("earth.json" yes, "earth.atmosphere.json"
@@ -83,7 +86,11 @@ export async function resolveRefs(value: unknown, file: string, source: DefSourc
     return resolveRefs(loaded, target, source, depth + 1);
   }
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(value)) out[k] = await resolveRefs(v, file, source, depth);
+  for (const [k, v] of Object.entries(value)) {
+    // A key that starts with '$' (other than the "$ref" form above) annotates the FILE ("$comment"): it is not part of the definition.
+    if (k.startsWith('$')) continue;
+    out[k] = await resolveRefs(v, file, source, depth);
+  }
   return out;
 }
 
@@ -147,6 +154,17 @@ async function loadDir<T extends { id: string }>(source: DefSource, files: strin
 }
 
 const PAD_CLASSES: readonly PadClass[] = ['light', 'medium', 'heavy'];
+/** How far a pad's `offsetEnu` and its resolved coordinates may be apart: this many metres, or this share of its distance from the reference point. */
+export const PAD_OFFSET_TOLERANCE_M = 20;
+export const PAD_OFFSET_TOLERANCE_SHARE = 0.002;
+
+/**
+ * The characters that compose runtime ids (contracts/sim.ts, "Ids"): '/' joins a craft id and an instance
+ * id into a part key, '~' separates the fields of derived vessel ids, '.' the lineage of a craft that left
+ * another as a piece. A vehicle id (craft ids are made from it) and a part's instance id contain none.
+ */
+export const ID_SEPARATORS: readonly string[] = ['/', '~', '.'];
+const separatorIn = (id: string): string | null => ID_SEPARATORS.find((c) => id.includes(c)) ?? null;
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isPlace = (v: unknown): v is { latDeg: number; lonDeg: number; padElevation: number | 'terrain' } =>
   isObject(v) && isFiniteNumber(v['latDeg']) && isFiniteNumber(v['lonDeg']) && (isFiniteNumber(v['padElevation']) || v['padElevation'] === 'terrain');
@@ -165,8 +183,9 @@ function checkPad(pad: unknown, index: number, file: string, seen: Set<string>):
   if (!Array.isArray(offset) || offset.length !== 2 || !offset.every(isFiniteNumber)) bad('"offsetEnu" must be [east, north] in metres');
   if (!isFiniteNumber(pad['azimuthDeg'])) bad('"azimuthDeg" must be a number of degrees');
   if (!PAD_CLASSES.includes(pad['class'] as PadClass)) bad(`"class" must be one of ${PAD_CLASSES.join(', ')}`);
+  // The limits are the class's (UniverseRules.pads.classLimits) unless the pad states its own.
   for (const k of ['maxLiftoffMass', 'maxDiameter']) {
-    if (!(isFiniteNumber(pad[k]) && pad[k] > 0)) bad(`"${k}" must be a positive number`);
+    if (pad[k] !== undefined && !(isFiniteNumber(pad[k]) && pad[k] > 0)) bad(`"${k}" must be a positive finite number when present (absent = the limit of the pad's class)`);
   }
   const flat = pad['flatRadius'];
   const blend = pad['blendRadius'];
@@ -189,7 +208,7 @@ function checkPad(pad: unknown, index: number, file: string, seen: Set<string>):
  *   the file must equal the reference point), every other pad at the resolved coordinates the file states
  *   (the site-resolve bake tool writes them; an elevation cannot be derived from an offset).
  */
-export function normaliseSite(site: LaunchSiteDef, file: string): void {
+export function normaliseSite(site: LaunchSiteDef, file: string, bodyRadius?: number): void {
   const raw = site as unknown as Record<string, unknown>;
   if (!isPlace(raw['location'])) throw new DefError(file, '"location" needs latDeg, lonDeg and padElevation (metres, or "terrain")');
   if (raw['pads'] !== undefined) {
@@ -229,32 +248,116 @@ export function normaliseSite(site: LaunchSiteDef, file: string): void {
   for (const p of pads.slice(1)) {
     if (resolved[p.id] === undefined) throw new DefError(file, `pad "${p.id}" has no resolved coordinates (location.pads["${p.id}"]: latDeg, lonDeg, padElevation, written by the site-resolve bake tool)`);
   }
+  // A pad's place is stated twice: as metres east and north of the reference point (`offsetEnu`) and as
+  // its resolved coordinates. The two must be one place, to the rounding of the offset and of a flat
+  // map over a few kilometres (PAD_OFFSET_TOLERANCE_M, or PAD_OFFSET_TOLERANCE_SHARE of the distance).
+  if (bodyRadius !== undefined && bodyRadius > 0) {
+    const rad = Math.PI / 180;
+    for (const p of pads) {
+      const at = resolved[p.id]!;
+      const east = (at.lonDeg - reference.lonDeg) * rad * Math.cos(reference.latDeg * rad) * bodyRadius;
+      const north = (at.latDeg - reference.latDeg) * rad * bodyRadius;
+      const apart = Math.hypot(east - p.offsetEnu[0], north - p.offsetEnu[1]);
+      const allowed = Math.max(PAD_OFFSET_TOLERANCE_M, PAD_OFFSET_TOLERANCE_SHARE * Math.hypot(east, north));
+      if (!(apart <= allowed)) {
+        throw new DefError(file, `pad "${p.id}": offsetEnu [${p.offsetEnu[0]}, ${p.offsetEnu[1]}] and its resolved coordinates (${east.toFixed(1)} m east, ${north.toFixed(1)} m north of the reference point) are ${apart.toFixed(1)} m apart (allowed ${allowed.toFixed(1)} m): one place is stated twice and the two disagree`);
+      }
+    }
+  }
+}
+
+/** What a pad class takes: both limits positive finite numbers, for each of the three classes. */
+function checkClassLimits(value: unknown, file: string, at: string): void {
+  if (!isObject(value)) throw new DefError(file, `"${at}" must be an object: pad class -> maxLiftoffMass, maxDiameter`);
+  for (const k of Object.keys(value)) if (!PAD_CLASSES.includes(k as PadClass)) throw new DefError(file, `"${at}.${k}" is not a pad class (${PAD_CLASSES.join(', ')})`);
+  for (const c of PAD_CLASSES) {
+    const limits = value[c];
+    if (!isObject(limits)) throw new DefError(file, `"${at}.${c}" is missing (every class has its limits)`);
+    for (const k of ['maxLiftoffMass', 'maxDiameter']) {
+      if (!(isFiniteNumber(limits[k]) && limits[k] > 0)) throw new DefError(file, `"${at}.${c}.${k}" must be a positive finite number, got ${JSON.stringify(limits[k])}`);
+    }
+    for (const k of Object.keys(limits)) if (k !== 'maxLiftoffMass' && k !== 'maxDiameter') throw new DefError(file, `"${at}.${c}.${k}" is not a limit of a pad class`);
+  }
 }
 
 /**
- * A rules document has exactly the fields of the contract's default document (so a file written before the
- * contract gained a field fails by the field's name instead of yielding `undefined` somewhere in a
- * countdown), a finite number wherever the default has a number, and a version from 1.
+ * Fields of UniverseRules that the default document does not state (optional in the contract until the
+ * lead moves their default into it), by path, each with its own check.
+ */
+const OPTIONAL_RULE_FIELDS: Readonly<Record<string, (value: unknown, file: string, at: string) => void>> = {
+  'pads.classLimits': checkClassLimits,
+};
+
+/** One value of a rules document against the default's value at the same place. */
+function checkRuleValue(value: unknown, model: unknown, file: string, at: string): void {
+  if (Array.isArray(model)) {
+    if (!Array.isArray(value)) throw new DefError(file, `"${at}" must be an array`);
+  } else if (typeof model === 'number') {
+    if (!isFiniteNumber(value)) throw new DefError(file, `"${at}" must be a finite number, got ${JSON.stringify(value)}`);
+  } else if (typeof model === 'boolean') {
+    if (typeof value !== 'boolean') throw new DefError(file, `"${at}" must be true or false, got ${JSON.stringify(value)}`);
+  } else if (model === null) {
+    if (value !== null && !isFiniteNumber(value)) throw new DefError(file, `"${at}" must be a finite number or null, got ${JSON.stringify(value)}`);
+  } else if (typeof model === 'string' && typeof value !== 'string' && !Array.isArray(value)) {
+    throw new DefError(file, `"${at}" must be a string or a list, got ${JSON.stringify(value)}`);
+  }
+}
+
+/**
+ * The complete rules document a rules FILE stands for (contracts/net.ts, `UniverseRules`). A file is stored
+ * as OVERRIDES of the default document: it states its id, its version and the fields in which it differs,
+ * and the library holds the default with the file's values over it. A field the contract gains is
+ * therefore the default's value in every document without a change to a file. A file may state only
+ * fields of UniverseRules: anything else is refused by its path (a mistyped name would otherwise be a
+ * silent default).
+ */
+export function completeRules(stated: unknown, file: string): UniverseRules {
+  if (!isObject(stated)) throw new DefError(file, 'a rules file must be an object');
+  if (typeof stated['id'] !== 'string' || stated['id'] === '') throw new DefError(file, '"id" must be a non-empty string (the file name)');
+  if (!Number.isInteger(stated['version']) || (stated['version'] as number) < 1) throw new DefError(file, `"version" must be an integer from 1, got ${String(stated['version'])}`);
+  const doc = JSON.parse(JSON.stringify(DEFAULT_UNIVERSE_RULES)) as Record<string, unknown>;
+  const overlay = (target: Record<string, unknown>, value: Record<string, unknown>, model: Record<string, unknown>, at: string): void => {
+    for (const k of Object.keys(value)) {
+      const path = at === '' ? k : `${at}.${k}`;
+      if (!(k in model)) {
+        const optional = OPTIONAL_RULE_FIELDS[path];
+        if (!optional) throw new DefError(file, `"${path}" is not a field of UniverseRules`);
+        optional(value[k], file, path);
+        target[k] = value[k];
+      } else if (isObject(model[k])) {
+        if (!isObject(value[k])) throw new DefError(file, `"${path}" must be an object`);
+        overlay(target[k] as Record<string, unknown>, value[k], model[k], path);
+      } else {
+        checkRuleValue(value[k], model[k], file, path);
+        target[k] = value[k];
+      }
+    }
+  };
+  overlay(doc, stated, JSON.parse(JSON.stringify(DEFAULT_UNIVERSE_RULES)) as Record<string, unknown>, '');
+  return doc as unknown as UniverseRules;
+}
+
+/**
+ * A COMPLETE rules document (as the library holds it, or as a test builds one): every field of the
+ * contract's default document, nothing else but the optional fields, a finite number wherever the default
+ * has a number, and a version from 1.
  */
 export function validateRules(doc: UniverseRules, file: string): void {
   const walk = (value: unknown, model: unknown, at: string): void => {
-    if (Array.isArray(model)) {
-      if (!Array.isArray(value)) throw new DefError(file, `"${at}" must be an array`);
-    } else if (isObject(model)) {
+    if (isObject(model)) {
       if (!isObject(value)) throw new DefError(file, `"${at}" must be an object`);
       const path = (k: string): string => (at === '' ? k : `${at}.${k}`);
       for (const k of Object.keys(model)) {
-        if (!(k in value)) throw new DefError(file, `"${path(k)}" is missing (every field of UniverseRules is stated in a rules document)`);
+        if (!(k in value)) throw new DefError(file, `"${path(k)}" is missing from the complete document`);
         walk(value[k], model[k], path(k));
       }
       for (const k of Object.keys(value)) {
-        if (!(k in model)) throw new DefError(file, `"${path(k)}" is not a field of UniverseRules`);
+        if (k in model) continue;
+        const optional = OPTIONAL_RULE_FIELDS[path(k)];
+        if (!optional) throw new DefError(file, `"${path(k)}" is not a field of UniverseRules`);
+        optional(value[k], file, path(k));
       }
-    } else if (typeof model === 'number') {
-      if (typeof value !== 'number' || !Number.isFinite(value)) throw new DefError(file, `"${at}" must be a finite number, got ${JSON.stringify(value)}`);
-    } else if (typeof model === 'boolean') {
-      if (typeof value !== 'boolean') throw new DefError(file, `"${at}" must be true or false, got ${JSON.stringify(value)}`);
-    }
+    } else checkRuleValue(value, model, file, at);
   };
   walk(doc, DEFAULT_UNIVERSE_RULES, '');
   if (!Number.isInteger(doc.version) || doc.version < 1) throw new DefError(file, `"version" must be an integer from 1, got ${String(doc.version)}`);
@@ -281,7 +384,11 @@ export function validateLibrary(lib: DefLibrary): void {
   }
   for (const v of Object.values(lib.vehicles)) {
     const ids = new Set<string>();
+    const inVehicleId = separatorIn(v.id);
+    if (inVehicleId !== null) throw new DefError(`vehicles/${v.id}.json`, `the vehicle id contains '${inVehicleId}', which composes runtime ids (craft ids are made from vehicle ids)`);
     for (const p of v.parts) {
+      const inPartId = typeof p.id === 'string' ? separatorIn(p.id) : null;
+      if (inPartId !== null) throw new DefError(`vehicles/${v.id}.json`, `part instance id "${p.id}" contains '${inPartId}', which composes runtime ids ('/' the part key, '~' derived vessel ids, '.' the lineage of a piece)`);
       if (!lib.parts[p.def]) throw new DefError(`vehicles/${v.id}.json`, `part "${p.id}" uses unknown def "${p.def}"`);
       if (ids.has(p.id)) throw new DefError(`vehicles/${v.id}.json`, `duplicate part instance id "${p.id}"`);
       ids.add(p.id);
@@ -360,11 +467,13 @@ export async function loadDefs(source: DefSource): Promise<DefLibrary> {
   const files = await source.list();
   const bodies = await loadDir<BodyDef>(source, files, 'bodies');
   const sites = await loadDir<LaunchSiteDef>(source, files, 'sites');
-  for (const s of Object.values(sites)) normaliseSite(s, `sites/${s.id}.json`);
+  for (const s of Object.values(sites)) normaliseSite(s, `sites/${s.id}.json`, bodies[s.bodyId]?.radius);
   const parts = await loadDir<PartDef>(source, files, 'parts');
   const vehicles = await loadDir<VehicleDef>(source, files, 'vehicles');
   const scenarios = await loadDir<ScenarioDef>(source, files, 'scenarios');
-  const rules = await loadDir<UniverseRules>(source, files, 'rules');
+  const rulesStated = await loadDir<{ id: string }>(source, files, 'rules');
+  const rules: Record<string, UniverseRules> = {};
+  for (const id of Object.keys(rulesStated)) rules[id] = completeRules(rulesStated[id], `rules/${id}.json`);
   const resources: Record<string, ResourceDef> = {};
   const resList = await source.read('resources.json');
   if (resList !== undefined) {
