@@ -755,8 +755,7 @@ within 0.1 ms except as said below). **Seven of eight scenarios hold their line 
   lift-off, 0.57 EV between T+6 s and T+10 s from the chase camera): answered by core-support twice.
   `6a2fb76` (what is brighter than the sun can light anything moves a daylight exposure by a quarter of a stop
   at most) left the sequence where it was; I re-opened the request with the re-measurement; `81d7b95` (the
-  highlight term under the sun) brings it to 0.48 EV and the new test passes, without room. The request file
-  was still marked open when this was written.
+  highlight term under the sun) brings it to 0.48 EV and the new test passes, without room. Resolved.
 - `cockpit-9` (the plasma from a camera inside the vessel): resolved in round 1 (`c3568bf`), unchanged.
 - `cockpit-13` / `NOTICE-core-1` (publish the window radiance): done. `PlasmaRenderer` publishes
   `'vfx.plasmaWindow'` (16-byte uniform: rgb = colour of the gas x `plasmaWindowRadiance(...)` of the active
