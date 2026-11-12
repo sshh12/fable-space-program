@@ -791,7 +791,7 @@
   "cameras": {
     "cockpit": {
       "part": "capsule",
-      "seat": "cdr"
+      "seat": "plt"
     },
     "chase": {
       "defaultDistance": 140,

@@ -63,9 +63,9 @@ describe('cockpit raster load from the seat', () => {
     for (let i = 0; i < mesh.vertexCount; i++) positions.set(f32.subarray((i * VERTEX_STRIDE) / 4, (i * VERTEX_STRIDE) / 4 + 3), i * 3);
     const vehicle = Object.values(defs.vehicles).find((v) => v.cockpit)!;
     const seat = seatFrames(model.mould).find((s) => s.id === vehicle.cameras.cockpit.seat)!;
-    // The perf spec's view (cockpit lab, scene leo): yaw 8 degrees right, pitch 2 up.
-    const yaw = (8 * Math.PI) / 180;
-    const pitch = (2 * Math.PI) / 180;
+    // The perf spec's view (cockpit lab, scene leo): the rest view from the vehicle's cockpit seat, pitched 20 degrees up.
+    const yaw = 0;
+    const pitch = (20 * Math.PI) / 180;
     const fwd = v3.normalize(v3.add(v3.add(v3.scale(seat.L, Math.cos(pitch) * Math.cos(yaw)), v3.scale(seat.R, Math.cos(pitch) * Math.sin(yaw))), v3.scale(seat.U, Math.sin(pitch))));
     // Assemblies by their family (the part of the name before the first ':').
     const family = (v: number): string => mesh.groupNames[mesh.vertexGroup[v]!]!.split(':')[0]!;

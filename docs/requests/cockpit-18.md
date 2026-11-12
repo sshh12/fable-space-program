@@ -47,3 +47,14 @@ lead's data; with the centre couch and this pitch the view is your `world-leo-pi
 degrees. The request stays open for it.
 
 Unit test: `tests/unit/flight-ui/camera.test.ts`, "starts the seat view at the rest pitch".
+
+## Lead decision, carried out by the cockpit (round 6, 2026-11-12): the default seat is the pilot's centre couch
+The lead decided for option 1 and authorised the cockpit to make this one change in the lead's vehicle data:
+- `data/defs/vehicles/meridian-lunar.json`, line 794: `"seat": "cdr"` -> `"seat": "plt"` (under `cameras.cockpit`).
+- The same fact is pinned in `tests/unit/sim-vessel/data.test.ts`, line 227 (`expect(vehicle.cameras.cockpit).toEqual({ part: 'capsule', seat: ... })`): changed to `'plt'` in the same commit so the unit suite stays green. That file is not the cockpit's; it is named here so the lead can object.
+
+What follows from it, checked:
+- The vessel's serialised state carries the command part's camera seat (`src/sim/vessel/assemble.ts` line 265 -> `codec.ts` `writePlain(p.command)`), so **the mission's golden state hash changes with this field**. The golden is stale already for another reason (the Earth tile set was re-baked: `tests/mission/full-mission.test.ts` fails on the tile hash before it compares the state), so it is the lead's to record anew in any case. The headless mission with the new seat: 35 of 36 pass, the one failure is that stale tile hash.
+- Unit tests that read the seat from the vehicle pass (`tests/unit/sim-vessel/crafts.test.ts`, `tests/unit/sim-world/snapshotV2.test.ts`, `tests/unit/flight-ui/camera.test.ts`, the cockpit's own).
+- The browser mission spec (`tests/browser/mission/lunar-direct.spec.ts`) takes its two cockpit pictures through the view manager (`setViewAndWait`), not from a named seat: nothing in it names a seat. It was NOT run (45 minutes of the one GPU slot); the app's cockpit views were (`tests/browser/cockpit/app.spec.ts`).
+- The cockpit's lab scenes, world recipes and app views are re-aimed for the centre couch; the geometry test now also holds the centre couch's line of sight through BOTH forward windows and to all three displays.

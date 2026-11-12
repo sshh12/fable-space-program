@@ -59,13 +59,15 @@ interface LabScene {
 }
 const SCENES: Record<string, LabScene> = {
   // On the pad and during entry the crew have the cabin lights on.
-  pad: { fake: 'pad', fired: 0, sun: { site: [205, 64] }, lights: true, look: [18, 46] },
-  leo: { fake: 'lowOrbit', fired: 4, attitude: { roll: -90 }, sun: { window: 'side-right', target: 'mfd0' }, lights: false, look: [8, 2] },
+  // (Looks are from the vehicle's cockpit seat, the pilot's centre couch: [0, 20] is the game's rest view, the
+  // camera rig's rest pitch.)
+  pad: { fake: 'pad', fired: 0, sun: { site: [205, 64] }, lights: true, look: [-14, 44] },
+  leo: { fake: 'lowOrbit', fired: 4, attitude: { roll: -90 }, sun: { window: 'side-right', target: 'mfd0' }, lights: false, look: [0, 20] },
   // Earth through the left side window, its axis turned toward the horizon ahead (the limb in view), the sun
   // high over the vessel shining in through the right side window.
   'leo-earth': { fake: 'lowOrbit', fired: 4, nadir: { window: 'side-left', offNadirDeg: 88 }, sun: { window: 'side-right', target: 'mfd0' }, lights: false, look: [-70, 8], aim: 'sideL', fov: 50 },
-  night: { fake: 'lowOrbit', fired: 4, attitude: { roll: -90 }, sun: 'eclipse', lights: true, look: [20, -2] },
-  reentry: { fake: 'reentry', fired: 8, sun: 'eclipse', lights: true, look: [16, 40] },
+  night: { fake: 'lowOrbit', fired: 4, attitude: { roll: -90 }, sun: 'eclipse', lights: true, look: [0, 20] },
+  reentry: { fake: 'reentry', fired: 8, sun: 'eclipse', lights: true, look: [0, 32] },
   moon: { fake: 'lunarSurface', fired: 6, sun: { site: [255, 16] }, lights: false, look: [-88, -6] },
 };
 const sceneName = params.get('scene') ?? 'leo';

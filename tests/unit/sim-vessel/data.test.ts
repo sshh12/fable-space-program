@@ -222,9 +222,9 @@ describe('capsule equals the shared mould line', () => {
     // Attach nodes sit on the mould line.
     expect(cap.attachNodes.find((n) => n.id === 'bottom')!.pos[1]).toBe(mould.heatShield.maxDiameterY);
     expect(cap.attachNodes.find((n) => n.id === 'top')!.pos[1]).toBe(mould.apexTunnel.yTop);
-    // The vehicle's cockpit camera sits in the commander's seat.
+    // The vehicle's cockpit camera sits in the pilot's (centre) seat (lead decision on request cockpit-18).
     const vehicle = defs.vehicles[VEHICLE]!;
-    expect(vehicle.cameras.cockpit).toEqual({ part: 'capsule', seat: 'cdr' });
+    expect(vehicle.cameras.cockpit).toEqual({ part: 'capsule', seat: 'plt' });
     expect(vehicle.cockpit).toBe('kestrel');
     expect(vehicle.crew.map((x) => x.seat)).toEqual(mould.seats.map((s) => s.id));
   });

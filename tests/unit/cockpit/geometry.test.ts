@@ -220,18 +220,26 @@ describe('cockpit interior geometry (shared mould line)', () => {
     }
   });
 
-  it('gives the commander an unobstructed line of sight through the left forward window and to all three displays', () => {
-    const cdr = def.seats.find((s) => s.id === 'cdr')!;
+  // The commander (the brief's criterion) through the left forward window; the pilot's centre couch, which is
+  // the vehicle's cockpit seat and so the player's eye (request cockpit-18), through both forward windows.
+  it.each([
+    ['cdr', ['fwd-left']],
+    ['plt', ['fwd-left', 'fwd-right']],
+  ] as [string, string[]][])('gives the %s couch an unobstructed line of sight through its forward windows and to all three displays', (seatId, windowIds) => {
+    const cdr = def.seats.find((s) => s.id === seatId)!;
     const eye = { x: cdr.pos[0], y: cdr.pos[1], z: cdr.pos[2] };
-    const fwdLeft = def.windows.find((w) => w.id === 'fwd-left')!;
-    // Targets: the window centre on the OUTER mould line (through the whole wall) and four points around it,
-    // and the centre and corners of each display screen.
-    const r0 = def.heatShield.maxDiameter / 2;
-    const rOut = r0 + ((def.cone.radiusTop - r0) / (def.cone.yTop - def.cone.yBottom)) * (fwdLeft.y - def.cone.yBottom);
-    const az = (fwdLeft.azimuthDeg * Math.PI) / 180;
-    const winOuter = { x: rOut * Math.sin(az), y: fwdLeft.y, z: rOut * Math.cos(az) };
-    const inner = sharedInnerOutline(fwdLeft.azimuthDeg, fwdLeft.y, fwdLeft.width * 0.6, fwdLeft.height * 0.6, 0, 8);
-    const targets: { name: string; p: V }[] = [{ name: 'fwd-left (outer centre)', p: winOuter }, ...inner.map((p, i) => ({ name: `fwd-left inner ${i}`, p }))];
+    // Targets: each window's centre on the OUTER mould line (through the whole wall) and points around it on
+    // the inner wall, and the centre and corners of each display screen.
+    const targets: { name: string; p: V }[] = [];
+    for (const wid of windowIds) {
+      const fwdLeft = def.windows.find((w) => w.id === wid)!;
+      const r0 = def.heatShield.maxDiameter / 2;
+      const rOut = r0 + ((def.cone.radiusTop - r0) / (def.cone.yTop - def.cone.yBottom)) * (fwdLeft.y - def.cone.yBottom);
+      const az = (fwdLeft.azimuthDeg * Math.PI) / 180;
+      const winOuter = { x: rOut * Math.sin(az), y: fwdLeft.y, z: rOut * Math.cos(az) };
+      const inner = sharedInnerOutline(fwdLeft.azimuthDeg, fwdLeft.y, fwdLeft.width * 0.6, fwdLeft.height * 0.6, 0, 8);
+      targets.push({ name: `${wid} (outer centre)`, p: winOuter }, ...inner.map((p, i) => ({ name: `${wid} inner ${i}`, p })));
+    }
     for (const d of model.displays) {
       const f = d.frame;
       const at = (a: number, b: number): V => add(f.o, add(scale(f.x, a), scale(f.y, b)));

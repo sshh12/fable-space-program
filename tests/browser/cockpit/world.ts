@@ -275,25 +275,24 @@ export const WORLD_VIEWS: WorldView[] = [
   // for what is outside, cockpit-7, and the frame reads by the Earth's light on its inner edge); the sun
   // through another window on the console.
   { name: 'world-leo-earth-side-window', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, windowBelow: 0.35, fovDeg: 70 }, checks: { maxBlack: 0.3 } },
-  { name: 'world-leo-sun-patch-console', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, seat: { yaw: 8, pitch: 2 }, fovDeg: 70 }, checks: {} },
-  // The same orbit from the PILOT'S couch (the centre one, 0.72 m to the commander's right), the head tipped
-  // back a little: both forward windows with the Earth in them over the three displays and the caution
-  // panel, the sun patch across the console. What a first-person cockpit is for: the view the round's list
-  // asks to choose (request cockpit-18 asks for it as the player's default).
+  { name: 'world-leo-sun-patch-console', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, seat: { yaw: -24, pitch: 4 }, fovDeg: 60 }, checks: {} },
+  // The same orbit as the PLAYER first sees it: the vehicle's cockpit seat (the pilot's centre couch since
+  // request cockpit-18) at the camera rig's rest pitch of 20 degrees: both forward windows with the Earth in
+  // them over the three displays and the caution panel, the sun patch across the console.
   {
     name: 'world-leo-pilot-seat',
     query: 'scene=lowOrbit&roll=180',
-    recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, free: { kind: 'interior', eye: { seat: [0.72, 0, 0] }, look: { seat: [0.72, 2.4, 5] } }, fovDeg: 75 },
+    recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, seat: { yaw: 0, pitch: 20 }, fovDeg: 70 },
     checks: { maxBlack: 0.3 },
   },
   // The night side: the sun behind the Earth, nothing toggled: the cabin under its floods at their standby
   // level and its displays (what a player sees who has touched nothing).
-  { name: 'world-night-displays-floods', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', seat: { yaw: 20, pitch: -2 }, fovDeg: 70 }, checks: { dark: true, maxBlack: 0.25 } },
+  { name: 'world-night-displays-floods', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', seat: { yaw: 0, pitch: 20 }, fovDeg: 70 }, checks: { dark: true, maxBlack: 0.25 } },
   // The climb with the engines at full thrust: the plume's lights stay outside the hull, the pages read
   // (request app-integration-5).
-  { name: 'world-ascent-plume-displays', query: 'scene=ascent&throttle=1', recipe: { seat: { yaw: 22, pitch: -2 }, fovDeg: 70 }, checks: {} },
+  { name: 'world-ascent-plume-displays', query: 'scene=ascent&throttle=1', recipe: { seat: { yaw: 0, pitch: 20 }, fovDeg: 70 }, checks: {} },
   // Entry: the shock layer outside the windows, the floods on.
-  { name: 'world-reentry-plasma', query: 'scene=reentry', recipe: { lights: true, seat: { yaw: 16, pitch: 40 }, fovDeg: 70 }, checks: { dark: true, litPanes: ['fwd-left', 'fwd-right'] } },
+  { name: 'world-reentry-plasma', query: 'scene=reentry', recipe: { lights: true, seat: { yaw: 0, pitch: 30 }, fovDeg: 70 }, checks: { dark: true, litPanes: ['fwd-left', 'fwd-right'] } },
   // On the lunar surface, the sun 17 degrees up on the far side of the capsule and across the view (long
   // shadows on the ground, this window's well in the capsule's own shade), the floods on: the head 30 cm inside
   // the left side window, low enough for the horizon to clear the shade's cassette, looking 8 degrees down through it at the ground and the horizon

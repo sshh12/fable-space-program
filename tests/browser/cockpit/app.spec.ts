@@ -31,19 +31,20 @@ interface AppView {
 }
 
 const VIEWS: AppView[] = [
-  // Parking orbit, straight from the seat, nothing touched: the picture of the mission run (06-earth-orbit-cockpit).
+  // Parking orbit, straight from the seat (the vehicle's cockpit seat: the pilot's centre couch since request
+  // cockpit-18), nothing touched: the picture of the mission run (06-earth-orbit-cockpit).
   { name: 'app-leo-seat', scenario: 'qa-leo' },
   // Along the console to both sides: where its ends meet the hull (request cockpit-lead-1).
   // (Angles are drags from the rig's rest view, which is pitched 20 degrees up since request cockpit-18.)
-  { name: 'app-leo-console-left', scenario: 'qa-leo', yaw: -30, pitch: -22 },
-  { name: 'app-leo-console-right', scenario: 'qa-leo', yaw: 62, pitch: -16 },
+  { name: 'app-leo-console-left', scenario: 'qa-leo', yaw: -55, pitch: -22 },
+  { name: 'app-leo-console-right', scenario: 'qa-leo', yaw: 55, pitch: -22 },
   // The lights action on: the floods at full.
   { name: 'app-leo-seat-floods', scenario: 'qa-leo', lights: true },
   // On the Moon after touchdown (10-lunar-touchdown-cockpit).
   { name: 'app-lunar-surface-seat', scenario: 'qa-lunar-surface' },
   // Out of the window from the seat in orbit: in this scenario's attitude the Earth's limb stands in the
   // commander's side window (the forward windows look into space).
-  { name: 'app-leo-window-left', scenario: 'qa-leo', yaw: -58, pitch: -32, window: true },
+  { name: 'app-leo-window-left', scenario: 'qa-leo', yaw: -76, pitch: -28, window: true },
 ];
 
 const lum = (r: number, g: number, b: number): number => 0.2126 * r + 0.7152 * g + 0.0722 * b;
