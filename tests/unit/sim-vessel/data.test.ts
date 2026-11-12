@@ -222,9 +222,12 @@ describe('capsule equals the shared mould line', () => {
     // Attach nodes sit on the mould line.
     expect(cap.attachNodes.find((n) => n.id === 'bottom')!.pos[1]).toBe(mould.heatShield.maxDiameterY);
     expect(cap.attachNodes.find((n) => n.id === 'top')!.pos[1]).toBe(mould.apexTunnel.yTop);
-    // The vehicle's cockpit camera sits in the pilot's (centre) seat (lead decision on request cockpit-18).
+    // The vehicle's cockpit camera sits in the commander's seat. The field is in the hashed state (the codec's
+    // vehicle reference, the command part's camera seat), so it cannot change before the tighten step after
+    // sub-wave 3.2 (MIGRATION_V2 principle 5): the change to the pilot's couch of request cockpit-18 was
+    // taken back, and the cockpit takes its default eye point from its own layout data.
     const vehicle = defs.vehicles[VEHICLE]!;
-    expect(vehicle.cameras.cockpit).toEqual({ part: 'capsule', seat: 'plt' });
+    expect(vehicle.cameras.cockpit).toEqual({ part: 'capsule', seat: 'cdr' });
     expect(vehicle.cockpit).toBe('kestrel');
     expect(vehicle.crew.map((x) => x.seat)).toEqual(mould.seats.map((s) => s.id));
   });

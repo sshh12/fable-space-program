@@ -58,6 +58,14 @@ close-out package), `src/core/contracts/*.ts`, `docs/requests/README.md`, and th
    `DefLibrary.sections`). Every number of the time model, contact, docking, pads, expiry and the rate
    limits is a field of `UniverseRules` (`src/core/contracts/net.ts`), read from the rules document in
    force, never written into code.
+7a. Until the tighten step after sub-wave 3.2, no field of a vehicle, part, body, site or rules definition
+    that the state hash or the codec's vehicle reference covers may change; any edit under
+    `data/defs/{vehicles,parts,bodies,sites,rules}` is followed, before its commit, by `npx vitest run
+    tests/unit/sim-vessel/codec.test.ts tools/dev/guard-pins.test.ts` and `npm run test:mission` through the
+    gate. (The corpus of `tests/unit/sim-vessel/corpus` holds vessel blobs written by earlier codec versions
+    against the definitions as they were; they cannot be re-written, and the mission alone does not show the
+    break. MIGRATION_V2 principle 5 has the episode; from the tighten step on, presentation fields such as
+    cameras, seats, names and references to visuals are outside the hash and free to change.)
 
 ## Shared working tree
 

@@ -155,3 +155,11 @@ Where the stored points lie against the future discs, with the radii as resolved
 So when fleet-data writes the site files, the rule "only points inside new flatten discs may change" has
 points on both sides at every pad: at least 16 in each pad's flat disc and at least 12 outside every disc
 of the field, and LC-1's 36 points that must not move.
+
+## The re-baseline taken back (2026-11-12, lead)
+
+The re-baseline of the golden to `e7cdbc4b452f686d` recorded under "Decisions" above was reversed the same
+day: the seat change of commit 01c4d2f also made the corpus's earlier blobs decode to another state
+(`tests/unit/sim-vessel/codec.test.ts`), so the field went back to `cdr` and the golden's hash to
+`b8221b0fd316207e`. `tiles.earth` stays `f5e6ef420bda7cea`: what this request was about is unchanged.
+MIGRATION_V2 principle 5 has the episode and the rule that follows from it.

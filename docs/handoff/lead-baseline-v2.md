@@ -838,3 +838,36 @@ vehicles are heavy: the capacity statements never distinguished classes; (4) "up
 
 Not touched: the cost model (a front-page day does not cost more with fewer launches), the brief of
 site-bake (closed), any code or test. No suite was run: documents only.
+
+## 20. The sixth re-baseline taken back; the rule on hashed definition fields (2026-11-12, 13:10-13:30)
+
+**Section 17 is reversed by the lead's decision.** The seat change of commit 01c4d2f (`cameras.cockpit.seat`
+`cdr` -> `plt` in `data/defs/vehicles/meridian-lunar.json`) broke more than the golden: the corpus holds
+vessel blobs written by earlier codec versions against the definition as it was, and with the changed field
+`tests/unit/sim-vessel/codec.test.ts` failed twice ("every blob in the corpus decodes to the state it was
+written from", "a blob written by the version before flies on exactly as the vessel it was written from").
+The mission run of section 17 could not show that, and the unit suite was not run there: the re-baseline
+was the wrong remedy.
+
+One commit, by explicit paths:
+
+| File | Change |
+|---|---|
+| `data/defs/vehicles/meridian-lunar.json` | `cameras.cockpit.seat` back to `cdr`. The file is now identical to its state before 01c4d2f (`git diff 01c4d2f^` is empty); that commit changed nothing else in it |
+| `tests/unit/sim-vessel/data.test.ts` | the assertion on the vehicle's cockpit camera back to `cdr` (01c4d2f had changed it with the field; it would fail otherwise), with a comment on the rule |
+| `tests/mission/golden.json` | `hash` back to `b8221b0fd316207e`; `steps` 596,933 and `tiles.earth` `f5e6ef420bda7cea` as they were |
+| `docs/MIGRATION_V2.md` | principle 5: five re-baselines again, the episode in two sentences, the rule; the tighten step: the default cockpit seat becomes a free choice then |
+| `docs/PACKAGE_RULES.md` | rule 7a: the same rule, in the same words |
+| `docs/ARCHITECTURE.md` | 7.2, the codec: the edit was taken back; no hashed definition field changes before the tighten step |
+
+**The rule** (MIGRATION_V2 principle 5, PACKAGE_RULES 7a): Until the tighten step after sub-wave 3.2, no field of a vehicle, part, body, site or rules definition that the state hash or the codec's vehicle reference covers may change; any edit under `data/defs/{vehicles,parts,bodies,sites,rules}` is followed, before its commit, by `npx vitest run tests/unit/sim-vessel/codec.test.ts tools/dev/guard-pins.test.ts` and `npm run test:mission` through the gate.
+
+The tighten-step decision stands (presentation fields out of the simulation projection that the codec's
+vehicle reference hashes and out of the state hash; one codec version step; the corpus recorded once).
+
+**Left to the cockpit package** (it is being told): the rest of 01c4d2f (`labs/cockpit/main.ts`,
+`tests/browser/cockpit/*`, `tests/unit/cockpit/*`, `docs/requests/cockpit-18.md`) still describes the
+pilot's couch as the vehicle's cockpit seat; the cockpit takes its default eye point from its own layout
+data instead.
+
+Suites, through the gate, before the commit: `tests/unit/sim-vessel/codec.test.ts` 23 of 23 (the two that failed pass), `tools/dev/guard-pins.test.ts` 3 of 3, the terrain guard 10 of 10, `tests/unit/sim-vessel/data.test.ts` 14 of 14; `npm run test:mission` 5 files, 36 of 36 on the golden `b8221b0fd316207e`. Also run to see what else the seat touches: `tests/unit/cockpit`, `sim-vessel`, `sim-world` and `vehicle`, 47 files, 393 tests, all pass.

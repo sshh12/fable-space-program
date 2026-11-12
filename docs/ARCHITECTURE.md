@@ -1072,8 +1072,11 @@ interface Vessel {
   or invalidate a save; the snapshot still states them (`CraftSnapshot.cockpit`), read from the
   definitions. Until that step the reference hashes the whole `VehicleDef` and the command part's camera
   seat is hashed vessel state: one such edit, the cockpit seat of request cockpit-18, changed the golden
-  hash of a flight that was the same in every number. The change alters saved bytes, so it is made with
-  that step's other codec changes: one codec version step, the corpus recorded once for it. Per
+  hash of a flight that was the same in every number and made the corpus's earlier blobs decode to another
+  state, and was taken back. Until that step no hashed definition field changes (MIGRATION_V2 principle 5,
+  PACKAGE_RULES 7a); from it on the default cockpit seat, like every presentation field, is a free choice.
+  The change alters saved bytes, so it is made with that step's other codec changes: one codec version
+  step, the corpus recorded once for it. Per
   part it carries the fingerprint of its `PartDef`, and module and resource blocks are length-prefixed, so
   an unknown or changed block is detected instead of mis-read. Rules that keep old blobs readable: part,
   module and resource ids are never removed or renumbered, only deprecated; a change of a part's modules,
