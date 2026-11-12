@@ -1,0 +1,33 @@
+{
+ "body": "jupiter",
+ "name": "Jupiter",
+ "radii": {
+  "mean": 69911000,
+  "a": 71492000,
+  "b": 71492000,
+  "c": 66854000
+ },
+ "bakeConfig": "tools/bake/planet/bodies/jupiter.json",
+ "maps": {
+  "cloudTop": {
+   "path": "jupiter/cloudTop.webp",
+   "width": 4096,
+   "height": 2048,
+   "channels": [
+    "r",
+    "g",
+    "b"
+   ],
+   "format": "webp",
+   "kind": "equirect",
+   "note": "Cassini ISS, 11-12 Dec 2000 (750 and 451 nm). Longitude origin as published by NASA (System III not confirmed by the source); zonal drift moves features relative to System III anyway",
+   "credit": "Jupiter cloud map: NASA/JPL/Space Science Institute (Cassini ISS, PIA07782)",
+   "licence": "Public domain (NASA/JPL: may be used for any purpose with credit)",
+   "rowZero": "north",
+   "columnZeroLonDeg": -180.0,
+   "latitude": "planetocentric",
+   "longitude": "east-positive in the body-fixed frame of the rotation model",
+   "zonallyFilledFraction": 0.0
+  }
+ }
+}

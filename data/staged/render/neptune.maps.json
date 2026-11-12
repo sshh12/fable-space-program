@@ -1,0 +1,33 @@
+{
+ "body": "neptune",
+ "name": "Neptune",
+ "radii": {
+  "mean": 24622000,
+  "a": 24764000,
+  "b": 24764000,
+  "c": 24341000
+ },
+ "bakeConfig": "tools/bake/planet/bodies/neptune.json",
+ "maps": {
+  "cloudTop": {
+   "path": "neptune/cloudTop.png",
+   "width": 1024,
+   "height": 512,
+   "channels": [
+    "r",
+    "g",
+    "b"
+   ],
+   "format": "png",
+   "kind": "equirect",
+   "note": "Hubble OPAL 2015 (F467M, F547M, F657N), colours as composited by OPAL (strongly cyan); outside -90.0..32.0 deg the observation is smeared at the limb and is replaced by a zonal fill from the nearest clean latitude",
+   "credit": "Neptune map: NASA/ESA Hubble Space Telescope, OPAL program (PI: Simon, GO13937), doi:10.17909/T9G593 (CC BY 4.0)",
+   "licence": "CC BY 4.0",
+   "rowZero": "north",
+   "columnZeroLonDeg": -180.0,
+   "latitude": "planetocentric",
+   "longitude": "east-positive in the body-fixed frame of the rotation model",
+   "zonallyFilledFraction": 0.3262
+  }
+ }
+}

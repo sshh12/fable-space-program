@@ -1,0 +1,55 @@
+{
+ "body": "saturn",
+ "name": "Saturn",
+ "radii": {
+  "mean": 58232000,
+  "a": 60268000,
+  "b": 60268000,
+  "c": 54364000
+ },
+ "bakeConfig": "tools/bake/planet/bodies/saturn.json",
+ "maps": {
+  "cloudTop": {
+   "path": "saturn/cloudTop.webp",
+   "width": 4096,
+   "height": 2048,
+   "channels": [
+    "r",
+    "g",
+    "b"
+   ],
+   "format": "webp",
+   "kind": "equirect",
+   "note": "Cassini ISS RGB global map, 11 Aug 2011; ring-shadow and polar gaps filled zonally",
+   "credit": "Saturn cloud map: NASA/JPL-Caltech/Space Science Institute (Cassini ISS global maps, PDS doi:10.17189/rkkb-6y30)",
+   "licence": "Public domain (NASA Planetary Data System)",
+   "rowZero": "north",
+   "columnZeroLonDeg": -180.0,
+   "latitude": "planetocentric",
+   "longitude": "east-positive in the body-fixed frame of the rotation model",
+   "zonallyFilledFraction": 0.1758
+  },
+  "saturn-rings": {
+   "path": "saturn/saturn-rings.png",
+   "width": 2048,
+   "height": 1,
+   "channels": [
+    "r",
+    "g",
+    "b",
+    "a"
+   ],
+   "format": "png",
+   "kind": "radial",
+   "note": "Saturn main rings, C ring inner edge to A ring outer edge (NSSDC radii, = the staged RingDef of bodies-ephemeris): alpha = normal opacity from the Cassini UVIS beta Cen occultation (10 km bins), colour = NSSDC ring-region albedo with an approximate tint",
+   "credit": "Saturn ring optical depth: NASA/JPL-Caltech/LASP (Cassini UVIS); PDS Ring-Moon Systems Node",
+   "licence": "Public domain (NASA Planetary Data System)",
+   "innerKm": 74658,
+   "outerKm": 136780,
+   "columnZero": "innerKm",
+   "alpha": "normal opacity 1 - exp(-tau)",
+   "tauMax": 8.0,
+   "tauMean": 1.5369657633463543
+  }
+ }
+}
