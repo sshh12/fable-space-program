@@ -1,6 +1,6 @@
 Status: open
 From: vehicle-pad
-Owner path: src/render/terrain (sitePlan.ts and its twin in shaders/surface.ts, the ground cover's site mask); data/defs/sites/ka-lae-lc1.json (pad.shape.areas, lead-owned) if the owners prefer to level under the roads
+Owner path: src/render/terrain (sitePlan.ts and its twin in shaders/surface.ts, the ground cover's site mask); data/defs/sites/ka-lae.json (the areas of the pad shape, lead-owned) if the owners prefer to level under the roads
 Blocking: no (the blocker of `docs/qa/wave2/vehicle-pad.r1.combined.json`, finding 1, is fixed on my side; this is the other half of "give the ground one owner")
 
 ## Problem
@@ -21,7 +21,7 @@ against the tiles; unit test in `tests/unit/vehicle/site.test.ts`). What is left
    amplification): the roads are fill over the surface as it was surveyed.
 
 ## Evidence
-`data/defs/sites/ka-lae-lc1.structures.json`: the structure `pad.groundworks` carries `roads`
+`data/defs/sites/ka-lae.structures.json`: the structure `pad.groundworks` carries `roads`
 ("x,z>x,z>...@width~fillet;...", site frame: x east, z SOUTH, metres from the pad centre), `pads`
 ("x,z,radius" or "x,z,halfX,halfZ,headingDeg"), `radius` (the stone field, a ring to about 110 m), `tracks`;
 the structure `pad.fence` carries `path`. `npx tsx tools/vehicle/site-ground.ts radial` prints the relief.
