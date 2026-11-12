@@ -37,6 +37,12 @@ export interface EmitterDesc {
   /** Velocity added to every particle (domain axes, m/s) and motion of the source during this frame (m). */
   vel: Vec3;
   sweep?: Vec3;
+  /**
+   * 0..1: share of the air's drag the particles are spared (default 0). Sparks shed into the wake of a body at
+   * hypersonic speed ride with the gas of the wake: against the still air they would be stopped at once and
+   * left kilometres behind the body, single points of light in an empty sky.
+   */
+  shelter?: number;
   /** Launch speed range (m/s), distribution exponent (1 = uniform, > 1 = more slow ones). */
   speed: [number, number];
   speedExponent?: number;
@@ -60,7 +66,7 @@ struct Particle {
   vel: vec3f, life: f32,       // m/s in domain axes; lifetime (0 = dead)
   color: vec4f,                // rgb = albedo (or emission tint), a = opacity
   size: f32, growth: f32, kind: f32, seed: f32,   // radius (m), radius growth (m/s), kind id, random 0..1
-  aux: vec4f,                  // x = smoothed sun visibility, y = kind extra (temperature K), z = radius at birth, w = unused
+  aux: vec4f,                  // x = smoothed sun visibility, y = kind extra (temperature K), z = radius at birth, w = shelter from the air's drag 0..1
   lum: vec4f,                  // rgb = luminance (cd/m^2, not pre-exposed), a = opacity now
 }
 struct ParticleU {
@@ -87,7 +93,7 @@ struct Emitter {
   pos: vec4f,      // xyz = centre (domain), w = radius
   axis: vec4f,     // xyz = unit axis, w = shape (0 sphere, 1 ring, 2 cylinder, 3 disc)
   vel: vec4f,      // xyz = base velocity, w = cylinder length
-  sweep: vec4f,    // xyz = motion of the source during the frame
+  sweep: vec4f,    // xyz = motion of the source during the frame, w = shelter 0..1: share of the air's drag the particles are spared
   speed: vec4f,    // min, max speed; min, max polar angle from the axis (rad)
   life: vec4f,     // min, max life (s); min, max radius (m)
   color: vec4f,    // rgb, a = opacity
@@ -158,7 +164,7 @@ fn slotOf(i: u32) -> u32 { let n = u32(pu.flags.z); return (pu.counts.x + n - 1u
   p.growth = e.misc.y;
   p.kind = e.misc.x;
   p.seed = rnd(seed, j, 11u);
-  p.aux = vec4f(1.0, mix(e.misc2.z, e.misc2.w, rnd(seed, j, 12u)), p.size, 0.0);
+  p.aux = vec4f(1.0, mix(e.misc2.z, e.misc2.w, rnd(seed, j, 12u)), p.size, e.sweep.w);
   p.lum = vec4f(0.0);
   particles[slotOf(pu.counts.y - 1u - i)] = p;
 }
@@ -203,6 +209,8 @@ fn glow(T: f32) -> vec3f {
   else if (kind == KIND_CHIP) { k = 0.03; turb = 0.0; }
   else if (kind == KIND_DROPLET) { k = 0.09; turb = 0.0; }
   else if (kind == KIND_MIST) { k = 7.0; turb = 1.6; weight = 0.3; }
+  // (Particles shed into a wake ride with the gas of the wake, not against the still air: spared most of its drag.)
+  k *= 1.0 - p.aux.w;
 
   if (dt > 0.0) {
     var v = p.vel;
@@ -300,7 +308,9 @@ fn glow(T: f32) -> vec3f {
       // Tumbling facets flash in the sun.
       let glint = pow(saturate(sin(p.seed * 91.0 + p.age * (9.0 + 30.0 * p.seed))), 24.0);
       // (A chip of a vehicle is dull, painted or charred: a faint glint now and then, not a star.)
-      lum += probe.sun.rgb * (lit * glint * select(0.12, 2.5, kind == KIND_ICE));
+      // (A facet of ice that catches the sun is a mirror: far brighter than a white surface, which is why a
+      // shower of frost is seen from hundreds of metres as glitter although no flake fills a pixel.)
+      lum += probe.sun.rgb * (lit * glint * select(0.12, 12.0, kind == KIND_ICE));
     }
     if (kind == KIND_DROPLET) {
       // White water: as bright as the sheet it was torn from (a sunlit white surface), and every drop is a lens
@@ -385,7 +395,10 @@ struct VOut {
   alpha *= saturate(2.0 - radius / (220.0 * pixel));
   // The streak is the path during the shutter, behind the particle (never ahead of it, and never longer than
   // the path it has flown since it was born).
-  let halfLen = min(min(speed * pu.flags.y, speed * p.age) * 0.5 * stretch, 150.0 * radius + 4.0);
+  // (A spark is a point of light with a short tail: whatever the frame makes of its speed relative to the eye,
+  // its streak is never metres long. Request vfx-cs-1: single sparks drawn as lines across the sky.)
+  let longest = select(150.0 * radius + 4.0, 40.0 * radius + 0.5, kind == KIND_SPARK);
+  let halfLen = min(min(speed * pu.flags.y, speed * p.age) * 0.5 * stretch, longest);
   // The same light spread over a longer streak is dimmer.
   alpha *= radius / (radius + 0.25 * halfLen);
   let q = vec2f(f32(vi & 1u) * 2.0 - 1.0, f32((vi >> 1u) & 1u) * 2.0 - 1.0);
@@ -564,7 +577,7 @@ export class ParticleSystem {
       E.set([e.pos.x, e.pos.y, e.pos.z, e.radius], o);
       E.set([e.axis.x, e.axis.y, e.axis.z, SHAPE[e.shape]], o + 4);
       E.set([e.vel.x, e.vel.y, e.vel.z, e.length ?? 0], o + 8);
-      E.set([e.sweep?.x ?? 0, e.sweep?.y ?? 0, e.sweep?.z ?? 0, 0], o + 12);
+      E.set([e.sweep?.x ?? 0, e.sweep?.y ?? 0, e.sweep?.z ?? 0, Math.min(1, Math.max(0, e.shelter ?? 0))], o + 12);
       E.set([e.speed[0], e.speed[1], e.polar[0], e.polar[1]], o + 16);
       E.set([e.life[0], e.life[1], e.size[0], e.size[1]], o + 20);
       E.set([e.color[0], e.color[1], e.color[2], e.opacity], o + 24);

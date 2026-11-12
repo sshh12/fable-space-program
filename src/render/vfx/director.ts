@@ -249,6 +249,8 @@ export class EffectDirector {
         radius: 0.95 * radius,
         vel: vd.vel,
         sweep: v3.scale(vd.vel, dt),
+        // (They stay in the wake and die within a few capsule diameters: request vfx-cs-1.)
+        shelter: 0.97,
         speed: P.ablation.speed,
         polar: [0.15, 1.2],
         life: P.ablation.life,
