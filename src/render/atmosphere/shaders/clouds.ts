@@ -667,9 +667,10 @@ fn cloudMarchRay(bi: u32, d: vec3f, tScene: f32, xi: f32, pixelAngle: f32, exact
   let gain = atmo.cloudDeep.w;
   let phase = vec3f(cloudPhase(cosTheta, 1.0), cloudPhase(cosTheta, gain) * gain, cloudPhase(cosTheta, gain * gain) * gain * gain);
   let kd = atmo.cloudLight.y;
-  // (The quality scale lowers the step budget, and the ray count of the full-resolution path. Thresholds,
-  // erosion and lighting are the same at every quality scale.)
-  let detailEye = 2;
+  // (The quality scale lowers the step budget, and the ray count of the full-resolution path; below 0.85 the
+  // eye's samples leave out the finest erosion octave, which has no mean, and the light's normal the
+  // erosion. Thresholds and lighting are the same at every quality scale.)
+  let detailEye = select(2, 1, atmo.cloudLight.w < 0.85);
 
   var st: CloudStack;
   st.cover = 0.0;
