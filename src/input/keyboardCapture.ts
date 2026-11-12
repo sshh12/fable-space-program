@@ -48,6 +48,7 @@ export function createKeyboardCapture(element: () => Element, onChange: (locked:
   let locked = false;
   let fullscreen = false;
   let disposed = false;
+  let pending: Promise<boolean> | null = null;
   const keyboard = (navigator as Navigator & { keyboard?: KeyboardLockApi }).keyboard;
 
   const unlock = (): void => {
@@ -86,35 +87,12 @@ export function createKeyboardCapture(element: () => Element, onChange: (locked:
     get fullscreen() {
       return fullscreen;
     },
-    async request() {
-      if (disposed) return false;
-      // Both calls are made synchronously inside the gesture so that the transient activation applies.
-      let fs: Promise<void> | null = null;
-      if (document.fullscreenElement === null && document.fullscreenEnabled) {
-        try {
-          fs = element().requestFullscreen({ navigationUI: 'hide' });
-        } catch {
-          fs = null;
-        }
-      }
-      let lock: Promise<void> | null = null;
-      if (keyboard && typeof keyboard.lock === 'function') {
-        try {
-          lock = keyboard.lock([...LOCKED_KEY_CODES]);
-        } catch {
-          lock = null;
-        }
-      }
-      if (fs) await fs.then(() => undefined, () => undefined);
-      if (lock) {
-        lockGranted = await lock.then(
-          () => true,
-          () => false,
-        );
-      }
-      // Fullscreen refused: a lock alone does nothing, release it.
-      if (document.fullscreenElement === null) unlock();
-      return evaluate();
+    request() {
+      // One request at a time (the opt-in first gesture and a click on the switch can come from one press).
+      pending ??= requestNow().finally(() => {
+        pending = null;
+      });
+      return pending;
     },
     release() {
       unlock();
@@ -135,4 +113,35 @@ export function createKeyboardCapture(element: () => Element, onChange: (locked:
       evaluate();
     },
   };
+
+  async function requestNow(): Promise<boolean> {
+    if (disposed) return false;
+    // Both calls are made synchronously inside the gesture so that the transient activation applies.
+    let fs: Promise<void> | null = null;
+    if (document.fullscreenElement === null && document.fullscreenEnabled) {
+      try {
+        fs = element().requestFullscreen({ navigationUI: 'hide' });
+      } catch {
+        fs = null;
+      }
+    }
+    let lock: Promise<void> | null = null;
+    if (keyboard && typeof keyboard.lock === 'function') {
+      try {
+        lock = keyboard.lock([...LOCKED_KEY_CODES]);
+      } catch {
+        lock = null;
+      }
+    }
+    if (fs) await fs.then(() => undefined, () => undefined);
+    if (lock) {
+      lockGranted = await lock.then(
+        () => true,
+        () => false,
+      );
+    }
+    // Fullscreen refused: a lock alone does nothing, release it.
+    if (document.fullscreenElement === null) unlock();
+    return evaluate();
+  }
 }
