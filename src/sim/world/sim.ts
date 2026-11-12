@@ -1833,15 +1833,35 @@ class World implements SimWorld, MilestoneHost {
   }
 
   private stageInfos(): StageInfo[] {
+    const a = this.active;
     if (this.stageInfoDirty || this.stageInfoStep !== this.stepCount - (this.stepCount % PATCH_REFRESH_STEPS)) {
-      const a = this.active;
       this.stageInfo = a.removed ? [] : stagingInfo(a.vessel, this.envAt(a, this.ut));
       this.stageInfoDirty = false;
       this.stageInfoStep = this.stepCount - (this.stepCount % PATCH_REFRESH_STEPS);
+      // Full-throttle acceleration of every stage: what its thrust-to-weight ratio is at any gravity.
+      const g = a.removed ? 1 : this.localGravity(a);
+      this.stageAcceleration = this.stageInfo.map((s) => s.twr * g);
+    }
+    // The cache is refreshed by physics steps and by changes of the vehicle, neither of which happens on a
+    // coast: delta-v, burn time and propellant do not change there, the local gravity does (a translunar
+    // coast, a sphere-of-influence change on rails). The ratio is restated at the gravity of now on every
+    // read (request flight-ui-8).
+    if (!a.removed) {
+      const g = this.localGravity(a);
+      for (let i = 0; i < this.stageInfo.length; i++) this.stageInfo[i]!.twr = this.stageAcceleration[i]! / g;
     }
     return this.stageInfo;
   }
   private stageInfoStep = -1;
+  private stageAcceleration: number[] = [];
+
+  /** Gravitational acceleration of the SOI body at a vessel's origin, m/s^2 (what `stagingInfo` weighs a stage with). */
+  private localGravity(e: Entry): number {
+    const r = e.vessel.r;
+    const rl2 = r.x * r.x + r.y * r.y + r.z * r.z;
+    const radius = this.info(e.bodyId).radius;
+    return this.info(e.bodyId).mu / (rl2 > 0 ? rl2 : radius * radius);
+  }
 
   // ---------------------------------------------------------------------------------------------- SAS
 
