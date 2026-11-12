@@ -459,6 +459,27 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
     const y = -backHy * 0.1;
     b.box(faceL(local(backF, x, y, under(x, y) + 0.004), s), 0.028, 0.011, 0.0028, 0.0014, ctx.m('steel'));
   }
+  // Where the straps start: each shoulder strap comes out of a guide slot at the top of the back (its reel
+  // is behind the couch), each lap belt from an anchor plate bolted down by the hip, the crotch strap from
+  // a plate on the seat.
+  const hardware = ctx.m('satinSteel');
+  const high = (x: number, y: number, r: number): number => Math.max(under(x, y), under(x + r, y), under(x - r, y), under(x, y + r), under(x, y - r));
+  for (const side of [-1, 1]) {
+    const gx = side * 0.1;
+    const gy = backHy + 0.012;
+    const gz = Math.max(high(gx, gy - 0.02, 0.02), 0.01) + 0.0075;
+    b.box(faceL(local(backF, gx, gy, gz), s), 0.031, 0.008, 0.0045, 0.002, hardware);
+    b.box(faceL(local(backF, gx, gy, gz + 0.005), s), 0.024, 0.0035, 0.0008, 0.0004, ctx.m('matteBlack'));
+    const ax = side * (hw - 0.012);
+    const ay = yb + 0.05;
+    const az = high(ax, ay, 0.014) + 0.0055;
+    b.box(faceL(local(backF, ax, ay, az), s), 0.013, 0.021, 0.0028, 0.0012, hardware);
+    b.cylinder(local(backF, ax, ay - 0.011, az + 0.0028), backF.n, 0.0055, 0.003, 6, ctx.m('steel'), { caps: 'top' });
+  }
+  {
+    const az = Math.max(high(0, yb + 0.03, 0.012), c.cushion * 0.9) + 0.0055;
+    b.box(faceL(local(backF, 0, yb + 0.026, az), s), 0.022, 0.009, 0.0028, 0.0012, hardware);
+  }
 }
 
 /** Rubber bellows boot over a controller's gimbal: a cone of folds from rBottom to rTop over `height`. */
