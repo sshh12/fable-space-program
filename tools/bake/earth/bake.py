@@ -108,6 +108,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--settlement-reach-km", type=float,
                     help="pads: the corridor's built-up test becomes a settlement test (>= 10 %% built-up in a 300 m "
                          "window) within this reach; other built-up land in the sector is reported (Ka Lae: 5)")
+    ap.add_argument("--shed-any", action="store_true",
+                    help="pads: with --accept-min, accept a layout whatever classes found no place (Ka Lae, the lead)")
+    ap.add_argument("--seed", action="append", default=[],
+                    help="pads: 'class:lat:lon' - a pad accepted after looking in an earlier run, placed first with every gate applied")
     ap.add_argument("--replace", action="store_true",
                     help="stage: bake a region that is already live again (REPLACE mode, stage.py)")
     a = ap.parse_args(argv)

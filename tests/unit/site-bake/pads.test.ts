@@ -175,30 +175,32 @@ const LAYOUTS: Layout[] = SITES.flatMap((site) => {
 
 /** Dry classes and the land cover never allowed in a pad's outer ring, per site (the lead's decisions of 2026-11-12). */
 const BARE = ['bareRock', 'sand', 'sparseScrub'];
+/** The fewest pads the lead accepts per site (2026-11-12). */
+const MIN_PADS: Record<string, number> = { madrakah: 16, 'ka-lae': 8 };
 const DRY: Record<string, { classes: string[]; forbidOuter: string[] }> = {
   madrakah: { classes: BARE, forbidOuter: [] },
   'ka-lae': { classes: [...BARE, 'grass', 'shrub'], forbidOuter: ['trees', 'crop', 'builtUp', 'wetland', 'water'] },
 };
 
 describe('site-bake: resolved pads', () => {
-  it('Madrakah is resolved (Ka Lae when the lead has decided: 2026-11-12 it is stopped, see the hand-off); no candidate layout is left', () => {
-    expect(LAYOUTS.map((l) => l.site)).toContain('madrakah');
+  it('both sites are resolved and no candidate layout is left', () => {
+    expect(LAYOUTS.map((l) => l.site).sort()).toEqual([...SITES].sort());
     const dir = path.join(STAGED, 'candidates');
     expect(fs.existsSync(dir) ? fs.readdirSync(dir) : []).toEqual([]);
   });
 
   for (const L of LAYOUTS) {
     describe(L.key, () => {
-      it('class counts: 4 heavy, 6 medium, 6 light, shed only from the light end, at least 12; unique ids; offsets about the reference pad', () => {
+      it('class counts: 4 heavy, 6 medium, 6 light asked, what found no place recorded as shed (the lead: Madrakah 16, Ka Lae at least 8); unique ids; offsets about the reference pad', () => {
         const d = L.doc;
         expect(new Set(d.pads.map((p) => p.id)).size).toBe(d.pads.length);
-        expect(Object.keys(d.shed ?? {}).filter((c) => c !== 'light'), 'shed from the light end only').toEqual([]);
+        if (L.site === 'madrakah') expect(d.shed ?? {}).toEqual({});
         for (const cls of Object.keys(SPEC) as PadClass[]) {
           const placed = d.pads.filter((p) => p.class === cls).length;
           expect(placed + (d.shed?.[cls] ?? 0), cls).toBe(SPEC[cls].count);
           expect(d.rule.classes[cls]).toEqual(SPEC[cls]);
         }
-        expect(d.pads.length).toBeGreaterThanOrEqual(12);
+        expect(d.pads.length).toBeGreaterThanOrEqual(MIN_PADS[L.site]!);
         expect(d.pads[0]!.id).toBe(d.referencePad);
         expect(d.pads[0]!.offsetEnu).toEqual([0, 0]);
         for (const p of d.pads) {
@@ -227,7 +229,16 @@ describe('site-bake: resolved pads', () => {
         const d = L.doc;
         const r = d.rule;
         expect(r.strict, 'the full rule that placed LC-1 (open ocean east) at Madrakah only').toBe(STRICT[L.site]);
-        expect(r.corridor).toEqual({ azimuthDeg: [...CORRIDOR.az], reachKm: CORRIDOR.reachM / 1000 });
+        expect(r.corridor).toMatchObject({ azimuthDeg: [...CORRIDOR.az], reachKm: CORRIDOR.reachM / 1000 });
+        // Ka Lae (the lead): the corridor's built-up part gates settlements (>= 10 % built-up in 300 m) within 5 km,
+        // LC-1's complex ground (600 m) excepted; Madrakah gates any built-up land in the sector to 12 km
+        const rc = r as unknown as { corridor: { settlement?: unknown }; ownGround: { radiusM: number } | null };
+        if (L.site === 'ka-lae') {
+          expect(rc.corridor.settlement).toEqual({ windowM: 300, minBuiltFraction: 0.1, reachM: 5000 });
+          expect(rc.ownGround?.radiusM).toBe(600);
+        } else {
+          expect(rc.corridor.settlement).toBeUndefined();
+        }
         expect([...r.dryClasses].sort(), 'the dry classes of the site').toEqual([...DRY[L.site]!.classes].sort());
         expect([...r.forbiddenInOuterRing].sort()).toEqual([...DRY[L.site]!.forbidOuter].sort());
         for (const p of d.pads.filter((q) => !q.fixed)) {

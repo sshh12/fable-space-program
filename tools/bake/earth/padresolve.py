@@ -637,6 +637,17 @@ def run(region_id: str, args) -> dict:
         log(f"pads: fixed {pid} ({cls}) at {la} {lo}: {'passes' if e['pass'] else 'fails ' + ', '.join(e['failures'])} "
             f"the rule on the baked tiles (height {e['height']:.2f} m, slope {e['slopeDeg']:.2f} deg)")
     grid = res.grid()
+    # seeded pads (--seed class:lat:lon): accepted after looking in an earlier run, placed first, every gate applied
+    seeds = []
+    for spec in getattr(args, "seed", None) or []:
+        cls, la, lo = spec.split(":")
+        e = res.evaluate(float(la), float(lo))
+        ok = e["pass"] and (e["builtUpM"] is None or e["builtUpM"] >= built_radius(cls)) and             (e.get("forbiddenM") is None or e["forbiddenM"] >= built_radius(cls))
+        if not ok:
+            raise RuntimeError(f"seeded {cls} pad at {la} {lo} fails the rule: {e['failures']}")
+        seeds.append({"class": cls, "latDeg": float(la), "lonDeg": float(lo), "padElevation": round(e["height"], 2),
+                      "fixed": False, "seeded": True, "evaluation": e})
+    fixed = fixed + seeds
     log(f"pads: grid pre-filter {grid['stats']}")
     partial = bool(getattr(args, "allow_partial", False))
     placed, tally = place(res, grid, classes, fixed, partial=partial)
@@ -711,6 +722,9 @@ def run(region_id: str, args) -> dict:
                          "+".join(Resolver.dry_classes)),
                  "dryClasses": [CLASS_NAME[v] for v in res.allowed],
                  "forbiddenInOuterRing": [CLASS_NAME[v] for v in res.forbid],
+                 "seeded": [{"id": p["id"], "class": p["class"], "latDeg": round(p["latDeg"], 6), "lonDeg": round(p["lonDeg"], 6),
+                             "reason": "accepted after looking in an earlier run of the same rule; placed first, every gate applied"}
+                            for p in placed if p.get("seeded")],
                  "fixed": [{"id": p["id"], "reason": getattr(args, "fixed_reason", None) or "fixed by the caller",
                             "gates": "reported only: the pad stays where it is",
                             "passes": p["evaluation"]["pass"], "failures": p["evaluation"]["failures"],
@@ -736,10 +750,10 @@ def run(region_id: str, args) -> dict:
     # the light end of the class mix: the lead's rule at Ka Lae)
     accept = getattr(args, "accept_min", None)
     shed_ok = bool(tally["unplaced"]) and accept is not None and len(pads) >= int(accept) and \
-        set(tally["unplaced"]) <= {"light"}
+        (set(tally["unplaced"]) <= {"light"} or bool(getattr(args, "shed_any", False)))
     if shed_ok:
         doc["shed"] = doc.pop("unplaced")
-        log(f"pads: {len(pads)} pads fit (at least {accept}); shed from the light end: {doc['shed']}")
+        log(f"pads: {len(pads)} pads fit (at least {accept}); shed: {doc['shed']}")
     dry = bool(getattr(args, "dry_run", False)) or (bool(tally["unplaced"]) and not shed_ok) or Resolver.dry_any_land
     if not dry:
         STAGED_SITES.mkdir(parents=True, exist_ok=True)

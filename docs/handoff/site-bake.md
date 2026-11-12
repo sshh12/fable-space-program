@@ -1,6 +1,6 @@
 # Hand-off: site-bake (wave 3.1)
 
-Status (after the lead's decisions of 2026-11-12, section 0.10): Madrakah resolved and accepted; **Ka Lae STOPPED a third time: under the lead's settlement rule 5 pads fit within 15 km and 10 within 25 km (under the 12 the lead set; section 0.11)**; verify 24 of 27 + 3 waived by the lead, 0 failed. Before the decisions: follow-up round done (2026-11-12 05:00-10:30 Pacific), one item STOPPED for the lead. Madrakah was baked
+Status (after the lead's decisions of 2026-11-12, section 0.10): Madrakah resolved and accepted; **Ka Lae resolved: 9 pads (LC-1, 1 heavy, 2 medium, 5 light) after the lead accepted the 25 km field and the look (section 0.12, which also lists what the next packages inherit)**; verify 24 of 27 + 3 waived by the lead, 0 failed. Before the decisions: follow-up round done (2026-11-12 05:00-10:30 Pacific), one item STOPPED for the lead. Madrakah was baked
 again (Copernicus GLO-30 instead of SRTM, the lead's near-shore sea floor, false inland water removed, de-shading
 refit) and swapped in by REPLACE (only the region's directories changed: 506 of its 840 plus `manifest.json`;
 section 0.7). Madrakah's 16 pads were re-resolved under the full LC-1 rule with the built-up and corridor gates,
@@ -615,6 +615,89 @@ sea, the Kahuku pali and the tree-covered slopes within a few kilometres. The le
 Lae, a search beyond 25 km (the row continues north-east along the Ka'u coast: round 2's field), or a change to the
 row geometry (for example a corridor sector narrower than 60-130 deg for the pads' keep-out part).
 
+### 0.12 Ka Lae resolved (the lead accepted the 25 km field, 2026-11-12, third) and the close of the package
+
+The lead's decision, recorded as the lead's: accept the 25 km layout (the ground, not a rule, limits the field;
+26 pads over two sites is enough; the count per site is data); no wider search and no narrower keep-out sector; look
+at every placement, exclude with reasons, re-resolve within 25 km when one falls; fewer accepted down to 8 without
+asking.
+
+**The look.** Every placement was rendered at level 12 (imagery and hillshade, 1.4 km; the 2.6 km sheet for the outer
+rings). Of the 25 km layout's ten, three fell: lc-3 (vehicle tracks across the disc and the outer ring), lc-4 (a
+lava-tube collapse pit inside the flat radius), lc-6 (Highway 11 inside the outer ring). The seven that stood were
+kept as seeds (`--seed class:lat:lon`: placed first, every gate applied again; recorded in `rule.seeded`) and the
+field re-resolved within 25 km four times; the replacements fell in turn (a collapse line, tracks, a collapse line,
+a crack and pits: lava-tube features show in Ka Lae's 10 m heights), one light pad on the South Point
+pasture (faint lines only) and one medium pad on the Kahuku lava (a flow front 400 m west, outside its 300 m flat
+radius) stood. **Result: 9 pads** (LC-1; 1 heavy, 2 medium, 5 light new; 2 heavy, 4 medium and 1 light found no
+place: `shed`). `data/staged/sites/ka-lae.pads.json`, resolved on the live tile set f5e6ef420bda7cea, with the
+per-pad land cover and the reported corridor numbers; the rule fields below. Pictures:
+`out/bake/earth/site-bake/pads-ka-lae-look{1..5}.png`, `pads-ka-lae-settle-sheet.png`, `pads-ka-lae-sheet.png`,
+`pads-ka-lae-corridors.png`.
+
+| Pad | Class | Lat, lon | Elev m | From LC-1 km | Footprint land cover | Outer-ring land cover | Clear azimuths | Nearest settlement in sector | Nearest built-up cell in sector |
+|---|---|---|---|---|---|---|---|---|---|
+| lc-1 (fixed) | heavy | 18.987556, -155.603239 | 21.6 | 0.0 | bareRock 81%, trees 13%, grass 6% | bareRock 54%, trees 31%, grass 8%, water 4%, sand 2%, builtUp 1% | blocked | 0.8 km at 88 | 0.6 km at 72 |
+| lc-2 | heavy | 18.964261, -155.634430 | 77.7 | 4.2 | grass 100% | grass 100% | 60-180 | none | 3.6 km at 80 |
+| lc-3 | medium | 18.993334, -155.762263 | 45.1 | 16.7 | bareRock 100% | bareRock 100% | 30-180 | 13.6 km at 67 | 8.1 km at 109 |
+| lc-4 | light | 19.030902, -155.581073 | 158.0 | 5.4 | grass 100% | grass 100% | 22-180 | none | none |
+| lc-5 | light | 18.930802, -155.654960 | 45.3 | 8.3 | grass 100% | grass 100% | 57.5-180 | none | 0.7 km at 100 |
+| lc-6 | light | 19.023833, -155.747167 | 195.1 | 15.7 | bareRock 100% | bareRock 100% | 0-180 | 11.1 km at 80 | 7.8 km at 60 |
+| lc-7 | light | 19.164688, -155.490512 | 72.1 | 23.0 | grass 100% | grass 100% | 30.5-180 | none | 5.5 km at 80 |
+| lc-8 | light | 18.942946, -155.640416 | 34.6 | 6.3 | grass 100% | grass 100% | 44-180 | none | 0.7 km at 114 |
+| lc-9 | medium | 19.004928, -155.769694 | 48.6 | 17.6 | bareRock 100% | bareRock 100% | 54-131 | 13.9 km at 73 | 9.2 km at 114 |
+
+LC-1 is fixed and exempt (reported only: it fails the outer-ring land cover, trees 31 %; its built-up ground is the
+complex's own). Ground excluded after looking (`rule.excluded`):
+
+| Centre | Radius m | Reason |
+|---|---|---|
+| 18.946451, -155.651827 | 700 | Ka Lae: vehicle tracks cross the outer ring and the disc (looked at, level-12 imagery) |
+| 19.008990, -155.752862 | 700 | Ka Lae: a collapse pit (lava tube) inside the flat radius (hillshade) |
+| 19.038391, -155.760879 | 700 | Ka Lae: Highway 11 crosses the outer ring |
+| 19.011143, -155.759141 | 700 | Ka Lae: a lava-tube collapse line through the flat radius (hillshade) |
+| 18.948072, -155.642984 | 600 | Ka Lae: a vehicle track crosses the disc |
+| 18.942133, -155.656675 | 600 | Ka Lae: vehicle tracks cross the disc (the South Point pasture) |
+| 19.006822, -155.763988 | 600 | Ka Lae: a lava-tube collapse line inside the flat radius (hillshade) |
+| 19.007647, -155.745156 | 600 | Ka Lae: a lava-tube crack and pits inside the flat radius (hillshade) |
+
+**What the next packages inherit (the close of site-bake):**
+
+| | Madrakah (`madrakah.pads.json`) | Ka Lae (`ka-lae.pads.json`) |
+|---|---|---|
+| Pads | 16: 4 heavy, 6 medium, 6 light | 9: 2 heavy (LC-1 + 1), 2 medium, 5 light (`shed`: 2 heavy, 4 medium, 1 light) |
+| Field | 19.08-19.37 N, 8.8-41.0 km from the nominal point, a north-south row behind the cliffed shore | LC-1 and the South Point pasture (4-8 km), the Kahuku lava (16-18 km), one pad above Punalu'u (23 km) |
+| Reference pad (`pads[0]`) | lc-1, 19.078241 N 57.786868 E (moved along the coast) | lc-1 = LC-1 at its v1 position and elevation (fixed) |
+| Dry gate (`rule.dryClasses`) | bare ground (bareRock, sand, sparseScrub), 80 % of the 500 m disc and the centre | bare ground, grass or shrub |
+| Outer ring (`rule.forbiddenInOuterRing`) | none | trees, crop, builtUp, wetland, water |
+| Open-ocean sector (`rule.strict`) | gated (LC-1's full rule) | reported |
+| Corridor, built-up part | any built-up cell in 60-130 deg to 12 km | no settlement (>= 10 % built-up in 300 m) in 60-130 deg within 5 km (`rule.corridor.settlement`); the rest reported |
+| Corridor, pads' keep-out part | 60-130 deg to 12 km, both ways | the same |
+| Own ground (`rule.ownGround`) | none | 600 m about LC-1, excepted from every built-up test |
+| Fixed / seeded | none / none | LC-1 (`rule.fixed`, with reason) / 7 seeded after looking (`rule.seeded`) |
+| Excluded after looking | 42 discs | 8 discs |
+| Every pad records | `report.landCover.footprint` (flat radius) and `.outerRing` (built-up radius): class fractions, for clearing the ground cover; `allowedFraction`, `bareFraction`, built-up and forbidden distances; `corridors[]` with clear azimuths, nearest pad, settlement and built-up cell in the sector | the same |
+
+Pad radii the layouts were resolved for (`rule.padRadii`, flat / blend / keep-out m): heavy 450 / 900 / 600, medium
+300 / 600 / 450, light 150 / 300 / 300; larger radii need a re-resolve. Pads face 90 deg. Ids are in placement
+order (fixed, seeded, new); fleet-data may rename them.
+
+Waivers (`data/defs/regions/earth-madrakah.json` `verifyWaivers`, the lead's): relief shading of the Madrakah imagery
+(levels 10 and 12), the level-11 albedo seam up to +0.037 sRGB levels. `verify.py --region earth-madrakah`: 24 of 27
+pass, 3 waived, 0 failed. Tests: `npx vitest run tests/unit/site-bake` 16 of 16 (both sites; the TerrainProvider
+re-measurement: Madrakah within 0.31 m of padElevation, steepest disc 1.32 deg; Ka Lae within 0.80 m, 3.98 deg; LC-1
+pinned to its v1 value); the tile-reading block is skipped explicitly without baked tiles (CI).
+
+Known limits: residual relief shading in Madrakah's imagery (waived; judged in the engine); a faint 30 m dimple
+texture of GLO-30 at relief x3; the sea floor up to 20 m deeper than ETOPO within 3 km of the shore in the bay south-west
+of Ras Madrakah; Madrakah level-12 edge continuity not yet checked by the provider test (request site-bake-2); the
+replace swap's 73 s window of mixed Madrakah tiles under the old manifest; LC-1 fails the outer-ring land-cover and
+corridor tests (reported, exempt); Ka Lae's new pads stand on pasture (grass, to be cleared from the footprint) and on
+young lava with tube collapses nearby (excluded where seen); faint vehicle tracks and thin rills were accepted at both
+sites; the region files' unit records in `data/cache/earth/state` no longer match their configuration (Ka Lae since
+a2c6318, Madrakah since its `verifyWaivers` changed): run regional steps with `--region` deliberately, a default
+`bake.py region` would re-bake.
+
 ## 1. What a consumer needs
 
 | Item | Where | Notes |
@@ -1126,3 +1209,5 @@ contentHash, which the swap changes). Open requests against this package's paths
   stopped, reported. Candidate files deleted; pads test split for CI (request platform-delivery-1).
 - 10:58-11:05. Lead's settlement rule for Ka Lae's corridor (section 0.11): implemented (settlement mask at 10 m,
   own-ground exception), 15 km 5 pads, 25 km 10 pads: stopped and reported.
+- 11:07-11:19. The lead accepted the 25 km field. Looked at every placement; 8 exclusions, seven pads kept as seeds,
+  four re-resolves: 9 pads. `ka-lae.pads.json` written; site-bake tests 16 of 16. Package closed (section 0.12).
