@@ -379,11 +379,23 @@ def tint(base: tuple[float, float, float], n: int) -> np.ndarray:
 
 
 def scatter_craters(h: np.ndarray, metres: float, seed: int, d_lo: float, d_hi: float, coverage: float, exponent: float = 2.0,
-                    fresh_power: float = 2.5) -> np.ndarray:
-    """Stamp craters with diameters d_lo..d_hi (m) until they cover `coverage` of the area. Returns freshness field 0..1."""
+                    fresh_power: float = 2.5, ghosts: float = 0.0) -> np.ndarray:
+    """Stamp craters with diameters d_lo..d_hi (m) until they cover `coverage` of the area. Returns freshness field 0..1.
+    `ghosts`: as much again of the area (x ghosts) in craters worn down to rimless hollows a fiftieth to a
+    thirtieth of their width deep, stamped first: what is left of the generations before, the gentle hummocks
+    a mature surface is made of between the craters one can count."""
     n = h.shape[0]
     px = n / metres
     rng = np.random.default_rng(seed)
+    if ghosts > 0.0:
+        grng = np.random.default_rng(seed + 7919)
+        covered = 0.0
+        for d in power_law_sizes(grng, 20000, d_lo, d_hi, exponent):
+            d = float(d)
+            if covered + np.pi * d * d / 4 > ghosts * coverage * metres * metres:
+                break
+            covered += np.pi * d * d / 4
+            stamp(h, grng.uniform(0, n), grng.uniform(0, n), 0.5 * d * px, crater_profile(d * grng.uniform(0.02, 0.035), 0.0, 0.0), 2.5)
     area = metres * metres
     fresh_field = np.zeros_like(h)
     covered = 0.0
@@ -482,7 +494,7 @@ def fine_regolith(scale: int, metres: float) -> Layer:
         scatter_craters(h, metres, seed + 3, 0.025, 0.4, 0.5 * crater_cover(0.025, 0.4), exponent=2.2, fresh_power=1.5)
         # The soil is cloddy at the centimetre: clumps of a finger's width and less, sharp-edged, a quarter of
         # the ground (each a lit facet with a black sliver behind it under a low sun), and a few stones.
-        clods = scatter_lumps(h, metres, seed + 4, 0.008, 0.07, 0.26, 0.6, 0.45)
+        clods = scatter_lumps(h, metres, seed + 4, 0.008, 0.07, 0.26, 0.6, 0.06)
         stones = scatter_lumps(h, metres, seed + 5, 0.015, 0.09, 0.012, 0.6, 0.9)
         speck = unit(spectral(n, seed + 6, 0.6, 60, 500))
         albedo = tint(GREY, n) * (0.93 + 0.14 * speck)[..., None] * (1.0 - 0.05 * clods)[..., None] * (1.0 + 0.22 * stones)[..., None]
@@ -491,7 +503,7 @@ def fine_regolith(scale: int, metres: float) -> Layer:
     if scale == 1:
         # Fine roughness only (a few millimetres); the forms are the craterlets'.
         h = spectral(n, seed + 1, 1.8, 20, 250) * 0.003
-        fresh = scatter_craters(h, metres, seed + 3, 0.12, 3.0, 1.3 * crater_cover(0.12, 3.0), exponent=2.0, fresh_power=2.0)
+        fresh = scatter_craters(h, metres, seed + 3, 0.12, 3.0, 1.3 * crater_cover(0.12, 3.0), exponent=2.0, fresh_power=5.0, ghosts=1.5)
         # Clods only: stones of this size are meshes of the rock field (a stone in a normal map is a decal that
         # is all lit or all black under a low sun, with no shadow on the ground).
         scatter_lumps(h, metres, seed + 4, 0.06, 0.14, 0.01, 0.3, 0.0)
@@ -501,7 +513,7 @@ def fine_regolith(scale: int, metres: float) -> Layer:
         return Layer(metres, h, albedo, np.full((n, n), 0.95), 1.0).with_feature_height(n / 12)
     d_lo, d_hi = ((1.0, 30.0), (8.0, 250.0))[scale - 2]
     h = np.zeros((n, n))
-    fresh = scatter_craters(h, metres, seed + 3, d_lo, d_hi, 1.2 * crater_cover(d_lo, d_hi), exponent=2.0, fresh_power=2.5)
+    fresh = scatter_craters(h, metres, seed + 3, d_lo, d_hi, 1.2 * crater_cover(d_lo, d_hi), exponent=2.0, fresh_power=6.0, ghosts=1.5)
     h = gauss(h, 0.8)
     mott = unit(spectral(n, seed + 6, 2.2, 1, 24))
     albedo = tint(GREY, n) * (0.95 + 0.10 * mott)[..., None] * (1.0 + 0.16 * gauss(fresh, 1.0))[..., None]
@@ -547,7 +559,7 @@ def compacted_soil(scale: int, metres: float) -> Layer:
         h = spectral(n, seed + 1, 1.6, 30, n // 2) * (0.01, 0.03)[scale - 2]
         clods = np.zeros((n, n))
         d_lo, d_hi = ((1.0, 14.0), (8.0, 150.0))[scale - 2]
-        scatter_craters(h, metres, seed + 3, d_lo, d_hi, crater_cover(d_lo, d_hi), fresh_power=3.0)
+        scatter_craters(h, metres, seed + 3, d_lo, d_hi, crater_cover(d_lo, d_hi), fresh_power=6.0, ghosts=1.5)
     h = gauss(h, 0.5)
     fine = unit(spectral(n, seed + 4, 1.2, 24, n // 2))
     albedo = tint((0.108, 0.105, 0.099), n) * (0.93 + 0.14 * fine)[..., None] * (1.0 - 0.06 * gauss(clods, 1.0))[..., None]
@@ -565,9 +577,10 @@ def boulder(scale: int, metres: float) -> Layer:
     f1, f2, ids, _ = worley(n, 46, seed, jitter=1.0)
     ys, xs = np.mgrid[0:n, 0:n] / n
     # Every facet is a plane of its own tilt and level; they meet in steps along the cell borders.
-    gx = (cell_random(ids, seed + 1) - 0.5) * 0.5
-    gy = (cell_random(ids, seed + 2) - 0.5) * 0.5
-    level = cell_random(ids, seed + 3) * 0.03
+    # (Faint: the faces of a block are the mesh's; on them a net of stepped facets read as cracked tiles.)
+    gx = (cell_random(ids, seed + 1) - 0.5) * 0.16
+    gy = (cell_random(ids, seed + 2) - 0.5) * 0.16
+    level = cell_random(ids, seed + 3) * 0.006
     h = (level + gx * (xs - 0.5) * 0.25 + gy * (ys - 0.5) * 0.25) * metres
     h = gauss(h, 1.2)
     edge = f2 - f1
@@ -575,7 +588,7 @@ def boulder(scale: int, metres: float) -> Layer:
     # (The joints between facets are steps, hardly grooves: as dark lines on a smooth face they read as
     # the cracks of an eggshell. What marks a lunar rock is its pitted, granular skin: zap pits and vesicles.)
     h -= crack * 0.0015 * metres
-    h += spectral(n, seed + 4, 1.6, 8, n // 2) * 0.0014 * metres
+    h += spectral(n, seed + 4, 1.6, 8, n // 2) * 0.0022 * metres + spectral(n, seed + 9, 2.4, 3, 24) * 0.004 * metres
     scatter_craters(h, metres, seed + 5, 0.004 * metres, 0.03 * metres, 0.14, exponent=2.2, fresh_power=0.7)
     shade = 0.92 + 0.16 * cell_random(ids, seed + 6)
     speck = unit(spectral(n, seed + 7, 0.3, 80, n // 2))

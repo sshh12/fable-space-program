@@ -507,7 +507,7 @@ function rawTree(variant: number, lod: number): Builder {
   const trunk: P3[] = [[0, 0, -0.05], [0.002, 0.001, 0.0], lerp([0, 0, 0], fork, 0.12), lerp([0, 0, 0], fork, 0.3), lerp([0, 0, 0], fork, 0.65), fork];
   trunk[3] = add(trunk[3]!, [0.035 * (w() - 0.5), 0.035 * (w() - 0.5), 0]);
   trunk[4] = add(trunk[4]!, [0.03 * (w() - 0.5), 0.03 * (w() - 0.5), 0]);
-  if (lod < 2) tube(b, trunk, [1.75 * trunkR, 1.55 * trunkR, 1.2 * trunkR, 1.04 * trunkR, 0.97 * trunkR, 0.92 * trunkR], [7, 5][lod]!, w());
+  if (lod < 2) tube(b, trunk, [1.42 * trunkR, 1.34 * trunkR, 1.14 * trunkR, 1.04 * trunkR, 0.97 * trunkR, 0.92 * trunkR], [7, 5][lod]!, w());
   else ribbons(b, [0, 0, -0.05], [0.6 * fork[0], 0.6 * fork[1], 0.45], 1.6 * trunkR);
   for (let k = 0; k < lobes; k++) {
     const a = (2 * Math.PI * (k + 0.7 * u())) / lobes;
