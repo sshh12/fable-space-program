@@ -83,6 +83,17 @@ export const SUNLIT_VISIBILITY_FULL = 0.3;
  * Exterior and map views only; never without the elevation (a caller that cannot tell gives none).
  */
 export const SUNLIT_SHADOW_MIN_EV = 0.5;
+/**
+ * What is brighter than anything the sun can light (request vfx-8): ground under a flame, a glint, a flame's
+ * own hint. A daylight exposure is set for what the sun lights, and those clip as the flame does. Pixels and
+ * emitters above SUNLIT_OVER_WHITE times the luminance of a white Lambert surface square to the sun (sunlit
+ * white with its share of sky light stays under it) may raise the exterior target by at most
+ * SUNLIT_SPOT_MAX_EV over what the frame without them asks for, under the same visibility gate as the other
+ * sunlit bounds. A frame full of sunlit cloud or snow keeps its half stop (SUNLIT_HIGHLIGHT_MAX_EV); the pad
+ * under the flame of a daylight lift-off no longer holds the meter on that bound until it leaves the frame.
+ */
+export const SUNLIT_OVER_WHITE = 1.5;
+export const SUNLIT_SPOT_MAX_EV = 0.25;
 export const SUNLIT_SURFACE = 0.25;
 export const SUNLIT_EVIDENCE_FROM = 0.0002;
 export const SUNLIT_EVIDENCE_FULL = 0.002;
@@ -143,6 +154,16 @@ export const SUN_IN_FRAME_MARGIN_EV = 1;
 /** Adaptation speed, EV per second: fast when the scene gets brighter, slower when it gets darker. */
 export const ADAPT_UP = 2.5;
 export const ADAPT_DOWN = 0.8;
+/**
+ * A cut between views (request cockpit-14). When `CameraState.kind` changes (chase to cockpit, flight to map)
+ * the exposure is the new shot's, not an eye's that adapts: for CUT_ADAPT_SECONDS after the change it follows
+ * the metered target with the time constant CUT_ADAPT_TAU, in both directions and through the dark range (the
+ * histogram of the new view arrives a few frames after the cut, and the view manager's blend carries the eye
+ * through the hull for a third of a second more: the target is still moving, and the exposure stays on it).
+ * Eleven stops from a sunlit exterior to the cabin took three to four seconds of black picture before.
+ */
+export const CUT_ADAPT_SECONDS = 0.75;
+export const CUT_ADAPT_TAU = 0.06;
 
 export const exposureFromEv100 = (ev100: number): number => 1 / (EXPOSURE_K * 2 ** ev100);
 /** EV100 that renders luminance L (cd/m^2) at mid-grey. */
@@ -265,8 +286,9 @@ export interface MeterResult {
   sunlitFloor: number;
 }
 
-/** Scratch: the far histogram of an interior view. */
+/** Scratch: the far histogram of an interior view, and an exterior frame without what is brighter than sunlit white. */
 const FAR = new Float64Array(HISTOGRAM_BINS);
+const SUNLIT = new Float64Array(HISTOGRAM_BINS);
 
 const smooth = (a: number, b: number, x: number): number => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
@@ -301,7 +323,8 @@ const smooth = (a: number, b: number, x: number): number => {
  *
  * Under the sun the exterior target is bounded on both sides of sunny 16: from above by
  * SUNLIT_HIGHLIGHT_MAX_EV (request vfx-4), from below by SUNLIT_SHADOW_MIN_EV while sunlit surfaces are in
- * the frame and the sun stands well above the horizon (request vfx-7).
+ * the frame and the sun stands well above the horizon (request vfx-7); and what is brighter than the sun can
+ * light anything (flame-lit ground, glints, emitters) moves it by SUNLIT_SPOT_MAX_EV at most (request vfx-8).
  */
 export function meterExposure(m: MeterInput): MeterResult {
   const interior = m.kind === 'interior';
@@ -332,8 +355,12 @@ export function meterExposure(m: MeterInput): MeterResult {
   const evSunlitMax = evSun + SUNLIT_HIGHLIGHT_MAX_EV;
   const underTheSun = (evHighlight: number, weight = sunlit): number => (weight > 0 && evHighlight > evSunlitMax ? evHighlight + (evSunlitMax - evHighlight) * weight : evHighlight);
   let evPrior = somethingLit ? Math.max(EV_DARK_FLOOR, evSun) : EV_DARK_FLOOR;
+  // Under the sun, what is brighter than anything it lights raises the target by a quarter stop at most (request vfx-8).
+  const overWhite = (SUNLIT_OVER_WHITE * m.sunIlluminance * m.sunVisibility) / Math.PI;
+  const spot = (evWith: number, evWithout: number): number => (sunlit > 0 && evWith > evWithout + SUNLIT_SPOT_MAX_EV ? evWith + (evWithout + SUNLIT_SPOT_MAX_EV - evWith) * sunlit : evWith);
   if (emitterCoverage > 0) {
-    const evEmitter = underTheSun(Math.log2(emitterLuminance / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)));
+    let evEmitter = underTheSun(Math.log2(emitterLuminance / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)));
+    if (emitterLuminance > overWhite) evEmitter = spot(evEmitter, evPrior);
     if (evEmitter > evPrior) evPrior += (evEmitter - evPrior) * smooth(LIT_PRESENT, EMISSIVE_FULL, emitterCoverage);
   }
 
@@ -374,6 +401,20 @@ export function meterExposure(m: MeterInput): MeterResult {
       // The bound holds for the mean as well as for the 99th percentile: a few per cent of the frame at a
       // hundred times sunlit white move the arithmetic mean by stops.
       evHistogram = underTheSun(Math.max(evHistogram, Math.log2(stats.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K))));
+      // The same frame without what is brighter than the sun can make it: it sets the level, the rest clips.
+      const first = luminanceBin(overWhite) + 1;
+      let over = 0;
+      if (sunlit > 0) for (let i = first; i < HISTOGRAM_BINS; i++) over += histogram[i]!;
+      if (over > 0) {
+        for (let i = 0; i < HISTOGRAM_BINS; i++) SUNLIT[i] = i < first ? histogram[i]! : 0;
+        const lit = histogramStats(SUNLIT, m.sampleCount);
+        let evLit = evSun;
+        if (lit.mean > 0) {
+          const evMean = ev100ForMidGrey(lit.mean);
+          evLit = underTheSun(Math.max(evMean - exposureCompensationCurve(evMean), Math.log2(lit.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K))));
+        }
+        evHistogram = spot(evHistogram, evLit);
+      }
     }
     w = smooth(LIT_PRIOR_ONLY, evHistogram > evPrior ? LIT_FULL_BRIGHT : LIT_FULL, stats.litFraction);
   }
@@ -434,4 +475,9 @@ export function adaptEv100(current: number, target: number, dt: number): number 
   // Exponential approach far from the target, constant-rate cap so large jumps take visible time.
   const step = Math.min(Math.abs(d), Math.max(rate * dt, Math.abs(d) * (1 - Math.exp(-dt * rate))));
   return current + Math.sign(d) * step;
+}
+
+/** Exposure during the CUT_ADAPT_SECONDS after a cut between views: on the target with the time constant CUT_ADAPT_TAU. */
+export function adaptEv100Cut(current: number, target: number, dt: number): number {
+  return current + (target - current) * (1 - Math.exp(-Math.max(0, dt) / CUT_ADAPT_TAU));
 }

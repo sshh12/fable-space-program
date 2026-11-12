@@ -213,3 +213,29 @@ test('from the seat the windows blow out; leaning to the window the Earth fills 
   await expectClean(page, pageLog, info);
 });
 
+
+test('a cut to the cockpit is exposed for the cabin within half a second (request cockpit-14)', async ({ page, pageLog }) => {
+  const info = await openIntegration(page, 'scene=lowOrbit&hud=0');
+  requireFeatures(test, info, ['vehicle', 'cockpit']);
+  // A sunlit exterior first: the vehicle from its sunlit side, the exposure settled on daylight.
+  await page.evaluate(() => window.__integration!.watchVesselFromSunSide(45, 35));
+  const outside = await exposure(page, 300);
+  expect(Math.abs(outside.ev100 - outside.sunny16)).toBeLessThan(0.75);
+  // The cut: the seat, one frame to the next.
+  const seated = await page.evaluate(() => window.__integration!.sitInCockpit(0, 0));
+  expect(seated).toBe(true);
+  const after30 = await exposure(page, 30);
+  await save(page, 'exposure-cut-to-cockpit-30-frames');
+  const settled = await exposure(page, 600);
+  await save(page, 'exposure-cut-to-cockpit-settled');
+  console.log(`cut to the cockpit: outside EV100 ${outside.ev100.toFixed(2)}, 30 frames after the cut ${after30.ev100.toFixed(2)}, settled ${settled.ev100.toFixed(2)}`);
+  record('f.cutToCockpit', { outside: outside.ev100, after30Frames: after30.ev100, settled: settled.ev100 });
+  // The cabin is many stops under daylight, and half a second after the cut the exposure is the cabin's.
+  expect(outside.ev100 - settled.ev100).toBeGreaterThan(4);
+  expect(Math.abs(after30.ev100 - settled.ev100)).toBeLessThan(0.75);
+  // And back out: daylight again within the same half second.
+  await page.evaluate(() => window.__integration!.watchVesselFromSunSide(45, 35));
+  const back = await exposure(page, 30);
+  expect(Math.abs(back.ev100 - outside.ev100)).toBeLessThan(0.75);
+  await expectClean(page, pageLog, info);
+});

@@ -4,6 +4,8 @@ import { blackbodyRadiance } from '@/render/core/mesh/meshSystem';
 import {
   ADAPT_DARK,
   adaptEv100,
+  adaptEv100Cut,
+  CUT_ADAPT_SECONDS,
   binLuminance,
   DARK_ADAPT_EV,
   EV_DARK_FLOOR,
@@ -25,6 +27,7 @@ import {
   SUNLIT_ELEVATION_MIN,
   SUNLIT_HIGHLIGHT_MAX_EV,
   SUNLIT_SHADOW_MIN_EV,
+  SUNLIT_SPOT_MAX_EV,
   SUN_IN_FRAME_MARGIN_EV,
   meterExposure,
   sunny16Ev,
@@ -477,6 +480,101 @@ describe('the exposure is bounded from below as well while the sun lights the sc
     fill(third, 0.3 * sunlit(0.02), 0.3 * sunlit(0.05), 30000);
     fill(third, 0.3 * sunlit(0.4), 0.3 * sunlit(0.85), 250);
     expect(meter(third, { sunVisibility: 0.3, sunElevationSin: HIGH }).targetEv100).toBeCloseTo(sunny16Ev(SUN * 0.3) - SUNLIT_SHADOW_MIN_EV, 9);
+  });
+});
+
+describe('what is brighter than the sun can light anything moves a daylight exposure by a quarter stop at most (request vfx-8)', () => {
+  const evSun = sunny16Ev(SUN);
+  const sunlit = (albedo: number): number => (albedo * SUN) / Math.PI;
+  /** A daylight pad: concrete, grass, a white vehicle. */
+  const pad = (): Uint32Array => {
+    const h = new Uint32Array(HISTOGRAM_BINS);
+    fill(h, sunlit(0.08), sunlit(0.35), 0.6 * N);
+    fill(h, sunlit(0.5), sunlit(0.85), 0.02 * N);
+    return h;
+  };
+
+  it('the apron under the flame of a daylight lift-off: in the frame or gone, the target moves by 0.25 EV at most', () => {
+    const gone = meter(pad()).targetEv100;
+    // 4 % of the lit pixels take more light from the flame than from the sun: 5 to 40 times sunlit white.
+    const lit = pad();
+    fill(lit, sunlit(5), sunlit(40), 0.025 * N);
+    const there = meter(lit).targetEv100;
+    expect(SUNLIT_SPOT_MAX_EV).toBe(0.25);
+    expect(there - gone).toBeLessThanOrEqual(SUNLIT_SPOT_MAX_EV + 1e-9);
+    expect(there).toBeGreaterThanOrEqual(gone);
+    // The upper bound alone let it ride half a stop up (0.57 EV in the lab's sequence): the sky pumped when the pad left.
+    expect(evSun + SUNLIT_HIGHLIGHT_MAX_EV - gone).toBeGreaterThan(0.4);
+    // With the flame's own hint on top: the same.
+    const flame = meter(lit, { emissive: [{ luminance: 3e6, coverage: 0.03 }] }).targetEv100;
+    expect(flame - gone).toBeLessThanOrEqual(SUNLIT_SPOT_MAX_EV + 1e-9);
+    // And over an empty daylight sky the hint raises the prior by no more.
+    const sky = meter(new Uint32Array(HISTOGRAM_BINS), { emissive: [{ luminance: 3e6, coverage: 0.05 }] }).targetEv100;
+    expect(sky - evSun).toBeLessThanOrEqual(SUNLIT_SPOT_MAX_EV + 1e-9);
+    expect(sky).toBeGreaterThanOrEqual(evSun);
+  });
+
+  it('a frame full of sunlit cloud or snow keeps its half stop, and sunlit white is protected as before', () => {
+    const snow = new Uint32Array(HISTOGRAM_BINS);
+    fill(snow, sunlit(0.6), sunlit(0.95), 0.9 * N);
+    expect(meter(snow).targetEv100).toBeCloseTo(evSun + SUNLIT_HIGHLIGHT_MAX_EV, 9);
+    // White with its share of sky light (1.2 x the sun alone) is still what the sun lights.
+    const bright = pad();
+    fill(bright, sunlit(1.0), sunlit(1.2), 0.05 * N);
+    const ev = meter(bright).targetEv100;
+    expect(ev - meter(pad()).targetEv100).toBeGreaterThan(SUNLIT_SPOT_MAX_EV);
+    expect(ev).toBeLessThanOrEqual(evSun + SUNLIT_HIGHLIGHT_MAX_EV + 1e-9);
+  });
+
+  it('does not touch night, twilight below the gate or a cabin: the ground a flame lights is what a night camera exposes for', () => {
+    // Ground at the brightness of sunlit white and above, lit by a flame alone.
+    const lit = new Uint32Array(HISTOGRAM_BINS);
+    fill(lit, 50, 400, 0.3 * N);
+    fill(lit, sunlit(0.8), sunlit(1.2), 0.025 * N);
+    const night = { sunVisibility: 0, litObjectInView: false };
+    const a = meter(lit, night).targetEv100;
+    // The 99th percentile of the lit pixels is held under 4 x mid-grey: the flame-lit ground sets the exposure.
+    expect(histogramStats(lit, N).p99 * exposureFromEv100(a)).toBeLessThanOrEqual(4 * 0.18 * 1.001);
+    expect(a).toBeGreaterThan(sunny16Ev(SUN) + SUNLIT_HIGHLIGHT_MAX_EV);
+    const sliver = meter(lit, { sunVisibility: 0.04 }).targetEv100;
+    expect(histogramStats(lit, N).p99 * exposureFromEv100(sliver)).toBeLessThanOrEqual(4 * 0.18 * 1.001);
+    // A cabin meters its near geometry by its own rules.
+    const cabin = { kind: 'interior' as const, histogramNear: lit };
+    expect(meter(lit, cabin).targetEv100).toBeLessThan(a);
+  });
+});
+
+describe('a cut between views takes the new exposure at once (request cockpit-14)', () => {
+  it('eleven stops from a sunlit exterior to the cabin in a third of a second, where the eye-like adaptation takes three', () => {
+    let cut = 15;
+    let eye = 15;
+    let t = 0;
+    let cutAt = Infinity;
+    let eyeAt = Infinity;
+    for (; t < 6; t += 1 / 60) {
+      cut = adaptEv100Cut(cut, 4, 1 / 60);
+      eye = adaptEv100(eye, 4, 1 / 60);
+      if (cut - 4 < 0.3 && cutAt === Infinity) cutAt = t;
+      if (eye - 4 < 0.3 && eyeAt === Infinity) eyeAt = t;
+    }
+    expect(cutAt).toBeLessThan(0.3);
+    expect(cutAt).toBeLessThan(CUT_ADAPT_SECONDS / 2);
+    expect(eyeAt).toBeGreaterThan(3);
+  });
+
+  it('both ways, through the dark range, and exactly on a target that is reached', () => {
+    // Cabin to a sunlit exterior.
+    let ev = 4;
+    for (let i = 0; i < 20; i++) ev = adaptEv100Cut(ev, 15, 1 / 60);
+    expect(15 - ev).toBeLessThan(0.1);
+    // Into a dark view: the dark adaptation's 0.12 EV/s is an eye's, a cut does not wait for it.
+    ev = 2;
+    for (let i = 0; i < 30; i++) ev = adaptEv100Cut(ev, -6, 1 / 60);
+    expect(ev + 6).toBeLessThan(0.01);
+    expect(adaptEv100Cut(7, 7, 1 / 60)).toBe(7);
+    expect(adaptEv100Cut(7, 3, 0)).toBe(7);
+    // It never overshoots, whatever the frame time.
+    expect(adaptEv100Cut(15, 4, 1)).toBeGreaterThanOrEqual(4);
   });
 });
 

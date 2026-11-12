@@ -7,7 +7,7 @@
 import type { FrameContext, RenderContext } from '@/core/contracts/render';
 import type { Perf } from '../perf';
 import type { CoreShaderLibrary, Tracked } from '../shaders/library';
-import { adaptEv100, HISTOGRAM_BINS, HISTOGRAM_MIN_LOG2, HISTOGRAM_RANGE_LOG2, INTERIOR_RANGE, LUMINANCE_FLOOR, meterExposure, type MeterInput, type MeterResult } from './exposure';
+import { adaptEv100, adaptEv100Cut, HISTOGRAM_BINS, HISTOGRAM_MIN_LOG2, HISTOGRAM_RANGE_LOG2, INTERIOR_RANGE, LUMINANCE_FLOOR, meterExposure, type MeterInput, type MeterResult } from './exposure';
 
 const STRIDE = 4;
 
@@ -86,6 +86,11 @@ export class ExposureMeter {
 
   adapt(current: number, target: number, dt: number): number {
     return adaptEv100(current, target, dt);
+  }
+
+  /** The same within CUT_ADAPT_SECONDS of a cut between views (request cockpit-14). */
+  adaptAfterCut(current: number, target: number, dt: number): number {
+    return adaptEv100Cut(current, target, dt);
   }
 
   last(): MeterResult {

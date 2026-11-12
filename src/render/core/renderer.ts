@@ -29,7 +29,7 @@ import { createMeshSystem, SHADOW_PASS_WGSL } from './mesh/meshSystem';
 import { TextureManager } from './mesh/textures';
 import { Perf } from './perf';
 import { ExposureMeter } from './post/exposureMeter';
-import { EV_DARK_FLOOR, exposureFromEv100, type EmissiveHint } from './post/exposure';
+import { CUT_ADAPT_SECONDS, EV_DARK_FLOOR, exposureFromEv100, type EmissiveHint } from './post/exposure';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorConfig, type GovernorState } from './post/governor';
 import { PostProcess } from './post/postProcess';
 import { Tonemap } from './post/tonemap';
@@ -419,6 +419,9 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   /** Exposure the TAA history was written with (0 = none yet). */
   let historyExposure = 0;
   let evInitialised = false;
+  // Kind of the view the exposure was last metered for, and the seconds left of the fast adaptation after a cut.
+  let meteredKind: string | null = null;
+  let cutAdapt = 0;
   let evOverride: number | null = null;
   let disposed = false;
   let historyReset = true;
@@ -594,9 +597,15 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       emissive: emissiveHints,
     });
     emissiveHints = [];
+    // A change of view kind is a cut: the new shot's exposure, not an eye that adapts (request cockpit-14).
+    const stepDt = Math.min(realDt, 0.1);
+    if (meteredKind !== null && meteredKind !== camera.kind) cutAdapt = CUT_ADAPT_SECONDS;
+    meteredKind = camera.kind;
     if (evOverride !== null) ev100 = evOverride;
     else if (!evInitialised) ev100 = metering.targetEv100;
-    else ev100 = meter.adapt(ev100, metering.targetEv100, Math.min(realDt, 0.1));
+    else if (cutAdapt > 0) ev100 = meter.adaptAfterCut(ev100, metering.targetEv100, stepDt);
+    else ev100 = meter.adapt(ev100, metering.targetEv100, stepDt);
+    cutAdapt = Math.max(0, cutAdapt - stepDt);
     evInitialised = true;
     const exposure = exposureFromEv100(ev100);
 

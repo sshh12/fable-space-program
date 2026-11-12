@@ -872,6 +872,21 @@ the HDR target at EV 15 (invisible in sunlight) and 0.25 at EV 10.
   _FULL`: a lunar landing under an 8 degree sun and a dawn splashdown are metered as before). The core
   computes the elevation for the nearest body; `exposureInfo().sunlitFloor` is the weight of the bound
   (0..1). Interior views are never bounded.
+- **Brighter than the sun can make it** (request `vfx-8`). Under the same visibility gate, pixels and
+  emitter hints above `SUNLIT_OVER_WHITE` = 1.5 times the luminance of a white surface square to the sun
+  (ground under a flame, glints, the flame's own hint) may raise the exterior target by at most
+  `SUNLIT_SPOT_MAX_EV` = 0.25 EV over what the frame without them asks for: they clip, as the flame does.
+  A frame full of sunlit cloud or snow keeps the half stop of the upper bound (nothing in it is brighter
+  than the sun makes white). So a daylight lift-off holds its exposure within a quarter of a stop whether
+  the apron under the flame is in the frame or not; at night that apron is what the camera exposes for,
+  as before.
+- **A cut between views** (request `cockpit-14`). When `CameraState.kind` changes between two frames
+  (chase to cockpit, flight to map, and back) the exposure follows the metered target with a time constant
+  of `CUT_ADAPT_TAU` = 0.06 s for `CUT_ADAPT_SECONDS` = 0.75 s, in both directions and through the dark
+  range: the new shot's exposure, a third of a second after the histogram of the new view has arrived,
+  instead of an eye adapting at 0.8 EV/s (eleven stops from a sunlit exterior to the cabin were three to
+  four seconds of black picture). Inside a view the rates are unchanged (`ADAPT_UP`, `ADAPT_DOWN`,
+  `ADAPT_DARK`). A rig that wants no fast adaptation keeps its kind.
 - **Emitters** (requests `vfx-1`, `vfx-4`). A plume, a reentry trail or a fireball is invisible to the
   meter. A feature that draws one and wants the camera to react calls
   `coreOf(ctx).addEmissiveHint(luminance, coverage)` in `prepare`, every frame it is in view:
@@ -1300,6 +1315,8 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 
 | Change | Request | Affects | Migration |
 |---|---|---|---|
+| Exposure after a cut: when `CameraState.kind` changes, the exposure follows the target with `CUT_ADAPT_TAU` (0.06 s) for `CUT_ADAPT_SECONDS` (0.75 s) (`adaptEv100Cut`), section 13 | `cockpit-14` | cockpit (the cabin is exposed a third of a second after C, not three to four seconds), map view, every screenshot taken shortly after a view change | None. Inside a view the adaptation rates are unchanged |
+| Exposure under the sun: pixels and emitter hints above `SUNLIT_OVER_WHITE` (1.5) x sunlit white raise the exterior target by at most `SUNLIT_SPOT_MAX_EV` (0.25 EV) over what the rest of the frame asks for, section 13 | `vfx-8` | vfx (daylight lift-off: the flame-lit apron and the flame's hint no longer hold the meter on the +0.5 EV bound), ocean (sun glint), anything brighter than sunlit white by day | None in code. Daylight frames with such pixels are up to 0.25 EV brighter than before; night, twilight below the gate and cabins unchanged |
 | Exposure target bounded from below under the sun: sunny 16 - `SUNLIT_SHADOW_MIN_EV` (0.5) while sunlit surfaces are in the frame (`SUNLIT_SURFACE`, `SUNLIT_EVIDENCE_FROM / _FULL`) and the sun stands 10-25 degrees or more above the ground under the camera (`MeterInput.sunElevationSin`, `SUNLIT_ELEVATION_MIN / _FULL`); `MeterResult.sunlitFloor`, `exposureInfo().sunlitFloor`, section 13 | `vfx-7` | vfx (daylight lift-off: no pumping when the lit pad leaves the frame), every daylight exterior frame of dark ground or sea with a sunlit hull, cloud or beach in it (up to 2.5 EV darker than the meter alone chose: dark things stay dark by day) | None in code. Night, twilight, eclipse, overcast, low sun (under 10 degrees), views without a sunlit surface and cabins are metered as before |
 | Mesh G-buffer shader, `standard` shading: a frost veil under the cells, `0.55 x smoothstep(0, 0.6, weight)`, clear coat covered by `max(cells, 0.8 x veil)`, section 10 | `vehicle-pad-6` | vehicle-pad (thin frost over markings) | None at frost weight 0 and 1; between, the paint is hazed evenly instead of left bare between the cells |
 | `PbrMaterialDef.alphaCutoff`: alpha-tested materials in the mesh system's G-buffer and shadow passes (second shadow pipeline with uv for models that have one; stochastic coverage where the mips average the alpha), section 10 | `vehicle-pad-4` | vehicle-pad (gratings, perforated plate) | None: materials without it are drawn exactly as before. The material uniform grew to 80 bytes (internal) |
