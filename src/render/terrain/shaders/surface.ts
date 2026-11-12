@@ -51,7 +51,7 @@ struct TerrainMaterial {
   p7: vec4f,                                  // share of the material's own hue in the ground colour where a pixel is a few metres, and where it is tens of metres; joint spacing of concrete slabs (m); gravel material (-1 = none)
   p8: vec4f,                                  // rgb = albedo of site gravel, a = strength of the shadows the detail relief casts along the sun (0 = off)
   p9: vec4f,                                  // height above sea level up to which shoreGain acts (m); wet band of the swash (m); number of regions; taps of the relief-shadow march
-  p10: vec4f,                                 // share of its saturation the imagery keeps outside the regions; reach of the patches along a class boundary (m; 0 = none); 1 = the far and aerial layers' relief casts shadows too; unused
+  p10: vec4f,                                 // share of its saturation the imagery keeps outside the regions; reach of the patches along a class boundary (m; 0 = none); 1 = the far and aerial layers' relief casts shadows too; number of detail scales a site's slab shows (the first n)
   anchor: array<vec4f, ${MAX_MATERIALS}>,     // rgb = albedo the ground takes where material m covers it (its own mean, or the set's choice for it)
   siteFrame: array<vec4f, ${2 * MAX_SITES}>,  // [2 s]: xyz = east at the site (body-fixed), w = first shape; [2 s + 1]: xyz = north, w = shape count
   siteShape: array<vec4f, ${2 * MAX_SITE_SHAPES}>, // [2 i]: centre east, north of the pad centre, half sizes x, z (m); [2 i + 1]: cos, sin of the heading, kind (0 slab, 1 gravel), corner radius (m)
@@ -818,6 +818,10 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
     let f = smoothstep(8.0, 24.0, period / footprint) * distFade * (1.0 - smoothstep(16.0, 64.0, texel / footprint));
     if (s == ${DETAIL_SCALES - 1}) { o.aerial = f; }
     if (f <= 0.0) { continue; }
+    // A site's slab shows its first scales only (mat.p10.w): poured concrete has grain and stains, and
+    // nothing of the size of the far and aerial layers (patches of tens and hundreds of metres), which were
+    // a third of what the apron's pixels cost under the vehicle at lift-off.
+    if (slab && f32(s) >= mat.p10.w) { continue; }
     var relief = f;
     var meanLod = -1.0;
     if (s >= 2) {

@@ -159,6 +159,7 @@ export const SURFACE_PARAM_KEYS = [
   'reliefShadow',
   'reliefShadowTaps',
   'reliefShadowFar',
+  'slabDetailScales',
   'shoreReachM',
   'lakeDepthM',
   'shoreWetnessHeightM',
@@ -344,7 +345,7 @@ export function buildMaterialUniform(set: MaterialSet, p: SurfaceParams, sites: 
   f.set([p.gravelAlbedoR, p.gravelAlbedoG, p.gravelAlbedoB, p.reliefShadow], o + 8);
   if (regions.length > MAX_REGIONS) throw new Error(`terrain material set "${m.id}": ${regions.length} regions, at most ${MAX_REGIONS}`);
   f.set([Math.max(p.shoreReachM, 1e-3), Math.max(p.shoreWetnessHeightM, 1e-3), regions.length, Math.max(2, Math.round(p.reliefShadowTaps))], o + 12);
-  f.set([p.imagerySaturationGlobal, Math.max(0, p.classBandM), p.reliefShadowFar, 0], o + 16);
+  f.set([p.imagerySaturationGlobal, Math.max(0, p.classBandM), p.reliefShadowFar, Math.min(4, Math.max(1, Math.round(p.slabDetailScales)))], o + 16);
   o += 20;
   m.materials.forEach((mt, i) => f.set(m.anchorAlbedo[mt.id] ?? mt.layers[0].meanAlbedo, o + i * 4));
   o += MAX_MATERIALS * 4;

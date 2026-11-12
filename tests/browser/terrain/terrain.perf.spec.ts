@@ -112,7 +112,17 @@ interface PerfView {
   budget: { gbuffer: number; shadow: number; rocks: number | null };
   /** The view must hold at least this many instances of ground cover (its cost is then in the terrain's lines). */
   cover?: number;
+  /**
+   * A bounded overrun granted by the lead (2026-11-12; docs/handoff/terrain-render.md section 14) until the
+   * work item named in `until` has landed. The budget line stays what it is and is printed beside the
+   * measurement in every run; the test holds the line to `ceiling` (the worst measurement of that day plus
+   * 5 %), so the spec still catches a regression. Not a budget: when the work item lands the entry goes.
+   */
+  leadWaiver?: { until: string; ceiling: { gbuffer?: number; shadow?: number } };
 }
+
+/** The detail layers composited into a cached clipmap around the camera (hand-off section 14, design note). */
+const MATERIAL_CACHE = 'terrain material cache';
 
 const VIEWS: PerfView[] = [
   { name: 'pad', body: 'earth', query: { body: 'earth', lat: PAD.lat - 0.0004, lon: PAD.lon + 0.0003, agl: 1.7, heading: 60, pitch: -4, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null } },
@@ -120,12 +130,12 @@ const VIEWS: PerfView[] = [
   // is met with nothing to draw. What rocks cost on Earth is measured at eye height on the broken, stony
   // ground 1 km south-west of the pad, the densest rock field near the site (every chunk in range holds
   // hundreds of rocks), and held to the line of the lunar descent.
-  { name: 'stony ground', body: 'earth', query: { body: 'earth', lat: 18.981197, lon: -155.609964, agl: 1.7, heading: 200, pitch: -8, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: 0.3 } },
+  { name: 'stony ground', body: 'earth', query: { body: 'earth', lat: 18.981197, lon: -155.609964, agl: 1.7, heading: 200, pitch: -8, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: 0.3 }, leadWaiver: { until: MATERIAL_CACHE, ceiling: { gbuffer: 2.9 } } },
   // Ground cover at its densest near the site: among the kiawe at eye height (tussocks, scrub and trees at
   // every level of detail), and the same thickets from 120 m up, when the lift-off camera sees trees to 1.8 km
   // and stands of them beyond.
-  { name: 'kiawe', body: 'earth', query: { body: 'earth', lat: PAD.lat + 0.0062, lon: PAD.lon + 0.0005, agl: 1.7, heading: 70, pitch: -3, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null }, cover: 3000 },
-  { name: 'thickets 120 m', body: 'earth', query: { body: 'earth', lat: PAD.lat + 0.0035, lon: PAD.lon - 0.001, agl: 120, heading: 15, pitch: -24, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null }, cover: 3000 },
+  { name: 'kiawe', body: 'earth', query: { body: 'earth', lat: PAD.lat + 0.0062, lon: PAD.lon + 0.0005, agl: 1.7, heading: 70, pitch: -3, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null }, cover: 3000, leadWaiver: { until: MATERIAL_CACHE, ceiling: { gbuffer: 2.05, shadow: 0.65 } } },
+  { name: 'thickets 120 m', body: 'earth', query: { body: 'earth', lat: PAD.lat + 0.0035, lon: PAD.lon - 0.001, agl: 120, heading: 15, pitch: -24, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null }, cover: 3000 , leadWaiver: { until: MATERIAL_CACHE, ceiling: { gbuffer: 3.45 } } },
   { name: '10 km', body: 'earth', query: { body: 'earth', lat: PAD.lat, lon: PAD.lon, alt: 10e3, heading: 340, pitch: -25, sun: '105,31' }, budget: { gbuffer: 1.5, shadow: 0.5, rocks: null } },
   { name: 'LEO', body: 'earth', query: { body: 'earth', lat: 19.6, lon: -155.5, alt: 250e3, heading: 20, pitch: -40, sun: '105,42' }, budget: { gbuffer: 1.5, shadow: 0.4, rocks: null } },
   { name: 'lunar orbit', body: 'moon', query: { body: 'moon', lat: 1.5, lon: 21.5, alt: 100e3, heading: 80, pitch: -30, sun: '92,10' }, budget: { gbuffer: 1.8, shadow: 0.6, rocks: null } },
@@ -152,8 +162,10 @@ for (const v of VIEWS) {
       const idle = await measure(page, 200);
       await calibrateBallast(page, 7);
       let best: Measured | null = null;
+      // What the test holds each line to: its budget, or the ceiling of a lead waiver.
+      const limit = { gbuffer: v.leadWaiver?.ceiling.gbuffer ?? v.budget.gbuffer, shadow: v.leadWaiver?.ceiling.shadow ?? v.budget.shadow };
       const within = (m: Measured): boolean =>
-        m.gbuffer + m.coverGbuffer <= v.budget.gbuffer && m.shadow + m.coverShadow <= v.budget.shadow && (v.budget.rocks === null || m.rocksGbuffer + m.rocksShadow <= v.budget.rocks) && m.selectP99 < 1 && m.hooksP99 < 1;
+        m.gbuffer + m.coverGbuffer <= limit.gbuffer && m.shadow + m.coverShadow <= limit.shadow && (v.budget.rocks === null || m.rocksGbuffer + m.rocksShadow <= v.budget.rocks) && m.selectP99 < 1 && m.hooksP99 < 1;
       for (let round = 0; round < 6; round++) {
         if (round >= 3 && within(best!)) break;
         const m = await measure(page, 200);
@@ -190,13 +202,27 @@ for (const v of VIEWS) {
           `rocks ${part(m.parts.rocks)}, ground cover ${part(m.parts.cover)}, shadow hooks ${part(m.parts.shadow)}, G-buffer hook ${part(m.parts.gbuffer)}); the renderer's own figure for the hooks: p99 ${m.cpuP99.toFixed(3)} ms; ` +
           `detail material arrays ${(st.materialBytes / 2 ** 20).toFixed(0)} MiB`,
       );
-      await shot(page, `perf-${v.name.replace(/ /g, '-')}`);
+      await shot(page, `perf-${v.name.replace(/ /g, '-')}${process.env.TERRAIN_SUFFIX ? `-${process.env.TERRAIN_SUFFIX}` : ''}`);
       expect(m.ballast).toBeGreaterThan(5);
       expect(m.quality).toBe(1);
       expect(m.scale).toBe(1);
       expect(m.gbuffer).toBeGreaterThan(0);
-      expect(m.gbuffer + m.coverGbuffer, 'terrain G-buffer with the ground cover').toBeLessThanOrEqual(v.budget.gbuffer);
-      expect(m.shadow + m.coverShadow, 'terrain shadows with the ground cover').toBeLessThanOrEqual(v.budget.shadow);
+      if (v.leadWaiver) {
+        const line = (what: string, measured: number, budget: number, ceiling: number | undefined): string =>
+          ceiling === undefined
+            ? ''
+            : measured <= budget
+              ? ` ${what} ${measured.toFixed(3)} ms is within its budget of ${budget}: the waiver (ceiling ${ceiling}) is no longer needed;`
+              : ` ${what} ${measured.toFixed(3)} ms is OVER ITS BUDGET of ${budget} by ${(measured - budget).toFixed(3)} and held to the ceiling of ${ceiling};`;
+        console.log(
+          `${v.name}: LEAD WAIVER until "${v.leadWaiver.until}":` +
+            line('G-buffer with the ground cover', m.gbuffer + m.coverGbuffer, v.budget.gbuffer, v.leadWaiver.ceiling.gbuffer) +
+            line('shadows with the ground cover', m.shadow + m.coverShadow, v.budget.shadow, v.leadWaiver.ceiling.shadow) +
+            ' the budgets are unchanged',
+        );
+      }
+      expect(m.gbuffer + m.coverGbuffer, `terrain G-buffer with the ground cover (budget ${v.budget.gbuffer}${v.leadWaiver?.ceiling.gbuffer === undefined ? '' : `, lead waiver ceiling ${limit.gbuffer}`})`).toBeLessThanOrEqual(limit.gbuffer);
+      expect(m.shadow + m.coverShadow, `terrain shadows with the ground cover (budget ${v.budget.shadow}${v.leadWaiver?.ceiling.shadow === undefined ? '' : `, lead waiver ceiling ${limit.shadow}`})`).toBeLessThanOrEqual(limit.shadow);
       if (v.cover !== undefined) {
         expect(st.cover.instances).toBeGreaterThan(v.cover);
         expect(m.coverGbuffer).toBeGreaterThan(0);

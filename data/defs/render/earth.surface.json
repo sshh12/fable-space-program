@@ -61,6 +61,7 @@
     "reliefShadow": 1,
     "reliefShadowTaps": 4,
     "reliefShadowFar": 0,
+    "slabDetailScales": 2,
     "shoreReachM": 4
   }
 }

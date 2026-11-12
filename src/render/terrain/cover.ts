@@ -80,14 +80,19 @@ export interface CoverOptions {
    * Levels of detail: an instance casts into a cascade from its finest mesh when its radius is
    * `shadowFineTexels` texels, from the middle one from `shadowMiddleTexels`, and not at all below
    * `shadowMinTexels`; in the G-buffer it takes the finest mesh when its radius spans `finePixels` pixels and
-   * the middle one from `middlePixels`.
+   * the middle one from `middlePixels`. Bushes, trees and groves have middle levels of their own
+   * (`woodyMiddlePixels`, `woodyShadowMiddleTexels`): theirs are the meshes with the triangles.
    */
   shadowFineTexels: number;
   shadowMiddleTexels: number;
+  woodyShadowMiddleTexels: number;
   shadowMinTexels: number;
   finePixels: number;
   middlePixels: number;
+  woodyMiddlePixels: number;
 }
+/** Shapes of wood and leaves (their middle levels: `woodyMiddlePixels`, `woodyShadowMiddleTexels`). */
+const SHAPE_WOODY: Record<CoverShape, boolean> = { tuft: false, bush: true, tree: true, grove: true, stone: false };
 
 export interface CoverSite {
   /** Pad centre (body-fixed, m), east and north unit vectors there, and the site's ground plan. */
@@ -194,6 +199,7 @@ const SHAPE_LEAFY: Record<CoverShape, boolean> = { tuft: false, bush: true, tree
  */
 const SHADOW_FINE_TEXELS = 1e9;
 const SHADOW_MIDDLE_TEXELS = 32;
+const WOODY_SHADOW_MIDDLE_TEXELS = 1e9;
 const SHADOW_MIN_TEXELS = 4;
 /**
  * An instance takes its finest mesh in the G-buffer when its radius spans this many pixels, the middle one
@@ -203,6 +209,7 @@ const SHADOW_MIN_TEXELS = 4;
  */
 const FINE_PIXELS = 55;
 const MIDDLE_PIXELS = 20;
+const WOODY_MIDDLE_PIXELS = 30;
 
 const COVER_WGSL = /* wgsl */ `
 struct CoverBody {
@@ -920,7 +927,7 @@ export class CoverRenderer {
   }
 
   /** Switches for measurements (TerrainDebug.setCoverOptions): what each part of the cover costs. Never used by the app. */
-  private options: CoverOptions = { kinds: null, shadows: true, leafTest: true, shadowFineTexels: SHADOW_FINE_TEXELS, shadowMiddleTexels: SHADOW_MIDDLE_TEXELS, shadowMinTexels: SHADOW_MIN_TEXELS, finePixels: FINE_PIXELS, middlePixels: MIDDLE_PIXELS };
+  private options: CoverOptions = { kinds: null, shadows: true, leafTest: true, shadowFineTexels: SHADOW_FINE_TEXELS, shadowMiddleTexels: SHADOW_MIDDLE_TEXELS, woodyShadowMiddleTexels: WOODY_SHADOW_MIDDLE_TEXELS, shadowMinTexels: SHADOW_MIN_TEXELS, finePixels: FINE_PIXELS, middlePixels: MIDDLE_PIXELS, woodyMiddlePixels: WOODY_MIDDLE_PIXELS };
   /** Scratch of drawShadow: the chunks inside the cascade and their tiers. */
   private readonly shadowChunks: Chunk[] = [];
   private readonly shadowTiers: Tier[] = [];
@@ -1444,9 +1451,9 @@ export class CoverRenderer {
       for (const c of tier.wanted) {
         if (!c.listed || !c.visible) continue;
         const g = c.origin;
-        // An instance spans 110 pixels (finest mesh) or 28 (middle) where its radius is this share of its distance.
+        // An instance takes the finest mesh (the middle one) where its radius is this share of its distance.
         const fineShare = this.options.finePixels * pixelAngle;
-        const middleShare = this.options.middlePixels * pixelAngle;
+        const middleShare = (SHAPE_WOODY[COVER_SHAPES[tier.shape]!] ? this.options.woodyMiddlePixels : this.options.middlePixels) * pixelAngle;
         if (c.near < c.reach) {
           // The camera is in or beside the chunk: distances differ by more than the chunk's own size.
           const ex = b.eye.x - g.x;
@@ -1575,7 +1582,7 @@ export class CoverRenderer {
           // A crown that spans many texels casts from a finer mesh: the coarsest one draws its shadow as a
           // few large sprays on the ground beside the eye.
           const fine = CoverRenderer.prefixEnd(c.radii, start, end, opt.shadowFineTexels * cascade.texelSize);
-          const middle = CoverRenderer.prefixEnd(c.radii, fine, end, opt.shadowMiddleTexels * cascade.texelSize);
+          const middle = CoverRenderer.prefixEnd(c.radii, fine, end, (SHAPE_WOODY[COVER_SHAPES[tiers[i]!.shape]!] ? opt.woodyShadowMiddleTexels : opt.shadowMiddleTexels) * cascade.texelSize);
           this.pushRange(base + v * COVER_LODS, c.base + start, c.base + fine);
           this.pushRange(base + v * COVER_LODS + 1, c.base + fine, c.base + middle);
           this.pushRange(base + v * COVER_LODS + 2, c.base + middle, c.base + end);
