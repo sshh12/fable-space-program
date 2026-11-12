@@ -263,7 +263,9 @@ cockpit displays' paint split.
 Two runs of `tests/browser/app` (functional + perf, 22:38 and 23:08), each alone on the GPU (one slot in the gate);
 other agents' CPU work ran beside them. The second run had the terrain pool work for app-integration-7 in the
 working tree (uncommitted, another agent's); where the two runs differ both are given. Budget lines are not
-loosened.
+loosened. Result of the second run: functional 7 of 7; perf 1 of 3 (the two 1440p tests fail on the soft
+main-thread line, as the table says). A third, short run at 00:04 on the committed tree (the loading test, the
+other-starts test added after the second run, the low-orbit test and the lead's `shell.spec.ts`): 4 of 4.
 
 **Loading** (`performance.now()` of the page; the pad, 1280 x 720, second run; 2560 x 1440 is the same within two seconds):
 
@@ -276,8 +278,9 @@ loosened.
 | Terrain at the start | 9.3 -> 31.3 | 32 tiles resident at 20.4 s, 636 (the always-resident levels) at 24.5 s, 1,079 with level 20 under the vehicle at 31.3 s |
 | First frames, fade | 31.3 -> 31.9 | 12 settled frames, then 450 ms |
 
-To the revealed view: **31.9 s** (first run 32.7 s; perf spec at 1440p 31.9 s, at 720p 29.9 s; lunar orbit at 1440p
-21.0 s). Two thirds of it is not loading data: the 14 s in which the first 19 frames wait for synchronous
+To the revealed view: **31.9 s** (first run 32.7 s, third run 30.4 s; perf spec at 1440p 31.9 s, at 720p 29.9 s;
+lunar orbit at 1440p 21.0 s; landed on the Moon in the cockpit view 22.2 s with level 18 under the lander;
+trans-Earth coast 17.6 s). Two thirds of it is not loading data: the 14 s in which the first 19 frames wait for synchronous
 pipeline compiles, and the terrain that starts streaming only after that and refines one level per round trip (request
 app-integration-11 asks for both). Before this round the game showed its first frame after 25-40 s and the pad's
 surroundings were drawn as sea for another 40 s at 1440p; now the first frame shown is the final one.
@@ -403,6 +406,10 @@ Added 2026-11-11 night (all looked at):
   `?capturepill=0&pilotlabel=0` with the pilot flying and the game paused: no switch, no pilot label, PAUSED.
 - `leo-chase.png`, `leo-cockpit.png`, `leo-map-node.png`: the parking orbit; the map with a maneuver node at the
   apoapsis, its handles and the node panel (prograde 1.0 m/s after the Shift-drag).
+- `start-lunar-surface-cockpit.png`: the first frame of a start landed on the Moon in the cockpit view: the cabin
+  lit, the navball instrument and the flight display legible. `start-trans-earth.png`: the first frame of the
+  trans-Earth coast: the ascent stage and capsule seen from behind at 322.6 Mm, the Earth and the Moon as two small
+  discs near the left edge (the framing of request app-integration-10).
 
 ## Browser mission (ARCHITECTURE 18.2)
 
