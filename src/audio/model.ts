@@ -89,6 +89,13 @@ export interface EngineVoiceTarget {
   paths: SourcePaths;
 }
 
+/** What a voice is built from before its cluster sounds (the same key, profile and seed its target will carry). */
+export interface EngineStandby {
+  key: string;
+  profileId: string;
+  seed: number;
+}
+
 export interface AeroTarget {
   wind: { gain: number; cutoff: number };
   noise: { gain: number; lowHz: number; highHz: number };
@@ -134,6 +141,11 @@ export interface ModelOutput {
   paused: boolean;
   /** Engine clusters that sound now (running, a transient, or within voiceHold of either). */
   engines: EngineVoiceTarget[];
+  /**
+   * Silent clusters of the active vessel that can still fire, at most `engines.standbyVoices` of them: the
+   * graph builds their voices ahead, one per frame, so that the frame of an ignition creates no nodes.
+   */
+  standby: EngineStandby[];
   aero: AeroTarget;
   reentry: ReentryTarget;
   ambience: AmbienceTarget;
@@ -179,6 +191,8 @@ interface ClusterAcc {
   posSum: Vec3;
   ignitionOffset: number | null;
   shutdownOffset: number | null;
+  /** Some engine of the cluster can still fire (not burnt out, ignitions left; RCS switched on). */
+  ready: boolean;
 }
 
 interface SourceTrack {
@@ -240,11 +254,13 @@ export class SoundModel {
     const continuous = continuousAudible(frame.warpFactor, this.config.mix.warp.threshold) ? 1 : 0;
     const eventsAllowed = !snap.warp.onRails && !frame.paused;
 
+    const standby: EngineStandby[] = [];
     const out: ModelOutput = {
       interior: geom.interior,
       continuous,
       paused: frame.paused,
-      engines: this.engineVoices(snap, geom, problems),
+      engines: this.engineVoices(snap, geom, problems, standby),
+      standby,
       aero: this.aero(geom),
       reentry: this.reentry(geom),
       ambience: this.ambience(snap, geom),
@@ -414,7 +430,7 @@ export class SoundModel {
 
   // ------------------------------------------------------------------------------------------- engines
 
-  private engineVoices(snap: SimSnapshot, geom: ListenerGeometry, problems: string[]): EngineVoiceTarget[] {
+  private engineVoices(snap: SimSnapshot, geom: ListenerGeometry, problems: string[], standby: EngineStandby[]): EngineVoiceTarget[] {
     const clusters = new Map<string, ClusterAcc>();
     const engines = this.config.engines;
     const seen = new Set<string>();
@@ -436,6 +452,7 @@ export class SoundModel {
           posSum: v3.zero(),
           ignitionOffset: null,
           shutdownOffset: null,
+          ready: false,
         };
         clusters.set(key, c);
       }
@@ -466,6 +483,7 @@ export class SoundModel {
           } else if (m.type === 'rcs' && md.type === 'rcs') {
             const c = cluster(vessel, engines.rcsModuleProfile);
             c.engines += md.thrusters.length;
+            if (m.enabled) c.ready = true;
             md.thrusters.forEach((t, j) => {
               const level = m.enabled ? (m.levels[j] ?? 0) : 0;
               const pos = v3.add(part.localPos, quat.rotate(part.localRot, v3.fromTuple(t.pos)));
@@ -497,12 +515,22 @@ export class SoundModel {
       if (t.running > 0 || t.ignition || t.shutdown) this.lastSounding.set(c.key, this.time);
       if (t.running > 0 || t.ignition || t.shutdown || held) out.push(t);
     }
+    // The other clusters of the active vessel that can still fire stand by (request app-integration-13: the
+    // nodes of a voice, its delay line above all, cost about a millisecond, which must not fall in the frame
+    // of an ignition). In the order of the vessel's parts, so the list is stable from frame to frame.
+    const sounding = new Set(out.map((t) => t.key));
+    for (const c of clusters.values()) {
+      if (standby.length >= engines.standbyVoices) break;
+      if (c.vessel.id !== geom.active.id || !c.ready || sounding.has(c.key)) continue;
+      standby.push({ key: c.key, profileId: c.profileId, seed: hashString(c.key) });
+    }
     return out;
   }
 
   private addEngine(c: ClusterAcc, engineKey: string, m: Extract<ModuleState, { type: 'engine' }>, lever: number, pos: Vec3, seen: Set<string>): void {
     seen.add(engineKey);
     c.engines++;
+    if (!m.flameout && m.ignitionsLeft !== 0) c.ready = true;
     c.posSum = v3.add(c.posSum, pos);
     if (m.thrust > 0) {
       c.running++;

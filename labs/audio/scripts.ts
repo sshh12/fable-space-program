@@ -7,7 +7,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { PartSnapshot, SimEvent, SimEventType, VesselSnapshot } from '@/core/contracts/sim';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { isFixedBurn, LAB_PARTS, LabEngines, labStack, type LabPlacement, type LabStackId } from './labVehicle';
+import { isFixedBurn, LAB_PARTS, LabEngines, labStack, placeVehicle, type LabPlacement, type LabStackId } from './labVehicle';
 import { SEA_LEVEL, baseSnapshot, externalAt, frames, labEngines, makeEvent, seatOf, steadyEngines, type ListenerSpec, type Script } from './scenes';
 
 /** US76-like pressure for the clip scenes, Pa. */
@@ -348,6 +348,37 @@ export function ignitionScript(lib: DefLibrary, stack: LabStackId, distance: num
         if (t >= at && prev < at) e.activate((p) => !isFixedBurn(lib, p.def));
         prev = t;
         stepEngines(e, last, t, t >= at ? 1 : 0);
+        return { parts: e.parts(SEA_LEVEL), aero: { pressure: SEA_LEVEL }, airVelocityVes: v3.zero(), boundingRadius: 10 };
+      },
+    }),
+  };
+}
+
+/**
+ * The mission vehicle on the pad (the booster stack when no vehicle is defined), heard at `distance` m: its
+ * throttleable engines light at 0.5 s, are shut down at 2.5 s and light again at 10 s, after the first
+ * voices have drained and been disposed. The timeline on which engine voices built ahead and voices built
+ * when they first sound must render the same samples (request app-integration-13).
+ */
+export function restartScript(lib: DefLibrary, distance: number, stack: LabStackId | 'vehicle' = 'vehicle'): Script {
+  const base = baseSnapshot(lib, 'pad');
+  const vehicle = stack === 'vehicle' ? Object.keys(lib.vehicles)[0] : undefined;
+  const e = vehicle ? new LabEngines(placeVehicle(lib, vehicle).parts, lib.parts) : labEngines(lib, stack === 'vehicle' ? 'booster' : stack);
+  const lit = (t: number): boolean => (t >= 0.5 && t < 2.5) || t >= 10;
+  const last = { t: 0 };
+  let prev = -1;
+  const l = externalAt(distance, { height: 2, lookY: 10 });
+  return {
+    name: `restart-${stack}-${distance}`,
+    duration: 12,
+    frame: frames({
+      base,
+      listen: () => l,
+      state: (t) => {
+        if (lit(t) && !lit(prev)) e.activate((p) => !isFixedBurn(lib, p.def));
+        if (!lit(t) && lit(prev)) e.shutdown(() => true);
+        prev = t;
+        stepEngines(e, last, t, lit(t) ? 1 : 0);
         return { parts: e.parts(SEA_LEVEL), aero: { pressure: SEA_LEVEL }, airVelocityVes: v3.zero(), boundingRadius: 10 };
       },
     }),

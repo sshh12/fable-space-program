@@ -117,6 +117,69 @@ describe('engine clusters', () => {
     const out = run(frames({ base, listen: () => externalAt(100), state: () => ({ parts: e.parts(SEA_LEVEL), aero: { pressure: SEA_LEVEL }, airVelocityVes: v3.zero() }) }), 0.5).at(-1)!;
     expect(out.engines).toHaveLength(0);
   });
+
+  it('the silent clusters of the active vessel that can still fire stand by, in a stable order, never the sounding ones', () => {
+    const id = Object.keys(lib.vehicles)[0];
+    if (!id) return;
+    const v = placeVehicle(lib, id);
+    const e = new LabEngines(v.parts, lib.parts);
+    const base = baseSnapshot(lib, 'pad');
+    const m = new SoundModel(cfg, lib);
+    const l = listener(externalAt(100), base.activeVesselId);
+    const frame = (t: number): ModelOutput => m.update({ snapshot: compose(base, { parts: e.parts(SEA_LEVEL), aero: { pressure: SEA_LEVEL } }, t, 0), listener: l, realDt: DT, warpFactor: 1, paused: false });
+    const before = frame(0);
+    // Every (vessel, profile) cluster of the stack, each once, under the configured count.
+    const profiles = new Set<string>();
+    for (const p of v.parts) for (const md of lib.parts[p.def]!.modules) if (md.type === 'engine') profiles.add(md.sound); else if (md.type === 'rcs') profiles.add(cfg.engines.rcsModuleProfile);
+    expect(before.standby.length).toBe(Math.min(profiles.size, cfg.engines.standbyVoices));
+    expect(new Set(before.standby.map((s) => s.profileId)).size).toBe(before.standby.length);
+    for (const s of before.standby) {
+      expect(s.key).toBe(`${base.activeVesselId}|${s.profileId}`);
+      expect(profiles.has(s.profileId)).toBe(true);
+    }
+    expect(frame(DT).standby).toEqual(before.standby);
+
+    // The throttleable engines light: their clusters sound (same key and seed as they stood by with), the rest still stand by.
+    e.activate((p) => lib.parts[p.def]?.modules.some((md) => md.type === 'engine' && !md.fixedBurn) ?? false);
+    let out = before;
+    for (let t = 2 * DT; t < 3; t += DT) {
+      e.step(DT, 1);
+      out = frame(t);
+    }
+    expect(out.engines.length).toBeGreaterThan(0);
+    for (const t of out.engines) {
+      const stood = before.standby.find((s) => s.key === t.key);
+      expect(stood, `${t.key} stood by before it sounded`).toBeDefined();
+      expect(stood!.seed).toBe(t.seed);
+      expect(stood!.profileId).toBe(t.profileId);
+      expect(out.standby.some((s) => s.key === t.key)).toBe(false);
+    }
+    expect(out.standby.length + out.engines.length).toBe(before.standby.length);
+  });
+
+  it('a burnt-out cluster, RCS that is switched off, another vessel and a count of 0 stand nothing by', () => {
+    const base = baseSnapshot(lib, 'pad');
+    const parts = labEngines(lib, 'booster').parts(SEA_LEVEL);
+    const l = listener(externalAt(100), base.activeVesselId);
+    const standby = (snapshot: ReturnType<typeof compose>, config = cfg): string[] =>
+      new SoundModel(config, lib).update({ snapshot, listener: l, realDt: DT, warpFactor: 1, paused: false }).standby.map((s) => s.profileId);
+    const all = standby(compose(base, { parts, aero: { pressure: SEA_LEVEL } }, 0, 0));
+    expect(all).toContain('engine.methalox-booster');
+
+    const spent = parts.map((p) => ({ ...p, modules: p.modules.map((ms) => (ms.type === 'engine' ? { ...ms, flameout: true } : ms.type === 'rcs' ? { ...ms, enabled: false } : ms)) }));
+    expect(standby(compose(base, { parts: spent, aero: { pressure: SEA_LEVEL } }, 0, 0))).toEqual([]);
+    const noIgnitions = parts.map((p) => ({ ...p, modules: p.modules.map((ms) => (ms.type === 'engine' ? { ...ms, ignitionsLeft: 0 } : ms.type === 'rcs' ? { ...ms, enabled: false } : ms)) }));
+    expect(standby(compose(base, { parts: noIgnitions, aero: { pressure: SEA_LEVEL } }, 0, 0))).toEqual([]);
+
+    // The same engines on a vessel that is not flown: nothing of it stands by.
+    const other = { ...base.vessels[0]!, id: 'dropped-stage', parts };
+    expect(standby(compose(base, { parts: spent, extraVessels: [other], aero: { pressure: SEA_LEVEL } }, 0, 0))).toEqual([]);
+
+    const off: AudioConfig = { ...cfg, engines: { ...cfg.engines, standbyVoices: 0 } };
+    expect(standby(compose(base, { parts, aero: { pressure: SEA_LEVEL } }, 0, 0), off)).toEqual([]);
+    const one: AudioConfig = { ...cfg, engines: { ...cfg.engines, standbyVoices: 1 } };
+    expect(standby(compose(base, { parts, aero: { pressure: SEA_LEVEL } }, 0, 0), one)).toHaveLength(1);
+  });
 });
 
 describe('two propagation paths', () => {

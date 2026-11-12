@@ -109,14 +109,24 @@ test('real vehicle parts drive the engine voices; engines that do not fire get n
   await page.evaluate(() => window.__test!.waitFrames(30));
   const idle = await page.evaluate(() => window.__audioLabLive!.engine.stats()!);
   expect(idle.engineVoices, 'voices on the pad before ignition').toBe(0);
+  // The clusters that can still fire stand by with their nodes built (data/defs/audio/engines.json standbyVoices),
+  // playing nothing: no voice is counted as active.
+  expect(idle.standbyVoices, 'voices built ahead on the pad').toBeGreaterThan(0);
+  expect(idle.delayLines).toBe(2 + idle.standbyVoices);
+  await page.evaluate(() => window.__audioLabLive!.resetUpdateCost());
   await page.evaluate(() => window.__audioLabLive!.ignite());
   await page.waitForFunction(() => window.__test!.audio()!.buses.engines.rms > 0.005, undefined, { timeout: 20_000 });
   await page.evaluate(() => window.__test!.waitFrames(60));
   const lit = await page.evaluate(() => window.__audioLabLive!.engine.stats()!);
+  const ignitionCostMs = await page.evaluate(() => window.__audioLabLive!.updateCost());
   // ignite() lights every throttleable engine of the vehicle: one voice per firing (vessel, profile) cluster.
   expect(lit.engineVoices).toBeGreaterThan(0);
   expect(lit.engineVoices).toBeLessThanOrEqual(4);
-  record('vehicle', { vehicle: vehicles[0], idle, lit });
+  // Every one of them stood by: the ignition made no voice (request app-integration-13; the cost of the
+  // frames around it is recorded, 0.44 ms of a voice's millisecond is its delay line).
+  expect(lit.engineVoices + lit.standbyVoices, 'voices sounding + still standing by').toBe(idle.standbyVoices);
+  expect(lit.delayLines, 'delay lines after the ignition').toBe(idle.delayLines);
+  record('vehicle', { vehicle: vehicles[0], idle, lit, ignitionCostMs });
   await expectNoErrors(page, pageLog);
 });
 

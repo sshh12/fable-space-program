@@ -9,14 +9,18 @@
  *   bus.air + bus.body + bus.direct -> bus.sum (bus gain) -> bus.fade (time-warp fade) -> bus.out -> master
  *   master: volume -> pause -> compressor -> limiter (+ makeup cancel) = preCeiling -> soft ceiling -> out
  *
- * Engine voices exist only while their cluster sounds (the model emits them) and until their delay line
- * and transients have drained after that; a cluster that sounds again revives its draining voice.
+ * Engine voices sound only while their cluster sounds (the model emits them) and until their delay line
+ * and transients have drained after that; a cluster that sounds again revives its draining voice. The
+ * nodes of a voice cost about a millisecond of main thread to make (the delay line alone 0.44 ms), so the
+ * silent clusters the model lists as standing by get theirs built ahead, at most one per `apply` and none
+ * in an `apply` that built a sounding voice: such a voice is the same nodes with its sources not started,
+ * and its first targets start them exactly as the constructor would have (same offsets, same time).
  */
 import type { AudioConfig, BusId, MixConfig } from './config';
 import { BUS_NAMES } from './config';
 import { compressorMakeupDb, dbToGain } from './mapping';
-import { ambienceAssetIds, type AeroTarget, type AmbienceTarget, type CabinTarget, type EngineVoiceTarget, type ModelOutput, type OneShotRequest, type ReentryTarget, type SourcePaths } from './model';
-import { CRACKLE_LEVELS, crackleWeights, noiseBank, noiseSource, slowModulator, type NoiseBank } from './noise';
+import { ambienceAssetIds, type AeroTarget, type AmbienceTarget, type CabinTarget, type EngineStandby, type EngineVoiceTarget, type ModelOutput, type OneShotRequest, type ReentryTarget, type SourcePaths } from './model';
+import { CRACKLE_LEVELS, crackleWeights, noiseBank, noiseSource, slowModulator, startSource, type NoiseBank, type StartAt } from './noise';
 
 /** Decoded sound assets by id (audio/assets.json), plus procedurally rendered ones. */
 export interface AssetBank {
@@ -33,13 +37,29 @@ type Smoothing = MixConfig['smoothing'];
 
 /** An AudioParam driven toward per-frame targets; reaches an exact 0 when asked for 0. */
 class Smooth {
+  /** While a voice is being built ahead: the list its parameters are gathered in (see `rearm`). */
+  static gather: Smooth[] | null = null;
   private last: number;
   constructor(
     readonly param: AudioParam,
-    initial: number,
+    private readonly initial: number,
   ) {
     param.value = initial;
     this.last = initial;
+    Smooth.gather?.push(this);
+  }
+  /**
+   * For a voice that was built ahead, at its first sound: the parameter's timeline as it would be had the
+   * voice been built now. Setting `value` schedules that value at the context's current time; on a voice
+   * built ahead that event lies in the past, the first targets then add theirs behind it instead of in its
+   * place, and a parameter with two events is rendered sample by sample where one with a single past event
+   * is rendered per block. With the old event dropped and the initial value set again, the parameter's events
+   * are those of a voice built at this moment, and so is every sample it renders.
+   */
+  rearm(): void {
+    this.param.cancelScheduledValues(0);
+    this.param.value = this.initial;
+    this.last = this.initial;
   }
   get target(): number {
     return this.last;
@@ -208,9 +228,9 @@ const DRAIN_MARGIN = 1.5;
 /** Deterministic start offset inside a loop so voices sharing an asset are never phase-aligned. */
 const loopOffset = (buffer: AudioBuffer, seed: number): number => (((seed >>> 0) % 9973) / 9973) * buffer.duration;
 
-function loopSource(ctx: BaseAudioContext, buffer: AudioBuffer, seed: number, time: number): AudioBufferSourceNode {
+function loopSource(ctx: BaseAudioContext, buffer: AudioBuffer, seed: number, time: StartAt): AudioBufferSourceNode {
   const src = new AudioBufferSourceNode(ctx, { buffer, loop: true });
-  src.start(time, loopOffset(buffer, seed));
+  startSource(src, time, loopOffset(buffer, seed));
   return src;
 }
 
@@ -259,7 +279,7 @@ class CrackleLayer {
   private readonly gain: Smooth;
   private readonly weights: Smooth[];
   private readonly nodes: AudioNode[] = [];
-  constructor(ctx: BaseAudioContext, noise: NoiseBank, seed: number, time: number, highpassHz: number) {
+  constructor(ctx: BaseAudioContext, noise: NoiseBank, seed: number, time: StartAt, highpassHz: number) {
     const hp = highpass(ctx, highpassHz);
     this.out = new GainNode(ctx, { gain: 0 });
     this.gain = new Smooth(this.out.gain, 0);
@@ -284,9 +304,10 @@ class CrackleLayer {
   get nodeCount(): number {
     return this.nodes.length + 1;
   }
-  dispose(): void {
+  /** `started` false: the sources were never started (a voice built ahead that never sounded). */
+  dispose(started = true): void {
     for (const n of this.nodes) {
-      if (n instanceof AudioBufferSourceNode) n.stop();
+      if (started && n instanceof AudioBufferSourceNode) n.stop();
       n.disconnect();
     }
     this.out.disconnect();
@@ -308,20 +329,29 @@ class EngineVoice {
   private readonly sources: AudioBufferSourceNode[] = [];
   private readonly nodes: AudioNode[] = [];
   private readonly transients = new Set<AudioBufferSourceNode>();
+  /** The source starts of a voice built ahead (`time` null), run by its first targets; null once it sounds. */
+  private starts: Array<(time: number) => void> | null;
+  /** Every smoothed parameter of a voice built ahead (re-armed with the first targets); empty otherwise. */
+  private smooths: Smooth[] = [];
   running = 0;
   releasedAt: number | null = null;
 
+  /** `time`: when the sources start; null builds the voice ahead of its first sound (standing by). */
   constructor(
     private readonly ctx: BaseAudioContext,
     private readonly bank: AssetBank,
     noise: NoiseBank,
-    readonly target0: EngineVoiceTarget,
+    spec: EngineStandby,
     private readonly config: AudioConfig,
     bus: BusNodes,
-    time: number,
+    at: number | null,
   ) {
-    const p = config.engines.profiles[target0.profileId]!;
-    const seed = target0.seed;
+    const p = config.engines.profiles[spec.profileId]!;
+    const seed = spec.seed;
+    this.starts = at === null ? [] : null;
+    const time: StartAt = this.starts ?? at!;
+    // The smoothed parameters of a voice built ahead are gathered while it is built (Smooth.rearm).
+    Smooth.gather = at === null ? this.smooths : null;
     this.sum = new GainNode(ctx, { gain: 1 });
     this.path = new PathOut(ctx, bus, config.mix.propagation.maxDelay, { hz: p.body.resonanceHz, db: p.body.resonanceDb });
     this.sum.connect(this.path.input);
@@ -368,10 +398,23 @@ class EngineVoice {
       this.crackle = new CrackleLayer(ctx, noise, seed + 3, time, p.crackle.highpassHz);
       this.crackle.out.connect(this.sum);
     } else this.crackle = null;
+    Smooth.gather = null;
+  }
+
+  /** Built ahead and not sounding yet. */
+  get standing(): boolean {
+    return this.starts !== null;
   }
 
   apply(t: EngineVoiceTarget, time: number, sm: Smoothing): void {
     const p = this.config.engines.profiles[t.profileId]!;
+    if (this.starts) {
+      // The first sound of a voice built ahead: its parameters as if it were built now, its sources started now.
+      for (const s of this.smooths) s.rearm();
+      this.smooths = [];
+      for (const start of this.starts) start(time);
+      this.starts = null;
+    }
     this.running = t.running;
     this.core.set(t.core.gain, time, sm.gain);
     this.coreRate.set(t.core.rate, time, sm.filter);
@@ -439,13 +482,14 @@ class EngineVoice {
   }
 
   dispose(): void {
-    for (const s of this.sources) s.stop();
+    const started = this.starts === null;
+    if (started) for (const s of this.sources) s.stop();
     for (const s of this.transients) s.stop();
     for (const n of [...this.sources, ...this.nodes]) n.disconnect();
     this.core.dispose();
     this.rumble?.dispose();
     this.hiss?.dispose();
-    this.crackle?.dispose();
+    this.crackle?.dispose(started);
     this.path.dispose();
   }
 }
@@ -677,8 +721,10 @@ export interface AudioGraphOptions {
 
 /** What the graph holds right now (resource load, not just what is audible). */
 export interface AudioGraphStats {
-  /** Engine voices allocated: sounding, or released and draining their delay line and transients. */
+  /** Engine voices that sound or have sounded: sounding, or released and draining their delay line and transients. */
   engineVoices: number;
+  /** Engine voices built ahead for clusters that have not sounded (sources not started; counted in nodes and delay lines). */
+  standbyVoices: number;
   /** Audio nodes held: the static mix (buses, master, environment voices) + engine voices + one-shots. */
   nodes: number;
   /** Delay lines allocated, and their total length (each one mono): memory = seconds x sampleRate x 4 B. */
@@ -825,21 +871,41 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
       }
       pauseParam.ramp(out.paused ? 0 : 1, time, mix.pause.fadeTime);
       const live = new Set<string>();
+      let built = false;
       for (const t of out.engines) {
         live.add(t.key);
         let v = engines.get(t.key);
         if (!v) {
           v = new EngineVoice(ctx, bank, noise, t, config, buses.engines, time);
           engines.set(t.key, v);
+          built = true;
         } else if (v.releasedAt !== null) v.revive();
         v.apply(t, time, sm);
       }
+      const standing = new Set<string>();
+      for (const s of out.standby) standing.add(s.key);
       for (const [k, v] of engines) {
         if (live.has(k)) continue;
+        if (v.standing) {
+          // Built ahead for a cluster that is gone (staged away, burnt out, another vessel is flown).
+          if (!standing.has(k)) {
+            v.dispose();
+            engines.delete(k);
+          }
+          continue;
+        }
         v.release(time, sm);
         if (v.finished(time)) {
           v.dispose();
           engines.delete(k);
+        }
+      }
+      // Build ahead: one voice per call at most, and none in a call that already built one.
+      if (!built) {
+        for (const s of out.standby) {
+          if (engines.has(s.key)) continue;
+          engines.set(s.key, new EngineVoice(ctx, bank, noise, s, config, buses.engines, null));
+          break;
         }
       }
       firstApply = false;
@@ -871,7 +937,7 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
     },
     activeVoices() {
       let n = oneShots.size + (alarm ? 1 : 0);
-      for (const v of engines.values()) n += 1 + v.playingTransients;
+      for (const v of engines.values()) if (!v.standing) n += 1 + v.playingTransients;
       if (aero.audible) n++;
       if (reentry.audible) n++;
       if (ambience.audible) n++;
@@ -883,14 +949,16 @@ export function createAudioGraph(ctx: BaseAudioContext, bank: AssetBank, config:
       let delayLines = 2;
       let delayLineSeconds = aero.path.delaySeconds + reentry.path.delaySeconds;
       let transients = 0;
+      let standby = 0;
       for (const v of engines.values()) {
         nodes += v.nodeCount;
         delayLines++;
         delayLineSeconds += v.path.delaySeconds;
         transients += v.playingTransients;
+        if (v.standing) standby++;
       }
       for (const k of oneShots.values()) nodes += k;
-      return { engineVoices: engines.size, nodes, delayLines, delayLineSeconds, oneShots: oneShots.size + transients };
+      return { engineVoices: engines.size - standby, standbyVoices: standby, nodes, delayLines, delayLineSeconds, oneShots: oneShots.size + transients };
     },
     dispose() {
       for (const v of engines.values()) v.dispose();

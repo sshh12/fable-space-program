@@ -192,16 +192,27 @@ export function noiseBank(ctx: BaseAudioContext): NoiseBank {
   return bank;
 }
 
+/**
+ * When a looping source starts: at a context time, or - for a voice built before its cluster sounds - held
+ * back in a list of starts that the voice runs with its first targets (`(time) => src.start(time, offset)`).
+ */
+export type StartAt = number | Array<(time: number) => void>;
+
+export function startSource(src: AudioBufferSourceNode, at: StartAt, offset: number): void {
+  if (typeof at === 'number') src.start(at, offset);
+  else at.push((time) => src.start(time, offset));
+}
+
 /** A looping noise source starting at a seeded offset. */
-export function noiseSource(ctx: BaseAudioContext, bank: NoiseBank, kind: NoiseKind, seed: number, time: number, playbackRate = 1): AudioBufferSourceNode {
+export function noiseSource(ctx: BaseAudioContext, bank: NoiseBank, kind: NoiseKind, seed: number, time: StartAt, playbackRate = 1): AudioBufferSourceNode {
   const buffer = bank.get(kind)!;
   const src = new AudioBufferSourceNode(ctx, { buffer, loop: true, playbackRate });
-  src.start(time, (((seed >>> 0) % 100003) / 100003) * buffer.duration);
+  startSource(src, time, (((seed >>> 0) % 100003) / 100003) * buffer.duration);
   return src;
 }
 
 /** Slow random modulation at `hz` knots per second: the average of the two coprime slow buffers, in [-1, 1]. */
-export function slowModulator(ctx: BaseAudioContext, bank: NoiseBank, seed: number, time: number, hz: number): { output: GainNode; sources: AudioBufferSourceNode[] } {
+export function slowModulator(ctx: BaseAudioContext, bank: NoiseBank, seed: number, time: StartAt, hz: number): { output: GainNode; sources: AudioBufferSourceNode[] } {
   const output = new GainNode(ctx, { gain: 0.5 });
   const sources = (['slow-a', 'slow-b'] as const).map((kind, i) => {
     const src = noiseSource(ctx, bank, kind, seed + 7717 * i, time, hz);

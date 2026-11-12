@@ -10,7 +10,7 @@ import { ENTRY_PROFILE, entryStateAt, missionEntryScript, type EntryState } from
 import type { LabStackId } from './labVehicle';
 import { clipStats, masterWavBase64, maxAbsDiff, measureRender, onset, onsetAbove, preCeilingLevels, type ClipStats, type TapMeasure } from './measure';
 import type { Script } from './scenes';
-import { clipScripts, eventsScript, ignitionScript, loudScripts, maximumScript, modeScript, plasmaScript, steadyScript, type SteadyCase } from './scripts';
+import { clipScripts, eventsScript, ignitionScript, loudScripts, maximumScript, modeScript, plasmaScript, restartScript, steadyScript, type SteadyCase } from './scripts';
 
 export interface MeasureResult {
   renderMs: number;
@@ -46,6 +46,13 @@ export interface AudioLabApi {
   /** The same lift-off heard by an external camera with mode 'chase' and with an unknown mode of kind 'external'. */
   /** tapDiff / selfTapDiff: largest max-abs difference of any audible tap relative to that tap's RMS (unknown mode vs chase / chase vs chase). */
   modes(unknownMode: string): Promise<{ modelIdentical: boolean; frames: number; masterDiff: number; selfMasterDiff: number; tapDiff: number; selfTapDiff: number; masterRms: number; enginesRms: number }>;
+  /**
+   * The vehicle's engines lit, shut down and lit again (scripts.ts restartScript) rendered with the engine
+   * voices built ahead (engines.standbyVoices as configured), with the voices built when they first sound
+   * (0), and built ahead once more. tapDiff / selfTapDiff: largest max-abs difference of any audible tap
+   * relative to that tap's RMS, ahead vs on demand / ahead vs ahead (the renderer's own floor).
+   */
+  standby(distance: number, stack?: LabStackId | 'vehicle'): Promise<{ shape: { tap: string; from: number; rmsA: number; rmsB: number; gain: number; residual: number; lag: number; residualAtLag: number }[]; worst: { tap: string; at: number; first: number; diff: number; self: number }[]; tapDiff: number; selfTapDiff: number; masterDiff: number; selfMasterDiff: number; masterRms: number; enginesRms: number; ahead: AudioGraphStats; onDemand: AudioGraphStats; renderMs: { ahead: number; onDemand: number }; problems: string[] }>;
   clipNames(): string[];
   clip(name: string): Promise<{ wav: string; stats: ClipStats; renderMs: number; problems: string[]; preCeiling: { peak: number; kneeShare: number }; maxStats: AudioGraphStats }>;
   /** Per-bus and per-path levels of a clip in the given windows (diagnosis of what is heard when). */
@@ -182,6 +189,100 @@ export function createLabApi(config: AudioConfig, defs: DefLibrary, bank: AssetB
       const selfMasterDiff = Math.max(maxAbsDiff(a1.master[0], a2.master[0]), maxAbsDiff(a1.master[1], a2.master[1]));
       const m = measureRender(a1, ['master', 'engines'], [[1, 6]]);
       return { modelIdentical, frames: ma.length, masterDiff, selfMasterDiff, tapDiff, selfTapDiff, masterRms: m['master']!.windows[0]!.rms, enginesRms: m['engines']!.windows[0]!.rms };
+    },
+    async standby(distance, stack = 'vehicle') {
+      const taps = TAP_NAMES.filter((t) => t !== 'master');
+      const onDemand: AudioConfig = { ...config, engines: { ...config.engines, standbyVoices: 0 } };
+      // A script holds its engines' state: a fresh one per render.
+      const run = (c: AudioConfig): Promise<OfflineRender> => {
+        const s = restartScript(defs, distance, stack);
+        return renderOffline(c, defs, bank, { duration: s.duration, frame: s.frame, taps });
+      };
+      const a1 = await run(config);
+      const b = await run(onDemand);
+      const a2 = await run(config);
+      let tapDiff = 0;
+      let selfTapDiff = 0;
+      // Per audible tap: the largest difference relative to the tap's RMS and when it occurs, largest first.
+      const worst: { tap: string; at: number; first: number; diff: number; self: number }[] = [];
+      for (const t of taps) {
+        const x = a1.taps[t]!;
+        const y = b.taps[t]!;
+        const rms = audioAnalysis.rmsOf(x);
+        if (rms < 1e-6) continue;
+        let at = 0;
+        let most = 0;
+        let first = -1;
+        for (let i = 0; i < x.length; i++) {
+          const d = Math.abs(x[i]! - y[i]!);
+          if (first < 0 && d > 1e-3 * rms) first = i;
+          if (d > most) {
+            most = d;
+            at = i;
+          }
+        }
+        const self = maxAbsDiff(x, a2.taps[t]!) / rms;
+        worst.push({ tap: t, at: at / a1.sampleRate, first: first / a1.sampleRate, diff: most / rms, self });
+        tapDiff = Math.max(tapDiff, most / rms);
+        selfTapDiff = Math.max(selfTapDiff, self);
+      }
+      worst.sort((p, q) => q.diff - p.diff);
+      // What kind of difference it is, in windows of the engines' air and body paths: the gain that fits one
+      // render to the other, what is left after it, and the shift (samples) at which the two agree best.
+      const shape: { tap: string; from: number; rmsA: number; rmsB: number; gain: number; residual: number; lag: number; residualAtLag: number }[] = [];
+      for (const t of ['engines.air', 'engines.body'] as TapName[]) {
+        const x = a1.taps[t]!;
+        const y = b.taps[t]!;
+        for (const from of [0.6, 0.9, 1.5, 2.0, 10.4, 11.0]) {
+          const i0 = Math.round(from * a1.sampleRate);
+          const n = Math.round(0.25 * a1.sampleRate);
+          let xx = 0;
+          let yy = 0;
+          let xy = 0;
+          for (let i = i0; i < i0 + n; i++) {
+            xx += x[i]! * x[i]!;
+            yy += y[i]! * y[i]!;
+            xy += x[i]! * y[i]!;
+          }
+          if (xx <= 0 || yy <= 0) continue;
+          const gain = xy / yy;
+          const residualOf = (lag: number, g: number): number => {
+            let r = 0;
+            for (let i = i0; i < i0 + n; i++) {
+              const d = x[i]! - g * y[i + lag]!;
+              r += d * d;
+            }
+            return Math.sqrt(r / xx);
+          };
+          let lag = 0;
+          let best = residualOf(0, gain);
+          for (let l = -48; l <= 48; l++) {
+            const r = residualOf(l, 1);
+            if (r < best) {
+              best = r;
+              lag = l;
+            }
+          }
+          shape.push({ tap: t, from, rmsA: Math.sqrt(xx / n), rmsB: Math.sqrt(yy / n), gain, residual: residualOf(0, gain), lag, residualAtLag: best });
+        }
+      }
+      const masterDiff = Math.max(maxAbsDiff(a1.master[0], b.master[0]), maxAbsDiff(a1.master[1], b.master[1]));
+      const selfMasterDiff = Math.max(maxAbsDiff(a1.master[0], a2.master[0]), maxAbsDiff(a1.master[1], a2.master[1]));
+      const m = measureRender(a1, ['master', 'engines'], [[0.5, 12]]);
+      return {
+        worst,
+        shape,
+        tapDiff,
+        selfTapDiff,
+        masterDiff,
+        selfMasterDiff,
+        masterRms: m['master']!.windows[0]!.rms,
+        enginesRms: m['engines']!.windows[0]!.rms,
+        ahead: a1.maxStats,
+        onDemand: b.maxStats,
+        renderMs: { ahead: a1.renderMs, onDemand: b.renderMs },
+        problems: [...a1.problems, ...b.problems],
+      };
     },
     clipNames() {
       return clipScripts(defs).map((s) => s.name);

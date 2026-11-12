@@ -69,6 +69,12 @@ export interface EnginesConfig {
   level: { refThrust: number; levelDb: number };
   /** A cluster keeps its voice this long after it last sounded (no churn on brief throttle dips), s. */
   voiceHold: number;
+  /**
+   * How many silent clusters of the active vessel that can still fire have their voice built ahead (one per
+   * frame), so an ignition creates no nodes in its own frame; 0 = voices are built when they first sound.
+   * Each standing voice holds mix.propagation.maxDelay seconds of mono delay line and plays nothing.
+   */
+  standbyVoices: number;
   rcsModuleProfile: string;
   profiles: Record<string, EngineProfile>;
 }
@@ -470,7 +476,13 @@ function parseEngines(n: Field, assets: Record<string, AssetDef>): EnginesConfig
   }
   const rcsModuleProfile = n.get('rcsModuleProfile').str();
   if (!profiles[rcsModuleProfile]) n.get('rcsModuleProfile').fail(`"${rcsModuleProfile}" is not a profile`);
-  return { level, voiceHold: n.get('voiceHold').num({ min: 0, max: 30 }), rcsModuleProfile, profiles };
+  return {
+    level,
+    voiceHold: n.get('voiceHold').num({ min: 0, max: 30 }),
+    standbyVoices: n.get('standbyVoices').num({ min: 0, max: 32, int: true }),
+    rcsModuleProfile,
+    profiles,
+  };
 }
 
 function parseEvents(n: Field, assets: Record<string, AssetDef>): EventsConfig {

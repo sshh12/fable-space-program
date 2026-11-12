@@ -23,7 +23,7 @@ import { compose, externalAt, listener, makeEvent, SEA_LEVEL, type ListenerSpec 
 declare global {
   interface Window {
     __audioLab?: AudioLabApi;
-    __audioLabLive?: { set(partial: Partial<LiveState>): void; get(): LiveState; fire(type: SimEventType): void; ignite(): void; fireSolids(): void; shutdown(): void; updateCost(): { frames: number; p50: number; p99: number; max: number }; engine: FableAudioEngine };
+    __audioLabLive?: { set(partial: Partial<LiveState>): void; get(): LiveState; fire(type: SimEventType): void; ignite(): void; fireSolids(): void; shutdown(): void; updateCost(): { frames: number; p50: number; p99: number; max: number }; /** Forget the frames measured so far (to measure the frames around one event). */ resetUpdateCost(): void; engine: FableAudioEngine };
   }
 }
 
@@ -180,6 +180,9 @@ async function boot(): Promise<void> {
       const v = [...updateMs].sort((a, b) => a - b);
       const q = (p: number): number => v[Math.min(v.length - 1, Math.floor(p * v.length))] ?? 0;
       return { frames: v.length, p50: q(0.5), p99: q(0.99), max: v[v.length - 1] ?? 0 };
+    },
+    resetUpdateCost() {
+      updateMs.length = 0;
     },
     fire(type: SimEventType) {
       pending.push(type);

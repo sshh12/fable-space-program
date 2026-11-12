@@ -255,6 +255,26 @@ test('an unknown view mode of kind external sounds exactly like the chase camera
   await expectNoErrors(page, pageLog);
 });
 
+test('engine voices built ahead sound exactly like voices built when they first sound', async ({ page, pageLog }) => {
+  test.setTimeout(240_000);
+  await lab(page);
+  // The vehicle's engines lit at 0.5 s, shut down at 2.5 s and lit again at 10 s (the first voices drained and
+  // disposed in between), with engines.standbyVoices as configured and with 0.
+  const r = await call(page, (l) => l.standby(100));
+  record('standby', { ...r, tapDiffDbReTap: db(r.tapDiff), selfTapDiffDbReTap: db(r.selfTapDiff), masterDiffDbReMaster: db(r.masterDiff / r.masterRms), selfMasterDiffDbReMaster: db(r.selfMasterDiff / r.masterRms) });
+  expect(r.problems).toEqual([]);
+  expect(r.enginesRms).toBeGreaterThan(0.003);
+  expect(r.ahead.standbyVoices, 'voices standing by at once').toBeGreaterThan(0);
+  expect(r.onDemand.standbyVoices).toBe(0);
+  expect(r.ahead.engineVoices, 'voices sounding at once').toBe(r.onDemand.engineVoices);
+  // A voice built ahead is the same nodes with the same seeded offsets, started at the same time: the two
+  // renders differ by no more than two renders of one scene do (the bound of the unknown-mode test above).
+  expect(r.tapDiff).toBeLessThanOrEqual(Math.max(4 * r.selfTapDiff, 5e-4));
+  expect(db(r.tapDiff)).toBeLessThan(-60);
+  expect(r.masterDiff).toBeLessThanOrEqual(Math.max(4 * r.selfMasterDiff, 3e-4 * r.masterRms));
+  await expectNoErrors(page, pageLog);
+});
+
 test("the mission's entry: the sound follows the aerodynamic load from the heat pulse to the drogues, for the chase camera and in the cabin", async ({ page, pageLog }) => {
   test.setTimeout(240_000);
   await lab(page);

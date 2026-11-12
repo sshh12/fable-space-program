@@ -87,7 +87,7 @@ export async function renderOffline(config: AudioConfig, defs: DefLibrary, bank:
   const step = stepFrames / sampleRate;
   const frameTimes: number[] = [];
   const oneShots: OfflineOneShotLog[] = [];
-  const maxStats: AudioGraphStats = { engineVoices: 0, nodes: 0, delayLines: 0, delayLineSeconds: 0, oneShots: 0 };
+  const maxStats: AudioGraphStats = { engineVoices: 0, standbyVoices: 0, nodes: 0, delayLines: 0, delayLineSeconds: 0, oneShots: 0 };
   let lastT = -step;
   const applyAt = (t: number): void => {
     const frame = spec.frame(t, t - lastT);
