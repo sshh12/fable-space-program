@@ -1327,11 +1327,16 @@ const PANEL_ALBEDO = vec3f(0.012, 0.013, 0.015);
   // The sun on the screen: the dark panel's diffuse reflection (the cover glass adds its own reflection).
   let sunVis = cabinSun(in.part, normalize(in.nPart), false);
   let sunLit = PANEL_ALBEDO / PI * max(dot(n, cabin.sun.xyz), 0.0) * cabinSunIlluminance(amb) * sunVis;
-  var o = gbufferPack(PANEL_ALBEDO, 0.0, n, 0.16, 0.0, MATERIAL_DISPLAY, amb.brightness,
-                      velocityFromClip(in.currClip, in.prevClip), img * (cabin.display.x * frame.exposure.x));
-  // RT5 carries the image at full brightness (the core scales it); the sunlit panel is added in proportion.
-  o.emissive = vec4f(o.emissive.rgb + writeHdr(sunLit * frame.exposure.x / max(amb.brightness, 1e-3)), 1.0);
-  return o;
+  // The screen's light is complete here, as for the rest of the interior (see INTERIOR_WGSL pack): the image at
+  // the brightness the cabin's light sets, through the front glass toward the eye relative to normal incidence
+  // ((1 - F(NoV)) / (1 - F0): a display states its luminance head-on and fades at grazing angles), plus the sun
+  // on the dark panel. The G-buffer record is the interior's black, fully rough metal with ambient occlusion
+  // 0: the core's deferred pass adds nothing. (As MATERIAL_ID.display the core lit the screen as a glossy
+  // dielectric with every local light: a plume's lights washed the pages out, request app-integration-5.)
+  let toEye = 1.0 - pow5(1.0 - saturate(dot(n, normalize(-toRoot(cabin.m0, cabin.m1, cabin.m2, in.part)))));
+  let luminance = img * (cabin.display.x * amb.brightness * toEye) + sunLit;
+  return gbufferPack(vec3f(0.0), 0.0, n, 1.0, 1.0, MATERIAL_STANDARD, 0.0,
+                     velocityFromClip(in.currClip, in.prevClip), luminance * frame.exposure.x);
 }
 
 // The same screens in the cabin probe: emitters (alpha 0: their light reaches surfaces as polygon sources).
