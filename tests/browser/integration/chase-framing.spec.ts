@@ -22,6 +22,9 @@ interface Framing {
   far: number;
   radius: number;
   below: boolean;
+  /** Angle of the body's centre right of and above the view axis, degrees (negative: left, below). */
+  right: number;
+  up: number;
   /** Angle of the sun from the view axis, degrees. */
   sun: number;
   /** Camera distance from the vessel's centre of mass and the vessel's bounding radius, m. */
@@ -63,6 +66,7 @@ async function framing(page: Page): Promise<Framing> {
     const deg = 180 / Math.PI;
     const forward = rot(c.qViewToRoot, { x: 0, y: 0, z: -1 });
     const up = rot(c.qViewToRoot, { x: 0, y: 1, z: 0 });
+    const right = rot(c.qViewToRoot, { x: 1, y: 0, z: 0 });
     const to = sub(body.rRoot, c.positionRoot);
     const d = len(to);
     const centre = Math.acos(Math.max(-1, Math.min(1, dot(to, forward) / d))) * deg;
@@ -78,6 +82,8 @@ async function framing(page: Page): Promise<Framing> {
       far: centre + ang,
       radius: ang,
       below: dot(to, up) < 0,
+      right: Math.asin(Math.max(-1, Math.min(1, dot(to, right) / d))) * deg,
+      up: Math.asin(Math.max(-1, Math.min(1, dot(to, up) / d))) * deg,
       sun: Math.acos(Math.max(-1, Math.min(1, dot(body.sunDir, forward)))) * deg,
       distance: len(sub(c.positionRoot, com)),
       boundingRadius: v.boundingRadius,
@@ -97,11 +103,17 @@ for (const scenario of SCENARIOS) {
     await page.evaluate(() => window.__test!.waitFrames(120));
     const f = await framing(page);
     await saveScreenshot(page, 'core-support', `chase-${scenario}`);
-    console.log(`  ${scenario}: ${f.bodyId} at ${f.altitudeKm.toFixed(0)} km, angular radius ${f.radius.toFixed(1)} deg, limb ${f.near.toFixed(1)}..${f.far.toFixed(1)} deg from the axis (half field ${(f.fovY / 2).toFixed(1)}), below ${f.below}; sun ${f.sun.toFixed(0)} deg from the axis; camera ${f.distance.toFixed(1)} m from a vessel of bounding radius ${f.boundingRadius.toFixed(1)} m`);
+    console.log(`  ${scenario}: ${f.bodyId} at ${f.altitudeKm.toFixed(0)} km, angular radius ${f.radius.toFixed(1)} deg, limb ${f.near.toFixed(1)}..${f.far.toFixed(1)} deg from the axis (half field ${(f.fovY / 2).toFixed(1)}), centre ${f.right.toFixed(1)} deg right and ${f.up.toFixed(1)} deg up, below ${f.below}; sun ${f.sun.toFixed(0)} deg from the axis; camera ${f.distance.toFixed(1)} m from a vessel of bounding radius ${f.boundingRadius.toFixed(1)} m`);
     const half = f.fovY / 2;
     expect(f.below, 'the body is below the vehicle in the frame').toBe(true);
     expect(f.near, 'near limb, degrees from the view axis').toBeLessThan(0.75 * half);
-    if (f.radius < 4) expect(f.far, 'far limb of a small disc').toBeLessThan(half);
+    if (f.radius < 6) {
+      // A small disc: whole in the frame and beside the vehicle to the lower left, clear of the instruments in the
+      // bottom middle of the HUD (it was hidden behind the navball when it stood straight below the vehicle).
+      expect(-f.up + f.radius, 'lower edge of the disc, degrees below the axis').toBeLessThan(half);
+      expect(f.right + f.radius, 'right edge of the disc, degrees right of the axis').toBeLessThan(-8);
+      expect(f.near, 'the disc clears the middle of the frame').toBeGreaterThan(0.5 * half);
+    }
     // Half the diagonal of the 16:9 frame is 48 degrees; the sun is at least 25 degrees outside it.
     expect(f.sun, 'sun, degrees from the view axis').toBeGreaterThan(48 + 25);
     // The vehicle is not a speck: the camera is within a few radii of what is left of it.

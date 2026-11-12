@@ -76,6 +76,8 @@ test('the pad at 1440p fits the tile pools, comes to rest, and a map round trip 
   // It comes to rest at all: with the vessel observer's bounding sphere the view asked for 1,660 of 1,280 tile
   // layers, 380 tiles waited for a layer for ever and this wait never returned.
   await waitIdle(page, 30, 180_000);
+  // Seconds from the page's navigation to the terrain at rest (the load: of it the terrain's part is the stream).
+  const restAt = (await page.evaluate(() => performance.now())) / 1000;
   const rest = await terrain(page);
   expect(rest.stream.stalled, 'tiles waiting for a layer').toBe(0);
   expect(rest.stream.uploading + rest.stream.queued + rest.stream.loading).toBe(0);
@@ -101,7 +103,7 @@ test('the pad at 1440p fits the tile pools, comes to rest, and a map round trip 
     const app = window.__app!.cpu();
     return { terrain: out, frame: { p50: app.frame.p50, p99: app.frame.p99 } };
   });
-  record('pad-1440p', { stream: rest.stream, earth: rest.earth, cpu });
+  record('pad-1440p', { restAtSeconds: Math.round(restAt * 10) / 10, stream: rest.stream, earth: rest.earth, cpu });
   // The streamer at rest: requests, dispatch and uploads of nothing (it was 2.6 ms p50 looking for a layer).
   expect(cpu.terrain['stream']!.p99, 'streamer main-thread p99, ms').toBeLessThan(0.5);
   const still = await saveScreenshot(page, 'core-support', 'pad-1440p-rest');
