@@ -251,7 +251,7 @@ async function traceLocal(file: string): Promise<number> {
     // An in-memory cache keyed like the OPFS one: a tile read twice in the session is needed once, as on a
     // client with the cache on, so "needed" is the session's unique bytes.
     const mem = new Map<string, Uint8Array>();
-    const cache = { get: async (k: string) => mem.get(k) ?? null, put: async (k: string, b: Uint8Array) => void mem.set(k, b), usage: () => ({ entries: mem.size, bytes: 0 }), flush: async () => undefined };
+    const cache = { get: async (k: string) => mem.get(k) ?? null, put: async (k: string, b: Uint8Array) => void mem.set(k, b), usage: () => ({ entries: mem.size, bytes: 0 }), flush: async () => undefined, mode: 'owner' as const, close: async () => undefined };
     const src = createPackTileSource({ packListUrl: 'http://local.packs.invalid/packs.json', fetch: f, coalesceGapBytes: v.gap, cache });
     const sets = new Set(reads.map((m) => m[1]!));
     for (const s of sets) await src.manifest(s);

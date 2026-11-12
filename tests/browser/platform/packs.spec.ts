@@ -96,6 +96,11 @@ test('the OPFS cache answers every tile after a reload, with no request to a mir
   console.log(`reload: ${again.stats.fromCache} reads from OPFS, ${again.stats.requests.packList} pack-list request, 0 tile requests (${again.ms.toFixed(0)} ms; ${first.ms.toFixed(0)} ms cold)`);
 });
 
+test('the OPFS cache has one owner across the page and a worker; a truncated entry is a miss and is removed', async ({ page }) => {
+  const r = await page.evaluate(() => window.__platform!.opfsOwnership());
+  expect(r).toEqual({ mainMode: 'owner', workerMode: 'read-only', workerGot: 1000, workerPutIgnored: true, truncatedMiss: true, truncatedRemoved: true, reopenedMode: 'owner' });
+});
+
 test('failover: 429 and a 404 for an indexed object move to the mirror; a 403 refreshes the pack list once', async ({ page }) => {
   const tiles = moonTiles().slice(0, 60);
   const want = expected(tiles);

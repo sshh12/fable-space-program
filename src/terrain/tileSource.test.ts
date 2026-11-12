@@ -82,9 +82,8 @@ describe('createTileSource', () => {
     expect(() => createTileSource({ kind: 'fs', root })).toThrow(/tileSource\.node\.ts/);
   });
 
-  it('a pack spec that asks for the OPFS cache fails every read where there is no OPFS (no silent fallback)', async () => {
-    const s = createTileSource({ kind: 'pack', packListUrl: `${base}/packs.json`, cache: { kind: 'opfs', maxBytes: 1e8 } });
-    await expect(s.tile('fixture-moon', 'height', KEY)).rejects.toThrow(/origin-private file system is not available/);
+  it('a pack spec that asks for the OPFS cache where there is no OPFS is refused at once (no silent fallback)', () => {
+    expect(() => createTileSource({ kind: 'pack', packListUrl: `${base}/packs.json`, cache: { kind: 'opfs', maxBytes: 1e8 } })).toThrow(/origin-private file system is not available/);
   });
 
   it('a tile the manifest does not promise resolves null without a request', async () => {

@@ -39,6 +39,22 @@ interface PlatformApi {
   /** Time to the first tile's bytes and to it decoded (an image layer through createImageBitmap). */
   firstTile(packListUrl: string, set: string, req: TileReq): Promise<{ bytesMs: number; decodedMs: number; bytes: number; stats: PackSourceStats }>;
   specFromCreateTileSource(packListUrl: string): Promise<string>;
+  /** The OPFS cache across two contexts (this page and a worker) and with a truncated entry (fix round, item 4). */
+  opfsOwnership(): Promise<OpfsOwnership>;
+}
+
+export interface OpfsOwnership {
+  mainMode: string;
+  workerMode: string;
+  /** Bytes the worker read of the entry the page wrote (null: a miss). */
+  workerGot: number | null;
+  /** The worker's put left no file. */
+  workerPutIgnored: boolean;
+  /** A file whose size is not its key's length: a miss, and removed. */
+  truncatedMiss: boolean;
+  truncatedRemoved: boolean;
+  /** After the page closed its cache, a new one is the owner. */
+  reopenedMode: string;
 }
 
 const info = document.getElementById('info')!;
@@ -98,6 +114,42 @@ window.__platform = {
     const bmp = await createImageBitmap(new Blob([new Uint8Array(b)], { type: 'image/webp' }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
     bmp.close();
     return { bytesMs, decodedMs: performance.now() - t0, bytes: b.length, stats: src.stats() };
+  },
+  async opfsOwnership() {
+    const dirName = 'fsp-packs-lab-ownership';
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry(dirName, { recursive: true }).catch(() => undefined);
+    const h = 'b'.repeat(32);
+    const a = await openOpfsCache({ maxBytes: 1e6, dirName });
+    await a.put(`${h}.0.1000`, new Uint8Array(1000).fill(5));
+    await a.flush();
+    const worker = await new Promise<{ mode: string; got: number | null }>((resolve, reject) => {
+      const w = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+      w.onmessage = (e: MessageEvent<{ mode: string; got: number | null } | { error: string }>) => {
+        w.terminate();
+        if ('error' in e.data) reject(new Error(e.data.error));
+        else resolve(e.data);
+      };
+      w.onerror = (e) => reject(new Error(e.message));
+      w.postMessage({ kind: 'opfs-probe', dirName, read: `${h}.0.1000`, write: `${h}.1000.10` });
+    });
+    const dir = await root.getDirectoryHandle(dirName);
+    const exists = async (name: string): Promise<boolean> => dir.getFileHandle(name).then(() => true, () => false);
+    const workerPutIgnored = !(await exists(`${h}.1000.10`));
+    // A file cut short (as a crash or a cleared write could leave it): 10 bytes under a key of 100.
+    const truncated = `${h}.5000.100`;
+    const fw = await (await dir.getFileHandle(truncated, { create: true })).createWritable();
+    await fw.write(new Uint8Array(10));
+    await fw.close();
+    await a.close();
+    const c = await openOpfsCache({ maxBytes: 1e6, dirName });
+    const truncatedMiss = (await c.get(truncated)) === null;
+    const truncatedRemoved = !(await exists(truncated));
+    const out: OpfsOwnership = { mainMode: a.mode, workerMode: worker.mode, workerGot: worker.got, workerPutIgnored, truncatedMiss, truncatedRemoved, reopenedMode: c.mode };
+    await c.close();
+    await root.removeEntry(dirName, { recursive: true }).catch(() => undefined);
+    say(`opfs ownership: ${JSON.stringify(out)}`);
+    return out;
   },
   async specFromCreateTileSource(packListUrl) {
     const src = createTileSource({ kind: 'pack', packListUrl });

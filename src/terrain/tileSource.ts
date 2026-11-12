@@ -5,7 +5,8 @@
  * message) into a `TileSource`:
  *   fetch  plain files over HTTP: `createFetchTileSource(baseUrl)` below, unchanged;
  *   pack   content-addressed packs from an ordered mirror list (`createPackTileSource`, packSource.ts), with
- *          the OPFS cache in front when the spec asks for it (opfsCache.ts);
+ *          the OPFS cache in front when the spec asks for it (opfsCache.ts; asking for it where there is no
+ *          OPFS throws at once, while at run time any error of the cache is a miss);
  *   fs     a directory of plain files. It needs the Node file system, which browser code must never import,
  *          so this module (part of the client bundle) does not construct it: Node code calls
  *          `createTileSource` of `tileSource.node.ts`, which builds `fs` with `createFsTileSource` (unchanged)
@@ -21,7 +22,7 @@ import type { TileKey } from '../core/geo/cubeSphere';
 import { tilePath } from '../core/geo/cubeSphere';
 import type { TileManifest, TileSource, TileSourceSpec } from '../core/contracts/terrain';
 import { layerHasTile } from '../core/contracts/terrain';
-import { openOpfsCache } from './opfsCache';
+import { openOpfsCache, opfsAvailable } from './opfsCache';
 import { createPackTileSource } from './packSource';
 
 /** A TileSource from its plain-data description (browser main thread, workers and Node; `fs` only through tileSource.node.ts). */
@@ -30,6 +31,9 @@ export function createTileSource(spec: TileSourceSpec): TileSource {
     case 'fetch':
       return createFetchTileSource(spec.baseUrl);
     case 'pack':
+      // Asking for the OPFS cache where there is none (Node) is a configuration error, said at once; at run
+      // time every error of the cache is a miss (opfsCache.ts, packSource.ts).
+      if (spec.cache && !opfsAvailable()) throw new Error('createTileSource: the pack spec asks for the OPFS cache, but the origin-private file system is not available here (a browser page or worker is needed)');
       return createPackTileSource({
         packListUrl: spec.packListUrl,
         cache: spec.cache ? openOpfsCache({ maxBytes: spec.cache.maxBytes }) : null,

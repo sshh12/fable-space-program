@@ -24,7 +24,7 @@
  *   length are checked against the offset and length known from the index; Content-Range is never read (it
  *   is not a CORS-safelisted response header).
  * - The optional cache is keyed by content address (`<hash>.<offset>.<length>`), so a changed URL never
- *   causes a re-download.
+ *   causes a re-download. It only accelerates: a cache that cannot open, or any error of one, is a miss.
  * - A boot pack (FPB1) can be added: its tiles and files are served from memory before anything is fetched.
  */
 import type { TileManifest, TileSource } from '../core/contracts/terrain';
@@ -105,6 +105,8 @@ export interface PackSourceStats {
   fromCache: number;
   fromNetwork: number;
   packListLoads: number;
+  /** Cache operations that failed (each was treated as a miss or a no-op; a cache that did not open counts 1). */
+  cacheErrors: number;
 }
 
 export interface PackTileSource extends TileSource {
@@ -176,15 +178,18 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
     if (next) next();
     else active--;
   };
+  const stats: PackSourceStats = { requests: {}, bytesReceived: {}, failures: {}, bytesNeeded: 0, fromBoot: 0, fromCache: 0, fromNetwork: 0, packListLoads: 0, cacheErrors: 0 };
   let cache: ByteCache | null = null;
-  const cacheReady: Promise<void> = Promise.resolve(o.cache ?? null).then((c) => {
-    cache = c;
-  });
-  // A cache that cannot open fails every read with its reason (awaited below); this only keeps an unused
-  // source from raising an unhandled rejection.
-  cacheReady.catch(() => undefined);
-
-  const stats: PackSourceStats = { requests: {}, bytesReceived: {}, failures: {}, bytesNeeded: 0, fromBoot: 0, fromCache: 0, fromNetwork: 0, packListLoads: 0 };
+  // A cache is an accelerator only: one that cannot open, or any error of one, is a miss (never a failed read).
+  const cacheReady: Promise<void> = Promise.resolve(o.cache ?? null).then(
+    (c) => {
+      cache = c;
+    },
+    () => {
+      cache = null;
+      stats.cacheErrors++;
+    },
+  );
   let list: Promise<ListState> | null = null;
   let listGeneration = 0;
   let listLoadedAt: number | null = null;
@@ -451,7 +456,10 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
       await cacheReady;
       const c = cache;
       if (c) {
-        const hit = await c.get(key);
+        const hit = await c.get(key).catch(() => {
+          stats.cacheErrors++;
+          return null;
+        });
         if (hit) {
           stats.fromCache++;
           return hit;
@@ -463,7 +471,10 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
         pending.push({ hash, offset, length, resolve, reject });
         schedule();
       });
-      if (c) await c.put(key, bytes.slice());
+      if (c)
+        await c.put(key, bytes.slice()).catch(() => {
+          stats.cacheErrors++;
+        });
       return bytes;
     })();
     inFlight.set(key, p);
