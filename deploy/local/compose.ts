@@ -1,9 +1,8 @@
 /**
  * The Docker forms of the local stack (ARCHITECTURE 16.4): `--compose` (deploy/local/compose.yml: the roles in
  * the pinned image, the Postgres 18 image Railway's template is built on, MinIO as the S3 store for the dump
- * and the upload and presign scripts) and `--db=docker` (only Postgres in a container, the rest as host
- * processes is NOT offered separately: it is the compose file's `postgres` service with the host stack's
- * roles pointed at it, which the compose form already covers).
+ * and the upload and presign scripts) and `--db=docker` (the host stack with the compose file's `postgres`
+ * service in place of the embedded cluster, behind the same DATABASE_URL on the same port).
  *
  * Machine rule (2026-11-12, the lead): the Docker VM must be capped before any of this runs. The launcher
  * refuses unless %UserProfile%\.wslconfig caps the WSL 2 VM at 6 GB or less (ARCHITECTURE 16.4). It starts
@@ -68,6 +67,41 @@ export function stopDaemon(say: (l: string) => void): void {
   docker(['desktop', 'stop'], 120_000);
 }
 
+/**
+ * `--db=docker`: the compose file's Postgres 18 service alone (project fsp-<name>), on the stack's Postgres port,
+ * with production's cluster settings; refused like the embedded one if the cluster is not UTF8 / builtin.
+ */
+export async function startDockerPostgres(
+  name: string,
+  fresh: boolean,
+  say: (l: string) => void,
+): Promise<{ readyMs: number; facts: import('../roles/hello').ClusterFacts; stop: () => Promise<void> }> {
+  assertDockerAllowed();
+  const project = `fsp-${name}`.toLowerCase();
+  const started = await ensureDaemon(say);
+  if (fresh) docker(['compose', '-f', COMPOSE_FILE, '-p', project, 'down', '-v'], 120_000);
+  const t0 = performance.now();
+  const up = spawnSync('docker', ['compose', '-f', COMPOSE_FILE, '-p', project, 'up', '-d', '--wait', 'postgres'], { stdio: 'inherit', timeout: 300_000 });
+  if (up.status !== 0) throw new Error('docker compose up postgres failed');
+  const readyMs = performance.now() - t0;
+  const { default: pg } = await import('pg');
+  const { clusterFacts } = await import('../roles/hello');
+  const c = new pg.Client({ connectionString: 'postgres://postgres:stack-local@127.0.0.1:47220/fsp' });
+  await c.connect();
+  const facts = await clusterFacts(c);
+  await c.end();
+  const stop = async (): Promise<void> => {
+    docker(['compose', '-f', COMPOSE_FILE, '-p', project, 'stop', 'postgres'], 120_000);
+    if (started) stopDaemon(say);
+  };
+  if (facts.serverEncoding !== 'UTF8' || facts.localeProvider !== 'builtin') {
+    await stop();
+    throw new Error(`the Postgres container of ${project} is ${facts.serverEncoding} with the ${facts.localeProvider} locale provider; refusing it (run with --fresh)`);
+  }
+  say(`postgres (container ${project}) ${facts.serverVersionNum} ${facts.serverEncoding}/${facts.localeProvider} ready in ${readyMs.toFixed(0)} ms`);
+  return { readyMs, facts, stop };
+}
+
 export interface ComposeRun {
   name: string;
   opts: { shape: string; page: string; compose: boolean; db: string; fresh: boolean };
@@ -85,7 +119,6 @@ const quoteArg = (a: string): string => (/^[A-Za-z0-9_\-./:=@,+\\*]+$/.test(a) ?
  */
 export async function runCompose(o: ComposeRun): Promise<number> {
   assertDockerAllowed();
-  if (!o.opts.compose) throw new Error('--db=docker is the compose form\'s postgres service: run with --compose');
   if (o.opts.shape !== 'combined') throw new Error('the compose form runs the combined shape (the suites of 28.6 that need signals and the pinned build)');
   o.takeLock();
   const project = `fsp-${o.name}`.toLowerCase();

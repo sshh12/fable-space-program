@@ -453,7 +453,7 @@ async function run(opts: Options, command: string[]): Promise<number> {
   const name = process.env.STACK_NAME || 'default';
   if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error(`STACK_NAME "${name}" may hold letters, digits, dot, dash and underscore only`);
   if (process.env.HEAVY_GATE !== 'stack') throw new Error('the launcher runs only inside the stack slot of the heavy gate: use `npm run stack -- [options] -- <command>`');
-  if (opts.compose || opts.db === 'docker') {
+  if (opts.compose) {
     const { runCompose } = await import('./compose');
     return runCompose({ name, opts, command, takeLock: () => takeLock(name), releaseLock, say });
   }
@@ -473,6 +473,7 @@ async function run(opts: Options, command: string[]): Promise<number> {
   const pgDir = path.join(dataDir, 'pg');
   let pgStarted = false;
   let useFile: string | null = null;
+  let dockerDb: { stop: () => Promise<void> } | null = null;
   const timings: Record<string, number> = {};
   const urls = { page: '', shell: `http://127.0.0.1:${PORTS.shell}`, packList: '', bucket: `http://127.0.0.1:${PORTS.bucket}/${STAND_IN.bucket}/p/`, mirror: '' };
   const endpointsFile = path.join(dataDir, 'endpoints.json');
@@ -509,6 +510,7 @@ async function run(opts: Options, command: string[]): Promise<number> {
       for (const c of children) if (c.child.exitCode === null && c.child.pid) killTree(c.child.pid);
       if (standIn) await standIn.close();
       if (pgStarted) await stopPostgres(pgDir);
+      if (dockerDb) await dockerDb.stop();
       if (useFile) fs.rmSync(useFile, { force: true });
       state.running = false;
       writeState(state);
@@ -527,10 +529,18 @@ async function run(opts: Options, command: string[]): Promise<number> {
     // Ports: one range, one stack. Anything listening there is a leftover of a dead stack.
     for (const [k, p] of Object.entries(PORTS)) if (await portOpen(p)) throw new Error(`port ${p} (${k}) is in use: another stack, or a leftover of one (\`npm run stack -- down\`)`);
 
-    // 1. Postgres
-    const pgRes = await startPostgres(pgDir, opts.fresh, path.join(logsDir, 'postgres.log'));
-    pgStarted = true;
-    state.postgres = { ...state.postgres, initMs: pgRes.initMs, readyMs: pgRes.readyMs, facts: pgRes.facts, postmasterPid: postmasterPid(pgDir) };
+    // 1. Postgres: embedded (the default), or the compose file's Postgres 18 container behind the same URL
+    let pgRes: { initMs: number | null; readyMs: number; facts: ClusterFacts };
+    if (opts.db === 'docker') {
+      const { startDockerPostgres } = await import('./compose');
+      const d = await startDockerPostgres(name, opts.fresh, say);
+      dockerDb = d;
+      pgRes = { initMs: null, readyMs: d.readyMs, facts: d.facts };
+    } else {
+      pgRes = await startPostgres(pgDir, opts.fresh, path.join(logsDir, 'postgres.log'));
+      pgStarted = true;
+    }
+    state.postgres = { ...state.postgres, initMs: pgRes.initMs, readyMs: pgRes.readyMs, facts: pgRes.facts, postmasterPid: opts.db === 'docker' ? null : postmasterPid(pgDir) };
     timings.postgresReadyMs = pgRes.readyMs;
     if (pgRes.initMs !== null) timings.postgresInitMs = pgRes.initMs;
     say(`postgres ${pgRes.facts.serverVersionNum} ${pgRes.facts.serverEncoding}/${pgRes.facts.localeProvider} ready in ${pgRes.readyMs.toFixed(0)} ms${pgRes.initMs !== null ? ` (initialised in ${pgRes.initMs.toFixed(0)} ms)` : ''}`);
