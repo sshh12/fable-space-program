@@ -299,6 +299,84 @@ test('soot and frost lie on the paint: frost in streaks and patches, soot as a g
   await expectNoErrors(page, pageLog);
 });
 
+test('frost as a coat with a thickness (request vehicle-pad-11, the candidate shader `frost=v2`) beside the coverage mask: no edge that the weight does not have', async ({ page, pageLog }) => {
+  /** The sunlit face of the layers panel under frost of the given weights: mean, darkest and brightest pixel against the clean paint, and the 99th percentile of the step between neighbours across the runnels. */
+  const measure = async (query: string, tag: string): Promise<Record<string, { mean: number; min: number; max: number; step99: number; bare: number; full: number }>> => {
+    await openPage(page, `/labs/render-core/?probe=inputs,layers&sun=180,40&hud=0&paused=1&ev=13${query}`);
+    await assertDiscreteGpu(page);
+    await page.evaluate((c) => {
+      window.__test!.setDeterministic(true);
+      window.__lab!.renderer.setJitter(false);
+      window.__rc!.lookAt(c, 180, 0, 9);
+    }, LAYERS_PANEL);
+    await waitIdle(page, 10);
+    const face = (frost: number): Promise<{ width: number; height: number; luma: number[] }> =>
+      page.evaluate(
+        async ([c, f]) => {
+          const rc = window.__rc!;
+          rc.probes.setLayers(0, f as number);
+          await window.__test!.waitFrames(4);
+          const [cx, cy, cz] = c as [number, number, number];
+          const corners = [[cx - 1.6, cy - 0.1, cz - 2.4], [cx + 1.6, cy - 0.1, cz + 2.4]].map((p) => rc.projectSitePoint(p as [number, number, number])!);
+          const x0 = Math.ceil(Math.min(corners[0]!.x, corners[1]!.x));
+          const x1 = Math.floor(Math.max(corners[0]!.x, corners[1]!.x));
+          const y0 = Math.ceil(Math.min(corners[0]!.y, corners[1]!.y));
+          const y1 = Math.floor(Math.max(corners[0]!.y, corners[1]!.y));
+          const img = await window.__lab!.renderer.readHdrPixels('hdr', { x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
+          const luma: number[] = [];
+          for (let i = 0; i < img.width * img.height; i++) luma.push(0.2126 * img.data[i * 4]! + 0.7152 * img.data[i * 4 + 1]! + 0.0722 * img.data[i * 4 + 2]!);
+          return { width: img.width, height: img.height, luma };
+        },
+        [LAYERS_PANEL, frost] as const,
+      );
+    const clean = await face(0);
+    const level = clean.luma.reduce((a, b) => a + b, 0) / clean.luma.length;
+    const white = await face(1);
+    const top = white.luma.reduce((a, b) => a + b, 0) / white.luma.length;
+    const out: Record<string, { mean: number; min: number; max: number; step99: number; bare: number; full: number }> = {};
+    for (const weight of [0.12, 0.35, 0.5, 0.75, 1]) {
+      const f = await face(weight);
+      await saveScreenshot(page, 'render-core', `mesh-frost-${tag}-${String(weight).replace('.', '')}`);
+      const steps: number[] = [];
+      for (let y = 0; y < f.height; y++) for (let x = 0; x + 1 < f.width; x++) steps.push(Math.abs(f.luma[y * f.width + x + 1]! - f.luma[y * f.width + x]!));
+      steps.sort((a, b) => a - b);
+      out[String(weight)] = {
+        mean: f.luma.reduce((a, b) => a + b, 0) / f.luma.length / level,
+        min: Math.min(...f.luma) / level,
+        max: Math.max(...f.luma) / level,
+        // In units of the way from clean paint to the full coat.
+        step99: steps[Math.floor(0.99 * (steps.length - 1))]! / (top - level),
+        // Share of the face that is (nearly) bare paint, and (nearly) the full coat: a mask has both at once.
+        bare: f.luma.filter((v) => v < level + 0.1 * (top - level)).length / f.luma.length,
+        full: f.luma.filter((v) => v > level + 0.9 * (top - level)).length / f.luma.length,
+      };
+    }
+    await page.evaluate(() => window.__rc!.probes.setLayers(0, 0));
+    await expectNoErrors(page, pageLog);
+    return out;
+  };
+  const mask = await measure('', 'mask');
+  const coat = await measure('&frost=v2', 'coat');
+  for (const [name, r] of [['mask', mask], ['coat', coat]] as const) {
+    console.log(
+      `frost as a ${name}: ` +
+        Object.entries(r)
+          .map(([w, v]) => `weight ${w}: mean ${v.mean.toFixed(2)} (${v.min.toFixed(2)} .. ${v.max.toFixed(2)}), bare ${(100 * v.bare).toFixed(0)} %, full ${(100 * v.full).toFixed(0)} %, 99 % of the steps between neighbours under ${v.step99.toFixed(3)}`)
+          .join('; '),
+    );
+  }
+  // The coat grows with the weight, everywhere at once: brighter with every weight, and at an in-between
+  // weight no pixel bare beside pixels of the full coat (the mask's dashes).
+  const weights = Object.keys(coat);
+  for (let i = 1; i < weights.length; i++) expect.soft(coat[weights[i]!]!.mean, `weight ${weights[i]}`).toBeGreaterThanOrEqual(coat[weights[i - 1]!]!.mean - 0.01);
+  expect.soft(Math.min(coat['0.35']!.bare, coat['0.35']!.full), 'bare paint beside full coat at weight 0.35').toBeLessThan(0.02);
+  expect.soft(Math.min(coat['0.5']!.bare, coat['0.5']!.full), 'bare paint beside full coat at weight 0.5').toBeLessThan(0.02);
+  expect.soft(coat['0.5']!.step99, 'steps between neighbours at half weight').toBeLessThan(mask['0.5']!.step99);
+  // The full coat is the brightest thing on the panel and dead matte; a thin one hazes every pixel.
+  expect.soft(coat['1']!.mean).toBeGreaterThan(2.3);
+  expect.soft(coat['0.35']!.min, 'the barest pixel under a thin coat').toBeGreaterThan(1.2);
+});
+
 test('alpha-tested materials: a bar grating shows the ground through it, casts a dappled shadow and keeps its coverage far away (request vehicle-pad-4)', async ({ page, pageLog }) => {
   /** Mean HDR luminance over the screen box of a ground rectangle (site ENU, z = 0) and its share of red pixels. */
   const box = async (x0: number, x1: number, y0: number, y1: number, z: number): Promise<{ lum: number; red: number; px: number }> =>

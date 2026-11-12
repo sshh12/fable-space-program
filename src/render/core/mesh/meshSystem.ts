@@ -516,6 +516,29 @@ class Group {
   }
 }
 
+/**
+ * The G-buffer shader with frost as a thickness (request vehicle-pad-11, the requester's text): the weight,
+ * modulated by a quarter in runnels of 8 cm x 1.2 m, is a density; a thin coat is a translucent haze, from
+ * about 0.6 it is opaque rime, cool white and dead matte; nothing has an edge unless the weight has one.
+ * Six edits of the frost lines of MATERIAL_STANDARD; '' if one of them finds nothing to replace.
+ */
+function frostCoatShader(): string {
+  const edits: [string, string][] = [
+    ['let frost = layerCoverage(frostWeight, uvm, 19);', 'let frostDensity = saturate(frostWeight * (0.75 + 0.5 * layerStreaks(uvm, vec2f(0.08, 1.2), 19)));'],
+    ['let veil = 0.55 * smoothstep(0.0, 0.6, frostWeight);', ''],
+    ['let frostCover = max(frost, veil);', 'let frostCover = smoothstep(0.0, 0.6, frostDensity);'],
+    ['albedo = mix(albedo, vec3f(0.93, 0.95, 0.97), frostCover);', 'albedo = mix(albedo, vec3f(0.90, 0.94, 1.0), frostCover);'],
+    ['roughness = mix(roughness, 0.85, frostCover);', 'roughness = mix(roughness, 0.95, frostCover);'],
+    ['coat = (1.0 - smoothstep(0.0, 0.35, sootDensity)) * (1.0 - max(frost, 0.8 * veil));', 'coat = (1.0 - smoothstep(0.0, 0.35, sootDensity)) * (1.0 - frostCover);'],
+  ];
+  let out = GBUFFER_SHADER;
+  for (const [from, to] of edits) {
+    if (out.split(from).length !== 2) return '';
+    out = out.replace(from, to);
+  }
+  return out;
+}
+
 export function createMeshSystem(args: {
   device: GPUDevice;
   shaders: CoreShaderLibrary;
@@ -525,8 +548,16 @@ export function createMeshSystem(args: {
   /** For 'ocean.wetness' (the wet line on hulls). */
   resources: SharedResources;
   reportError: (m: string) => void;
+  /** Frost as a thickness (the candidate text of request vehicle-pad-11) instead of the coverage mask. */
+  frostCoat?: boolean;
 }): MeshSystem {
   const { device, shaders, frameLayout, shadowPassLayout, textures, resources, reportError } = args;
+  let gbufferShader = GBUFFER_SHADER;
+  if (args.frostCoat) {
+    const coat = frostCoatShader();
+    if (coat === '') reportError('render core: the frost-coat shader could not be made from the mesh shader text; frost stays a mask');
+    else gbufferShader = coat;
+  }
 
   const batchLayout = device.createBindGroupLayout({
     label: 'mesh.batch',
@@ -566,7 +597,7 @@ export function createMeshSystem(args: {
     { format: RENDER_FORMATS.hdr },
   ];
   const gbufferPipelines: Tracked<{ back: GPURenderPipeline; none: GPURenderPipeline }> = shaders.tracked(() => {
-    const module = shaders.createModule('mesh.gbuffer', GBUFFER_SHADER);
+    const module = shaders.createModule('mesh.gbuffer', gbufferShader);
     const layout = device.createPipelineLayout({ label: 'mesh.gbuffer', bindGroupLayouts: [frameLayout, batchLayout, materialLayout] });
     const make = (cullMode: GPUCullMode): GPURenderPipeline =>
       device.createRenderPipeline({

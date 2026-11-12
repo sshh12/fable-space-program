@@ -307,8 +307,19 @@ export interface MeterInput {
   /** Histogram of all lit geometry and of geometry within INTERIOR_RANGE. */
   histogram: ArrayLike<number>;
   histogramNear: ArrayLike<number>;
-  /** Histogram of the sky pixels between LUMINANCE_FLOOR and SKY_METER_MAX (interior views; absent: none). */
+  /**
+   * Histogram of the sky pixels between LUMINANCE_FLOOR and SKY_METER_MAX (absent: none): what an interior
+   * view sees of the sky through its windows, and what lights an exterior frame at twilight (`skyInAir`).
+   */
   histogramSky?: ArrayLike<number>;
+  /**
+   * How deep the camera is in an atmosphere, 0..1 (0 above every atmosphere, 1 in its lower half), and the
+   * share of the star's light that reaches the camera directly (the air's transmittance towards it x the
+   * visible share of its disc): with them the sky counts in an exterior or map view when the direct sun is
+   * nearly gone (`twilightSkyWeight`). Absent: 0 and 1 (the sky does not count).
+   */
+  skyInAir?: number;
+  sunDirectShare?: number;
   /** Number of pixels the GPU sampled (lit or not). */
   sampleCount: number;
   /** Unoccluded illuminance of the star at the camera (lux) and the fraction of its disc visible there. */
@@ -361,6 +372,35 @@ export interface MeterResult {
   farWeight: number;
 }
 
+/** The sky counts in an exterior view from the end of nautical twilight (the sun 12 degrees under the horizon) and fully from the end of civil twilight (6 degrees). */
+export const TWILIGHT_SKY_FROM = Math.sin((-12 * Math.PI) / 180);
+export const TWILIGHT_SKY_FULL = Math.sin((-6 * Math.PI) / 180);
+
+/**
+ * The sky counts in an exterior view once less than this share of the star's clear light reaches the camera
+ * directly, and fully from the lower one: over the Earth's ground that is the sun between 2 degrees and half
+ * a degree over the horizon (transmittance 0.047 at 2.3 degrees, 0.023 at 1, 0.008 at a half), so the frames
+ * with the sun 2 degrees up and more are metered as before.
+ */
+export const SKY_SUN_FULL = 0.005;
+export const SKY_SUN_NONE = 0.05;
+
+/**
+ * Weight, 0..1, with which the sky's pixels (`histogramSky`) count as lit pixels of an exterior or map view
+ * and the rules under the sun let go (request atmosphere-clouds-11): the camera's depth in an atmosphere
+ * (`skyInAir`) x how little of the star's light still arrives directly (`sunDirectShare`: the sun on the
+ * horizon behind forty air masses, its disc under it, a mountain or the Moon in front of it) x twilight
+ * (the sun less than 6 degrees under the horizon; nothing from 12 degrees: the night sky, its stars and the
+ * night floor are not touched). 0 without a sky histogram, the direct share or the sun's elevation.
+ */
+export function twilightSkyWeight(m: Pick<MeterInput, 'histogramSky' | 'skyInAir' | 'sunDirectShare' | 'sunElevationSin'>): number {
+  if (!m.histogramSky || m.sunElevationSin === undefined || m.sunDirectShare === undefined) return 0;
+  const inAir = Math.max(0, Math.min(1, m.skyInAir ?? 0));
+  if (inAir === 0) return 0;
+  const weakSun = 1 - smooth(SKY_SUN_FULL, SKY_SUN_NONE, m.sunDirectShare);
+  return inAir * weakSun * smooth(TWILIGHT_SKY_FROM, TWILIGHT_SKY_FULL, m.sunElevationSin);
+}
+
 /** Scratch: the far histogram of an interior view, the same with the sky, and an exterior frame without what is brighter than sunlit white. */
 const FAR = new Float64Array(HISTOGRAM_BINS);
 const SEEN = new Float64Array(HISTOGRAM_BINS);
@@ -401,8 +441,31 @@ const smooth = (a: number, b: number, x: number): number => {
  * SUNLIT_HIGHLIGHT_MAX_EV (request vfx-4), from below by SUNLIT_SHADOW_MIN_EV while sunlit surfaces are in
  * the frame and the sun stands well above the horizon (request vfx-7); and what is brighter than the sun can
  * light anything (flame-lit ground, glints, emitters) moves it by SUNLIT_SPOT_MAX_EV at most (request vfx-8).
+ *
+ * Twilight (request atmosphere-clouds-11): where the direct sun is nearly gone inside an atmosphere, an
+ * exterior or map view is metered twice, as above and with the sky's pixels counted and the rules under the
+ * sun let go, and the two targets are mixed by `twilightSkyWeight`.
  */
 export function meterExposure(m: MeterInput): MeterResult {
+  const weight = m.kind === 'interior' ? 0 : twilightSkyWeight(m);
+  if (weight <= 0) return meterOnce(m, false);
+  const sky = meterOnce(m, true);
+  if (weight >= 1) return sky;
+  const base = meterOnce(m, false);
+  const mix = (a: number, b: number): number => a + (b - a) * weight;
+  return {
+    ...base,
+    targetEv100: mix(base.targetEv100, sky.targetEv100),
+    litFraction: mix(base.litFraction, sky.litFraction),
+    histogramWeight: mix(base.histogramWeight, sky.histogramWeight),
+    evHistogram: mix(base.evHistogram, sky.evHistogram),
+    evPrior: mix(base.evPrior, sky.evPrior),
+    sunlitFloor: mix(base.sunlitFloor, sky.sunlitFloor),
+  };
+}
+
+/** One metering: `withSky` counts the sky's pixels as lit ones and lets the rules under the sun go (exterior and map views at twilight). */
+function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
   const interior = m.kind === 'interior';
   // Interior: what lies beyond the cabin (the far histogram), for the key, the far exposure and the window rule.
   let far: HistogramStats | null = null;
@@ -443,6 +506,26 @@ export function meterExposure(m: MeterInput): MeterResult {
     }
     histogram = h;
   }
+  // Twilight (request atmosphere-clouds-11). Inside an atmosphere, once the direct sun is nearly gone (on
+  // the horizon, under it, behind a mountain), what lights the frame is the sky, and the sky is an order of
+  // magnitude brighter than the ground it lights: metered on the ground alone the frame goes to mid-grey
+  // ground under a white sky, and the rules under the sun, which hold the picture while the sun is up, die
+  // with the sun's light through forty air masses while the sky has lost a stop. So the sky's pixels count
+  // as the lit pixels they are and the rules under the sun let go (`withSky`; meterExposure mixes this
+  // metering with the one without by the weight, which is 1 before the disc reaches the horizon: no step
+  // there). What is brighter than the sky's 90th percentile (the glow about the sun, which a photograph of
+  // a sunset lets clip) counts at that level.
+  const skyWeight = withSky && !interior ? 1 : 0;
+  if (skyWeight > 0 && m.histogramSky) {
+    let skyPixels = 0;
+    for (let i = 0; i < HISTOGRAM_BINS; i++) skyPixels += m.histogramSky[i]!;
+    if (skyPixels > 0) {
+      const top = percentileBin(m.histogramSky, 0, skyPixels, 0.9);
+      const h = Float64Array.from(histogram);
+      for (let i = 0; i < HISTOGRAM_BINS; i++) h[Math.min(i, top)] = h[Math.min(i, top)]! + m.histogramSky[i]!;
+      histogram = h;
+    }
+  }
   const stats = interior ? histogramStats(m.histogramNear, m.sampleCount, Infinity) : histogramStats(histogram, m.sampleCount);
   const all = interior ? histogramStats(m.histogram, m.sampleCount) : stats;
 
@@ -452,7 +535,7 @@ export function meterExposure(m: MeterInput): MeterResult {
   const evSun = sunny16Ev(m.sunIlluminance * m.sunVisibility);
   // Highlight protection under the sun ends half a stop above sunny 16 (not in a cabin, not without the sun).
   const sunlitOutside = somethingLit ? smooth(SUNLIT_VISIBILITY_MIN, SUNLIT_VISIBILITY_FULL, m.sunVisibility) : 0;
-  const sunlit = interior ? 0 : sunlitOutside;
+  const sunlit = interior ? 0 : sunlitOutside * (1 - skyWeight);
   const evSunlitMax = evSun + SUNLIT_HIGHLIGHT_MAX_EV;
   const underTheSun = (evHighlight: number, weight = sunlit): number => (weight > 0 && evHighlight > evSunlitMax ? evHighlight + (evSunlitMax - evHighlight) * weight : evHighlight);
   let evPrior = somethingLit ? Math.max(EV_DARK_FLOOR, evSun) : EV_DARK_FLOOR;

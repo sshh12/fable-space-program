@@ -24,7 +24,7 @@ import { HASH_WGSL, mat4, v3, type Mat4 } from '@/core/math';
 import { registerCore, type CoreApi, type FullscreenPipelineDesc, type ManagedTarget, type TemporalFeature } from './coreApi';
 import { atmosphereTransmittanceAlong, buildBodyPoses, buildProjection, buildVesselPoses, cameraBasis, jitterSequenceLength, nearestBody, planetshineAt, sunAt, sunVisibilityAt, taaJitter, type ShineLight } from './frame/math';
 import { FRAME_UNIFORM_FLOATS, packFrameUniforms, type CloudShadowParams } from './frame/uniforms';
-import { AmbientOcclusion, type ContactShadowParams } from './lighting/ao';
+import { AmbientOcclusion, type ContactShader, type ContactShadowParams } from './lighting/ao';
 import { DeferredLighting } from './lighting/deferred';
 import { createMeshSystem, SHADOW_PASS_WGSL } from './mesh/meshSystem';
 import { TextureManager } from './mesh/textures';
@@ -65,21 +65,25 @@ export interface RendererOptions {
    */
   pipelineWarm?: boolean;
   /**
-   * The contact shadow with the rules for the near field (lighting/ao.ts; requests cockpit-10, vehicle-pad-10)
-   * instead of the first rule alone. Default while the rules are being proved: false, unless the page's
-   * address carries `contact=v2` or the page's server was started with VITE_CORE_CONTACT=v2 (a test run
-   * that exercises every suite with them).
+   * The shader of the contact shadow (lighting/ao.ts; requests cockpit-10, vehicle-pad-10): 'near' (the
+   * default: the rules for the near field), 'first' (the first rule alone, the pass as it was: for A/B) or
+   * 'cross' (a candidate rule). Also by the page's address, `contact=first` / `contact=v5`, and by the env
+   * of the page's server, VITE_CORE_CONTACT=first / v5 (a test run that exercises a suite with one).
    */
-  contactNear?: boolean;
+  contactShader?: ContactShader;
 }
 
 /** The env of the page's Vite server (undefined where the module is not served by Vite). */
 const VITE_ENV: Record<string, string | undefined> | undefined = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
 
 /**
- * The sun-shadow chunk with two switches for A/B pictures of its filter, read from ShadowUniforms.count.y
+ * The sun-shadow chunk with switches for A/B pictures of its filter, read from ShadowUniforms.count.y
  * (ShadowSystem.debugFlags): 1 = the kernel is not turned per pixel, 2 = no dithered cross-fade between
- * cascades. Only pages that ask for it (`shadowdebug=1`, VITE_CORE_SHADOW_DEBUG=1) compile this text.
+ * cascades, 4 = a candidate: every tap's reference depth is lifted by what the receiver's plane rises over
+ * half a texel, where a texel covers several pixels (the bilinear comparison reads the depths of texel
+ * CENTRES; on a face the sun grazes they differ from the plane's depth at the tap by more than the fixed
+ * bias), 8 = no cascade shadow at all (what of a picture's grain is the shadow's). Only pages that ask for
+ * it (`shadowdebug=1`, VITE_CORE_SHADOW_DEBUG=1) compile this text.
  */
 function shadowsWithSwitches(wgsl: string, reportError: (m: string) => void): string {
   const edits: [string, string][] = [
@@ -88,6 +92,11 @@ function shadowsWithSwitches(wgsl: string, reportError: (m: string) => void): st
       'let phi = noise.x * TWO_PI * (1.0 - smoothstep(SHADOW_SPIN_FULL, SHADOW_SPIN_NONE, perTexel)) * select(1.0, 0.0, (shadowU.count.y & 1u) != 0u);',
     ],
     ['if (fade < 1.0 && noise.b >= fade) { continue; }', 'if (fade < 1.0 && noise.b >= fade && (shadowU.count.y & 2u) == 0u) { continue; }'],
+    [
+      'let zref = zr + dot(g, w) - bias / zRange;',
+      'let zref = zr + dot(g, w) - bias / zRange - select(0.0, 0.5 * (abs(g.x) * texel.x + abs(g.y) * texel.y) * smoothstep(SHADOW_SPIN_FULL, SHADOW_SPIN_NONE, perTexel), (shadowU.count.y & 4u) != 0u);',
+    ],
+    ['if (blockers == 0.0) { return 1.0; }', 'if (blockers == 0.0 || (shadowU.count.y & 8u) != 0u) { return 1.0; }'],
   ];
   let out = wgsl;
   for (const [from, to] of edits) {
@@ -189,8 +198,8 @@ export interface CoreRenderer extends Renderer {
    */
   setContactShadow(params: Partial<ContactShadowParams>): void;
   contactShadow(): ContactShadowParams;
-  /** Whether the contact shadow runs with the near field's rules (`RendererOptions.contactNear`); false: the first rule alone, and `setContactShadow` changes nothing. */
-  readonly contactNear: boolean;
+  /** The shader the contact shadow runs (`RendererOptions.contactShader`); with 'first' `setContactShadow` changes nothing. */
+  readonly contactShader: ContactShader;
   /** Switches of the sun-shadow filter for A/B pictures (ShadowSystem.debugFlags: 1 = no per-pixel turn of the kernel, 2 = no dithered cross-fade between cascades). 0 in the game. */
   setShadowDebug(flags: number): void;
   exposureInfo(): ExposureInfo;
@@ -310,7 +319,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   // ----------------------------------------------------------------------------------- shader library
   const pageQuery = new URLSearchParams(globalThis.location?.search ?? '');
   const pipelineWarm = opts.pipelineWarm ?? pageQuery.get('warm') !== '0';
-  const contactNear = opts.contactNear ?? (pageQuery.get('contact') ?? VITE_ENV?.VITE_CORE_CONTACT) === 'v2';
+  const contactAsked = pageQuery.get('contact') ?? VITE_ENV?.VITE_CORE_CONTACT;
+  const contactShader: ContactShader = opts.contactShader ?? (contactAsked === 'first' ? 'first' : contactAsked === 'v5' ? 'cross' : 'near');
   const shadowSwitches = (pageQuery.get('shadowdebug') ?? VITE_ENV?.VITE_CORE_SHADOW_DEBUG) === '1';
   const shaders: CoreShaderLibrary = createShaderLibrary(device, reportError, { warm: pipelineWarm });
   shaders.register('hash', HASH_WGSL);
@@ -387,7 +397,17 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   // Shadow maps of up to SPOT_SHADOW_MAX spot lights with castShadow (request vehicle-pad-2).
   const spotShadows = new SpotShadows(device, shadows.passLayout, reportError);
   const textures = new TextureManager(device, ctx.assetsUrl, reportError, mips);
-  const meshes = createMeshSystem({ device, shaders, frameLayout: frameBindGroupLayout, shadowPassLayout: shadows.passLayout, textures, resources, reportError });
+  const meshes = createMeshSystem({
+    device,
+    shaders,
+    frameLayout: frameBindGroupLayout,
+    shadowPassLayout: shadows.passLayout,
+    textures,
+    resources,
+    reportError,
+    // A candidate while it is being proved: only pages that ask for it compile its text.
+    frostCoat: (pageQuery.get('frost') ?? VITE_ENV?.VITE_CORE_FROST) === 'v2',
+  });
 
   const managed: { make: () => void; target: { texture: GPUTexture; view: GPUTextureView; size: [number, number]; version: number; alive: boolean } }[] = [];
   let cloudShadow: CloudShadowParams = { near: null, far: null };
@@ -455,7 +475,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   let bodiesKnown = false;
   const lighting = new DeferredLighting(ctx, shaders);
   lighting.setSpotShadows(spotShadows.arrayView, spotShadows.uniform);
-  const ao = new AmbientOcclusion(ctx, shaders, core, contactNear);
+  const ao = new AmbientOcclusion(ctx, shaders, core, contactShader);
   const tonemap = new Tonemap(ctx, shaders);
   const post = new PostProcess(ctx, shaders, core, gpu.hasFeature('rg11b10ufloat-renderable'));
   const meter = new ExposureMeter(ctx, shaders);
@@ -698,6 +718,19 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     return true;
   };
 
+  /** How deep the point is in an atmosphere: 0 at its top and above every one, 1 from half its top altitude down (MeterInput.skyInAir). */
+  const depthInAir = (point: { x: number; y: number; z: number }, snapshot: SimSnapshot, d: DefLibrary): number => {
+    let depth = 0;
+    for (const b of snapshot.bodies) {
+      const def = d.bodies[b.id];
+      const top = def?.render.atmosphere?.topAltitude;
+      if (!def || !top) continue;
+      const t = Math.max(0, Math.min(1, (def.radius + top - v3.dist(point, b.rRoot)) / (0.5 * top)));
+      depth = Math.max(depth, t * t * (3 - 2 * t));
+    }
+    return depth;
+  };
+
   const sunInView = (camera: CameraState, dir: { x: number; y: number; z: number }, angularRadius: number, aspect: number): boolean => {
     const basis = cameraBasis(camera);
     const z = v3.dot(dir, basis.forward);
@@ -799,6 +832,9 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       litObjectInView: litObjectInView(snapshot, camera, bodies, vessels, rh, rw / rh) || sunDiscInView,
       ...(sunInFrame !== undefined ? { sunInFrame } : {}),
       ...(sunElevationSin !== undefined ? { sunElevationSin } : {}),
+      // Where the direct sun is nearly gone the sky is what lights the frame (request atmosphere-clouds-11).
+      skyInAir: inSpace ? 0 : depthInAir(camera.positionRoot, snapshot, defs),
+      sunDirectShare: sunVisibility * (0.2126 * air[0] + 0.7152 * air[1] + 0.0722 * air[2]),
       kind: camera.kind,
       exposureCompensation: camera.exposureCompensation,
       minEv100: camera.minEv100,
@@ -1227,7 +1263,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       ao.setContact(params);
     },
     contactShadow: () => ({ ...ao.contact }),
-    contactNear,
+    contactShader: ao.shader,
     setShadowDebug(flags) {
       shadows.debugFlags = flags >>> 0;
     },

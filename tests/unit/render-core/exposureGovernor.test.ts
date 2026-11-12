@@ -37,6 +37,9 @@ import {
   SUN_IN_FRAME_MARGIN_EV,
   sunThroughAir,
   meterExposure,
+  SKY_SUN_FULL,
+  SKY_SUN_NONE,
+  twilightSkyWeight,
   sunny16Ev,
   type MeterInput,
 } from '@/render/core/post/exposure';
@@ -1126,3 +1129,120 @@ describe('interior metering: what fills the frame through the windows (request c
   });
 });
 
+describe('exterior metering at twilight: the sky lights the frame and counts (request atmosphere-clouds-11)', () => {
+  const sin = (deg: number): number => Math.sin((deg * Math.PI) / 180);
+  /** The pad at dusk, looking into the sunset: half the frame ground lit by the sky alone, half sky (a glow near the horizon, darker above). */
+  const dusk = (): { ground: Uint32Array; sky: Uint32Array } => {
+    const ground = new Uint32Array(HISTOGRAM_BINS);
+    fill(ground, 12, 45, 0.5 * N);
+    const sky = new Uint32Array(HISTOGRAM_BINS);
+    fill(sky, 60, 400, 0.35 * N);
+    fill(sky, 400, 2500, 0.15 * N);
+    return { ground, sky };
+  };
+  /**
+   * The sun `elevationDeg` over the horizon of the Earth's ground: the clear air's transmittance towards it
+   * (zenith 0.851, the Kasten-Young air mass), the visible share of its disc, and the meter's inputs for it.
+   */
+  const sunAt = (elevationDeg: number): Partial<MeterInput> => {
+    const up = Math.max(elevationDeg, 0);
+    const transmittance = Math.exp(Math.log(0.851) / (sin(up) + 0.50572 * (up + 6.07995) ** -1.6364));
+    const visibility = Math.max(0, Math.min(1, (elevationDeg + 0.27) / 0.54));
+    return { sunIlluminance: sunThroughAir(SUN, transmittance, false), sunVisibility: visibility, sunDirectShare: transmittance * visibility, sunElevationSin: sin(elevationDeg), litObjectInView: visibility > 0 };
+  };
+  const at = (elevationDeg: number, over: Partial<MeterInput> = {}): ReturnType<typeof meterExposure> => {
+    const v = dusk();
+    return meter(v.ground, { histogramSky: v.sky, skyInAir: 1, ...sunAt(elevationDeg), ...over });
+  };
+  const stops = (luminance: number, ev: number): number => Math.log2((luminance * exposureFromEv100(ev)) / 0.18);
+
+  it('the weight: how little of the sun still arrives directly, inside an atmosphere, until the end of twilight', () => {
+    const sky = new Uint32Array(HISTOGRAM_BINS);
+    const w = (share: number, elevationDeg: number, skyInAir = 1): number => twilightSkyWeight({ histogramSky: sky, skyInAir, sunDirectShare: share, sunElevationSin: sin(elevationDeg) });
+    expect(SKY_SUN_NONE).toBe(0.05);
+    expect(SKY_SUN_FULL).toBe(0.005);
+    // The mission's launch (31 degrees: 0.73), a low sun (10 degrees: 0.42), the dawn frame of request
+    // atmosphere-clouds-10 (7 km up, the sun 1 degree up: 0.24), the sun 2.3 degrees over the pad (0.055): none.
+    for (const share of [0.73, 0.42, 0.24, 0.055, 0.05]) expect(w(share, 5)).toBe(0);
+    expect(w(0.0275, 1.5)).toBeCloseTo(0.5, 6);
+    expect(w(0.005, 0.5)).toBe(1);
+    expect(w(0, -0.3)).toBe(1);
+    expect(w(0, -6)).toBeCloseTo(1, 9);
+    expect(w(0, -9)).toBeGreaterThan(0.3);
+    expect(w(0, -9)).toBeLessThan(0.7);
+    expect(w(0, -12)).toBe(0);
+    expect(w(0, -40)).toBe(0);
+    // A sun hidden by a mountain or the Moon while it stands high: the sky counts.
+    expect(w(0, 40)).toBe(1);
+    // Above the air, and without the inputs, never.
+    expect(w(0, -3, 0)).toBe(0);
+    expect(w(0, -3, 0.5)).toBeCloseTo(0.5, 9);
+    expect(twilightSkyWeight({ skyInAir: 1, sunDirectShare: 0, sunElevationSin: sin(-3) })).toBe(0);
+    expect(twilightSkyWeight({ histogramSky: sky, skyInAir: 1, sunElevationSin: sin(-3) })).toBe(0);
+    expect(twilightSkyWeight({ histogramSky: sky, skyInAir: 1, sunDirectShare: 0 })).toBe(0);
+  });
+
+  it('after sunset the frame is exposed for sky and ground together: the glow under the shoulder, the sky above it in the mid-tones, the ground dark', () => {
+    const v = dusk();
+    const without = meter(v.ground, { ...sunAt(-0.3) });
+    const r = at(-0.3);
+    // Metered on the ground alone, the glow (2,000 cd/m^2) stood more than six stops over mid-grey: white.
+    expect(stops(2000, without.targetEv100)).toBeGreaterThan(6);
+    expect(Math.abs(stops(25, without.targetEv100))).toBeLessThan(0.8);
+    // With the sky: the glow within three stops of mid-grey, the sky above it within two under, the ground three and more under.
+    expect(stops(2000, r.targetEv100)).toBeLessThan(3);
+    expect(stops(2000, r.targetEv100)).toBeGreaterThan(1);
+    expect(stops(150, r.targetEv100)).toBeLessThan(0);
+    expect(stops(150, r.targetEv100)).toBeGreaterThan(-2.3);
+    expect(stops(25, r.targetEv100)).toBeLessThan(-3);
+    expect(r.targetEv100 - without.targetEv100).toBeGreaterThan(3);
+  });
+
+  it('no step as the disc crosses the horizon, and none as the sky comes in over the last two degrees', () => {
+    // From a degree over the horizon to a degree under it the weight is 1 or nearly: the target does not move with the disc.
+    const over = at(0.75).targetEv100;
+    for (const elevation of [0.5, 0.27, 0.1, 0, -0.1, -0.27, -1]) expect(Math.abs(at(elevation).targetEv100 - over), `${elevation} deg`).toBeLessThan(0.15);
+    // The same frame metered without the sky moves by more than three stops against it.
+    const v = dusk();
+    expect(over - meter(v.ground, { ...sunAt(-0.3) }).targetEv100).toBeGreaterThan(3);
+    // Coming in (2.3 degrees: not yet; half a degree: wholly) the target is a mix of the two meterings by the weight: monotonic.
+    let last = at(2.3).targetEv100;
+    expect(last).toBe(meter(v.ground, { ...sunAt(2.3) }).targetEv100);
+    for (const elevation of [2.1, 1.9, 1.7, 1.5, 1.3, 1.1, 0.9, 0.7, 0.5]) {
+      const ev = at(elevation).targetEv100;
+      expect(ev, `${elevation} deg`).toBeGreaterThanOrEqual(last - 0.05);
+      expect(ev - last, `${elevation} deg`).toBeLessThan(1.2);
+      last = ev;
+    }
+    // Twilight ends: from 6 to 12 degrees under the horizon the sky hands back to the night's metering.
+    expect(at(-12).targetEv100).toBe(meter(v.ground, { ...sunAt(-12) }).targetEv100);
+    expect(at(-9).targetEv100).toBeLessThan(at(-6).targetEv100);
+    expect(at(-9).targetEv100).toBeGreaterThan(at(-12).targetEv100);
+  });
+
+  it('daylight, the dawn of request atmosphere-clouds-10, the night and a camera above the air are metered as before', () => {
+    const v = dusk();
+    // The sun up and its light arriving (5 % of it and more): the sky histogram changes nothing.
+    for (const elevation of [31, 10, 5, 2.3]) expect(at(elevation).targetEv100, `${elevation} deg`).toBe(meter(v.ground, { ...sunAt(elevation) }).targetEv100);
+    // The dawn frame: 7 km up, the sun 1 degree over the horizon, 0.24 of its light.
+    const dawn = { sunIlluminance: sunThroughAir(SUN, 0.24, false), sunVisibility: 1, sunDirectShare: 0.24, sunElevationSin: sin(1) };
+    expect(meter(v.ground, { ...dawn, histogramSky: v.sky, skyInAir: 1 }).targetEv100).toBe(meter(v.ground, dawn).targetEv100);
+    // Night (the sun 12 degrees and more under the horizon): stars and airglow in the sky histogram change nothing.
+    const stars = new Uint32Array(HISTOGRAM_BINS);
+    fill(stars, 0.01, 3, 0.02 * N);
+    const dark = new Uint32Array(HISTOGRAM_BINS);
+    fill(dark, 0.01, 0.2, 0.3 * N);
+    const night = { sunIlluminance: 0, sunVisibility: 0, sunDirectShare: 0, sunElevationSin: sin(-30), litObjectInView: false };
+    expect(meter(dark, { ...night, histogramSky: stars, skyInAir: 1 }).targetEv100).toBe(meter(dark, night).targetEv100);
+    // In orbit, in the Earth's shadow, the glowing limb is sky too: not counted (skyInAir 0).
+    const limb = new Uint32Array(HISTOGRAM_BINS);
+    fill(limb, 200, 3000, 0.01 * N);
+    const eclipsed = { sunVisibility: 0, sunDirectShare: 0, sunElevationSin: sin(-5), litObjectInView: false };
+    expect(meter(dark, { ...eclipsed, histogramSky: limb, skyInAir: 0 }).targetEv100).toBe(meter(dark, eclipsed).targetEv100);
+    // An interior view has its own rules for the sky in its windows.
+    const cabin = new Uint32Array(HISTOGRAM_BINS);
+    fill(cabin, 5, 40, 0.85 * N);
+    const inside = { histogramNear: cabin, kind: 'interior' as const, histogramSky: v.sky, sunVisibility: 0, sunDirectShare: 0, sunElevationSin: sin(-0.3) };
+    expect(meter(cabin, { ...inside, skyInAir: 1 }).targetEv100).toBe(meter(cabin, { ...inside, skyInAir: 0 }).targetEv100);
+  });
+});
