@@ -4,8 +4,8 @@ Owner paths: `src/render/vehicle/**`, `data/defs/visuals/parts/**`, `data/defs/v
 structures file under `data/defs/sites/`, `public/assets/vehicle/**`, `tools/vehicle/**`, `labs/vehicle/**`,
 `tests/browser/vehicle/**`, `tests/unit/vehicle/**`. Nothing outside these paths was changed. Requests: section 7.
 
-State: built, reviewed, fixed, and reworked twice after visual critiques (section 9, "Visual close-out, round
-1", 2026-11-11; section 10, "Visual close-out, round 2", 2026-11-12). Sections 1 to 7 describe the package as
+State: built, reviewed, fixed, and reworked three times after visual critiques (section 9, "Visual close-out,
+round 1", 2026-11-11; sections 10 and 11, rounds 2 and 3, 2026-11-12). Sections 1 to 7 describe the package as
 it is now.
 
 ## 1. What exists
@@ -15,7 +15,7 @@ Everything is generated in code at start-up from the part and site definitions; 
 | Piece | Where |
 |---|---|
 | Geometry kernel: mesh builder with components and position-based re-masking, lathe / tube / extrude / patch primitives, validation | `src/render/vehicle/geom/{builder,prims,validate}.ts` |
-| Material library (61 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
+| Material library (64 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
 | Decal sheet (content: names, texts, colours, sizes of every marking; `foil: true` for markings painted on metal film) | `data/defs/visuals/parts/livery.json` (section `visuals/parts/livery`), read by `src/render/vehicle/decals.ts`, baked by `tools/vehicle/bake-decals.ts` into `decals.png` and `decals_orm.png` |
 | 14 part generators, registry | `src/render/vehicle/parts/**` |
 | 25 part visual files (parameters only) | `data/defs/visuals/parts/<partId>.json` |
@@ -23,7 +23,7 @@ Everything is generated in code at start-up from the part and site definitions; 
 | Ground survey of a site (the real terrain under the complex) and its reader | section `visuals/sites/<siteId>` (`data/defs/visuals/sites/<siteId>.json`), `src/render/vehicle/site/survey.ts` |
 | Launch complex layout (34 structures, with the names of their markings) | the site's `*.structures.json` under `data/defs/sites/` |
 | Vessel feature (id `vehicle`) and site feature (id `site`), LOD selection | `src/render/vehicle/{vesselFeature,siteFeature,lod}.ts` |
-| Texture bakes (procedural, CPU), decal bake, model report, site ground report | `tools/vehicle/{texlib,bake-textures,bake-decals,model-report,site-ground}.ts` |
+| Texture bakes (procedural, CPU), decal bake and its cut-out copy (ink only, for lettering painted on a skin), model report, site ground report and survey | `tools/vehicle/{texlib,bake-textures,bake-decals,decal-coverage,model-report,site-ground}.ts` |
 | Lab | `labs/vehicle/` (`/labs/vehicle/`) |
 
 Part generator ids: `stage.tank`, `engine.liquid`, `stage.interstage`, `stage.ring`, `motor.pack`, `rcs.pod`,
@@ -130,6 +130,7 @@ node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/vehicl
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/vehicle --project=perf
 node tools/dev/heavy.mjs --class=bake -- npx tsx tools/vehicle/bake-textures.ts [recipe ...]     # about 40 s for all
 node tools/dev/heavy.mjs --class=gpu  -- npx tsx tools/vehicle/bake-decals.ts                    # canvas text in Chrome
+node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/decal-coverage.ts                 # after every decal bake: decals_cut.png (ink only)
 node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/model-report.ts [partId ...]      # triangle counts, mesh checks
 node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts [radial]           # terrain under every structure
 node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts survey             # writes data/defs/visuals/sites/<siteId>.json (about 25 s)
@@ -163,16 +164,16 @@ flight.
 | Mated attach interfaces meet within 5 mm | 33 interfaces, gap 0 to 1.24 mm, no overlap |
 | Capsule skin on the shared mould line within 2 mm; openings at the file's azimuth / y / size | pass (the test reads the file) |
 | Nothing under a fairing or boost cover reaches through it | boost cover over the capsule: least clearance 25.5 mm; fairing over the descent stage 156 mm |
-| Triangles, full stack | LOD0 1,305,108 (1.0 to 1.6 M), LOD1 311,570, LOD2 28,676 (< 60 k) |
-| Launch complex triangles (all models, 34 structures) | LOD0 394,480, LOD1 120,916, LOD2 18,178 |
+| Triangles, full stack | LOD0 1,299,720 (1.0 to 1.6 M), LOD1 309,086, LOD2 28,928 (< 60 k) |
+| Launch complex triangles (all models, 34 structures) | LOD0 394,720, LOD1 120,928, LOD2 18,274 |
 | No vessel caster in a staggered cascade | 0 staggered submissions (`staging.spec.ts`) |
 | Staging sequence with `splitForStage` | all 10 stages; separated pieces are full models and clear the stack |
 | LOD: nothing left dithered | dolly of 12 distances from 7 to 360 m: 271 cross-fades started, 0 items fading 60 frames after each stop |
 | The complex on the real ground | the survey bounds the terrain: 219,240 samples of the height authority (`site-ground.ts verify`) and 775 live samples in the integration lab (`game.spec.ts`), worst excess over its bounds 0.000 m in both; every vertex of the ground model is at least 2 cm over the upper bound or at least 0.3 m under the lower one, every level face is above the upper bound at its centre (`site.test.ts`); largest terrain-to-pad-plane gap under the 22 structures that stand on level areas 0.000 m |
-| Vehicle G-buffer < 0.8 ms | 0.022 ms (stack filling the view), 0.071 ms (tower at 15 m), p99; p50 0.019 / 0.068 |
-| Vehicle shadows < 0.4 ms | 0.224 ms (fill; windows 0.233 / 0.224 / 0.224), 0.230 ms (tower; 0.015 / 0.249 / 0.230), p99; p50 0.006 / 0.014 |
-| Site G-buffer + shadow < 0.5 ms | 0.069 + 0.024 ms (fill), 0.033 + 0.044 ms (tower), p99; p50 0.066 + 0.022 / 0.030 + 0.042. In the run before, the fill view read 0.070 + 0.260 ms (inside the line): the site's shadow passes show the same rare long frames as the vehicle's did in round 1 |
-| CPU instance update < 0.3 ms | 0.250 ms p50 / 0.415 ms p95 (fill), 0.225 / 0.305 ms (tower); the site's own update 0.195 / 0.165 ms p50. **The run before failed this line** (0.310 and 0.305 ms p50) under a multi-process bake; see below |
+| Vehicle G-buffer < 0.8 ms | 0.022 ms (stack filling the view), 0.072 ms (tower at 15 m), p99 |
+| Vehicle shadows < 0.4 ms | 0.210 ms (fill; windows 0.007 / 0.210 / 0.241), 0.251 ms (tower; 0.252 / 0.251 / 0.251), p99 |
+| Site G-buffer + shadow < 0.5 ms | 0.069 + 0.243 ms (fill), 0.033 + 0.045 ms (tower), p99 |
+| CPU instance update < 0.3 ms | 0.185 ms p50 / 0.345 ms p95 (fill), 0.195 / 0.305 ms (tower); the site's own update 0.105 / 0.100 ms p50. **One run of round 2 failed this line** (0.310 and 0.305 ms p50) under a multi-process bake; see below |
 | `expectNoErrors` | in every vehicle-lab test |
 
 Perf: 2560 x 1440, `perf=features&scale=1&governor=off`, ballast 6.9 ms, p99 of timestamp queries, median of
@@ -188,7 +189,11 @@ all lines passed with the figures in the table. The CPU line has little margin u
 caster batches), each of which builds its matrices again. The lead should re-measure on a quiet machine
 (PACKAGE_RULES 16).
 
-Generated assets: 91 MB in 69 files under `public/assets/vehicle` (limit 120 MB). No API key was used and no
+Round 3 (the figures in the table): the spec passed in both of its runs (the other: fill 0.022 / 0.242 /
+0.070 + 0.260 ms and 0.160 ms p50; tower 0.072 / 0.253 / 0.034 + 0.045 ms and 0.145 ms p50), 125 instances
+(the markings models are four more).
+
+Generated assets: 91 MB in 70 files under `public/assets/vehicle` (limit 120 MB). No API key was used and no
 money was spent: every texture and decal is baked procedurally. No Modal app was touched.
 
 ## 5. Deviations from the brief (wave-1 reality and decisions)
@@ -232,15 +237,18 @@ money was spent: every texture and decal is baked procedurally. No Modal app was
 - Night: no beams in the air (no transparent pass in this package); the core shadows two spots, so the
   shadows of tower and masts across the apron come from the two banks nearest the camera only; site lights
   are capped at 12 per frame (vessel 4) of the core's 16, the nearest win.
-- Frost is told by its structure (lanes, frost lines, rime on dark structure), not by its brightness: sunlit
-  white paint and frost are a few per cent apart in display luma (the tone curve's shoulder). No vapour and no
-  falling ice (request 9).
-- A marking under soot is a label of even tone: the shader's soot streaks live in texture space and a
-  decal's coordinates are atlas coordinates.
-- Glass is opaque: no inner panes, no cabin behind the windows from outside (the cockpit package's glazing
-  replaces the panes when `exteriorGlass` is false).
+- Frost: the coat is brilliant against the grey tank barrels now (display luma 180 against 155), but the edges
+  of its bare lanes and of the frost lines break into hard dashes: the core draws frost as a mask (request
+  11). No vapour and no falling ice (request 9).
+- The returned capsule's soot mask is thick (mean 0.96 on the cone, the shader's near-black), yet in direct
+  low sun it still reads brown-gold rather than charcoal: the hue of the deposit is the core's ramp
+  (request 13).
+- Markings on the interstages, the boost cover, the fairing and the site's signs are still atlas rectangles
+  (on dark or flat surfaces); only the stages and the capsule have cut-out lettering.
+- Glass is an opaque dark mirror: no inner panes, no cabin behind the windows from outside (the cockpit
+  package's glazing replaces the panes when `exteriorGlass` is false).
 - Stand-off fittings thinner than the contact march resolves get a ragged contact shadow (request 10; the
-  hatch handle was made solid).
+  hatch's handle and handrails were made solid).
 - Lightning masts beyond about 450 m are solid posts; fence fabric beyond about 100 m is a faint veil.
 - Fairing petals have no panel joints, vents or rails; the capsule's nose has no docking mechanism; tower
   joints have gusset plates but no bolt groups; the launch mount's water system is plain painted pipe.
@@ -264,6 +272,9 @@ money was spent: every texture and decal is baked procedurally. No Modal app was
 | `docs/requests/vehicle-pad-8.md` | terrain render | open | ground cover and loose rocks off the roads, stone pads and fence line of a site; a strip of disturbed soil; word when the height function changes inside a site |
 | `docs/requests/vehicle-pad-9.md` | vfx | open | vent vapour, vapour down the frosted barrels and falling ice, from the vents and frost bands the visual files declare |
 | `docs/requests/vehicle-pad-10.md` | render core, lighting | open | contact shadows of thin stand-off casters |
+| `docs/requests/vehicle-pad-11.md` | render core, mesh shader | open | frost as a coat with a thickness (soft edges, cool white, sparkle) instead of a mask |
+| `docs/requests/vehicle-pad-12.md` | vfx or atmosphere | open | single scattering of the frame's spot lights in the air (beams on the night pad) |
+| `docs/requests/vehicle-pad-13.md` | render core, mesh shader | open | soot ramp: a grey-brown veil and a neutral black instead of one coffee brown |
 
 Against these paths: `cockpit-11` (ports in the boost cover) resolved in 9a5339a; `sim-core-v2-2` (a site
 with structures and no ground survey must fail at load) resolved in 37d3ad2. No other open request in
@@ -404,3 +415,34 @@ Not fixed, and why:
 - **Vapour and falling ice**: request 9 (vfx).
 - **Far masts** are solid red-and-white posts beyond about 450 m (a cut-out lattice would put the masts on
   the per-material shadow path, which cost 1.2 ms on the vessel in round 1).
+
+## 11. Visual close-out, round 3 (2026-11-12)
+
+Work list: `docs/qa/wave2/vehicle-pad.r2.combined.json` (photo 6/10, artifact 6/10; no blocker, 7 majors, 14
+minors). One working session at the end of a long one: the majors were taken first and the round stops at
+a committed green state with the minors below open.
+
+| # (r2 finding) | Item | What was done | Shows in |
+|---|---|---|---|
+| 1 | Frost reads as grey whitewash, 4 % brighter than bare | The difference now survives the tone curve: the cryogenic tank barrels are painted light grey (`skin-grey`, albedo about 0.37; a working launcher's grey), so the coat is the brightest thing on the stage: barrel luma 180 frosted against 155 bare in the lab (ratio 1.16; it was 1.03). One coat across the skin (0.75 and above, bare lanes at 0.12), a solid rime on the intertank and its frames (the dashes were a half weight), lettering under an even veil. What is left is the core's: lane and frost-line edges still break into hard dashes because frost is drawn as a mask (request 11: frost as a thickness, as soot became a density), and vapour is the effects package's (request 9, open) | `frost-prelaunch` against `frost-shed`, `frost-line-prelaunch`, `pad-stack-300m`, `game-pad-noon-300m` |
+| 2 | The flown capsule is a brass tint | Partly. The pristine film is a mirror of a dark sky, so a thin deposit read as bright as the film. The soot mask is thick now (mean 0.96 on the cone: the shader's near-black over most of the shell, dark brown streaks in the lee, three streak widths and a mottle), on the forward bay, window panels and round every fitting, and the markings are ink on the scorched tiles (no clean label). In the pictures the unlit side is black, but the side in direct low sun still reads brown-gold, not charcoal: the hue is the core's soot ramp (request 13) | `game-chutes-capsule-flown`, `game-chutes-capsule-flown-lee`, `capsule-charred-back-shell` |
+| 3 | Furry shadow at the hatch rails | The two handrails are solid rails on a web that runs down to the skin (no gap for the contact march to resolve as noise), like the pull handle; request 10 stays open for thin casters in general | `capsule-hatch` |
+| 4 | Markings are stickers | Markings on the stages and on the capsule are cut-out lettering: a cut-out copy of the atlas keyed to the ink (`decals_cut.png`, `tools/vehicle/decal-coverage.ts`, material `decal-cut`; the sheet's `skinColors` say which backgrounds are skin) on patches a hair above a continuous skin, in a model of their own that casts no shadow. The skin weathers, soots and frosts under and between the letters; plates with a colour of their own (caution placards) stay whole. Not converted: markings on the interstages, the boost cover and the fairing (dark or flat surfaces where the rectangle does not show) and the site's signs | `frost-shed`, `stage-m1-space`, `capsule-hatch`, `capsule-charred-back-shell` |
+| 5 | The berm is a knife-edged prism with stretched cobbles | A pushed-up bank: cosine cross-section of 10 vertices with smooth normals, lumps at blade scale, ends that run out in height and width on a rounded plan; fill at a third of the river rock's size | `game-site-tank-farm-low`, `site-tank-farm-berm` |
+| 6 | Night pad half lit | Three of the six banks aim at 0.8 of the stack's height with a tighter cone: the vehicle is lit from skirt to capsule. Beams in the air: request 12 (no transparent pass here) | `game-pad-night`, `site-pad-night` |
+| 7 | Close-up hardware is clean primitives | Only the deluge system's finish: galvanised ring main and goose-necks with a rust-and-scale stain, darker oxide heads. Bolt groups, weld beads, clamp shoes, arm plates and hoses are NOT done | `pad-engine-section` |
+| 8 | Windows are black voids | Panes are dark mirrors (metallic, roughness 0.03, a fifth to a quarter of what faces them): black only when they face empty space. No inner pane or cabin glow | `capsule-windows`, `game-orbit-capsule` |
+| 17 | Landing lamps bloom, light lands to one side | Lens luminance a seventh of round 2's, cones aimed 9 degrees outward instead of 25: the pool lies under and round the vehicle | `lander-lights` |
+
+Not done in this round, and why (working context ran out; all are stated in the critique with their
+causes): the minors 9 (soot hue and heat tint on the bells: the hue is the core's ramp), 10 (trench floor
+tone), 11 (blanket panels' stitching, powerheads), 12 (top of the stack), 13 (silver film at 10 to 30 m,
+radiator, thruster quad), 14 (shield spalls and glow map), 15 (lander pads in the lab), 16 (comb edge
+against cloud: not this package's), 18 (verges, crawlerway end: partly the terrain's, request 8), 19
+(capsule nose hardware), 20 (foam at 40 m), 21 (dust on the foot pads); of major 7 everything but the
+deluge finish; of major 6 the work lights' spill.
+
+Assertions changed: `looks.test.ts` lets a frosting stage pose its `markings` model beside `body` (still
+nothing dithered). Nothing else.
+
+Perf after the round: section 4.
