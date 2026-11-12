@@ -153,6 +153,17 @@ export interface BodyTerrainDef {
   minElevation: number;
   /** Deepest quadtree level the renderer subdivides to (beyond data: procedural). */
   maxRenderLevel: number;
+  /**
+   * v2 (ARCHITECTURE 10.2, 10.5; request bodies-ephemeris-3): a cap on the coarse levels of this body's height
+   * pyramid that stay resident while the body is resident (for impact prediction, far views and the idle
+   * state's warm level). The provider keeps levels 0 .. min(`TileManifest.residentHeightLevel`,
+   * `residentLevel`) resident, lazily per body. Absent = no cap: the manifest's level, as today, so every
+   * existing terrain section stays valid. Rule for generated bodies: 3 (levels 0-3 are at most 510 tiles per
+   * layer, the size of Earth's resident pyramid); a body whose pyramid is shallower is resident whole.
+   * Honoured by the provider from the lazy-residency change of wave 4.1c; until then the manifest's level
+   * alone applies, which is the same or deeper.
+   */
+  residentLevel?: number;
   modifiers: TerrainModifier[];
   surfaceFriction: number;
   amplification: TerrainAmplificationDef;
