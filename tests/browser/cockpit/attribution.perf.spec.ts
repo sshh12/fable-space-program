@@ -14,13 +14,15 @@ import { assertDiscreteGpu, expect, expectNoErrors, openPage, test, waitIdle, wi
 
 test.use({ viewport: { width: 2560, height: 1440 } });
 
-const A = { polygonSources: 1, sun: 2, reflections: 4, detailTextures: 8, patterns: 16, bounce: 32, shading: 64, lampShadows: 128, shadeDraw: 256, decals: 512, screens: 1024, frustumCulling: 2048 };
+const A = { polygonSources: 1, sun: 2, reflections: 4, detailTextures: 8, patterns: 16, bounce: 32, shading: 64, lampShadows: 128, shadeDraw: 256, decals: 512, screens: 1024, frustumCulling: 2048, depthPrepass: 4096, displayPaint: 8192 };
 
 const CONFIGS: [name: string, mask: number, without: string[]][] = [
   ['baseline', 0, []],
   ['every chunk drawn (no frustum culling)', A.frustumCulling, []],
   ['depth pre-pass only', A.shadeDraw, []],
   ['depth pre-pass only, every chunk', A.shadeDraw | A.frustumCulling, []],
+  ['one shaded draw, no depth pre-pass', A.depthPrepass, []],
+  ['one shaded draw, no pre-pass, constant fragment', A.depthPrepass | A.shading, []],
   ['constant fragment', A.shading, []],
   ['constant fragment, no decals, no screens', A.shading | A.decals | A.screens, []],
   ['without polygon sources', A.polygonSources, []],
@@ -39,6 +41,8 @@ const CONFIGS: [name: string, mask: number, without: string[]][] = [
   ['without the pressure shell', 0, ['shell']],
   ['without windows, hatches, mounts, fixtures', 0, ['windows', 'hatch', 'dockingHatch', 'mount', 'checklist', 'panel', 'locker', 'bag', 'cable', 'flood', 'duct', 'handhold', 'extinguisher', 'fdfPouch', 'floorRails']],
   ['without couches and harness', 0, ['couch', 'harness', 'couchPallet']],
+  ['displays not painted', A.displayPaint, []],
+  ['displays not painted, depth pre-pass only', A.displayPaint | A.shadeDraw, []],
   ['baseline again', 0, []],
 ];
 

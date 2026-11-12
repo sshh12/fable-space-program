@@ -376,8 +376,17 @@ export function buildHatch(ctx: CabinContext): void {
     const outDir = v3.normalize(localDirOf(face, un - u, vn - v));
     const alongDir = v3.cross(face.n, outDir);
     const lf = frameAt(local(face, u, v, 0.009), outDir, alongDir);
-    b.box(lf, 0.019, 0.015, 0.009, 0.002, ctx.m('anodized'));
-    b.cylinder(local(lf, -0.006, 0, 0.009), face.n, 0.0055, 0.004, 10, steel, { caps: 'top' });
+    // The latch: a clevis bolted to the rim (a base plate, two cheeks), the hook's arm between the cheeks on
+    // a pivot pin with its return spring.
+    const black = ctx.m('anodized');
+    b.box(offsetFrame(lf, 0, 0, -0.0065), 0.021, 0.0175, 0.0025, 0.001, black);
+    for (const sy of [-1, 1]) {
+      b.box(offsetFrame(lf, -0.001, sy * 0.0115, 0.0005), 0.016, 0.0025, 0.0085, 0.0015, black);
+      for (const sx of [-1, 1]) b.cylinder(local(lf, sx * 0.016, sy * 0.0145, -0.004), face.n, 0.0027, 0.0016, 6, steel, { caps: 'top' });
+    }
+    b.cylinder(local(lf, -0.004, -0.0165, 0.003), alongDir, 0.003, 0.033, 8, steel, { caps: 'both' });
+    b.cylinder(local(lf, -0.004, -0.0075, 0.003), alongDir, 0.0052, 0.004, 10, steel, { caps: 'both' });
+    b.cylinder(local(lf, -0.004, 0.0035, 0.003), alongDir, 0.0052, 0.004, 10, steel, { caps: 'both' });
     // Hook: an arm over the door's edge, its tip turned down onto the striker. (The door is a flat plug in a
     // conical wall: at its sides the rim lies almost flush with the frame, at the top and the bottom it
     // stands several centimetres proud; the hook's drop and the striker's height follow.)
@@ -390,7 +399,7 @@ export function buildHatch(ctx: CabinContext): void {
     }
     const room = v3.dot(v3.sub(tip, under), g.inward);
     const drop = Math.max(0.003, Math.min(0.022, room - 0.012));
-    b.box(offsetFrame(lf, 0.036, 0, 0.004), 0.024, 0.006, 0.004, 0.0015, steel);
+    b.box(offsetFrame(lf, 0.027, 0, 0.004), 0.033, 0.0055, 0.004, 0.0015, steel);
     b.box(frameAt(v3.addScaled(tip, face.n, -drop / 2), outDir, alongDir), 0.004, 0.006, drop / 2, 0.0015, steel);
     // Striker post on the frame's land, with its roller.
     const top = v3.addScaled(tip, face.n, -drop - 0.002);

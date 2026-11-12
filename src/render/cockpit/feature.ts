@@ -138,6 +138,10 @@ export const ABLATE = {
   screens: 1024,
   /** Every chunk drawn, in view or not. */
   frustumCulling: 2048,
+  /** The depth pre-pass: the interior shaded in one draw that tests and writes depth (hidden surfaces drawn before their occluders are shaded and overwritten). */
+  depthPrepass: 4096,
+  /** The displays' painting and uploads (the screens keep their last image). */
+  displayPaint: 8192,
 } as const;
 
 /** A run of consecutive triangles of one assembly of the full detail level, with its bounding sphere (part frame). */
@@ -235,6 +239,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   let ambientBuf: GPUBuffer;
   let interior: Tracked<GPURenderPipeline>;
   let interiorDepth: Tracked<GPURenderPipeline>;
+  /** The interior shaded in one draw, without the depth pre-pass (cost attribution only: ABLATE.depthPrepass). */
+  let interiorSingle: Tracked<GPURenderPipeline>;
   let decals: Tracked<GPURenderPipeline>;
   let shadow: Tracked<GPURenderPipeline>;
   let display: Tracked<GPURenderPipeline>;
@@ -421,6 +427,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
         });
       interiorDepth = gpipe('cockpit.interiorDepth', INTERIOR_WGSL(decls), interiorLayout, 'depth');
       interior = gpipe('cockpit.interior', INTERIOR_WGSL(decls), interiorLayout, 'shade');
+      interiorSingle = gpipe('cockpit.interiorSingle', INTERIOR_WGSL(decls), interiorLayout, 'single');
       decals = gpipe('cockpit.labels', INTERIOR_WGSL(decls), interiorLayout, 'decal');
       display = gpipe('cockpit.display', DISPLAY_WGSL(decls), [vtx([[0, 'float32x3', 0], [1, 'float32x3', 12], [2, 'float32x2', 24], [3, 'float32', 32]], 36)]);
       ballPipe = gpipe('cockpit.ball', BALL_WGSL(decls), [vtx([[0, 'float32x3', 0], [1, 'float32x3', 12], [2, 'float32x2', 24]], 32)]);
@@ -728,7 +735,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const t0 = performance.now();
       // The screens are painted only while a camera can see them: from inside, or close enough outside for
       // the full detail level (request app-integration-12: not in the chase view, not in the map).
-      displays.update(clock, frame.snapshot, (i) => controls.page(Math.min(i, controls.displayCount - 1)), encoder, active.lod === 'lod0' && frame.camera.kind !== 'map');
+      displays.update(clock, frame.snapshot, (i) => controls.page(Math.min(i, controls.displayCount - 1)), encoder, active.lod === 'lod0' && frame.camera.kind !== 'map' && (ablation & ABLATE.displayPaint) === 0);
       const gm = active.gm;
       // The flood lights' shadow maps: every layer when this model's lamps are not the ones in the maps (the
       // first frame), then one layer a frame while a lever, a guard or a hand controller has moved.
@@ -823,11 +830,14 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       pass.setBindGroup(1, gm.group);
       pass.setVertexBuffer(0, gm.vertex);
       pass.setIndexBuffer(gm.index, 'uint32');
-      pass.setPipeline(interiorDepth.get());
-      for (const r of active.runs) pass.drawIndexed(r.count, 1, r.start);
+      const prepass = (ablation & ABLATE.depthPrepass) === 0;
+      if (prepass) {
+        pass.setPipeline(interiorDepth.get());
+        for (const r of active.runs) pass.drawIndexed(r.count, 1, r.start);
+      }
       pass.setVertexBuffer(1, gm.occlusion);
       if ((ablation & ABLATE.shadeDraw) === 0) {
-        pass.setPipeline(interior.get());
+        pass.setPipeline(prepass ? interior.get() : interiorSingle.get());
         for (const r of active.runs) pass.drawIndexed(r.count, 1, r.start);
       }
       const labels = gm.model.mesh.ranges.labels!;

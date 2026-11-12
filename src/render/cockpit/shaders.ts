@@ -276,11 +276,14 @@ const FLOOD_FAR2 = 0.2;
 const DISPLAY_FAR2 = 0.3;
 /// Share of a surface's known irradiance under which a source's largest possible contribution is skipped.
 const CABIN_NEGLIGIBLE = 0.01;
-/// A flood's reflector gathers its light into a beam about the lens normal (half power at about 45 degrees,
-/// nothing beyond 63): a pool of light where the lamp is aimed, darker walls beside and behind it. The same
-/// flux as the bare Lambertian lens: FLOOD_BEAM_GAIN is 1 / (2 x the integral of the ramp x cosine).
-const FLOOD_BEAM_GAIN = 2.05;
-fn floodBeam(c: f32) -> f32 { return FLOOD_BEAM_GAIN * smoothstep(0.45, 0.95, c); }
+/// A flood's reflector gathers most of its light into a beam about the lens normal (half power at about 45
+/// degrees): a pool of light where the lamp is aimed. The rest (FLOOD_SKIRT of the lens's own Lambertian
+/// luminance) leaves the diffuser to every side: the wall beside the fixture, a hand's width from the lens,
+/// stands in its spill. The same flux as the bare Lambertian lens: FLOOD_BEAM_GAIN is
+/// 1 / (FLOOD_SKIRT + (1 - FLOOD_SKIRT) x 0.488), 0.488 being twice the integral of the ramp x cosine.
+const FLOOD_SKIRT = 0.2;
+const FLOOD_BEAM_GAIN = 1.69;
+fn floodBeam(c: f32) -> f32 { return FLOOD_BEAM_GAIN * (FLOOD_SKIRT + (1.0 - FLOOD_SKIRT) * smoothstep(0.45, 0.95, c)); }
 const POLY_WINDOW = 0u;
 const POLY_PATCH = 1u;
 const POLY_FLOOD = 2u;
@@ -525,13 +528,15 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
     let cs = max(-dot(toC, P.normal.xyz) * inv, 0.0);
     var beam = 1.0;
     if (kind == POLY_FLOOD) {
-      // Nothing arrives outside the lamp's beam; inside it the lamp's shadow map (lampmap.ts) says what of
-      // the lamp this pixel sees past the cabin's parts, in place of the vertex's baked visibility (which
-      // has decided above whether the lamp reaches this surface at all): a lever, a strap, the console's
-      // edge throw their shadows, and what stands on a wall sits in its contact shadow.
+      // Nothing arrives behind the lens. Inside the lamp's beam its shadow map (lampmap.ts) says what of the
+      // lamp this pixel sees past the cabin's parts, in place of the vertex's baked visibility (which has
+      // decided above whether the lamp reaches this surface at all): a lever, a strap, the console's edge
+      // throw their shadows, and what stands on a wall sits in its contact shadow. Beside the beam, where
+      // the map does not reach (the lens's spill onto the wall round the fixture), the baked visibility stays.
+      if (cs <= 0.0) { continue; }
       beam = floodBeam(cs);
-      if (beam <= 0.0) { continue; }
-      vis = lampVisibility(index, posPart, nPart);
+      let inMap = smoothstep(0.45, 0.55, cs);
+      if (inMap > 0.0) { vis = mix(vis, lampVisibility(index, posPart, nPart), inMap); }
       if (vis <= 0.0) { continue; }
     }
     if ((kind == POLY_FLOOD && d2 > FLOOD_FAR2) || (kind == POLY_DISPLAY && d2 > DISPLAY_FAR2)) {
@@ -928,6 +933,8 @@ fn aaFade(f: f32, fw: f32) -> f32 { return 1.0 - smoothstep(0.2, 0.45, f * fw); 
 const QUILT_CELL = ${QUILT.cell};
 const QUILT_HEIGHT = ${QUILT.height};
 const QUILT_POWER = ${QUILT.power};
+/// Amplitude (m) of the slow folds in which a blanket's cover lies.
+const QUILT_WRINKLE = 0.0022;
 
 /// Surface detail of a material at surface coordinates uv (metres; quilted blankets: quilt cells, cabin/quilt.ts):
 /// the baked detail textures (tone, gloss, normal, cavity, wear and grime masks) with a per-part phase, tone
@@ -980,14 +987,19 @@ fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f3
       let f = fract(a) - 0.5;
       let id = floor(a);
       // Each cell is filled a little differently (the batting settles).
-      let fill = mix(0.75, 1.15, hash_to_unit(hash4(i32(id.x), i32(id.y), i32(seed), 33)));
+      let fill = mix(0.6, 1.2, hash_to_unit(hash4(i32(id.x), i32(id.y), i32(seed), 33)));
       let c = max(cos(PI * f.x) * cos(PI * f.y), 1e-4);
       let ce = pow(c, QUILT_POWER);
       // Gradient of the pillow height (m) in cell coordinates. The crease at the seam is as sharp as the
       // pixel footprint resolves (fwIn = cells per pixel): from afar the cloth dives into the seam more
       // gently, so a crease narrower than a pixel does not sparkle.
-      let soft = clamp(fwIn * 9.0, 0.04, 0.8);
+      let soft = clamp(fwIn * 9.0, 0.1, 0.8);
       var ga = -(QUILT_HEIGHT * fill * QUILT_POWER * PI) * ce * sin(PI * f) / (cos(PI * f) + vec2f(soft));
+      // The cover does not lie taut: two families of slow folds, two to three cells long, cross the bay (a
+      // height of QUILT_WRINKLE x (0.9 sin(p) + 0.6 sin(q)); its gradient in cell coordinates).
+      let wp = cos(a.x * 2.3 + a.y * 0.9 + 1.7) * 0.9;
+      let wq = cos(a.x * 1.1 - a.y * 3.1 + 4.1) * 0.6;
+      ga += QUILT_WRINKLE * vec2f(2.3 * wp + 1.1 * wq, 0.9 * wp - 3.1 * wq);
       // Distance to the nearest seam (cells) and which pair of seams it belongs to.
       let sd = vec2f(0.5) - abs(f);
       let seam = min(sd.x, sd.y);
@@ -1014,6 +1026,9 @@ fn materialDetail(mat: Material, uvIn: vec2f, dxIn: vec2f, dyIn: vec2f, fwIn: f3
       let thread = (1.0 - smoothstep(0.00025, 0.0005, seamM)) * stitch * aaFade(1.0 / 0.001, fw);
       d.albedo *= 1.0 + 0.3 * thread;
       d.rough -= 0.1 * thread;
+      // Handling and age: broad, soft-edged soiling that differs from bay to bay.
+      let soil = 0.5 + 0.5 * sin(a.x * 0.71 + 2.0 * sin(a.y * 0.53 + 1.3 + f32(seed)) + 0.37 * f32(seed)) * sin(a.y * 0.67 + 0.9);
+      d.albedo *= 1.0 - 0.08 * smoothstep(0.35, 0.95, soil);
       // Dust gathers a little in the grooves, handling polishes the crowns.
       d.grime = max(d.grime * 0.6, groove * 0.5);
       d.rough -= 0.05 * ce;
