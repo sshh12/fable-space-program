@@ -509,8 +509,11 @@ def bake_region(region_id: str) -> None:
         log(f"height {region_id}: every level already baked")
         manifest.mark("height", region_id)
         return
-    # build (and cache) the regional source once in the parent so workers only memory-map it
-    _regional_height(region_id).prepare()
+    # build (and cache) the regional source once in the parent so workers only memory-map it (not when only
+    # recording or checking: bake.py accept / --dry-run)
+    from earth.util import unit_mode
+    if unit_mode() is None:
+        _regional_height(region_id).prepare()
     for level, n_tiles, units, cfg in plan:
         log(f"height {region_id} level {level}: {n_tiles} tiles")
         run_units(f"height-{region_id}-l{level}", _reg_unit, units, key=key, config=cfg)

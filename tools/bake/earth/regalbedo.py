@@ -78,7 +78,7 @@ def _inputs(region_id: str) -> dict:
             "albedoGlobal": manifest.build_hash("albedo", "global")}
 
 
-def fit(region_id: str) -> dict:
+def fit(region_id: str, cached_only: bool = False, accept_stored: bool = False) -> dict | None:
     p = _fit_path(region_id)
     reg = regmod.load(region_id)
     inp = _inputs(region_id)
@@ -96,6 +96,15 @@ def fit(region_id: str) -> dict:
         f = read_json(p)
         if f.get("key") == key:
             return f
+        if accept_stored:
+            # bake.py accept (lead-4): the stored fit is the one the tiles were baked with; its key is stale only
+            # because an input's build hash moved without those tiles changing: adopt it for the present inputs
+            from earth.util import write_json
+            f = {**f, "key": key, "acceptedFromKey": f.get("key")}
+            write_json(p, f)
+            return f
+    if cached_only:
+        return None
     # 1. de-shading on a level-FIT_LEVEL mosaic
     tl = regional.level_tiles(reg, FIT_LEVEL)
     faces = [t[0] for t in tl]
@@ -208,10 +217,21 @@ def bake(region_id: str) -> None:
         if not manifest.is_marked(layer, scope):
             raise RuntimeError(f"regional albedo needs the {layer} layer ({scope}) baked first")
     from earth.heights import _regional_height
-    _regional_height(region_id)       # builds the coast grid here (if needed), so workers only memory-map it
-    s2.fetch(reg)
-    _get(region_id)
-    f = fit(region_id)
+    from earth.util import unit_mode, units_done
+    f = fit(region_id, cached_only=True, accept_stored=unit_mode() == "accept")
+    k = lambda u: f"{u[2][0][1]}-{u[2][0][2]}-{len(u[2])}"   # noqa: E731
+    plan = [(f"albedo-{region_id}-l{level}", [(region_id, level, tuple(tl[i:i + 32])) for tl in
+             [regional.level_tiles(reg, level)] for i in range(0, len(tl), 32)]) for level in regmod.levels(reg)]
+    done = f is not None and all(units_done(n, us, k, {"v": 5, "region": reg, "fit": f, "offshore": OFFSHORE_M,
+                                                       "lossless": True, "inputs": _inputs(region_id)}) for n, us in plan)
+    if not done and unit_mode() is None:     # the sources only when a unit will run (lead-4)
+        _regional_height(region_id)       # builds the coast grid here (if needed), so workers only memory-map it
+        s2.fetch(reg)
+        _get(region_id)
+        f = fit(region_id)
+    if f is None:
+        raise RuntimeError(f"albedo {region_id}: no cached de-shading fit for the present inputs: cannot accept or "
+                           f"check without baking")
     cfg = {"v": 5, "region": reg, "fit": f, "offshore": OFFSHORE_M, "lossless": True, "inputs": _inputs(region_id)}
     for level in regmod.levels(reg):                      # coarse to fine: feathers read stored parents
         tl = regional.level_tiles(reg, level)

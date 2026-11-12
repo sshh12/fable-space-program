@@ -88,13 +88,41 @@ def run(step: str, regions: list[str], region_given: bool = False, args=None) ->
         globals_.bake_albedo_lowres()
         _manifest(None, regions)
         return
+    if step == "accept":
+        # lead-4: record the present configuration for every unit of --region baked with an earlier one, without
+        # baking; refuses unless every tile of the region is present in the live tile set
+        if not region_given or len(regions) != 1:
+            raise ValueError("bake.py accept needs --region <id>")
+        import os
+        from earth import stage
+        missing = [p for p in sorted(stage._region_paths(regions[0])) if not (paths.TILES / p).is_file()]
+        if missing:
+            raise RuntimeError(f"accept: {len(missing)} tiles of {regions[0]} are missing (e.g. {missing[0]}): refusing")
+        os.environ["EARTH_UNIT_MODE"], os.environ["EARTH_ACCEPT_REGION"] = "accept", regions[0]
+        try:
+            run("region", regions, region_given=True, args=args)
+        finally:
+            os.environ.pop("EARTH_UNIT_MODE", None)
+            os.environ.pop("EARTH_ACCEPT_REGION", None)
+        return
     if step == "region":
-        from earth import albedo, heights, landcover, watermask
+        import os
+        from earth import albedo, heights, landcover, manifest, watermask
+        from earth.util import DRY_TODO, unit_mode
+        if args is not None and getattr(args, "dry_run", False):
+            os.environ["EARTH_UNIT_MODE"] = "dry"
         for r in regions:
             heights.bake_region(r)
             watermask.bake_region(r)
             albedo.bake_region(r)
             landcover.bake_region(r)
+        if unit_mode() is not None:              # accept / dry run: the manifest is not written, only compared
+            diff = manifest.unchanged(regmod.list_regions())
+            log(f"region ({unit_mode()}): units that would run: {DRY_TODO or 'none'}; manifest entries a write would "
+                f"change: {diff or 'none'} (manifest.json and its contentHash stay as they are)")
+            if unit_mode() == "dry" and (DRY_TODO or diff):
+                raise RuntimeError("dry run: the region step would re-bake or rewrite the manifest")
+            return
         for layer in ("height", "watermask", "albedo", "landcover"):
             _manifest(layer, regions if region_given else regmod.list_regions())
         return

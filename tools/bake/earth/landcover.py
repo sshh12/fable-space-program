@@ -213,7 +213,9 @@ def bake_region(region_id: str) -> None:
         plan.append((level, [(region_id, level, tuple(tl[i:i + 32])) for i in range(0, len(tl), 32)]))
     if not all(units_done(f"landcover-{region_id}-l{level}", units, key, cfg) for level, units in plan):
         from earth import regmask
-        regmask.worldcover(reg)        # download / build the WorldCover grid here, so workers only memory-map it
+        from earth.util import unit_mode
+        if unit_mode() is None:
+            regmask.worldcover(reg)    # download / build the WorldCover grid here, so workers only memory-map it
         for level, units in plan:
             run_units(f"landcover-{region_id}-l{level}", _reg_unit, units, key=key, config=cfg)
     manifest.mark("landcover", region_id)

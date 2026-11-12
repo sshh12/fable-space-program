@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (site-bake, 2026-11-12)
 From: the lead (on site-bake's report: docs/handoff/site-bake.md section 10, "Deviations, known limits")
 Owner path: tools/bake/earth and its state in data/cache/earth/state (site-bake has finished; no later package of WORK_PACKAGES_V2 owns the Earth bake: whoever the lead gives the next regional bake to)
 Blocking: no (nothing runs the Earth bake at present); it becomes a trap the moment someone does
@@ -51,3 +51,26 @@ to say; either way item 2 of this request (keep what cannot change a tile out of
 texts, anything a verifier reads) is what stops it from happening a third time. Until then: nobody runs a
 step of the Earth bake, with or without `--region`, without the lead's word, and nobody edits a region
 file as a note pad.
+
+## Resolution (site-bake, 2026-11-12)
+- **Not hashed any more** (`tools/bake/earth/util.py` `config_hash`): region-file fields that cannot change a tile:
+  at the top level `site`, `name`, `title`, `description`, `verifyWaivers`, `siteResolution`; at any depth `note`,
+  `notes`, `credit`, `attribution`, `landSurvey`. Everything else of the region dict stays in each unit's
+  configuration (shape, levels, coverage, sources and their numbers, feather, ...): a rename, a note, a credit line or
+  a waiver is no longer a re-bake.
+- **`bake.py accept --region <id>`** (no tile touched): refuses unless every tile of the region is present; runs the
+  region's four steps in record-only mode: for every unit whose record holds an earlier configuration it writes
+  `state/<name>/accepted.json` = {present hash: recorded hash} (one recorded configuration per unit directory, else
+  it refuses; a unit never baked refuses). The records themselves are left as they are and `accepted.json` is
+  kept out of the manifest's build hash, so the build hashes, the dependent steps' inputs and the manifest stay as
+  they are. Ka Lae's stored albedo de-shading fit was keyed to an earlier height build (the despike repair moved
+  it without touching the albedo tiles): accept adopts the stored fit for the present inputs (`acceptedFromKey`).
+  Run for earth-ka-lae (the site rename, and the height build moved by the despike repair) and earth-madrakah (the
+  verifyWaivers edit).
+- **The regional steps prepare their sources only when a unit will run** (water mask, albedo, land cover; heights
+  already did): a run over baked regions no longer downloads WorldCover or Sentinel-2.
+- **Proof** (2026-11-12 11:36, `out/bake/earth/site-bake/region-dryrun.log`): `bake.py region --dry-run` WITHOUT
+  `--region` (both regions): every height level "already baked", every other unit "0 to run", "units that would
+  run: none; manifest entries a write would change: none"; `data/tiles/earth/manifest.json` byte-identical (sha1
+  63f035f2...), contentHash f5e6ef420bda7cea; the terrain guard (every-commit form) 10 of 10 after the accept.
+- The rule "run regional steps with `--region`" is no longer needed.

@@ -694,9 +694,11 @@ of Ras Madrakah; Madrakah level-12 edge continuity not yet checked by the provid
 replace swap's 73 s window of mixed Madrakah tiles under the old manifest; LC-1 fails the outer-ring land-cover and
 corridor tests (reported, exempt); Ka Lae's new pads stand on pasture (grass, to be cleared from the footprint) and on
 young lava with tube collapses nearby (excluded where seen); faint vehicle tracks and thin rills were accepted at both
-sites; the region files' unit records in `data/cache/earth/state` no longer match their configuration (Ka Lae since
-a2c6318, Madrakah since its `verifyWaivers` changed): run regional steps with `--region` deliberately, a default
-`bake.py region` would re-bake.
+sites; [resolved, request lead-4: the unit records of both regions were brought into agreement without baking
+(`bake.py accept --region`), region fields that cannot change a tile are no longer hashed (`site`, `name`, `title`,
+`description`, `verifyWaivers`, `siteResolution`; `note(s)`, `credit`, `attribution`, `landSurvey` at any depth), and
+`bake.py region --dry-run` without `--region` reports nothing to run and an unchanged manifest (contentHash
+f5e6ef420bda7cea)].
 
 ## 1. What a consumer needs
 
@@ -1211,3 +1213,6 @@ contentHash, which the swap changes). Open requests against this package's paths
   own-ground exception), 15 km 5 pads, 25 km 10 pads: stopped and reported.
 - 11:07-11:19. The lead accepted the 25 km field. Looked at every placement; 8 exclusions, seven pads kept as seeds,
   four re-resolves: 9 pads. `ka-lae.pads.json` written; site-bake tests 16 of 16. Package closed (section 0.12).
+- 11:30-11:40. Request lead-4: non-baking region fields out of the unit hash, `bake.py accept` for both regions (no tile
+  touched), sources prepared only when a unit runs; `bake.py region --dry-run` (no `--region`): nothing to run, the
+  manifest unchanged (f5e6ef420bda7cea); terrain guard 10 of 10.

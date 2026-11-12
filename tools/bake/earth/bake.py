@@ -69,7 +69,7 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("step", choices=["site", "heights", "albedo", "watermask", "night", "landcover", "clouds",
                                      "globals", "region", "all", "manifest", "contact", "recovery", "cleanup",
-                                     "status", "despike", "stage", "swap", "pads", "quality"])
+                                     "status", "despike", "stage", "swap", "pads", "quality", "accept"])
     ap.add_argument("--region", help="region id (data/defs/regions/<id>.json); default: every earth-* region that "
                                      "is not staged")
     # pads / quality (padresolve.py, groundquality.py): the site is named here, no site file is read
@@ -87,7 +87,8 @@ def main(argv: list[str]) -> int:
                     help="pads: 'latDeg:lonDeg:radiusM:reason' - ground rejected after LOOKING at the imagery (a wadi "
                          "bed, a road, a borrow pit); repeatable, recorded in the pads file")
     ap.add_argument("--dry-run", action="store_true",
-                    help="pads: write the result to out/bake/earth/site-bake only (e.g. the Q8 fall-back trial)")
+                    help="pads: write the result to out/bake/earth/site-bake only; region: run nothing, report every "
+                         "unit that would run and whether the manifest would change (fails if anything would)")
     ap.add_argument("--allow-partial", action="store_true",
                     help="pads: place as many pads as fit and report the rest (an incomplete layout is written to out/ only)")
     ap.add_argument("--dry-any-land", action="store_true",

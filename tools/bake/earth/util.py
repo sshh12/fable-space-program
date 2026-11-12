@@ -56,6 +56,29 @@ def run_units(name: str, fn: Callable, units: list, *, key: Callable[[object], s
     log(f"{name}: {len(units) - len(todo)} of {len(units)} units already done, {len(todo)} to run")
     if not todo:
         return []
+    if unit_mode() == "dry":
+        DRY_TODO.append((name, len(todo)))
+        log(f"{name}: DRY RUN: {len(todo)} units would run")
+        return []
+    if unit_mode() == "accept":
+        rid = os.environ.get("EARTH_ACCEPT_REGION", "")
+        if not rid or f"-{rid}-l" not in name:
+            raise RuntimeError(f"accept: {name} is not a regional unit of {rid!r}: refusing")
+        olds = set()
+        for u in todo:
+            p = sdir / f"{key(u)}.done"
+            if not p.is_file():
+                raise RuntimeError(f"accept: {name}/{p.name} was never baked: refusing (bake it)")
+            olds.add(p.read_text(encoding="utf-8"))
+        if len(olds) != 1:
+            raise RuntimeError(f"accept: {name} holds records of {len(olds)} configurations: refusing")
+        acc = dict(_accepted(sdir))
+        acc[cfg] = olds.pop()
+        write_json(sdir / "accepted.json", acc)
+        _ACCEPTED[str(sdir)] = acc
+        log(f"{name}: {len(todo)} units baked with configuration {acc[cfg]} accepted for the present {cfg} "
+            f"(no tile touched)")
+        return []
     results = []
     t0 = time.time()
     with pool(workers) as ex:
@@ -78,14 +101,55 @@ def units_done(name: str, units: list, key: Callable[[object], str], config: dic
     return all(_is_done(paths.STATE / name / f"{key(u)}.done", cfg) for u in units)
 
 
+# Region-file fields that cannot change a tile: kept out of a unit's configuration hash, so that a rename, a note,
+# a credit line or a verify waiver is not a re-bake (lead-4). Top level of the region dict, and at any depth.
+NOT_HASHED_TOP = ("site", "name", "title", "description", "verifyWaivers", "siteResolution")
+NOT_HASHED_ANY = ("note", "notes", "credit", "attribution", "landSurvey")
+
+
+def _bake_view(v, top: bool = True):
+    if isinstance(v, dict):
+        return {k: _bake_view(x, False) for k, x in v.items()
+                if k not in NOT_HASHED_ANY and not (top and k in NOT_HASHED_TOP)}
+    if isinstance(v, list):
+        return [_bake_view(x, False) for x in v]
+    return v
+
+
+_ACCEPTED: dict[str, dict] = {}
+
+
+def _accepted(sdir: Path) -> dict:
+    """data/cache/earth/state/<name>/accepted.json: {present configuration hash: recorded hash} written by
+    `bake.py accept` for units whose tiles were baked with a configuration that differs only in fields that do not
+    reach a tile (or in the hashing itself). Kept out of the manifest's build hash."""
+    k = str(sdir)
+    if k not in _ACCEPTED:
+        p = sdir / "accepted.json"
+        _ACCEPTED[k] = read_json(p) if p.is_file() else {}
+    return _ACCEPTED[k]
+
+
+def unit_mode() -> str | None:
+    """EARTH_UNIT_MODE: "accept" (record the present configuration for baked units, run nothing), "dry" (count what
+    would run, run nothing) or unset (bake)."""
+    return os.environ.get("EARTH_UNIT_MODE") or None
+
+
+DRY_TODO: list[tuple[str, int]] = []
+
+
 def _is_done(p: Path, cfg: str) -> bool:
     try:
-        return p.read_text(encoding="utf-8") == cfg
+        c = p.read_text(encoding="utf-8")
     except OSError:
         return False
+    return c == cfg or _accepted(p.parent).get(cfg) == c
 
 
 def config_hash(config: dict) -> str:
+    if isinstance(config, dict) and isinstance(config.get("region"), dict):
+        config = {**config, "region": _bake_view(config["region"])}
     return hashlib.sha256(json.dumps(config, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
 
 

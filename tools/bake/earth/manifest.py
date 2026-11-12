@@ -7,6 +7,7 @@ a region's coverage rectangles are added once that region's part of the layer is
 from __future__ import annotations
 
 import hashlib
+import json
 
 from common import layout
 from earth import paths, region as regmod
@@ -114,6 +115,8 @@ def build_hash(layer: str, scope: str | None = None, include: set[str] | frozens
         top = rel.split("/")[0]
         if not p.is_file() or not (top.startswith(f"{layer}-") or top.startswith(f"layer-{layer}-")):
             continue
+        if p.name == "accepted.json":                 # bake.py accept: no tile changed, the build stays
+            continue
         if scope == "global" and f"-{prefix}" in top:
             continue
         if scope not in (None, "global") and f"-{scope}" not in top:
@@ -123,6 +126,22 @@ def build_hash(layer: str, scope: str | None = None, include: set[str] | frozens
         h.update(rel.encode("utf-8"))
         h.update(p.read_bytes())
     return h.hexdigest()[:16]
+
+
+def unchanged(region_ids: list[str], layers: tuple = ("height", "watermask", "albedo", "landcover")) -> list[str]:
+    """For a dry run: the regional layers whose manifest entry (coverage, sources, build hash, ...) a write would
+    change. Empty: write_all would leave manifest.json byte-identical (same contentHash)."""
+    live = layout.read_manifest(paths.TILESET)
+    out = []
+    for layer in layers:
+        regs = [regmod.load(r) for r in region_ids if is_marked(layer, r)]
+        entry = _layer_dict(layer, regs)
+        entry["build"] = build_hash(layer)
+        cur = live["layers"].get(layer, {})
+        diff = [k for k, v in entry.items() if json.loads(json.dumps(v)) != cur.get(k)]
+        if diff:
+            out.append(f"{layer}: {', '.join(diff)}")
+    return out
 
 
 def write_all(region_ids: list[str], only: str | None = None) -> None:

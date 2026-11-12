@@ -144,13 +144,21 @@ def bake(region_id: str) -> None:
     for layer, scope in (("watermask", "global"), ("height", region_id)):
         if not manifest.is_marked(layer, scope):
             raise RuntimeError(f"regional watermask needs the {layer} layer ({scope}) baked first")
-    worldcover(reg)
-    _rh(reg)                     # builds the coast grid here (if needed), so workers only memory-map it
     cfg = {"v": 3, "region": reg, "correct": CORRECT_TEXELS, "sub": SUB,
            "inputs": {"height": manifest.build_hash("height", region_id),
                       "watermaskGlobal": manifest.build_hash("watermask", "global")},
            "worldcover": wcmod.URL, "coastGrid": regsrc.GRID_VERSION}
     lv = regmod.levels(reg)
+    from earth.util import unit_mode, units_done
+
+    def _plan(prefix):
+        return [(f"{prefix}-{region_id}-l{level}", [(region_id, level, tuple(tl[i:i + 64])) for tl in
+                 [regional.level_tiles(reg, level)] for i in range(0, len(tl), 64)]) for level in lv]
+    k = lambda u: f"{u[2][0][1]}-{u[2][0][2]}-{len(u[2])}"   # noqa: E731
+    done = all(units_done(n, us, k, cfg) for prefix in ("watermask-base", "watermask") for n, us in _plan(prefix))
+    if not done and unit_mode() is None:     # the sources only when a unit will run (lead-4)
+        worldcover(reg)
+        _rh(reg)                     # builds the coast grid here (if needed), so workers only memory-map it
     for level in reversed(lv):
         tl = regional.level_tiles(reg, level)
         units = [(region_id, level, tuple(tl[i:i + 64])) for i in range(0, len(tl), 64)]
