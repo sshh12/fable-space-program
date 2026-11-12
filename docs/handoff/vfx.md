@@ -633,3 +633,37 @@ the flat fill inside it; the solid-motor smoke (soft, cream); RCS puffs that bar
 secondary bursts as lumps and its soft close view. What should no longer be raised: the faceted fireball
 smoke, the clipped white reentry wake at 0.3, the black hull at T+0 of a night lift-off, the black cabin
 windows during entry.
+
+## 9. Visual close-out, round 2
+
+(INTERIM while the round is being finished: this section is rewritten with the final pictures and numbers at
+the end of the round. Until then the commit messages of `git log -- src/render/vfx` since `1665ac9` are the
+record.)
+
+The round began with a second owner's working state (`1665ac9`, then uncommitted tuning, committed as found
+in `b8edf91`) and was finished by a third after a machine crash. Work list: what the mission flown in the
+game showed, then the round-1 lists `docs/qa/wave2/vfx.r1.photo.json` and `vfx.r1.artifact.json`.
+
+What the game showed, and its causes (pictures: `out/screens/vfx/dev/a2-*.png`, taken by the new
+`tests/browser/vfx/appshots.spec.ts`: the real game flown by the test pilot, HUD off):
+
+- **No flame at lift-off.** Two causes. The flame measured 0.2 to 0.3 million cd/m^2: under the tone curve a
+  cream column of the same value as the sunlit steam behind it. And in the milestone picture the HUD's speed
+  read-out covers the nozzles. The booster flame is now 2.8 million cd/m^2 in the data (`afterburn.luminance`;
+  1.8 to 2.5 million measured 12 m below the nozzles), with a white heart, an edge, and Mach discs of the same
+  brightness; it starts three exit radii below the nozzles. `liftoff.spec.ts` asserts 240,000 cd/m^2 (three
+  stops over a sunlit white surface). The flame no longer fades with altitude as fast (square root of the
+  pressure down to 9 kPa, gone at 1.5 kPa).
+- **White streaks across the frame at stage separation, a line ahead of the reentering capsule.** One bug: a
+  particle's streak is its motion relative to the eye during the shutter, and the motion of the effect domain
+  past the eye was divided by the REAL frame time. Under the pilot's 4 x physics warp every particle riding
+  with a vehicle at 2.4 km/s was drawn as a hairline of the largest length; with the clock stopped (every
+  stopped lab picture) the same happened to particles at reentry speed. The domain's velocity relative to the
+  eye is now measured over simulated time and held while the clock stands still (`VfxGlobals.domVel`).
+- **Hard white rectangles (ice, chips).** They were flat-topped capsules a few pixels across. Flakes are now
+  soft irregular specks with a Gaussian profile, tumbling (seen flat, then edge-on), and smaller
+  (`particles.ice.size` 1.2 to 18 cm).
+- **Blotchy canopies.** Alternate gores were pleated in and out by 4 to 6 % of the radius even when full,
+  each gore bulged 5 %, every ring left 7 % of its width open (dark joints: a wall of bricks) and the tapes
+  were 40 % grey lines. Full canopies are smooth domes now: 2 % scallops, pleats only while slack, slots only
+  round the vent, faint tapes.

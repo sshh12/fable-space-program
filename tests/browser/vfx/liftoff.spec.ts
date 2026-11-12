@@ -12,6 +12,12 @@ test.describe.configure({ timeout: 600_000 });
 
 /** A sunlit white surface is about 30,000 cd/m^2: the jet must stand out against one. */
 const VISIBLE = 30_000;
+/**
+ * ... and the flame itself is blinding: three stops and more over that surface, so that it clips at a daylight
+ * exposure and blooms (critics of round 1: "no booster flame clips, by day or by night"; it read 0.2 to 0.3
+ * million cd/m^2 then, about 2 million since round 2).
+ */
+const BLINDING = 8 * VISIBLE;
 
 const CAMERAS = [
   { name: 'pad camera at 430 m', file: 'pad', query: '', follow: false },
@@ -68,9 +74,9 @@ for (const night of [false, true]) {
         rows.push(`T+${T}: nozzles ${probe.nozzleHeight.toFixed(0)} m up, EV100 ${probe.ev100.toFixed(1)}; 12 m below ${probe.near.toFixed(0)} (off ${probe.nearOff.toFixed(0)}), 30 m below ${probe.far.toFixed(0)} (off ${probe.farOff.toFixed(0)}) cd/m^2`);
         // Under the vehicle the flame is seen at every moment (the first metres below the nozzles are the
         // translucent core of the jets with its Mach discs, dim by day by design: the probe is in the flame).
-        expect(probe.near, `T+${T}: 12 m below the nozzles`).toBeGreaterThan(VISIBLE);
+        expect(probe.near, `T+${T}: 12 m below the nozzles`).toBeGreaterThan(BLINDING);
         // Further down it is behind the launch mount until the vehicle has cleared it.
-        if (T >= 4) expect(probe.far, `T+${T}: 30 m below the nozzles`).toBeGreaterThan(VISIBLE);
+        if (T >= 4) expect(probe.far, `T+${T}: 30 m below the nozzles`).toBeGreaterThan(BLINDING);
         if (T === 2 || T === 6) {
           await waitIdle(page, 30);
           await saveScreenshot(page, 'vfx/liftoff-probe', `${cam.file}-${night ? 'night' : 'day'}-T${T}`);
