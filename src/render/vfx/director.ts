@@ -501,7 +501,7 @@ export class EffectDirector {
             life: W.life,
             size: W.size,
             color: W.albedo,
-            opacity: 0.85,
+            opacity: 0.55,
             count: Math.round(count * amount),
             seed: seed + k,
           });
@@ -538,7 +538,7 @@ export class EffectDirector {
             life: W.life,
             size: W.size,
             color: W.albedo,
-            opacity: 0.85,
+            opacity: 0.55,
             count: Math.round(((W.count * 0.5) / fingers) * amount * (0.6 + 0.8 * rnd(90 + i))),
             seed: seed + 16 + i,
           });
@@ -554,7 +554,8 @@ export class EffectDirector {
           vel: v3.scale(horizontal, 0.3),
           speed: [0.4 * v0, 1.5 * v0],
           polar: [(90 - C.crownAngleDeg[1]) * DEG, (90 - C.crownAngleDeg[0] + 8) * DEG],
-          life: [W.life[0] * 0.5, W.life[1] * 0.55],
+          // (Gone within a second: fine spray falls back or dries in the air, it does not hang round the capsule as vapour.)
+          life: [0.25, 0.8],
           size: W.mistSize,
           growth: 0.45,
           color: W.albedo,

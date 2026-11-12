@@ -23,7 +23,7 @@ export const MAX_FOAM = 8;
 const INST_FLOATS = 8;
 const CROWN_FLOATS = 20;
 /** The mist of a crown hangs in the air for this many flight times of its rim. */
-const MIST_LIFE = 3;
+const MIST_LIFE = 1.1;
 const GRAVITY_FALLBACK = 9.81;
 
 /** Rim height of a crown (m) `age` seconds after an impact that throws the sheet up at `speed` m/s. */
@@ -187,7 +187,7 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   // settling and thinning long after the sheet has fallen back.
   let mistR = foot + 0.5 * lean * peak * (1.0 - exp(-age / (0.5 * flight)));
   let mistW = 0.45 * body + 0.25 * lean * peak * saturate(age / flight);
-  let mistH = max(peak * (0.16 + 0.22 * saturate(age / (0.6 * flight))) * (1.0 - 0.3 * saturate(age / (2.0 * flight) - 0.5)), 0.2);
+  let mistH = max(peak * (0.1 + 0.1 * saturate(age / (0.6 * flight))) * (1.0 - 0.3 * saturate(age / (2.0 * flight) - 0.5)), 0.2);
   var L = vec3f(0.0);
   var T = 1.0;
   var wsum = 0.0;
@@ -376,7 +376,8 @@ export class FoamRenderer {
     this.patches.forEach((p, i) => {
       const age = effectTime - p.start;
       const radius = p.bodyRadius * (1.2 + S.foamRadiusFactor * (1 - Math.exp(-age / 2.5)) + 0.04 * age);
-      this.data.set([p.pos.x, p.pos.y, p.pos.z, radius, age / S.foamTime, p.strength, p.seed, p.bodyRadius], i * INST_FLOATS);
+      // (The decal's strength is the patch's times the data switch: 0 once the ocean draws the foam itself, request vfx-9.)
+      this.data.set([p.pos.x, p.pos.y, p.pos.z, radius, age / S.foamTime, p.strength * S.foamDecal, p.seed, p.bodyRadius], i * INST_FLOATS);
       // The crown: up on the speed of the impact, down under gravity; it has torn apart by the time its rim is back at the water.
       const flight = (2 * p.crownSpeed) / gravity;
       const life = age / flight;

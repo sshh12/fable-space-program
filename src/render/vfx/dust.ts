@@ -36,7 +36,7 @@ const WGSL = /* wgsl */ `
 #include "vfx_volume"
 struct DustSheet {
   centre: vec4f,   // xyz = foot of the jet on the ground, domain coordinates, w = inner radius (m)
-  shape: vec4f,    // x = outer radius (m), y = tan of the mean elevation of the grains, z = optical depth of the sheet seen from above at the inner radius, w = scroll of the streaks (m)
+  shape: vec4f,    // x = outer radius (m), y = tan of the highest elevation of the grains (the top of the sheet), z = optical depth of the sheet seen from above at the inner radius, w = scroll of the streaks (m)
   look: vec4f,     // rgb = albedo, w = seed
   misc: vec4f,     // x = march stretches, y = height of the proxy (m), zw unused
 }
@@ -116,13 +116,20 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     let p = R.ro + R.rd * tm;
     let r = length(p.xz);
     if (r > rMax) { continue; }
+    // Without air the grains fly ballistic from the foot of the jet at a few degrees of elevation at most: there
+    // is NO dust above that cone (nothing for it to hang in), so the sheet has a top, at r tan(elevation), and
+    // a level line of sight from a camera a few metres up passes over all of it: the sky stays black down to
+    // the horizon. Vertical profile 3 (1 - h / H)^2 / H (its integral over the height is 1), integrated in
+    // closed form over the stretch so that the sheet is caught however thin it is.
     let H = max(r, r0) * S.shape.y;
-    let ha = max(R.ro.y + R.rd.y * ta - lift, 0.0);
-    let hb = max(R.ro.y + R.rd.y * (ta + dt) - lift, 0.0);
-    let x = (hb - ha) / H;
-    var mean = 1.0 - 0.5 * x;
-    if (abs(x) > 1e-3) { mean = (1.0 - exp(-x)) / x; }
-    let column = exp(-ha / H) / H * dt * mean;
+    let hA = (R.ro.y + R.rd.y * ta - lift) / H;
+    let hB = (R.ro.y + R.rd.y * (ta + dt) - lift) / H;
+    let a = saturate(hA);
+    let b = saturate(hB);
+    // (Mean of the profile over the stretch; the part of it above the top or below the ground holds nothing.)
+    var prof = 3.0 * sq(1.0 - a) * step(0.0, hA) * step(hA, 1.0);
+    if (abs(hB - hA) > 1e-4) { prof = abs(sq(1.0 - a) * (1.0 - a) - sq(1.0 - b) * (1.0 - b)) / abs(hB - hA); }
+    let column = prof / H * dt;
     if (column < 1e-5) { continue; }
     // A continuous sheet, not a fan of rays: its streaks are fine, three to one at most, they break along the
     // radius and stream outwards. Under the jet the ground is scoured and the haze is thinner, never absent.
@@ -130,11 +137,12 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     let lod = max(tm * fp, 0.3 * dt) / r0;
     let s1 = vfxNoiseLod(vec3f(ang * 5.3, 0.22 * (r - S.shape.w) / r0 + seed), lod * 0.5);
     let s2 = vfxNoiseLod(vec3f(ang * 19.0, 0.7 * (r - 1.6 * S.shape.w) / r0 + seed * 3.1), lod * 1.8);
-    let streak = (0.7 + 0.6 * s1.g) * (0.8 + 0.4 * s2.b);
-    // (Seen from above the sheet is translucent: the ground, its rocks and the lander's shadow show through
-    // it. It thins a little more slowly than 1 / r, so that along a level line of sight, through hundreds of
-    // metres of it, it still adds up to a veil over the horizon.)
-    let amount = S.shape.z * mix(0.5, 1.0, smoothstep(0.3 * r0, 1.25 * r0, r)) * pow(r0 / max(r, r0), 0.7) * (1.0 - smoothstep(0.55 * rMax, rMax, r));
+    let streak = (0.3 + 1.4 * s1.g) * (0.55 + 0.9 * s2.b);
+    // (Seen from above the sheet is translucent: the ground, its rocks and the lander's shadow show through it.
+    // It thins quickly with distance: the grains spread over a growing ring and fly apart, 1 / r^1.5 near the
+    // foot and faster than 1 / r^3 beyond ten radii of the scoured spot.)
+    let rr = max(r, r0);
+    let amount = S.shape.z * mix(0.5, 1.0, smoothstep(0.3 * r0, 1.25 * r0, r)) * pow(r0 / rr, 1.5) / (1.0 + sq(rr / (10.0 * r0))) * (1.0 - smoothstep(0.55 * rMax, rMax, r));
     let tau = amount * streak * column;
     let stepT = exp(-tau);
     let rel = f.origin + f.X * p.x + f.Y * p.y + f.Z * p.z;
@@ -149,7 +157,10 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     T *= stepT;
   }
   if (T > 0.9995) { return volumeNone(); }
-  return volumeOut(uv, L, T, clamp(tsum / max(wsum, 1e-20), R.t0, R.t1));
+  // No line of sight is veiled by more than about half: the sheet softens the ground, it never hides it.
+  let cover = 1.0 - T;
+  let keep = min(1.0, 0.5 / cover);
+  return volumeOut(uv, L * keep, 1.0 - cover * keep, clamp(tsum / max(wsum, 1e-20), R.t0, R.t1));
 }
 `;
 
@@ -180,7 +191,8 @@ export class DustSheetRenderer {
     const D = this.data;
     this.distances = [];
     const originRel = v3.sub(dom.originRoot, frame.camera.positionRoot);
-    const tanE = Math.tan((0.5 * (P.elevationDeg[0] + P.elevationDeg[1]) * Math.PI) / 180);
+    // The top of the sheet: the highest elevation the grains leave the foot of the jet at.
+    const tanE = Math.tan((P.elevationDeg[1] * Math.PI) / 180);
     [...sheets]
       .sort((a, b) => b.strength - a.strength)
       .slice(0, MAX_DUST_SHEETS)
@@ -190,7 +202,7 @@ export class DustSheetRenderer {
         D.set([s.pos.x, s.pos.y, s.pos.z, s.innerRadius], o);
         D.set([outer, tanE, P.sheetDepth * Math.pow(s.strength, 1.6), (noiseTime * P.sheetSpeed) % (400 * s.innerRadius)], o + 4);
         D.set([P.albedo[0], P.albedo[1], P.albedo[2], (s.seed % 211) / 211], o + 8);
-        D.set([P.sheetSteps, Math.max(2, 5 * outer * tanE), 0, 0], o + 12);
+        D.set([P.sheetSteps, Math.max(2, outer * tanE + 1), 0, 0], o + 12);
         this.distances.push(v3.len(v3.add(originRel, quat.rotate(dom.q, s.pos))));
       });
     if (this.distances.length > 0) this.device.queue.writeBuffer(this.buffer, 0, D, 0, this.distances.length * INST_FLOATS);

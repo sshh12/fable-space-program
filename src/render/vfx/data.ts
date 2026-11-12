@@ -279,6 +279,11 @@ export interface VfxData {
     /** Half height of the band of water levels around the entry level in which the foam follows the surface (swell), m. */
     foamSwell: number;
     /**
+     * 0..1: strength of the vfx foam decal at an entry point. 1 while the ocean draws no foam of its own there;
+     * 0 once it does (request vfx-9: ring waves and a foam patch at an impact are the ocean's).
+     */
+    foamDecal: number;
+    /**
      * The crown sheet: its rim rises at `rise` x the droplet speed; its foot spreads by `spread` body radii;
      * `thickness` in body radii at the foot; optical depth across the sheet at the foot; how far it tears
      * apart by the time it has fallen back (0..1); march steps.
@@ -448,6 +453,7 @@ const ROOT: Schema = {
     foamTime: 'p',
     foamAlbedo: 'c',
     foamSwell: 'p',
+    foamDecal: 'u',
     crown: { albedo: 'c', rise: 'p', spread: 'n', thickness: 'p', opticalDepth: 'n', breakup: 'u', steps: 'i', mist: 'n' },
   },
 };

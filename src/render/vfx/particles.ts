@@ -315,9 +315,11 @@ fn glow(T: f32) -> vec3f {
     if (kind == KIND_DROPLET) {
       // White water: as bright as the sheet it was torn from (a sunlit white surface), and every drop is a lens
       // that flashes when it lines up with the sun.
-      lum = p.color.rgb * (probe.sun.rgb * lit + vfxLocalLights(rel) + vfxProbeAmbient(0u)) * (1.0 / PI);
+      // A drop is clear water: it shows the sky and the sea through itself, a good deal darker than the white
+      // sheet it was torn from, and flashes when it lines up with the sun.
+      lum = p.color.rgb * (probe.sun.rgb * (0.35 * lit) + vfxLocalLights(rel) * 0.35 + vfxProbeAmbient(0u) * 0.7) * (1.0 / PI);
       let glint = pow(saturate(sin(p.seed * 113.0 + p.age * (14.0 + 45.0 * p.seed))), 16.0);
-      lum += probe.sun.rgb * (lit * glint * 1.2);
+      lum += probe.sun.rgb * (lit * glint * 3.0);
     }
     if (kind == KIND_GAS) { alpha *= sq(p.aux.z / max(p.size, 1e-3)); }
   }

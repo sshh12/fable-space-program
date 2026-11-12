@@ -51,3 +51,17 @@ back shell, which glows with the square of the intensity) the value at 7.6 km/s 
 twice the 3,020 of the cockpit-9 resolution at full intensity, half of its 610 at 0.3 (the wake cools faster as the
 intensity falls, the base flow comes in at peak heating). Not seen from the cabin by vfx in this round: the
 cockpit's own pictures are the check, and if the cabin is too bright at peak heating the place to say so is here.
+
+What the published values mean (vfx round 3, for the cockpit's next fixer). `plasmaWindow.rgb` is a LUMINANCE in
+cd/m^2 (linear sRGB, not pre-exposed: multiply by `frame.exposure.x` yourself): what a ray from inside the cabin
+through a lee-side (back-shell) window meets on its way out, i.e. half a shoulder radius of the base flow behind
+the back shell plus the sheath one radius behind the shoulder, averaged over the streaks and over the 8 to 30 Hz
+flicker (the sheath flickers by +-22 % about it). It is the radiance of the PANE as a light source: a window of
+solid angle W seen from a cabin surface under angle t lights it with `rgb * W * cos t` lux. It is not the shock
+layer itself (900,000 cd/m^2 at the stagnation point at full intensity), which only a window near the shoulder,
+looking forward, would see. `plasmaWindow.a` is the vessel's `plasmaIntensity` (0..1) and doubles as the "there is
+a sheath" flag: a = 0 means rgb = 0 and your layout value is the fallback. The value is for the ACTIVE vessel.
+It scales with the heat flux as flux^1.3 through `plasmaLuminance` and with the square of the intensity in the
+base-flow part, so between intensity 0.6 and 1.0 it grows about 4.5 times (1,536 -> 6,875 cd/m^2 in the lab's
+numbers); if that is too steep for the cabin, the place to flatten it is `BASE_GLOW` in `src/render/vfx/plasma.ts`
+(say so here), not a clamp on your side, so that the panes and the light they throw keep agreeing.
