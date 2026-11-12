@@ -15,6 +15,8 @@
  *   morph=0                 geomorphing and fade-ins off (control experiment of the pop detector)
  *   hud=0                   no text overlay
  *   p.<body>.<key>=<n>      override a tunable of data/defs/render/<body>.surface.json (A/B comparisons)
+ *   coverkinds=<ids>        draw only these kinds of ground cover; covershadow=0: the cover casts no shadow;
+ *   leaftest=0              leaf sprays drawn whole; casters=0: terrain, rocks and cover cast no sun shadow
  *
  * window.__terrain is the handle for specs.
  */
@@ -159,6 +161,11 @@ async function boot(): Promise<void> {
   if (terrain.cover) await app.renderer.addFeature(terrain.cover);
   if (query.has('delay')) terrain.debug.setStreamDelay(Number(query.get('delay')));
   if (query.get('morph') === '0') terrain.debug.setMorphEnabled(false);
+  // Measurement switches (A/B of what each part costs or draws): coverkinds=<ids>, covershadow=0, leaftest=0, casters=0.
+  if (query.has('coverkinds')) terrain.debug.setCoverOptions({ kinds: query.get('coverkinds')!.split(',').filter(Boolean) });
+  if (query.get('covershadow') === '0') terrain.debug.setCoverOptions({ shadows: false });
+  if (query.get('leaftest') === '0') terrain.debug.setCoverOptions({ leafTest: false });
+  if (query.get('casters') === '0') terrain.debug.setShadowCasting(false);
 
   const cameraBody = (): string => {
     const s = app.camera.spec;

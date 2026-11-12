@@ -59,6 +59,7 @@
     "imageryCalibrationLevel": -1,
     "imagerySaturation": 0.4,
     "imagerySaturationGlobal": 1,
+    "classBandM": 0,
     "imageryRefLuminance": 0.1,
     "imageryContrast": 1,
     "anchorNear": 0,

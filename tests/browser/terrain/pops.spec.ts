@@ -104,8 +104,17 @@ async function fly(page: Page, c: PathCase): Promise<PathResult> {
   );
 }
 
+/** Lab parameters that leave the detail layers out of the picture (their fade distance below any camera height of a path). */
+const PLAIN = { 'p.earth.detailFadeDistanceM': 1, 'p.moon.detailFadeDistanceM': 1 };
+
 function queryOf(c: PathCase, extra: Record<string, string | number> = {}): Record<string, string | number> {
-  const q: Record<string, string | number> = { scene: c.body === 'moon' ? 'lunarOrbit' : 'lowOrbit', paused: 1, deterministic: 1, body: c.body, lat: c.lat, lon: c.lon, alt: c.from, heading: c.heading, pitch: c.pitchFrom, sun: c.sun, ...extra };
+  // The detector looks at the picture WITHOUT the detail layers (PLAIN): tiles, their normal maps and imagery,
+  // rocks and ground cover, which is everything that has levels of detail. The grain of the detail layers
+  // changes every block a little in every frame of a descent, and the busier the ground, the less a pop
+  // stands out from its block's own median: with the lunar layers of round 2 the control (morphing off)
+  // showed three spike frames where it had shown five. The layers themselves have no levels to pop between
+  // (they fade by their size on screen), so nothing the detector is there for is taken out of its sight.
+  const q: Record<string, string | number> = { scene: c.body === 'moon' ? 'lunarOrbit' : 'lowOrbit', paused: 1, deterministic: 1, body: c.body, lat: c.lat, lon: c.lon, alt: c.from, heading: c.heading, pitch: c.pitchFrom, sun: c.sun, ...PLAIN, ...extra };
   if (c.fov) q.fov = c.fov;
   return q;
 }

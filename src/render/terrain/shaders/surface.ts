@@ -51,7 +51,7 @@ struct TerrainMaterial {
   p7: vec4f,                                  // share of the material's own hue in the ground colour where a pixel is a few metres, and where it is tens of metres; joint spacing of concrete slabs (m); gravel material (-1 = none)
   p8: vec4f,                                  // rgb = albedo of site gravel, a = strength of the shadows the detail relief casts along the sun (0 = off)
   p9: vec4f,                                  // height above sea level up to which shoreGain acts (m); wet band of the swash (m); number of regions; taps of the relief-shadow march
-  p10: vec4f,                                 // share of its saturation the imagery keeps outside the regions; unused
+  p10: vec4f,                                 // share of its saturation the imagery keeps outside the regions; reach of the patches along a class boundary (m; 0 = none); unused
   anchor: array<vec4f, ${MAX_MATERIALS}>,     // rgb = albedo the ground takes where material m covers it (its own mean, or the set's choice for it)
   siteFrame: array<vec4f, ${2 * MAX_SITES}>,  // [2 s]: xyz = east at the site (body-fixed), w = first shape; [2 s + 1]: xyz = north, w = shape count
   siteShape: array<vec4f, ${2 * MAX_SITE_SHAPES}>, // [2 i]: centre east, north of the pad centre, half sizes x, z (m); [2 i + 1]: cos, sin of the heading, kind (0 slab, 1 gravel), corner radius (m)
@@ -1081,8 +1081,8 @@ ${DETAIL_WGSL}
   // a coarse raster seen from afar (cells of 60 m and more, a few pixels each) is averaged over four more
   // points, or the corners of its cells show. (Averaging at every distance was tried: it cost 0.2 ms of the
   // G-buffer at 10 km, measured, and gave nothing there that the mixture does not give.)
-  let band = min(2.5 * classTexel, 28.0);
-  let patches = select(0.0, smoothstep(1.5, 3.0, 9.0 / footLong), mat.p7.x > 0.0);
+  let band = min(2.5 * classTexel, mat.p10.y);
+  let patches = select(0.0, smoothstep(1.5, 3.0, 9.0 / footLong), mat.p7.x > 0.0 && mat.p10.y > 0.0);
   if (patches > 0.0) {
     let cp0 = noiseAt(classLattice.yzx * (5.0 * c0) + vec3f(6.1, 0.4, 9.9));
     classWarp += patches * band * vec2f(cp0.a, clamp(0.5 * cp0.g, -1.0, 1.0));

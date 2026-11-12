@@ -71,6 +71,13 @@ export interface CoverDef {
   foliage: string | null;
 }
 
+/** Measurement switches of the ground cover: the kinds that are drawn (null = all), whether it casts shadows, whether leaf sprays are tested for coverage. */
+export interface CoverOptions {
+  kinds: string[] | null;
+  shadows: boolean;
+  leafTest: boolean;
+}
+
 export interface CoverSite {
   /** Pad centre (body-fixed, m), east and north unit vectors there, and the site's ground plan. */
   centre: Vec3;
@@ -180,7 +187,7 @@ const COVER_WGSL = /* wgsl */ `
 struct CoverBody {
   rot: mat3x3f,
   prevRot: mat3x3f,
-  p0: vec4f,                       // material id, frame body index, unused
+  p0: vec4f,                       // material id, frame body index, leaf coverage test (1; 0 = sprays drawn whole: A/B of its cost), unused
   anchor: vec4f,                   // xyz = the body's anchor (a body-fixed point near the camera) relative to the camera (ROOT axes)
   prevAnchor: vec4f,               // the same a frame ago
   kinds: array<vec4f, ${MAX_KINDS}>, // per kind: largest range (m), range per metre of radius, shading mode (0 grass, 1 foliage, 2 stone), distance it is drawn from (m)
@@ -284,6 +291,7 @@ fn coverThreshold(p: vec3f, dpx: vec3f, dpy: vec3f) -> f32 {
 fn coverLeaf(uv: vec2f, duvx: vec2f, duvy: vec2f, cell: f32, lod: f32, threshold: f32) -> vec4f {
   let at = vec2f(clamp(uv.x, 0.004, 0.996), 1.0 - clamp(uv.y, 0.004, 0.996));
   let t = textureSampleGrad(coverLeaves, anisoRepeat, at, i32(cell + 0.5), duvx, duvy);
+  if (coverBody.p0.z < 0.5) { return vec4f(t.rgb * 4.0, 1.0); }
   let size = f32(textureDimensions(coverLeaves).x);
   let level = 0.5 * log2(max(max(dot(duvx, duvx), dot(duvy, duvy)) * size * size, 1e-12));
   let cover = saturate(t.a * (1.0 + 0.4 * lod + 0.1 * lod * lod));
@@ -858,6 +866,18 @@ export class CoverRenderer {
     return [this.gbuffer, this.shadow, this.leafShadow];
   }
 
+  /** Switches for measurements (TerrainDebug.setCoverOptions): what each part of the cover costs. Never used by the app. */
+  private options: CoverOptions = { kinds: null, shadows: true, leafTest: true };
+
+  setOptions(o: Partial<CoverOptions>): void {
+    this.options = { ...this.options, ...o };
+    for (const b of this.bodies) {
+      b.rest = null;
+      b.list = null;
+      for (const tier of b.tiers) tier.scanned = null;
+    }
+  }
+
   /** Scatter a chunk's instances. Returns false while the land cover under it is still loading. */
   private buildChunk(b: CoverBody, tier: Tier, c: Chunk): boolean {
     const info = b.info;
@@ -1156,7 +1176,7 @@ export class CoverRenderer {
       const pm = b.prevRot;
       u.set([m[0], m[3], m[6], 0, m[1], m[4], m[7], 0, m[2], m[5], m[8], 0], 0);
       u.set([pm[0], pm[3], pm[6], 0, pm[1], pm[4], pm[7], 0, pm[2], pm[5], pm[8], 0], 12);
-      u.set([MATERIAL_ID.terrain, b.bodyIndex, 0, 0], 24);
+      u.set([MATERIAL_ID.terrain, b.bodyIndex, this.options.leafTest ? 1 : 0, 0], 24);
       u.set([b.anchorRel.x, b.anchorRel.y, b.anchorRel.z, 0, b.prevAnchorRel.x, b.prevAnchorRel.y, b.prevAnchorRel.z, 0], 28);
       for (const tier of b.tiers) u.set([tier.kind.rangeM, tier.rangePerRadius, SHAPE_MODE[tier.kind.shape], tier.kind.nearM], BODY_FLOATS + tier.kindIndex * 4);
       this.device.queue.writeBuffer(b.uniform, 0, u);
@@ -1204,6 +1224,11 @@ export class CoverRenderer {
     let build: { tier: Tier; c: Chunk }[] | null = null;
     for (const tier of b.tiers) {
       tier.rangePerRadius = 2 / (Math.max(tier.kind.minPixels, 0.5) * pixelAngle);
+      if (this.options.kinds && !this.options.kinds.includes(tier.kind.id)) {
+        tier.wanted.length = 0;
+        tier.scanned = null;
+        continue;
+      }
       if (!tier.scanned || v3.dist(o.eye, tier.scanned) > 0.25 * tier.chunkSize) this.scan(b, tier, o, ground);
       const range = tier.kind.rangeM;
       for (const c of tier.wanted) {
@@ -1439,7 +1464,7 @@ export class CoverRenderer {
    */
   drawShadow(pass: GPURenderPassEncoder, cascade: ShadowCascadeView, bodyId: string): void {
     const b = this.bodies.find((x) => x.info.id === bodyId);
-    if (!b || !b.active || b.empty) return;
+    if (!b || !b.active || b.empty || !this.options.shadows) return;
     const m = cascade.viewProj;
     const rot = b.rot;
     const texelRadius = SHADOW_MIN_TEXELS * cascade.texelSize;

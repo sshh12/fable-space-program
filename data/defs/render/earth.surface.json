@@ -53,6 +53,7 @@
     "imageryCalibrationLevel": 7,
     "imagerySaturation": 0.7,
     "imagerySaturationGlobal": 0.8,
+    "classBandM": 28,
     "imageryRefLuminance": 0.035,
     "imageryContrast": 0.6,
     "anchorNear": 0.9,

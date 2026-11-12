@@ -16,7 +16,7 @@ import { loadLowResAlbedo, srgbToLinear } from './lowResAlbedo';
 import { capMaxLevel, capMorph, fitLodScale, GRID_QUADS, GRID_VERTS, GroundSpeed, levelRange, LOD_K_MAX, LOD_K_MIN, lodK, morphWindow, POOL_LOW, smooth01, warpLevelCap, type ReliefFloor } from './lod';
 import { buildMaterialUniform, createNoiseTexture, loadMaterialSet, materialRegions, readSurfaceParams, type MaterialSet, type SiteGroundPlan, type SurfaceParams } from './materials';
 import { BodyQuadtree, TILE_READY, type DrawItem, type LodObserverFixed, type SelectParams, type TileNode, type ViewFrustum } from './quadtree';
-import { CoverRenderer, loadLeafAtlas, type CoverBodyInfo, type CoverSite } from './cover';
+import { CoverRenderer, loadLeafAtlas, type CoverBodyInfo, type CoverOptions, type CoverSite } from './cover';
 import { buildRecordConstants, type RecordContext, type SiteDisc } from './records';
 import { RockRenderer } from './rocks';
 import { BODY_UNIFORM_BYTES, MAX_OBSERVERS, RECORD_BYTES, RECORD_FLOATS, TERRAIN_SHADOW_WGSL, TILE_FRAME_BYTES, TILE_FRAME_FLOATS } from './shaders/common';
@@ -125,6 +125,14 @@ export interface TerrainDebug {
   setRocksEnabled(on: boolean): void;
   /** Draw the ground cover or not. */
   setCoverEnabled(on: boolean): void;
+  /**
+   * Measurement switches of the ground cover (what each part costs): the kinds that are drawn (ids of the
+   * set's `cover.kinds`; null = all), whether the cover casts shadows, whether leaf sprays are tested for
+   * coverage (off: the cards are drawn whole).
+   */
+  setCoverOptions(o: Partial<CoverOptions>): void;
+  /** Cast sun shadows (terrain, rocks and cover) or not: which shadow in a picture is the terrain's own. */
+  setShadowCasting(on: boolean): void;
   /** The main-thread height authority. */
   provider(): TerrainAuthority;
   /** READY tiles of a level, nearest to a point first (at most `limit`). */
@@ -285,6 +293,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   let morphEnabled = true;
   let rocksEnabled = true;
   let coverEnabled = true;
+  let castEnabled = true;
   let selectMs = 0;
   let prefetchMs = 0;
   // Fit of the view into the tile pools (lod.ts fitLodScale): factor on K, and the demand it was fitted to.
@@ -789,7 +798,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
           if (!initialised) return;
           const t0 = performance.now();
           const b = cascadeBody(frame, cascade);
-          if (b) cover?.drawShadow(pass, cascade, b.id);
+          if (b && castEnabled) cover?.drawShadow(pass, cascade, b.id);
           const dt = performance.now() - t0;
           cpu.cover += dt;
           drawMs += dt;
@@ -814,7 +823,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
           if (!initialised) return;
           const t0 = performance.now();
           const b = cascadeBody(frame, cascade);
-          if (b) rocks?.drawShadow(pass, cascade, b.id);
+          if (b && castEnabled) rocks?.drawShadow(pass, cascade, b.id);
           const dt = performance.now() - t0;
           cpu.rocks += dt;
           drawMs += dt;
@@ -1075,7 +1084,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       if (!initialised) return;
       const t0 = performance.now();
       const b = cascadeBody(frame, cascade);
-      if (!b) return;
+      if (!b || !castEnabled) return;
       // Cascade clip coordinates of a body-fixed point: clip_r = A_r . p + B_r (orthographic, w = 1).
       const m = cascade.viewProj;
       const A = cascadeA;
@@ -1201,6 +1210,12 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       },
       setCoverEnabled(on: boolean) {
         coverEnabled = on;
+      },
+      setCoverOptions(o: Partial<CoverOptions>) {
+        cover?.setOptions(o);
+      },
+      setShadowCasting(on: boolean) {
+        castEnabled = on;
       },
       provider: () => provider,
       bodies: () => bodies.map((b) => b.id),
