@@ -1056,7 +1056,9 @@ export function createHud(opts: HudOptions): HudImpl {
     const inAir = airborne && (r.dynamicPressure > 1 || r.mach > 0.02);
     // The chute light matters while the next chute stage could be fired: coming down through the air.
     const chuteRelevant = r.chuteEnvelope !== null && airborne && r.verticalSpeed < 0;
-    const showEntry = heating || chuteRelevant || r.liftVectorUp !== null || thermalWarn;
+    // The lift vector is flown while the entry heats up (the hypersonic part); under chutes it means nothing.
+    const liftRelevant = r.liftVectorUp !== null && heating;
+    const showEntry = heating || chuteRelevant || liftRelevant || thermalWarn;
     let targetButtonsShown = 0;
     for (const [id, b] of targetButtons) {
       // The body the vessel sits on cannot be its target.
@@ -1078,7 +1080,7 @@ export function createHud(opts: HudOptions): HudImpl {
     fluxShow.set(heating);
     // The heat shield matters while it heats up, or once it is in its last margin.
     ablShow.set(r.ablatorFraction !== null && (heating || ablWarn));
-    liftShow.set(r.liftVectorUp !== null);
+    liftShow.set(liftRelevant);
     chuteShow.set(chuteRelevant);
     ltShow.set(r.landingTarget !== null);
     ltRowsShow.set(ltExpanded);
@@ -1134,7 +1136,7 @@ export function createHud(opts: HudOptions): HudImpl {
     const lt = r.landingTarget;
     const st = s.staging;
     const activeStage = describeActiveStage(s);
-    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${phase.suborbital}|${r.periapsisAltitude < 0}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.gDose > 0}|${r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${ltExpanded}|${r.horizontalSpeed >= 0.1}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${st.nextStage}|${st.lockout}|${st.stages.length}|${activeStage}|${s.mission.failed}`;
+    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${phase.suborbital}|${r.periapsisAltitude < 0}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.gDose > 0}|${liftRelevant && r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${ltExpanded}|${r.horizontalSpeed >= 0.1}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${st.nextStage}|${st.lockout}|${st.stages.length}|${activeStage}|${s.mission.failed}`;
     textClock += dt;
     const due = textClock >= TEXT_PERIOD - 1e-4;
     if (forceText || due || sig !== lastSig) {

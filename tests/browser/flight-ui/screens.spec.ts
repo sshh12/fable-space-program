@@ -70,6 +70,14 @@ async function expectCoherentState(page: Page, scene: string): Promise<void> {
   }
   expect(v.mass, `${scene}: the snapshot's mass is the readout`).toBeCloseTo(r.mass, 3);
   expect(r.mass, `${scene}: not the FakeSim's constant 50 t`).not.toBe(50000);
+  // Round 6 (the whole mission in the real app): no Mach number outside an atmosphere (the Moon, or above the
+  // Earth's 140 km simulated top), the chute light names its chutes, the lift vector only in the heating entry,
+  // and no title-cased milestone id ("Tli Complete") in a toast.
+  if (v.bodyId !== 'earth' || r.altitudeAsl > 140_000) expect(text, `${scene}: no Mach number in vacuum`).not.toMatch(/\bM\s[\d.]+\b/);
+  const chuteRow = page.locator('.hud .entry .row', { has: page.locator('.light') });
+  if (await chuteRow.isVisible()) await expect(chuteRow.locator('.lbl'), `${scene}: chute light names its chutes`).toHaveText(/^(Drogue|Main) deploy$/);
+  if (await page.locator('.hud .entry .lift').isVisible()) expect(r.heatFlux, `${scene}: lift vector only while the entry heats up`).toBeGreaterThan(1000);
+  expect(text, `${scene}: milestones by their names`).not.toMatch(/\b(Tli|Soi)\b/);
 }
 
 /** The cockpit package's seat view in low orbit (16:9), shown behind the interior layout. */
