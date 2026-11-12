@@ -225,9 +225,9 @@ export function buildCouches(ctx: CabinContext): void {
       // its pivot bolt on the outboard face (the hinges at hip, knee and foot; the back frame's joints).
       const node = (at: Vec3, side: number, r: number): void => {
         const out = v3.scale(s.R, side);
-        b.cylinder(v3.addScaled(at, out, -0.022), out, r, 0.037, 14, rail, { caps: 'both' });
-        b.cylinder(v3.addScaled(at, out, 0.015), out, 0.0075, 0.003, 6, ctx.m('steel'), { caps: 'top' });
-        b.cylinder(v3.addScaled(at, out, -0.03), out, r - 0.004, 0.008, 12, ctx.m('aluminium'), { caps: 'none' });
+        // (A turned fitting: chamfered at both ends, a little larger than the tubes it joins.)
+        b.lathe(v3.addScaled(at, out, -0.02), out, [[r - 0.005, 0], [r - 0.0035, 0.0025], [r - 0.0035, 0.0305], [r - 0.006, 0.033], [0.008, 0.033]], 14, rail, { ref: s.L });
+        b.cylinder(v3.addScaled(at, out, 0.013), out, 0.0065, 0.003, 6, ctx.m('steel'), { caps: 'top' });
       };
       for (const side of [-1, 1]) {
         for (const [at, n, half] of [[pts.hip, pts.thighN, legHw], [pts.knee, pts.thighN, legHw], [pts.foot, pts.shinN, legHw - 0.01]] as [Vec3, Vec3, number][]) {
@@ -466,10 +466,9 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
   const high = (x: number, y: number, r: number): number => Math.max(under(x, y), under(x + r, y), under(x - r, y), under(x, y + r), under(x, y - r));
   for (const side of [-1, 1]) {
     const gx = side * 0.1;
-    const gy = backHy + 0.012;
-    const gz = Math.max(high(gx, gy - 0.02, 0.02), 0.01) + 0.0075;
-    b.box(faceL(local(backF, gx, gy, gz), s), 0.031, 0.008, 0.0045, 0.002, hardware);
-    b.box(faceL(local(backF, gx, gy, gz + 0.005), s), 0.024, 0.0035, 0.0008, 0.0004, ctx.m('matteBlack'));
+    const gy = backHy - 0.004;
+    const gz = Math.max(high(gx, gy, 0.03), 0.01) + 0.0065;
+    b.box(faceL(local(backF, gx, gy, gz), s), 0.029, 0.006, 0.004, 0.002, hardware);
     const ax = side * (hw - 0.012);
     const ay = yb + 0.05;
     const az = high(ax, ay, 0.014) + 0.0055;

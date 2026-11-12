@@ -265,7 +265,7 @@ interface PhotoSpec {
 const PHOTO: Record<string, PhotoSpec> = {
   paint: { relief: -0.00003, reliefRadius: 3, tone: 1.0, macro: 0.6, rough: 0.5, cavity: [2, 900] },
   brushed: { relief: 0.000012, reliefRadius: 2, tone: 0.8, macro: 0.5, rough: 0.6, cavity: [1, 1500] },
-  fabric: { relief: 0.0005, reliefRadius: 4, tone: 0.55, macro: 0.3, rough: 0.2, cavity: [1, 1200] },
+  fabric: { relief: 0.0004, reliefRadius: 4, tone: 0.35, macro: 0.3, rough: 0.2, cavity: [1, 1200] },
   nomex: { relief: 0.0006, reliefRadius: 10, tone: 1.0, macro: 0.15, macroTexels: 14, rough: 0.2, cavity: [3, 400] },
   webbing: { relief: 0.0004, reliefRadius: 4, tone: 0.8, macro: 0.4, rough: 0.2, cavity: [1, 1500] },
   velcro: { relief: 0.0008, reliefRadius: 5, tone: 0.8, macro: 0.3, rough: 0.0, cavity: [1, 1200] },

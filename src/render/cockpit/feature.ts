@@ -194,6 +194,9 @@ interface GpuModel {
   lampMatrices: Float64Array[];
   lampStale: number;
   lampCursor: number;
+  /** What the cabin's sun map was last rendered for (the sun's direction in the part frame, its tiles, the detail level), and whether a control has moved since. */
+  sunKey: string;
+  sunStale: boolean;
   /** Sphere the cabin sun map covers (part frame). */
   sunCentre: Vec3;
   sunRadius: number;
@@ -254,6 +257,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   let lampMaps: CabinLampMaps;
   /** The model whose lamps the shadow maps hold. */
   let lampModel: GpuModel | null = null;
+  /** The model whose casters the cabin's sun map holds. */
+  let sunMapModel: GpuModel | null = null;
   let probe: CabinProbe;
   let interiorProbe: Tracked<GPURenderPipeline>;
   let displayProbe: Tracked<GPURenderPipeline>;
@@ -348,7 +353,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
           { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
           { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
           { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-          { binding: 6, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+          { binding: 6, visibility: FV, buffer: { type: 'read-only-storage' } },
           { binding: 7, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
           { binding: 8, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
           { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
@@ -581,7 +586,10 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       // The floods: full with the lights command of the active vessel, at their standby level otherwise.
       const floods = floodLevel(model, src.active && frame.snapshot.readouts.lightsOn);
       const states = controlStates(model.controls, src, defs, model.layout.alarms, clock, gm.memory, (id) => seats.get(id)!, (i) => floodLuminance(model, i, floods));
-      if (writeControls(ctx, gm, states)) gm.lampStale = gm.lampMatrices.length;
+      if (writeControls(ctx, gm, states)) {
+        gm.lampStale = gm.lampMatrices.length;
+        gm.sunStale = true;
+      }
       lastStates = states;
 
       // ---- cabin light
@@ -760,9 +768,17 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       if (active.lod === 'lod0') farFrames = 0;
       if (active.sun) {
         // The cabin's sun map: the interior's occluders at the drawn detail level (not the enclosure), into
-        // the tile of every window the sun enters.
-        const ranges = [gm.model.mesh.ranges[sunRange(active.lod)]!];
-        sunMap.render(encoder, active.sun, gm.sunGroup, gm.vertex, gm.index, ranges, ctx.perf.gpuPass('cockpit.sunMap') as GPURenderPassTimestampWrites | undefined);
+        // the tile of every window the sun enters. The map is in the part frame: it stays valid while the sun
+        // stands still in that frame (a vessel holding its attitude), no control moves and the detail level
+        // and the lit windows are the same; it is rendered again as soon as any of them changes.
+        const key = `${gm.model.layoutId}|${active.lod}|${active.sun.perSide}|${active.sun.l.map((x) => x.toFixed(6)).join(',')}|${active.sun.tiles.map((t) => `${t.window}:${t.col}:${t.row}:${t.u.map((x) => x.toFixed(5)).join(',')}:${t.v.map((x) => x.toFixed(5)).join(',')}`).join(';')}`;
+        if (key !== gm.sunKey || gm.sunStale || sunMapModel !== gm) {
+          gm.sunKey = key;
+          gm.sunStale = false;
+          sunMapModel = gm;
+          const ranges = [gm.model.mesh.ranges[sunRange(active.lod)]!];
+          sunMap.render(encoder, active.sun, gm.sunGroup, gm.vertex, gm.index, ranges, ctx.perf.gpuPass('cockpit.sunMap') as GPURenderPassTimestampWrites | undefined);
+        }
       }
       // After the display mips: the ambient pass reads their means.
       const ts = ctx.perf.gpuPass('cockpit.ambient') as GPUComputePassTimestampWrites | undefined;
@@ -1236,6 +1252,8 @@ function uploadModel(ctx: RenderContext, model: CockpitModel, detail: DetailText
     lampMatrices,
     lampStale: 0,
     lampCursor: 0,
+    sunKey: '',
+    sunStale: true,
     sunCentre,
     sunRadius: boundingRadius(mesh.vertices, mesh.vertexCount, sunCentre) + model.layout.transport.sunMapMargin,
     ballOcc,

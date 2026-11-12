@@ -274,7 +274,7 @@ export const WORLD_VIEWS: WorldView[] = [
   // its frame in view with the Earth filling it (four tenths of the frame and more: the interior meter exposes
   // for what is outside, cockpit-7, and the frame reads by the Earth's light on its inner edge); the sun
   // through another window on the console.
-  { name: 'world-leo-earth-side-window', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, windowBelow: 0.82, fovDeg: 60 }, checks: { maxBlack: 0.3 } },
+  { name: 'world-leo-earth-side-window', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, windowBelow: 0.35, fovDeg: 70 }, checks: { maxBlack: 0.3 } },
   { name: 'world-leo-sun-patch-console', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, seat: { yaw: 8, pitch: 2 }, fovDeg: 70 }, checks: {} },
   // The night side: the sun behind the Earth, nothing toggled: the cabin under its floods at their standby
   // level and its displays (what a player sees who has touched nothing).

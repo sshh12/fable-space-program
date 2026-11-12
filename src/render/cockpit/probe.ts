@@ -219,7 +219,15 @@ export class CabinProbe {
     this.warm = 0;
   }
 
-  /** Render the six faces and filter them: the probe and the bounce coefficients are current after this. */
+  /** Which half of the faces the last frame rendered (0: faces 0..2, 1: faces 3..5). */
+  private half = 1;
+
+  /**
+   * Render the faces and filter them: the probe and the bounce coefficients are current after this. The first
+   * frames render all six faces; after that three faces a frame, the two halves in turn (the cabin's light
+   * changes slowly, and the cabin is closed: every texel of a face is drawn again when its half comes round,
+   * so the other half is simply kept). The filter runs every frame over the whole cube.
+   */
   render(encoder: GPUCommandEncoder, d: ProbeDraw): void {
     const S = this.size;
     if (!this.centre || v3.dist(this.centre, d.centre) > 1e-6) {
@@ -232,16 +240,20 @@ export class CabinProbe {
     // The coefficients feed the next frame's probe: the first frames take the new value outright (the
     // inter-reflection builds up bounce by bounce), later ones are filtered a little against flicker.
     this.device.queue.writeBuffer(this.params, 0, new Float32Array([1 / PROBE_SCALE, this.warm < 12 ? 1 : 0.5, 0, 0]));
+    const all = this.warm < 2;
     this.warm++;
+    this.half = all ? 1 : 1 - this.half;
+    const firstFace = all ? 0 : this.half * 3;
+    const faceCount = all ? 6 : 3;
     const pass = encoder.beginRenderPass({
       label: 'cockpit.probe',
-      colorAttachments: [{ view: this.atlasView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }],
+      colorAttachments: [{ view: this.atlasView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: all ? 'clear' : 'load', storeOp: 'store' }],
       depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'discard' },
       ...(d.timestamps?.render ? { timestampWrites: d.timestamps.render } : {}),
     });
     pass.setBindGroup(0, d.frameGroup);
     pass.setBindGroup(1, d.cabinGroup);
-    for (let i = 0; i < 6; i++) {
+    for (let i = firstFace; i < firstFace + faceCount; i++) {
       pass.setViewport((i % 3) * S, Math.floor(i / 3) * S, S, S, 0, 1);
       pass.setScissorRect((i % 3) * S, Math.floor(i / 3) * S, S, S);
       pass.setBindGroup(2, this.faceGroups[i]!);

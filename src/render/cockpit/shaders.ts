@@ -93,10 +93,12 @@ export const CABIN_DECLS = (scene: string): string => /* wgsl */ `
 /// The flood lights' shadow maps (lampmap.ts): one layer per lamp, depth 0 at the lens .. 1.
 @group(1) @binding(11) var cabinLampMaps: texture_depth_2d_array;
 /// Share of flood light i seen from a part-frame point with unit normal n (part frame) past the cabin's own
-/// parts: the lamp's shadow map, four bilinear comparisons three quarters of a texel apart about the point,
-/// which is first moved off its surface by a texel and a half of the map at its distance (no surface shades
-/// itself; a part's contact shadow starts that far from it).
-fn lampVisibility(i: u32, p: vec3f, n: vec3f) -> f32 {
+/// parts: the lamp's shadow map, four bilinear comparisons about the point, which is first moved off its
+/// surface by a texel and a half of the map at its distance (no surface shades itself; a part's contact
+/// shadow starts that far from it). The comparisons lie three quarters of a texel apart, times the spread
+/// (1..2): a surface the lamp's light only grazes stretches a texel over centimetres, and a wider kernel
+/// turns the stair steps of a shadow's edge there into a soft ramp.
+fn lampVisibility(i: u32, p: vec3f, n: vec3f, spread: f32) -> f32 {
   if ((u32(cabin.tint.w + 0.5) & 128u) != 0u) { return 1.0; }
   let m = cabin.lamps[i];
   let size = f32(textureDimensions(cabinLampMaps).x);
@@ -107,7 +109,7 @@ fn lampVisibility(i: u32, p: vec3f, n: vec3f) -> f32 {
   let ndc = c.xyz / max(c.w, 1e-4);
   let uv = vec2f(0.5 + 0.5 * ndc.x, 0.5 - 0.5 * ndc.y);
   if (any(uv <= vec2f(0.0)) || any(uv >= vec2f(1.0))) { return 1.0; }
-  let o = 0.75 / size;
+  let o = 0.75 * spread / size;
   let lit = textureSampleCompareLevel(cabinLampMaps, shadowCompare, uv + vec2f(-o, -0.4 * o), i, ndc.z)
           + textureSampleCompareLevel(cabinLampMaps, shadowCompare, uv + vec2f(0.4 * o, -o), i, ndc.z)
           + textureSampleCompareLevel(cabinLampMaps, shadowCompare, uv + vec2f(o, 0.4 * o), i, ndc.z)
@@ -150,7 +152,7 @@ export const AMBIENT_WGSL = (scene: string): string => /* wgsl */ `
 @group(1) @binding(2) var<storage, read_write> outAmb: array<vec4f, ${AMBIENT_VEC4S}>;
 fn cabinPolyRadiance(i: u32) -> vec3f { return outAmb[2u + i].xyz; }
 // (The chunk's cabinLight looks the lamps' shadow maps up; this pass lights nothing and binds no map.)
-fn lampVisibility(i: u32, p: vec3f, n: vec3f) -> f32 { return 1.0; }
+fn lampVisibility(i: u32, p: vec3f, n: vec3f, spread: f32) -> f32 { return 1.0; }
 ${scene}
 #include "cockpit_cabin"
 #include "cloud_shadow"
@@ -281,8 +283,8 @@ const CABIN_NEGLIGIBLE = 0.01;
 /// luminance) leaves the diffuser to every side: the wall beside the fixture, a hand's width from the lens,
 /// stands in its spill. The same flux as the bare Lambertian lens: FLOOD_BEAM_GAIN is
 /// 1 / (FLOOD_SKIRT + (1 - FLOOD_SKIRT) x 0.488), 0.488 being twice the integral of the ramp x cosine.
-const FLOOD_SKIRT = 0.2;
-const FLOOD_BEAM_GAIN = 1.69;
+const FLOOD_SKIRT = 0.3;
+const FLOOD_BEAM_GAIN = 1.557;
 fn floodBeam(c: f32) -> f32 { return FLOOD_BEAM_GAIN * (FLOOD_SKIRT + (1.0 - FLOOD_SKIRT) * smoothstep(0.45, 0.95, c)); }
 const POLY_WINDOW = 0u;
 const POLY_PATCH = 1u;
@@ -536,7 +538,7 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
       if (cs <= 0.0) { continue; }
       beam = floodBeam(cs);
       let inMap = smoothstep(0.45, 0.55, cs);
-      if (inMap > 0.0) { vis = mix(vis, lampVisibility(index, posPart, nPart), inMap); }
+      if (inMap > 0.0) { vis = mix(vis, lampVisibility(index, posPart, nPart, clamp(0.6 / max(cr * inv, 0.05), 1.0, 2.0)), inMap); }
       if (vis <= 0.0) { continue; }
     }
     if ((kind == POLY_FLOOD && d2 > FLOOD_FAR2) || (kind == POLY_DISPLAY && d2 > DISPLAY_FAR2)) {
@@ -559,6 +561,86 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
       L = P.radiance.rgb * beam;
     }
     diffuse += L * (PI * ff) * vis;
+  }
+  return diffuse;
+}
+
+/// The light of the windows and the screens at a VERTEX (pos camera-relative ROOT with unit normal n; posPart /
+/// nPart the same in the part frame): e = their irradiance on the vertex's own plane (lux, rgb; each source
+/// times its baked visibility there), d = the directions it comes from, each weighted by its share (ROOT; not
+/// normalised). These sources are broad and their baked visibility is per vertex anyway, so the interior takes
+/// them per vertex and interpolates (the fragment turns e toward the pixel's own normal about d): integrating
+/// five window openings and three screens in every pixel was half of the interior's GPU time (round 5).
+struct VertexLight { e: vec3f, d: vec3f }
+fn cabinVertexLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occ: Occ) -> VertexLight {
+  var o: VertexLight;
+  o.e = vec3f(0.0);
+  o.d = vec3f(0.0);
+  var vis = occ;
+  let floods0 = cabin.counts.y;
+  let displays0 = cabin.counts.x - cabin.counts.z;
+  for (var i = 0u; i < cabin.counts.x; i++) {
+    if (i >= floods0 && i < displays0) { continue; }
+    let P = cabin.polys[i];
+    if (P.normal.w < 0.5) { continue; }
+    let index = u32(P.p1.w);
+    let toC = (P.p0.xyz + P.p2.xyz) * 0.5 - pos;
+    var c = vec3f(0.0);
+    if (i < floods0) {
+      let vw = vis.w[min(index, ${MAX_WINDOWS - 1}u)];
+      if (vw <= 0.004) { continue; }
+      let Lw = cabinPolyRadiance(i);
+      if (max(Lw.r, max(Lw.g, Lw.b)) <= 1e-3) { continue; }
+      c = Lw * (PI * windowOpening(posPart, nPart, index) * vw);
+    } else {
+      // A screen lights only the side it faces.
+      if (dot(toC, P.normal.xyz) > 0.0) { continue; }
+      let vd = vis.d[min(index, ${MAX_DISPLAYS - 1}u)];
+      if (vd <= 0.004) { continue; }
+      let ff = max(dot(n, polyVector(pos, P.p0.xyz, P.p1.xyz, P.p2.xyz, P.p3.xyz)), 0.0);
+      c = cabinPolyRadiance(i) * (PI * ff * vd);
+    }
+    o.e += c;
+    o.d += normalize(toC) * luminance(c);
+  }
+  return o;
+}
+
+/// The flood lights at a PIXEL (lux; pos camera-relative ROOT, unit n; posPart / nPart the same in the part
+/// frame): each lamp's beam (floodBeam) through its shadow map (lampVisibility); f0, f1 = the baked visibility
+/// of the eight lamps at the surface (whether a lamp reaches it at all, and the visibility of the lens's spill
+/// outside its map). eKnown: irradiance (lux) the surface is known to receive from elsewhere: a lamp whose
+/// largest possible irradiance here is under a hundredth of that and of what the lamps before it gave is skipped.
+fn cabinLampLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, f0: vec4f, f1: vec4f, eKnown: f32) -> vec3f {
+  var diffuse = vec3f(0.0);
+  let last = cabin.counts.x - cabin.counts.z;
+  for (var i = cabin.counts.y; i < last; i++) {
+    let P = cabin.polys[i];
+    if (P.normal.w < 0.5) { continue; }
+    let index = min(u32(P.p1.w), ${MAX_FLOODS - 1}u);
+    let toC = (P.p0.xyz + P.p2.xyz) * 0.5 - pos;
+    // Nothing arrives behind the lens, nor on a surface that faces away from it.
+    let side = -dot(toC, P.normal.xyz);
+    if (side <= 0.0) { continue; }
+    let cr = dot(n, toC);
+    if (cr <= -0.5 * length(P.p2.xyz - P.p0.xyz)) { continue; }
+    var vis = select(f0, f1, index >= 4u)[index & 3u];
+    if (vis <= 0.004) { continue; }
+    let d2 = dot(toC, toC);
+    if (luminance(P.radiance.rgb) * FLOOD_BEAM_GAIN * P.radiance.w * vis < CABIN_NEGLIGIBLE * (eKnown + luminance(diffuse)) * max(d2, 0.01)) { continue; }
+    let inv = inverseSqrt(d2);
+    let cs = side * inv;
+    let beam = floodBeam(cs);
+    // Inside the beam the lamp's shadow map; in the spill beside it the baked visibility (see cabinLight).
+    let inMap = smoothstep(0.45, 0.55, cs);
+    if (inMap > 0.0) { vis = mix(vis, lampVisibility(index, posPart, nPart, clamp(0.6 / max(cr * inv, 0.05), 1.0, 2.0)), inMap); }
+    if (vis <= 0.0) { continue; }
+    if (d2 > FLOOD_FAR2) {
+      diffuse += P.radiance.rgb * (beam * P.radiance.w * max(cr, 0.0) * cs * inv * inv * inv * vis);
+      continue;
+    }
+    let ff = max(dot(n, polyVector(pos, P.p0.xyz, P.p1.xyz, P.p2.xyz, P.p3.xyz)), 0.0);
+    diffuse += P.radiance.rgb * (beam * PI * ff * vis);
   }
   return diffuse;
 }
@@ -733,6 +815,35 @@ fn sunThroughWindows(p: vec3f) -> vec4f {
   return vec4f(cabin.glassSun.rgb * pow((1.0 - fr) / (1.0 - f0), 2.0 * cabin.glassSun.w) * best.x, f32(which));
 }
 
+/// How far (m, across the sun's direction; 0 inside) a part-frame point lies from the nearest beam of sunlight
+/// that enters through a window, at most (a lower bound; 1000 when no sun enters). Taken at the vertices: a
+/// pixel whose interpolated value is over SUN_REACH lies in no beam and skips the sun altogether.
+fn cabinSunReach(p: vec3f) -> f32 {
+  var best = 1e3;
+  if (cabin.sunMap.w < 0.5) { return best; }
+  let ls = cabin.sunPart.xyz;
+  for (var i = 0u; i < cabin.counts.y; i++) {
+    let a0 = cabin.apertures[4u * i];
+    let a1 = cabin.apertures[4u * i + 1u];
+    let a2 = cabin.apertures[4u * i + 2u];
+    let a3 = cabin.apertures[4u * i + 3u];
+    if (a1.w <= 0.0) { continue; }
+    let cosI = -dot(ls, a1.xyz);
+    if (cosI <= 0.03) { continue; }
+    let dist = dot(p - a0.xyz, a1.xyz);
+    if (dist <= 0.0) { continue; }
+    // Where the point's ray to the sun crosses the aperture's outer end, against its rounded rectangle; a
+    // step of x across the sun's direction moves that crossing by at most x / cosI.
+    let h = p + ls * (dist / cosI) - a0.xyz;
+    let q = abs(vec2f(dot(h, a2.xyz), dot(h, a3.xyz))) - (vec2f(a0.w, a1.w) - vec2f(a2.w));
+    let d = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - a2.w;
+    best = min(best, max(d, 0.0) * cosI);
+  }
+  return best;
+}
+/// Longest edge of an interior triangle plus the widest penumbra (m): see cabinSunReach.
+const SUN_REACH = 0.4;
+
 /// Widest penumbra radius the sun map filters (m): the penumbra of a blocker 0.65 m from the receiver.
 const SUN_PENUMBRA_MAX = 0.006;
 
@@ -873,15 +984,15 @@ struct VOut {
   @location(5) @interpolate(flat) ctl: vec2u,
   @location(6) currClip: vec4f,
   @location(7) prevClip: vec4f,
-  @location(8) occ0: vec4f,
-  @location(9) occ1: vec4f,
-  @location(10) occ2: vec4f,
-  @location(11) occ3: vec4f,
-  @location(12) occ4: vec4f,
-  @location(13) occ5: vec4f,
+  @location(8) occ0: vec4f,               // x = baked ambient occlusion
+  @location(9) light: vec4f,              // rgb = the windows' and screens' irradiance at the vertex (cabinVertexLight), w = distance to the nearest sun beam (cabinSunReach)
+  @location(10) lightD: vec3f,            // where that light comes from (ROOT, weighted, not normalised)
+  @location(11) occ4: vec4f,              // baked visibility of flood lights 0..3
+  @location(12) occ5: vec4f,              // ... and 4..7
 }
 
-fn vertexOut(v: VIn) -> VOut {
+/// eye: where the surface is seen from (camera-relative ROOT): a two-sided surface is lit on the side it shows.
+fn vertexOut(v: VIn, eye: vec3f) -> VOut {
   var p = v.pos;
   var pp = v.pos;
   var n = v.nrm.xyz;
@@ -906,16 +1017,23 @@ fn vertexOut(v: VIn) -> VOut {
   o.ctl = v.ctl;
   o.part = p;
   o.occ0 = v.occ0;
-  o.occ1 = v.occ1;
-  o.occ2 = v.occ2;
-  o.occ3 = v.occ3;
   o.occ4 = v.occ4;
   o.occ5 = v.occ5;
+  // The windows' and the screens' light, taken here and interpolated (cabinVertexLight).
+  var nl = normalize(o.n);
+  var nlPart = normalize(n);
+  if (dot(nl, eye - w) < 0.0) {
+    nl = -nl;
+    nlPart = -nlPart;
+  }
+  let lit = cabinVertexLight(w, nl, p, nlPart, occUnpack(v.occ0, v.occ1, v.occ2, v.occ3, v.occ4, v.occ5));
+  o.light = vec4f(lit.e, cabinSunReach(p));
+  o.lightD = lit.d;
   return o;
 }
-@vertex fn vs(v: VIn) -> VOut { return vertexOut(v); }
+@vertex fn vs(v: VIn) -> VOut { return vertexOut(v, vec3f(0.0)); }
 @vertex fn vsProbe(v: VIn) -> VOut {
-  var o = vertexOut(v);
+  var o = vertexOut(v, toRoot(cabin.m0, cabin.m1, cabin.m2, cabin.probe.xyz));
   o.clip = probeFace.viewProj * vec4f(o.part, 1.0);
   return o;
 }
@@ -1130,7 +1248,7 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
 
   let seed = select(in.misc.w, 0u, isLabel);
   let det = materialDetail(mat, in.uv.xy, duvx, duvy, fw, seed, (flags & FLAG_EDGE) != 0u);
-  var occ = occUnpack(in.occ0, in.occ1, in.occ2, in.occ3, in.occ4, in.occ5);
+  let ao = in.occ0.x;
   // Modelled cavity (vertex) and texture cavity darken the cabin's ambient light only.
   let cavity = (f32(in.misc.y) / 255.0) * det.cavity;
 
@@ -1212,9 +1330,22 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
   let nPart = dirPart(n);
   let NoV = max(dot(n, viewDir), 1e-3);
   var Ebounce = vec3f(0.0);
-  if ((off & 32u) == 0u) { Ebounce = cabinBounce(nPart) * (occ.ao * cavity); }
+  if ((off & 32u) == 0u) { Ebounce = cabinBounce(nPart) * (ao * cavity); }
   var Edirect = vec3f(0.0);
-  if ((off & 1u) == 0u) { Edirect = cabinLight(world, n, in.part, nPart, occ, amb.sunT * amb.cloudT, luminance(Ebounce)); }
+  if ((off & 1u) == 0u) {
+    // The windows and the screens: their irradiance at the vertices, turned toward this pixel's own normal
+    // about the direction it comes from (as far as it comes from one side: the more evenly it arrives from
+    // all round, and where it only grazes the face, the less it is turned).
+    var Ev = in.light.rgb;
+    let dl = length(in.lightD);
+    if (dl > 1e-6) {
+      let dd = in.lightD / dl;
+      let turn = clamp(max(dot(n, dd), 0.0) / max(dot(N, dd), 0.25), 0.0, 2.5);
+      Ev *= mix(1.0, turn, saturate(dl / max(luminance(Ev), 1e-6)) * smoothstep(0.0, 0.3, dot(N, dd)));
+    }
+    // The flood lights, each through its shadow map, per pixel.
+    Edirect = Ev + cabinLampLight(world, n, in.part, nPart, in.occ4, in.occ5, luminance(Ebounce) + luminance(Ev));
+  }
   let E = Edirect + Ebounce;
   // In the probe a metal counts as a diffuse reflector of its own colour (it holds no specular light).
   let diffuseColor = select(albedo * (1.0 - metallic), albedo, probe);
@@ -1237,7 +1368,7 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
         rn = normalize(mix(nPart, an, mat.b.z * saturate(5.0 * roughness)));
       }
       let dfg = envBrdfApprox(roughness, NoV);
-      let so = cabinSpecOcclusion(NoV, occ.ao * cavity, roughness);
+      let so = cabinSpecOcclusion(NoV, ao * cavity, roughness);
       specular = cabinProbeAtFp(in.part, reflect(-vPart, rn), roughness, fpR) * (f0 * dfg.x + vec3f(dfg.y)) * so;
       if (mat.b.w > 0.0) {
         let fc = (0.04 + 0.96 * pow5(1.0 - NoV)) * mat.b.w;
@@ -1254,7 +1385,8 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
   // mesh are coarser than its quilting.
   let ngPart = dirPart(select(faceN, N, shading == 1u));
   var sunVis = vec3f(0.0);
-  if ((off & 2u) == 0u) { sunVis = cabinSun(in.part, ngPart, shading == 1u); }
+  // (Only where a beam of sunlight can be: in.light.w, cabinSunReach.)
+  if ((off & 2u) == 0u && in.light.w < SUN_REACH) { sunVis = cabinSun(in.part, ngPart, shading == 1u); }
   if (max(sunVis.r, max(sunVis.g, sunVis.b)) > 0.0) {
     var s: Surface;
     s.pos = world;
@@ -1309,7 +1441,7 @@ fn shade(in: VOut, eye: vec3f, decal: bool, probe: bool) -> Shaded {
       case 7u: { c = sunLit; }
       case 8u: { c = emissive; }
       case 9u: { c = (dirPart(faceN) * 0.5 + 0.5) * 100.0; }
-      case 10u: { c = vec3f(occ.ao * cavity) * 100.0; }
+      case 10u: { c = vec3f(ao * cavity) * 100.0; }
       default: { c = albedo * 100.0; }
     }
     o.luminance = c;

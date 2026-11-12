@@ -73,14 +73,16 @@ test('draws the interior from the seat, the flight page painting at 15 Hz and th
   expect(pages).toEqual(['flight', 'orbit', 'systems']);
   const rates = st.displays.perDisplay.map((n) => n / (seconds / 1000));
   const costPerPaint = st.displays.cpuMs / Math.max(1, st.displays.paints);
-  const paced = Math.min(15, Math.max(2, (DISPLAY_CPU_BUDGET - 15 * costPerPaint) / 2 / costPerPaint));
-  console.log(`displays: ${rates.map((r) => r.toFixed(1)).join(' / ')} paints per second (flight / orbit / systems), ${costPerPaint.toFixed(2)} ms per paint (the budget leaves the slow pages ${paced.toFixed(1)} Hz each), ${((st.displays.cpuMs / (seconds / 1000)) / 60).toFixed(3)} ms per 60 Hz frame`);
+  console.log(`displays: ${rates.map((r) => r.toFixed(1)).join(' / ')} paints per second (flight / orbit / systems), ${costPerPaint.toFixed(2)} ms per paint on average, ${((st.displays.cpuMs / (seconds / 1000)) / 60).toFixed(3)} ms per 60 Hz frame`);
   expect(rates[0], 'the flight page: paints per second').toBeGreaterThan(14.5);
   expect(rates[0]).toBeLessThan(16.5);
+  // (Each slow display is paced by its own page's cost: a dear page less often than a cheap one, none under
+  // the layout's floor of 2 Hz, none over the plain rate; the unit test holds the shares exactly.)
   for (const i of [1, 2]) {
-    expect(rates[i], `display ${i} (a slow page): paints per second`).toBeGreaterThan(0.75 * paced);
+    expect(rates[i], `display ${i} (a slow page): paints per second`).toBeGreaterThan(1.9);
     expect(rates[i]).toBeLessThan(16.5);
   }
+  expect(DISPLAY_CPU_BUDGET / 60, 'the displays budget is under the CPU line').toBeLessThan(0.4);
   // The brief's CPU line, here too: under 0.4 ms of main-thread time per frame at 60 frames a second.
   expect(st.displays.cpuMs / (seconds / 1000) / 60, 'display paint + upload + mips, ms of main thread per 60 Hz frame').toBeLessThan(0.4);
   // Staggered: one display per frame (a fast page that has waited a frame may share one; not at this frame rate).
