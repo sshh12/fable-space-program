@@ -21,7 +21,8 @@
  * the view at the start position is final (`viewPending` below is empty): every render feature idle (terrain
  * resident at the levels the camera selects, nothing fading, sky data and probe in place, tables built,
  * textures loaded), no shader module compiling, no terrain load of the simulation outstanding, the exposure at
- * its target, for SETTLE_FRAMES consecutive frames. Then the screen fades and the game begins.
+ * its target (or no longer adapting quickly), for SETTLE_FRAMES consecutive frames. Then the screen fades and
+ * the game begins.
  */
 import type { ButtonAction, ControlInputs } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -53,8 +54,14 @@ const HUD_OBSTACLE_SELECTOR = '.hud .panel, .hud .later, .hud .tile:not(.compact
 
 /** Consecutive frames with nothing pending before the loading screen fades (a stable picture, not one lucky frame). */
 export const SETTLE_FRAMES = 12;
-/** The exposure counts as settled within this many EV of the meter's target. */
+/** The exposure counts as settled within this many EV of the meter's target... */
 const EXPOSURE_SETTLED_EV = 0.25;
+/**
+ * ...or, further off, once it no longer moves towards it faster than this, EV per second: the eye-like dark
+ * adaptation of the renderer (a tenth of a stop per second below EV -3) is the camera's behaviour, not loading,
+ * and an exposure that stands still (an override, a floor) must never hold the screen.
+ */
+const EXPOSURE_MOVING_EV_PER_S = 0.3;
 /** Words for the render packages on the loading screen. */
 const PACKAGE_LABEL: Record<string, string> = { terrain: 'terrain', vehicle: 'vehicle and site', ocean: 'ocean', sky: 'sky', atmosphere: 'atmosphere and clouds', vfx: 'effects', cockpit: 'cockpit', map: 'map view' };
 
@@ -111,6 +118,8 @@ export interface Game {
   /** Resolves when the view at the start position is final and the loading screen has faded. */
   readonly revealed: Promise<void>;
   loadingReport(): LoadingReport;
+  /** Wall time of every render feature's start-up (`init`), ms, by feature id. */
+  readonly featureInitMs: Readonly<Record<string, number>>;
   /** Fullscreen + keyboard lock on (needs a user gesture) / off: what a click on the HUD's capture switch does. */
   toggleKeyboardCapture(): void;
   /** True while the stage stack has been touched and the mission is neither failed nor over (beforeunload guard). */
@@ -206,11 +215,15 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   // Each one is registered behind a timer of its hooks (featureTiming.ts): the per-feature main-thread numbers.
   const timings = createFrameTimings();
   const steps = 1 + features.list.length;
+  /** How long each feature's start-up took, ms (the loading timeline of the hand-off). */
+  const featureInitMs: Record<string, number> = {};
   const featureInit = (async () => {
     let done = 1;
     for (const f of features.list) {
       loading.update('pipelines', { detail: PACKAGE_LABEL[features.packageOf[f.id] ?? ''] ?? f.id, done, total: steps });
+      const t0 = performance.now();
       await renderer.addFeature(timedFeature(f, timings.hook));
+      featureInitMs[f.id] = performance.now() - t0;
       done++;
     }
     loading.update('pipelines', { detail: 'shader modules compiling', done, total: steps });
@@ -247,6 +260,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   let settled = 0;
   let lastUploaded = -1;
   let lastStalled = 0;
+  let lastEv100 = Number.NaN;
   /** Terrain numbers of the latest frame under the loading screen. */
   const ground = { resident: 0, queued: 0, baking: 0, uploading: 0, poolFull: false, deepestLevel: 0, levelUnderVehicle: null as number | null };
   let pending: string[] = [];
@@ -297,7 +311,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
    * One frame under the loading screen (after it was rendered): update the steps from the subsystems and
    * return the names of what is still pending for the view to be final.
    */
-  const viewPending = (): string[] => {
+  const viewPending = (realDt: number): string[] => {
     readGround();
     const compiling = core.shaders.pendingCompilations();
     const idle = (f: { isIdle?(): boolean }): boolean => f.isIdle === undefined || f.isIdle();
@@ -331,12 +345,14 @@ export async function createGame(deps: GameDeps): Promise<Game> {
       if (!out.some((x) => name.startsWith(x) || (x === 'models' && (name === 'vehicle and site' || name === 'cockpit')))) out.push(name);
     }
     const e = renderer.exposureInfo();
-    if (e.override === null && Math.abs(e.ev100 - e.targetEv100) > EXPOSURE_SETTLED_EV) out.push('exposure');
+    const evRate = realDt > 0 && !Number.isNaN(lastEv100) ? Math.abs(e.ev100 - lastEv100) / realDt : Number.POSITIVE_INFINITY;
+    lastEv100 = e.ev100;
+    if (e.override === null && Math.abs(e.ev100 - e.targetEv100) > EXPOSURE_SETTLED_EV && evRate > EXPOSURE_MOVING_EV_PER_S) out.push('exposure');
     return out;
   };
 
-  const whileLoading = (): void => {
-    pending = viewPending();
+  const whileLoading = (realDt: number): void => {
+    pending = viewPending(realDt);
     settled = pending.length === 0 ? settled + 1 : 0;
     if (pending.length === 0 || loading.state('view') !== 'waiting') {
       loading.begin('view');
@@ -426,7 +442,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     ctx.perf.cpuEnd('frame');
     if (held) {
       if (loading.fading) loading.frame(now);
-      else whileLoading();
+      else whileLoading(realDt);
       // The game begins with the first frame after the screen has gone.
       if (!loading.active && settings.pilot) pilot.start();
     }
@@ -500,6 +516,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     },
     revealed: loading.revealed,
     loadingReport: () => loading.report(),
+    featureInitMs,
     toggleKeyboardCapture,
     inFlight,
     stop() {

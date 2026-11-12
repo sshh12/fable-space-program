@@ -14,7 +14,14 @@ lunar-direct from the pad to splashdown in real Chrome in 44.9 minutes. Every mi
 1.94 m from the target on level 12, splashdown inside the Central Pacific zone at 7.82 m/s, `cheatCounter` 0, no
 error. The frame-time budgets are missed: GPU p99 is met everywhere (worst 8.4 ms); rAF is missed in every phase
 because of the headless clock (`app-integration-8`); the main thread is missed in 24 of 80 phases (renderer hooks).
-See "Browser mission". Eight requests filed; four resolved.
+See "Browser mission". Thirteen requests filed; six resolved.
+
+**Added 2026-11-11 night (after the user's feedback):** an honest loading screen (the scene opens when the view
+at the start position is final: 32 s on the pad, land where land is in the first frame); keyboard capture and
+fullscreen are opt-in; the main-thread misses are attributed per feature and per hook with the app's own
+per-frame timers (during burns: the cockpit's ORB display painted in the chase view; near the ground: the
+terrain's prepare; at lift-off: one frame of cockpit + sim); requests 9-13. The browser mission was not re-flown
+in this round. See "Loading", "Measured" and "Requests filed".
 
 ## API of src/app
 
@@ -44,14 +51,61 @@ render scale), `governor=off`, `hud=0`, `mute=1`. None of them touches physics; 
 -> `createSim` -> `createRenderer(canvas, gpu, defs, { onError, perfFeatures, quality, governor })`, resized to
 the canvas's CSS size times the device pixel ratio on every ResizeObserver change -> navball renderer published as
 `'ui.navball'` -> input system, HUD (mounted in `#ui-root`), flight controller, status line -> view manager ->
-features -> audio engine; then the features' start-up, `audio.init(defs, '/assets/audio')` and `sim.ready` are
-awaited together; then the loop starts. Boot to `ready` at the pad: 25-40 s in the specs with the machine shared
-(shader compiles, sky data, the pad's terrain, 38 sound assets).
+features -> audio engine; then the features' start-up (one after the other, each behind its hook timer),
+`audio.init(defs, '/assets/audio')` and `sim.ready` are awaited together; then the loop starts under the loading
+screen. `ready` resolves when the screen has gone.
+
+### Loading (user feedback 2026-11-11: "would be nice to show clear progress")
+
+`index.html` paints "MERIDIAN / Loading the program" at once (static, the loading screen's look), so the page is
+never black while the program's modules load. `createLoadingScreen` replaces it as soon as `main.ts` runs and stays
+up, opaque, over the canvas and the HUD until the view at the start position is final. Ten rows; a row has a count
+and a bar only where its subsystem exposes a real count, and nothing runs on a timer (the footer clock is the wall
+clock since the page opened):
+
+| Row | What it shows | Read from | Done when |
+|---|---|---|---|
+| Graphics device | the adapter's name | `acquireGpu` | the device exists |
+| Definitions | files read / files listed | a counting `DefSource` around `fetchDefSource` | `loadDefs` returns |
+| Simulation | phase only | `createTerrainProvider`, `createSim` | `sim.ready` (the ground under the vehicle for the physics) |
+| Render pipelines | render core + features initialised / 10, the feature being initialised, then "N shader modules compiling" | `renderer.addFeature` one by one; `coreOf(ctx).shaders.pendingCompilations()` | every feature added and no module compiling |
+| Sky and stars | 3 parts: star catalogue, Milky Way cube (face size), light probe | `SkyFeature.status()`, `.probe().completed` | `sky.isIdle()` |
+| Atmosphere and clouds | phase only (no count exposed: request app-integration-11) | `atmosphere.isIdle()`, `ocean.isIdle()` | both idle |
+| Vehicle and site models | phase only (request app-integration-11) | `coreOf(ctx).meshes.isIdle()`, the vessel / site / cockpit features | all idle |
+| Sound | assets decoded / total | `audio.probe()` | `audio.init` resolves |
+| Terrain at the start | tiles resident / (resident + queued + baking + uploading), the level of the deepest resident tile under the vehicle | `TerrainFeature.debug.stats().stream`, `.readyTileAt(body, lat, lon)` | `terrain.isIdle()`, or the tile pool is full (below) |
+| First frames | consecutive frames with nothing pending / 12, or "waiting for <what>" | everything above + `renderer.exposureInfo()` | 12 in a row |
+
+The frame loop runs under the screen from the moment every subsystem exists: streaming, the first use of every
+pipeline, the probe and the exposure meter need real frames. Meanwhile the simulation is NOT advanced (it stays at
+the scenario's first instant, so the launch window and the UT of a flight do not depend on the machine's loading
+time), key presses are dropped (a Space pressed while waiting fires nothing), and the test pilot (`?pilot=1`) starts
+with the first frame after the screen has gone.
+
+**The view is final** (`viewPending()` in `game.ts` returns nothing) when: no shader module is compiling; the sky,
+atmosphere, ocean, vessel, site, cockpit, effects and map features are idle and the mesh system has no texture
+loading; the terrain feature is idle (nothing queued, baking, uploading or fading; rocks and ground cover built);
+the simulation has no terrain load outstanding (`sim.terrainPending() === null`); and the exposure is within
+0.25 EV of the meter's target, or no longer moving towards it faster than 0.3 EV/s (the renderer's slow dark
+adaptation below EV -3 is the camera's behaviour, not loading; an exposure that stands still never holds the
+screen). `SETTLE_FRAMES = 12` consecutive such frames start the fade (450 ms, driven by the
+frame loop); the game begins with the first frame after it. **Tile pool full:** at 1440p the pad view wants more
+tiles than the terrain's pool holds, so the terrain is never idle there (request app-integration-7). The app
+recognises that state from the stream counters (nothing queued or baking, tiles waiting to upload, none uploaded
+and every one of them refused a layer in the frame, nothing fading) and treats it as final: those tiles stay
+drawn by their parents for as long as the camera stays. The row then reads "tile pool full, N left to coarser
+tiles", and the reveal record says `poolFull: true`.
+
+`window.__boot()` (from the first moment of the page) and `window.__app.loading()` return the `LoadingReport`:
+every step with state, words, count, total and its start / end time, and the `RevealRecord` (frame, busy
+features, the terrain's counters and levels, EV100 and its target, settled frames, start and end of the fade).
+`window.__app.featureInitMs()` gives the start-up time of every feature.
 
 ### Frame (ARCHITECTURE 5)
 
 ```
 realDt = clamp(now - last, 0, 0.1 s)                (1/60 s in deterministic mode); ctx.perf.cpuBegin('frame')
+held = loading screen up (then: no key press counts, no controls, no sim.advance)
 f = input.sample();  F2 -> hud.setVisible, ` -> key help, P -> pause
 mapView.setActive(lastCamera.kind == 'map'); map = mapView.update(lastSnapshot, lastCamera, sim.commands, f.pointer, cssSize)
     every 10th frame in map view: mapView.setObstacles(HUD panel boxes)           (request map-view-5)
@@ -65,15 +119,21 @@ view = viewManager.update(snapshot, mapper.map(f, realDt, { pointerConsumed: map
 hud.update(snapshot, view.camera, realDt)            (renders the navball texture)
 audio.update({ snapshot, listener: view.listener, realDt, warpFactor: snapshot.warp.factor, paused })
 renderer.render(snapshot, view.camera, view.observers, realDt)
-ctx.perf.cpuEnd('frame'); window.__test frameDone
+ctx.perf.cpuEnd('frame')
+while held: update the loading steps, count settled frames, start / advance the fade
+window.__test frameDone
 ```
 
 Rigs: chase (`createChaseRig({ defs, terrain })`), cockpit (`createCockpitRig({ defs })`), map
 (`createMapRig({ defs })`), in that order (C cycles chase and cockpit, M toggles the map); the view manager gets
 the terrain for the LOD observers. Exposure: the rigs' own settings (compensation 0; the map rig's 0.005 fill
 light and EV100 floor 9); nothing was changed in the app after looking at the pictures (see "Pictures"). A
-frame that throws stops the loop, is reported to `window.__test.errors` and shows the `#fatal` box. Audio is
-resumed on every keydown and pointerdown (capture phase). The beforeunload guard (`installUnloadGuard`) asks
+frame that throws stops the loop, is reported to `window.__test.errors` and shows the `#fatal` box (the loading
+screen is taken away). Audio is resumed on every keydown and pointerdown (capture phase). Keyboard capture is
+opt-in: the page starts windowed and uncaptured and every binding works so; the HUD's switch
+("Keyboard capture OFF / ON / NO LOCK") asks for fullscreen + keyboard lock on a click and leaves on the second
+(`input.requestKeyboardCapture()` / `releaseKeyboardCapture()`, request flight-ui-7); `?capture=1` asks on the
+first key press or click instead. The beforeunload guard (`installUnloadGuard`) asks
 while `inFlight()`: the mission has not failed and (a stage has fired or the scenario did not start on a pad).
 A failed mission offers "Revert to launch" (pad scenarios; "Restart scenario" otherwise) on the HUD banner: a page
 reload, i.e. a fresh simulation.
@@ -108,7 +168,7 @@ with the lever at the applied throttle); `setView(mode)`; `camera()`; `setCamera
 map rig); `setDeterministic(on)`; `setPaused(p)`; `hdrStats()`; `audio()` (AudioProbe); `map()` (MapElementInfo
 of the map view). Nothing reaches `Sim.debug`.
 
-What the Playwright mission (ARCHITECTURE 18.2) uses: open `/?pilot=1&capture=0` (or call `pilot.start()`), poll
+What the Playwright mission (ARCHITECTURE 18.2) uses: open `/?pilot=1` (or call `pilot.start()`), poll
 `window.__app.brief().milestones` / `window.__test.milestones()`, `pilot.done()` / `failure()`, `state()` for the
 gates (`cheatCounter`, `scenario`, `mission`, `terrain.incompleteQueries`), `setView` + screenshots at milestones,
 `perf()` under the GPU lock, `audio()`; real key presses for the binding segments (they act whenever the pilot is
@@ -116,9 +176,14 @@ stopped).
 
 ### window.__app (AppDebug, for the app's specs)
 
-`features()`, `featureOrder()`, `cpu()` / `resetCpu()`, `exposure()`, `viewMode()`, `viewBlending()`,
-`hudVisible()`, `keyboardLocked()`, `heldCodes()`, `paused()`, `frames()`, `lever()`, `simStats()`, `inFlight()`,
-`notifications()`, `pilotReport()`, `mfdPages()`, `brief()` (a few numbers of the latest snapshot, cheap to
+`features()`, `featureOrder()`, `cpu()` / `resetCpu()` (frame, stages and now `features`: every render feature's
+hooks per frame, `core` = the render stage minus the hooks), `cpuSlowest()` (the 12 slowest frames since the last
+reset with stages, features, hooks and a note of throttle / thrust / warp / altitude), `startCpuTrace(n)` /
+`takeCpuTrace()` (consecutive frames: total, render, sim, hud, audio and every feature), `loading()`,
+`featureInitMs()`, `exposure()`, `viewMode()`, `viewBlending()`, `hudVisible()`, `keyboardLocked()`,
+`toggleKeyboardCapture()`, `heldCodes()`, `paused()`, `frames()`, `lever()`, `simStats()`, `inFlight()`,
+`notifications()`, `pilotReport()`, `mfdPages()`, `mfdPaintStats(reset?)` (the cockpit displays' paints and their
+Canvas 2D / upload / mip time), `cockpitFrame()`, `brief()` (a few numbers of the latest snapshot, cheap to
 poll), `frameLights()` (local lights of the last frame), `busyFeatures()` (what `isIdle()` waits for),
 `terrainStats()` (the terrain's stream counters, selection and per-frame CPU).
 
@@ -129,24 +194,51 @@ npm run dev                         # then open http://127.0.0.1:<port>/ (baked 
 /?pilot=1                           # watch the test pilot fly the mission (about 45 minutes)
 npm run typecheck:paths -- src/app tests/browser/app
 npx vitest run tools/dev/boundaries.test.ts
-node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/app/app.spec.ts --project=functional   # about 5 min
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/app --project=functional --project=perf   # both in one slot, about 11 min
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/app/app.spec.ts --project=functional   # about 7 min
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/app/app.perf.spec.ts --project=perf     # about 4 min
 ```
 
-Specs (`tests/browser/app/app.spec.ts`): boots on the pad with every feature, the real sim and no error; keyboard
-(throttle Z / X / Shift, SAS T and 1, Tab, 9, C, M, `.` and `/`, P, F2); a short real flight (Z, T, Space,
-lift-off, climb to 4 km with pictures in every view, engines heard); the scripted test pilot inside the page (from
-the pad through the launch window to 2 km, then stopped); the game's default capture (first key press: fullscreen
-and keyboard lock both granted in headless Chrome). `app.perf.spec.ts`: pad and climb at 1440p internal (budget
-assertions, soft) and at 720p (recorded).
+Footage (`tools/footage/record.mjs` opens `/?scenario=lunar-direct&view=chase&capture=0&scale=1&governor=off`): add
+`&pilotlabel=0&capturepill=0` for frames without the "TEST PILOT" line and the capture switch (`capture=0` is no
+longer needed: nothing is captured unless `capture=1`).
+
+Specs (`tests/browser/app/app.spec.ts`, nine tests):
+- the loading screen: polled from the first moment of the page (`window.__boot()`); it covers the page, opaque,
+  in every sample; the simulation's UT does not move under it; its terrain row equals the streamer's counters and
+  its sound row the audio engine's count in the same instant; no count runs past its total; every step finishes;
+  the frame loop's reveal record has no busy feature, nothing queued, baking or uploading, 12 settled frames, the
+  exposure at its target, the ground under the vehicle at level 12 or deeper; the first revealed frame has under
+  10 % sea-coloured pixels in the band between the horizon and the site (0.7 % measured; the same band was open
+  sea for 40 s after boot before) and differs from the frame ten seconds later by less than 6 of 255 on average
+  (1.6 measured); pictures of the screen at four stages;
+- the loading screen lets go in a dark cabin start on the Moon and in a deep-space coast;
+- boots on the pad with every feature, the real sim and no error;
+- keyboard (throttle Z / X / Shift, SAS T and 1, Tab, 9, C, M, `.` and `/`, P, F2);
+- a short real flight (Z, T, Space, lift-off, climb to 4 km with pictures in every view, engines heard);
+- the scripted test pilot inside the page (from the pad through the launch window to 2 km, then stopped; the
+  status line names it);
+- in low orbit (`qa-leo`): the map takes the pointer, a click on the apoapsis marker adds a node, a 100 px
+  Shift-drag on the prograde handle changes it by 1.0 m/s and the throttle lever stays at 0 (ARCHITECTURE 11 and
+  18.2; the interrupted agent's test, finished: the map camera is turned until the marker is on the near side of
+  the Earth);
+- keyboard capture is opt-in: keys and clicks on the scene capture nothing; a click on the HUD switch gives
+  fullscreen and the lock, a second click leaves both; `?capture=1` asks on the first key; `capturepill=0` and
+  `pilotlabel=0` hide the switch and the pilot's label (PAUSED still shows).
+
+`app.perf.spec.ts`: pad and climb at 1440p internal (budget assertions, soft) and at 720p (recorded), each with
+the slowest frames' breakdown, a trace across ignition and lift-off and the terrain feature's own split; an
+engine burn in lunar orbit (coast, start, burn, the same burn with no display on the orbit page, cut-off) with the
+cockpit displays' paint split.
 
 ## What a human sees when pressing each key
 
 | Key | What happens (verified in the specs unless marked) |
 |---|---|
-| (first key or click) | fullscreen and the keyboard lock are requested; the HUD's "Capture keyboard" pill turns to captured; sound starts |
+| (first key or click) | sound starts (the AudioContext resumes); nothing is captured: the page stays windowed and every key below works |
+| click on "Keyboard capture" (HUD, top right) | OFF -> ON: fullscreen and the keyboard lock (browser shortcuts such as Ctrl+W then reach the game; "NO LOCK" if the browser refuses the lock); a second click or Esc leaves both |
 | Z / X | throttle lever to 100 % / 0 % (the HUD's throttle tape follows) |
-| Shift / F | lever up / down at 0.5 per second (Left Ctrl too while the keyboard is locked) |
+| Shift / F | lever up / down at 0.5 per second (Left Ctrl too while the keyboard is captured: the only binding that needs it) |
 | Space | fires the next stage: on the pad the engines light, the clamps let go, lift-off (plume, smoke, rumble); the stage leaves the HUD's stack |
 | Backspace | abort sequence (not exercised by the specs) |
 | T | SAS on / off (HUD SAS button lit, "HOLD · STABILITY") |
@@ -165,6 +257,88 @@ assertions, soft) and at 720p (recorded).
 | ` | key-help sheet generated from the binding table |
 
 ## Measured
+
+### 2026-11-11 night: loading timeline and main-thread attribution
+
+Two runs of `tests/browser/app` (functional + perf, 22:38 and 23:08), each alone on the GPU (one slot in the gate);
+other agents' CPU work ran beside them. The second run had the terrain pool work for app-integration-7 in the
+working tree (uncommitted, another agent's); where the two runs differ both are given. Budget lines are not
+loosened.
+
+**Loading** (`performance.now()` of the page; the pad, 1280 x 720, second run; 2560 x 1440 is the same within two seconds):
+
+| Step | start -> end, s | What happened |
+|---|---|---|
+| Graphics device, definitions | 0.4 -> 0.7 | adapter, 84 of 86 definition files |
+| Simulation, sound | 0.7 -> 2.6 | `sim.ready` at 2.5 s; 38 of 38 assets at 2.6 s |
+| Render pipelines | 2.1 -> 20.1 | `createRenderer` and the features' start-up one by one, done by about 5.7 s (terrain 1.6 s, cockpit 1.0, ocean 0.5, vehicle 0.3, site 0.1, the rest under 0.05); the first frame is presented at 9.3 s; the next 18 frames take 10.8 s while 70 shader modules compile |
+| Sky and stars, atmosphere | 9.3 -> 20.3 | Milky Way cube, light probe, scattering tables: done with the compiles |
+| Terrain at the start | 9.3 -> 31.3 | 32 tiles resident at 20.4 s, 636 (the always-resident levels) at 24.5 s, 1,079 with level 20 under the vehicle at 31.3 s |
+| First frames, fade | 31.3 -> 31.9 | 12 settled frames, then 450 ms |
+
+To the revealed view: **31.9 s** (first run 32.7 s; perf spec at 1440p 31.9 s, at 720p 29.9 s; lunar orbit at 1440p
+21.0 s). Two thirds of it is not loading data: the 14 s in which the first 19 frames wait for synchronous
+pipeline compiles, and the terrain that starts streaming only after that and refines one level per round trip (request
+app-integration-11 asks for both). Before this round the game showed its first frame after 25-40 s and the pad's
+surroundings were drawn as sea for another 40 s at 1440p; now the first frame shown is the final one.
+
+**Frame time** (`app.perf.spec.ts`, governor off, render scale 1, median of three 240-frame windows; second run,
+first run in brackets where it differs):
+
+| | GPU p50 / p99 (11 ms) | rAF p99 (17.5) / >= 33 ms | main thread p50 / p99 (6 ms) |
+|---|---|---|---|
+| 1440p pad | 6.2 / 6.9 | 17.0 / 0 | 4.25 / **6.69** (4.63 / 6.31) |
+| 1440p climb (0.3-1.0 km) | 6.4 / 7.0 | 17.3 / 0 | 3.98 / **6.48** (4.60 / 6.48) |
+| 720p pad | 3.2 / 3.8 | 17.1 / 0 | 2.90 / 4.17 |
+| 720p climb | 3.3 / 3.8 | 17.2 / 0 | 3.16 / 4.43 |
+| 1440p lunar orbit, coast | 1.1 / 3.1 | 17.0 / 0 | 1.53 / 2.40 |
+| 1440p lunar orbit, burning | 1.2 / 3.5 | 17.0 / 0 | 1.75 / **7.05** (1.70 / 6.94) |
+| 1440p lunar orbit, burning, no display on the ORB page | 1.3 / 3.3 | 17.0 / 0 | 1.58 / 2.47 |
+| 1440p lunar orbit, after the cut-off | 1.1 / 3.2 | 17.0 / 0 | 1.49 / 2.35 |
+
+GPU and rAF are inside their lines everywhere with the GPU to itself. The frame clock ran at 60 Hz in the perf
+tests of both runs (rAF p99 16.9-17.3 ms); the short-flight functional test read p50 16.67 ms in the first run and
+17.46 ms in the second, so the 57.5 Hz clock of request app-integration-8 comes and goes between page loads. The
+main thread misses its line in three rows.
+
+**Main-thread attribution** (the app's hook timers: every feature hook in every frame; `core` = the render stage
+minus the hooks; p50 / p99 over the windows, ms; 1440p):
+
+| Feature | pad | climb | orbit coast | orbit burning | what it is |
+|---|---|---|---|---|---|
+| terrain | 1.85 / 3.35 (2.76 / 3.65) | 1.59 / 2.79 | 0.23 / 0.46 | 0.26 / 0.58 | `prepare` 2.0-2.9 ms and `drawShadow` 0.7-1.3 on the slowest pad frames; its own split at the pad, p50: selection 0.57, ground cover 0.52, build 0.11, shadow 0.08, rocks 0.07, stream 0.02 |
+| cockpit | 0.66 / 0.96 | 0.71 / 1.18 | 0.55 / 0.80 | 0.60 / **5.56** | `compute` in the CHASE view: the three displays painted at 15 Hz, the sun map, the ambient pass and the cabin probe, at 140 m where the displays are under a pixel |
+| vehicle | 0.37 / 0.59 | 0.33 / 0.59 | 0.14 / 0.23 | 0.15 / 0.25 | `prepare`, `drawGBuffer` |
+| core | 0.32 / 0.51 | 0.28 / 0.55 | 0.24 / 0.34 | 0.25 / 0.37 | the render core's own work |
+| site | 0.25 / 0.38 | 0.15 / 0.25 | - | - | |
+| vfx | 0.05 / 0.08 | 0.26 / 0.39 | 0.04 / 0.06 | 0.09 / 0.14 | `prepare`; 1.5-2.8 ms in the first frame of a plume |
+| ocean, atmosphere, sky | 0.13 / 0.21, 0.11 / 0.16, 0.03 / 0.05 | 0.11 / 0.16, 0.08 / 0.13, - | -, -, 0.07 / 0.11 | - | |
+| app stages (p99) | sim 0.37, HUD 0.24, audio 0.16, input + map + controls + views 0.15 | sim 0.71, HUD 0.32, audio 0.17 | sim 0.24, HUD 0.22, audio 0.09 | sim 0.27, HUD 0.26, audio 0.13 | nothing to fix in `src/app` |
+
+What the slow frames are made of:
+
+- **Engine burns away from terrain (the unattributed rows of the mission: loi:burn, lunarCircularise, deorbit:burn,
+  tei, entry): the cockpit feature's `compute`, and in it the Canvas 2D painting of the MFD's ORB page.** In the
+  trace across a burn (910 frames, thrust for 407) 63 frames are 6 ms or more: every one during the burn, every
+  one with `cockpit.compute` 5.2-5.7 ms of a 7.0-7.6 ms frame; none before the start, none after the cut-off. The
+  displays' own statistics: 0.75 paints per frame always; mean per paint Canvas 2D 0.44 ms on the coast, 1.28 ms
+  burning, 0.22 ms burning with the centre display cycled off the orbit page (upload 0.20 and mips 0.02 ms
+  throughout). With no display on the ORB page the same burn is 1.58 / 2.47 ms. Request app-integration-12
+  (cockpit: do not paint what cannot be seen from outside; flight-ui: bound the ORB page's paint), blocking.
+- **Near the ground: the terrain's `prepare`** (selection, ground cover) at 2-3 ms on the slow frames, with the
+  cockpit's 0.7-1.2 ms, the vehicle's 0.4-0.7 ms and the site's 0.3-0.5 ms on top. First run (tile pool full: 316
+  tiles waiting for a layer for ever): terrain 10-14 ms per frame for a few seconds after lift-off (trace p99
+  10.0, max 14.4 ms); second run with the pool work: p99 4.9, max 6.8 ms. Request app-integration-7 (addendum
+  with these numbers).
+- **Ignition and lift-off are single frames:** ignition 12.7 ms (vfx 2.72, terrain 2.08, audio 1.85, sim 1.00,
+  HUD 0.83); the frame in which the stack leaves the pad 28-34 ms in all four traces (1440p: 29.96 = cockpit
+  16.03 + sim 5.85 + terrain 4.26; 720p: cockpit 25.55 two frames after a sim step of 6.38). It is the likely
+  frame behind the mission's one delta of 33 ms or more at ignition. Requests app-integration-12 (cockpit) and
+  -13 (sim, vfx, audio).
+- **Not the cause:** the render core's attribution frame (one frame in 64 with every hook in a pass of its own):
+  0 to 6 of the frames of 6 ms or more fall on it in any trace; `core` stays at 0.3-0.5 ms.
+
+### Earlier (2026-11-11 afternoon, machine shared)
 
 Machine shared with up to four other agents' Chrome jobs on the GPU and about twelve agents on the CPU during
 every run: the numbers are provisional (PACKAGE_RULES 16); the budget lines are not loosened.
@@ -211,7 +385,24 @@ simulation 0.6-1.3 ms (its line 1.5 ms at 4x); HUD 0.4-0.7 ms (line 0.5 ms). Re-
 - `climb-cockpit-1km.png`: beige, evenly lit cabin: the plume lights reached the interior (app-integration-5,
   resolved by the cockpit in its round; to be re-shot).
 - `pad-paused.png`: taken right after a map round trip: the land around the pad drawn as sea
-  (app-integration-6, open).
+  (app-integration-6, open; in the runs of the night the land is there).
+
+Added 2026-11-11 night (all looked at):
+- `loading-0-first.png`: the screen in its first instant: MERIDIAN, "Starting", ten rows with hollow marks,
+  "Graphics device: WebGPU adapter and device" lit, 0:00. `loading-1-defs.png`: the adapter's name in green,
+  "Definitions: files read, 44 / 86" with its bar half way.
+- `loading-2-pipelines.png`: "Render pipelines: terrain, 1 / 10" with its bar, "Sound 0 / 38", the rest waiting
+  (hollow marks), 0:02 in the footer.
+- `loading-3-terrain.png`: at 0:11: "70 shader modules compiling", "Sky and stars: light probe, 2 / 3",
+  "Terrain at the start: level 0 under the vehicle · 610 queued, 8 baking, 4 uploading, 14 / 636".
+- `loading-4-view.png`: everything done in green, "First frames: consecutive frames with nothing pending, 7 / 12",
+  0:32.
+- `loading-revealed-first.png` (no HUD): the first frame shown: the stack at the tower, lava plain and scrub to
+  the horizon, clouds; `loading-revealed-later.png`: ten seconds later, the same picture.
+- `capture-on.png`: the HUD's switch reading "Keyboard capture ON" (green); `footage-switches.png`:
+  `?capturepill=0&pilotlabel=0` with the pilot flying and the game paused: no switch, no pilot label, PAUSED.
+- `leo-chase.png`, `leo-cockpit.png`, `leo-map-node.png`: the parking orbit; the map with a maneuver node at the
+  apoapsis, its handles and the node panel (prograde 1.0 m/s after the Shift-drag).
 
 ## Browser mission (ARCHITECTURE 18.2)
 
@@ -469,9 +660,11 @@ visual gap of the flight. Both cockpit pictures are nearly black.
 
 1. **rAF budgets (all phases): harness, not game.** See above. Request `app-integration-8` (lead harness,
    blocking for the rAF lines). Nothing in `src/app` paces frames: the loop is one rAF callback per frame.
-2. **Main-thread p99 (24 rows): renderer hooks.** Terrain near the ground (`app-integration-7`, open). Burn-time
-   spikes are not attributed yet; the spec now records per-feature CPU for the next run. The budget line is not
-   loosened.
+2. **Main-thread p99 (24 rows): renderer hooks.** Terrain near the ground (`app-integration-7`, open). The
+   burn-time rows are attributed since (see "Measured", 2026-11-11 night): the cockpit's ORB display painted in
+   the chase view while the orbit changes (`app-integration-12`). The mission spec's windows now carry the app's
+   per-frame feature times and each window's two slowest frames with their breakdown, so the next flight shows
+   it per phase. The budget line is not loosened.
 3. **Two deltas of 33 ms or more** (ignition, LOI coast) out of 153,167 frames.
 4. **Image statistics.**
    - `10-lunar-touchdown-cockpit` (9.6 % non-black): a real finding. The cabin is nearly black on the sunlit
@@ -489,13 +682,20 @@ visual gap of the flight. Both cockpit pictures are nearly black.
 | `app-integration-1` | render-core | resolved (`fdf3cde`) | `PerfSnapshot.cpu` never held the app's `'frame'` zone |
 | `app-integration-2` | lead harness | resolved (`37932b8`) | `tests/browser/shell/shell.spec.ts` asserted the old boot shell |
 | `app-integration-3` | camera (flight-ui) | resolved (flight-ui round 5) | chase camera started behind the launch tower on the pad |
-| `app-integration-4` | flight-ui HUD | open | ENTRY panel replaces the ORBIT panel during the ascent (1 kW/m^2 heating threshold) |
+| `app-integration-4` | flight-ui HUD | resolved (`d9f9413`, `2bd0a88`) | ENTRY panel replaces the ORBIT panel during the ascent (1 kW/m^2 heating threshold) |
 | `app-integration-5` | cockpit / core | resolved (cockpit round) | plume local lights lit the cabin interior through the hull |
-| `app-integration-6` | terrain-render | open | land around the pad drawn as sea for about a second after a map round trip |
-| `app-integration-7` | terrain-render | open | terrain never idle at 1440p (tile pool full, ~300-430 uploads stalled for ever) |
+| `app-integration-6` | terrain-render | open (work in progress in the tree) | land around the pad drawn as sea for about a second after a map round trip |
+| `app-integration-7` | terrain-render | open (work in progress in the tree; addendum with per-frame numbers) | terrain never idle at 1440p (tile pool full, ~300-430 uploads stalled for ever); terrain `prepare` on the main thread |
 | `app-integration-8` | lead harness | open (blocking for the rAF lines) | headless rAF clock at ~57.5 Hz (p50 17.4 ms in every mission phase, whatever the load): rAF budgets cannot be judged |
+| `app-integration-9` | flight-ui HUD, src/input | resolved (`cc8e8cb`, `e4d5188`; wired in `1b9f665`) | the capture pill as an explicit switch that also releases, a switch to hide it, `InputSystem.releaseKeyboardCapture` |
+| `app-integration-10` | src/camera (shared code), vehicle data | open | chase default framing in deep space: distance by the vessel's size after separations, the nearest body in frame, the Sun out of it (pictures 07-14 of the mission) |
+| `app-integration-11` | render core, terrain-render, atmosphere | open | load time: synchronous pipeline compiles hold the first 19 frames for 14 s, terrain streams only afterwards and one level per round trip; counts the loading screen lacks (terrain residency by level, shader and texture totals, atmosphere status) |
+| `app-integration-12` | cockpit, flight-ui MFD painter | open, **blocking** for the main-thread line during burns | the cockpit's displays are painted in the chase view; the ORB page costs 5.2-5.7 ms per paint while the orbit changes; 16-26 ms in the lift-off frame |
+| `app-integration-13` | sim-world-pilot, vfx, audio | open | one-off costs in the ignition and lift-off frames: sim 5.9-6.4 ms, first plume frame 1.5-2.8 ms, audio 1.5-1.9 ms |
 
-Also answered: `map-view-5` (the app shell part; its labs/integration part was then resolved by core-support).
+Also answered: `map-view-5` (the app shell part; its labs/integration part was then resolved by core-support),
+`flight-ui-7` (the capture switch's release and hide option wired, fullscreen state passed on) and the app part of
+`flight-ui-3` (map obstacle selectors of the round-6 HUD), both in `1b9f665`.
 
 ## Known limits
 
@@ -503,8 +703,20 @@ Also answered: `map-view-5` (the app shell part; its labs/integration part was t
   `app-integration-8`) and main thread (renderer hooks, `app-integration-7` and the burn-time spikes). See "Browser mission".
 - From TLI to the entry the chase pictures show neither the Earth nor the Moon; both cockpit pictures are nearly
   black (for the visual close-out).
-- The main-thread CPU line is missed (above); the renderer's per-feature CPU is the place to look first.
-- `isIdle()` never becomes true at 1440p on the pad (app-integration-7): deterministic screenshots at the budget
-  resolution must wait for that request.
+- The main-thread CPU line is missed in three measured situations at 1440p (pad 6.7, first kilometre 6.5, engine
+  burns 7.1 ms p99) and in the lift-off frame (30 ms); every part of it is attributed and requested (-7, -12,
+  -13). Nothing in `src/app` contributes more than 0.15 ms.
+- Loading takes 32 s on the pad on this machine; the screen is honest about it but it is long. The two large
+  parts are not the app's (request -11). The loading screen waits for `terrain.isIdle()`; where the terrain's
+  tile pool is full (the state of the tree before the pool work for -7) it lets go with the parents drawn and
+  says so.
+- The chase view's default framing in deep space is unchanged (request -10); nothing was wired because nothing
+  exists yet.
+- The browser mission was not re-flown in this round (by instruction): its spec is updated (no `capture=0`, the
+  per-frame feature times and slowest frames per window) and type-checks, but has not run with the loading
+  screen. `ready` now resolves 30 s later than before; the spec's `openPage` waits for it without a limit of its
+  own.
+- `isIdle()` at 1440p on the pad depends on the pool work for app-integration-7 (idle in the second run of the
+  night, never idle in the first).
 - Not exercised in a browser spec: abort, RCS / gear / lights / fine-control keys, vessel cycling, a node drag in
   the map, the 144 / 240 Hz paths.

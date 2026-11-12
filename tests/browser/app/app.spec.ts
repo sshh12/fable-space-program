@@ -150,6 +150,8 @@ test('the loading screen shows real progress and stays until the view at the pad
   console.log(`loading: ${sec(report.elapsedMs)} s to the revealed view; ${samples.length} samples; pictures of ${[...shot].join(', ')}`);
   for (const x of report.steps) console.log(`  ${x.label.padEnd(24)} ${sec(x.startMs).padStart(6)} -> ${sec(x.endMs).padStart(6)} s  ${x.done ?? ''}${x.total !== null ? ` / ${x.total}` : ''}  ${x.detail}`);
   console.log(`  reveal: ${JSON.stringify(report.reveal)}`);
+  const inits = await page.evaluate(() => window.__app!.featureInitMs());
+  console.log(`  feature start-up, s: ${Object.entries(inits).map(([id, t]) => `${id} ${sec(t)}`).join(', ')}`);
   // The terrain under the screen, about every two seconds: resident / queued / baking / uploading tiles and frames.
   let lastPrinted = -1e9;
   for (const s of samples) {
@@ -232,6 +234,27 @@ test('the loading screen shows real progress and stays until the view at the pad
   expect(diff.meanAbsDiff, 'first revealed frame against the frame ten seconds later').toBeLessThan(6);
   expect(after.ut, 'the simulation runs once the screen has gone').toBeGreaterThan([...uts][0] ?? 0);
   await expectNoErrors(page, pageLog);
+});
+
+test('the loading screen lets go in other starts too: a dark cabin on the Moon, a coast in deep space', async ({ page, pageLog }) => {
+  // Starts whose exposure adapts slowly (a dark cabin) or whose view has no terrain near it: the screen must not hang.
+  for (const [name, query] of [
+    ['start-lunar-surface-cockpit', '?scenario=qa-lunar-surface&view=cockpit'],
+    ['start-trans-earth', '?scenario=qa-trans-earth'],
+  ] as const) {
+    await openGame(page, query);
+    const report = await page.evaluate(() => window.__app!.loading());
+    const r = report.reveal!;
+    console.log(
+      `${name}: ${(report.elapsedMs / 1000).toFixed(1)} s to the revealed view; terrain ${r.terrain.resident} tiles, level ${r.terrain.levelUnderVehicle ?? '-'} under the vehicle, ${r.terrain.deepestLevel} in view; EV100 ${r.ev100.toFixed(2)} (target ${r.targetEv100.toFixed(2)}); busy ${JSON.stringify(r.busy)}`,
+    );
+    expect(report.active).toBe(false);
+    for (const x of report.steps) expect(x.state, `${name}: ${x.id} finished`).toBe('done');
+    expect(r.busy).toEqual([]);
+    expect(r.terrain.queued + r.terrain.baking + r.terrain.uploading).toBe(0);
+    await shoot(page, name, { minNonBlack: 0.02, minStd: 4, minBuckets: 20 });
+    await expectNoErrors(page, pageLog);
+  }
 });
 
 test('boots on the pad with every feature, the real sim and no error', async ({ page, pageLog }) => {

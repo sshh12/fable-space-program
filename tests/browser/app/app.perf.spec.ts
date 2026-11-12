@@ -259,6 +259,25 @@ function summariseTrace(name: string, t: FrameTrace): TraceSummary {
   return summary;
 }
 
+/** The terrain feature's own split of its main-thread time over 120 frames (p50 / p95 / max per part, ms). */
+async function terrainParts(page: Page, name: string): Promise<Record<string, { p50: number; p95: number; max: number }>> {
+  const parts = await page.evaluate(async () => {
+    const rows: Record<string, number>[] = [];
+    for (let i = 0; i < 120; i++) {
+      await window.__test!.waitFrames(1);
+      rows.push({ ...window.__app!.terrainStats().cpu });
+    }
+    const out: Record<string, { p50: number; p95: number; max: number }> = {};
+    for (const k of Object.keys(rows[0]!)) {
+      const v = rows.map((x) => x[k]!).sort((a, b) => a - b);
+      out[k] = { p50: v[60]!, p95: v[114]!, max: v[119]! };
+    }
+    return out;
+  });
+  console.log(`${name}: terrain feature, its own split, p50 / p95 / max ms: ${Object.entries(parts).map(([k, v]) => `${k} ${ms(v.p50)} / ${ms(v.p95)} / ${ms(v.max)}`).join(', ')}`);
+  return parts;
+}
+
 /**
  * Wait for streaming to finish; at 1440p the terrain on the pad never becomes idle (its tile pool is full and a
  * few hundred uploads wait for a slot for ever: request app-integration-7), so after a minute the frame is measured
@@ -282,13 +301,17 @@ async function settle(page: Page): Promise<{ idle: boolean; busy: string[]; terr
 }
 
 /** Pad, then Z / T / Space and the climb from 200 m; the numbers go to out/app/perf-<label>.json. */
-async function padAndClimb(page: Page, label: string): Promise<{ padStreaming: Awaited<ReturnType<typeof settle>>; checkpoints: Checkpoint[]; ignition: TraceSummary }> {
+async function padAndClimb(
+  page: Page,
+  label: string,
+): Promise<{ padStreaming: Awaited<ReturnType<typeof settle>>; checkpoints: Checkpoint[]; ignition: TraceSummary; terrain: Record<'pad' | 'climb', Awaited<ReturnType<typeof terrainParts>>> }> {
   const run = await withGpuLock(async () => {
     await openWithin(page, '/?scale=1&governor=off&mute=1', 300_000);
     await assertDiscreteGpu(page);
     const padStreaming = await settle(page);
     console.log(`${label} pad streaming: ${JSON.stringify(padStreaming)}`);
     const checkpoints: Checkpoint[] = [await measure(page, `${label} pad`)];
+    const terrain = { pad: await terrainParts(page, `${label} pad`), climb: {} as Awaited<ReturnType<typeof terrainParts>> };
     const pad = await page.evaluate(() => window.__app!.brief());
     await page.evaluate(() => window.__app!.startCpuTrace(1500));
     await page.evaluate(() => window.__test!.waitFrames(60));
@@ -299,7 +322,8 @@ async function padAndClimb(page: Page, label: string): Promise<{ padStreaming: A
     await until(page, `b.milestones.includes('LIFTOFF') && b.altitudeAsl > ${pad.altitudeAsl + 200}`, 90_000);
     const ignition = summariseTrace(`${label} ignition and lift-off`, (await page.evaluate(() => window.__app!.takeCpuTrace()))!);
     checkpoints.push(await measure(page, `${label} climb`));
-    return { padStreaming, checkpoints, ignition };
+    terrain.climb = await terrainParts(page, `${label} climb`);
+    return { padStreaming, checkpoints, ignition, terrain };
   });
   const dir = path.join(process.cwd(), 'out', 'app');
   fs.mkdirSync(dir, { recursive: true });

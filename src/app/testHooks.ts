@@ -29,6 +29,8 @@ export interface AppDebug {
   takeCpuTrace(): FrameTrace | null;
   /** The loading screen: its steps with their counts and times, and what the frame loop found at the reveal. */
   loading(): LoadingReport;
+  /** Wall time of every render feature's start-up, ms, by feature id. */
+  featureInitMs(): Record<string, number>;
   exposure(): ExposureInfo;
   viewMode(): string;
   viewBlending(): boolean;
@@ -150,6 +152,7 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     startCpuTrace: (frames) => game.timings.startTrace(frames),
     takeCpuTrace: () => game.timings.takeTrace(),
     loading: () => game.loadingReport(),
+    featureInitMs: () => ({ ...game.featureInitMs }),
     exposure: () => game.renderer.exposureInfo(),
     viewMode: () => game.views.mode,
     viewBlending: () => game.views.blending,
