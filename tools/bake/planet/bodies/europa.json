@@ -51,7 +51,7 @@
   "maxLevel": 5,
   "source": "albedo",
   "colourSource": null,
-  "transfer": "linear",
+  "transfer": "srgb",
   "tint": [
    1.0,
    0.96,

@@ -69,7 +69,7 @@
   "maxLevel": 5,
   "source": "albedo",
   "colourSource": "colour",
-  "transfer": "linear",
+  "transfer": "srgb",
   "tint": null,
   "calibration": {
    "meanAlbedo": 0.44,
