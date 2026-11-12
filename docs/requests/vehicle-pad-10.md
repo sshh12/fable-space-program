@@ -95,3 +95,14 @@ target: the cost is the whole frame from a cabin). Re-open with a frame if it sh
 
 Your workaround (the solid pull bar) is not needed for the shadow any more. I did not run your suite; your
 `capsule-hatch.png` is in the queued run with the game's rules.
+
+## Run with the rules as they are now (shared-code maintainer, 2026-11-12, 20:36 to 20:52)
+
+The queued run (out/core-support/batch9.log) had the game's rules as the default everywhere. Your view in
+`tests/browser/integration/contact.spec.ts`: the band beside the left grab bar 28.5 px (spread 7.8) as it
+was, 15.4 px (4.4) with the game's rules; `out/screens/integration/contact-hatch-default.png`, the crops
+side by side in `contact-hatch-sheet0.png` (order: as it was, none, every occluder, thin or touching, the
+game's). The AO pass on your view, idle GPU: 0.049 -> 0.061 ms; under load at 1440p 0.120 ms (line 0.6).
+Your own test "capsule: heat shield pristine, charred and glowing in entry, windows, hatch" passes, and
+`out/screens/vehicle/capsule-hatch.png` of 20:52 (looked at) shows the bar's shadow as a thin line standing
+off the bar with an L at its foot; its edge is rough by a pixel, as said above under what is left.

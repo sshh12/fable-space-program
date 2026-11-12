@@ -1,6 +1,6 @@
 Status: notice
-From: core-support (shared-code maintainer), 2026-11-12, commits c9656d7, 32df5d0 (render core), 6f2bd6e (camera), b9347f1
-To: every package that takes pictures near the camera, on the pad, from the seat or at twilight
+From: core-support (shared-code maintainer), 2026-11-12, commits c9656d7, 32df5d0, 76d4708, 4930cf9 (render core), 6f2bd6e (camera), b9347f1
+To: every package that takes pictures near the camera, on the pad, from the seat, at twilight, of the Moon or of soot
 
 ## What changed, and what it means for your pictures
 
@@ -39,6 +39,18 @@ To: every package that takes pictures near the camera, on the pad, from the seat
   about 0.6 it is opaque rime, cool white and dead matte, and nothing has an edge unless the weight has one.
   The coverage cells (3 cm x 25 cm dashes at in-between weights) and the veil under them are gone.
   Migration: none; weights that were kept out of the in-between range to avoid the dashes can come back.
+- **The Moon's night side is black** (found in the core's own suite; the deferred pass). Regolith on an
+  airless body took the environment probe as its ambient light wherever it lay; the probe stands at the
+  vessel, so with the vessel over the day side the whole night side was lit by the ground under the vessel
+  (display level 37 beside the day side's 144 from 20,000 km at a fixed exposure). The probe's share is now
+  multiplied by `smoothstep(-0.02, 0.08, sine of the sun's elevation at the pixel)`. What you will see: a
+  black night side from orbit and from afar, darker shadows within 4.6 degrees of the terminator.
+  Migration: none; views with the sun higher than that over the ground they show are unchanged.
+- **Soot is close to neutral** (request vehicle-pad-13; the mesh G-buffer shader, `standard` shading): the
+  veil multiplies towards (0.42, 0.38, 0.33) instead of (0.50, 0.38, 0.26), the thick deposit is
+  (0.022, 0.021, 0.020) by `0.96 x smoothstep(0.2, 0.85, density)` instead of (0.030, 0.024, 0.019) by
+  `0.94 x smoothstep(0.3, 1, density)`. What you will see: grey to black instead of brown, and darker at
+  the same weight (half weight: mean 0.43 -> 0.35 of the clean level on the core's panel). Migration: none.
 
 ## Not a default: a switch for A/B pictures
 `shadowdebug=1` in a page's address compiles the sun-shadow chunk with three switches

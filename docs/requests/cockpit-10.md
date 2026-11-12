@@ -195,3 +195,28 @@ crop of the rule set called cross at 19:03, default in the queued run).
 
 Your two views of `world.spec.ts` and `app-leo-seat` passed at 19:17 with the rules of c9656d7; they are in
 the queued run with the rules as they are now.
+
+## Run with the rules as they are now (shared-code maintainer, 2026-11-12, 20:36 to 20:52)
+
+The queued run (out/core-support/batch9.log) had the game's rules as the default everywhere.
+
+- Your lunar frame of 0e184e5 in the integration lab: isolated dark pixels on the well floor 1.17 % with the
+  first rules, 0.00 % with the game's, frozen noise; live 0.92 % -> 0.00 %. The crops:
+  `out/screens/integration/contact-moon-well-sheet0.png` (in the order as it was, none, every occluder, thin
+  or touching, the game's, the game's with no cascade shadow; looked at: the fifth has the one clean edge).
+- The pad view: 0.31 % as it was, 0.30 % with no contact shadow, 0.27 % with the game's rules.
+- Your suite's two views (`world.spec.ts`: `world-moon-horizon`, `world-pad-noon-forward-window`) and
+  `app-leo-seat` / `app-leo-seat-floods` pass.
+
+**One place where dots remain, seen in your `world-moon-horizon.png` of this run** (looked at; 4x crop of
+x 380-560, y 50-230): on the well's left wall beside and below the orange strap there is a patch of sparse
+dark-grey dots, fading with distance from the strap. By reading, not by an A/B (my spec's lunar frame is the
+older recipe, which has no strap in it): the strap hangs off the wall and is thin, so the contact shadow
+draws its shadow, and that shadow is one bit per half-resolution pixel from a march that is jittered per
+pixel; where the ray only sometimes finds the strap, the result is dots, and the temporal resolve makes a
+soft shadow of them in a moving picture. It is the remainder that `vehicle-pad-10` lists as not done (a
+full-resolution, filtered contact term near the camera). It is far fainter than the stipple this request
+was about, and I did not hold the round for it: if the critic names it, re-open with this crop.
+
+Also changed in the core since, and visible from your seat in lunar orbit: the Moon's night side is black
+(NOTICE-core-6: regolith no longer takes the probe's light where the sun is under the local horizon).
