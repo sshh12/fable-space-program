@@ -578,7 +578,9 @@ windows a pixel sees best, the quilt's per-pixel relief trimmed, the probe rende
 
 Unit: 53 / 53 (`src/render/cockpit tests/unit/cockpit src/core/defs tools/dev/boundaries.test.ts`). Browser,
 functional project, `tests/browser/cockpit`: 33 / 33 before the form-factor fix (5 app views, 13 lab views,
-the functional spec, 9 world views), 32 passed and 1 skipped after it (world-chase-window-night: the integration lab had switched the ocean package off, whose shader did not compile while its owner was editing it; that picture is from the run before the fix). Perf: fails on the two lines above. Typecheck of the owned paths clean.
+the functional spec, 9 world views), 33 / 33 after it (the night chase view on its own in a second run: in the full run the integration
+lab had switched the ocean package off, whose shader did not compile while its owner was editing it, and the
+view was skipped as its spec demands). Perf: fails on the two lines above. Typecheck of the owned paths clean.
 
 My judgement of this round's pictures against the photographs: **photo lens about 6.5, artifact lens about
 6.5**. The cabin is now geometrically honest and lit by lamps one can see, it reads in the sun, on the Moon
