@@ -557,6 +557,18 @@ the lineage field.
   that is outside by event time alone and records that rule as accepted by the lead; the checker in
   `tools/dev/mission-baseline.ts` is unchanged and still reports that row as outside.
 - The pad class limits are provisional until fleet-data's table.
+- **Request site-bake-1 (open, against the lead's records; filed 05:03, not acted on in this round).** The
+  Madrakah region was swapped into the live `earth` tile set at 04:59: the manifest's content hash went
+  from `ab20fdfc579d4015` to `f70a61d55dca902f`. (a) `tests/mission/golden.json` `tiles.earth` is out of
+  date, so the determinism test stops at its precondition; the flight on the new tiles is the golden one
+  (flown with the recorder at 05:05: `b8221b0fd316207e`, 596,933 steps), so the field can be changed
+  without another flight. (b) The terrain guard's directory summary fails (the manifest's size and 840 new
+  directories on face 2, levels 8-12; heights pass bit for bit): `terrain-guard.record.ts --tiles` reads
+  every tile file and runs under the `bake` slot, so it was left for a moment the lead chooses. (c) The
+  request also asks to change `tiles.earth` in `tests/mission/baseline-v1.json`: recommended NOT to, since
+  that file is the record of the v1 flight on the tiles of its day, nothing compares the field, and the
+  file is pinned. (d) `--add-place` for the new pads belongs to the lead step before 4.1 (the pads are
+  staged, their flatten discs are not live).
 - `src/core/fakes/fakeSim.ts`: `advanceRails` lands on the float instant (section 13).
 - The reference images (section 3) and `.wslconfig` (the user's) as before.
 
