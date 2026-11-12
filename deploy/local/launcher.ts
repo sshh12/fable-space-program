@@ -63,12 +63,8 @@ export const PORTS = {
   minio: 47221,
 } as const;
 export const CLUSTER_FLAGS = ['--encoding=UTF8', '--locale-provider=builtin', '--builtin-locale=C.UTF-8'];
-export const PRODUCTION_SETTINGS: [string, string][] = [
-  ['shared_buffers', '96MB'],
-  ['max_wal_size', '256MB'],
-  ['min_wal_size', '64MB'],
-  ['max_connections', '40'],
-];
+export { PRODUCTION_PG_SETTINGS as PRODUCTION_SETTINGS } from '../roles/pgsettings';
+import { PRODUCTION_PG_SETTINGS as PRODUCTION_SETTINGS } from '../roles/pgsettings';
 const PG_USER = 'postgres';
 const PG_PASSWORD = 'stack-local';
 const PG_DB = 'fsp';
@@ -467,6 +463,7 @@ async function run(opts: Options, command: string[]): Promise<number> {
   let standIn: StandIn | null = null;
   const pgDir = path.join(dataDir, 'pg');
   let pgStarted = false;
+  let useFile: string | null = null;
   const timings: Record<string, number> = {};
   const urls = { page: '', shell: `http://127.0.0.1:${PORTS.shell}`, packList: '', bucket: `http://127.0.0.1:${PORTS.bucket}/${STAND_IN.bucket}/p/`, mirror: '' };
   const endpointsFile = path.join(dataDir, 'endpoints.json');
@@ -503,6 +500,7 @@ async function run(opts: Options, command: string[]): Promise<number> {
       for (const c of children) if (c.child.exitCode === null && c.child.pid) killTree(c.child.pid);
       if (standIn) await standIn.close();
       if (pgStarted) await stopPostgres(pgDir);
+      if (useFile) fs.rmSync(useFile, { force: true });
       state.running = false;
       writeState(state);
       releaseLock();
@@ -539,6 +537,11 @@ async function run(opts: Options, command: string[]): Promise<number> {
     state.bootPack = boot;
     if (!boot) throw new Error('no boot pack in data/packs/boot: build one first (npx tsx tools/pack/cli.ts boot --build=<client build>)');
     const clientDir = opts.page === 'build' ? buildClient() : null;
+    if (clientDir) {
+      // npm run stack:client never prunes a build that has a live use file beside it (lead-baseline-v2 section 12).
+      useFile = `${clientDir}.use-${process.pid}`;
+      fs.writeFileSync(useFile, JSON.stringify({ pid: process.pid, stack: name, since: new Date().toISOString() }));
+    }
     const ep = shapeEndpoints(opts.shape);
     urls.mirror = `http://127.0.0.1:${ep.mirrorPort}/p/`;
     urls.packList = `${ep.api[0]}/packs.json`;
@@ -717,6 +720,13 @@ async function down(): Promise<number> {
     }
   }
   fs.rmSync(LOCK, { force: true });
+  const clientRoot = path.join(STACK_ROOT, 'client');
+  if (fs.existsSync(clientRoot)) {
+    for (const f of fs.readdirSync(clientRoot)) {
+      const m = /.use-(d+)$/.exec(f);
+      if (m && !alive(Number(m[1]))) fs.rmSync(path.join(clientRoot, f), { force: true });
+    }
+  }
   const open: number[] = [];
   for (const p of Object.values(PORTS)) if (await portOpen(p)) open.push(p);
   console.log(open.length === 0 ? `down: ${cleaned} leftover(s) stopped; no port of the stack range is open` : `down: ports still open: ${open.join(', ')} (something outside the stack holds them)`);
@@ -725,18 +735,16 @@ async function down(): Promise<number> {
 
 // ------------------------------------------------------------------------------------------------ main
 
-const argv = process.argv.slice(2);
-let code: number;
-try {
-  if (argv[0] === 'status') code = status();
-  else if (argv[0] === 'down') code = await down();
-  else {
+/** The launcher's command line (deploy/local/stack.mjs calls it; importing this module runs nothing). */
+export async function main(argv: string[]): Promise<number> {
+  try {
+    if (argv[0] === 'status') return status();
+    if (argv[0] === 'down') return await down();
     const { opts, command } = parseArgs(argv);
-    code = await run(opts, command);
+    return await run(opts, command);
+  } catch (e) {
+    say((e as Error).message);
+    releaseLock();
+    return 2;
   }
-} catch (e) {
-  say((e as Error).message);
-  releaseLock();
-  code = 2;
 }
-process.exit(code);

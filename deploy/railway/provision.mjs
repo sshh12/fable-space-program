@@ -40,9 +40,9 @@ function railwayBin() {
 }
 const RAILWAY = railwayBin();
 
-function rw(args, input) {
-  const r = spawnSync(RAILWAY, args, { cwd: REPO, encoding: 'utf8', input, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
-  if (r.status !== 0) throw new Error(`railway ${args.filter((a) => !a.includes('=')).join(' ')}: ${(r.stderr || r.stdout || String(r.error)).trim()}`);
+function rw(args, input, cwd = REPO) {
+  const r = spawnSync(RAILWAY, args, { cwd, encoding: 'utf8', input, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
+  if (r.status !== 0) throw new Error(`railway ${args.filter((a) => !a.includes('=')).join(' ')}: ${[r.stdout, r.stderr, r.error ? String(r.error) : ""].join(" ").trim().slice(0, 2000)}`);
   return r.stdout;
 }
 
@@ -134,13 +134,13 @@ function provisionServices() {
 
   // game: the hello stand-in until wave 5; built by Railway from the Dockerfile; autodeploy off (no repo source).
   const gameId = ensureService('game');
-  update(gameId, { ...region, builder: 'DOCKERFILE', dockerfilePath: 'deploy/Dockerfile', healthcheckPath: '/healthz', healthcheckTimeout: 120, drainingSeconds: 45, restartPolicyType: 'ALWAYS' });
+  update(gameId, { ...region, dockerfilePath: 'deploy/Dockerfile', healthcheckPath: '/healthz', healthcheckTimeout: 120, drainingSeconds: 45, restartPolicyType: 'ALWAYS' });
   limits(gameId, 2, 2);
   const shellId = ensureService('shell');
-  update(shellId, { ...region, builder: 'DOCKERFILE', dockerfilePath: 'deploy/Dockerfile', healthcheckPath: '/healthz', healthcheckTimeout: 120, restartPolicyType: 'ALWAYS', watchPatterns: ['src/**', 'public/**', 'index.html', 'data/defs/**', 'deploy/roles/shell.ts', 'deploy/roles/packs.ts', 'deploy/boot-manifest.json'] });
+  update(shellId, { ...region, dockerfilePath: 'deploy/Dockerfile', healthcheckPath: '/healthz', healthcheckTimeout: 120, restartPolicyType: 'ALWAYS', watchPatterns: ['src/**', 'public/**', 'index.html', 'data/defs/**', 'deploy/roles/shell.ts', 'deploy/roles/packs.ts', 'deploy/boot-manifest.json'] });
   limits(shellId, 0.5, 0.25);
   const dumpId = ensureService('dump');
-  update(dumpId, { ...region, builder: 'DOCKERFILE', dockerfilePath: 'deploy/Dockerfile', cronSchedule: '7 * * * *', restartPolicyType: 'NEVER' });
+  update(dumpId, { ...region, dockerfilePath: 'deploy/Dockerfile', cronSchedule: '7 * * * *', restartPolicyType: 'NEVER' });
   limits(dumpId, 1, 0.5);
 
   const gameDomain = domainOf(gameId, 'game');
@@ -177,20 +177,23 @@ function deploy(service) {
   if (!service) throw new Error('deploy <service>');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fsp-export-'));
   const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).stdout.trim();
-  const tar = path.join(dir, 'export.tar');
-  const a = spawnSync('git', ['archive', '--format=tar', '-o', tar, 'HEAD'], { cwd: REPO, encoding: 'utf8' });
-  if (a.status !== 0) throw new Error(a.stderr);
   const src = path.join(dir, 'src');
   fs.mkdirSync(src);
-  const x = spawnSync('tar', ['-xf', tar, '-C', src], { encoding: 'utf8' });
+  const tar = path.join(src, 'export.tar');
+  const a = spawnSync('git', ['archive', '--format=tar', '-o', tar, 'HEAD'], { cwd: REPO, encoding: 'utf8' });
+  if (a.status !== 0) throw new Error(a.stderr);
+  // A relative archive name inside the target: GNU tar reads "C:..." as a remote host.
+  const x = spawnSync('tar', ['-xf', 'export.tar'], { cwd: src, encoding: 'utf8' });
   if (x.status !== 0) throw new Error(x.stderr);
   fs.rmSync(tar);
   const ids = services();
   setVars(ids[service], { RAILWAY_DOCKERFILE_PATH: 'deploy/Dockerfile', COMMIT: commit });
   const t0 = Date.now();
-  const out = rw(['up', src, '--service', service, '--environment', 'production', '--project', PROJECT, '--detach', '--no-gitignore']);
+  // Run from inside the export: the CLI resolves its upload root from the working directory.
+  const out = rw(['up', '--service', service, '--environment', 'production', '--project', PROJECT, '--detach', '--no-gitignore'], undefined, src);
   console.log(out.trim());
-  console.log(JSON.stringify({ service, commit, uploadedS: (Date.now() - t0) / 1000, export: src }));
+  fs.rmSync(dir, { recursive: true, force: true });
+  console.log(JSON.stringify({ service, commit, uploadedS: (Date.now() - t0) / 1000 }));
 }
 
 const [cmd, arg] = process.argv.slice(2);

@@ -46,3 +46,22 @@ work lands.
   share about $1-2. Budget guard: per-service replica limits (no hard workspace limit: it would stop
   haulpoint-tms; no soft limit: it is an e-mail alert and the user wants none). Modal: environment `fsp`
   (free), one volume for the pack copy (inside Modal's free storage), app `fsp-probe` on demand.
+- 01:20-01:33 CREATED on Railway (project `fable-space-program` 7cc16fa5-1790-44e6-8087-4e75673a5a7a, environment
+  production 11958a85-d81f-4639-9d77-90bbef65e27b): buckets `dumps` (56ba9069-0144-4099-b8bf-a6497a9e98f3, S3
+  name in deploy/railway/buckets.json) and `packs` (3ca8455f-988e-4425-a9f0-f024512cecfd); the first `packs`
+  create raced with `dumps` and left an undeployed, empty bucket (4dad6994-31d6-47e2-865c-1521299558d6, renamed
+  `packs-orphan-undeployed`; the CLI cannot delete it because it is in no environment: delete it in the
+  dashboard, project settings, buckets). Services postgres 77bea2f1-a875-4eee-8889-c7e43368a7ca (image
+  ghcr.io/railwayapp-templates/postgres-ssl:18, 5 GB volume at /var/lib/postgresql/data, limit 1 vCPU / 0.5 GB),
+  game c3c9e85c-d3c2-4f72-bf90-86c59ab0929d (limit 2 / 2, draining 45 s, restart Always, health /healthz),
+  shell f86d5d8f-67a3-4828-9bca-5ac4707043be (limit 0.5 / 0.25, CDN on), dump c93a9302-50e5-41b6-b21c-631a3bba04f9
+  (cron 7 * * * *, restart Never). Domains game-production-dfc41bff.up.railway.app,
+  shell-production-b6007648.up.railway.app. Bucket CORS set and read back (AllowedOrigins *, GET/HEAD, Range,
+  ExposeHeaders Content-Range/Length/ETag). Uplink measured with the 19.97 MB boot pack: 5.1 s (31 Mbit/s).
+- 01:31 the skeleton is UP: Postgres 18.6 (server_version_num 180006), initdb printed "locale provider:
+  builtin, default collation: C.UTF-8": POSTGRES_INITDB_ARGS took effect; the hello game connects (UTF8,
+  builtin, C.UTF-8); shell healthy with the boot pack loaded from the bucket in one attempt. buildId
+  e6f0ba3d7194f245 on game (commit ae74aa7) and shell (41ff282): the bundle did not change between the two
+  commits, so the id is the same. Game: upload 40 s, build and deploy 2 min 9 s, no build pause.
+- 01:35 coordinator: the launcher keeps its own lock (done: data/stack/.launcher.lock) and writes
+  `<build>.use-<pid>` beside the client build it serves (done; removed at teardown, stale ones by `down`).
