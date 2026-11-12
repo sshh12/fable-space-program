@@ -97,7 +97,6 @@ export class AtmosphereTables {
           compute: { module: ctx.shaders.createModule(label, wgsl), entryPoint: 'main' },
         }),
       );
-      pipeline.get();
       return { layout, pipeline, group: null };
     };
     this.stages = {
@@ -107,6 +106,11 @@ export class AtmosphereTables {
       skyView: stage('atmosphere.skyView', SKY_VIEW_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), storage(3, '2d'), sampled(4, '2d'), sampled(5, '2d-array')]),
       aerial: stage('atmosphere.aerial', AERIAL_COMPUTE_WGSL, [uniform, sampled(1, '2d-array'), sampled(2, '2d-array'), sampled(3, '2d'), sampled(4, '2d'), storage(5, '3d'), storage(6, '3d')]),
     };
+  }
+
+  /** The pipelines of the table passes, for `shaders.warm` (created ahead, off the GPU process's main thread). */
+  pipelines(): Tracked<unknown>[] {
+    return Object.values(this.stages).map((s) => s.pipeline);
   }
 
   /** True once the static tables hold data for the current bodies. */

@@ -13,7 +13,7 @@
  */
 import type { BodyDef } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
-import { cameraBasis, coreOf, f16ToF32, MAX_BODIES, readTexturePixels, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
+import { cameraBasis, coreOf, f16ToF32, MAX_BODIES, readTexturePixels, type CoreApi, type ManagedTarget, type TemporalFeature, type Tracked } from '@/render/core';
 import { airglowShows, resolveAirglow, type AirglowLayer } from './airglow';
 import { CloudSystem, type CoverageImage } from './clouds';
 import { AERIAL_SIZE, MULTISCATTER_LUT_SIZE, SKY_IRRADIANCE_LUT_SIZE, SKY_VIEW_LUT_SIZE, TRANSMITTANCE_LUT_SIZE } from './math';
@@ -66,9 +66,17 @@ export interface AtmosphereStatus {
   coverage: { loaded: number; total: number };
 }
 
-export interface AtmosphereFeature extends RenderFeature {
+export interface AtmosphereFeature extends RenderFeature, TemporalFeature {
   /** Rebuild the static tables on the next frame (after editing atmosphere definitions at run time). */
   invalidate(): void;
+  /**
+   * Start everything that is refined over frames again (the core calls it at every restart of the temporal
+   * sequences: frame-exact captures, RENDER_API section 13): the clouds' radiance and geometry history, the
+   * cloud shadow map (marched whole in the next frame, with its extent and axes chosen from the scene as on
+   * a fresh page), the light-change detection, the cloud clock (snapped to simulation time). The frames after
+   * it depend on the scene and on their count alone. Starts no work: `isIdle()` is what it was.
+   */
+  resetTemporal(): void;
   /** Progress of the one-off work (tables, cloud noise, coverage maps). Does not change `isIdle()`. */
   status(): AtmosphereStatus;
   readonly debug: AtmosphereDebug;
@@ -236,7 +244,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
     id,
     order: opts.order ?? 0,
 
-    init(c) {
+    async init(c) {
       ctx = c;
       core = coreOf(c);
       device = c.device;
@@ -288,7 +296,6 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         layouts: [marchLayout],
         targets: marchTargets.map(() => ({ format: HALF_FORMAT })),
       });
-      marchPipeline.get();
       fineTargets = ['add', 'mul'].map((n) =>
         core.createTextureChecked({ label: `${id}.marchFine.${n}`, format: HALF_FORMAT, size: [FINE_TILE_SIZE, FINE_TILE_SIZE], usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING }),
       );
@@ -303,7 +310,6 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
         layouts: [marchLayout],
         targets: fineTargets.map(() => ({ format: HALF_FORMAT })),
       });
-      marchFinePipeline.get();
 
       // One blend into the HDR target: add + mul x destination. Dual-source blending does it in one draw;
       // without the feature the same result takes a multiply draw followed by an add draw in the same pass.
@@ -320,7 +326,6 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
           });
         }),
       );
-      for (const p of compositePipelines) p.get();
       compositeFinePipelines = modes.map((mode) =>
         core.shaders.tracked(() => {
           const module = c.shaders.createModule(`${id}.compositeFine.${mode}`, compositeFineFsWgsl(mode));
@@ -333,12 +338,14 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
           });
         }),
       );
-      for (const p of compositeFinePipelines) p.get();
 
       if (opts.clouds !== false) {
         const hasClouds = Object.values(c.defs.bodies).some((b) => b.render.clouds && b.render.atmosphere);
         if (hasClouds) clouds = new CloudSystem(c, uniformBuffer, { id, coverageMaps: opts.coverageMaps });
       }
+      // Every pipeline of the package is created ahead, off the GPU process's main thread (RENDER_API 17.8):
+      // a `get()` where a pass is drawn then costs nothing.
+      await core.shaders.warm([marchPipeline, marchFinePipeline, ...compositePipelines, ...compositeFinePipelines, ...tables.pipelines(), ...(clouds ? clouds.pipelines() : [])]);
     },
 
     prepare(frame) {
@@ -506,6 +513,10 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
 
     invalidate() {
       tables.invalidate();
+    },
+
+    resetTemporal() {
+      clouds?.resetTemporal();
     },
 
     status() {

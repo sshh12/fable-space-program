@@ -347,16 +347,8 @@ export class CloudSystem {
     this.shadowBlitPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudShadowBlit`, fragment: CLOUD_SHADOW_BLIT_FS_WGSL, layouts: [this.shadowBlitLayout], targets: SHADOW_TARGETS });
     this.shadowFilterLayout = device.createBindGroupLayout({ label: `${id}.cloudShadowFilter`, entries: [uniform, tex(1, 'unfilterable-float')] });
     this.shadowFilterPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudShadowFilter`, fragment: CLOUD_SHADOW_FILTER_FS_WGSL, layouts: [this.shadowFilterLayout], targets: [{ format: 'rgba32float' }] });
-    this.shadowFilterPipeline.get();
     this.momentMipLayout = device.createBindGroupLayout({ label: `${id}.cloudShadowMips`, entries: [tex(0)] });
     this.momentMipPipeline = this.core.fullscreenPipeline({ label: `${id}.cloudShadowMips`, fragment: CLOUD_SHADOW_MIP_FS_WGSL, layouts: [this.momentMipLayout], targets: [{ format: 'rgba16float' }] });
-    this.momentMipPipeline.get();
-    this.marchPipeline.get();
-    this.marchFinePipeline.get();
-    this.resolvePipeline.get();
-    this.shadowPipeline.get();
-    this.shadowInPlacePipeline.get();
-    this.shadowBlitPipeline.get();
 
     this.generateNoise().catch((e: unknown) => this.core.reportError(`${id}: cloud noise generation failed: ${e instanceof Error ? e.message : String(e)}`));
   }
@@ -853,7 +845,10 @@ export class CloudSystem {
     // a different step phase each time (a function of the march index alone, so it also runs while the
     // frame's noise is frozen): the resolve averages the marches of a pixel into an edge as wide as the
     // pixel, and into a picture without a step pattern.
-    const marchIndex = frame.frameIndex >> 2;
+    // (The march index runs on the core's sequence index: the frames since the temporal sequences last
+    // started, which is the frame index until a frame-exact capture restarts them. A golden-ratio phase taken
+    // from the absolute frame index stands somewhere else in every capture: request core-4.)
+    const marchIndex = this.core.sequenceIndex() >> 2;
     const sub = taaJitter(marchIndex, 8);
     u.set('cloudJitter', sub[0], sub[1], (marchIndex * 0.6180339887498949) % 1, marchIndex);
     u.set('cloudHigh', params.highThicknessMinM, params.highThicknessMaxM, params.highExtinctionMin, params.highExtinctionMax);
@@ -1028,7 +1023,8 @@ export class CloudSystem {
     u.set('shadowL', dir.x, dir.y, dir.z, full ? 0 : 1);
     this.shadowFull = full;
     this.shadowShifted = !full && (shift[0] !== 0 || shift[1] !== 0);
-    u.set('shadowShift', shift[0], shift[1], frame.frameIndex % (16 * rounds), n);
+    // (The refresh phase on the sequence index as well: its rounds of 48 and 96 frames are not powers of two.)
+    u.set('shadowShift', shift[0], shift[1], this.core.sequenceIndex() % (16 * rounds), n);
     u.set('shadowFilter', pixelOnGround, vScale, rounds, vScale / Math.max(sinDir, 0.02));
     // The tent of the map the core reads: a texel either way, and up to three across the sun's azimuth as
     // the sun gets low (the shadows of single cloudlets then run tens of kilometres along it: hairlines of
@@ -1067,9 +1063,22 @@ export class CloudSystem {
   resetTemporal(cloudTime?: number): void {
     this.lastMarchFrame = -10;
     this.shadowValid = false;
+    // (What has hysteresis starts from nothing: the extent of the shadow map, its ratio along v, its coarse
+    // step count. After this they are functions of the scene, as on a fresh page.)
+    this.shadowHalfExtent = 0;
+    this.shadowVScale = 1;
+    this.shadowCoarse = false;
+    this.anchorFixed = null;
     this.lightChange.fill(0);
     this.lastSunFixed = null;
+    // (The cloud clock follows simulation time with a rate limit: without a time given it is snapped to it.)
     if (cloudTime !== undefined) this.cloudTime = cloudTime;
+    else this.lastUt = null;
+  }
+
+  /** The pipelines of the cloud passes, for `shaders.warm` (created ahead, off the GPU process's main thread). */
+  pipelines(): Tracked<unknown>[] {
+    return [this.marchPipeline, this.marchFinePipeline, this.resolvePipeline, this.shadowPipeline, this.shadowInPlacePipeline, this.shadowBlitPipeline, this.shadowFilterPipeline, this.momentMipPipeline];
   }
 
   private ensureGroups(tables: { transmittance: GPUTextureView; irradiance: GPUTextureView }): void {
