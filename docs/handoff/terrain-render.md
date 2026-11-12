@@ -784,3 +784,138 @@ demand, eager requests, the fit), `tests/unit/camera/observers.test.ts` (4), `te
 `tests/browser/terrain/smoke.spec.ts` (residency and counts). The package's functional browser suite on the
 final code: 20 of 20 (integrated views, integrity incl. "no cracks or holes along a descent" and "the mesh at
 the deepest level is the collision surface", pops with and without delayed streaming, smoke, reviewed views).
+
+## 14. Visual close-out, round 2 (2026-11-12)
+
+Work list: `docs/qa/wave2/terrain-render.r1.combined.json` (photo 5.5, artifact 5.5; 1 blocker, 15 majors,
+8 minors). The reference photographs of `out/qa/ref/` (earth-terrain-aerial, moon-surface, launch-pad) were
+looked at first; every screenshot named below was rendered on the code of this section and looked at (crops
+enlarged where it mattered). `integrated-*` (sky, atmosphere, clouds, ocean) are the pictures to judge the
+Earth by; `integrated-game-pad` and `integrated-game-lunar-surface` are the game's own chase views with every
+package loaded. The GPU gate had one slot for about six agents: three browser runs in all (33, 90 and 100
+minutes of waiting), so shapes and textures were judged without a GPU wherever that was possible (below,
+"Tools").
+
+### What changed in the code (for whoever maintains it next; sections 1 to 7 otherwise stand)
+
+- **Shrubs and trees** (`coverMesh.ts`, `cover.ts`, `tools/terrain/gen_foliage.py`,
+  `public/assets/terrain/earth-volcanic-coast/foliage.webp`). A `bush` is stems from one foot, a `tree` a
+  short trunk (widening foot) that forks into four crooked limbs; limbs fork into branches, branches into
+  twigs (tubes with a frame carried along them, 7 to 3 sides), and at the end of every twig stand three or
+  four leaf sprays: cards bent along their length that carry one cell of the leaf atlas (2 x 2 cells: two
+  builds of a kiawe spray with bipinnate leaves, two of a coastal shrub's; rgb = colour relative to the
+  plant's tint, a = coverage; drawn by `gen_foliage.py`, no provider, 330 KB). The twig ends are the places
+  the leaf clusters of the old crowns had (one random sequence): a coarser level keeps the first of them with
+  larger sprays (1.9 x, 3.4 x) and fewer stems, so the outline and the mass of leaves stay. Triangles of a
+  tree: 9,634 / 1,518 / 100; of a bush 3,276 / 492 / 32. Stands of trees (`grove`) keep the leaf clusters.
+  The vertex has 12 floats now (position, normal, two shading numbers, uv, two more: `COVER_VERTEX_FLOATS`).
+- **Leaves in the shader** (`cover.ts`, `COVER_LEAF_WGSL`). Near the eye a fragment of a spray shows where the
+  atlas' coverage is above a half (the outline of every leaflet); further away, where a leaflet is smaller
+  than a pixel, it shows with the probability of the coverage, by a threshold fixed to the surface in cells
+  of about a pixel (hashed alpha testing, Wyman and McGuire 2017): a crown is a fine speckle of leaf and sky
+  that neither swims nor thins out. The shadow pass of shrubs and trees runs the same test (pipeline
+  `terrain.cover.leafShadow`): a crown's shadow is dappled. Shadow levels: finest mesh from 48 cascade texels
+  of radius, middle from 8, nothing under 1 (`SHADOW_*_TEXELS`). Wood has furrowed bark (ridges that wander
+  along the stem, broken into plates; relief from the bark's height through screen derivatives).
+- **Light through leaves** (`shaders/lighting.ts`). For `MATERIAL_TERRAIN` the G-buffer's metallic channel is
+  the share of light that comes through a leaf or a blade from behind (the ground cover writes 0.3 to 0.6;
+  the terrain itself and every other writer leave 0): `brdfTerrainDirect` returns albedo x (1.15, 1.2, 0.55)
+  x share x -N.L for faces turned from the sun. The same chunk no longer lets the view angle of its specular
+  terms fall under 70 degrees from the normal (a rough field does not mirror the horizon: that was the lava
+  that doubled in brightness with distance), and its ambient term adds a tenth of the light on the ground
+  around to faces that look sideways and down.
+- **Rocks** (`rockMesh.ts`). The mesh is the variant's polyhedron face by face, every face a patch of its
+  own divided about its middle (5 / 2 / 1 pieces per edge), each point moved along its direction from the
+  centre by the same functions as before (wear, scoops, crack, relief at a third of the old amplitude):
+  faces stay planes, edges are creases. 1,100 to 3,600 / 260 to 900 / 60 to 90 triangles. The unit ball stays
+  inside, the sides reach the buried rim (`math.test.ts` unchanged and green). On an anchored body rocks take
+  `anchorAlbedo[rockMaterial]` x `rockAlbedoScale` (no 1.5 x).
+- **Ground colour** (`shaders/surface.ts`, `materials.ts`). The calibration is a REGION of the body, not a
+  tile level: `materialRegions()` turns the rectangles of the imagery's first regional level
+  (`imageryCalibrationLevel` + 1) into face coordinates with the bakes' feather; `regionShare()` in the shader
+  gives the share of a fragment inside (uniform `region`, at most `MAX_REGIONS` 4; unit test
+  `regions.test.ts` with a twin of the shader function). Inside a region the ground has the BRIGHTNESS of its
+  materials times the imagery's relative brightness (bounded 0.55 .. `toneMax`, default 1.1) and takes its
+  HUE from the materials by `anchorNear` / `anchorFar` (now by the size of a pixel on the ground alone: 8 to
+  40 m) and from the imagery by the rest. From 4 to 16 m per pixel the material colour goes to the mixture of
+  ALL materials under the pixel by their weights; beyond the ground cover's range a class's `classTone`
+  (brightness, share of leaf green) stands for its canopy. Outside the regions the body-wide imagery keeps
+  `imagerySaturationGlobal` of its saturation.
+- **Class boundaries** are bands: the class lookup is thrown about by noise of 9 m and 3 m with an amplitude
+  of up to 28 m where a pixel resolves those sizes, and averaged over two (coarse rasters: four) points
+  around the fragment where it does not. The ground cover looks the class of a plant up to 22 m from where
+  it stands (`EDGE_REACH_M`) and has drifts and bare lanes at 4.3 times its clump size (`DRIFT_MIN/MAX`).
+- **Water**: a lake above sea level needs ground level to a fraction of a degree (slope under 0.006 to
+  0.018) AND imagery that shows water (blue at least about red); water colour takes the imagery only where
+  that is blue above red, else the dark shallow colour of a rock coast.
+- **Relief shadows**: `reliefShadowTaps` per body (Earth 4, Moon 6) over the same reach, a sharper edge
+  (0.035 of the layer's range), and the march gives way as the terrain's own slope nears its terminator
+  (cosine 0.03 to 0.14): there the facet term of the regolith BRDF and the slope's cosine carry the shading.
+  The occlusion of the detail layers has a floor of 0.4.
+- **Ground cover on the main thread** (`cover.ts`): chunk rows go to the GPU relative to a body-fixed anchor
+  near the camera (`ANCHOR_REACH_M` 64) and are written when a chunk is built, fades or the anchor moves, not
+  every frame; while the view rests (same eye within 2 cm, same frustum, nothing to build or fade) a frame
+  costs the body uniform only (`CoverBody.rest`). The shadow lists are still built per cascade per frame.
+- **New keys**: `set.json` `toneMax`, `classTone`, `cover.foliage` (written by `gen_materials.py`; a set
+  without them does not load); surface params `reliefShadowTaps`, `imagerySaturationGlobal` (required).
+- **Tools**: `tools/terrain/dump-cover.ts` + `preview_cover.py` (a software rasteriser with the leaf atlas:
+  a tree, a shrub or a rock as a picture in six seconds, no GPU), `gen_foliage.py --preview`.
+- **Exposure of the reviewed views**: ground views by day are taken at a fixed daylight exposure (EV100
+  14.5 in the integration lab, 15.8 in the terrain lab, whose sun has no atmosphere in front of it), not by
+  the labs' meters: a frame filled with lava was metered up two and a half stops to a grey plain under a
+  blown sky. The game views and everything from 5 km up keep the meter.
+
+### The list, item by item
+
+| Item (r1) | Done | Look at |
+|---|---|---|
+| BLOCKER photo: trees and shrubs seen close are placeholder art | Frames of wood with leaf sprays, bark, light through leaves, dappled shadows (above). The old crowns of flattened solids are gone from shrubs and trees at every level | `integrated-kiawe-eye` (trees at 25 to 60 m), `integrated-stony-ground` (a shrub at 3 m), `integrated-grass-eye`, `kiawe-eye`; offline `preview_cover.py` at 4.5 m and 9 m |
+| major artifact: two imagery treatments meet across the island, land changes colour with altitude | Calibration by region; the body-wide and the regional imagery agree in their low-pass over the island (measured: mean luminance 0.0388 against 0.0384), so one treatment gives one picture | `cracks-earth-60000`, `cracks-earth-150000`, `cracks-earth-20000` (the same grey and green at every height, no line), `earth-edge-50km`, `integrated-40km` |
+| major photo: lava pale, doubling in brightness with distance, warm | Anchor albedo of pahoehoe 0.043 with blue above red (was 0.058 neutral), clinker 0.027; sparse scrub is lava with soil in pockets (was half soil); brightness bounded to 1.1 x the material; no horizon mirror at grazing angles (BRDF); daylight exposure for the views. Measured in `integrated-stony-ground`: sunlit lava sRGB (51, 47, 42) under a sky of about (110, 140, 190), about 0.12 of it | `integrated-30m`, `integrated-off-apron-eye`, `integrated-stony-ground`, `integrated-kiawe-120m`, `integrated-200m` |
+| major photo + artifact: stony ground as wax hummocks, smeared texture, black blotches, tan loaves | Rocks are dark angular blocks of the ground's own rock; hollows keep sky and ground light (occlusion floor, bounce); lava dark with sheen on crests. NOT fixed: the forms themselves (smooth swells of the height function, the detail foreshortened into streaks on them): request `terrain-render-9` to the terrain core | `integrated-stony-ground`, `earth-stony-ground` |
+| major photo: 100 m to 10 km a map with dots | Class boundaries as bands of patches, cover thinned across them, drifts and bare lanes, wider size ranges (scrub 0.4 to 2.3 m, kiawe 1.9 to 5.6 m), mixture colour from afar, canopy tone. Not done: roads, tracks, walls (no such data in the site) | `integrated-kiawe-120m`, `integrated-1km`, `earth-1km`, `integrated-10km` |
+| major photo: waterline (white sheet in an inlet, ochre and turquoise rim, pale shore rock) | The sheet was the ocean's surf over a shelf: request `terrain-render-8`, withdrawn because the ocean's round 2 had already changed the surf (lines now). Water colour no longer takes land colour from the imagery; shallow water over rock is dark; shore rock is the dark lava | `integrated-200m`, `shoreline-200m` |
+| major artifact: ponds on the lava slope near the pad | Lakes need level ground (a fraction of a degree) and imagery that shows water | `integrated-1km`, `earth-1km` (none left) |
+| major artifact: tree shadows as rectangles and straight lobes | Leaf sprays cast through the coverage test at every level; finer levels cast from fewer texels | `integrated-kiawe-eye` |
+| major photo: ground 300 m west of the pad a blurred print of cobbles | The pebbly sand layers get three times their relief (`gen_materials.py` `PHOTO["black-sand"]`), so stones stand up in the normal map, the occlusion and the relief shadows. Textures rebuilt | `pops-earth-descent-end` |
+| major photo: lunar rocks smooth pale loaves | Creased face patches (above); `rockAlbedoScale` 0.9 (was 1.05); the boulder skin is granular and pitted, its net of stepped facets and dark cracks nearly gone (textures rebuilt) | `moon-standing`, `moon-standing-down`, `integrated-game-lunar-surface` |
+| major photo: lunar soil soft, smudged shadows | Near layer with rounded clods on a quarter of the ground (was a tenth) at a steeper slope; six taps and a sharper edge in the relief march (textures rebuilt). NOT fixed: the width of rock shadows near the eye is the cascades' texel (render core); a contact-shadow march in screen space was not requested this round | `moon-standing`, `moon-standing-upsun` |
+| major photo: small craters one thing repeated, black discs; quilted ripple | Layers rebuilt in the generator: equilibrium numbers (0.09 of the ground per e-fold of diameter, was 0.03), most craters worn (freshness to the fifth or sixth power; depth 0.025 to 0.2 of the diameter), and under them one and a half times as much ground again in ghost hollows a fiftieth to a thirtieth deep. Textures rebuilt | `moon-300m`, `moon-50m`, `moon-2km`; offline previews `out/terrain/materials/lunar-regolith-*.png` |
+| major photo: nothing sharp between 5 and 50 km above the Moon | Only through the denser aerial layer (textures rebuilt). Orbital detail from crater shapes and bicubic imagery: not done | `moon-edge-50km`, `moon-orbit-100km` |
+| major artifact: lunar self-shadows polygonal, hairlines, bites | The relief march no longer disagrees with the cascade near the terminator of a slope (it gives way there), six taps. The cascade shadow of the tile mesh on itself is unchanged (a march through the tile's height texture in place of the cascade: not done) | `moon-standing-down`, `moon-300m` |
+| major artifact: ink-blot slope under a low sun | The relief march fades at the terrain's terminator; the slope darkens by its cosine and the facet term | `moon-300m` (lower right), `cracks-moon-300` |
+| minor: seabed notches at the near-field radius; stipple at the lunar terminator from 5,000 km; white halo round fresh craters; single black pixels; dark specks on the Kona coast; LEO softness; apron too regular; ruler-straight lunar horizon | Not changed (the halo and the pixels may change with the rebuilt layers; the horizon is the height function's mare) | - |
+| minor: evidence gaps | `integrated-game-pad` and `integrated-game-lunar-surface` added (the game's chase views with every package, sun pinned); perf pictures re-taken in this round's perf run. Not done: frames along the descents of `pops.spec`, a warp picture over land | `integrated-game-*`, `perf-*` |
+
+### Textures
+
+Both material sets were rebuilt at the end of the round (`gen_materials.py --preview` through the gate's
+`bake` slot, which the v2 site bake held for the first four hours: commit c51e92d). The generator's changes
+were judged before that from single layers rendered outside the asset folders (two seconds each) and from
+the previews in `out/terrain/materials/`; the screenshots of the last two browser runs show the new sets.
+The Earth's source photographs are unchanged (`data/cache/terrain/photo/`, not in the repository).
+
+### Requests
+
+| Request | State |
+|---|---|
+| `terrain-render-8` (ocean: a sheet of surf foam over a wide shallow shelf) | withdrawn by the filer: the ocean's round 2 (600b7bc and its working tree) draws lines there |
+| `terrain-render-9` (terrain core: lobes, cracks and pressure ridges on rock classes instead of smooth swell) | open, not blocking |
+| `ocean-7` (against this package: wet sand behind the swash) | resolved: see its resolution (the wet band exists since round 1; wet ground now keeps its true view angle in the sky reflection) |
+
+### Performance
+
+`terrain.perf.spec.ts`, first run on this round's code (run 3, 1440p, `withGpuLock`, other agents' jobs
+queued behind it; the run's console output was lost with a cleaned scratch folder, so only what the failed
+assertions report is known): 6 of 12 passed (LEO, lunar orbit, lunar surface, Moon from 5,000 km, Earth from
+20,000 km, warp). Terrain G-buffer with the ground cover, p99: pad 1.65 ms, kiawe 2.22, stony ground 2.94,
+thickets from 120 m 3.60, 10 km 1.74 (budget 1.5; round 1: 1.09, 1.53, 2.35, 2.93, 1.14). The 60 s lunar
+descent failed on the selection's p99, 1.34 ms against 1 (round 1: 0.59; nothing in the selection changed).
+The half millisecond that every Earth view gained was the averaging of the class lookup over two to four
+more points, which ran for most of a frame at eye height and all of it at 10 km: it now runs only for
+coarse class rasters from afar (b5fd29e). A second run on that code was queued; its numbers are below if it
+finished, and this paragraph is the record if it did not.
+
+### Honest scores (own judgement of this round's screenshots)
+
+Written before the last run's pictures were looked at; see the end of this section for the final judgement.
