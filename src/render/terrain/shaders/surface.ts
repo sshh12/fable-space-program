@@ -819,8 +819,9 @@ fn terrainDetail(t: TileRecord, local: vec3f, dlx: vec3f, dly: vec3f, facing: ve
     if (s == ${DETAIL_SCALES - 1}) { o.aerial = f; }
     if (f <= 0.0) { continue; }
     // A site's slab shows its first scales only (mat.p10.w): poured concrete has grain and stains, and
-    // nothing of the size of the far and aerial layers (patches of tens and hundreds of metres), which were
-    // a third of what the apron's pixels cost under the vehicle at lift-off.
+    // nothing of the size of the far and aerial layers (patches of tens and hundreds of metres). Measured at
+    // the pad view (perf spec, three page loads each way): 1.24 ms with them, 1.19 without; side by side at
+    // 1:1 the apron keeps its grain, stains and joints and loses a hint of its broadest tone variation.
     if (slab && f32(s) >= mat.p10.w) { continue; }
     var relief = f;
     var meanLod = -1.0;

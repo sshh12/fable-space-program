@@ -199,7 +199,13 @@ const SHAPE_LEAFY: Record<CoverShape, boolean> = { tuft: false, bush: true, tree
  */
 const SHADOW_FINE_TEXELS = 1e9;
 const SHADOW_MIDDLE_TEXELS = 32;
-const WOODY_SHADOW_MIDDLE_TEXELS = 1e9;
+/**
+ * Bushes, trees and groves: as the others. Casting every crown from its coarsest mesh (1e9 here) was tried
+ * on the lead's decision of 2026-11-12 and looked at 1:1 at the perf views' cameras: among kiawe the shadow
+ * of a tree 15 m from the eye thins to a few streaks (left as it was for that); over the thickets from
+ * 120 m and from the pad nothing shows. It was worth 0.20 / 0.17 / 0.08 ms of the cover's shadows there.
+ */
+const WOODY_SHADOW_MIDDLE_TEXELS = 32;
 const SHADOW_MIN_TEXELS = 4;
 /**
  * An instance takes its finest mesh in the G-buffer when its radius spans this many pixels, the middle one
@@ -209,7 +215,12 @@ const SHADOW_MIN_TEXELS = 4;
  */
 const FINE_PIXELS = 55;
 const MIDDLE_PIXELS = 20;
-const WOODY_MIDDLE_PIXELS = 30;
+/**
+ * Bushes, trees and groves: as the others. The middle level only from 60 px across (30 here) was tried on
+ * the lead's decision of 2026-11-12 and looked at 1:1: over the thickets from 120 m the bushes of 40 to
+ * 60 px become a few flat leaf cards, and it was worth 0.03 to 0.06 ms of the cover's G-buffer.
+ */
+const WOODY_MIDDLE_PIXELS = 20;
 
 const COVER_WGSL = /* wgsl */ `
 struct CoverBody {
