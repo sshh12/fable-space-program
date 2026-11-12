@@ -294,3 +294,35 @@ the credit line. Nothing from Bjorn Jonsson (no-copy request) or Solar System Sc
 Timings (6 workers, other agents' jobs running): small bodies 3-60 s each, Ganymede 3.7 min, Mercury 1.2 +
 3.6 min, Mars 4.3 + 14.7 min, Pluto 1.3 + 1.5 min; downloads at about 60 MB/s from the USGS bucket.
 Disk peak of a pass about 5.3 GB (Mercury's 4.25 GB BDR plus its 8-bit half-resolution copy, minutes).
+
+## 8. Requests, contract changes, open items
+
+- **No contract change requested.** The manifest gains additive fields only (`layers.height.elevation`,
+  `layers.*.build`, `layers.albedo.calibration`, `body`), which `validateTileManifest` and
+  `common/layout.validate_manifest` accept (the Moon's manifest already carries `build` and `colour`).
+- **Request bodies-ephemeris-2** (against my paths): resolved (0144348), see section 7.
+- **bodies-ephemeris-3** (theirs, to the lead): the resident level stays a property of the baked manifest
+  here: every manifest has `residentHeightLevel` = min(3, height levels); their staged sections carry a
+  `residentLevel` of 3 that agrees with it.
+- **For the lead (disk):** the floor of 25 GB was reached during this package's bakes mainly because
+  `data/packs` grew to 14 GB and the site-bake caches grew at the same time; a package cannot see another's
+  planned peak. The gate's free-space check is for memory; a disk reservation in the gate would make the
+  floor enforceable across packages.
+- **Venus cloud tops** (decision 2) and **Uranian moons' Voyager images** (partial coverage; the design
+  chose procedural) are left as they are by design.
+
+## 9. How the tool is built (for the next maintainer)
+
+`tools/bake/planet/`: `config.py` (strict schema; unknown keys are errors), `fetch.py` (resumable range
+download from moon/fetch.py, provider MD5 sidecar, sha256 in the config), `source.py` (GeoTIFF georeference
+from the file and checked against the config; exact grids memory-mapped, others copied or regridded onto a
+canonical 2:1 grid; nodata pull-push fill; float16 mips for 8-bit data; optional decimation), `heights.py`
+(finest level from the reference surface + area-filtered DEM or procedural relief; full-weighting pyramid
+from earth/hpyramid.py), `albedo.py` (finest level area-filtered, calibration gain with the clip cap,
+`colourMode` chroma or detail, `lowFrequency` percentile mapping; 2 x 2 linear box pyramid computed
+depth-first per level-2 subtree), `procedural.py` + `procedural.ts` (the crater population of the body's
+generic model, complementary weights), `giants.py` (equirect re-orientation, point/cell registration,
+planetographic latitude, zonal fill; ring strip from an occultation table), `bake.py` (driver, step
+fingerprints, `--split-passes`, `--clean-after`, `--credits`), `verify.py`, `sheets.py`.
+Adding a body: a config (sources with url/bytes/md5, conventions, levels, landmarks with Gazetteer refs),
+`--record-checksums` on the first run, then `verify.py <id>` and `sheets.py <id>`, and LOOK at the sheet.
