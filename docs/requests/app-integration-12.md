@@ -82,6 +82,24 @@ Also: a display whose page is dear to paint is painted less often (its smoothed 
 0.36 ms per frame on average); with the ORB page at 5 ms that is about one paint a second during a burn. Inside
 (`lod0`) the picture is unchanged for pages that paint in about half a millisecond (15 Hz).
 
+## Resolution: cockpit, round 5 (the lead's condition on the pacing)
+
+The lead accepted the pacing of round 4 with one condition: a page showing fast flight data updates at 15 Hz or
+better whenever a camera can read it. The rule is now explicit in code (`src/render/cockpit/pacing.ts`,
+`DisplayPacer`), in data (`displays.fastPages` and `displays.slowMinHz` of the cockpit layout: the flight, entry
+and landing pages are fast) and in tests (`tests/unit/cockpit/pacing.test.ts`; the functional spec's rate
+assertion states it per display):
+- a display showing a fast page is painted `rateHz` (15) times a second whatever its page costs; its slots keep
+  their cadence however late a paint was;
+- the other displays share what the fast ones leave of `DISPLAY_CPU_BUDGET` (21.6 ms of main thread per second:
+  0.36 ms per 60 Hz frame), by their typical paint cost, and are never painted less often than `slowMinHz` (2);
+- one paint per frame, except that a fast page whose slot came a whole frame ago is painted in the same frame as
+  another display (so three fast pages keep 15 Hz at 30 frames a second);
+- nothing is painted while no camera can read the screens (as in round 4).
+Consequence for your budget: with the default pages (flight, orbit, systems) the displays stay within the
+0.4 ms line; a player who puts fast pages on all three displays pays 3 x 15 paints a second (about 0.5 ms per
+frame at 0.7 ms per paint): the rule puts fast flight data before the budget there.
+
 ## Resolution (flight-ui, round 7)
 `src/ui/mfd/mfdPainter.ts`: the ORB page's body graphic (the per-pixel shading, 5.2-5.7 ms) is no longer redone in
 one paint.

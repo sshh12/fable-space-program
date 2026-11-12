@@ -672,3 +672,41 @@ My judgement of the pictures after this round: **photo lens about 6, artifact le
 side window and the cratered ground in the lunar window are real gains, the staircase reflections are gone; the
 set is still clean and procedural, nothing casts a lamp's shadow, and three acceptance views (pad, Earth window,
 night chase) are unchanged.
+
+## 11. Visual close-out, round 5 (2026-11-12)
+
+Fix round 5 on the round-3 list and round 4's leftovers (section 10.3). **In progress when this was written:
+the state below is committed; the measurements and pictures are pending the machine's one GPU slot.** If this
+section still says "in progress", the next fixer continues from 11.4.
+
+### 11.1 What was built (committed, unit-tested; browser run pending)
+
+| Item of the round's list | Built | Where |
+|---|---|---|
+| 1 Where the GPU time goes | The full detail level is drawn in chunks of at most 768 triangles of one assembly, culled against the view frustum (from the commander's seat 68,000 of 306,000 triangles are in view: `tests/unit/cockpit/raster.test.ts` prints the table per assembly, with triangle sizes on screen). Cost attribution: `CockpitFeature.setAblation(mask, families)` (`ABLATE`: polygon sources, sun, reflections, detail textures, patterns, bounce, the whole fragment, lamp shadows, the shading draw, decals, screens, frustum culling, the depth pre-pass, display painting) and `tests/browser/cockpit/attribution.perf.spec.ts`, which times the perf spec's view under each switch and with assembly families left out, in the sunlit and the lamp-lit cabin (`out/screens/cockpit/attribution-<scene>.json`) | `feature.ts` (`buildChunks`, `visibleRuns`), `shaders.ts` (`cabin.tint.w`), cockpit lab `&ablate=` `&without=` |
+| 2 Light that behaves | The flood lights' shadow maps: one 1024^2 perspective depth map per lamp from the middle of its lens over its beam, rendered at start and, one layer a frame, after a lever, guard or hand controller moved; read per pixel (four bilinear comparisons) in place of the baked per-vertex visibility, which remains the test of whether a lamp reaches a surface at all and the visibility of the lens's spill outside the beam. The beam has a Lambertian skirt (a fifth of the lens's luminance to every side): the wall beside a fixture stands in its spill | `lampmap.ts`, `shaders.ts` (`lampVisibility`, `floodBeam`), `tests/unit/cockpit/lampmap.test.ts` |
+| 3 Materials | Eight photographic material samples generated with an image model (`tools/cockpit/photo-source.ts`: painted panel, brushed aluminium, seat fabric, beta cloth, webbing, hook-and-loop, rubber, anodised metal; 8 images, 56,192 output image tokens) and baked into the detail layers (`tools/cockpit/bake-textures.ts`: shading divided out, made seamless by four shifted copies each weighted to vanish on its own seam, the shift at the photograph's own period so a weave's yarns meet, repeating blotches attenuated; tone, relief and gloss from the photograph, wear and grime masks procedural). Stencils on ring frames and close-out panels, data plates; the label atlas is 2048 x 4096 | `public/assets/cockpit/detail-*.png`, `cabin/shell.ts` |
+| 4 Remaining majors | Sewn stowage bags and document pouch (one displaced cover cinched under its straps, piping, zip, buckles: `softCover`); lockers with piano hinge, quarter-turn fasteners, pressed beads, rivets, webbing pull, data plate; harness webbing with rounded bends, slack and roll; couch frame node fittings at every tube joint; hatch latches as clevises on pivot pins; the docking hatch's inner face in rings with ribs, gauge and valve (no triangle fan); the tunnel wall in rows; shade guide rails ending in feet, the pull tab a webbing loop; the cue card under a spring clip on a ring; quilt with slow folds, a softer crease and soiling | `cabin/*.ts`, `mesh.ts` (`disc`) |
+| 6 Displays | The pacing rule explicit: `pacing.ts` (`DisplayPacer`), `displays.fastPages` / `displays.slowMinHz` in the layout, `tests/unit/cockpit/pacing.test.ts`, the functional spec's per-display rate assertion; recorded in request app-integration-12 | `pacing.ts`, `displays.ts` |
+
+### 11.2 Spent on generation
+
+OpenAI image model `gpt-image-2`, quality high, 1024 x 1024: 8 images, 7,024 output image tokens each (56,192 in
+all; `data/cache/cockpit/photo/usage.json`). At 40 USD per million image output tokens (the published rate of the
+earlier model; this model's rate was not looked up) that is about 2.3 USD of the package's 50 USD.
+
+### 11.3 Not done, and why
+
+- **Crew figures**: the brief lists the cabin's hardware and soft goods, not crew; the package has no route to
+  sculpted meshes (everything is built in code, the budget is for textures). Left out, as the round's list allows.
+
+### 11.4 To continue
+
+1. Run `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/cockpit/attribution.perf.spec.ts --project=perf`
+   (in this round it also runs the functional suite and the perf spec as child runs in the same slot: remove
+   that last test and the hard-coded probe path in it before closing the round). Read
+   `out/screens/cockpit/attribution-leo.json` / `-night.json`: fix what costs most until the interior line holds.
+2. LOOK at `out/screens/cockpit/*.png`, `attribution/*.png` (lamp shadows on / off) and `attribution/probe/*.png`
+   (candidate framings: pad through the hatch window, Earth window from farther back, night chase from farther,
+   the pilot's seat), choose the framings, re-aim `world.ts` / `app.spec.ts`, prune the candidates.
+3. Check request cockpit-10 (core, open: the stipple on the window wells) and re-shoot when it is resolved.
