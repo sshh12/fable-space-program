@@ -213,3 +213,28 @@ export async function withGpuLock<T>(fn: () => Promise<T>, timeoutMs = 20 * 60_0
     }
   }
 }
+
+// ------------------------------------------------------------------------------------------- frame clock
+
+/** Distribution of the deltas of a series of frame timestamps, ms. */
+export interface FrameClockStats {
+  count: number;
+  mean: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  max: number;
+  /** 1000 / mean: the rate the page was actually presented at. */
+  hz: number;
+}
+
+/** Statistics of the frame-to-frame deltas of `timestamps` (ms, ascending), e.g. the rAF callback times. */
+export function frameClockOf(timestamps: readonly number[]): FrameClockStats {
+  const d: number[] = [];
+  for (let i = 1; i < timestamps.length; i++) d.push(timestamps[i]! - timestamps[i - 1]!);
+  if (d.length === 0) throw new Error('frameClockOf: needs at least two timestamps');
+  const sorted = [...d].sort((a, b) => a - b);
+  const q = (p: number): number => sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))]!;
+  const mean = d.reduce((s, x) => s + x, 0) / d.length;
+  return { count: d.length, mean, p50: q(0.5), p95: q(0.95), p99: q(0.99), max: sorted[sorted.length - 1]!, hz: 1000 / mean };
+}
