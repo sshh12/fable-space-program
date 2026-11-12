@@ -1178,6 +1178,11 @@ ${DETAIL_WGSL}
     let canopy = smoothstep(1500.0, 7000.0, dist);
     made *= mix(1.0, cb.orb.z, canopy);
     made = mix(made, luminance(made) * vec3f(0.74, 1.12, 0.42), canopy * cb.orb.w);
+    // The near and mid layers darken the ground they show on (their hollows see less sky, their relief
+    // casts shadows); where they have become too small to show, that share stays as a factor, or the ground
+    // would brighten with distance as its detail fades.
+    let gone = 2.0 - smoothstep(8.0, 24.0, 1.0 / (body.detailInv[0] * footprint)) - smoothstep(8.0, 24.0, 1.0 / (body.detailInv[1] * footprint));
+    made *= 1.0 - 0.07 * gone;
     let lumM = luminance(made);
     // The ground has the BRIGHTNESS of its material, times how bright the imagery is there relative to its
     // usual brightness (bounded: rock is as dark as it is wherever the mosaic is pale; a strip the mosaic

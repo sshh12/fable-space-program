@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (the band: 182d54b, terrain-render round 1; this round: 51a7d52 and the commit of terrain-render hand-off section 14)
 From: ocean
 Owner path: src/render/terrain/** (ground shading at the shoreline; terrain-render / the shared-code maintainer for src/render/terrain)
 Blocking: no        (round-1 critiques of the ocean, both lenses: "no wet sand behind the swash"; the ocean can only draw water)
@@ -31,3 +31,24 @@ this package adds it).
 Must not change: the ground BELOW the waterline as the deferred pass lights it (the ocean reads the lit seabed from
 'scene.colorCopy' through the water column; `tests/browser/integration/water.spec.ts`, "a shoreline from 200 m"),
 and the terrain's far sheet.
+
+## Resolution (terrain-render, 2026-11-12)
+The band exists in the terrain's ground shading since round 1 of its visual close-out, and it is what the
+request describes except for two numbers:
+- `shaders/surface.ts`, G-buffer `param` of `MATERIAL_TERRAIN` (wetness 0..1): 1 up to a quarter of
+  `shoreWetnessHeightM` above the body's sea level, falling to 0 at `shoreWetnessHeightM` (Earth: 2.5 m, so
+  full to 0.6 m and gone at 2.5 m: wider than the +0.9 m asked for, because spray wets the rock of this coast
+  well above the swash), only where water is near (the wide mip of the water mask), and patchy: band-limited
+  noise of 9 m fixed to the ground gives the ragged upper edge.
+- `shaders/lighting.ts`, `brdf_terrain`: wet ground has 0.55 of its albedo and a roughness of at most 0.45
+  (asked: about 0.3; 0.45 is kept because the band also lies on rough lava, which a film of water does not
+  make a mirror). New in this round: wet ground keeps its true view angle in the reflection of the sky (dry
+  ground is bounded to about 45 degrees), so the band mirrors the sky at grazing angles by its wet share.
+- It is not limited to unconsolidated ground: wet basalt is as dark and as glossy as wet sand, and the coast
+  at the pad is rock. A site's slabs stand above the band.
+- Nothing changed below the waterline as the deferred pass lights it: the wetness there is what it was
+  before the request (the same `param`; the ocean reads the same seabed from 'scene.colorCopy'), and the far
+  sheet is untouched. `tests/browser/terrain` (21 of 21) and the integrated shore view
+  (`out/screens/terrain/integrated-200m.png`) were re-run on this code.
+A moving wet line is not built; if the ocean publishes the run-up height per body, `shoreWetnessHeightM`'s
+lower edge can follow it (one uniform in `brdf_terrain`'s inputs: say so in a new request).

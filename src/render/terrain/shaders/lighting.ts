@@ -64,9 +64,11 @@ fn brdfTerrainDirect(s: Surface, l: vec3f) -> vec3f {
 }
 fn brdfTerrainAmbient(s: Surface, a: AmbientInput) -> vec3f {
   let m = terrainWet(s);
-  // (The view angle of the reflection is bounded as in the direct term; wet ground is a film of water and
-  // keeps its true angle by the share that is wet.)
-  let NoV = max(dot(s.n, s.v), mix(0.35, 1e-4, s.param));
+  // (The view angle of the sky's reflection is bounded further than the direct term's, to about 45 degrees:
+  // measured in the 30 m view, the reflection of the horizon still lifted lava 150 m away to twice the lava
+  // at one's feet, and tinted it blue. Wet ground is a film of water and keeps its true angle by the share
+  // that is wet.)
+  let NoV = max(dot(s.n, s.v), mix(0.7, 1e-4, s.param));
   let dfg = envBrdfApprox(max(m.w, 0.25), NoV);
   // The sky lights a face by how much of it the face sees (a.skyIrradiance); the ground around it gives back
   // about a tenth of what falls on it (lava, soil, dry grass), sun included (some four times the sky's light

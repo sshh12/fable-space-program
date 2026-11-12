@@ -683,7 +683,7 @@ SETS = {
         # Basalt is dark and cool: pahoehoe photographed in sun under a blue sky is sRGB (55, 62, 73), 0.15 of
         # the sky's luminance, old flows from orbit no brighter than twice the sea (out/qa/ref/INDEX.md,
         # earth-terrain-aerial). Albedo 0.043 with blue above red; clinker darker and neutral.
-        "anchorAlbedo": {"scrub-soil": [0.098, 0.08, 0.057], "pasture": [0.086, 0.082, 0.038], "pahoehoe": [0.039, 0.043, 0.05], "aa": [0.027, 0.027, 0.029], "black-sand": [0.036, 0.036, 0.037]},
+        "anchorAlbedo": {"scrub-soil": [0.098, 0.08, 0.057], "pasture": [0.086, 0.082, 0.038], "pahoehoe": [0.036, 0.043, 0.055], "aa": [0.025, 0.027, 0.031], "black-sand": [0.036, 0.036, 0.037]},
         # How far above its own albedo the brightness of the imagery may lift the ground of a material (default
         # 1.1): rock is as dark as it is wherever the mosaic is pale; dry grass and soil do vary.
         "toneMax": {"pasture": 1.45, "scrub-soil": 1.3},
