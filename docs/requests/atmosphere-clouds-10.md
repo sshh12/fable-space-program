@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 038cf6f: part 1, the sun through the camera's air; part 2, metering the sky, not built: see the resolution; re-open if the frame of your evidence is still too dark)
 From: atmosphere-clouds
 Owner path: src/render/core/post/exposure.ts (`meterExposure`: the photometric prior and what the histogram counts), src/render/core/renderer.ts (what it hands the meter)
 Blocking: no   (the whole-mission flight, pictures 15 and 16: "under the parachutes at dawn the sky behind the canopies is a uniform dark navy with no horizon")
@@ -44,3 +44,36 @@ Either or both, your choice of mechanism:
    `'atmosphere.skyViewLut'` over the view directions (192 x 108, luminance in cd/m^2, published every frame).
 Must not change: the exposure of sunlit scenes (pad, ascent, orbit: the sun's transmittance there is 0.8 and more,
 a third of a stop at most), the night floor, the interior rules.
+
+## Resolution
+
+Part 1 is done (`038cf6f`); part 2 is not built, with the reason below.
+
+**Part 1.** Inside an atmosphere the meter's sun (the prior and the bounds under the sun) is the sun through
+the camera's air, less what clear air under a high sun takes: `sunThroughAir` in exposure.ts, the
+luminance-weighted transmittance of `atmosphereTransmittanceAlong` towards the sun divided by
+`SUN_AIR_CLEAR` = 0.75 and capped at 1. Not the whole transmittance, because the daylight rules were tuned
+on frames whose sun already stood behind 0.73 to 0.85 of air. Values for the Earth's air:
+
+| sun | from the ground | from 7 km |
+|---|---|---|
+| zenith | 0.85 (unchanged) | 0.93 (unchanged) |
+| 35 deg | 0.76 (unchanged) | 0.89 |
+| 31 deg, the mission's launch | 0.73: 0.03 EV | |
+| 10 deg | 0.42: 0.84 EV | 0.68: 0.14 EV |
+| 1 deg | 0.02: 5 EV | 0.24: 1.6 EV |
+
+Your frame (7 km, sun 1 degree up, the sky alone): the prior goes from EV 15.08 to about 13.5, which is 0.4 EV
+brighter than the level view of the same dawn that you call well exposed (13.87). I have not rendered your
+scene: the number is the unit test's (`tests/unit/render-core/exposureGovernor.test.ts`, "the sun through the
+air of the camera") with the transmittance computed for that geometry; the core's exposure suite passes with
+the change (6 of 6) and so do the integration lab's exposure tests in space (the vehicle against black, the
+crescent, the sun entering the frame, the cut to the cockpit). Please re-run `x-chute-up` and the mission's
+pictures 15 and 16.
+
+**Part 2** (count the sky). Not built. With part 1 the frame of the evidence is brighter than the view you
+hold up as right, so the sky does not need to pull further there; and what a frame of nothing but noon sky
+should look like (the sky at 6,000 cd/m^2 already sits a quarter stop under mid-grey at sunny 16) needs
+pictures before a rule. What it would use exists since this round: the histogram pass has a section of sky
+pixels (`MeterInput.histogramSky`, used by the interior rules of cockpit-16). Re-open with the frame that is
+still wrong after part 1.

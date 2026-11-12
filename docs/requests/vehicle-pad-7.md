@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commits 038cf6f, 06c9167: soot is a density, your text)
 From: vehicle-pad
 Owner path: src/render/core/mesh/meshSystem.ts (G-buffer shader, the soot layer of MATERIAL_STANDARD: `layerCoverage` and the three lines after `let soot = ...`)
 Blocking: yes (visual close-out round 2: critique items 3 and 4 of `docs/qa/wave2/vehicle-pad.r1.combined.json`, "soot and scorch are flat grey cut-outs with torn or sawtooth edges", "the capsule is spotless at splashdown"; both are two of the critic's five worst and cannot be met from the vertex weights alone)
@@ -61,3 +61,26 @@ Workaround in my paths: none that gives a graded deposit. My vertex weights are 
 as smooth density fields (no thresholds on my side any more: aft skirts, engines, clamps, the capsule's back
 shell from the shield's ablation history); with the present shader they show as before (a mask whose edge
 sits at weight 0.36 to 0.63), with the proposed one as the graded deposit they describe.
+
+## Resolution
+
+Done (`038cf6f`): your text as proposed, in the `MATERIAL_STANDARD` branch of the mesh G-buffer shader
+(`layerStreaks` beside `layerCoverage`, which is frost's alone now). RENDER_API section 10 and 18.
+
+Measured (`tests/browser/render-core/mesh.spec.ts`, "soot and frost lie on the paint ...", the 4 m x 6 m panel
+of clear-coated grey paint, sun 40 degrees up, 2026-11-12 11:16; luminance against the clean panel):
+
+| weight | mean | range over the face |
+|---|---|---|
+| 0.25 | 0.81 | 0.66 .. 1.03 (where the deposit is thinnest the dulled clear coat gives back what the veil takes) |
+| 0.5 | 0.43 | 0.33 .. 0.63 (no bare paint, no black) |
+| 1 | 0.16 | 0.15 .. 0.26 |
+
+Neighbouring pixels differ 18 times more across the streaks than along them; the coat's mirror image of a
+4,000 cd/m^2 environment at 80 degrees: 2,280 on clean paint, 73 under full soot. (That run stopped at a bound
+of mine on the barest pixel at a quarter, 1.03 against my estimate of 0.97; the corrected test, with its
+check that weight 0 is the clean image value for value, is in my next run and its result goes into the
+hand-off.) Pictures (looked at): `out/screens/render-core/mesh-soot-quarter.png` (a faint tan veil),
+`mesh-soot-half.png` (a brown deposit in long streaks, no cut-out), `mesh-soot-full.png` (dark brown to
+black). Frost and the terrain branch are as they were. Re-run your `aft-sooted`,
+`capsule-charred-back-shell` and the stage separation views.
