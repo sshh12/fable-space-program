@@ -536,8 +536,10 @@ function fdai(ctx: CabinContext, f: Frame, ballR: number, housing: number): void
     fastener(ctx, offsetFrame(face, x, y, 0), 0.6);
   }
   ctx.labelQuad(face, -hs + 0.016, -hs + 0.006, 0.026, 0.006, 'FDAI', 'bezel', { color: 0, backlit: true });
-  // Retaining ring of the cover glass: a machined, anodised ring standing off the bezel around the window.
-  b.lathe(face.o, f.n, [[holeR + 0.0055, 0], [holeR + 0.0055, 0.0022], [holeR + 0.0035, 0.0034], [holeR + 0.0008, 0.0034], [holeR, 0.002], [holeR, -0.003]], 64, ctx.m('anodized'), { ref: f.x });
+  // Retaining ring of the cover glass: a machined ring standing off the bezel around the window, in the
+  // matt black of instrument bezels (a satin ring this small mirrored the brightest thing in the cabin, a sun
+  // patch or a window, as torn white flecks).
+  b.lathe(face.o, f.n, [[holeR + 0.0055, 0], [holeR + 0.0055, 0.0022], [holeR + 0.0035, 0.0034], [holeR + 0.0008, 0.0034], [holeR, 0.002], [holeR, -0.003]], 64, ctx.m('matteBlack'), { ref: f.x });
   // Rate needles on the three outer scales (roll above, pitch at the right, yaw below): each slides along
   // its slot with the body rate about its axis, centred at rest.
   const scales: { key: string; rate: number; o: [number, number]; along: [number, number] }[] = [

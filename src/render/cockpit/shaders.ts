@@ -239,6 +239,10 @@ export const CABIN_CHUNK = /* wgsl */ `
 #include "atmosphere_common"
 
 const MAX_CABIN_POLYS = ${MAX_CABIN_POLYS}u;
+/// Squared distance (m^2) beyond which a flood light's lens is integrated as a small source.
+const FLOOD_FAR2 = 0.2;
+/// The same for a display's screen.
+const DISPLAY_FAR2 = 0.3;
 const POLY_WINDOW = 0u;
 const POLY_PATCH = 1u;
 const POLY_FLOOD = 2u;
@@ -303,7 +307,8 @@ fn dirPart(v: vec3f) -> vec3f { return cabin.m0.xyz * v.x + cabin.m1.xyz * v.y +
 /// Vector irradiance of a polygon (Lambert): the cosine-weighted directions over its solid angle, over pi.
 /// dot(n, V) is the form factor from a point with normal n (without horizon clipping).
 fn edgeVec(a: vec3f, b: vec3f) -> vec3f {
-  // theta / sin(theta) by the rational fit of Hill and Heitz (no acos, no length).
+  // theta / (2 pi sin(theta)) by the rational fit of Hill and Heitz (no acos, no length): the edge's term of
+  // the form-factor vector, the 1 / (2 pi) included (the fit is 1 / (2 pi) at theta = 0, 1 / 4 at a right angle).
   let x = dot(a, b);
   let y = abs(x);
   let p = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
@@ -317,7 +322,9 @@ fn polyVector(pos: vec3f, a: vec3f, b: vec3f, c: vec3f, d: vec3f) -> vec3f {
   let u1 = normalize(b - pos);
   let u2 = normalize(c - pos);
   let u3 = normalize(d - pos);
-  var V = (edgeVec(u0, u1) + edgeVec(u1, u2) + edgeVec(u2, u3) + edgeVec(u3, u0)) * (0.5 / PI);
+  // (No further factor: edgeVec carries the 1 / (2 pi). Until round 3 this sum was divided by 2 pi once more,
+  // and every polygon source - windows, floods, displays - lit the cabin 6.3 times too weakly.)
+  var V = edgeVec(u0, u1) + edgeVec(u1, u2) + edgeVec(u2, u3) + edgeVec(u3, u0);
   // Orientation-free: V points toward the polygon.
   if (dot(V, (a + c) * 0.5 - pos) < 0.0) { V = -V; }
   return V;
@@ -406,6 +413,8 @@ fn windowOpening(posPart: vec3f, nPart: vec3f, wi: u32) -> f32 {
     let e3 = a0.xyz + a2.xyz * (-hs.x) + a3.xyz * hs.y;
     return max(dot(nPart, polyVector(posPart, e0, e1, e2, e3)), 0.0);
   }
+  // (The whole inner end behind the receiver's own plane: nothing of the window is above its horizon.)
+  if (abs(dot(nPart, a2.xyz)) * hs.x + abs(dot(nPart, a3.xyz)) * hs.y <= dot(nPart, d)) { return 0.0; }
   let s = h / (h + a3.w);
   let lo = max(-hs, pu * (1.0 - s) - hs * s);
   let hi = min(hs, pu * (1.0 - s) + hs * s);
@@ -436,15 +445,22 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
       // window past the interior's own parts.
       let vw = occ.w[min(index, ${MAX_WINDOWS - 1}u)];
       if (vw <= 0.004) { continue; }
+      // (A window that looks into black space sends nothing in: its opening is not integrated.)
+      let Lw = cabinPolyRadiance(i);
+      if (max(Lw.r, max(Lw.g, Lw.b)) <= 1e-3) { continue; }
       let ffw = windowOpening(posPart, nPart, index);
       if (ffw <= 0.0) { continue; }
-      diffuse += cabinPolyRadiance(i) * (PI * ffw * vw);
+      diffuse += Lw * (PI * ffw * vw);
       continue;
     }
     if (dot(toP, P.normal.xyz) > 0.0) {
       // Emitters light only the side they face.
       continue;
     }
+    // ... and only surfaces that face them: a source wholly behind the receiver's plane costs nothing.
+    let toC = (P.p0.xyz + P.p2.xyz) * 0.5 - pos;
+    let cr = dot(n, toC);
+    if (cr <= -0.5 * length(P.p2.xyz - P.p0.xyz)) { continue; }
     var vis: f32;
     if (kind == POLY_DISPLAY) {
       vis = occ.d[min(index, ${MAX_DISPLAYS - 1}u)];
@@ -455,6 +471,17 @@ fn cabinLight(pos: vec3f, n: vec3f, posPart: vec3f, nPart: vec3f, occIn: Occ, su
     }
     // A source this point cannot see (baked) costs nothing.
     if (vis <= 0.004) { continue; }
+    let d2 = dot(toC, toC);
+    if ((kind == POLY_FLOOD && d2 > FLOOD_FAR2) || (kind == POLY_DISPLAY && d2 > DISPLAY_FAR2)) {
+      // A flood's lens is a strip a hand long, a screen a hand and a half across: from more than twice its
+      // size away it is a small source, E = L A cos(source) cos(receiver) / d^2 (within a few per cent of
+      // the polygon's integral); a flood with the same beam about its lens normal as below.
+      let inv = inverseSqrt(d2);
+      let cs = max(-dot(toC, P.normal.xyz) * inv, 0.0);
+      let Lf = select(cabinPolyRadiance(i), P.radiance.rgb * (1.6 * smoothstep(0.26, 0.82, cs)), kind == POLY_FLOOD);
+      diffuse += Lf * (P.radiance.w * max(cr, 0.0) * cs * inv * inv * inv * vis);
+      continue;
+    }
     let V = polyVector(pos, P.p0.xyz, P.p1.xyz, P.p2.xyz, P.p3.xyz);
     let ff = max(dot(n, V), 0.0);
     if (ff <= 0.0) { continue; }
@@ -521,13 +548,15 @@ fn cabinProbeAtFp(p: vec3f, d: vec3f, roughness: f32, fp: f32) -> vec3f {
   let dir = normalize(cabinProbeDir(p, d));
   if (lod < 3.0) { return textureSampleLevel(cabinProbe, linearClamp, dir, lod).rgb * cabin.probe.w; }
   // The coarse mips are a few texels per face: a single bilinear lookup draws a bright window there as a
-  // blocky lozenge with creases along the texel grid on a flat satin panel. Four lookups half a texel apart
-  // (of that mip) on both axes turn the tent into a smooth bell: no crease in either direction.
+  // blocky lozenge with creases along the texel grid on a flat satin panel. Lookups half a texel apart (of
+  // that mip) round it off: two across one diagonal from mip 3, four on both axes from mip 3.6 (a texel of
+  // ten degrees and more), which turn the tent into a smooth bell with no crease in either direction.
   let t = normalize(cross(dir, select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(dir.y) > 0.9)));
   let b = cross(dir, t);
   let a = 0.5 * exp2(lod) / texelsPerRad;
-  let s = textureSampleLevel(cabinProbe, linearClamp, dir + (t + b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t + b) * a, lod).rgb
-        + textureSampleLevel(cabinProbe, linearClamp, dir + (t - b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t - b) * a, lod).rgb;
+  var s = textureSampleLevel(cabinProbe, linearClamp, dir + (t + b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t + b) * a, lod).rgb;
+  if (lod < 3.6) { return s * (0.5 * cabin.probe.w); }
+  s += textureSampleLevel(cabinProbe, linearClamp, dir + (t - b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t - b) * a, lod).rgb;
   return s * (0.25 * cabin.probe.w);
 }
 /// Radians per pixel swept by a reflected direction r (screen derivatives; uniform control flow only).

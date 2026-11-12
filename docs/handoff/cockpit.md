@@ -6,8 +6,8 @@ the physical attitude indicator, the window glass, the cabin light and the crew-
 Owned paths: `src/render/cockpit/**`, `data/defs/visuals/cockpits/**`, `labs/cockpit/**`,
 `tests/browser/cockpit/**`, `tests/unit/cockpit/**`, `tools/cockpit/**`, `public/assets/cockpit/**`, this file.
 
-State: built, reviewed, fixed, reworked in visual rounds 1 and 2 (sections 7 and 8: what the critics listed and
-what was done about each item, what is still open). Sections 1-6 describe the package as it is now.
+State: built, reviewed, fixed, reworked in visual rounds 1 to 3 (sections 7 to 9: what the critics and the user
+listed and what was done about each item, what is still open). Sections 1-6 describe the package as it is now.
 
 ## 1. API
 
@@ -40,9 +40,10 @@ await renderer.addFeature(feature);   // init is async: it loads public/assets/c
   floods off. Tunnel vision follows the vessel's own g.
 - Shared resources: publishes `'ui.mfd'` (rgba8unorm-srgb 2D array, 1024 x 768 x 3, full mip chain); reads
   `'ui.navball'` (publishes the navball renderer's view itself if nobody did).
-- `FrameContext.lights`: when the camera is outside the cabin and the cabin lights are on, one point light
-  per window, in its well (the lit cabin's spill onto the well and the hull around it; at most the 16 the
-  core takes).
+- `FrameContext.lights`: when the camera is outside the cabin, two point lights per window (in its well and
+  just outside it: the lit cabin's spill onto the well and the hull around it; at most the 16 the core
+  takes). The floods always burn: at the layout's `lighting.floodStandby` share of their flux, at full with
+  the active vessel's lights command (`floodLevel`).
 - Feature extras (tests, labs): `model(layoutId)`, `occlusion(layoutId)` (the baked occlusion stream),
   `stats()` (`CockpitFrameStats`: active, layout, vesselId, vesselActive, lod, inside, triangles, cabin
   polygons, sunLit, tunnel, vibration, prepare ms), `displays` (`MfdDisplays`: stats, painted pages),
@@ -51,7 +52,8 @@ await renderer.addFeature(feature);   // init is async: it loads public/assets/c
   `bvhRay`, `occlusionAt` / `occlusionSources` / `unpackOcclusion` / `bakeVertex`, `sunMapLayout` /
   `sunTileUniform` / `sunEnters`, `probeFaceMatrix` / `probeDirection` / `PROBE_FACES`, `loadCockpitLayout`,
   `validateLayout`, `bindingState` / `controlStates` / `readoutText` / `instrumentSource`, `digitMask`,
-  `cabinSources`, `castCabinRay`, `insideDistance`, `openingsOf`, `seatFrames`.
+  `cabinSources`, `floodLevel`, `castCabinRay`, `insideDistance`, `openingsOf`, `seatFrames`, and the penetration
+  check `findPenetrations` / `wallDepthByGroup` (`penetration.ts`, section 3).
 
 ## 2. What is there
 
@@ -84,23 +86,31 @@ shared mould line `visuals/shared/kestrel-mouldline.json`):
   struts, pallets, five-point harness in natural webbing (a 1.6 mm band laid ON the pads: resampled every 6 mm
   onto the highest surface under it, bridging the channels) with adjusters and a metal rotary buckle. Commander and pilot: a
   sculpted rotation controller, a translation controller, a throttle.
-- Console: five sections, each a closed body running back to the wall, the lowest with a skirt closing the
-  space under the console; their faces are meshed on a regular 1.4 cm grid with lines along the outline of
+- Console: five sections **fitted to the hull** (section 9): each face plate is limited row by row to the
+  half-width the conical wall leaves at that height, so its hull-side edge is the wall's own curve at a
+  constant stand-off (clear of the blankets' crowns) with a rubber seal bead along it; a closed body behind
+  each plate stands clear of the ring frames and follows the wall back as the cone narrows (0.32 m deep),
+  two brackets per side to the structure, the lowest section with a skirt closing the space under the
+  console. A layout whose instrument hangs over a plate's hull-side edge is refused at build time. The faces
+  are meshed on a regular 1.4 cm grid with lines along the outline of
   every large mounted part (so the baked contact shadow of a bezel is an even band), close-out beads along
   the hinge lines of the tilted sections, cover strips with fasteners over the butt joints, three MFD bezels
   with six page keys above the screen's page tabs, the attitude indicator (retaining ring, domed cover
   glass, slotted recessed fasteners, three rate needles on outer scales), 18-lamp caution and warning panel,
   master alarms, 31 toggle switches in five groups (keyed washer, hex nut, bushing, bright bat-handle lever;
   wicket guards between them; name above, position legends above and below the lever's throw; group lines),
-  rotary selectors, seven-segment readouts, lamps. Wall panels with breakers, flood lights, hand holds,
-  lockers, ducts (32 sides), cable bundles (slack between clamps, grommet and backshell at both ends),
-  extinguisher, flight-data-file pouch, two soft stowage bags strapped to the upper wall, an entry checklist
-  card on hook-and-loop.
+  rotary selectors, seven-segment readouts, lamps. Wall panels with breakers, six flood lights (two beside
+  the forward windows over the console, two on the aft side walls over the couches, two low by the floor:
+  all where the cabin sees them), hand holds, lockers, ducts (32 sides), cable bundles (slack between
+  clamps, grommet and backshell at both ends), extinguisher, flight-data-file pouch, two soft stowage bags,
+  a printed entry cue card on hook-and-loop. Every fixture's place is in the layout file (`fixtures`); the
+  builder seats each body clear of the blankets, frames, close-out panels and the floor under it and builds
+  what carries it (stand-offs, legs, strap ends, clamps) as `mount:*` assemblies.
 - Labels (174 placards, 2048^2 atlas painted at init, sampled anisotropically) are decals drawn after the
   interior with their ink as coverage into RT0 and RT5 only; every label is right-reading from the side it
   faces. Lamp-lens legends share one cap height.
-- Detail levels: lod0 **266,692** triangles (inside, or closer than 6 m, hysteresis to 7 m), lod1 23,936,
-  lod2 6,750; 258,128 vertices; 106 animated controls; 43 materials. Model build (with the lod0 BVH) under
+- Detail levels: lod0 **about 281,000** triangles (inside, or closer than 6 m, hysteresis to 7 m), lod1 about
+  24,000, lod2 about 7,000; about 273,000 vertices; 106 animated controls; 45 materials. Model build (with the lod0 BVH) under
   a second.
 
 Materials: every `detail` kind samples a baked tileable detail layer (`public/assets/cockpit/detail-n.png`,
@@ -115,9 +125,9 @@ Instruments (`instruments.ts`): switches, guards, lamps, selectors, readouts (th
 position.
 
 MFDs (`displays.ts`): the shared `MfdPainter` paints each display into an OffscreenCanvas at 15 Hz,
-staggered; uploaded into mip 0 of its layer, then the mips (all 'cockpit.mfdUpload'). Screen material
-`MATERIAL_ID.display` with the RGB stripe structure, brightness following the cabin light, and anti-glare
-cover glass.
+staggered; uploaded into mip 0 of its layer, then the mips (all 'cockpit.mfdUpload'). The screens show the RGB
+stripe structure up close, their brightness follows the cabin light, an anti-glare cover glass lies over them;
+their light is complete in the emission the cockpit writes (the interior's black record, section 4 item 8).
 
 ### Light (`lighting.ts`, `occlusion.ts`, `sunmap.ts`, `probe.ts`, `shaders.ts`)
 
@@ -186,6 +196,8 @@ Crew view: in the interior camera only, tunnel vision above 6 g and structure-bo
 | GPU occlusion bake = CPU reference | 300 vertices, 4,800 values: mean abs difference 0.0008, 99.5th percentile 0.002, 2 values flip (a source seen edge-on) | `cockpit.spec.ts` |
 | Reviewed screenshots over the real world | 8 views in the integration lab | `world.spec.ts` (`out/screens/cockpit/world-*.png`) |
 | Reviewed screenshots in the cockpit lab (stand-ins outside the cabin) | 13 views | `views.spec.ts` |
+| **No assembly in the hull, in what lies on it or in another assembly** (request cockpit-lead-1): hull and floor analytically, blankets / frames / close-outs as skins, solids against solids, 3 mm; mounts end at the wall | nothing found (it found 123 pairs before round 3) | `penetration.test.ts` (`penetration.ts`) |
+| **The cabin in the game** (`src/app`, the player's cockpit rig, nothing toggled, metered exposure): the frame's median above 22 of 255, under a quarter black, under a fifth clipped | 5 views | `tests/browser/cockpit/app.spec.ts` (`out/screens/cockpit/app-*.png`) |
 | expectNoErrors | cockpit lab specs; world spec: cockpit loaded, active, no cockpit problem or error | all |
 
 Perf of round 1 below; this round's numbers are in section 8. `scene=leo` from the commander's seat, 2560 x 1440, attribution mode, 7 ms GPU ballast, RTX 5090. Five
@@ -246,6 +258,13 @@ world-chase-window-night.
 7. **`displays.tabSpan`** (0.66) in the layout file mirrors a constant of the MFD painter (the share of the
    screen width its page tabs span); the bezel's page keys sit above the tabs. If flight-ui moves its tabs
    this number must follow (a request for an exported constant was not filed).
+8. **The screens are not written as `MATERIAL_ID.display`** (the brief's wording): the core lights that record
+   as a glossy dielectric with every local light, and a plume's lights washed the pages out in the climb
+   (request app-integration-5). Their image, at the brightness the cabin's light sets and through the front
+   glass's angular transmission, is written as emission with the interior's black record.
+9. **The floods are not off without the lights command** (the brief ties them to `lightsOn`): they burn at
+   `lighting.floodStandby` (0.3) of their flux and the command brings them to full. A cabin that is black
+   until the player finds the lights key reads as broken (the lead's item 2 of round 3).
 
 ## 5. Requests
 
@@ -265,6 +284,14 @@ world-chase-window-night.
   longer shoulder, so sun patches and Earth-filled windows keep texture.
 - **cockpit-13** (vfx + contract, OPEN): publish the sheath's window radiance as a shared GPU resource, so the
   cabin's entry light (today the layout's `plasmaLuminance` / `plasmaColor`) matches the panes by construction.
+- **cockpit-14** (core, resolved 6a2fb76): a change of `CameraState.kind` is a cut: the exposure follows the
+  new view's target within a quarter of a second (it took three to four seconds from the chase view's
+  daylight exposure: the "black cockpit" of the mission pictures).
+- **cockpit-15** (app-integration, the mission spec; open when this was written): wait for the exposure
+  before the two cockpit pictures.
+- **cockpit-lead-1** (against the cockpit, resolved in round 3): the cabin's parts interpenetrate.
+- **app-integration-5** (against the cockpit and the core, resolved 27fb5c8 / 38da0ee): exterior local lights
+  in the cabin and on the screens.
 - cockpit-cs-1 (against the cockpit, resolved 77e2f72): the cabin's cloud shadow through the core's chunk.
 
 ## 6. Known weaknesses (honest)
@@ -273,9 +300,10 @@ world-chase-window-night.
   the procedural bake (no photographed or generated PBR sets; none of the 50 USD budget spent); no crew; the
   stowage is two soft bags and a checklist card (no tape, loose items or document pouches beyond the flight
   data file); hard parts are boxes with chamfers; ring frames, close-outs and lockers carry little breakup.
-- **No lamp casts a sharp shadow**: flood and window visibility is baked per vertex; the floods are beams now
-  (pools of light, darker walls), but a switch lever, a guard or a hatch rod throws no shadow of its own.
-  Shadow maps for the floods were not built (cost against the 0.8 ms line).
+- **No lamp casts a sharp shadow**: flood and window visibility is baked per vertex; the floods are beams
+  (pools of light, darker walls) and since round 3 stand where the cabin sees them, but a switch lever, a
+  guard or a hatch rod throws no shadow of its own. Shadow maps for the floods were not built (cost against
+  the 0.8 ms line).
 - **Range**: an interior camera cannot hold a sunlit patch or a sunlit landscape and the cabin in one
   exposure. The core's meter now stops down up to 3 EV for bright areas of a few per cent (cockpit-12, part 1);
   a sun patch on the console still clips (the direct sun is 6-7 stops over an Earth-lit cabin), and the noon
@@ -426,3 +454,133 @@ typecheck of the owned paths clean.
 lens about 6. The blockers of round 1 are answered in part (entry and lunar windows now show the world, the pad
 window shows sky and rigging) but each still clips; the cabin's artefacts are mostly gone; the cabin is still a
 clean, untextured set without crew or real clutter, and no thin part casts a shadow.
+
+## 9. Visual close-out, round 3 (2026-11-12)
+
+No critique was run on round 2; the last verdict is round 1's (photo 4, artifact 4). The lead's work list of
+this round: (1) request cockpit-lead-1 from the user ("the dash runs into the side of the craft"), (2) the
+cabin nearly black in the integrated game, (3) the two round-1 lists, (4) open requests. The session was cut
+once by a machine crash; everything below is committed.
+
+### 9.1 Geometry (cockpit-lead-1)
+
+The automated check was built first (`penetration.ts`, `tests/unit/cockpit/penetration.test.ts`; method in the
+request's resolution and in the file header) and its first run found **123 pairs** deeper than 3 mm: the user
+had seen the mildest of them. What it found and what was done:
+
+| Found | Done |
+|---|---|
+| Console face cut diagonally by the wall, the attitude indicator and three lamps hanging over the cut into the blankets; console bodies through blankets and ring frames | The face plates are limited row by row by the hull (edge = the wall's curve at blanket crowns + 12 mm, with a seal bead), bodies at frame height + 4 mm following the wall back, brackets to the structure; layout moved inside the limit; an overhanging instrument is refused at build time |
+| Floods 1 and 2 inside the console's body (71 mm), floods 3 and 4 above the console's skirt: four of six lamps never lit the cabin | Floods moved to where the cabin sees them: beside the forward windows over the console, on the aft side walls over the couches, low by the floor |
+| Two cable runs and two handholds through the console; cables through the window bezels | Removed or re-routed (four handholds and two cable runs remain) |
+| Every wall fixture (breaker panels, bags, pouch, card, handhold rails, extinguisher) sunk in the blankets or standing in a ring frame | `skinHeight`: each body stands clear of what lies on the wall under it; stand-offs, legs, strap ends, clamps and grommets are `mount:*` assemblies that reach through to the wall and end AT it |
+| Lockers and ducts through the floor | Seated above the floor; the ducts come up through a floor collar |
+| Outboard couches' hip rails and foot ends in the blankets | Back 34 cm wide, leg trough turned inboard from the hip, shin 5 cm shorter |
+| Attenuator struts through the pallet beams | Struts stand under the beams (part of the pallet) |
+| Harness webbing through the bolsters, the hip cushion and the inboard arm rests | Laid on the couch's pads AS BUILT (a ray onto the couch's triangles); belts start on the back cushion; inboard arm rests and their hand controllers sit over the bolster |
+| Ducts through the pallet's wall fittings, floods and cables in the ducts' way | Re-routed |
+
+The check now finds nothing (9 tests, about 2 s). Pictures along the console to both sides, in the app:
+`app-leo-console-left.png`, `app-leo-console-right.png`.
+
+### 9.2 "The cockpit is nearly black in the integrated game"
+
+Four causes, the first three found with `tests/browser/cockpit/app.spec.ts` (the real app,
+`?scenario=qa-leo&view=cockpit`):
+
+1. **The pictures showed a transient, and so does the player's first three seconds.** The settled cabin in the
+   same orbit as the mission's black picture meters EV 3.9 and reads (median 131 of 255). After a cut from the
+   chase view the exposure came down from EV 15 at 0.8 EV/s; the mission spec shot 15 frames after the cut.
+   Core: request cockpit-14, **resolved** (6a2fb76: a change of camera kind is a cut, the exposure is on the
+   new target within a quarter of a second). Mission spec: request cockpit-15 (open): wait before the picture.
+2. **Four of the six floods were buried** (9.1): with the lights on, only the two low 65 lm lamps reached the
+   cabin. Fixed by the geometry.
+3. **The floods were off unless the player found the lights key.** They now burn at `lighting.floodStandby`
+   (0.3 of their flux) always and at full with the lights command (a deviation from the brief's wording,
+   section 4 item 9).
+4. **Every polygon source lit the cabin 6.3 times too weakly**, since round 1: `polyVector` (shaders.ts)
+   divided the Hill-Heitz edge sum by 2 pi although the fitted edge term already carries it. Windows (Earth
+   and sky light), floods and the displays' glow were 2.65 stops under the sun patches and under the lamps'
+   own lenses. Found when the floods, integrated as small sources for the perf line (E = L A cos cos / d^2),
+   came out four times brighter than the polygon integral in the same scene. Fixed: a cabin lit through its
+   windows is as bright as its windows make it, and a sun patch stands four stops over it, not six and a half.
+
+The cabin, nothing toggled, at the metered exposure:
+
+| State | Picture | EV100 | Frame median (of 255) |
+|---|---|---|---|
+| Sun in the cabin (parking orbit, the app) | `app-leo-seat.png` | 5.0 | 133 |
+| The same, looking along the console at the lit floods | `app-leo-console-right.png` | 6.1 | 74 |
+| On the Moon after touchdown, no sun in the cabin (the app) | `app-lunar-surface-seat.png` | 3.2 | 120 |
+| Night side, sun behind the Earth (integration lab) | `world-night-displays-floods.png` | 3.3 | 68 |
+| The climb, engines at full thrust, plume lights outside | `world-ascent-plume-displays.png` | 3.8 | 92 |
+
+The last row is request app-integration-5's follow-up: the screens took the plume's local lights through the
+core's display material; their light is now complete in the cockpit's emission (section 4 item 8).
+
+### 9.3 The round-1 lists (what round 2 left open, and this round)
+
+| Item | State after round 3 | Picture |
+|---|---|---|
+| Console: slabs, no cheeks or mounts, blankets through its edge (major, both) | Rebuilt fitted to the hull: plates, closed bodies that follow the wall, seal bead, brackets (9.1) | `app-leo-console-left`, `-right`, `world-night-displays-floods` |
+| Night: even fill, no pools, bimodal brightness (major, both) | The floods are where the cabin sees them (they were buried): lit lenses in view, the light falls off from them; night at the standby level reads. NOT done: cast shadows of thin parts | `world-night-displays-floods`, `app-leo-console-right` |
+| Harness shards through the pads (major, both) | Laid on the pads as built; the check holds it | `look-back-couches-hatch` |
+| Blankets pass through structure, star-shaped flat triangles at the seams (major, artifact) | Nothing passes through anything (the check). The mesh carries the pillows without the seam crease (`quiltMeshHeight`); the crease is shaded per pixel | `app-leo-seat`, `closeup-switches` |
+| Attitude indicator's ring torn into white flecks (major, both) | The retaining ring is matt black (a satin ring that small mirrored the sun patch as flecks). Error needles NOT built | `closeup-fdai`, `world-leo-sun-patch-console` |
+| Blocky, creased reflections of a window on satin panels; smoky smears on the hatch door (major, both) | Coarse probe mips sampled twice from mip 3, four times from mip 3.6; with the window's light at its true level (9.2 cause 4) the door reads as painted metal lit by its window, the smears are faint | `hatch-mechanism`, `closeup-switches` |
+| Guards as thin glowing brackets (minor) | 3 mm satin bar | `closeup-switches` |
+| Empty clean set (major, both) | A printed cue card, the bags and the pouch in view from the seat, lit flood fixtures on posts. NOT done: photographed / generated texture sets (none of the 50 USD spent), crew, more loose items | `world-reentry-plasma`, `app-leo-seat` |
+| Sun patch a white hole (major, both) | The patch keeps its texture: the page under it reads, the bezel's keys show, no bloom halo; the windows beside it keep their tone. Cause: the cabin around it was lit 6.3 times too weakly (9.2 cause 4); the core's meter (cockpit-12) now reaches it | `world-leo-sun-patch-console` |
+| Stepped edges where a bezel casts the patch's edge (major, both) | NOT changed this round: a few teeth remain at the bezel's side | `world-leo-sun-patch-console` |
+| Pad view: clipped sky (blocker r1, both) | As round 2: a cloud and the rigging show through the ported window, the sky clips (not lit geometry: the interior meter cannot weigh it) | `world-pad-noon-forward-window` |
+| Lunar view (blocker r1, both) | As round 2: black sky, clipped ground, the exterior's well walls with the cascade filter's grain | `world-moon-horizon` |
+| Reentry (blocker r1, both) | As round 2 (the panes show the vfx sheath as a pale lavender glow, no streaks), in the rebuilt cabin under its floods | `world-reentry-plasma` |
+| Earth window beside a black slab (major, photo) | NOT changed: the Earth is exposed, the frame beside it is black | `world-leo-earth-side-window` |
+| Night chase view (major, both) | The lit lamps and the cabin show through the window; the hull is still nearly black | `world-chase-window-night` |
+
+### 9.4 Not fixed, and why
+
+- **No thin part casts a shadow from a lamp** (switch levers, guards, hatch rods): flood visibility is baked per
+  vertex. Shadow maps for the floods were not built: the interior is over its GPU line already (9.5).
+- **Photographed or generated texture sets, crew figures**: not attempted in this round (the geometry took it).
+- **The pad's sky, the grain on the exterior's window wells**: the core's and other packages' (the sky is not
+  lit geometry for the interior meter; cockpit-10 resolved for the near filter, grain remains at grazing sun).
+- **Earth window view**: the picture needs the sun on the frame beside the window; the recipe was not re-aimed.
+- **Attitude error needles, MFD key legends**: not done.
+
+### 9.5 Measured perf
+
+`cockpit.perf.spec.ts`, `scene=leo` from the seat, 2560 x 1440, 7 ms ballast, RTX 5090, the one GPU slot of the
+gate held by this run (other agents' CPU jobs running): **the interior line is NOT met**.
+
+| | p50 | p99 | budget (p99) |
+|---|---|---|---|
+| `cockpit.gbuffer` | 0.609 | 0.901 | |
+| `cockpit.probe` + `probeFilter` | 0.052 + 0.029 | 0.059 + 0.029 | |
+| `cockpit.sunMap`, `ambient`, `shadow` | 0.035, 0.006, 0.002 | 0.037, 0.008, 0.002 | |
+| interior total | 0.73 | **1.04** (1.01 and 1.04 in two runs) | 0.8 (**not met**; round 2: 0.93 to 1.47, round 1: 0.76) |
+| `cockpit.transparent` (glass) | 0.021 | 0.024 | 0.2 (met) |
+| `cockpit.mfdUpload`, mean per frame | | 0.016 | 0.2 (met) |
+| display paint + upload + mips, CPU mean | | 0.42, 0.54, 0.44 in three runs | 0.4 (**not met**; the painting is the shared MfdPainter's) |
+
+What moved it: the floods now light the cabin in every scene (in round 2's measurement they were off and four
+of them were culled by their baked visibility anyway), about 15,000 more triangles. First measurement of the
+round: G-buffer p50 0.658, p99 0.929. Cuts made after it (0.658 -> 0.609): floods and displays integrated as
+small sources beyond twice their size, sources behind the receiver's plane skipped before integration, four
+probe lookups only from mip 3.6, windows that look into black space skipped. (The form-factor fix came after
+the last measurement; it removes one multiplication.) The G-buffer pass's p99 stands 45 % over its p50 in every run of all three rounds, so the 0.8 ms line
+needs an interior p50 of about 0.55 ms: about 0.18 ms less than now. Where that would come from (not done): the
+window prisms (five per pixel, about a third of a blanket pixel's arithmetic) evaluated only for the two
+windows a pixel sees best, the quilt's per-pixel relief trimmed, the probe rendered every other frame.
+
+### 9.6 Last run and honest score
+
+Unit: 53 / 53 (`src/render/cockpit tests/unit/cockpit src/core/defs tools/dev/boundaries.test.ts`). Browser,
+functional project, `tests/browser/cockpit`: 33 / 33 before the form-factor fix (5 app views, 13 lab views,
+the functional spec, 9 world views), 32 passed and 1 skipped after it (world-chase-window-night: the integration lab had switched the ocean package off, whose shader did not compile while its owner was editing it; that picture is from the run before the fix). Perf: fails on the two lines above. Typecheck of the owned paths clean.
+
+My judgement of this round's pictures against the photographs: **photo lens about 6.5, artifact lens about
+6.5**. The cabin is now geometrically honest and lit by lamps one can see, it reads in the sun, on the Moon
+and at night without the player touching anything, and the console looks built into the capsule. It is still a
+clean, procedurally textured set without crew; lamps cast no shadows of small parts; the pad's sky and the
+lunar ground clip; three world views (Earth window, lunar horizon, night chase) are weak pictures.
