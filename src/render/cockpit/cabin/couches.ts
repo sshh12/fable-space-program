@@ -352,8 +352,27 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
   const web = ctx.m('webbing', { flags: FLAG_OVERLAY });
   const b = ctx.b;
   const thickW = 0.0016;
-  /** A strap along a polyline of (x, y) frame coordinates: resampled every 6 mm, laid on the pads. */
-  const strap = (path: [number, number][], w: number, minLift = 0): void => {
+  /**
+   * A strap along a path of (x, y) frame coordinates, laid on the pads. Webbing does not turn a corner in its
+   * own plane: the path's corners are rounded off (three rounds of corner cutting), the band is resampled
+   * every 6 mm, wanders a few millimetres, lifts off the pad in long soft waves and rolls a little about its
+   * own length, as a slack strap lies.
+   */
+  let strapSeed = 0;
+  const strap = (corners: [number, number][], w: number, minLift = 0): void => {
+    const seed = ++strapSeed * 1.7 + (s.id.charCodeAt(0) % 7);
+    let path = corners;
+    for (let round = 0; round < 3 && path.length > 2; round++) {
+      const cut: [number, number][] = [path[0]!];
+      for (let i = 0; i + 1 < path.length; i++) {
+        const [x0, y0] = path[i]!;
+        const [x1, y1] = path[i + 1]!;
+        if (i > 0) cut.push([x0 + (x1 - x0) * 0.25, y0 + (y1 - y0) * 0.25]);
+        if (i + 2 < path.length) cut.push([x0 + (x1 - x0) * 0.75, y0 + (y1 - y0) * 0.75]);
+      }
+      cut.push(path[path.length - 1]!);
+      path = cut;
+    }
     const xy: [number, number][] = [];
     for (let i = 0; i + 1 < path.length; i++) {
       const [x0, y0] = path[i]!;
@@ -362,6 +381,20 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
       for (let k = 0; k < n; k++) xy.push([x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n]);
     }
     xy.push(path[path.length - 1]!);
+    // The band wanders a little to either side between its ends (never at them: they are sewn down).
+    const total = (xy.length - 1) * 0.006;
+    const waves = Math.max(1, Math.round(total / 0.13));
+    for (let i = 1; i + 1 < xy.length; i++) {
+      const t = i / (xy.length - 1);
+      const [xa, ya] = xy[i - 1]!;
+      const [xb, yb] = xy[i + 1]!;
+      const l = Math.hypot(xb - xa, yb - ya) || 1;
+      const m = 0.0035 * Math.sin(Math.PI * t) * Math.sin(2 * Math.PI * waves * t * 0.5 + seed);
+      xy[i] = [xy[i]![0] - ((yb - ya) / l) * m, xy[i]![1] + ((xb - xa) / l) * m];
+    }
+    // Its roll about its own length (rad) and its slack: where it stands off the pad in long soft waves.
+    const roll = (i: number): number => 0.16 * Math.sin(Math.PI * (i / (xy.length - 1))) * Math.sin(2 * Math.PI * waves * (i / (xy.length - 1)) * 0.7 + 2.1 * seed);
+    const slack = (i: number): number => 0.004 * Math.sin(Math.PI * (i / (xy.length - 1))) * (0.5 - 0.5 * Math.cos(2 * Math.PI * waves * (i / (xy.length - 1)) + seed));
     // Height under the band (its middle and both edges), then the band bridges: a running maximum over
     // about two centimetres.
     const raw = xy.map(([x, y], i) => {
@@ -372,7 +405,7 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
       const sy = ((xb - xa) / l) * (w / 2);
       return Math.max(under(x, y), under(x + sx, y + sy), under(x - sx, y - sy), minLift);
     });
-    const h = raw.map((_, i) => Math.max(...raw.slice(Math.max(0, i - 2), i + 3)) + 0.0018);
+    const h = raw.map((_, i) => Math.max(...raw.slice(Math.max(0, i - 2), i + 3)) + 0.0018 + slack(i) + (w / 2) * Math.abs(Math.tan(roll(i))));
     const at = (i: number, j: number): { p: Vec3; uv: [number, number] } => {
       const [x, y] = xy[i]!;
       const [xa, ya] = xy[Math.max(0, i - 1)]!;
@@ -382,7 +415,7 @@ function harness(ctx: CabinContext, s: SeatFrame, cfg: SeatLayoutDef, backF: Fra
       const sy = (xb - xa) / l;
       // Cross-section: bottom of the left edge, top left, top right, bottom of the right edge.
       const across = [-0.5, -0.47, 0.47, 0.5][j]! * w;
-      const up = j === 0 || j === 3 ? 0 : thickW;
+      const up = (j === 0 || j === 3 ? 0 : thickW) + across * Math.tan(roll(i));
       return { p: local(backF, x + sx * across, y + sy * across, h[i]! + up), uv: [i * 0.006, across + w / 2] };
     };
     b.surface(xy.length - 1, 3, at, web);

@@ -474,9 +474,48 @@ function locker(ctx: CabinContext, az: number, y: number, w: number, h: number, 
   const f = seatedFrame(ctx, az, y, w, h, depth);
   const b = ctx.b;
   b.box(offsetFrame(f, 0, 0, -depth / 2), w / 2, h / 2, depth / 2, 0.006, ctx.m('closeout', { ao: 0.85 }));
-  // Door with a seam groove, paddle latch and label.
-  b.box(offsetFrame(f, 0, 0, 0.003), w / 2 - 0.008, h / 2 - 0.008, 0.003, 0.002, ctx.m('closeout'));
-  b.box(offsetFrame(f, 0, h / 2 - 0.035, 0.008), 0.035, 0.012, 0.003, 0.002, ctx.m('anodized'));
-  b.box(offsetFrame(f, 0, h / 2 - 0.035, 0.0115), 0.026, 0.006, 0.0012, 0.0008, ctx.m('steel'));
-  ctx.labelQuad(offsetFrame(f, 0, 0, 0.006), 0, -0.01, Math.min(w * 0.8, 0.2), 0.018, label, 'closeout', { color: 1, style: { box: true } });
+  // The door: a pressed sheet in the body's rim, hung on a piano hinge along one side and held by two
+  // quarter-turn fasteners on the other, stiffened by two pressed beads, with a paddle latch, a webbing pull,
+  // its stowage label and a data plate. Rivets hold the rim to the body.
+  const dw = w / 2 - 0.008;
+  const dh = h / 2 - 0.008;
+  const steel = ctx.m('steel');
+  b.box(offsetFrame(f, 0, 0, 0.003), dw, dh, 0.003, 0.002, ctx.m('closeout'));
+  for (const v of [-dh * 0.5, dh * 0.5]) b.box(offsetFrame(f, 0.006, v, 0.0068), dw - 0.03, 0.006, 0.0012, 0.0011, ctx.m('closeout', { ao: 0.9 }));
+  // Piano hinge: its pin and alternating knuckles.
+  const hingeU = -dw - 0.001;
+  const knuckles = Math.max(4, Math.round((2 * dh) / 0.03));
+  b.cylinder(local(f, hingeU, -dh + 0.008, 0.0055), f.y, 0.0016, 2 * dh - 0.016, 6, steel, { caps: 'both' });
+  for (let k = 0; k < knuckles; k++) {
+    const v0 = -dh + 0.01 + ((2 * dh - 0.02) * k) / knuckles;
+    b.cylinder(local(f, hingeU, v0 + 0.001, 0.0055), f.y, 0.0034, (2 * dh - 0.02) / knuckles - 0.002, 8, ctx.m(k % 2 === 0 ? 'closeout' : 'aluminium'), { caps: 'both' });
+  }
+  // Quarter-turn fasteners on the free side: a ringed head with a slot.
+  for (const v of [-dh * 0.62, dh * 0.62]) {
+    const p = local(f, dw - 0.016, v, 0.006);
+    b.cylinder(p, f.n, 0.0085, 0.0016, 14, ctx.m('aluminium'), { caps: 'top' });
+    b.cylinder(v3.addScaled(p, f.n, 0.0016), f.n, 0.0058, 0.0018, 12, steel, { caps: 'top' });
+    b.box(offsetFrame(f, dw - 0.016, v, 0.0098), 0.0048, 0.0009, 0.0005, 0.0002, ctx.m('matteBlack'));
+  }
+  // Paddle latch in a dished escutcheon.
+  b.box(offsetFrame(f, dw - 0.05, 0, 0.0075), 0.012, 0.03, 0.0025, 0.002, ctx.m('anodized'));
+  b.box(offsetFrame(f, dw - 0.05, 0.004, 0.0108), 0.007, 0.02, 0.0011, 0.0008, steel);
+  // Rivets round the rim.
+  const rim = ctx.m('aluminium');
+  const nu = Math.max(2, Math.round(w / 0.07));
+  const nv = Math.max(2, Math.round(h / 0.07));
+  for (let i = 0; i <= nu; i++) for (const sv of [-1, 1]) b.cylinder(local(f, -w / 2 + 0.004 + ((w - 0.008) * i) / nu, sv * (h / 2 - 0.004), -0.0005), f.n, 0.0022, 0.001, 6, rim, { caps: 'top' });
+  for (let j = 1; j < nv; j++) for (const su of [-1, 1]) b.cylinder(local(f, su * (w / 2 - 0.004), -h / 2 + 0.004 + ((h - 0.008) * j) / nv, -0.0005), f.n, 0.0022, 0.001, 6, rim, { caps: 'top' });
+  // Webbing pull below the latch.
+  {
+    const loop: Vec3[] = [];
+    for (let k = 0; k <= 10; k++) {
+      const a = (Math.PI * k) / 10;
+      loop.push(local(f, dw - 0.05, -0.045 - 0.028 * Math.sin(a), 0.0075 + 0.0045 * Math.cos(a) + 0.001));
+    }
+    b.surface(1, loop.length - 1, (i, j) => ({ p: v3.addScaled(loop[j]!, f.x, (i - 0.5) * 0.02), uv: [i * 0.02, j * 0.006] }), ctx.m('webbingOrange'));
+  }
+  ctx.labelQuad(offsetFrame(f, -0.02, 0, 0.0062), 0, 0.012, Math.min(w * 0.6, 0.18), 0.018, label, 'closeout', { color: 1, style: { box: true } });
+  b.box(offsetFrame(f, -0.02, -0.022, 0.0064), 0.034, 0.009, 0.0004, 0.0002, ctx.m('aluminium'));
+  ctx.labelQuad(offsetFrame(f, -0.02, -0.022, 0.0068), 0, 0, 0.062, 0.0055, 'MAX 12 KG  ·  LATCH BEFORE BURN', 'aluminium', { color: 1, lift: 0.0003, style: { weight: 500 } });
 }

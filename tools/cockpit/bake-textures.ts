@@ -250,20 +250,27 @@ interface PhotoSpec {
   reliefRadius: number;
   /** Contrast of the photographed tone (1 = as photographed). */
   tone: number;
+  /**
+   * Share kept of the tone's broad variation (blotches wider than about `macroTexels`; a seventh of the tile
+   * when not given): a stain that comes back every tile reads as a pattern on a large surface, the more so
+   * the smaller the tile.
+   */
+  macro: number;
+  macroTexels?: number;
   /** Roughness offset per unit of relative tone, smoothed over a few texels (+: darker is rougher). */
   rough: number;
   /** Cavity strength (per metre of depth below the surroundings) and its radius in texels. */
   cavity: [radius: number, strength: number];
 }
 const PHOTO: Record<string, PhotoSpec> = {
-  paint: { relief: -0.00003, reliefRadius: 3, tone: 1.0, rough: 0.5, cavity: [2, 900] },
-  brushed: { relief: 0.000012, reliefRadius: 2, tone: 0.8, rough: 0.6, cavity: [1, 1500] },
-  fabric: { relief: 0.0005, reliefRadius: 4, tone: 1.0, rough: 0.2, cavity: [1, 1200] },
-  nomex: { relief: 0.0006, reliefRadius: 10, tone: 1.0, rough: 0.2, cavity: [3, 400] },
-  webbing: { relief: 0.0004, reliefRadius: 4, tone: 1.0, rough: 0.2, cavity: [1, 1500] },
-  velcro: { relief: 0.0008, reliefRadius: 5, tone: 1.0, rough: 0.0, cavity: [1, 1200] },
-  rubber: { relief: 0.00006, reliefRadius: 3, tone: 1.0, rough: 0.6, cavity: [1, 3000] },
-  cast: { relief: -0.00003, reliefRadius: 3, tone: 1.0, rough: 0.6, cavity: [1, 3000] },
+  paint: { relief: -0.00003, reliefRadius: 3, tone: 1.0, macro: 0.6, rough: 0.5, cavity: [2, 900] },
+  brushed: { relief: 0.000012, reliefRadius: 2, tone: 0.8, macro: 0.5, rough: 0.6, cavity: [1, 1500] },
+  fabric: { relief: 0.0005, reliefRadius: 4, tone: 0.55, macro: 0.3, rough: 0.2, cavity: [1, 1200] },
+  nomex: { relief: 0.0006, reliefRadius: 10, tone: 1.0, macro: 0.15, macroTexels: 14, rough: 0.2, cavity: [3, 400] },
+  webbing: { relief: 0.0004, reliefRadius: 4, tone: 0.8, macro: 0.4, rough: 0.2, cavity: [1, 1500] },
+  velcro: { relief: 0.0008, reliefRadius: 5, tone: 0.8, macro: 0.3, rough: 0.0, cavity: [1, 1200] },
+  rubber: { relief: 0.00006, reliefRadius: 3, tone: 1.0, macro: 0.5, rough: 0.6, cavity: [1, 3000] },
+  cast: { relief: -0.00003, reliefRadius: 3, tone: 1.0, macro: 0.5, rough: 0.6, cavity: [1, 3000] },
 };
 const photoDir = path.resolve(outDir, '..', '..', '..', 'data', 'cache', 'cockpit', 'photo');
 
@@ -377,7 +384,9 @@ for (const l of layers) {
     continue;
   }
   photographic.push(l.name);
-  const tone = photoTone(file);
+  const raw = photoTone(file);
+  const broad = blurField(raw.data, S, spec.macroTexels ?? S / 7);
+  const tone = F((_u, _v, x, y) => Math.max(0.02, raw.at(x, y) - (1 - spec.macro) * (broad[y * S + x]! - 1)));
   const low = new Field(S, S);
   low.data.set(blurField(tone.data, S, spec.reliefRadius));
   const soft = new Field(S, S);

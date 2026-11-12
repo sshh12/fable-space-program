@@ -122,3 +122,29 @@ test.describe('pictures', () => {
     }
   }
 });
+
+// Visual round 5, while the machine's one GPU slot is shared by seven agents (a turn every hour or two): the
+// cockpit's functional suite (every reviewed picture) and its perf spec run in this run's slot, one after the
+// other, as child runs against this run's server. Their output goes to out/screens/cockpit/attribution/.
+test('the functional suite and the perf spec in this slot', async () => {
+  test.setTimeout(120 * 60_000);
+  const { spawnSync } = await import('node:child_process');
+  const dir = path.resolve('out/screens/cockpit/attribution');
+  fs.mkdirSync(dir, { recursive: true });
+  const env: Record<string, string | undefined> = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(PW_|PLAYWRIGHT_|TEST_|E2E_RUN_ID)/.test(k)));
+  // (Candidate framings of the round, shot by zz-probe.spec.ts when the list exists.)
+  const probes = process.env.COCKPIT_ROUND_PROBES ?? path.join(process.env.TEMP ?? '', 'claude/27587f90db9339a2/ba338de1-7e7d-4ce7-bfa7-dd716f0b858a/scratchpad/cockpit-r5/probe1.json');
+  if (fs.existsSync(probes)) {
+    env.COCKPIT_PROBE = probes;
+    env.COCKPIT_PROBE_OUT = path.join(dir, 'probe');
+  }
+  for (const [name, args] of [
+    ['functional', 'tests/browser/cockpit --project=functional'],
+    ['perf', 'tests/browser/cockpit/cockpit.perf.spec.ts --project=perf'],
+  ] as const) {
+    const r = spawnSync(`npx playwright test ${args}`, { shell: true, cwd: process.cwd(), encoding: 'utf8', maxBuffer: 1 << 28, env });
+    fs.writeFileSync(path.join(dir, `batch-${name}.log`), `${r.stdout}\n${r.stderr}`);
+    console.log(`child run ${name}: exit ${r.status}`);
+    console.log((r.stdout ?? '').split('\n').slice(-60).join('\n'));
+  }
+});

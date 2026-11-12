@@ -38,6 +38,10 @@ const VIEWS: AppView[] = [
   { name: 'app-leo-seat-floods', scenario: 'qa-leo', lights: true },
   // On the Moon after touchdown (10-lunar-touchdown-cockpit).
   { name: 'app-lunar-surface-seat', scenario: 'qa-lunar-surface' },
+  // Out of the windows from the seat in orbit: up at the forward windows over the console, and to either side.
+  { name: 'app-leo-windows-forward', scenario: 'qa-leo', yaw: 20, pitch: 38 },
+  { name: 'app-leo-window-left', scenario: 'qa-leo', yaw: -62, pitch: 10 },
+  { name: 'app-leo-window-right', scenario: 'qa-leo', yaw: 88, pitch: 12 },
 ];
 
 const lum = (r: number, g: number, b: number): number => 0.2126 * r + 0.7152 * g + 0.0722 * b;
