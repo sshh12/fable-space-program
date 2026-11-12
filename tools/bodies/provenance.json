@@ -91,7 +91,8 @@
         "rmsKm": 531.7988377512869,
         "maxKm": 674.5713183615313,
         "samples": 145
-      }
+      },
+      "apsisDropped": "the listed apsidal period is too short for a slowly precessing ellipse: periapsis held fixed (moves the position by at most e a)"
     },
     "dione": {
       "path": "sat-fit",

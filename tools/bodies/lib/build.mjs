@@ -139,7 +139,7 @@ export function buildLibrary(S, live, bake) {
         const fit = satelliteOrbit({ row, frame, path: 'sat-fit', calibration: cal, fitSpan: span.rows, ctx, muSum: ctx.muSum });
         chosen = fit.best;
         path = 'sat-fit';
-        paths[id] = { path, reading: readingName(chosen.reading), calibrationMaxDeg: round(chosen.calibrationMaxDeg, 4), tablePathCalibrationMaxDeg: round(table.best.calibrationMaxDeg, 4), fit: chosen.fit };
+        paths[id] = { path, reading: readingName(chosen.reading), calibrationMaxDeg: round(chosen.calibrationMaxDeg, 4), tablePathCalibrationMaxDeg: round(table.best.calibrationMaxDeg, 4), fit: chosen.fit, ...(chosen.apsisDropped ? { apsisDropped: "the listed apsidal period is too short for a slowly precessing ellipse: periapsis held fixed (moves the position by at most e a)" } : {}) };
       } else {
         paths[id] = { path, reading: readingName(chosen.reading), calibrationMaxDeg: round(chosen.calibrationMaxDeg, 4) };
       }
