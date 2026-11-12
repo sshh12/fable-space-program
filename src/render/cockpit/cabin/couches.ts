@@ -220,6 +220,23 @@ export function buildCouches(ctx: CabinContext): void {
     const hipCross = [seatPoint(s, -(hw + 0.02), c.hipU + 0.05, backPlane - 0.045), seatPoint(s, hw + 0.02, c.hipU + 0.05, backPlane - 0.045)];
     b.tube(headCross, 0.016, 8, rail, { caps: true });
     b.tube(hipCross, 0.016, 8, rail, { caps: true });
+    if (d === 0) {
+      // Where a cross tube meets a side rail: a node fitting, the tube's end in a barrel across the rail with
+      // its pivot bolt on the outboard face (the hinges at hip, knee and foot; the back frame's joints).
+      const node = (at: Vec3, side: number, r: number): void => {
+        const out = v3.scale(s.R, side);
+        b.cylinder(v3.addScaled(at, out, -0.022), out, r, 0.037, 14, rail, { caps: 'both' });
+        b.cylinder(v3.addScaled(at, out, 0.015), out, 0.0075, 0.003, 6, ctx.m('steel'), { caps: 'top' });
+        b.cylinder(v3.addScaled(at, out, -0.03), out, r - 0.004, 0.008, 12, ctx.m('aluminium'), { caps: 'none' });
+      };
+      for (const side of [-1, 1]) {
+        for (const [at, n, half] of [[pts.hip, pts.thighN, legHw], [pts.knee, pts.thighN, legHw], [pts.foot, pts.shinN, legHw - 0.01]] as [Vec3, Vec3, number][]) {
+          node(v3.addScaled(v3.addScaled(at, n, -0.03), s.R, side * (half + 0.02)), side, 0.0185);
+        }
+        node(headCross[side < 0 ? 0 : 1]!, side, 0.021);
+        node(hipCross[side < 0 ? 0 : 1]!, side, 0.021);
+      }
+    }
     if (d < 2) {
       // The attenuator struts carry the pallet's beams (under the couch's cross tubes): from the beam's far
       // face to the floor, part of the pallet.

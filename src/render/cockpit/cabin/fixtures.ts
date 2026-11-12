@@ -295,7 +295,13 @@ export function buildFixtures(ctx: CabinContext): void {
   const card = wallFrame(ctx, ck.azDeg, ck.y, plateInset(ctx, ck.azDeg, ck.y, cw, chh, 0.004, 0.0005));
   const cf = { ...card, x: v3.normalize(v3.add(card.x, v3.scale(card.y, 0.06))), y: v3.normalize(v3.add(card.y, v3.scale(card.x, -0.06))) };
   b.box(offsetFrame(cf, 0, 0.0, -0.0025), cw / 2 - 0.006, chh / 2 - 0.008, 0.0015, 0.0006, ctx.m('velcro', { flags: FLAG_OVERLAY }));
+  // A second card under the first, a little askew, both under a spring clip on a ring.
+  const under = { ...cf, x: v3.normalize(v3.add(cf.x, v3.scale(cf.y, -0.035))), y: v3.normalize(v3.add(cf.y, v3.scale(cf.x, 0.035))) };
+  b.box(offsetFrame(under, 0.003, -0.004, -0.0019), cw / 2, chh / 2, 0.0005, 0.0002, ctx.m('card', { ao: 0.8 }));
   b.box(offsetFrame(cf, 0, 0, -0.0006), cw / 2, chh / 2, 0.0006, 0.0002, ctx.m('card'));
+  b.box(offsetFrame(cf, 0, chh / 2 - 0.004, 0.0022), 0.019, 0.0075, 0.0022, 0.001, ctx.m('matteBlack'));
+  for (const sx of [-1, 1]) b.tube([local(cf, sx * 0.012, chh / 2 - 0.006, 0.0044), local(cf, sx * 0.009, chh / 2 + 0.006, 0.006), local(cf, 0, chh / 2 + 0.012, 0.0045)], 0.0009, 5, ctx.m('steel'));
+  b.lathe(local(cf, 0, chh / 2 + 0.019, 0.003), cf.n, [[0.0085, -0.0012], [0.0097, 0], [0.0085, 0.0012], [0.0073, 0], [0.0085, -0.0012]], 20, ctx.m('steel'), { ref: cf.x });
   ctx.labelQuad(cf, 0, chh / 2 - 0.014, cw - 0.012, 0.0105, 'ENTRY CHECKLIST', 'card', { color: 1, style: { weight: 700 } });
   ctx.labelQuad(cf, 0, chh / 2 - 0.0225, cw - 0.012, 0.0008, '#LINE', 'card', { color: 1 });
   const steps = ['1  CM/SM SEP - CONFIRM', '2  ATT HOLD - RETRO', '3  RCS CMD - ON', '4  EI -15 MIN - SUITS', '5  G LIMIT 8 - CHECK', '6  COMM BLK - EXPECT', '7  DROGUE ARM - 24 KM', '8  MAINS - 3 KM AUTO', '9  VENT - OPEN', '10 BEACON - ON'];

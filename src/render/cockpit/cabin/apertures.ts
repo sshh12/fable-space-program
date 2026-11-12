@@ -479,5 +479,30 @@ export function buildDockingHatch(ctx: CabinContext): void {
     b.box(f, 0.022, 0.014, 0.008, 0.002, ctx.m('aluminium'));
     b.tube([{ x: 0, y: y - 0.05, z: 0 }, revPoint(r - 0.07, y - 0.048, a)], 0.004, 6, ctx.m('steel'));
   }
-  ctx.labelQuad(offsetFrame(hub, 0, -0.18, 0), 0, 0, 0.22, 0.015, 'DOCKING HATCH · PEV FIRST', 'hatch', { color: 1, style: { box: true } });
+  // The hatch's inner face: a machined plate stiffened by radial ribs between a hub ring and a rim ring, a
+  // pressure gauge and its equalisation valve between two ribs.
+  const hatchRib = ctx.m('hatch', { ao: 0.85 });
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * 2 * Math.PI + 0.12;
+    const radial = { x: Math.cos(a), y: 0, z: Math.sin(a) };
+    const tangent = { x: -Math.sin(a), y: 0, z: Math.cos(a) };
+    const r0 = 0.085;
+    const r1 = r - 0.075;
+    b.box(frameAt(v3.add(face.o, v3.add(v3.scale(radial, (r0 + r1) / 2), v3.scale(face.n, 0.006))), radial, tangent), (r1 - r0) / 2, 0.0035, 0.006, 0.0015, hatchRib);
+  }
+  b.lathe(face.o, face.n, [[0.092, 0], [0.092, 0.012], [0.08, 0.012], [0.08, 0]], 40, hatchRib, { ref: face.x });
+  b.lathe(face.o, face.n, [[r - 0.066, 0], [r - 0.066, 0.012], [r - 0.078, 0.012], [r - 0.078, 0]], 64, hatchRib, { ref: face.x });
+  {
+    const ga = 1.9;
+    const gp = v3.add(face.o, v3.scale({ x: Math.cos(ga), y: 0, z: Math.sin(ga) }, r * 0.55));
+    b.lathe(gp, face.n, [[0.028, 0], [0.028, 0.014], [0.024, 0.017], [0, 0.017]], 24, ctx.m('anodized', { flags: FLAG_EDGE }), { ref: face.x });
+    b.cylinder(v3.addScaled(gp, face.n, 0.017), face.n, 0.021, 0.0012, 24, ctx.m('pointer'), { caps: 'top' });
+    b.box(frameAt(v3.addScaled(gp, face.n, 0.0188), { x: Math.cos(0.7), y: 0, z: Math.sin(0.7) }, { x: -Math.sin(0.7), y: 0, z: Math.cos(0.7) }), 0.009, 0.0009, 0.0005, 0.0002, ctx.m('warning'));
+    const vp = v3.add(face.o, v3.scale({ x: Math.cos(ga + 0.5), y: 0, z: Math.sin(ga + 0.5) }, r * 0.55));
+    b.cylinder(vp, face.n, 0.012, 0.016, 14, ctx.m('steel'), { caps: 'top' });
+    b.cylinder(v3.add(v3.addScaled(vp, face.n, 0.022), v3.scale(face.x, -0.024)), face.x, 0.0045, 0.048, 10, ctx.m('warning'), { caps: 'both' });
+  }
+  // Its placard: a plate riveted across two ribs.
+  b.box(offsetFrame(hub, 0, -0.18, 0.0124), 0.115, 0.0105, 0.0004, 0.0002, ctx.m('aluminium'));
+  ctx.labelQuad(offsetFrame(hub, 0, -0.18, 0.0128), 0, 0, 0.22, 0.015, 'DOCKING HATCH · PEV FIRST', 'aluminium', { color: 1, lift: 0.0003, style: { box: true } });
 }
