@@ -1,6 +1,6 @@
 {
  "v": 1,
- "uploadedAt": "2026-11-12T09:54:24.978Z",
+ "uploadedAt": "2026-11-12T10:35:46.572Z",
  "sets": {
   "moon": {
    "type": "tiles",
@@ -145,6 +145,278 @@
     }
    ],
    "contentHash": null
+  },
+  "earth": {
+   "type": "tiles",
+   "index": "dfee7712e6664fe888d812a653328e23",
+   "indexBytes": 4545198,
+   "packs": [
+    {
+     "hash": "10af5e5d80ad47b5baef19814f5ae6a5",
+     "bytes": 268418528
+    },
+    {
+     "hash": "815d2d9a6636841ed6af37299c2954bb",
+     "bytes": 268362340
+    },
+    {
+     "hash": "502639d2713c860830c664e8696b82a8",
+     "bytes": 268424444
+    },
+    {
+     "hash": "b0a631d85589d1ae732b976c37d8ae3c",
+     "bytes": 84650925
+    },
+    {
+     "hash": "da2f3bf0c35268f453f6a2621d4aca24",
+     "bytes": 155609372
+    },
+    {
+     "hash": "80196ba84e1aa55a9f93c82f1b6db9e3",
+     "bytes": 119576300
+    },
+    {
+     "hash": "79fbcf9821e18b53c8dd376da6271142",
+     "bytes": 105259675
+    },
+    {
+     "hash": "dba1632ef0637329d3eedee8e8a8750f",
+     "bytes": 127007592
+    },
+    {
+     "hash": "f2e92eae24442ab91fef9b29578b97b7",
+     "bytes": 268417977
+    },
+    {
+     "hash": "43aa323a0fd86ffc2894282289a8de56",
+     "bytes": 77657869
+    },
+    {
+     "hash": "2a14cec9578452497392f5ddb642deff",
+     "bytes": 109061824
+    },
+    {
+     "hash": "8955dd9577aa5a074cdb1eea4f87fd3e",
+     "bytes": 141978580
+    },
+    {
+     "hash": "d8c3d5f4eac6cece17c1d36c2e38ef92",
+     "bytes": 266687698
+    },
+    {
+     "hash": "c8e3f9193cbe08d6b1bd3d4b0bc215e6",
+     "bytes": 268408409
+    },
+    {
+     "hash": "78ffd362ad2950dfa45ae986101e774f",
+     "bytes": 268399744
+    },
+    {
+     "hash": "59338d78e69eaa916e80a42a2544d23c",
+     "bytes": 268391525
+    },
+    {
+     "hash": "da90ea263292797590a077c3935a0e58",
+     "bytes": 198868861
+    },
+    {
+     "hash": "b3c8dc725be7bd9c0df603249a80933c",
+     "bytes": 72968646
+    },
+    {
+     "hash": "b612b0dcaebd5bcda4a74c7760ec414c",
+     "bytes": 180712072
+    },
+    {
+     "hash": "58ef5295af471cd654ff1866b322c9d5",
+     "bytes": 268406862
+    },
+    {
+     "hash": "74c1f3014460112b7b76887caacc6f5e",
+     "bytes": 268417537
+    },
+    {
+     "hash": "0bd84f8e474d0436705069068938ca76",
+     "bytes": 69321005
+    },
+    {
+     "hash": "9ec7faf9ea7f8680e9588ec7390507ca",
+     "bytes": 116900876
+    },
+    {
+     "hash": "a0180193b9465d5f0fec481d29147525",
+     "bytes": 206122725
+    },
+    {
+     "hash": "22053c9a7fbd0932391b08bc2bfd219d",
+     "bytes": 76670975
+    },
+    {
+     "hash": "bc4093946aadae6b5023e8089860fbcb",
+     "bytes": 251867022
+    },
+    {
+     "hash": "e94d0b373e21f9d0db7817a8932544f2",
+     "bytes": 268412443
+    },
+    {
+     "hash": "72d7d695ed7d4336ffca144aaf74c8e3",
+     "bytes": 268387590
+    },
+    {
+     "hash": "bfce47d9ec93a09d9d229411d5012728",
+     "bytes": 112317995
+    },
+    {
+     "hash": "b6fd7e46b403e444c960cbf15c215c2d",
+     "bytes": 261673734
+    },
+    {
+     "hash": "cd171c1508fa7dbbde850f891404a37b",
+     "bytes": 161264949
+    },
+    {
+     "hash": "9176e0832b6a3520ba1faa20b549e0ce",
+     "bytes": 98794186
+    },
+    {
+     "hash": "e9795b8c7fb34832b62ddd096f76be9b",
+     "bytes": 149034549
+    },
+    {
+     "hash": "4e65c534b8b4954b763d3d5e8dd62c14",
+     "bytes": 176421415
+    },
+    {
+     "hash": "55739b03ea4ec5f90de8795137d1056c",
+     "bytes": 78895307
+    },
+    {
+     "hash": "b8731f194bdcf7a2ac389e7369eb9f44",
+     "bytes": 217061996
+    },
+    {
+     "hash": "7e95d7fe2db30ba547dcb573e6db8c8d",
+     "bytes": 116170384
+    },
+    {
+     "hash": "1a64a2919939b9ea43b6598e0434f36a",
+     "bytes": 268410542
+    },
+    {
+     "hash": "b4b87a0ae0422403ac8f9006a0f31823",
+     "bytes": 220503363
+    },
+    {
+     "hash": "9a9be6de1b9a262d24f5742c68c88304",
+     "bytes": 154828192
+    },
+    {
+     "hash": "bb80fde400ddaad5942827ea90167052",
+     "bytes": 54361839
+    },
+    {
+     "hash": "40d42cbaa05f7b31b21de646606692fc",
+     "bytes": 73687571
+    },
+    {
+     "hash": "ceb2f19b78c8b7c2de3cdba427f50281",
+     "bytes": 79905190
+    },
+    {
+     "hash": "385c256855a2a9ce9f740ccf971981f6",
+     "bytes": 103776418
+    },
+    {
+     "hash": "dbc13709ca231f6a5aa78a826bafbf5d",
+     "bytes": 116442398
+    },
+    {
+     "hash": "029d306c78ca1429f194a89d0b159250",
+     "bytes": 252365731
+    },
+    {
+     "hash": "773bfe409838edb91bc03753b1a24428",
+     "bytes": 72892088
+    },
+    {
+     "hash": "ca9f777ccd7c46b528ead993c12816da",
+     "bytes": 133746495
+    },
+    {
+     "hash": "7913dc5258ce746291d19e5664f6971b",
+     "bytes": 150241620
+    },
+    {
+     "hash": "c8dd43750ccd56d6c8462610ed12e759",
+     "bytes": 86616885
+    },
+    {
+     "hash": "cb1a78008d5c604d0a14533632584bd5",
+     "bytes": 106131369
+    },
+    {
+     "hash": "01d0594c83dc5f97a4bacd0587c1f49b",
+     "bytes": 103154869
+    },
+    {
+     "hash": "16a41d15eac4dfe9e8fed4f440a9ca33",
+     "bytes": 134060217
+    },
+    {
+     "hash": "41d3bdb6aae5b7c21f4c2d3ce124c7aa",
+     "bytes": 160417960
+    },
+    {
+     "hash": "adbd56528495249a9e3dddd00f1f64d7",
+     "bytes": 93541206
+    },
+    {
+     "hash": "20f4dcd2c73b23c26df228e60620a710",
+     "bytes": 165098619
+    },
+    {
+     "hash": "2fedd3c0cf0be08c41f4a7ad6fd476a4",
+     "bytes": 96625481
+    },
+    {
+     "hash": "2a73204b86242e403a45fe594d54139b",
+     "bytes": 120436264
+    },
+    {
+     "hash": "dae8f2916ffc39ecb915eb96201db0b0",
+     "bytes": 140353530
+    },
+    {
+     "hash": "3204a4a12d635b85e7bcfeaadf845b5d",
+     "bytes": 198988572
+    },
+    {
+     "hash": "f8f2fb80f0a215be97cd7e3bca81420f",
+     "bytes": 73019359
+    },
+    {
+     "hash": "d2af05ea9e9234086ab1d435bacc43e6",
+     "bytes": 164195126
+    },
+    {
+     "hash": "919f6988c321d5a06e462cc516e7ec05",
+     "bytes": 75158448
+    },
+    {
+     "hash": "69f18f58ddf061d206f0ea5faf76032d",
+     "bytes": 90987844
+    },
+    {
+     "hash": "3b4718bdeadda79ecd349ac39189187f",
+     "bytes": 82471303
+    },
+    {
+     "hash": "baa2cf879113a89b4d58348fc97abcb2",
+     "bytes": 38744300
+    }
+   ],
+   "contentHash": "ab20fdfc579d4015"
   }
  }
 }
