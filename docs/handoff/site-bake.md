@@ -34,6 +34,110 @@ when it lands). The running log is at the end.
 - `azimuthDeg` is 90 for every pad (LC-1's `padAzimuthDeg`: launches east).
 - Pad ids `lc-1` .. `lc-16` per site, in placement order (heavy, medium, light); fleet-data may rename them.
 
+## 2. Public API (tools/bake/earth)
+
+```
+python -I tools/bake/earth/bake.py stage   --region <id>     # bake a NEW region away from the live tile set
+python -I tools/bake/earth/bake.py swap    --region <id>     # move its tiles in (new directories only), then the manifest, atomically
+python -I tools/bake/earth/bake.py pads    --region <id> --site <site> --nominal <lat,lon>
+                                           [--fixed <id:class:lat:lon:elevation>]... [--azimuth 90]
+                                           [--classes heavy=4:2500,medium=6:1500,light=6:1000] [--search-km N] [--strict]
+python -I tools/bake/earth/bake.py quality --region <id> --site <site>      # Q8 material (pictures, measurements)
+python -I tools/bake/earth/bake.py contact --region <id>     # the region's contact sheets only (staged or live)
+python -I tools/bake/earth/verify.py --region <id> [--quick] # region checks, staged (prospective manifest) or live
+python -I tools/bake/earth/swaptree.py --stage <dir> --live <dir> --manifest <file> [--delay-ms N]   # stdlib only
+```
+
+Python (stdlib) entry points other packages may call: `stage.begin(region_id)`, `stage.state(region_id) -> None |
+"staging" | "moved" | "swapped"`, `stage.hidden_regions() -> set[str]`, `stage.route(face, level, x, y) -> Path | None`,
+`stage.prospective_manifest(region_id) -> dict`, `stage.swap(region_id) -> dict`; `swaptree.swap_tree(stage: Path,
+live: Path, *, delay_s=0.0, log=print) -> dict`, `swaptree.write_manifest_atomic(live: Path, data: bytes) -> Path`;
+`region.list_regions(include_hidden: bool = False) -> list[str]`; `manifest.build_hash(layer, scope=None,
+include=frozenset())`, `manifest.layer_dict(layer, regions)`, `manifest.region_attribution(region, layer=None)`;
+`heights.source_finer_than_parent(region, level) -> bool`, `heights.vertex_spacing_m(region, level) -> float`;
+`padresolve.run(region_id, args) -> dict`; `groundquality.run(region_id, args) -> dict`.
+
+**Staging** (`stage.py`). A region is staged from `begin()` (which refuses a coverage overlapping the live one) until
+`swap()` has finished; its state is `data/cache/earth/stage/<region>/stage.json`. While "staging", `tiles.tile_file`
+routes every tile of its coverage at its regional levels to `data/cache/earth/stage/<region>/tiles/...` (reads and
+writes; global levels and other regions stay live). While "staging" or "moved" the region is hidden:
+`region.list_regions()` leaves it out (so `bake.py` without `--region`, `manifest`, `contact`, full `verify.py`
+and `cleanup` never see it), and `manifest.build_hash()` leaves its state records out (so a manifest written by anyone
+meanwhile is byte-identical to the live one).
+
+**Swap** (`stage.swap`). (1) The prospective manifest is built with the same layer functions as
+`manifest.write_all` and checked to be purely additive: every live layer key, coverage and sourceCoverage rectangle
+(in order), height scale, source and attribution line stays; only the region's rectangles, its source and
+attribution lines and the layers' `build` hashes are added or updated. (2) `swaptree.swap_tree` pre-flights every
+staged file against the live tree (a different live file at the same path stops the swap before anything moves;
+an identical one is left) and moves each staged directory that has no live counterpart with ONE rename (atomic on one
+volume); existing directories are entered and files moved one by one onto free names. (3) Every tile the new
+manifest promises is checked present (`layout.verify_files_exist`). (4) The manifest is written ONCE, through a
+temporary file and `os.replace`. Every step is idempotent: an interrupted swap is finished by running it again.
+
+**Region-file fields added** (optional, additive; Ka Lae's file is unchanged and keeps its behaviour):
+`sources.height.resolutionM` (land source sample spacing: sourceCoverage only at levels whose parent samples more
+coarsely), `sources.height.credit` / `landSurvey` / `attribution` (manifest source and attribution text of the
+region's land source), `sources.albedo.deshadeFitMinHeightM` (ground used for the regional de-shading fit; default
+1500 m as at Ka Lae: on Madrakah's desert coast every height is sparsely vegetated).
+
+## 6. The terrain guard: exactly what changes
+
+**Tile directories added to the Earth set** (all NEW; no directory that existed before holds a new, removed or
+changed file; checked byte for byte in section 8): for each layer `height` (`.hgt`), `albedo` (`.webp`), `watermask`
+(`.u8`) and `landcover` (`.u8`), on
+face 2, the column directories `{layer}/2/{level}/{x}` of the coverage rectangles of `earth-madrakah`:
+
+| Level | x (directories) | y (files per directory) | Tiles per layer |
+|---|---|---|---|
+| 8 | 43..51 (9) | 176..184 (9) | 81 |
+| 9 | 87..102 (16) | 353..366 (14) | 224 |
+| 10 | 175..203 (29) | 707..732 (26) | 754 |
+| 11 | 352..404 (53) | 1417..1464 (48) | 2,544 |
+| 12 | 706..808 (103) | 2835..2928 (94) | 9,682 |
+| all | 210 per layer, **840 directories** | | 13,285 per layer, **53,140 files** |
+
+The tile set's root directory `.` changes in one file only: `manifest.json` (additive: section 4). Nothing under
+`globals/`, `night/`, any other face or any level 0-7 directory changes; the Moon set is not touched. No stored
+guard direction lies in the new coverage: the nearest of the 2,000 Earth directions is 226 km from the region centre
+(17.211 N 58.820 E, level-8 tile 2/50/174, two tiles south of the level-8 coverage), the next 396 km; the guard's
+heights stay bit-identical (section 8). The new site and its pads are a new place: the lead appends its group
+(`--add-place`).
+
+**Flatten discs of the new pads** (for the guard's place groups; fleet-data sets the final radii). Each pad's ground
+was checked over a disc of 500 m radius about its centre (the pad rule, every class); the spacing keeps the blend
+discs apart for the radii below (heavy 2.5 km >= 900 + 900 m, heavy-medium 2.0 km >= 1.5 km, heavy-light 1.75 km >=
+1.2 km, medium 1.5 km >= 1.2 km, medium-light 1.25 km >= 0.9 km, light 1 km >= 0.6 km):
+
+| Class | Flat radius m | Blend radius m | Source |
+|---|---|---|---|
+| heavy | 450 | 900 | LC-1 (`ka-lae-lc1.json` `pad`) |
+| medium | 300 | 600 | between the two (fleet-docking 5.1 gives heavy and light only) |
+| light | 150 | 300 | fleet-docking 5.1 |
+
+The pad centres (site id, pad id, class, latitude, longitude) are the tables of section 3; LC-1's disc exists today
+and does not move.
+
+## 7. How to run and verify
+
+Every heavy step through the gate (one at a time; 6 workers at most; the bake re-executes itself in
+`data/cache/earth/venv`):
+
+```
+node tools/dev/heavy.mjs --class=bake --label=site-bake-stage -- python -I tools/bake/earth/bake.py stage --region earth-madrakah
+node tools/dev/heavy.mjs --class=bake --label=site-bake-pads  -- python -I tools/bake/earth/bake.py pads --region earth-madrakah --site madrakah --nominal 19.0,57.8 --search-km 20
+node tools/dev/heavy.mjs --class=bake --label=site-bake-pads  -- python -I tools/bake/earth/bake.py pads --region earth-ka-lae --site ka-lae --nominal 18.987556,-155.603239 --fixed lc-1:heavy:18.987556:-155.603239:21.62 --search-km 20
+node tools/dev/heavy.mjs --class=bake --label=site-bake-q     -- python -I tools/bake/earth/bake.py quality --region earth-madrakah --site madrakah
+node tools/dev/heavy.mjs --class=bake --label=site-bake-verify -- python -I tools/bake/earth/verify.py --region earth-madrakah
+node tools/dev/heavy.mjs --class=bake --label=site-bake-swap  -- python -I tools/bake/earth/bake.py swap --region earth-madrakah
+node tools/dev/heavy.mjs --class=cpu  -- npx vitest run tests/unit/site-bake tests/unit/terrain-core/terrain-guard.test.ts
+```
+
+Every step is resumable: finished work units are recorded in `data/cache/earth/state/` with the hash of their
+configuration; the stage marker says where the region stands. After an interruption, check the stage and the live
+tree for `.partial` or zero-length files before resuming (`layout.write_atomic` never leaves a truncated tile under
+its final name).
+
 ## 11. Running log
 
 - 2026-11-12 00:45 Pacific. Start. Read the brief, ARCHITECTURE 9.3/9.4/10.1/10.2/31.3, MIGRATION_V2, PACKAGE_RULES,
