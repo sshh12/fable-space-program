@@ -67,7 +67,9 @@ describe('the pilot through Sim.advance', () => {
     const headless = openSession(defs, 'qa-drogues', { terrain: await createRealTerrain(defs) });
     const run = await runHeadless(headless, createMissionPilot(defs, headless.scenario), { maxTicks: TICKS });
     expect(run.reason).toBe('tickLimit');
-    expect(run.stats.steps).toBe(TICKS * 4);
+    // A control tick is due at the ticks that are whole multiples of four: the steps up to the first one come before it.
+    const lead = (4 - (Math.round(headless.scenario.startUt * 120) % 4)) % 4;
+    expect(run.stats.steps).toBe(TICKS * 4 + lead);
     const frames = await flyFrames('qa-drogues', { stopTick: TICKS, awaitTerrain: true, maxFrames: 60 * 600 });
     expect(frames.ticks).toBe(TICKS);
     expect(frames.hashAtStop).toBe(headless.stateHash());

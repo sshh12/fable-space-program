@@ -356,36 +356,44 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     note('tick grid', `start tick ${Math.round(a.scenario.startUt * 120)}; all ${a.run.stats.ticks} control ticks (${a.run.stats.railsAdvances} of them rails landings) on whole ticks`, 'no state time off the grid');
   });
 
-  it('same-start equality: the ascent to EARTH_ORBIT is the one the v1 clock flew from this start', () => {
+  it('same start: the ascent to EARTH_ORBIT is the one the v1 clock flew from this start, flown by a pilot who acts on the control ticks of the clock', () => {
     // tests/mission/reference-v1-aligned.json: the v1 clock from the same tick-aligned start, at every milestone
-    // up to EARTH_ORBIT and every 30 s of the ascent. The v1 clock summed float instants while it warped on the
-    // pad and lifted off 18.6 microseconds before the tick: the Earth turns 1.4e-9 rad in that time, which is
-    // the difference of the two flights in the plane angles and in the inertial position (9 mm).
+    // up to EARTH_ORBIT and every 30 s of the ascent (v1 values, never rewritten). Until the tick-pure rule
+    // (src/sim/clock.ts) this flight equalled it to 5e-10. A control tick is now due at the ticks that are
+    // whole multiples of four, where v1 counted from the start and from every rails landing: the pilot of
+    // this flight acts `lead` ticks later than v1's, and the ascent is v1's ascent flown that much later.
+    // So the times differ by exactly the lead, the mass and the shape of the orbit agree to 1e-6, and the
+    // plane and the inertial position differ by what the Earth turns in the lead (1.8e-6 rad, 11 m at the pad).
     const reference = readReference();
     expect(a.scenario.startUt).toBe(reference.startUt);
+    const lead = ((4 - (Math.round(a.scenario.startUt * 120) % 4)) % 4) / 120;
+    expect(lead).toBe(3 / 120);
     expect(sameStart).toHaveLength(reference.states.length);
     expect(sameStart.filter((r) => r.kind === 'milestone').map((r) => r.id)).toEqual(['LIFTOFF', 'MAX_Q', 'STAGE_SEP_1', 'FAIRING_JETTISON', 'STAGE_SEP_2', 'EARTH_ORBIT']);
     const worst = (f: (r: ReferenceDifference) => number): number => Math.max(...sameStart.map((r) => Math.abs(f(r))));
     for (const r of sameStart) {
       expect(r.sameBody && r.sameControlTick, `${r.id}: same control tick, same body`).toBe(true);
-      expect(Math.abs(r.dUt), `${r.id}: event time`).toBeLessThan(1e-4);
-      expect(Math.abs(r.dCaptureUt), `${r.id}: capture time`).toBeLessThan(1e-4);
-      expect(r.da, `${r.id}: da/a`).toBeLessThan(1e-9);
-      expect(r.de, `${r.id}: de`).toBeLessThan(1e-9);
-      expect(r.dEnergy, `${r.id}: dE/E`).toBeLessThan(1e-9);
-      expect(r.dh, `${r.id}: dh/h`).toBeLessThan(1e-9);
-      expect(r.di, `${r.id}: di`).toBeLessThan(1e-8);
-      expect(r.dlan, `${r.id}: dLAN`).toBeLessThan(1e-8);
-      expect(r.dMass, `${r.id}: dm/m`).toBeLessThan(1e-12);
-      expect(Math.abs(r.dAltitude), `${r.id}: altitude`).toBeLessThan(1e-4);
-      expect(r.dPosition, `${r.id}: position`).toBeLessThan(0.05);
-      expect(r.dVelocity, `${r.id}: velocity`).toBeLessThan(1e-4);
+      // Every state is the v1 state `lead` later, to the tick.
+      expect(Math.abs(Math.abs(r.dUt) - lead), `${r.id}: event time`).toBeLessThan(1e-4);
+      expect(Math.abs(Math.abs(r.dCaptureUt) - lead), `${r.id}: capture time`).toBeLessThan(1e-4);
+      // The orbit's size, shape, energy and angular momentum, and the mass: the same flight.
+      expect(r.da, `${r.id}: da/a`).toBeLessThan(1e-6);
+      expect(r.de, `${r.id}: de`).toBeLessThan(1e-6);
+      expect(r.dEnergy, `${r.id}: dE/E`).toBeLessThan(1e-6);
+      expect(r.dh, `${r.id}: dh/h`).toBeLessThan(1e-6);
+      expect(r.dMass, `${r.id}: dm/m`).toBeLessThan(1e-7);
+      expect(Math.abs(r.dAltitude), `${r.id}: altitude`).toBeLessThan(0.01);
+      // The plane and the inertial place: the Earth has turned 7.29e-5 rad/s x lead under a later launch.
+      expect(r.di, `${r.id}: di`).toBeLessThan(1e-5);
+      expect(r.dlan, `${r.id}: dLAN`).toBeLessThan(2e-5);
+      expect(r.dPosition, `${r.id}: position`).toBeLessThan(15);
+      expect(r.dVelocity, `${r.id}: velocity`).toBeLessThan(0.05);
     }
     const sci = (x: number): string => x.toExponential(2);
     note(
       'same start',
-      `${sameStart.length} states to EARTH_ORBIT at the same control ticks as the v1 clock from this start: event times within ${sci(worst((r) => r.dUt))} s, da/a ${sci(worst((r) => r.da))}, de ${sci(worst((r) => r.de))}, dE/E ${sci(worst((r) => r.dEnergy))}, dh/h ${sci(worst((r) => r.dh))}, di ${sci(worst((r) => r.di))} rad, dLAN ${sci(worst((r) => r.dlan))} rad, dm/m ${sci(worst((r) => r.dMass))}, altitude ${sci(worst((r) => r.dAltitude))} m, position ${sci(worst((r) => r.dPosition))} m`,
-      '1e-4 s; 1e-9 in a, e, E, h; 1e-8 rad in i and LAN; 1e-12 in mass; 0.1 mm; 5 cm',
+      `${sameStart.length} states to EARTH_ORBIT, each ${(lead * 120).toFixed(0)} ticks after the v1 clock's from this start: event times within ${sci(worst((r) => r.dUt))} s, da/a ${sci(worst((r) => r.da))}, de ${sci(worst((r) => r.de))}, dE/E ${sci(worst((r) => r.dEnergy))}, dh/h ${sci(worst((r) => r.dh))}, di ${sci(worst((r) => r.di))} rad, dLAN ${sci(worst((r) => r.dlan))} rad, dm/m ${sci(worst((r) => r.dMass))}, altitude ${sci(worst((r) => r.dAltitude))} m, position ${sci(worst((r) => r.dPosition))} m`,
+      'the lead to 1e-4 s; 1e-6 in a, e, E, h; 1e-5 rad in i and 2e-5 rad in LAN; 1e-7 in mass; 1 cm of altitude; 15 m of inertial position',
     );
     console.log(`\nSame-start comparison (tests/mission/reference-v1-aligned.json):\n${referenceTable(sameStart)}`);
   });
@@ -396,7 +404,22 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     expect(controls.length).toBeGreaterThanOrEqual(4);
     const rows = compareEnvelope(baseline, record, controls);
     expect(rows).toHaveLength(17);
-    for (const r of rows) expect(r.pass, `${r.id}: ${r.why ?? ''}`).toBe(true);
+    // The control flights are v1 flights with shifted starts: their pilots act at their starts. The pilot of
+    // this flight acts on the clock's control ticks, `lead` ticks after the start (the test above), which
+    // the controls do not sample. A milestone that is outside by its event time ALONE is therefore held to
+    // the checker's allowance plus that lead; every element stays held to the checker's own allowance.
+    const lead = ((4 - (Math.round(a.scenario.startUt * 120) % 4)) % 4) / 120;
+    const byTheChecker = rows.filter((r) => r.pass).length;
+    const timeOnly: string[] = [];
+    for (const r of rows) {
+      if (r.pass) continue;
+      const why = r.why ?? '';
+      const onlyTime = /^event time differs by (-?[0-9.]+) s, allowed ([0-9.]+) s$/.exec(why);
+      expect(onlyTime, `${r.id}: ${why}`).not.toBeNull();
+      expect(Math.abs(Number(onlyTime![1])), `${r.id}: ${why}`).toBeLessThanOrEqual(Number(onlyTime![2]) + lead + 5e-4);
+      timeOnly.push(`${r.id} (${onlyTime![1]} s against ${onlyTime![2]} s)`);
+    }
+    expect(byTheChecker).toBeGreaterThanOrEqual(16);
     // The touchdown point and the recovery zone are the baseline's.
     expect(record.final.recoveryZone).toBe(baseline.final.recoveryZone);
     const td = record.milestones.find((m) => m.id === 'LUNAR_TOUCHDOWN')!;
@@ -404,7 +427,7 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     const cosang = Math.sin(td.latitude) * Math.sin(btd.latitude) + Math.cos(td.latitude) * Math.cos(btd.latitude) * Math.cos(td.longitude - btd.longitude);
     const apart = Math.acos(Math.max(-1, Math.min(1, cosang))) * a.defs.bodies[td.bodyId]!.radius;
     expect(apart).toBeLessThan(50);
-    note('envelope', `all 17 milestones inside twice the spread of ${controls.length} v1 control flights; touchdown ${apart.toFixed(2)} m from the baseline's point; splashdown in "${record.final.recoveryZone}"`, 'event time and da/a within 2 x the controls; 50 m; the same recovery zone');
+    note('envelope', `${byTheChecker} of 17 milestones inside twice the spread of ${controls.length} v1 control flights${timeOnly.length > 0 ? `, ${timeOnly.join(', ')} inside by event time once the pilot's lead of ${(lead * 120).toFixed(0)} ticks is allowed` : ''}; touchdown ${apart.toFixed(2)} m from the baseline's point; splashdown in "${record.final.recoveryZone}"`, 'event time and da/a within 2 x the controls; 50 m; the same recovery zone');
     console.log(`\nEnvelope against tests/mission/baseline-v1.json:\n${describeEnvelope(rows)}`);
   });
 

@@ -8,7 +8,11 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import { PHYSICS_DT } from '@/core/contracts/defs';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { v3 } from '@/core/math/vec3';
+import { baseUtOfTick, nearestTick, offsetOfTick } from '@/sim/clock';
 import { makeOrbit, propagate } from '@/sim/orbit';
+
+/** The conic at a tick as the world evaluates it: at the clock base of the tick plus the whole ticks since (src/sim/clock.ts). */
+const conicAt = (orbit: Parameters<typeof propagate>[0], ut: number) => propagate(orbit, baseUtOfTick(nearestTick(ut)), offsetOfTick(nearestTick(ut)));
 import { active, comState, controls, flatTerrain, loadLibrary, makeSim, orbitScenario } from './helpers';
 
 let defs: DefLibrary;
@@ -72,7 +76,7 @@ describe('rails', () => {
     expect(v.translationMode).toBe('rails');
     expect(v3.len(v.w)).toBeGreaterThan(0);
     const c = comState(v);
-    const ref = propagate(orbit, s.simUt);
+    const ref = conicAt(orbit, s.simUt);
     expect(v3.dist(c.r, ref.r)).toBeLessThan(1e-4);
     expect(v3.dist(c.v, ref.v)).toBeLessThan(1e-6);
     expect(s.simUt - s0.simUt).toBeCloseTo(1200 * PHYSICS_DT, 6);
@@ -125,7 +129,7 @@ describe('rails', () => {
     expect(worstStep).toBeLessThan(5e-3);
     const sEnd = sim.peek();
     const cEnd = comState(active(sEnd));
-    const refEnd = propagate(railsRef!, sEnd.simUt);
+    const refEnd = conicAt(railsRef!, sEnd.simUt);
     expect(v3.dist(cEnd.r, refEnd.r)).toBeLessThan(1e-4);
     // The new orbit differs from the old one: the burn was real.
     expect(v3.dist(cEnd.v, propagate(before, sEnd.simUt).v)).toBeGreaterThan(10);

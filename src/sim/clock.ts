@@ -46,3 +46,37 @@ export const snapToTick = (ut: number): number => nearestTick(ut) / TICKS_PER_SE
 
 /** Seconds spanned by a whole number of ticks (exact to rounding of one product: no accumulated error). */
 export const secondsOfTicks = (ticks: number): number => ticks * PHYSICS_DT;
+
+/**
+ * THE STATE AT A TICK IS A FUNCTION OF THE TICK AND THE VESSELS. Three things used to depend on how the
+ * clock got to a tick (where the last rails landing was): the base that body orientations are evaluated
+ * from, the phase of the control ticks and the phase of the sun sample. All three are fixed functions of
+ * the tick, so a session that reaches a tick by rails, by steps or after a restore is in the same state.
+ *
+ * Clock base. A body's orientation is W(base) + rate x (seconds since the base), and a vessel on rails is
+ * propagated to "base plus seconds since": the absolute time in seconds resolves only 1.2e-7 s at mission
+ * epochs (1e-11 rad of the Earth's turn, a millimetre of an orbit), which would show as noise from step to
+ * step; the offset from a base is exact. The base of a tick is the last whole multiple of BASE_TICKS: one
+ * day. Why a day: the offset then stays below 86,400 s, where a whole number of ticks times 1/120 s is
+ * exact to 1.5e-11 s (1e-15 rad of the Earth's turn, 7 nm at its surface, 1e-7 m of a low orbit), a base
+ * is itself a whole number of seconds (exact), and the base changes once per day of universe time; at that
+ * one tick the evaluation error of W at an absolute time (about 1e-11 rad, some tens of micrometres of
+ * ground) appears as a single step of the ground, where a shorter period would show it more often and a
+ * longer one would let the offset lose bits.
+ */
+export const BASE_TICKS = 86400 * TICKS_PER_SECOND;
+
+/** The clock base of a tick: the last whole multiple of BASE_TICKS at or before it. */
+export const baseTickOf = (tick: number): number => tick - (((tick % BASE_TICKS) + BASE_TICKS) % BASE_TICKS);
+
+/** The clock base of a tick as an instant, s (a whole number of seconds: exact). */
+export const baseUtOfTick = (tick: number): number => baseTickOf(tick) / TICKS_PER_SECOND;
+
+/** Seconds from the clock base of a tick to the tick: whole ticks times the length of one. */
+export const offsetOfTick = (tick: number): number => (tick - baseTickOf(tick)) * (1 / TICKS_PER_SECOND);
+
+/** A control tick is due at the ticks that are whole multiples of this (30 Hz of universe time; CONTROL_TICK_STEPS of the contract). */
+export const CONTROL_TICKS = 4;
+
+/** The sun sample (direction and visible fraction of the star at a vessel) is taken at the ticks that are whole multiples of this. */
+export const SUN_SAMPLE_TICKS = 12;

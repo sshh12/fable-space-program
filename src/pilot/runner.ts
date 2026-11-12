@@ -3,7 +3,8 @@
  *
  *   await sim.ready
  *   loop:  await sim.terrainPending() while it is non-null
- *          every CONTROL_TICK_STEPS-th physics step, and before every rails advance:
+ *          at every tick that is a whole multiple of CONTROL_TICK_STEPS (before the step from it), and
+ *          before every rails advance (at whatever tick the clock stands):
  *              controls = pilot.update(sim.peek(), commands, dt);  sim.setControls(controls)
  *          sim.needsIntegration or physics warp ?  sim.step()
  *                                                :  sim.advanceRails(min(sim.nextEventUt, ut + warpFactor / 60))
@@ -15,6 +16,7 @@
  */
 import { NEUTRAL_CONTROLS, type CommandResult, type ControlInputs, type NavballMode, type NodeEdit, type Pilot, type PlayerCommands, type SasMode } from '@/core/contracts/controls';
 import { MAX_PHYSICS_WARP_INDEX, PHYSICS_DT, WARP_LEVELS } from '@/core/contracts/defs';
+import { TICKS_PER_SECOND } from '@/core/contracts/net';
 import { CONTROL_TICK_STEPS, type Sim, type SimSnapshot } from '@/core/contracts/sim';
 
 /** Real-time frame the rails quantum mirrors (the browser's 60 Hz). */
@@ -215,8 +217,10 @@ async function runLoop(sim: Sim, driver: Driver, opts: RunOptions, log: InputLog
   const issued: LoggedCommand[] = [];
   const commands = recordingCommands(sim.commands, issued);
   let controls = copyControls(NEUTRAL_CONTROLS);
-  let sinceControl = 0;
   let snapshot = sim.peek();
+  // The clock tick, followed from the sim's own time: a control tick is a function of it, not of how many
+  // steps this loop has made since something happened.
+  let tick = Math.round(snapshot.simUt * TICKS_PER_SECOND);
   const startUt = snapshot.simUt;
   let prevTickUt = startUt;
   let warpIndex = snapshot.warp.index;
@@ -227,7 +231,7 @@ async function runLoop(sim: Sim, driver: Driver, opts: RunOptions, log: InputLog
     if (awaitTerrain) {
       for (let p = sim.terrainPending(); p !== null; p = sim.terrainPending()) await p;
     }
-    if (sinceControl % CONTROL_TICK_STEPS === 0) {
+    if (tick % CONTROL_TICK_STEPS === 0 || (!sim.needsIntegration && warpIndex > MAX_PHYSICS_WARP_INDEX)) {
       snapshot = sim.peek();
       lastUt = snapshot.simUt;
       warpIndex = snapshot.warp.index;
@@ -280,19 +284,19 @@ async function runLoop(sim: Sim, driver: Driver, opts: RunOptions, log: InputLog
         if (ringCount < STEP_RING) ringCount++;
       } else sim.step();
       stats.steps++;
-      sinceControl++;
+      tick++;
     } else {
       const ut = snapshot.simUt;
       const target = Math.min(sim.nextEventUt, ut + WARP_LEVELS[warpIndex]! * RAILS_FRAME);
       const reached = sim.advanceRails(target);
       if (reached > ut) {
         stats.railsAdvances++;
-        sinceControl = 0;
+        tick = Math.round(reached * TICKS_PER_SECOND);
       } else {
         // An event is due (the sim has stepped warp down): one physics step moves time on.
         sim.step();
         stats.steps++;
-        sinceControl++;
+        tick++;
       }
     }
   }

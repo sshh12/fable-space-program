@@ -13,7 +13,7 @@ import { PHYSICS_DT } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { v3 } from '@/core/math/vec3';
-import { ceilTick, floorTick, isTickInstant, nearestTick, snapToTick, tickOfInstant, TICKS_PER_SECOND, utOfTick } from '@/sim/clock';
+import { baseUtOfTick, ceilTick, floorTick, isTickInstant, nearestTick, offsetOfTick, snapToTick, tickOfInstant, TICKS_PER_SECOND, utOfTick } from '@/sim/clock';
 import { makeOrbit, propagate } from '@/sim/orbit';
 import { repoRoot } from '../../../tools/sim/realWorld';
 import { active, comState, flatTerrain, loadLibrary, makeSim, orbitScenario } from './helpers';
@@ -89,8 +89,11 @@ describe('rails landings', () => {
       expect(nearestTick(reached)).toBe(ceilTick(request));
       expect(reached - request).toBeGreaterThan(-1e-5);
       expect(reached - request).toBeLessThan(PHYSICS_DT);
-      // The state is the conic evaluated at the landing tick.
-      expect(v3.dist(comState(active(sim.peek())).r, propagate(orbit, reached).r)).toBeLessThan(1e-4);
+      // The state is the conic evaluated at the landing tick: at the clock base of the tick plus the ticks
+      // since, which is the instant of the tick to 1e-11 s (the absolute time in seconds resolves 1e-7 s).
+      const landed = nearestTick(reached);
+      expect(v3.dist(comState(active(sim.peek())).r, propagate(orbit, baseUtOfTick(landed), offsetOfTick(landed)).r)).toBeLessThan(1e-6);
+      expect(v3.dist(comState(active(sim.peek())).r, propagate(orbit, reached).r)).toBeLessThan(1e-3);
       ut = reached;
     }
     expect(sim.advanceRails(ut)).toBe(ut);
@@ -155,8 +158,9 @@ describe('rails landings', () => {
     const alt = v3.len(c1.r) - defs.bodies['earth']!.radius;
     expect(alt).toBeLessThanOrEqual(simTop);
     expect(simTop - alt).toBeLessThan(v3.len(c1.v) * PHYSICS_DT);
-    expect(v3.dist(c1.r, propagate(orbit, s1.simUt).r)).toBeLessThan(1e-4);
-    expect(v3.dist(c1.v, propagate(orbit, s1.simUt).v)).toBeLessThan(1e-7);
+    const t1 = nearestTick(s1.simUt);
+    expect(v3.dist(c1.r, propagate(orbit, baseUtOfTick(t1), offsetOfTick(t1)).r)).toBeLessThan(1e-6);
+    expect(v3.dist(c1.v, propagate(orbit, baseUtOfTick(t1), offsetOfTick(t1)).v)).toBeLessThan(1e-7);
     // Stepping from here stays on the grid.
     for (let i = 0; i < 8; i++) sim.step();
     expect(sim.peek().simUt).toBe(utOfTick(nearestTick(s1.simUt) + 8));

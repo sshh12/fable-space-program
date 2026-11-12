@@ -4,7 +4,7 @@
   "vehicle": "meridian-lunar",
   "site": "ka-lae",
   "pad": "lc-1",
-  "startUt": 938534867.5083333,
+  "startUt": 938534857.6333333,
   "start": {
     "kind": "landed",
     "bodyId": "moon",
@@ -20,12 +20,12 @@
     "ascent-stage": {
       "LOX": 8452.174,
       "CH4": 2347.826,
-      "RCSProp": 219.135
+      "RCSProp": 219.815
     },
     "descent-stage": {
-      "LOX": 3935.696,
-      "CH4": 1093.249,
-      "RCSProp": 96.415
+      "LOX": 3934.483,
+      "CH4": 1092.912,
+      "RCSProp": 97.164
     }
   },
   "target": "moon",

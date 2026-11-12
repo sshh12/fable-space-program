@@ -33,11 +33,12 @@ import {
 } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { padLocationOf, padOf } from '@/core/defs/sites';
+import type { TimeLimitKind } from '@/core/contracts/net';
 import { FRAME_HISTORY_EPOCHS, type FrameEpochOrigin, type FrameRebase } from '@/core/math/frame';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG, G0, RAD } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { ceilTick, nearestTick, TICK_EPSILON, TICKS_PER_SECOND, tickOfInstant, utOfTick } from '../clock';
+import { baseTickOf, baseUtOfTick, ceilTick, floorTick, nearestTick, offsetOfTick, SUN_SAMPLE_TICKS, TICK_EPSILON, TICKS_PER_SECOND, tickOfInstant, utOfTick } from '../clock';
 import type { BodyInfo, BodySystem } from '../bodies/bodySystem';
 import { createBodySystem } from '../bodies/bodySystem';
 import { dirFromLatLon, enuBasis } from '../frames/bodyFrames';
@@ -142,7 +143,6 @@ export const PREWARM_RADAR_ALTITUDE = 1500;
 /** Pending events kept for consumers that never drain the queue. */
 export const MAX_PENDING_EVENTS = 1024;
 /** Sun direction / visibility refresh interval per vessel, steps. */
-const SUN_REFRESH_STEPS = 12;
 /** Seconds a 'landed' scenario vessel is given to come to rest before startUt. */
 const LANDED_SETTLE_TIME = 40;
 const LANDED_DROP_HEIGHT = 0.25;
@@ -229,7 +229,6 @@ interface Entry {
   reducedTick: number;
   /** Counter that changes when the vessel's orbit or plan changes (VesselSnapshot.revision). */
   revision: number;
-  sunStep: number;
   /** Attitude follows the SAS hold direction during rails warp. */
   trackHold: boolean;
   /** In the terrain regime (low or slow near the ground): final data must be resident under it. */
@@ -285,6 +284,8 @@ class World implements SimWorld, MilestoneHost {
   private readonly surfaceTargets: SurfaceTarget[];
   private readonly milestones: MilestoneEvaluator;
 
+  /** Where the ids of launched craft come from (the further craft of a vehicle that is an assembly from the start). */
+  private readonly ids: CraftIdSource;
   /** Id of the pad of the scenario's site that the scenario stands on. */
   private readonly startPad: string;
 
@@ -314,23 +315,15 @@ class World implements SimWorld, MilestoneHost {
   // time: the clock is a whole tick (src/sim/clock.ts); `ut` = clockTick / TICKS_PER_SECOND is derived.
   private clockTick: number;
   private ut: number;
-  /**
-   * The clock base: the tick of the scenario start, of the last rails landing or of the last debug time
-   * change. Body orientations and the rails time of flight of a step are evaluated as "at the base, plus
-   * whole steps since" (see OrientationCache), so the rotation is exactly uniform from step to step.
-   */
-  private baseTick: number;
-  private utBase: number;
-  private stepsSinceBase = 0;
+  // Body orientations and the time of flight of a vessel on rails are evaluated as "at the clock base of
+  // the tick, plus the seconds since" (src/sim/clock.ts, baseTickOf; OrientationCache). The base, the
+  // control ticks and the sun samples are functions of the tick: nothing here remembers how the clock got
+  // to where it is.
   /** Monotonic count of physics steps + rails advances (SimSnapshot.tick, deprecated name). */
   private revision = 0;
-  private stepsSinceControl = 0;
   private stepCount = 0;
   /** Presentation lag behind the sim state, s in [0, PHYSICS_DT). */
   private lag = 0;
-  /** The step time being computed, and its offset from the clock base (kept apart for precision). */
-  private splitUt = NaN;
-  private splitOffset = 0;
   private lastAdvanceOnRails = false;
   private railsWarpActive = false;
 
@@ -347,6 +340,8 @@ class World implements SimWorld, MilestoneHost {
   private warpIndex = 0;
   private warpMax = MAX_PHYSICS_WARP_INDEX;
   private warpLimitedBy: string | null = null;
+  /** What kind of limit `warpLimitedBy` is (TimeView.limitedBy.kind): set where the sentence is chosen, never read back out of it. */
+  private warpLimitKind: TimeLimitKind | null = null;
   private warpEvent: WarpEvent | null = null;
   private warpStamp = -1;
   private mustStamp = -1;
@@ -410,10 +405,9 @@ class World implements SimWorld, MilestoneHost {
     this.milestones = new MilestoneEvaluator(scenario.milestones);
     this.targetBodyId = scenario.target && defs.bodies[scenario.target] ? scenario.target : null;
     this.clockTick = tickOfInstant(scenario.startUt, `scenarios/${scenarioId}.json: startUt`);
-    this.baseTick = this.clockTick;
     this.ut = utOfTick(this.clockTick);
-    this.utBase = this.ut;
-    this.startCraftId = (opts.ids ?? seededCraftIds()).next(scenario.vehicle);
+    this.ids = opts.ids ?? seededCraftIds();
+    this.startCraftId = this.ids.next(scenario.vehicle);
     this.renderRoot = opts.renderRoot ?? 'soiBody';
     this.frameBody = this.system.rootId;
     this.frameSeenBody = this.system.rootId;
@@ -442,21 +436,23 @@ class World implements SimWorld, MilestoneHost {
   }
 
   /**
-   * BCBF -> ROOT orientation of a body at `ut`, evaluated as the orientation at the clock base plus the
-   * rotation over the offset from it.
+   * BCBF -> ROOT orientation of a body at `ut`: the orientation at the clock base of that instant plus the
+   * rotation over the seconds since. A function of the instant alone.
    */
   private orientAt(bodyId: string, ut: number): Quat {
-    return this.orient.at(bodyId, this.utBase, this.offsetFromBase(ut));
+    const tick = nearestTick(ut);
+    if (utOfTick(tick) === ut) {
+      // An instant on the grid: whole ticks times the step (exactly uniform from step to step).
+      return this.orient.at(bodyId, baseUtOfTick(tick), offsetOfTick(tick));
+    }
+    // An event instant inside a tick: the base of the tick it lies in, and the plain difference.
+    const baseUt = utOfTick(baseTickOf(floorTick(ut)));
+    return this.orient.at(bodyId, baseUt, ut - baseUt);
   }
 
-  /**
-   * Seconds from the clock base to `ut`: whole ticks times the step for an instant on the grid (exactly
-   * uniform from step to step), the plain difference for an event instant inside a tick.
-   */
-  private offsetFromBase(ut: number): number {
-    if (ut === this.ut) return this.stepsSinceBase * PHYSICS_DT;
-    const tick = nearestTick(ut);
-    return utOfTick(tick) === ut ? (tick - this.baseTick) * PHYSICS_DT : ut - this.utBase;
+  /** Orientation at the presentation time: `lag` seconds before the clock tick, from the clock tick's base. */
+  private orientPresented(bodyId: string, lag: number): Quat {
+    return this.orient.at(bodyId, baseUtOfTick(this.clockTick), offsetOfTick(this.clockTick) - lag);
   }
 
   private envAt(e: Entry, ut: number): WorldEnv {
@@ -466,11 +462,20 @@ class World implements SimWorld, MilestoneHost {
     return e.env;
   }
 
+  /**
+   * Take the vessel's sun sample at `ut`. The sample is vessel state (`Vessel.sun`); it is taken when the
+   * tick is a whole multiple of SUN_SAMPLE_TICKS, at a rails landing and at the start.
+   */
   private refreshSun(e: Entry, ut: number): void {
     const posRoot = v3.add(this.system.stateRoot(e.bodyId, ut).r, e.vessel.r);
-    e.env.sunDir = this.system.sunDirection(posRoot, ut).dir;
-    e.env.sunVisibility = this.system.sunVisibility(posRoot, ut);
-    e.sunStep = this.stepCount;
+    e.vessel.sun = { dir: this.system.sunDirection(posRoot, ut).dir, visibility: this.system.sunVisibility(posRoot, ut) };
+    this.sunToEnv(e);
+  }
+
+  /** The step environment reads the sample the vessel carries. */
+  private sunToEnv(e: Entry): void {
+    e.env.sunDir = e.vessel.sun.dir;
+    e.env.sunVisibility = e.vessel.sun.visibility;
   }
 
   private comState(e: Entry): { r: Vec3; v: Vec3 } {
@@ -512,7 +517,6 @@ class World implements SimWorld, MilestoneHost {
       prevValid: false,
       reducedTick: this.clockTick,
       revision: 0,
-      sunStep: -1000000,
       trackHold: false,
       regime: false,
       bornTick: this.clockTick,
@@ -532,7 +536,7 @@ class World implements SimWorld, MilestoneHost {
   /** Build the scenario vessel and place it. `final` = terrain under the start point is resident. */
   private placeStartVessel(final: boolean): void {
     const sc = this.scenario;
-    const vessel = assembleVessel(this.defs, sc.vehicle, { stagesAlreadyFired: sc.stagesAlreadyFired, craft: { craftId: this.startCraftId, joinedTick: this.clockTick } });
+    const vessel = assembleVessel(this.defs, sc.vehicle, { stagesAlreadyFired: sc.stagesAlreadyFired, craft: { craftId: this.startCraftId, joinedTick: this.clockTick, ids: this.ids } });
     if (sc.resources) applyStartResources(vessel, sc.resources);
     const start = sc.start;
     const ut = sc.startUt;
@@ -807,11 +811,15 @@ class World implements SimWorld, MilestoneHost {
   }
 
   /**
-   * Centre-of-mass state of a rails vessel at `utNew`. A step time is the clock base plus whole steps:
-   * propagate with the two apart (exact time of flight).
+   * Centre-of-mass state of a rails vessel at `utNew`. An instant on the grid is the clock base of its tick
+   * plus whole ticks: propagate with the two apart (exact time of flight), for a step and for a rails
+   * landing alike, so that a vessel on rails is in the same state at a tick however the clock got there.
+   * An event instant inside a tick is propagated to as it is.
    */
   private railsState(e: Entry, utNew: number): { r: Vec3; v: Vec3 } {
-    return utNew === this.splitUt ? propagate(e.orbit!, this.utBase, this.splitOffset) : propagate(e.orbit!, utNew);
+    const tick = nearestTick(utNew);
+    if (utOfTick(tick) !== utNew) return propagate(e.orbit!, utNew);
+    return propagate(e.orbit!, baseUtOfTick(tick), offsetOfTick(tick));
   }
 
   private advanceReduced(e: Entry, utNew: number): boolean {
@@ -820,7 +828,8 @@ class World implements SimWorld, MilestoneHost {
     while (e.reducedTick + REDUCED_STEP_TICKS <= tickNew) {
       const t = utOfTick(e.reducedTick);
       const env = this.envAt(e, t);
-      if (this.stepCount - e.sunStep >= SUN_REFRESH_STEPS * 10) this.refreshSun(e, t);
+      // The reduced tier samples the sun at a tenth of the rate: at the first of its steps after every tenth sample tick.
+      if (e.reducedTick % (SUN_SAMPLE_TICKS * 10) < REDUCED_STEP_TICKS) this.refreshSun(e, t);
       const res = stepVesselReduced(v, env, REDUCED_DT);
       e.reducedTick += REDUCED_STEP_TICKS;
       if (res.removed !== null) {
@@ -934,13 +943,10 @@ class World implements SimWorld, MilestoneHost {
   step(): void {
     this.throwIfBroken();
     this.ensurePatches();
-    if (this.stepsSinceControl % CONTROL_TICK_STEPS === 0) this.boundaryWork();
+    if (this.clockTick % CONTROL_TICK_STEPS === 0) this.boundaryWork();
     const ut0 = this.ut;
     const dt = PHYSICS_DT;
-    const stepNumber = this.stepsSinceBase + 1;
     const utNew = utOfTick(this.clockTick + 1);
-    this.splitUt = utNew;
-    this.splitOffset = stepNumber * dt;
     this.updateSasHold(this.active);
     let incomplete = false;
     for (let k = 0; k < this.entries.length; k++) {
@@ -955,16 +961,14 @@ class World implements SimWorld, MilestoneHost {
       }
     }
     if (incomplete) this.incompleteQueries++;
-    this.stepsSinceBase = stepNumber;
     this.clockTick += 1;
     this.ut = utNew;
     this.stampAges();
     this.revision++;
     this.stepCount++;
-    this.stepsSinceControl++;
     this.lastAdvanceOnRails = false;
     this.railsWarpActive = false;
-    this.afterAdvance(dt, this.stepsSinceControl % CONTROL_TICK_STEPS === 0);
+    this.afterAdvance(dt, this.clockTick % CONTROL_TICK_STEPS === 0);
     if (this.active.mode !== 'rails' && this.stepCount % PATCH_REFRESH_STEPS === 0) this.patchesDirty = true;
     this.touch();
   }
@@ -981,7 +985,7 @@ class World implements SimWorld, MilestoneHost {
     e.prevQ.w = v.q.w;
     e.prevValid = true;
     const env = this.envAt(e, ut0);
-    if (this.stepCount - e.sunStep >= SUN_REFRESH_STEPS) this.refreshSun(e, ut0);
+    if (this.clockTick % SUN_SAMPLE_TICKS === 0) this.refreshSun(e, ut0);
     const must = v.hold !== null ? false : this.mustIntegrate(e, env);
     if (e.mode === 'rails' && must) {
       e.mode = 'integrated';
@@ -1047,10 +1051,9 @@ class World implements SimWorld, MilestoneHost {
   }
 
   private adopt(vessel: Vessel, parent: Entry): void {
+    // A vessel that separates flies on with the sample of the vessel it left (copied with its state).
     const e = this.newEntry(vessel, parent.bodyId);
-    e.env.sunDir = parent.env.sunDir;
-    e.env.sunVisibility = parent.env.sunVisibility;
-    e.sunStep = parent.sunStep;
+    this.sunToEnv(e);
     this.entries.push(e);
     if (parent === this.active) this.separations.push(this.ut);
     this.stageInfoDirty = true;
@@ -1516,14 +1519,9 @@ class World implements SimWorld, MilestoneHost {
     }
     this.clockTick = landing;
     this.ut = target;
-    this.baseTick = landing;
-    this.utBase = target;
-    this.stepsSinceBase = 0;
-    this.splitUt = NaN;
     this.stampAges();
     this.revision++;
     this.railsAdvances++;
-    this.stepsSinceControl = 0;
     this.lag = 0;
     this.lastAdvanceOnRails = true;
     this.afterAdvance(0, true);
@@ -1613,7 +1611,7 @@ class World implements SimWorld, MilestoneHost {
         this.lag = 0;
         break;
       }
-      if (this.stepsSinceControl % CONTROL_TICK_STEPS === 0) {
+      if (this.clockTick % CONTROL_TICK_STEPS === 0) {
         if (!tickGiven) onControlTick?.();
         if (this.warpIndex > MAX_PHYSICS_WARP_INDEX) {
           // Rails warp was engaged in the control tick: the rest of this frame's time is spent on rails.
@@ -1652,17 +1650,21 @@ class World implements SimWorld, MilestoneHost {
     const v = a.vessel;
     let max = WARP_LEVELS.length - 1;
     let limitedBy: string | null = null;
+    let kind: TimeLimitKind | null = null;
     let event: WarpEvent | null = null;
     const base = this.bases.get(a.bodyId)!;
     if (a.removed) {
       max = MAX_PHYSICS_WARP_INDEX;
       limitedBy = 'No vessel';
+      kind = 'physics';
     } else if (this.bubbleMustIntegrate()) {
       max = MAX_PHYSICS_WARP_INDEX;
       limitedBy = RAILS_REFUSED;
+      kind = 'physics';
     } else if (v.hold === null && v3.len(v.w) > ROTATION_WARP_LIMIT && !this.railsWarpActive) {
       max = MAX_PHYSICS_WARP_INDEX;
       limitedBy = ROTATING_REFUSED;
+      kind = 'physics';
     } else if (v.hold !== null) {
       // Landed: any level; the only events are node lead times.
       event = this.nodeEvent();
@@ -1670,12 +1672,16 @@ class World implements SimWorld, MilestoneHost {
       if (la < max) {
         max = Math.max(la, MAX_PHYSICS_WARP_INDEX);
         limitedBy = 'Maneuver node ahead';
+        kind = 'event';
       }
     } else {
       const com = this.comState(a);
       const alt = v3.len(com.r) - base.info.radius;
       let idx = maxWarpIndexForAltitude(base.def, alt);
-      if (idx < max) limitedBy = 'Altitude too low for a higher warp level';
+      if (idx < max) {
+        limitedBy = 'Altitude too low for a higher warp level';
+        kind = 'altitude';
+      }
       const nodes = this.nodes.map((node) => ({ node, burnTime: this.burnTimeFor(node) }));
       const alarms = this.altitudeAlarms(a, com);
       const eventFor = (level: number): WarpEvent | null =>
@@ -1689,6 +1695,7 @@ class World implements SimWorld, MilestoneHost {
         if (la >= idx) break;
         idx = ev !== null && ev.kind === 'altitudeLimit' ? idx - 1 : Math.max(la, MAX_PHYSICS_WARP_INDEX);
         limitedBy = this.describeEvent(ev);
+        kind = ev !== null && ev.kind === 'altitudeLimit' ? 'altitude' : 'event';
       }
       max = idx;
       event = eventFor(Math.min(this.warpIndex, max));
@@ -1702,12 +1709,14 @@ class World implements SimWorld, MilestoneHost {
         if (!this.policy.isFinalAt(a.bodyId, dirFixed)) {
           max = 0;
           limitedBy = 'Terrain data loading';
+          kind = 'physics';
           this.terrainClampActive = true;
         }
       }
     }
     this.warpMax = max;
     this.warpLimitedBy = limitedBy;
+    this.warpLimitKind = limitedBy === null ? null : (kind ?? 'event');
     this.warpEvent = event;
     if (this.warpIndex > max) {
       if (this.terrainClampActive) this.terrainWarpClamps++;
@@ -2244,10 +2253,6 @@ class World implements SimWorld, MilestoneHost {
         for (const n of this.nodes) n.ut += shift;
         this.clockTick = tick;
         this.ut = to;
-        this.baseTick = tick;
-        this.utBase = to;
-        this.stepsSinceBase = 0;
-        this.splitUt = NaN;
         for (const e of this.entries) if (e.vessel.hold !== null) rideBody(e.vessel, this.envAt(e, to), 0);
         this.patchesDirty = true;
         this.warpStamp = -1;
@@ -2503,7 +2508,7 @@ class World implements SimWorld, MilestoneHost {
     bodies.forEach((b, i) => {
       bodyIndex.set(b.id, i);
       // Orientation on the world clock (base + offset): the same rotation the physics and landed vessels use.
-      b.qFixedToRoot = this.orient.at(b.id, this.utBase, this.stepsSinceBase * PHYSICS_DT - lag);
+      b.qFixedToRoot = this.orientPresented(b.id, lag);
       if (originR && originV) {
         b.rRoot = v3.sub(b.rRoot, originR);
         b.vRoot = v3.sub(b.vRoot, originV);
@@ -2590,7 +2595,7 @@ class World implements SimWorld, MilestoneHost {
         liveTick: this.clockTick,
         rate,
         maxRate: warpFactor(this.warpMax),
-        limitedBy: this.warpLimitedBy === null ? null : { kind: this.warpLimitedBy.startsWith('Altitude') ? 'altitude' : this.warpMax <= MAX_PHYSICS_WARP_INDEX ? 'physics' : 'event', text: this.warpLimitedBy, vesselIds: [], accountIds: [] },
+        limitedBy: this.warpLimitedBy === null ? null : { kind: this.warpLimitKind ?? 'event', text: this.warpLimitedBy, vesselIds: [], accountIds: [] },
         relation: 'live',
         offset: 0,
         clockId: null,
@@ -2669,7 +2674,7 @@ class World implements SimWorld, MilestoneHost {
     const v = e.vessel;
     if (v.hold !== null && v.anchor) {
       // Landed vessels ride the body: evaluate exactly at the presentation time.
-      const qf = this.orient.at(e.bodyId, this.utBase, this.stepsSinceBase * PHYSICS_DT - lag);
+      const qf = this.orientPresented(e.bodyId, lag);
       const sp = this.info(e.bodyId).spin;
       snap.r = quat.rotate(qf, v.anchor.rFixed);
       snap.v = v3.cross(sp, snap.r);
