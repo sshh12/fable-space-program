@@ -1,0 +1,43 @@
+{
+  "budgetBytes": 25000000,
+  "roots": {
+    "earth": "data/tiles/earth",
+    "moon": "data/tiles/moon",
+    "sky": "data/sky"
+  },
+  "items": [
+    { "set": "earth", "path": "manifest.json" },
+    { "set": "moon", "path": "manifest.json" },
+    { "set": "sky", "path": "manifest.json" },
+    { "set": "sky", "path": "stars.f32" },
+    { "set": "sky", "path": "named-stars.json" },
+    { "set": "earth", "layer": "albedo", "levels": [0, 2] },
+    { "set": "earth", "layer": "watermask", "levels": [0, 2] },
+    { "set": "earth", "layer": "landcover", "levels": [0, 2] },
+    { "set": "earth", "layer": "night", "levels": [0, 2] },
+    { "set": "earth", "layer": "height", "levels": [0, 1] },
+    { "set": "sky", "path": "milkyway-px.rgb9e5", "from": 22020096, "note": "mips 3-11 (256^2 and below) of a 2048^2 rgb9e5 face; mip 0 first" },
+    { "set": "sky", "path": "milkyway-nx.rgb9e5", "from": 22020096 },
+    { "set": "sky", "path": "milkyway-py.rgb9e5", "from": 22020096 },
+    { "set": "sky", "path": "milkyway-ny.rgb9e5", "from": 22020096 },
+    { "set": "sky", "path": "milkyway-pz.rgb9e5", "from": 22020096 },
+    { "set": "sky", "path": "milkyway-nz.rgb9e5", "from": 22020096 },
+    { "set": "earth", "path": "globals/albedoLowRes.png" },
+    { "set": "moon", "path": "globals/albedo-lowres.png" },
+    { "set": "moon", "layer": "albedo", "levels": [0, 2] },
+    { "set": "moon", "layer": "height", "levels": [0, 1] },
+    { "set": "earth", "layer": "height", "levels": [2, 2] },
+    { "set": "earth", "layer": "albedo", "levels": [3, 3] },
+    { "set": "earth", "layer": "watermask", "levels": [3, 3] },
+    { "set": "earth", "layer": "landcover", "levels": [3, 3] },
+    { "set": "earth", "layer": "night", "levels": [3, 3] },
+    { "set": "moon", "layer": "height", "levels": [2, 2] },
+    { "set": "moon", "layer": "albedo", "levels": [3, 3] },
+    { "set": "earth", "layer": "height", "levels": [3, 3] },
+    { "set": "moon", "layer": "height", "levels": [3, 3] }
+  ],
+  "notBaked": [
+    { "item": "earth/globals/cloudCoverage.png low mips", "reason": "no low-resolution cloud map is baked (the 8192 x 4096 PNG is 38 MB); a reduced copy is a bake product, not copied tile bytes: a request to the bake owner" },
+    { "item": "menu assets", "reason": "the menu does not exist yet (capability-settings and app-integration-1, wave 4)" }
+  ]
+}

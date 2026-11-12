@@ -1,14 +1,43 @@
 /**
- * Fetch-based TileSource for the browser main thread and module workers. Body-agnostic: every tile set is
- * served at {baseUrl}/{tileset}/manifest.json and {baseUrl}/{tileset}/{layer}/{face}/{level}/{x}/{y}.{ext}
- * (ARCHITECTURE section 7.1). The manifest is fetched once per tile set and cached; tiles the manifest does
- * not promise are never requested (`layerHasTile` decides) and resolve to null; a failed request for a
- * promised tile rejects (a 404 there is a bake bug, not a normal condition).
+ * Tile sources (ARCHITECTURE 10.2, 10.4).
+ *
+ * `createTileSource(spec)` turns a `TileSourceSpec` (plain data: a tile worker receives it in its init
+ * message) into a `TileSource`:
+ *   fetch  plain files over HTTP: `createFetchTileSource(baseUrl)` below, unchanged;
+ *   pack   content-addressed packs from an ordered mirror list (`createPackTileSource`, packSource.ts), with
+ *          the OPFS cache in front when the spec asks for it (opfsCache.ts);
+ *   fs     a directory of plain files. It needs the Node file system, which browser code must never import,
+ *          so this module (part of the client bundle) does not construct it: Node code calls
+ *          `createTileSource` of `tileSource.node.ts`, which builds `fs` with `createFsTileSource` (unchanged)
+ *          and hands the other kinds to this function. Asking this module for `fs` is an error that says so.
+ *
+ * The fetch source: body-agnostic, every tile set is served at {baseUrl}/{tileset}/manifest.json and
+ * {baseUrl}/{tileset}/{layer}/{face}/{level}/{x}/{y}.{ext} (ARCHITECTURE section 10.1). The manifest is
+ * fetched once per tile set and cached; tiles the manifest does not promise are never requested
+ * (`layerHasTile` decides) and resolve to null; a failed request for a promised tile rejects (a 404 there is
+ * a bake bug, not a normal condition).
  */
 import type { TileKey } from '../core/geo/cubeSphere';
 import { tilePath } from '../core/geo/cubeSphere';
-import type { TileManifest, TileSource } from '../core/contracts/terrain';
+import type { TileManifest, TileSource, TileSourceSpec } from '../core/contracts/terrain';
 import { layerHasTile } from '../core/contracts/terrain';
+import { openOpfsCache } from './opfsCache';
+import { createPackTileSource } from './packSource';
+
+/** A TileSource from its plain-data description (browser main thread, workers and Node; `fs` only through tileSource.node.ts). */
+export function createTileSource(spec: TileSourceSpec): TileSource {
+  switch (spec.kind) {
+    case 'fetch':
+      return createFetchTileSource(spec.baseUrl);
+    case 'pack':
+      return createPackTileSource({
+        packListUrl: spec.packListUrl,
+        cache: spec.cache ? openOpfsCache({ maxBytes: spec.cache.maxBytes }) : null,
+      });
+    case 'fs':
+      throw new Error(`createTileSource: the "fs" kind (${spec.root}) reads the file system; in Node use createTileSource from src/terrain/tileSource.node.ts`);
+  }
+}
 
 /** Validate the parts of a manifest the height authority relies on; throws with the tile set name. */
 export function validateTileManifest(m: unknown, tileset: string): TileManifest {
