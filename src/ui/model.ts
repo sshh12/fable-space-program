@@ -477,6 +477,40 @@ export function stageActionWords(s: SimSnapshot, defs: DefLibrary | undefined, i
 /** Local gravity (m/s^2) below which a stage shows its acceleration instead of a thrust-to-weight ratio. */
 export const WEAK_GRAVITY = 0.5;
 
+const G0 = 9.80665;
+
+/**
+ * Full-throttle acceleration of stage `index` at its current mass, m/s^2, from its vacuum delta-v, its burn time
+ * and the vacuum Isp of the engines it ignites (VehicleDef stage actions; fixed-burn motors left out):
+ * a0 = ve (1 - e^(-dv/ve)) / t, exact for a constant-thrust burn. It does not depend on gravity, so it stays
+ * right where the sim's TWR is stale: StageInfo is refreshed on integrated steps only, and after a coast on rails
+ * across a sphere-of-influence change its TWR still holds the gravity of the old body (request flight-ui-8).
+ * Null without a vehicle definition, engines or a burn time.
+ */
+export function stageAcceleration(s: SimSnapshot, defs: DefLibrary | undefined, index: number): number | null {
+  const info = s.staging.stages[index];
+  const v = activeVesselOf(s);
+  const vehicle = defs && v ? defs.vehicles[v.vehicleId] : undefined;
+  const stage = vehicle?.stages[index];
+  if (!info || !defs || !vehicle || !stage || !(info.burnTime > 0) || !(info.deltaVVac > 0)) return null;
+  let thrust = 0;
+  let flow = 0;
+  for (const a of stage.actions) {
+    if (a.kind !== 'igniteEngines') continue;
+    for (const id of a.parts) {
+      const def = defs.parts[vehicle.parts.find((p) => p.id === id)?.def ?? ''];
+      for (const m of def?.modules ?? []) {
+        if (m.type !== 'engine' || m.fixedBurn || !(m.ispVac > 0)) continue;
+        thrust += m.thrustVac;
+        flow += m.thrustVac / m.ispVac;
+      }
+    }
+  }
+  if (!(flow > 0)) return null;
+  const ve = (G0 * thrust) / flow;
+  return (ve * (1 - Math.exp(-info.deltaVVac / ve))) / info.burnTime;
+}
+
 export interface StagesView {
   tiles: StageTileView[];
   /** Index of the active (burning) stage, or -1. */
@@ -515,7 +549,7 @@ export function describeStages(s: SimSnapshot, defs?: DefLibrary): StagesView {
       deltaVVac: hasEngines ? formatDeltaV(info.deltaVVac) : '',
       twr: hasEngines ? formatTwr(info.twr) : '',
       thrustLabel: weak ? 'Accel' : 'TWR',
-      thrustValue: !hasEngines ? '' : weak ? `${formatNumber(info.twr * gLocal!, 2)}${NBSP}m/s²` : formatTwr(info.twr),
+      thrustValue: !hasEngines ? '' : weak ? `${formatNumber(stageAcceleration(s, defs, i) ?? info.twr * gLocal!, 2)}${NBSP}m/s²` : formatTwr(info.twr),
       burnTime: hasEngines ? formatDuration(info.burnTime) : '',
       propellant: info.propellantFraction,
       hasEngines,

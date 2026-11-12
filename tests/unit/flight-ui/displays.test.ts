@@ -47,6 +47,7 @@ import {
   landingTargetExpanded,
   milestoneSoiBody,
   milestoneTitle,
+  stageAcceleration,
   stageActionText,
   stageBurnLabel,
   summarizeResources,
@@ -735,6 +736,26 @@ describe('round-6 mission read-outs', () => {
     const drogues = describeChuteEnvelope(at(8, 'unsafe'), defs)!;
     expect([drogues.label, drogues.light, drogues.tone]).toEqual(['Drogue deploy', 'UNSAFE', 'warning']);
     expect(describeChuteEnvelope({ ...base, readouts: { ...base.readouts, chuteEnvelope: null } }, defs)).toBeNull();
+  });
+
+  it('gives a coasting stage its full-throttle acceleration whatever gravity the sim last computed its TWR at', () => {
+    // At the Moon's SOI (out/screens/mission/08: "Heron descent stage · Δv 3 547 m/s · 0.00 m/s²"): the sim's
+    // TWR was computed near the Earth before the rails coast, the HUD multiplied it by the Moon's 0.001 m/s^2.
+    const m0 = 45_000;
+    const mprop = 30_000;
+    const engine = defs.parts['lyra-d']!.modules.find((m) => m.type === 'engine')!;
+    if (engine.type !== 'engine') throw new Error('lyra-d has no engine');
+    const ve = engine.ispVac * 9.80665;
+    const burnTime = mprop / (engine.thrustVac / ve);
+    const base = missionSnap('translunar', ['capsule'], (_p, _r, c) => c);
+    const stages = base.staging.stages.map((x) => ({ ...x }));
+    // Stage index 4 ignites the descent engine (lyra-d); its TWR is stale (Earth gravity at 10 000 km).
+    stages[4] = { ...stages[4]!, fired: true, deltaVVac: ve * Math.log(m0 / (m0 - mprop)), deltaVNow: ve * Math.log(m0 / (m0 - mprop)), burnTime, twr: engine.thrustVac / (m0 * 1.49), propellantFraction: 0.92 };
+    const s = { ...base, staging: { ...base.staging, stages, nextStage: 5 } };
+    expect(stageAcceleration(s, defs, 4)).toBeCloseTo(engine.thrustVac / m0, 6);
+    const tile = describeStages(s, defs).tiles[4]!;
+    expect(tile.thrustLabel).toBe('Accel');
+    expect(n(tile.thrustValue)).toBe(`${(engine.thrustVac / m0).toFixed(2)} m/s²`);
   });
 
   it('shows no Mach number or angle of attack outside an atmosphere', () => {
