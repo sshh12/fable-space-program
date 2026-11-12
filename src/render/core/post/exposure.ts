@@ -89,8 +89,12 @@ export const SUNLIT_SHADOW_MIN_EV = 0.5;
  * emitters above SUNLIT_OVER_WHITE times the luminance of a white Lambert surface square to the sun (sunlit
  * white with its share of sky light stays under it) may raise the exterior target by at most
  * SUNLIT_SPOT_MAX_EV over what the frame without them asks for, under the same visibility gate as the other
- * sunlit bounds. A frame full of sunlit cloud or snow keeps its half stop (SUNLIT_HIGHLIGHT_MAX_EV); the pad
- * under the flame of a daylight lift-off no longer holds the meter on that bound until it leaves the frame.
+ * sunlit bounds. The same bound holds for the highlight term as such: the brightest per cent of a sunlit
+ * frame (a white mount, the apron in the outer light of a flame, a hull: at or under sunlit white, so not
+ * told from it by their luminance) raises the target by SUNLIT_SPOT_MAX_EV at most over what the frame's mean
+ * and the prior ask for. A frame that is bright as a whole (sunlit cloud tops, snow) keeps its half stop
+ * (SUNLIT_HIGHLIGHT_MAX_EV) through its mean; the pad under the flame of a daylight lift-off no longer holds
+ * the meter on that bound until it leaves the frame.
  */
 export const SUNLIT_OVER_WHITE = 1.5;
 export const SUNLIT_SPOT_MAX_EV = 0.25;
@@ -399,8 +403,12 @@ export function meterExposure(m: MeterInput): MeterResult {
       }
     } else {
       // The bound holds for the mean as well as for the 99th percentile: a few per cent of the frame at a
-      // hundred times sunlit white move the arithmetic mean by stops.
-      evHistogram = underTheSun(Math.max(evHistogram, Math.log2(stats.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K))));
+      // hundred times sunlit white move the arithmetic mean by stops. And under the sun the highlight term
+      // alone (a few per cent of the frame near white: a white launch mount, the apron round a flame, a hull)
+      // may raise the target by SUNLIT_SPOT_MAX_EV over what the frame's mean and the prior ask for; only a
+      // frame that is bright as a whole (cloud tops, snow) takes the whole half stop (request vfx-8).
+      const evMeanTerm = evHistogram;
+      evHistogram = underTheSun(Math.max(evMeanTerm, spot(Math.log2(stats.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)), Math.max(evMeanTerm, evPrior))));
       // The same frame without what is brighter than the sun can make it: it sets the level, the rest clips.
       const first = luminanceBin(overWhite) + 1;
       let over = 0;
@@ -411,7 +419,8 @@ export function meterExposure(m: MeterInput): MeterResult {
         let evLit = evSun;
         if (lit.mean > 0) {
           const evMean = ev100ForMidGrey(lit.mean);
-          evLit = underTheSun(Math.max(evMean - exposureCompensationCurve(evMean), Math.log2(lit.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K))));
+          const evLitMean = evMean - exposureCompensationCurve(evMean);
+          evLit = underTheSun(Math.max(evLitMean, spot(Math.log2(lit.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)), Math.max(evLitMean, evSun))));
         }
         evHistogram = spot(evHistogram, evLit);
       }

@@ -338,11 +338,16 @@ describe('highlight protection is bounded while the sun lights the scene (reques
     // of albedo 0.1 no darker than two stops under mid-grey).
     expect(3e5 * exposureFromEv100(lit)).toBeGreaterThan(4);
     expect(4000 * exposureFromEv100(lit)).toBeGreaterThan(0.18 / 4);
-    // Sunlit white itself (0.9 x 128,000 / pi cd/m^2) is still protected: the bound is half a stop above
-    // what holds it under 4 x mid-grey.
+    // Sunlit white itself (0.9 x 128,000 / pi cd/m^2) on a twentieth of the frame is protected by the highlight
+    // term up to SUNLIT_SPOT_MAX_EV over the prior (request vfx-8): it sits within a tenth of 4 x mid-grey.
     const white = day();
     fill(white, 33000, 36700, 0.05 * N);
-    expect(histogramStats(white, N).p99 * exposureFromEv100(meter(white).targetEv100)).toBeLessThanOrEqual(4 * 0.18 * 1.001);
+    expect(meter(white).targetEv100).toBeCloseTo(evSun + SUNLIT_SPOT_MAX_EV, 9);
+    expect(histogramStats(white, N).p99 * exposureFromEv100(meter(white).targetEv100)).toBeLessThanOrEqual(4 * 0.18 * 1.1);
+    // A frame that is white as a whole is held under 4 x mid-grey by its mean, up to the half stop.
+    const snow = new Uint32Array(HISTOGRAM_BINS);
+    fill(snow, 30000, 36700, 0.9 * N);
+    expect(meter(snow).targetEv100).toBeCloseTo(evSun + SUNLIT_HIGHLIGHT_MAX_EV, 9);
   });
 
   it('an emitter over the sky is bounded alike by day', () => {
@@ -505,6 +510,12 @@ describe('what is brighter than the sun can light anything moves a daylight expo
     expect(there).toBeGreaterThanOrEqual(gone);
     // The upper bound alone let it ride half a stop up (0.57 EV in the lab's sequence): the sky pumped when the pad left.
     expect(evSun + SUNLIT_HIGHLIGHT_MAX_EV - gone).toBeGreaterThan(0.4);
+    // The outer ring of the apron, at or under sunlit white (not told from it by its luminance): the same bound.
+    const ring = pad();
+    fill(ring, sunlit(0.8), sunlit(1.4), 0.03 * N);
+    expect(meter(ring).targetEv100).toBeLessThanOrEqual(evSun + SUNLIT_SPOT_MAX_EV + 1e-9);
+    expect(meter(ring).targetEv100 - gone).toBeLessThan(0.3);
+    expect(meter(ring).targetEv100).toBeGreaterThan(gone);
     // With the flame's own hint on top: the same.
     const flame = meter(lit, { emissive: [{ luminance: 3e6, coverage: 0.03 }] }).targetEv100;
     expect(flame - gone).toBeLessThanOrEqual(SUNLIT_SPOT_MAX_EV + 1e-9);
@@ -518,12 +529,12 @@ describe('what is brighter than the sun can light anything moves a daylight expo
     const snow = new Uint32Array(HISTOGRAM_BINS);
     fill(snow, sunlit(0.6), sunlit(0.95), 0.9 * N);
     expect(meter(snow).targetEv100).toBeCloseTo(evSun + SUNLIT_HIGHLIGHT_MAX_EV, 9);
-    // White with its share of sky light (1.2 x the sun alone) is still what the sun lights.
+    // A twentieth of the frame at white (with its share of sky light, or in the outer light of a flame: the
+    // meter cannot tell): the highlight term raises the target by a quarter stop over the prior, not by a half.
     const bright = pad();
     fill(bright, sunlit(1.0), sunlit(1.2), 0.05 * N);
     const ev = meter(bright).targetEv100;
-    expect(ev - meter(pad()).targetEv100).toBeGreaterThan(SUNLIT_SPOT_MAX_EV);
-    expect(ev).toBeLessThanOrEqual(evSun + SUNLIT_HIGHLIGHT_MAX_EV + 1e-9);
+    expect(ev).toBeCloseTo(evSun + SUNLIT_SPOT_MAX_EV, 9);
   });
 
   it('does not touch night, twilight below the gate or a cabin: the ground a flame lights is what a night camera exposes for', () => {
