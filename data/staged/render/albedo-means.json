@@ -1,0 +1,230 @@
+{
+ "description": "Mean linear RGB and luminance of each baked body's level-0 albedo (six tiles decoded from sRGB, texels weighted by solid angle), the disc mean over the whole sphere. colourBasis says where the colour comes from: a MONOCHROME map's colour is the config's tint, not a measurement. Written by tools/bake/planet/verify.py (request bodies-ephemeris-5).",
+ "bodies": {
+  "ariel": {
+   "meanLinearRgb": [
+    0.41836,
+    0.40798,
+    0.40416
+   ],
+   "meanLuminance": 0.40991,
+   "colourBasis": "procedural: the config's colour (disc-integrated colour B-V 0.66, V-R 0.55 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta)"
+  },
+  "callisto": {
+   "meanLinearRgb": [
+    0.17286,
+    0.14922,
+    0.12333
+   ],
+   "meanLuminance": 0.15238,
+   "colourBasis": "MONOCHROME map x the config's tint [1.1715, 1.0, 0.8241]"
+  },
+  "ceres": {
+   "meanLinearRgb": [
+    0.09195,
+    0.09188,
+    0.09195
+   ],
+   "meanLuminance": 0.0919,
+   "colourBasis": "MONOCHROME map x the config's tint None"
+  },
+  "charon": {
+   "meanLinearRgb": [
+    0.27611,
+    0.2636,
+    0.24927
+   ],
+   "meanLuminance": 0.26522,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.95, 0.9]"
+  },
+  "deimos": {
+   "meanLinearRgb": [
+    0.07529,
+    0.07141,
+    0.06933
+   ],
+   "meanLuminance": 0.07209,
+   "colourBasis": "procedural: the config's colour (approximate colour of Voyager/Viking images; brightening of fresh crater interiors and ejecta)"
+  },
+  "dione": {
+   "meanLinearRgb": [
+    0.34067,
+    0.34203,
+    0.33117
+   ],
+   "meanLuminance": 0.34095,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.99, 0.97]"
+  },
+  "enceladus": {
+   "meanLinearRgb": [
+    0.34301,
+    0.35343,
+    0.35552
+   ],
+   "meanLuminance": 0.35137,
+   "colourBasis": "MONOCHROME map x the config's tint [0.97, 0.99, 1.0]"
+  },
+  "europa": {
+   "meanLinearRgb": [
+    0.55963,
+    0.477,
+    0.38931
+   ],
+   "meanLuminance": 0.48823,
+   "colourBasis": "MONOCHROME map x the config's tint [1.1803, 1.0, 0.8166]"
+  },
+  "ganymede": {
+   "meanLinearRgb": [
+    0.30593,
+    0.28517,
+    0.23549
+   ],
+   "meanLuminance": 0.286,
+   "colourBasis": "colour map (chroma mode with a mono map)"
+  },
+  "iapetus": {
+   "meanLinearRgb": [
+    0.32012,
+    0.30811,
+    0.29266
+   ],
+   "meanLuminance": 0.30955,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0463, 1.0, 0.9462]"
+  },
+  "io": {
+   "meanLinearRgb": [
+    0.45202,
+    0.31336,
+    0.14419
+   ],
+   "meanLuminance": 0.33063,
+   "colourBasis": "colour map"
+  },
+  "mars": {
+   "meanLinearRgb": [
+    0.32771,
+    0.12887,
+    0.10236
+   ],
+   "meanLuminance": 0.16923,
+   "colourBasis": "colour map (detail mode with a mono map)"
+  },
+  "mercury": {
+   "meanLinearRgb": [
+    0.16706,
+    0.15579,
+    0.14266
+   ],
+   "meanLuminance": 0.15724,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.93, 0.85]"
+  },
+  "mimas": {
+   "meanLinearRgb": [
+    0.62897,
+    0.62897,
+    0.62897
+   ],
+   "meanLuminance": 0.62897,
+   "colourBasis": "procedural: the config's colour (no measured colour index exists for Mimas (Pace 1971 lists only bracketed values without a reference; Morrison & Cruikshank 1974: photographic magnitudes only): neutral grey; brightening of fresh crater interiors and ejecta)"
+  },
+  "miranda": {
+   "meanLinearRgb": [
+    0.33642,
+    0.33751,
+    0.33737
+   ],
+   "meanLuminance": 0.33726,
+   "colourBasis": "procedural: the config's colour (disc-integrated colour B-V 0.64, V-R 0.52 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta)"
+  },
+  "oberon": {
+   "meanLinearRgb": [
+    0.24841,
+    0.24047,
+    0.23306
+   ],
+   "meanLuminance": 0.24162,
+   "colourBasis": "procedural: the config's colour (disc-integrated colour B-V 0.69, V-R 0.57 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta)"
+  },
+  "phobos": {
+   "meanLinearRgb": [
+    0.07362,
+    0.07,
+    0.0667
+   ],
+   "meanLuminance": 0.07053,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.95, 0.9]"
+  },
+  "pluto": {
+   "meanLinearRgb": [
+    0.19822,
+    0.16945,
+    0.14067
+   ],
+   "meanLuminance": 0.17349,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.85, 0.7]"
+  },
+  "rhea": {
+   "meanLinearRgb": [
+    0.40614,
+    0.40627,
+    0.39442
+   ],
+   "meanLuminance": 0.40539,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.99, 0.97]"
+  },
+  "tethys": {
+   "meanLinearRgb": [
+    0.3602,
+    0.36146,
+    0.3502
+   ],
+   "meanLuminance": 0.36038,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.99, 0.97]"
+  },
+  "titan": {
+   "meanLinearRgb": [
+    0.23082,
+    0.19685,
+    0.15039
+   ],
+   "meanLuminance": 0.20072,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.85, 0.65]"
+  },
+  "titania": {
+   "meanLinearRgb": [
+    0.2903,
+    0.28228,
+    0.26926
+   ],
+   "meanLuminance": 0.28305,
+   "colourBasis": "procedural: the config's colour (disc-integrated colour B-V 0.69, V-R 0.57 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta)"
+  },
+  "triton": {
+   "meanLinearRgb": [
+    0.43853,
+    0.47087,
+    0.33234
+   ],
+   "meanLuminance": 0.45399,
+   "colourBasis": "colour map"
+  },
+  "umbriel": {
+   "meanLinearRgb": [
+    0.22174,
+    0.22159,
+    0.22061
+   ],
+   "meanLuminance": 0.22155,
+   "colourBasis": "procedural: the config's colour (disc-integrated colour B-V 0.66, V-R 0.54 (Karkoschka 2001, Icarus 151:51, table VIII (HST)); tint = relative reflectance (R, V, B) as linear sRGB (R, G, B): rho_B/rho_V = 10^(-0.4 ((B-V) - (B-V)sun)), rho_R/rho_V = 10^(0.4 ((V-R) - (V-R)sun)), or without V-R the B-V slope continued linearly in wavelength (B 440, V 550, R 640 nm: rho_R/rho_V = (rho_V/rho_B)^(90/110)); (B-V)sun 0.65, (V-R)sun 0.53 (Johnson, as Karkoschka 2001); brightening of fresh crater interiors and ejecta)"
+  },
+  "venus": {
+   "meanLinearRgb": [
+    0.16435,
+    0.14893,
+    0.13168
+   ],
+   "meanLuminance": 0.15096,
+   "colourBasis": "MONOCHROME map x the config's tint [1.0, 0.9, 0.8]"
+  }
+ }
+}
