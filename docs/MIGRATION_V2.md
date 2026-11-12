@@ -25,9 +25,24 @@ tree as read on 2026-11-10. Nothing in this file has been executed.
    recorded on that clock could never stay green once time is an integer tick. So step 3.1 changes only
    the clock, on `World`: scenario and QA start instants are snapped to a tick (`findStartTime` emits
    tick-aligned values), rails advances land on ticks. That one step is compared against the unchanged
-   flight **by tolerance** (milestone states: orbit elements at each milestone to 1e-6 relative, touchdown
-   point within 50 m, splashdown inside the same recovery zone, event times within 1 s), and the golden
-   hash is re-baselined for it.
+   flight **by envelope**, and the golden hash is re-baselined for it. (Revised 2026-11-12 on
+   measurements: a fixed tolerance cannot work. The scripted pilot decides at 30 Hz, so a flight is a
+   chaotic function of its start instant: moving only the start of the unmodified v1 code by 2 ms changes
+   EARTH_ORBIT by 4.8e-5 in da/a, TLI by 1.6e-3, the lunar touchdown by 47 s and the splashdown by 15 s,
+   while the unshifted code reproduces the baseline bit for bit. The mission record
+   `tests/mission/baseline-v1.json` is therefore compared in one of two modes,
+   `tools/dev/mission-baseline.ts`. **EXACT**, for a step that must not change behaviour and starts at
+   the bit-identical instant: every milestone's event time and state equal; the golden hash asserts the
+   same for the end state, the record says at which milestone a difference starts. **ENVELOPE**, for a
+   step that legitimately moves time, the tick grid and later the session switch: per milestone, the
+   flight's difference from the baseline in event mission time and in da/a lies within twice the largest
+   such difference among a recorded set of control flights, which are the reference code with shifted
+   starts and nothing else, recorded by the step's owner in a controls file; and the mission's own gates
+   pass. In both, angles are compared as wrapped absolute differences, the true anomaly is never
+   compared, and each milestone states how long after its event its state was captured. `sim-core-v2`
+   additionally keeps a same-start reference, `tests/mission/reference-v1-aligned.json`: the v1 clock
+   started at the tick-aligned instant, which the tick-grid code must equal to 1e-9 through EARTH_ORBIT,
+   that is until the first rails advance lands on a tick.)
 4. **After that, numerics do not change.** `stepVessel`'s forces and its RK4 free-flight path, the Kepler
    code and the body maths keep their results. The **trajectory guard** is recorded on the tick-grid
    `World` (step 3.2) and is bit-exact for the attended craft of the lunar mission at 400 sample ticks and
@@ -35,7 +50,7 @@ tree as read on 2026-11-10. Nothing in this file has been executed.
    by fate (impact or decay within 2 s and 500 m, or the same orbit), because its stepping tier changes by
    design when the 25 km bubble becomes islands and the Reduced tier.
 5. **The golden mission hash is re-baselined exactly four times**, each behind its guard: after the tick
-   grid (3.1, tolerance), after the id and codec change (3.4, bit-exact guard), after `LocalSession`
+   grid (3.1, envelope), after the id and codec change (3.4, bit-exact guard), after `LocalSession`
    replaces `World` (4.3, bit-exact guard), after the Sun-rooted body set is activated (4.4, tolerance
    1e-9 relative on positions, since the Sun direction changes by rounding).
 6. **The tree is green at every commit**: `npm run typecheck`, the unit suites, `tools/dev/boundaries.test.ts`
@@ -74,7 +89,7 @@ Each step leaves the tree green. "Guard" names the test that proves the step cha
 
 | When | What the lead does |
 |---|---|
-| 3.0 `lead-baseline-v2` | Records the baseline on the unmodified tree: mission state hash and the milestone states used by step 3.1's tolerance comparison, unit and browser suite results, the summed GPU budget table, and the **reference images** of every ARCHITECTURE 31.3 checkpoint into `data/baselines/` with a tracked hash manifest and the compare helper in `tests/browser/harness.ts`. Writes the **v2 contracts** (section 4) additively: new files, new fields, deprecated markers on the fields the sweep will retire; nothing is removed yet, so the tree compiles. Adds boundary rules for `src/universe`, `src/session`, `src/net`, `src/client`, `src/shell`, `src/bench`, `src/gate`, `server/`, `bots/` (headless list, the edges of ARCHITECTURE section 2, "no server code in the client bundle"). Adds the class `stack` to `tools/dev/heavy.mjs` (one slot, shared by the local stack and the compose suites of ARCHITECTURE 16.4, and held for the stack's whole life because the launcher is the wrapped command: there is no background mode). Root configuration for wave 3: the `stack` script in `package.json` (`npm run stack` runs `node tools/dev/heavy.mjs --class=stack -- node deploy/local/stack.mjs`, which `platform-delivery` writes; `npm run stack -- [options] -- <command>` runs a suite inside the slot) and a `.gitignore` entry for `data/stack`; **the page a browser loads on the stack** (ARCHITECTURE 16.4): the script `stack:client` (a production client build with CI's Vite configuration, written to `data/stack/client/<source hash>/`, never to `dist/`, under `--class=cpu`, a no-op when the source hash is unchanged), the dev server serving `/endpoints.json` from the file named by `STACK_ENDPOINTS` (absent without a stack), and `tests/browser/globalSetup.ts` starting no server of its own when `STACK_URL` is set and pointing the `functional` and `acceptance` projects at it; `vitest.config.ts` includes `tests/universe`, `tests/load`, `server`, `bots` (and `tests/net` behind `NET=1`, as the mission is behind `MISSION=1`); a Playwright project `acceptance` with `testDir: tests/acceptance`; `tsconfig.node.json` (no DOM) for `server`, `bots`, `deploy` and the headless `src` directories, run by `npm run typecheck`; a CI-only build script that writes outside the shared `dist/`. Installs the dependencies of wave 3 (an S3 client and presigner for the pack tools; `embedded-postgres` and `pg` with its types for the local stack). At a moment when no WSL workload runs, writes the Docker VM cap of ARCHITECTURE 16.4 into `%UserProfile%\.wslconfig` and tells the user (OPEN_QUESTIONS, "Small things") |
+| 3.0 `lead-baseline-v2` | Records the baseline on the unmodified tree: mission state hash and the milestone states used by step 3.1's comparison (the mission record, principle 3), unit and browser suite results, the summed GPU budget table, and the **reference images** of every ARCHITECTURE 31.3 checkpoint into `data/baselines/` with a tracked hash manifest and the compare helper in `tests/browser/harness.ts`. Writes the **v2 contracts** (section 4) additively: new files, new fields, deprecated markers on the fields the sweep will retire; nothing is removed yet, so the tree compiles. Adds boundary rules for `src/universe`, `src/session`, `src/net`, `src/client`, `src/shell`, `src/bench`, `src/gate`, `server/`, `bots/` (headless list, the edges of ARCHITECTURE section 2, "no server code in the client bundle"). Adds the class `stack` to `tools/dev/heavy.mjs` (one slot, shared by the local stack and the compose suites of ARCHITECTURE 16.4, and held for the stack's whole life because the launcher is the wrapped command: there is no background mode). Root configuration for wave 3: the `stack` script in `package.json` (`npm run stack` runs `node tools/dev/heavy.mjs --class=stack -- node deploy/local/stack.mjs`, which `platform-delivery` writes; `npm run stack -- [options] -- <command>` runs a suite inside the slot) and a `.gitignore` entry for `data/stack`; **the page a browser loads on the stack** (ARCHITECTURE 16.4): the script `stack:client` (a production client build with CI's Vite configuration, written to `data/stack/client/<source hash>/`, never to `dist/`, under `--class=cpu`, a no-op when the source hash is unchanged), the dev server serving `/endpoints.json` from the file named by `STACK_ENDPOINTS` (absent without a stack), and `tests/browser/globalSetup.ts` starting no server of its own when `STACK_URL` is set and pointing the `functional` and `acceptance` projects at it; `vitest.config.ts` includes `tests/universe`, `tests/load`, `server`, `bots` (and `tests/net` behind `NET=1`, as the mission is behind `MISSION=1`); a Playwright project `acceptance` with `testDir: tests/acceptance`; `tsconfig.node.json` (no DOM) for `server`, `bots`, `deploy` and the headless `src` directories, run by `npm run typecheck`; a CI-only build script that writes outside the shared `dist/`. Installs the dependencies of wave 3 (an S3 client and presigner for the pack tools; `embedded-postgres` and `pg` with its types for the local stack). At a moment when no WSL workload runs, writes the Docker VM cap of ARCHITECTURE 16.4 into `%UserProfile%\.wslconfig` and tells the user (OPEN_QUESTIONS, "Small things") |
 | before 3.2 | Reviews 3.1; hands the presentation sweep the list of deprecated fields |
 | after 3.2 | **Contract tighten**: removes the deprecated fields (`SimSnapshot.tick`, `Readouts.targetBodyId`, `.targetClosestApproach`, `LaunchSiteDef.pad`, the `pause` action, the `createSim` export) and their producers once the sweep's grep is clean; lifts `TilePackIndex` from `platform-delivery`'s file into `terrain.ts` |
 | before 4.1 | Installs wave 4's dependencies (`ws` and its types, `fflate`); registers the gate plugin and the definition-bundle plugin (`defsHash`) in `vite.config.ts`; signs off the island API (`src/sim/island/api.ts` signatures) and the navigation signatures the view calls; hands `net.ts`'s wire-message section to `wire-protocol` and `universe.ts` to `universe-directory` |
@@ -88,7 +103,7 @@ Packages never run `npm install` and never edit a root file; a brief lists what 
 
 | Step | Package | Change | Guard |
 |---|---|---|---|
-| 3.1 | `sim-core-v2` | **Tick grid on `World`**, nothing else: start instants on ticks (`findStartTime`, `start-time.json`, the QA scenarios), rails advances land on ticks | Milestone states against the lead's baseline within the tolerances of principle 3; mission passes; golden re-baseline 1 |
+| 3.1 | `sim-core-v2` | **Tick grid on `World`**, nothing else: start instants on ticks (`findStartTime`, `start-time.json`, the QA scenarios), rails advances land on ticks | The mission record against the lead's baseline in ENVELOPE mode with the owner's control flights (principle 3), and the same-start reference to 1e-9 through EARTH_ORBIT; mission passes; golden re-baseline 1 |
 | 3.2 | `sim-core-v2` | Record the **trajectory guard** on the tick-grid tree (principle 4) | The file itself |
 | 3.3 | `sim-core-v2` | Vessel model: `crafts[]`, `links[]`, `helm`, `PartRuntime.craft`; per-craft stage state; flow groups `(craft, stageGroup)`; crew, cockpit and seats on the command part; craft ids from a seeded source; the id rules of ARCHITECTURE 3; `separateVessel` over tree edges and links; a momentum-conserving **dock merge added beside** `mergeVessels`, which stays as the weld of released clamp pieces into one held ground structure (it is not a dock: those pieces have no ports) | Trajectory guard, clamp vessel included; momentum tests to 1e-9 |
 | 3.4 | `sim-core-v2` | The non-derived members of `Vessel.struct` become vessel state; the **versioned** binary codec (version, `defsHash`, vehicle reference kinds through a resolver, part fingerprints, length-prefixed blocks, the migration registry); `stateHash` over codec output | Codec round trip exact mid-touchdown and mid-entry; a fixture written by the previous version decodes; golden re-baseline 2 |
@@ -263,6 +278,10 @@ sampler.
 
 ## 8. Guards that stay green through every step
 
+- Mission record (step 3.0, `tests/mission/baseline-v1.json`): EXACT for a step that must not change
+  behaviour, ENVELOPE against the owner's control flights for a step that moves time (principle 3):
+  `npx tsx tools/dev/record-mission-baseline.ts --exact <record>` or
+  `--envelope <record> --controls <controls.json>`.
 - Trajectory guard (step 3.2): attended craft and the six fixtures bit-exact; debris by fate.
 - Terrain guard (wave 3): height at fixed points on Earth and Moon bit-exact, the tile hash list.
 - Reference images (step 3.0) within each checkpoint's tolerance.
