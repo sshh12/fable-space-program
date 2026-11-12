@@ -12,6 +12,9 @@
  *                                                   the documented fallback while the GitHub App has no access
  *                                                   (OPEN_QUESTIONS Q5)
  *   node deploy/railway/provision.mjs ids           print the project, environment and service ids
+ *   node deploy/railway/provision.mjs ops <role>    run an operator job role once in a temporary service `ops`
+ *                                                   (pgsettings: ALTER SYSTEM to production's values)
+ *   node deploy/railway/provision.mjs ops-delete    delete the temporary service
  *
  * Nothing here touches another project: every call names the project id below.
  */
@@ -196,11 +199,33 @@ function deploy(service) {
   console.log(JSON.stringify({ service, commit, uploadedS: (Date.now() - t0) / 1000 }));
 }
 
+/**
+ * A one-off operator job inside the private network: a temporary service `ops` (no cron, restart Never) runs
+ * ROLES=<role> once from a clean export with the database URL as a reference variable, then is deleted.
+ */
+function opsJob(role) {
+  const id = ensureService('ops');
+  update(id, { multiRegionConfig: { [REGION]: { numReplicas: 1 } }, dockerfilePath: 'deploy/Dockerfile', restartPolicyType: 'NEVER' });
+  limits(id, 1, 0.5);
+  setVars(id, { ROLES: role, DATABASE_URL: '${{postgres.DATABASE_URL}}' });
+  deploy('ops');
+  console.log(`ops: deployed ROLES=${role}; read its log with: railway logs --service ops, then: node deploy/railway/provision.mjs ops-delete`);
+}
+
+function opsDelete() {
+  const id = services().ops;
+  if (!id) return console.log('ops: no such service');
+  gql(`mutation($s:String!){ serviceDelete(id:$s) }`, { s: id });
+  console.log(`ops: service ${id} deleted`);
+}
+
 const [cmd, arg] = process.argv.slice(2);
-if (cmd === 'services') provisionServices();
+if (cmd === 'ops') opsJob(arg ?? 'pgsettings');
+else if (cmd === 'ops-delete') opsDelete();
+else if (cmd === 'services') provisionServices();
 else if (cmd === 'deploy') deploy(arg);
 else if (cmd === 'ids') console.log(JSON.stringify({ project: PROJECT, environment: ENVIRONMENT, services: services() }));
 else {
-  console.error('usage: node deploy/railway/provision.mjs services | deploy <service> | ids');
+  console.error('usage: node deploy/railway/provision.mjs services | deploy <service> | ids | ops <role> | ops-delete');
   process.exit(2);
 }

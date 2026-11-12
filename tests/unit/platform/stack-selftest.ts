@@ -168,12 +168,13 @@ async function main(): Promise<void> {
   if (want('shapes')) {
     for (const shape of ['split', 'launch'] as const) {
       const t0 = Date.now();
-      const probe = `"Promise.all(${JSON.stringify(shapeProcesses(shape).map((p) => p.port)).replace(/"/g, '')}.map(p=>fetch('http://127.0.0.1:'+p+'/healthz').then(r=>r.status))).then(s=>{console.log('HEALTH',s.join(','));process.exit(s.every(x=>x===200)?0:1)})"`;
+      const probe = `"Promise.all(${JSON.stringify(shapeProcesses(shape).map((p) => p.port)).replace(/"/g, '')}.map(p=>fetch('http://127.0.0.1:'+p+'/healthz').then(r=>r.status))).then(s=>{console.log('HEALTH',s.join(','));process.exitCode=s.every(x=>x===200)?0:1})"`;
       const x = stack('fsp-pd-selftest-a', [`--shape=${shape}`], ['node', '-e', probe]);
       const code = await x.done;
       const s = stateOf('fsp-pd-selftest-a');
       const ports = new Set(s?.processes.filter((p) => p.name !== 'page').map((p) => p.port));
-      report(`shape-${shape}`, code === 0 && ports.size === shapeProcesses(shape).length && Date.parse(s!.startedAt) >= t0 - 1000, `${s?.processes.filter((p) => p.name !== 'page').map((p) => `${p.name}:${p.port}`).join(' ')}; ${(x.out().match(/HEALTH .*/) ?? ['no health line'])[0]}`);
+      if (code !== 0) console.log(x.out().slice(-1500));
+      report(`shape-${shape}`, code === 0 && ports.size === shapeProcesses(shape).length && Date.parse(s!.startedAt) >= t0 - 1000, `${s?.processes.filter((p) => p.name !== 'page').map((p) => `${p.name}:${p.port}`).join(' ')}; ${(x.out().match(/HEALTH .*/) ?? ['no health line'])[0]}; exit ${code}`);
     }
   }
 
