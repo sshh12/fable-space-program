@@ -670,9 +670,10 @@ export function createHud(opts: HudOptions): HudImpl {
 
   const node = { dv: new TextSlot(), burn: new TextSlot(), start: new TextSlot() };
   // Title row: 'Maneuver' and the countdown to the burn's start (amber in its last 10 s); then delta-v and burn time.
-  const nodeWord = new TextSlot('Start');
-  const nodeStartEl = el('span', 'nwhen', [el('span', 'nword', [nodeWord.node]), el('span', 'pname nstart', [node.start.node])], { title: 'Time to the start of the burn (during the burn: since its start)' });
-  const nodePanel = el('div', 'panel node', [el('div', 'ptitle', [el('span', '', ['Maneuver']), nodeStartEl]), row('Δv remaining', node.dv).root, row('Burn time', node.burn).root], {
+  // The title says what the countdown counts to: "BURN IN T− 9:53", then "BURNING T+ 0:12" during the burn.
+  const nodeWord = new TextSlot('Burn in');
+  const nodeStartEl = el('span', 'pname nstart', [node.start.node], { title: 'Time to the start of the maneuver burn (during the burn: since its start)' });
+  const nodePanel = el('div', 'panel node', [el('div', 'ptitle', [el('span', '', [nodeWord.node]), nodeStartEl]), row('Δv remaining', node.dv).root, row('Burn time', node.burn).root], {
     'data-show': 'external map',
   });
   const nodeShow = hiddenFlag(nodePanel);
@@ -1329,7 +1330,7 @@ export function createHud(opts: HudOptions): HudImpl {
     if (nbv) {
       node.dv.set(nbv.deltaV);
       node.burn.set(nbv.burnTime);
-      nodeWord.set(nbv.started ? 'Burning' : 'Start');
+      nodeWord.set(nbv.started ? 'Burning' : 'Burn in');
       node.start.set(nbv.startIn);
       nodeDvTone.set(nbv.insufficient ? 'warning' : 'accent');
     }

@@ -30,7 +30,7 @@ export const HUD_CSS = /* css */ `
   --caution: ${UI_COLORS.caution};
   --warning: ${UI_COLORS.warning};
   --gap: calc(var(--u) * 1.4);
-  --lcol: calc(var(--u) * 26.5);
+  --lcol: calc(var(--u) * 25.5);
   --rcol: calc(var(--u) * 25.5);
   position: absolute;
   inset: 0;
@@ -193,7 +193,7 @@ export const HUD_CSS = /* css */ `
 .hud .rcol { position: absolute; right: var(--gap); top: calc(var(--gap) + var(--u) * 4.4); width: var(--rcol); display: flex; flex-direction: column; gap: calc(var(--u) * 0.8); align-items: stretch; max-height: calc(100% - var(--u) * 8); }
 
 /* ---------------------------------------------------------------- clock + warp */
-.hud .clock .metrow { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.8); height: 2.05em; contain: size layout style; }
+.hud .clock .metrow { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.8); height: 1.92em; contain: size layout style; }
 .hud .clock .met { font-size: 1.32em; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
 /* The warp word (RAILS / PHYSICS) over the factor, right-aligned: the row holds "T+ 88d 88:88:88" and "×100k". */
 .hud .clock .wf { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; white-space: nowrap; line-height: 1.02; }
@@ -433,8 +433,6 @@ export const HUD_CSS = /* css */ `
 .hud .gauge .gl { grid-row: 3; margin-top: calc(var(--u) * 0.15); font-size: 0.78em; letter-spacing: 0.04em; color: var(--label); font-weight: 600; white-space: nowrap; }
 
 .hud .bottom > .node { position: absolute; left: calc(50% + var(--u) * 15.3); bottom: calc(var(--hh) + var(--u) * 0.8); width: calc(var(--u) * 21); }
-.hud .node .nwhen { display: inline-flex; align-items: baseline; gap: 0.45em; white-space: nowrap; }
-.hud .node .nword { font-size: 1em; font-weight: 700; letter-spacing: 0.08em; color: var(--label); }
 .hud .node .nstart { font-size: 1.15em; font-variant-numeric: tabular-nums; }
 .hud .node.imminent .nstart { color: var(--caution); }
 .hud .node.imminent { border-color: var(--caution); --st: var(--caution); }

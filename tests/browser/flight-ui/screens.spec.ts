@@ -74,8 +74,9 @@ async function expectCoherentState(page: Page, scene: string): Promise<void> {
   const r = s.readouts;
   const v = s.vessels.find((x) => x.id === s.activeVesselId)!;
   if (v.situation === 'landed' || v.situation === 'splashed') expect(r.altitudeRadar, `${scene}: radar altitude when landed`).toBeLessThan(5);
-  // (Near the ground: a coast toward a perigee far above the surface sinks fast too.)
-  if (r.verticalSpeed < -50 && r.altitudeAsl < 200_000) expect(r.periapsisAltitude, `${scene}: sinking at ${r.verticalSpeed.toFixed(0)} m/s on a path that meets the surface`).toBeLessThan(0);
+  // A vessel sinking fast near the ground is on a path that goes lower than where it is (not a circular conic at its
+  // own height). (A lunar return's vacuum perigee lies above the surface, some 50 km up, at the entry interface.)
+  if (r.verticalSpeed < -50 && r.altitudeAsl < 200_000) expect(r.periapsisAltitude, `${scene}: sinking at ${r.verticalSpeed.toFixed(0)} m/s on a path that goes lower`).toBeLessThan(r.altitudeAsl - 1000);
   if (r.dynamicPressure > 0 && r.verticalSpeed < 0 && r.verticalSpeed > -15 && v.situation === 'flying' && r.thrust === 0) {
     const chutes = s.staging.stages.filter((x) => x.actionKinds.includes('deployParachute'));
     expect(chutes.length, `${scene}: chute stages`).toBeGreaterThan(0);
@@ -559,7 +560,8 @@ test.describe('flight-ui stage stack (720p)', () => {
       await expect(tile.locator('.sn')).toHaveText(number);
       await expect(tile.locator('.dv')).toHaveText(/^Δv [\d\s]+\sm\/s$/);
       const dv = Number((await tile.locator('.dv').textContent())!.replace(/[^\d]/g, ''));
-      expect(Math.abs(dv - info.deltaVNow)).toBeLessThanOrEqual(1);
+      // Vacuum delta-v, as every figure of the stack (the header says "vac").
+      expect(Math.abs(dv - info.deltaVVac)).toBeLessThanOrEqual(1);
       await expect(tile.locator('.meta')).toHaveText(/^TWR [\d.]+\s+[\d:]+$/);
       await expect(tile.locator('.bar.prop')).toBeVisible();
       // The active tile sits under the next stage's tile, at the bottom of the stack.
