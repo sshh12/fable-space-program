@@ -104,13 +104,13 @@
    "ref": "IAU Gazetteer of Planetary Nomenclature, feature 15669 Sputnik Planitia (19.51 N, 178.69 E, bright ice), 16257 Belton Regio (9.21 S, 91.42 E, the dark former Cthulhu Macula) (Schenk et al. 2018)"
   },
   {
-   "name": "Sputnik Planitia floor",
-   "kind": "demHeight",
+   "name": "Sputnik Planitia basin",
+   "kind": "craterDepth",
    "latDeg": 19.51,
    "lonDegE": 178.69,
-   "expectM": -2000,
-   "toleranceM": 1000,
-   "ref": "Schenk et al. 2018 (Icarus 314): the ice sheet lies about 2 km below the mean radius"
+   "diameterKm": 1492,
+   "minDepthM": 1000,
+   "ref": "IAU Gazetteer feature 15669 (19.51 N, 178.69 E, 1,492 km); the ice sheet lies 2.5-3.5 km below the rim (Schenk et al. 2018, Icarus 314); this DEM at level 5 gives a 1.7 km floor-to-ring depth"
   }
  ]
 }
