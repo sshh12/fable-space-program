@@ -436,7 +436,7 @@ function buildServerBundle(): string {
 }
 
 function buildClient(): string {
-  const r = spawnSync('npm', ['run', '--silent', 'stack:client'], { cwd: REPO, encoding: 'utf8', shell: true });
+  const r = spawnSync('npm run --silent stack:client', { cwd: REPO, encoding: 'utf8', shell: true });
   if (r.status !== 0) throw new Error(`npm run stack:client failed: ${r.stderr || r.stdout}`);
   const last = r.stdout
     .trim()

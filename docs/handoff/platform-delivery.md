@@ -230,6 +230,11 @@ Details and tables: `docs/capacity/2026-11-12-platform.md`.
   product, not tile bytes; listed as deferred.
 - **The client does not use the boot pack or the pack source yet** (app-integration-2 and presentation-sweep);
   the boot set measurement therefore holds back the page's own requests beyond it.
+- **Autodeploy of shell on its watch paths and builds of game from a `release` branch** need Railway's GitHub
+  App (OPEN_QUESTIONS Q5, not authorised): the watch patterns are set on `shell`, but every deploy today is
+  `node deploy/railway/provision.mjs deploy <service>` (a clean `git archive` export of HEAD uploaded with the
+  logged-in CLI, the documented fallback). `deploy/stage.mjs` and `deploy/rollout.mjs` (ARCHITECTURE 16.2) are
+  not part of this brief and do not exist.
 
 ## 8. Requests and contract changes
 
