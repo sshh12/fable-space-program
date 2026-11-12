@@ -180,6 +180,19 @@ class Raster:
         fp_deg = np.degrees(np.asarray(footprint_m) / self.body.radius)
         return self.pyramid.sample(np.degrees(lat), lon, fp_deg)
 
+    def coarse_percentile(self, fn, q: float) -> float:
+        """Area-weighted q-th percentile over the globe of the scalar fn(values) at the coarse mip."""
+        k = max(0, min(self.meta["mips"], int(np.log2(max(1, self.meta["height"] // 256)))))
+        a = np.asarray(self.pyramid.mips[k][np.arange(self.meta["height"] >> k)[:, None],
+                                            np.arange(self.meta["width"] >> k)[None, :]], dtype=np.float64)
+        hk, wk = a.shape[:2]
+        lat = 90.0 - (np.arange(hk) + 0.5) * 180.0 / hk
+        w = np.repeat(np.cos(np.radians(lat))[:, None], wk, axis=1).ravel()
+        v = np.asarray(fn(a), dtype=np.float64).ravel()
+        o = np.argsort(v)
+        cdf = np.cumsum(w[o]) / w.sum()
+        return float(v[o][min(len(v) - 1, int(np.searchsorted(cdf, q / 100.0)))])
+
     def coarse_mean(self, fn=None, region: dict | None = None) -> np.ndarray:
         """Area-weighted mean over the globe (or a disc) of fn(values) at the coarsest mip with >= 256 rows."""
         k = max(0, min(self.meta["mips"], int(np.log2(max(1, self.meta["height"] // 256)))))

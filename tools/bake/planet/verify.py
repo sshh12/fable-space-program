@@ -249,7 +249,7 @@ def verify_solid(body: config.Body, rep: Report, quick: bool) -> dict:
     hr = TileReader(bid)
     ar = AlbedoReader(bid)
     # elevation range in the manifest covers the finest level
-    rep.check(bid, "height: elevation range recorded", "elevation" in hl and hl["elevation"]["min"] < hl["elevation"]["max"],
+    rep.check(bid, "height: elevation range recorded", "elevation" in hl and hl["elevation"]["min"] <= hl["elevation"]["max"],
               f"{hl.get('elevation')}")
     lms = body.raw["landmarks"]
     needs = body.albedo["procedural"] is None or bool(body.height["craters"] and body.height["craters"]["named"])

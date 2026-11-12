@@ -105,8 +105,57 @@ def gain(body: config.Body) -> float:
         if not mean > 0:
             raise ValueError(f"{body.id}: albedo source mean is {mean}")
         g = cal["meanAlbedo"] / mean
+        # never push more than half a per cent of the surface into the 8-bit ceiling: a bright icy body whose
+        # mosaic has a narrow range would otherwise lose its detail (it keeps a lower mean instead)
+        tmax = float(np.max(_tint(body))) if r.channels == 1 and rc is None else 1.0
+
+        def peak_fn(a):
+            lin = _to_linear(body, al["source"], a)
+            return (lin.max(axis=-1) if lin.ndim == 3 else lin) * tmax
+        p995 = r.coarse_percentile(peak_fn, 99.5)
+        if p995 > 0 and g * p995 > CLIP_LIMIT:
+            g = CLIP_LIMIT / p995
     _GAIN[body.id] = g
     return g
+
+
+CLIP_LIMIT = 0.97
+_LOWF: dict = {}
+
+
+def _low_luminance(body: config.Body, d: np.ndarray) -> np.ndarray:
+    """Linear luminance of the source (before calibration) area-filtered over the lowFrequency sigma."""
+    lf = body.albedo["lowFrequency"]
+    r = _raster(body, body.albedo["source"])
+    lin = _to_linear(body, body.albedo["source"], r.sample(d, np.full(d.shape[:-1], lf["sigmaKm"] * 1000.0)))
+    return lin @ LUMA if lin.ndim == d.ndim and lin.shape[-1] == 3 else lin
+
+
+def _low_cdf(body: config.Body) -> tuple[np.ndarray, np.ndarray]:
+    """Area-weighted distribution of the low-frequency luminance (sorted values, cumulative percent)."""
+    if body.id not in _LOWF:
+        lat = np.radians(np.arange(-89.0, 90.0, 2.0))
+        lon = np.radians(np.arange(-179.0, 180.0, 2.0))
+        LA, LO = np.meshgrid(lat, lon, indexing="ij")
+        d = cube.lat_lon_to_dir(LA, LO).reshape(-1, 3)
+        v = _low_luminance(body, d)
+        w = np.cos(LA).ravel()
+        o = np.argsort(v)
+        _LOWF[body.id] = (v[o], 100.0 * (np.cumsum(w[o]) - 0.5 * w[o]) / w.sum())
+    return _LOWF[body.id]
+
+
+def low_frequency_factor(body: config.Body, d: np.ndarray) -> np.ndarray:
+    """Multiplier that replaces the map's low-frequency albedo by the configured one: the percentile rank of a
+    texel's low-frequency luminance in the body's own distribution is mapped to an absolute albedo
+    (`lowFrequency.percentileToAlbedo`), the detail above `sigmaKm` is kept as a ratio. For mosaics whose
+    brightness was equalised region by region (Iapetus: the dark Cassini Regio was stretched to mid-grey)."""
+    vals, cdf = _low_cdf(body)
+    low = _low_luminance(body, d)
+    rank = np.interp(low, vals, cdf)
+    knots = np.asarray(body.albedo["lowFrequency"]["percentileToAlbedo"], dtype=np.float64)
+    target = np.interp(rank, knots[:, 0], knots[:, 1])
+    return target / np.maximum(low, 1e-6)
 
 
 def procedural_colour(body: config.Body) -> np.ndarray:
@@ -132,6 +181,8 @@ def finest_linear(body: config.Body, face: int, x: int, y: int) -> np.ndarray:
         rc = _raster(body, al["colourSource"])
         # chroma at the colour map's own resolution at least (no ringing from upsampling chroma)
         col = rc.sample(d, np.maximum(fp, rc.pyramid.px_deg0 * np.pi / 180.0 * body.radius))
+    if al.get("lowFrequency"):
+        return np.clip(linear_colour(body, v, col) * low_frequency_factor(body, d)[..., None], 0.0, 1.0)
     return np.clip(linear_colour(body, v, col) * gain(body), 0.0, 1.0)
 
 
@@ -222,7 +273,8 @@ def build_hash(body_id: str, layer_name: str, ext: str, max_level: int) -> str:
 def layer(body: config.Body, stats: dict, sources: list[str]) -> dict:
     return {"encoding": "webp", "ext": "webp", "globalMaxLevel": int(body.albedo["maxLevel"]), "coverage": {},
             "sources": sources, "calibration": {"meanAlbedo": body.albedo["calibration"]["meanAlbedo"],
-                                                "gain": round(stats["gain"], 6)}}
+                                                "gain": round(stats["gain"], 6), "clipLimit": CLIP_LIMIT,
+                                                "lowFrequency": body.albedo.get("lowFrequency")}}
 
 
 def lowres(body: config.Body, w: int = 1024, h: int = 512) -> np.ndarray:

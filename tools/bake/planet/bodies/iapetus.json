@@ -62,9 +62,47 @@
     "lonDegE": 120.5,
     "radiusKm": 400
    },
-   "ref": "NSSDC: geometric albedo 0.05 (dark leading) / 0.5 (bright trailing); calibrated on the bright Roncevaux Terra"
+   "ref": "superseded by lowFrequency (absolute albedo by percentile); NSSDC 0.05 / 0.5"
   },
-  "procedural": null
+  "procedural": null,
+  "lowFrequency": {
+   "sigmaKm": 150,
+   "percentileToAlbedo": [
+    [
+     0,
+     0.02
+    ],
+    [
+     10,
+     0.035
+    ],
+    [
+     30,
+     0.05
+    ],
+    [
+     40,
+     0.12
+    ],
+    [
+     50,
+     0.35
+    ],
+    [
+     75,
+     0.5
+    ],
+    [
+     95,
+     0.6
+    ],
+    [
+     100,
+     0.7
+    ]
+   ],
+   "ref": "The USGS mosaic equalises brightness region by region (the dark Cassini Regio is mid-grey in it). Iapetus' two-tone albedo, NSSDC 0.05 (dark leading) / 0.5 (bright trailing), dark material over roughly 40 % of the surface: restored from the mosaic's own low-frequency pattern by percentile rank; the detail above 150 km is the mosaic's"
+  }
  },
  "landmarks": [
   {

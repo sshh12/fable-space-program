@@ -215,7 +215,14 @@ def validate(raw: dict, where: str) -> None:
         if h["dem"] is not None and h["craters"] is not None:
             raise ConfigError(f"{where}.height: a DEM and procedural craters exclude each other")
         al = raw["albedo"]
-        _keys(al, f"{where}.albedo", ("maxLevel", "source", "colourSource", "transfer", "tint", "calibration", "procedural"))
+        _keys(al, f"{where}.albedo", ("maxLevel", "source", "colourSource", "transfer", "tint", "calibration", "procedural"),
+              ("lowFrequency",))
+        if al.get("lowFrequency") is not None:
+            lf = al["lowFrequency"]
+            _keys(lf, f"{where}.albedo.lowFrequency", ("sigmaKm", "percentileToAlbedo", "ref"))
+            ks = lf["percentileToAlbedo"]
+            if len(ks) < 2 or [k[0] for k in ks] != sorted(k[0] for k in ks) or ks[0][0] != 0 or ks[-1][0] != 100:
+                raise ConfigError(f"{where}.albedo.lowFrequency.percentileToAlbedo: increasing percentiles from 0 to 100")
         _num(al["maxLevel"], f"{where}.albedo.maxLevel", 0, 6)
         if (al["source"] is None) == (al["procedural"] is None):
             raise ConfigError(f"{where}.albedo: exactly one of source and procedural")

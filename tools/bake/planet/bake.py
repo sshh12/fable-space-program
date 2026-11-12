@@ -30,7 +30,7 @@ from common import layout  # noqa: E402
 from planet import albedo, config, fetch, giants, heights, procedural, rt, source  # noqa: E402
 
 # Bump when the output of a step changes for the same config.
-CODE_VERSION = {"prepare": 1, "procedural": 1, "height": 1, "albedo": 1, "manifest": 1}
+CODE_VERSION = {"prepare": 1, "procedural": 1, "height": 1, "albedo": 2, "manifest": 2}
 SOLID_STEPS = ("fetch", "prepare", "procedural", "height", "albedo", "manifest")
 
 
