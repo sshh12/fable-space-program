@@ -13,18 +13,18 @@
         "decDeg": 52.9
       }
     },
-    "a": 9375000,
-    "e": 0.015,
-    "iDeg": 1.1,
-    "lanDeg": 169.2,
-    "argPeDeg": 216.3,
-    "meanAnomalyDeg": 189.7,
-    "epochUt": 0,
+    "a": 9374907.26591751,
+    "e": 0.0151341547798316,
+    "iDeg": 1.07126845204621,
+    "lanDeg": 116.530168184558,
+    "argPeDeg": 314.798861149331,
+    "meanAnomalyDeg": 213.361997081862,
+    "epochUt": 938240818,
     "rates": {
-      "argPeDeg": 32727.2727272727,
-      "lanDeg": -15652.1739130435
+      "lanDeg": -15916.3024121915,
+      "argPeDeg": 31811.6363378555
     },
-    "meanMotionDegPerDay": 1129.58895513022
+    "meanMotionDegPerDay": 1128.40986899692
   },
   "rotation": {
     "mode": "fixedRate",

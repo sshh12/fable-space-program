@@ -7,7 +7,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { BodyDef } from '../../../src/core/contracts/defs';
-import { atmosphereModelRaw } from '../../../src/sim/bodies/atmosphere';
+import { atmosphereAt, atmosphereModelRaw } from '../../../src/sim/bodies/atmosphere';
+import { convectiveFlux, radiativeFlux, stagnationFlux } from '../../../src/sim/dynamics/thermal';
 import { EARTH_SIMTOP_DENSITY } from '../../../tools/bodies/lib/atmospheres.mjs';
 import { STAGED_BODY_FILES } from './stagedBodies.generated';
 
@@ -45,6 +46,22 @@ describe('staged atmospheres', () => {
     expect(atm.gamma).toBeGreaterThan(1);
     expect(atm.gamma).toBeLessThan(5 / 3 + 1e-9);
     expect(atm.heating.kConv).toBeGreaterThan(0);
+  });
+
+  it.each(withAtmosphere)('%s: drag inputs and convective heating work in the runtime (radiative heating: none for this gas)', (id) => {
+    const body = asBody(id);
+    const atm = body.atmosphere!;
+    const h = atm.simTop / 3;
+    const s = atmosphereAt(body, h);
+    expect(s.density).toBeGreaterThan(0);
+    expect(s.pressure).toBeGreaterThan(0);
+    expect(s.speedOfSound).toBeGreaterThan(100);
+    expect(s.speedOfSound).toBeLessThan(3000);
+    // 6 km/s through the density at a third of the rails boundary, 1 m nose radius
+    const q = stagnationFlux(atm.heating, s.density, 6000, 1);
+    expect(q).toBeGreaterThan(0);
+    expect(convectiveFlux(atm.heating, s.density, 6000, 1)).toBe(q);
+    expect(radiativeFlux(atm.heating, s.density, 12000, 1)).toBe(0);
   });
 
   it('the giants have no surface and a floor below the 1-bar level', () => {

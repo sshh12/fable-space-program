@@ -1,27 +1,23 @@
 #!/usr/bin/env node
-// Validates the staged body definitions (data/staged/bodies) against JPL Horizons at ten epochs over 2030-2060
-// (2030-01-01 to 2060-01-01 TDB, evenly spaced), ICRF axes, parent-centred, body centres.
+// Validates the staged orbits (data/staged/bodies) against JPL Horizons over the validity window 2029-09-01 ..
+// 2060-01-01 (about 2,000 states per body, the ones fit-orbits.mjs fitted, cached under
+// data/cache/bodies/horizons/), ICRF axes, parent-centred, body centres, with the tolerance table
+// tools/bodies/tolerances.json (the lead's decision on request bodies-ephemeris-4):
 //
-//   planets (JPL Table 1)        heliocentric ecliptic longitude, latitude and distance against the table's
-//                                stated accuracy for 1800-2050 (approx_pos "Accuracy", the 1800-2050 column)
-//   satellites, Ceres, Pluto     angle between the positions seen from the parent <= 1 degree and radial
-//                                distance within 2 % (the brief's satellite tolerance; it states none for the
-//                                osculating dwarf-planet elements, which therefore get the same)
-//   Earth, Moon                  pinned to v1 by the design (ARCHITECTURE 8.2): reported, not gated
+//   every body is judged on the largest angle between model and Horizons positions seen from its parent and the
+//   largest relative difference of the distance, over the window, against its row (its class's tolerance, or a
+//   reasoned bound); a body over its class tolerance without a row giving the physical reason fails.
+//   Earth and the Moon are pinned by the design: reported, not judged.
 //
-// Writes tools/bodies/validation-report.json and prints a table; exits 1 when a gated body fails.
+// Writes tools/bodies/validation-report.json and prints the residual table; exits 1 on any failure.
 //   node tools/bodies/validate.mjs [--quiet]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BODY_ORDER, CATALOGUE, horizonsCenter } from './lib/catalogue.mjs';
 import { formatJson } from './lib/format.mjs';
-import { vectorsAt } from './lib/horizons.mjs';
 import { REPO_ROOT } from './lib/http.mjs';
-import { DEG, ECLIPTIC_TO_ICRF, angleBetween, jdToUt, len, matVec, orbitState, rotZ, transpose, wrap180 } from './lib/kepler.mjs';
-
-export const VALIDATION_JDS = Array.from({ length: 10 }, (_, k) => 2462502.5 + (k * (2473459.5 - 2462502.5)) / 9);
-const TOL_ANGLE_DEG = 1;
-const TOL_RADIAL = 0.02;
+import { DEG, ECLIPTIC_TO_ICRF, angleBetween, jdToUt, len, matVec, orbitState, rotZ, sub, transpose, wrap180 } from './lib/kepler.mjs';
+import { WINDOW_START_JD, WINDOW_STOP_JD, windowSamples } from './lib/window.mjs';
 
 const readJson = (p) => JSON.parse(readFileSync(join(REPO_ROOT, p), 'utf8'));
 
@@ -40,94 +36,104 @@ export function stagedState(defs, id, ut) {
 }
 
 const toEcliptic = transpose(ECLIPTIC_TO_ICRF);
-const lonLatDist = (r) => {
+const eclLon = (r) => {
   const e = matVec(toEcliptic, r);
-  return { lon: Math.atan2(e[1], e[0]) / DEG, lat: Math.asin(e[2] / len(e)) / DEG, dist: len(e) };
+  return Math.atan2(e[1], e[0]) / DEG;
 };
 /** General precession in longitude from J2000 (IAU 2006, Capitaine et al. 2003), degrees. */
 const precessionDeg = (T) => (5028.796195 * T + 1.1054348 * T * T) / 3600;
 
+/** The window step the fit used (so the very same cached states are judged); Earth and the Moon: a year, a month. */
+const PINNED_PERIOD_D = { earth: 365.25, moon: 27.321661 };
+function stepOf(fits, id) {
+  if (PINNED_PERIOD_D[id]) return { periodDays: PINNED_PERIOD_D[id] };
+  const w = fits.bodies[id]?.horizons.find((h) => h.kind === 'window');
+  if (!w) throw new Error(`${id}: no window step in tools/bodies/sources/orbit-fits.json`);
+  return { periodDays: 1, stepMinutes: Number(w.step.split(' ')[0]) };
+}
+
 export async function validate() {
   const defs = loadStaged();
-  const approx = readJson('tools/bodies/sources/jpl-approx-pos.json');
-  const prov = readJson('tools/bodies/provenance.json');
+  const tol = readJson('tools/bodies/tolerances.json');
+  const fits = readJson('tools/bodies/sources/orbit-fits.json');
   const rows = [];
   for (const id of BODY_ORDER) {
     const c = CATALOGUE[id];
     if (c.parent === null) continue;
-    const h = await vectorsAt(c.horizons, horizonsCenter(id), VALIDATION_JDS, `val-${id}`);
-    const epochs = [];
-    for (const s of h.rows) {
+    const row = tol.bodies.find((r) => r.id === id);
+    if (!row) throw new Error(`tools/bodies/tolerances.json has no row for ${id}`);
+    const st = stepOf(fits, id);
+    const win = await windowSamples(id, c.horizons, horizonsCenter(id), st.periodDays, { stepMinutes: st.stepMinutes });
+    let maxAngle = 0;
+    let maxRadial = 0;
+    let sumSq = 0;
+    let maxDv = 0;
+    let maxOfDate = 0;
+    let worstJd = null;
+    for (const s of win.rows) {
       const ut = jdToUt(s.jd);
-      const m = stagedState(defs, id, ut).r;
-      const ang = angleBetween(m, s.r) / DEG;
-      const radial = (len(m) - len(s.r)) / len(s.r);
-      const A = lonLatDist(m);
-      const B = lonLatDist(s.r);
-      const e = { jd: s.jd, angleDeg: ang, radial, dLonArcsec: wrap180(A.lon - B.lon) * 3600, dLatArcsec: (A.lat - B.lat) * 3600, dDistKm: (A.dist - B.dist) / 1e3 };
-      if (id === 'earth') {
-        // The v1 Almanac formula is referred to the mean equinox of date: compare in that frame too.
-        const T = (s.jd - 2451545) / 36525;
-        const ofDate = matVec(rotZ(precessionDeg(T) * DEG), matVec(toEcliptic, s.r));
-        const Bd = { lon: Math.atan2(ofDate[1], ofDate[0]) / DEG };
-        e.dLonOfDateArcsec = wrap180(A.lon - Bd.lon) * 3600;
+      const m = stagedState(defs, id, ut);
+      const ang = angleBetween(m.r, s.r) / DEG;
+      if (ang > maxAngle) {
+        maxAngle = ang;
+        worstJd = s.jd;
       }
-      epochs.push(e);
+      maxRadial = Math.max(maxRadial, Math.abs(len(m.r) - len(s.r)) / len(s.r));
+      maxDv = Math.max(maxDv, len(sub(m.v, s.v)) / len(s.v));
+      sumSq += ang * ang;
+      if (id === 'earth') {
+        const T = (s.jd - 2451545) / 36525;
+        const ofDate = matVec(ECLIPTIC_TO_ICRF, matVec(rotZ(precessionDeg(T) * DEG), matVec(toEcliptic, s.r)));
+        maxOfDate = Math.max(maxOfDate, Math.abs(wrap180(eclLon(m.r) - eclLon(ofDate))));
+      }
     }
-    const worst = (f) => epochs.reduce((w, e) => (Math.abs(e[f]) > Math.abs(w) ? e[f] : w), 0);
-    const path = prov.paths[id]?.path ?? null;
-    const row = { id, path, reading: prov.paths[id]?.reading ?? null, horizons: { command: c.horizons, center: horizonsCenter(id), url: h.meta.url, retrievedAt: h.meta.retrievedAt } };
-    row.worst = { angleDeg: worst('angleDeg'), radial: worst('radial'), dLonArcsec: worst('dLonArcsec'), dLatArcsec: worst('dLatArcsec'), dDistKm: worst('dDistKm') };
-    if (id === 'earth') row.worst.dLonOfDateArcsec = worst('dLonOfDateArcsec');
-    if (path === 'approx-pos') {
-      const acc = approx.accuracy[c.approxPos].table1;
-      row.tolerance = { dLonArcsec: acc.longitudeArcsec, dLatArcsec: acc.latitudeArcsec, dDistKm: acc.distanceKkm * 1000 };
-      row.gated = true;
-      row.pass = Math.abs(row.worst.dLonArcsec) <= acc.longitudeArcsec && Math.abs(row.worst.dLatArcsec) <= acc.latitudeArcsec && Math.abs(row.worst.dDistKm) <= acc.distanceKkm * 1000;
-      row.factor = Math.max(Math.abs(row.worst.dLonArcsec) / acc.longitudeArcsec, Math.abs(row.worst.dLatArcsec) / acc.latitudeArcsec, Math.abs(row.worst.dDistKm) / (acc.distanceKkm * 1000));
-      // Within the table's stated validity (1800-2050) only:
-      const inRange = epochs.filter((e) => e.jd <= 2469807.5);
-      const wIn = (f) => inRange.reduce((w, e) => Math.max(w, Math.abs(e[f])), 0);
-      row.factorTo2050 = Math.max(wIn('dLonArcsec') / acc.longitudeArcsec, wIn('dLatArcsec') / acc.latitudeArcsec, wIn('dDistKm') / (acc.distanceKkm * 1000));
-    } else if (id === 'earth' || id === 'moon') {
-      row.gated = false;
-      row.pass = null;
-      row.note = id === 'earth' ? 'pinned to the v1 Almanac Sun (inverted) by ARCHITECTURE 8.2; the formula is referred to the mean equinox of date, so in ICRF it differs by the precession since J2000 (dLonOfDateArcsec removes it)' : 'pinned to the frozen v1 ellipse by ARCHITECTURE 8.2 (no node regression, no apsidal precession)';
+    const cls = tol.classes[row.class] ?? null;
+    const bound = row.class === 'pinned' ? null : { angleDeg: row.angleDeg ?? cls.angleDeg, radial: row.radial ?? cls.radial };
+    const out = {
+      id,
+      class: row.class,
+      samples: win.rows.length,
+      residual: { maxAngleDeg: maxAngle, maxRadial, rmsAngleDeg: Math.sqrt(sumSq / win.rows.length), worstAtJdTdb: worstJd, maxVelocityError: maxDv },
+      tolerance: bound,
+      horizons: { url: win.meta.url, retrievedAt: win.meta.retrievedAt, stepMinutes: win.step },
+    };
+    if (id === 'earth') out.residual.maxLongitudeOfDateDeg = maxOfDate;
+    if (row.class === 'pinned') {
+      out.verdict = 'reported';
+      out.reason = row.reason;
     } else {
-      row.tolerance = { angleDeg: TOL_ANGLE_DEG, radial: TOL_RADIAL };
-      row.gated = true;
-      row.pass = Math.abs(row.worst.angleDeg) <= TOL_ANGLE_DEG && Math.abs(row.worst.radial) <= TOL_RADIAL;
-      row.factor = Math.max(Math.abs(row.worst.angleDeg) / TOL_ANGLE_DEG, Math.abs(row.worst.radial) / TOL_RADIAL);
+      const overClass = maxAngle > cls.angleDeg || maxRadial > cls.radial;
+      const withinRow = maxAngle <= bound.angleDeg && maxRadial <= bound.radial;
+      const widened = bound.angleDeg > cls.angleDeg || bound.radial > cls.radial;
+      if (widened && !(typeof row.reason === 'string' && row.reason.trim().length > 40)) throw new Error(`tolerances.json: ${id} widens its class tolerance without a reason`);
+      out.verdict = !overClass ? 'pass' : withinRow && widened ? 'reasoned exception' : 'FAIL';
+      if (widened) out.reason = row.reason;
     }
-    row.epochs = epochs;
-    rows.push(row);
+    rows.push(out);
   }
   return rows;
 }
 
 function fmtRow(r) {
-  const w = r.worst;
-  const pos = r.path === 'approx-pos' || r.id === 'earth' ? `dLon ${w.dLonArcsec.toFixed(1)}" dLat ${w.dLatArcsec.toFixed(1)}" dDist ${w.dDistKm.toFixed(0)} km` : `angle ${w.angleDeg.toFixed(3)} deg radial ${(w.radial * 100).toFixed(2)} %`;
-  const extra = r.id === 'earth' ? ` (of date: dLon ${w.dLonOfDateArcsec.toFixed(1)}")` : '';
-  const verdict = r.pass === null ? 'reported' : r.pass ? 'PASS' : `FAIL x${r.factor.toFixed(2)}`;
-  return `${r.id.padEnd(10)} ${(r.path ?? '').padEnd(10)} ${verdict.padEnd(11)} ${pos}${extra}`;
+  const res = r.residual;
+  const t = r.tolerance ? ` (tolerance ${r.tolerance.angleDeg} deg, ${(r.tolerance.radial * 100).toFixed(1)} %)` : '';
+  const extra = r.id === 'earth' ? ` (of date: ${(res.maxLongitudeOfDateDeg * 3600).toFixed(1)}")` : '';
+  return `${r.id.padEnd(10)} ${r.verdict.padEnd(19)} max ${res.maxAngleDeg.toFixed(4)} deg, radial ${(res.maxRadial * 100).toFixed(3)} %, rms ${res.rmsAngleDeg.toFixed(4)} deg${extra}${t}`;
 }
 
 async function main() {
   const rows = await validate();
-  const failed = rows.filter((r) => r.gated && !r.pass);
+  const failed = rows.filter((r) => r.verdict === 'FAIL');
   writeFileSync(join(REPO_ROOT, 'tools/bodies/validation-report.json'), formatJson({
-    description: 'tools/bodies/validate.mjs: staged definitions against JPL Horizons at ten epochs over 2030-2060 (worst deviation per body; signed: model minus Horizons)',
-    epochsJdTdb: VALIDATION_JDS,
-    summary: { gated: rows.filter((r) => r.gated).length, passed: rows.filter((r) => r.pass === true).length, failed: failed.map((r) => r.id), reported: rows.filter((r) => !r.gated).map((r) => r.id) },
+    description: 'tools/bodies/validate.mjs: the staged orbits against JPL Horizons over the validity window (residual per body, judged with tools/bodies/tolerances.json)',
+    window: { startJdTdb: WINDOW_START_JD, stopJdTdb: WINDOW_STOP_JD },
+    summary: { passed: rows.filter((r) => r.verdict === 'pass').map((r) => r.id), reasonedExceptions: rows.filter((r) => r.verdict === 'reasoned exception').map((r) => r.id), failed: failed.map((r) => r.id), reported: rows.filter((r) => r.verdict === 'reported').map((r) => r.id) },
     bodies: rows,
   }));
   if (!process.argv.includes('--quiet')) for (const r of rows) console.log(fmtRow(r));
-  console.log(`\n${rows.filter((r) => r.pass === true).length} of ${rows.filter((r) => r.gated).length} gated bodies within tolerance; reported only: ${rows.filter((r) => !r.gated).map((r) => r.id).join(', ')}`);
-  if (failed.length) {
-    console.log(`outside tolerance: ${failed.map((r) => r.id).join(', ')} (tools/bodies/validation-report.json)`);
-    process.exit(1);
-  }
+  const n = (v) => rows.filter((r) => r.verdict === v).length;
+  console.log(`\n${n('pass')} pass, ${n('reasoned exception')} reasoned exceptions, ${failed.length} failed; reported (pinned): ${rows.filter((r) => r.verdict === 'reported').map((r) => r.id).join(', ')}`);
+  if (failed.length) process.exit(1);
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/').split('/').pop())) await main();

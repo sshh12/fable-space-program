@@ -8,21 +8,18 @@
   "orbit": {
     "kind": "kepler",
     "frame": "ecliptic",
-    "a": 1426666414179.92,
-    "e": 0.05386179,
-    "iDeg": 2.48599187,
-    "lanDeg": 113.66242448,
-    "argPeDeg": -21.06354617,
-    "meanAnomalyDeg": -42.64463408,
-    "epochUt": 0,
+    "a": 1426590724154.09,
+    "e": 0.0540686556849236,
+    "iDeg": 2.48720006996395,
+    "lanDeg": 113.57354758977,
+    "argPeDeg": 338.710630094839,
+    "meanAnomalyDeg": 321.074646937067,
+    "epochUt": 938240818,
     "rates": {
-      "a": -187087097.09742,
-      "e": -0.00050991,
-      "iDeg": 0.00193609,
       "lanDeg": -0.28867794,
       "argPeDeg": -0.13029422
     },
-    "meanMotionDegPerDay": 0.0334815220854209
+    "meanMotionDegPerDay": 0.0335107273755985
   },
   "rotation": {
     "mode": "fixedRate",

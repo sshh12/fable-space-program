@@ -1,3346 +1,696 @@
 {
-  "description": "tools/bodies/validate.mjs: staged definitions against JPL Horizons at ten epochs over 2030-2060 (worst deviation per body; signed: model minus Horizons)",
-  "epochsJdTdb": [2462502.5, 2463719.9444444445, 2464937.388888889, 2466154.8333333335, 2467372.277777778, 2468589.722222222, 2469807.1666666665, 2471024.611111111, 2472242.0555555555, 2473459.5],
+  "description": "tools/bodies/validate.mjs: the staged orbits against JPL Horizons over the validity window (residual per body, judged with tools/bodies/tolerances.json)",
+  "window": {
+    "startJdTdb": 2462380.5,
+    "stopJdTdb": 2473459.5
+  },
   "summary": {
-    "gated": 29,
-    "passed": 13,
-    "failed": ["mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune", "phobos", "deimos", "io", "europa", "mimas", "tethys", "miranda", "triton", "ceres"],
+    "passed": ["mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune", "phobos", "deimos", "io", "europa", "ganymede", "callisto", "enceladus", "tethys", "dione", "rhea", "titan", "iapetus", "ariel", "umbriel", "titania", "oberon", "triton", "ceres", "pluto", "charon"],
+    "reasonedExceptions": ["mimas", "miranda"],
+    "failed": [],
     "reported": ["earth", "moon"]
   },
   "bodies": [
     {
       "id": "mercury",
-      "path": "approx-pos",
-      "reading": null,
-      "horizons": {
-        "command": "199",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27199%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:02.226Z"
-      },
-      "worst": {
-        "angleDeg": 0.0038901955939969384,
-        "radial": 0.00002462296052546435,
-        "dLonArcsec": -13.93993513793248,
-        "dLatArcsec": -1.6037195938402249,
-        "dDistKm": 1185.256517326355
+      "class": "planet",
+      "samples": 1819,
+      "residual": {
+        "maxAngleDeg": 0.006725300889891834,
+        "maxRadial": 0.000030088567389171197,
+        "rmsAngleDeg": 0.0018343207035028993,
+        "worstAtJdTdb": 2471562.734722222,
+        "maxVelocityError": 0.00008715910334020024
       },
       "tolerance": {
-        "dLonArcsec": 15,
-        "dLatArcsec": 1,
-        "dDistKm": 1000
+        "angleDeg": 0.1,
+        "radial": 0.002
       },
-      "gated": true,
-      "pass": false,
-      "factor": 1.6037195938402249,
-      "factorTo2050": 1.6037195938402249,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.0002061603280553613,
-          "radial": 0.00000911671997077223,
-          "dLonArcsec": 0.7446728038303263,
-          "dLatArcsec": 0.04201620312471732,
-          "dDistKm": 426.38963080596926
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.0038901955939969384,
-          "radial": 0.000009532143180190424,
-          "dLonArcsec": -13.93993513793248,
-          "dLatArcsec": -1.6037195938402249,
-          "dDistKm": 479.5362382736206
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.00155207604527205,
-          "radial": 0.000004832370670312797,
-          "dLonArcsec": 5.629295621747588,
-          "dLatArcsec": 0.03897244788326759,
-          "dDistKm": 299.6481292877197
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.000160991855000569,
-          "radial": 0.000015293451825528486,
-          "dLonArcsec": 0.5816384303216182,
-          "dLatArcsec": 0.010227704392207215,
-          "dDistKm": 1057.5743104400635
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.0008410413415364045,
-          "radial": -0.000009924307523655351,
-          "dLonArcsec": -3.0275732443442394,
-          "dLatArcsec": 0.04836022686345309,
-          "dDistKm": -678.0986447601318
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.0018314863653751433,
-          "radial": 0.0000037809507227514708,
-          "dLonArcsec": 6.6009889222641505,
-          "dLatArcsec": -0.40950237256183186,
-          "dDistKm": 226.09480813598634
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.0029237602369194503,
-          "radial": -0.000007267800907341067,
-          "dLonArcsec": -10.596089285945709,
-          "dLatArcsec": -0.2187447880750426,
-          "dDistKm": -351.51032136535645
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.001712154154937887,
-          "radial": 0.00002462296052546435,
-          "dLonArcsec": -6.134328744883533,
-          "dLatArcsec": -0.6246828819630679,
-          "dDistKm": 1185.256517326355
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.0014577965792494153,
-          "radial": 0.000007792138873570381,
-          "dLonArcsec": -5.271843808804988,
-          "dLatArcsec": -0.38756863967108757,
-          "dDistKm": 463.52867604064943
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.000550542960755158,
-          "radial": 0.0000065655933592971845,
-          "dLonArcsec": 1.9913545736926608,
-          "dLatArcsec": -0.03616663941130582,
-          "dDistKm": 447.70791833496094
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27199%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+        "retrievedAt": "2026-11-12T09:48:00.561Z",
+        "stepMinutes": 8774
+      },
+      "verdict": "pass"
     },
     {
       "id": "venus",
-      "path": "approx-pos",
-      "reading": null,
-      "horizons": {
-        "command": "299",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27299%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:02.370Z"
-      },
-      "worst": {
-        "angleDeg": 0.0053917301722385454,
-        "radial": 0.00004126250019430812,
-        "dLonArcsec": -19.427584964068956,
-        "dLatArcsec": 0.7099110986661605,
-        "dDistKm": 4491.572652206421
+      "class": "planet",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.007475707231519941,
+        "maxRadial": 0.000048796081211474325,
+        "rmsAngleDeg": 0.003056204909993961,
+        "worstAtJdTdb": 2473116.2125,
+        "maxVelocityError": 0.0000910114977662193
       },
       "tolerance": {
-        "dLonArcsec": 20,
-        "dLatArcsec": 1,
-        "dDistKm": 4000
+        "angleDeg": 0.1,
+        "radial": 0.002
       },
-      "gated": true,
-      "pass": false,
-      "factor": 1.1228931630516052,
-      "factorTo2050": 1.1228931630516052,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.003937926025219439,
-          "radial": -0.000003490750852424729,
-          "dLonArcsec": -14.167196710513963,
-          "dLatArcsec": -0.5909739392539137,
-          "dDistKm": -375.6284596099853
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.0016934694670780951,
-          "radial": -0.00001961406734521181,
-          "dLonArcsec": -6.055224789088243,
-          "dLatArcsec": 0.7099110986661605,
-          "dDistKm": -2128.894329284668
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.0010385446579619087,
-          "radial": -0.000008280038179511241,
-          "dLonArcsec": 3.7354025938839186,
-          "dLatArcsec": 0.21092068054358037,
-          "dDistKm": -896.3741601715088
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.0018140022444748112,
-          "radial": 0.000018338804129815828,
-          "dLonArcsec": 6.522235808870391,
-          "dLatArcsec": 0.48287278623284635,
-          "dDistKm": 1977.2044716491698
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.0018407551917321008,
-          "radial": 0.00004126250019430812,
-          "dLonArcsec": -6.634948935970897,
-          "dLatArcsec": 0.20614963314322665,
-          "dDistKm": 4491.572652206421
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.0053917301722385454,
-          "radial": -0.000010088522228678511,
-          "dLonArcsec": -19.427584964068956,
-          "dLatArcsec": -0.41941378736911616,
-          "dDistKm": -1084.3138231811524
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.0003380400280042986,
-          "radial": -0.000017880521938794978,
-          "dLonArcsec": 1.1974974831900909,
-          "dLatArcsec": -0.21862768285911827,
-          "dDistKm": -1946.0809033050537
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.0007004575035745062,
-          "radial": 0.0000022688110434863906,
-          "dLonArcsec": -2.5126105069830373,
-          "dLatArcsec": -0.2139227926732712,
-          "dDistKm": 244.705168258667
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.0009165305848400991,
-          "radial": 0.000030443037676530674,
-          "dLonArcsec": -3.2985017338432954,
-          "dLatArcsec": 0.1371777270120056,
-          "dDistKm": 3294.191340774536
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.00503100495338866,
-          "radial": 0.000031034191613890554,
-          "dLonArcsec": -18.129606991260516,
-          "dLatArcsec": -0.5469739930729745,
-          "dDistKm": 3369.4618243103027
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27299%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:07.976Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "earth",
-      "path": "sun-v1",
-      "reading": null,
+      "class": "pinned",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.8375692923487347,
+        "maxRadial": 0.00009075874328960391,
+        "rmsAngleDeg": 0.6347766554494125,
+        "worstAtJdTdb": 2473454.127083333,
+        "maxVelocityError": 0.01498731070461881,
+        "maxLongitudeOfDateDeg": 0.011597848816109035
+      },
+      "tolerance": null,
       "horizons": {
-        "command": "399",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27399%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:02.477Z"
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27399%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:51:17.773Z",
+        "stepMinutes": 7977
       },
-      "worst": {
-        "angleDeg": 0.8370871125555165,
-        "radial": -0.00005453966180994446,
-        "dLonArcsec": 3013.510181369702,
-        "dLatArcsec": -4.563484265454258,
-        "dDistKm": -8023.385663391114,
-        "dLonOfDateArcsec": -27.61537069586666
-      },
-      "gated": false,
-      "pass": null,
-      "note": "pinned to the v1 Almanac Sun (inverted) by ARCHITECTURE 8.2; the formula is referred to the mean equinox of date, so in ICRF it differs by the precession since J2000 (dLonOfDateArcsec removes it)",
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.41398532444470554,
-          "radial": -0.00004324162446389761,
-          "dLonArcsec": 1490.34379136574,
-          "dLatArcsec": -3.174338162712372,
-          "dDistKm": -6361.164727661133,
-          "dLonOfDateArcsec": -18.39455626650306
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.46140339993539453,
-          "radial": -0.00001896299515266715,
-          "dLonArcsec": 1661.0522020595909,
-          "dLatArcsec": 0.3676053906011462,
-          "dDistKm": -2859.1429861450197,
-          "dLonOfDateArcsec": -15.328372239491728
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.5045587480604167,
-          "radial": 0.00003245611786555226,
-          "dLonArcsec": 1816.4098867058783,
-          "dLatArcsec": 2.4162641298591105,
-          "dDistKm": 4900.269362304687,
-          "dLonOfDateArcsec": -27.61537069586666
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.5539724518792525,
-          "radial": 0.000006226613256501442,
-          "dLonArcsec": 1994.2982072042469,
-          "dLatArcsec": -3.2382430476746284,
-          "dDistKm": 915.939495666504,
-          "dLonOfDateArcsec": -17.374189460133493
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.602307841172228,
-          "radial": -0.000008055851302292757,
-          "dLonArcsec": 2168.3081519118787,
-          "dLatArcsec": 0.5985664415513566,
-          "dDistKm": -1214.5267161254883,
-          "dLonOfDateArcsec": -11.013840449732015
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.644866125758146,
-          "radial": -0.00003535069999103896,
-          "dLonArcsec": 2321.516440051346,
-          "dLatArcsec": 2.737798564414237,
-          "dDistKm": -5337.988176879883,
-          "dLonOfDateArcsec": -25.457604167877435
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.6944984678957173,
-          "radial": -0.0000394432714484068,
-          "dLonArcsec": 2500.1916734376664,
-          "dLatArcsec": -3.7614003743467816,
-          "dDistKm": -5802.425197692871,
-          "dLonOfDateArcsec": -14.436879074582976
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.746346569645843,
-          "radial": 0.000029749550631254073,
-          "dLonArcsec": 2686.847148303332,
-          "dLatArcsec": 1.6611131744140712,
-          "dDistKm": 4484.675029022217,
-          "dLonOfDateArcsec": 4.561631338492589
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.7894978640550199,
-          "radial": 0.000016720967691506878,
-          "dLonArcsec": 2842.190493514636,
-          "dLatArcsec": 3.2165709633531843,
-          "dDistKm": 2524.905094207764,
-          "dLonOfDateArcsec": -7.75444433861594
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.8370871125555165,
-          "radial": -0.00005453966180994446,
-          "dLonArcsec": 3013.510181369702,
-          "dLatArcsec": -4.563484265454258,
-          "dDistKm": -8023.385663391114,
-          "dLonOfDateArcsec": -4.096633531116822
-        }
-      ]
+      "verdict": "reported",
+      "reason": "The v1 Almanac low-precision Sun, inverted (ARCHITECTURE 8.2), so the lunar mission's lighting, windows and start time are unchanged. The formula is referred to the mean equinox of date: in the J2000 frame of the other planets Earth's heliocentric longitude is off by the precession since J2000 (0.41 deg in 2029 rising to 0.84 deg in 2060); of date it is within the formula's 0.01 deg. Whether to move it is decided at activation (wave 4.4)."
     },
     {
       "id": "mars",
-      "path": "approx-pos",
-      "reading": null,
-      "horizons": {
-        "command": "499",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27499%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:02.587Z"
-      },
-      "worst": {
-        "angleDeg": 0.016305712771074714,
-        "radial": -0.00006417700117879112,
-        "dLonArcsec": 58.70120294739536,
-        "dLatArcsec": -1.1447996073846056,
-        "dDistKm": -13334.70926663208
+      "class": "planet",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.027409465221660673,
+        "maxRadial": 0.00017051050025796932,
+        "rmsAngleDeg": 0.008877841502431717,
+        "worstAtJdTdb": 2470689.875,
+        "maxVelocityError": 0.00030895932252636204
       },
       "tolerance": {
-        "dLonArcsec": 40,
-        "dLatArcsec": 2,
-        "dDistKm": 25000
+        "angleDeg": 0.1,
+        "radial": 0.002
       },
-      "gated": true,
-      "pass": false,
-      "factor": 1.467530073684884,
-      "factorTo2050": 1.467530073684884,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.010830069366677884,
-          "radial": -0.000014630997394397135,
-          "dLonArcsec": 38.99834481208018,
-          "dLatArcsec": 0.7978686817145864,
-          "dDistKm": -3023.6531285400392
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.0015833578201762328,
-          "radial": 0.00001335610302275635,
-          "dLonArcsec": -5.697683169046286,
-          "dLatArcsec": 0.1725551849543372,
-          "dDistKm": 3024.701516204834
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.009378226368527073,
-          "radial": -0.000015207399781632375,
-          "dLonArcsec": 33.77160132140489,
-          "dLatArcsec": -0.43868437072855926,
-          "dDistKm": -3778.084264312744
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.007155401306705154,
-          "radial": -0.00003002001822555854,
-          "dLonArcsec": -25.74211752789779,
-          "dLatArcsec": -1.1447996073846056,
-          "dDistKm": -7161.686633972168
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.01077271284922504,
-          "radial": -0.000019646549109499093,
-          "dLonArcsec": 38.775480554932074,
-          "dLatArcsec": 0.9811943019733427,
-          "dDistKm": -4141.59268637085
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.0030535276652055706,
-          "radial": -0.00004783381037973396,
-          "dLonArcsec": -10.978262064872979,
-          "dLatArcsec": 0.6238160516747193,
-          "dDistKm": -10292.34996331787
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.016305712771074714,
-          "radial": -0.000027139949987823682,
-          "dLonArcsec": 58.70120294739536,
-          "dLatArcsec": -0.9490820988107718,
-          "dDistKm": -6592.91000567627
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.007643406341109529,
-          "radial": 0.000021020731638443774,
-          "dLonArcsec": -27.519857245533785,
-          "dLatArcsec": -0.7486403500043259,
-          "dDistKm": 5178.423031494141
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.0017932443084355252,
-          "radial": -0.000018224731511579077,
-          "dLonArcsec": 6.45233986851963,
-          "dLatArcsec": -0.20777131089765866,
-          "dDistKm": -4022.2646716308595
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.012839590343271121,
-          "radial": -0.00006417700117879112,
-          "dLonArcsec": -46.244134890275745,
-          "dLatArcsec": 0.4580963381772385,
-          "dDistKm": -13334.70926663208
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27499%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:08.350Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "jupiter",
-      "path": "approx-pos",
-      "reading": null,
-      "horizons": {
-        "command": "599",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27599%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:02.682Z"
-      },
-      "worst": {
-        "angleDeg": 0.12959353715847607,
-        "radial": -0.000720789352590732,
-        "dLonArcsec": 466.65673438169506,
-        "dLatArcsec": 7.282669672219022,
-        "dDistKm": 549466.7217559814
+      "class": "planet",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.09109930118895412,
+        "maxRadial": 0.0006810581413315612,
+        "rmsAngleDeg": 0.037737934963400985,
+        "worstAtJdTdb": 2462380.5,
+        "maxVelocityError": 0.0011660812195391113
       },
       "tolerance": {
-        "dLonArcsec": 400,
-        "dLatArcsec": 10,
-        "dDistKm": 600000
+        "angleDeg": 0.1,
+        "radial": 0.002
       },
-      "gated": true,
-      "pass": false,
-      "factor": 1.1666418359542376,
-      "factorTo2050": 1.1666418359542376,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.028058203182469203,
-          "radial": 0.00030965175848005376,
-          "dLonArcsec": 101.02846441095608,
-          "dLatArcsec": -0.06602611063888375,
-          "dDistKm": 251156.04598632813
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.0524343406785649,
-          "radial": 0.00017603303534852847,
-          "dLonArcsec": -188.7485688634115,
-          "dLatArcsec": 3.696278708049272,
-          "dDistKm": 132818.96983105468
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.004668123836696215,
-          "radial": -0.0004261046395347093,
-          "dLonArcsec": -16.62845253440537,
-          "dLatArcsec": -2.438071983246548,
-          "dDistKm": -322497.69828283694
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.011234291596349064,
-          "radial": 0.00023925548321785135,
-          "dLonArcsec": 40.44793122670853,
-          "dLatArcsec": -0.6213308380494276,
-          "dDistKm": 194308.33075598144
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.012509896718205904,
-          "radial": -0.00045713121080164843,
-          "dLonArcsec": -45.02493943055015,
-          "dLatArcsec": -1.0227919799203455,
-          "dDistKm": -361284.7396187744
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.12959353715847607,
-          "radial": -0.00047201828363290584,
-          "dLonArcsec": 466.65673438169506,
-          "dLatArcsec": -0.8307873074630656,
-          "dDistKm": -349852.2690126953
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.07200513575988515,
-          "radial": 0.0007007804078648999,
-          "dLonArcsec": 259.12651552134776,
-          "dLatArcsec": 7.106307738124773,
-          "dDistKm": 549466.7217559814
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.0202029853815792,
-          "radial": -0.00005442088501987646,
-          "dLonArcsec": -72.74428699270175,
-          "dLatArcsec": 0.652873152975797,
-          "dDistKm": -44314.55227050781
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.08316415465301535,
-          "radial": -0.000720789352590732,
-          "dLonArcsec": 299.3387448539579,
-          "dLatArcsec": -6.46344209942904,
-          "dDistKm": -549218.8368165283
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.10314864478702408,
-          "radial": 0.00045575869178573336,
-          "dLonArcsec": 371.30620486432235,
-          "dLatArcsec": 7.282669672219022,
-          "dDistKm": 341881.88437145995
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27599%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:00.938Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "saturn",
-      "path": "approx-pos",
-      "reading": null,
-      "horizons": {
-        "command": "699",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27699%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:02.776Z"
-      },
-      "worst": {
-        "angleDeg": 0.2472115993907002,
-        "radial": -0.0011957504175009982,
-        "dLonArcsec": -890.1398074021017,
-        "dLatArcsec": -25.229557171943995,
-        "dDistKm": -1707232.4978356934
+      "class": "planet",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.03283061478633124,
+        "maxRadial": 0.0015252121490590958,
+        "rmsAngleDeg": 0.01037226123735318,
+        "worstAtJdTdb": 2473454.127083333,
+        "maxVelocityError": 0.0019669551455565155
       },
       "tolerance": {
-        "dLonArcsec": 600,
-        "dLatArcsec": 25,
-        "dDistKm": 1500000
+        "angleDeg": 0.1,
+        "radial": 0.002
       },
-      "gated": true,
-      "pass": false,
-      "factor": 1.4835663456701695,
-      "factorTo2050": 1.1381549985571289,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.06195436067660295,
-          "radial": 0.0008005149885871518,
-          "dLonArcsec": 222.88776329023676,
-          "dLatArcsec": 11.711288283773236,
-          "dDistKm": 1092584.9261159669
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.013430521515343456,
-          "radial": 0.0010077140455565423,
-          "dLonArcsec": 48.01063506715764,
-          "dLatArcsec": 5.744723187263734,
-          "dDistKm": 1359377.9835644532
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.07141436353164654,
-          "radial": 0.00016341260782238437,
-          "dLonArcsec": -256.9862110871327,
-          "dLatArcsec": -9.164824358039514,
-          "dDistKm": 224721.04568896483
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.11557909086984422,
-          "radial": -0.0011957504175009982,
-          "dLonArcsec": -416.40774044662976,
-          "dLatArcsec": -5.0001354970559575,
-          "dDistKm": -1707232.4978356934
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.10324072989284808,
-          "radial": -0.001041944859857548,
-          "dLonArcsec": -371.89973245581314,
-          "dLatArcsec": 7.339755818675364,
-          "dDistKm": -1538896.8672490234
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.1134363246673695,
-          "radial": -0.00009794008013502255,
-          "dLonArcsec": -408.18186116271136,
-          "dLatArcsec": 15.540864067028615,
-          "dDistKm": -147079.271388916
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.11104176454888108,
-          "radial": 0.0005100964646772757,
-          "dLonArcsec": -399.2617134957982,
-          "dLatArcsec": 19.815540710132083,
-          "dDistKm": 761937.9200178223
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.12802075338290372,
-          "radial": 0.0005965477888053827,
-          "dLonArcsec": -460.6734242942821,
-          "dLatArcsec": 19.252589659050212,
-          "dDistKm": 868505.9145891113
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.1900329133404764,
-          "radial": 0.000056354537597851635,
-          "dLonArcsec": -684.740803082741,
-          "dLatArcsec": 4.413236727111247,
-          "dDistKm": 79101.10448950196
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.2472115993907002,
-          "radial": -0.0008584036553533766,
-          "dLonArcsec": -890.1398074021017,
-          "dLatArcsec": -25.229557171943995,
-          "dDistKm": -1169037.6542973632
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27699%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:08.712Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "uranus",
-      "path": "approx-pos",
-      "reading": null,
-      "horizons": {
-        "command": "799",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27799%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:02.869Z"
-      },
-      "worst": {
-        "angleDeg": 0.05483194654860988,
-        "radial": 0.0003481410640173675,
-        "dLonArcsec": -197.39225715729845,
-        "dLatArcsec": 3.0871026788872324,
-        "dDistKm": 954333.1158725586
+      "class": "planet",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.025856857449602675,
+        "maxRadial": 0.00034584476644943223,
+        "rmsAngleDeg": 0.0108682721929456,
+        "worstAtJdTdb": 2473454.127083333,
+        "maxVelocityError": 0.002972136534823738
       },
       "tolerance": {
-        "dLonArcsec": 50,
-        "dLatArcsec": 2,
-        "dDistKm": 1000000
+        "angleDeg": 0.1,
+        "radial": 0.002
       },
-      "gated": true,
-      "pass": false,
-      "factor": 3.947845143145969,
-      "factorTo2050": 2.2254102278911887,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.001997181123975448,
-          "radial": 0.000007746860755671554,
-          "dLonArcsec": 7.16276130483493,
-          "dLatArcsec": -0.6235692395582748,
-          "dDistKm": 22274.38623388672
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.01715288537086524,
-          "radial": -0.00003458605480217802,
-          "dLonArcsec": 61.74891521081918,
-          "dLatArcsec": 0.4889856914196855,
-          "dDistKm": -98283.16486669923
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.007339380671152409,
-          "radial": -0.00032690601507065953,
-          "dLonArcsec": 26.421796957947663,
-          "dLatArcsec": -0.18191247421277534,
-          "dDistKm": -918693.5531914063
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.021484674454930547,
-          "radial": -0.00018436162982001758,
-          "dLonArcsec": -77.29989040735745,
-          "dLatArcsec": -2.742357255996364,
-          "dDistKm": -512751.7958081055
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.030917050968041853,
-          "radial": 0.00025724022708503843,
-          "dLonArcsec": -111.27051139455943,
-          "dLatArcsec": -2.9357261241332644,
-          "dDistKm": 709221.3874658203
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.017878808507478836,
-          "radial": 0.0003481410640173675,
-          "dLonArcsec": -64.3612894351918,
-          "dLatArcsec": -1.0134901077338387,
-          "dDistKm": 954333.1158725586
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.022034218269568646,
-          "radial": -0.000007032262174707383,
-          "dLonArcsec": -79.32920708790334,
-          "dLatArcsec": -0.42700640516319943,
-          "dDistKm": -19234.989646972655
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.04603579865035392,
-          "radial": -0.000091165904080471,
-          "dLonArcsec": -165.7421283318854,
-          "dLatArcsec": 0.26322009707269167,
-          "dDistKm": -249585.39675878905
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.05483194654860988,
-          "radial": 0.00021690006253449778,
-          "dLonArcsec": -197.39225715729845,
-          "dLatArcsec": 2.426316648969351,
-          "dDistKm": 596058.806730957
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.034894609214420835,
-          "radial": 0.00028677418265914763,
-          "dLonArcsec": -125.58737511312756,
-          "dLatArcsec": 3.0871026788872324,
-          "dDistKm": 793562.5640273438
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27799%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:08.965Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "neptune",
-      "path": "approx-pos",
-      "reading": null,
-      "horizons": {
-        "command": "899",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27899%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:02.958Z"
-      },
-      "worst": {
-        "angleDeg": 0.013822436728899913,
-        "radial": -0.0003069834491136112,
-        "dLonArcsec": -49.781877845589406,
-        "dLatArcsec": 1.3987208231095671,
-        "dDistKm": -1371203.9241953124
+      "class": "planet",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.012914985694419954,
+        "maxRadial": 0.00018051573717753347,
+        "rmsAngleDeg": 0.006904221865564736,
+        "worstAtJdTdb": 2465477.127083333,
+        "maxVelocityError": 0.004045798928658594
       },
       "tolerance": {
-        "dLonArcsec": 10,
-        "dLatArcsec": 1,
-        "dDistKm": 200000
+        "angleDeg": 0.1,
+        "radial": 0.002
       },
-      "gated": true,
-      "pass": false,
-      "factor": 6.8560196209765625,
-      "factorTo2050": 4.978187784558941,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.0006436443542160971,
-          "radial": 0.000050950483276665395,
-          "dLonArcsec": 2.234100517716797,
-          "dLatArcsec": 0.6174701849993802,
-          "dDistKm": 227563.4800654297
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.00076646952090644,
-          "radial": -0.00013240358354773662,
-          "dLonArcsec": 2.744643977666783,
-          "dLatArcsec": 0.29421243614020653,
-          "dDistKm": -591131.6399277344
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.013822436728899913,
-          "radial": -0.00009565735427692851,
-          "dLonArcsec": -49.781877845589406,
-          "dLatArcsec": -0.24165873956327744,
-          "dDistKm": -426866.49790429685
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.012037722705071916,
-          "radial": 0.00018273380306833996,
-          "dLonArcsec": -43.355886227755036,
-          "dLatArcsec": -0.035093259806906474,
-          "dDistKm": 814957.4437207031
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.003939056522183221,
-          "radial": 0.00018165511646113432,
-          "dLonArcsec": 14.178465007171326,
-          "dLatArcsec": 0.5021692597359184,
-          "dDistKm": 810005.1975595703
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.005122929433481956,
-          "radial": -0.00008520726497783274,
-          "dLonArcsec": 18.45097982409243,
-          "dLatArcsec": 0.105688547727123,
-          "dDistKm": -380030.2295048828
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.007016584200982456,
-          "radial": -0.000077709307400998,
-          "dLonArcsec": -25.269738872793823,
-          "dLatArcsec": -0.27155629912734014,
-          "dDistKm": -346624.1590859375
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.0028960231433606902,
-          "radial": 0.00009201070888903869,
-          "dLonArcsec": -10.403897290507302,
-          "dLatArcsec": 0.7383349916696424,
-          "dDistKm": 410449.05327050784
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.009468464876523421,
-          "radial": -0.00003347456781420773,
-          "dLonArcsec": 34.07060759527667,
-          "dLatArcsec": 1.3987208231095671,
-          "dDistKm": -149402.73786132812
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.0022408085614452084,
-          "radial": -0.0003069834491136112,
-          "dLonArcsec": 8.069507760546912,
-          "dLatArcsec": 0.010491657630673501,
-          "dDistKm": -1371203.9241953124
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27899%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:09.244Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "moon",
-      "path": "frozen-v1",
-      "reading": null,
+      "class": "pinned",
+      "samples": 1819,
+      "residual": {
+        "maxAngleDeg": 168.85394717402866,
+        "maxRadial": 0.13433917609032459,
+        "rmsAngleDeg": 87.33452747947565,
+        "worstAtJdTdb": 2462423.151388889,
+        "maxVelocityError": 2.023058143107077
+      },
+      "tolerance": null,
       "horizons": {
-        "command": "301",
-        "center": "500@399",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27301%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40399%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T09:13:27.233Z"
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27301%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40399%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+        "retrievedAt": "2026-11-12T09:51:18.160Z",
+        "stepMinutes": 8774
       },
-      "worst": {
-        "angleDeg": 162.35164939386195,
-        "radial": -0.0980111321972367,
-        "dLonArcsec": -588735.4439432373,
-        "dLatArcsec": -31694.763084025075,
-        "dDistKm": -39647.10959427482
-      },
-      "gated": false,
-      "pass": null,
-      "note": "pinned to the frozen v1 ellipse by ARCHITECTURE 8.2 (no node regression, no apsidal precession)",
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 162.35164939386195,
-          "radial": -0.0027254234965295595,
-          "dLonArcsec": -588735.4439432373,
-          "dLatArcsec": -5663.385890297827,
-          "dDistKm": -993.479061412394
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 150.72859970437517,
-          "radial": 0.06397512753275487,
-          "dLonArcsec": -543418.4599118278,
-          "dLatArcsec": 20409.657209783603,
-          "dDistKm": 24170.64067985916
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 116.87645596422307,
-          "radial": -0.05547322734154008,
-          "dLonArcsec": -421756.72152116115,
-          "dLatArcsec": 2794.869473847965,
-          "dDistKm": -22399.269945506036
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 100.02463470152999,
-          "radial": -0.07449233098468883,
-          "dLonArcsec": -359087.6881648554,
-          "dLatArcsec": -31694.763084025075,
-          "dDistKm": -30108.027513598918
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 66.58792541395768,
-          "radial": 0.052542864553627104,
-          "dLonArcsec": -238080.0649433099,
-          "dLatArcsec": 29702.489896209598,
-          "dDistKm": 20212.151999939502
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 49.349009721375715,
-          "radial": 0.02157371643226437,
-          "dLonArcsec": -177564.1619080051,
-          "dLatArcsec": 9232.86962728728,
-          "dDistKm": 7733.362557217658
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 44.222344508721115,
-          "radial": 0.03902941735870055,
-          "dLonArcsec": -157895.18144207977,
-          "dLatArcsec": -20985.584862493826,
-          "dDistKm": 14720.363779319525
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 8.712967878501958,
-          "radial": -0.00004134585004807453,
-          "dLonArcsec": -30733.787396765183,
-          "dLatArcsec": 6655.747930771167,
-          "dDistKm": -16.307897238254547
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 10.181610166494817,
-          "radial": -0.0980111321972367,
-          "dLonArcsec": 36761.947374084775,
-          "dLatArcsec": -789.3799788091009,
-          "dDistKm": -39647.10959427482
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 37.27946395186872,
-          "radial": 0.03779208255005352,
-          "dLonArcsec": 133557.46687637715,
-          "dLatArcsec": 13416.85791930027,
-          "dDistKm": 14714.887855289518
-        }
-      ]
+      "verdict": "reported",
+      "reason": "The frozen v1 ellipse (ARCHITECTURE 8.2): no nodal regression (18.6 years) and no apsidal precession (8.85 years), which the sim-orbits acceptance tests pin; it drifts from the real Moon by up to 169 deg over the window (162 deg at the ten epochs first measured). Whether to move it is decided at activation (wave 4.4)."
     },
     {
       "id": "phobos",
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node regressing",
-      "horizons": {
-        "command": "401",
-        "center": "500@499",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:35.513Z"
-      },
-      "worst": {
-        "angleDeg": 165.75108069775533,
-        "radial": 0.01867140487811381,
-        "dLonArcsec": 590986.6304385791,
-        "dLatArcsec": 185817.67000757414,
-        "dDistKm": 172.88143652707896
+      "class": "moon",
+      "samples": 1892,
+      "residual": {
+        "maxAngleDeg": 0.23560851881849826,
+        "maxRadial": 0.00015597722817315012,
+        "rmsAngleDeg": 0.0990455543871392,
+        "worstAtJdTdb": 2473323.866666667,
+        "maxVelocityError": 0.00401536325792369
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": false,
-      "factor": 165.75108069775533,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 42.99857857565131,
-          "radial": -0.0034118351968507325,
-          "dLonArcsec": -154967.80612334172,
-          "dLatArcsec": 51916.86541080436,
-          "dDistKm": -32.47073228951916
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 8.039445359237993,
-          "radial": -0.001158397390651747,
-          "dLonArcsec": -32061.35949959712,
-          "dLatArcsec": 1593.2081207263068,
-          "dDistKm": -11.017708717549219
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 27.129341907723795,
-          "radial": 0.0014191561228496642,
-          "dLonArcsec": 108041.08524485923,
-          "dLatArcsec": 9998.382505348261,
-          "dDistKm": 13.477773562571034
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 62.00760742594197,
-          "radial": 0.004610431966883711,
-          "dLonArcsec": 233809.580929156,
-          "dLatArcsec": -47662.111760833825,
-          "dDistKm": 43.668331369837745
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 96.73278229814365,
-          "radial": 0.007954372451202637,
-          "dLonArcsec": 342089.9368490311,
-          "dLatArcsec": 115318.12291628345,
-          "dDistKm": 75.08336211308837
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 131.33663628018468,
-          "radial": 0.011289529079610344,
-          "dLonArcsec": 456514.1570820674,
-          "dLatArcsec": -169458.4784265385,
-          "dDistKm": 106.13871348743513
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 165.75108069775533,
-          "radial": 0.014391625796430727,
-          "dLonArcsec": 590986.6304385791,
-          "dLatArcsec": 185817.67000757414,
-          "dDistKm": 134.717068606684
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 159.79808077871792,
-          "radial": 0.016746353130979955,
-          "dLonArcsec": -570988.9615565611,
-          "dLatArcsec": -159277.20572519206,
-          "dDistKm": 156.11400763767958
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 125.61404273282437,
-          "radial": 0.01842320891268877,
-          "dLonArcsec": -462146.89807871875,
-          "dLatArcsec": 89622.3656366857,
-          "dDistKm": 171.07539134306273
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 91.49446667914921,
-          "radial": 0.01867140487811381,
-          "dLonArcsec": -349744.0497082457,
-          "dLatArcsec": -25693.991695948655,
-          "dDistKm": 172.88143652707896
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278436+m%27",
+        "retrievedAt": "2026-11-12T09:48:01.320Z",
+        "stepMinutes": 8436
+      },
+      "verdict": "pass"
     },
     {
       "id": "deimos",
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node advancing",
-      "horizons": {
-        "command": "402",
-        "center": "500@499",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:35.768Z"
-      },
-      "worst": {
-        "angleDeg": 91.03872359503765,
-        "radial": 0.00034561432992738945,
-        "dLonArcsec": 330342.34368412214,
-        "dLatArcsec": -123404.18943206639,
-        "dDistKm": 8.104274383749813
+      "class": "moon",
+      "samples": 1901,
+      "residual": {
+        "maxAngleDeg": 0.23572976652490502,
+        "maxRadial": 0.00011797315426979719,
+        "rmsAngleDeg": 0.10228040809223536,
+        "worstAtJdTdb": 2473330.283333333,
+        "maxVelocityError": 0.004060869311708253
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": false,
-      "factor": 91.03872359503765,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 45.492792579159556,
-          "radial": 0.00025346344926968054,
-          "dLonArcsec": 175940.77805018538,
-          "dLatArcsec": -15419.75078652368,
-          "dDistKm": 5.943985546439886
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 50.64289532804384,
-          "radial": -0.0002433946682945998,
-          "dLonArcsec": 184871.97788602044,
-          "dLatArcsec": -50079.7213610433,
-          "dDistKm": -5.710698687799275
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 55.92858118482433,
-          "radial": -0.00017058636536863923,
-          "dLonArcsec": 181372.64129692066,
-          "dLatArcsec": 90666.07071928473,
-          "dDistKm": -4.002127080764621
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 60.994083149589436,
-          "radial": 0.00034561432992738945,
-          "dLonArcsec": 215906.9259164783,
-          "dLatArcsec": -73453.48845341936,
-          "dDistKm": 8.104274383749813
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 66.01193400857898,
-          "radial": -0.00018194497385403357,
-          "dLonArcsec": 256474.15915094884,
-          "dLatArcsec": -7695.058398271228,
-          "dDistKm": -4.268659912914038
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 71.147666373538,
-          "radial": -0.00018524343840867254,
-          "dLonArcsec": 247568.48157412192,
-          "dLatArcsec": 95286.52988890767,
-          "dDistKm": -4.34606041392684
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 76.14901520215062,
-          "radial": 0.00014227192190373504,
-          "dLonArcsec": 250187.28352857844,
-          "dLatArcsec": -121496.25270751471,
-          "dDistKm": 3.33679773947224
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 81.07271648188603,
-          "radial": 0.00007985322848125598,
-          "dLonArcsec": 302964.2473156544,
-          "dLatArcsec": 67375.86967656757,
-          "dDistKm": 1.8729676179736852
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 86.04601529731613,
-          "radial": -0.00025750846561664674,
-          "dLonArcsec": 330342.34368412214,
-          "dLatArcsec": 42235.86987458943,
-          "dDistKm": -6.041931926593184
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 91.03872359503765,
-          "radial": -0.00002488247947110943,
-          "dLonArcsec": 312436.991924835,
-          "dLatArcsec": -123404.18943206639,
-          "dDistKm": -0.5836828444302082
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278396+m%27",
+        "retrievedAt": "2026-11-12T09:48:10.481Z",
+        "stepMinutes": 8396
+      },
+      "verdict": "pass"
     },
     {
       "id": "io",
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis regressing, node regressing",
-      "horizons": {
-        "command": "501",
-        "center": "500@599",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:35.956Z"
-      },
-      "worst": {
-        "angleDeg": 1.680030759025226,
-        "radial": 0.0002781271226456669,
-        "dLonArcsec": 6052.265720413288,
-        "dLatArcsec": 198.11302205023057,
-        "dDistKm": 116.82831795823574
+      "class": "moon",
+      "samples": 1859,
+      "residual": {
+        "maxAngleDeg": 0.03506198256209222,
+        "maxRadial": 0.0000966108449159368,
+        "rmsAngleDeg": 0.018930382692712,
+        "worstAtJdTdb": 2471627.260416667,
+        "maxVelocityError": 0.0037501911272525175
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": false,
-      "factor": 1.680030759025226,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.8906164644635026,
-          "radial": 0.00019818631795981236,
-          "dLonArcsec": 3208.0875706985353,
-          "dLatArcsec": -34.13893674240427,
-          "dDistKm": 83.33855068331957
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.9888249343798278,
-          "radial": 0.0001597049118058381,
-          "dLonArcsec": 3554.3960128429717,
-          "dLatArcsec": 198.11302205023057,
-          "dDistKm": 67.30349085515738
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 1.0908327121508756,
-          "radial": 0.0000026950142662845018,
-          "dLonArcsec": 3928.1255139724635,
-          "dLatArcsec": -49.54627428195559,
-          "dDistKm": 1.1409587417840958
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 1.1402274048884304,
-          "radial": 0.00021852743896410667,
-          "dLonArcsec": 4107.682857418149,
-          "dLatArcsec": 21.699502767704537,
-          "dDistKm": 91.85075037443637
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 1.2596889870872376,
-          "radial": 0.00007634579489532198,
-          "dLonArcsec": 4532.665501719248,
-          "dLatArcsec": -158.00395783487136,
-          "dDistKm": 32.19825901031494
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 1.3449134844789588,
-          "radial": -0.00009983814170822152,
-          "dLonArcsec": 4840.5213325548175,
-          "dLatArcsec": -148.2026991205859,
-          "dDistKm": -42.25878004390001
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 1.4240762862826515,
-          "radial": 0.00017377249559074248,
-          "dLonArcsec": 5127.150774787515,
-          "dLatArcsec": 187.00688266516784,
-          "dDistKm": 73.01826683777571
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 1.5433841166656603,
-          "radial": 0.00010285872809092248,
-          "dLonArcsec": 5557.417642832115,
-          "dLatArcsec": 0.07865763311247775,
-          "dDistKm": 43.40792406773567
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 1.6183663458605224,
-          "radial": 0.000003093857113971663,
-          "dLonArcsec": 5824.323335738973,
-          "dLatArcsec": 169.97180502701065,
-          "dDistKm": 1.30888501483202
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 1.680030759025226,
-          "radial": 0.0002781271226456669,
-          "dLonArcsec": 6052.265720413288,
-          "dLatArcsec": 46.93206317433667,
-          "dDistKm": 116.82831795823574
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278585+m%27",
+        "retrievedAt": "2026-11-12T09:48:01.964Z",
+        "stepMinutes": 8585
+      },
+      "verdict": "pass"
     },
     {
       "id": "europa",
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis regressing, node regressing",
-      "horizons": {
-        "command": "502",
-        "center": "500@599",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:36.154Z"
-      },
-      "worst": {
-        "angleDeg": 3.571426112046153,
-        "radial": 0.0007590218646615979,
-        "dLonArcsec": -12861.318959463915,
-        "dLatArcsec": 603.8802330906401,
-        "dDistKm": 504.52818731606004
+      "class": "moon",
+      "samples": 1943,
+      "residual": {
+        "maxAngleDeg": 0.14103592792383493,
+        "maxRadial": 0.0006521007455354391,
+        "rmsAngleDeg": 0.06778271753243406,
+        "worstAtJdTdb": 2465107.091666667,
+        "maxVelocityError": 0.007944401313885732
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": false,
-      "factor": 3.571426112046153,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 1.9290727162434222,
-          "radial": 0.0003283553645641743,
-          "dLonArcsec": -6946.000274506605,
-          "dLatArcsec": -169.0240277262551,
-          "dDistKm": 218.45475389957429
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 2.051349206849168,
-          "radial": 0.0001158218353890479,
-          "dLonArcsec": -7375.493143156427,
-          "dLatArcsec": -381.63448859457935,
-          "dDistKm": 78.26270098412037
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 2.1652691325154176,
-          "radial": 0.00038179367153436073,
-          "dLonArcsec": -7794.101393860728,
-          "dLatArcsec": -232.08509205520232,
-          "dDistKm": 256.579448564291
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 2.3448020173994757,
-          "radial": 0.0001447202546292936,
-          "dLonArcsec": -8444.543930881446,
-          "dLatArcsec": 211.2719425618909,
-          "dDistKm": 96.27505704498292
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 2.7132422637259377,
-          "radial": -0.0005780508820570928,
-          "dLonArcsec": -9749.427612632144,
-          "dLatArcsec": 603.8802330906401,
-          "dDistKm": -390.6803666269779
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 2.777244408193344,
-          "radial": 0.00014524035571104207,
-          "dLonArcsec": -9992.255621644199,
-          "dLatArcsec": 475.68641536578536,
-          "dDistKm": 97.7001525683403
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 3.0367558163121107,
-          "radial": 0.0007590218646615979,
-          "dLonArcsec": -10943.58370393611,
-          "dLatArcsec": -28.331517347191237,
-          "dDistKm": 504.52818731606004
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 3.1891799891104986,
-          "radial": 0.000029676836596856222,
-          "dLonArcsec": -11474.285175505338,
-          "dLatArcsec": -444.60327311357156,
-          "dDistKm": 20.034555622935294
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 3.3544831279272014,
-          "radial": -0.000033307982479041866,
-          "dLonArcsec": -12074.775630817021,
-          "dLatArcsec": -320.0244578876356,
-          "dDistKm": -22.425292114138603
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 3.571426112046153,
-          "radial": 0.00020728482578795724,
-          "dLonArcsec": -12861.318959463915,
-          "dLatArcsec": 218.3702190387229,
-          "dDistKm": 137.84091314053535
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278214+m%27",
+        "retrievedAt": "2026-11-12T09:48:11.178Z",
+        "stepMinutes": 8214
+      },
+      "verdict": "pass"
     },
     {
       "id": "ganymede",
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node regressing",
-      "horizons": {
-        "command": "503",
-        "center": "500@599",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:36.347Z"
-      },
-      "worst": {
-        "angleDeg": 0.2449531894769619,
-        "radial": -0.0019499855387332095,
-        "dLonArcsec": -879.1491763247905,
-        "dLatArcsec": -193.5453500695667,
-        "dDistKm": -2093.4056042689085
+      "class": "moon",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.12598761587136753,
+        "maxRadial": 0.0009485000072334005,
+        "rmsAngleDeg": 0.05487537741269077,
+        "worstAtJdTdb": 2463621.366666667,
+        "maxVelocityError": 0.0014511424382006983
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.2449531894769619,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.10894635236168972,
-          "radial": -0.00008214313222743724,
-          "dLonArcsec": -341.3916926433558,
-          "dLatArcsec": -193.5453500695667,
-          "dDistKm": -87.91842694866658
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.2449531894769619,
-          "radial": -0.0001326192784447126,
-          "dLonArcsec": -879.1491763247905,
-          "dLatArcsec": -72.92626311750432,
-          "dDistKm": -142.06638332629203
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.04092817207335363,
-          "radial": -0.0008844147873431628,
-          "dLonArcsec": 60.88085423330085,
-          "dLatArcsec": 134.17710111823712,
-          "dDistKm": -948.4630863312483
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.08925585996458078,
-          "radial": -0.0013359473794904819,
-          "dLonArcsec": 278.7418901829369,
-          "dLatArcsec": 160.21147322391087,
-          "dDistKm": -1432.8255922682285
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.041494256258936914,
-          "radial": 0.00020241689615847078,
-          "dLonArcsec": 148.459000433013,
-          "dLatArcsec": 17.067115405488664,
-          "dDistKm": 216.58436897063254
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.10366803541265386,
-          "radial": 0.001564752407146454,
-          "dLonArcsec": 371.17626550480054,
-          "dLatArcsec": -39.03819065222316,
-          "dDistKm": 1670.8403916859627
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.0669199536458861,
-          "radial": 0.00036208842156743926,
-          "dLonArcsec": -221.63072251164522,
-          "dLatArcsec": -94.80390221939956,
-          "dDistKm": 387.0761796233654
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.2083008467272689,
-          "radial": 0.00040676023308581523,
-          "dLonArcsec": -744.6880892375702,
-          "dLatArcsec": -90.54741948322062,
-          "dDistKm": 435.0740926244259
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.07929572184916135,
-          "radial": -0.00039329465215031745,
-          "dLonArcsec": -284.77379492369437,
-          "dLatArcsec": 19.99674988278157,
-          "dDistKm": -421.3623776782751
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.06826760771860345,
-          "radial": -0.0019499855387332095,
-          "dLonArcsec": 166.5790965380893,
-          "dLatArcsec": 180.79591261736584,
-          "dDistKm": -2093.4056042689085
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:11.658Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "callisto",
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node regressing",
-      "horizons": {
-        "command": "504",
-        "center": "500@599",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:36.537Z"
-      },
-      "worst": {
-        "angleDeg": 0.15476622986772617,
-        "radial": -0.0003479776314129891,
-        "dLonArcsec": -470.0226507485695,
-        "dLatArcsec": -354.8821066756711,
-        "dDistKm": -659.3341714305877
+      "class": "moon",
+      "samples": 1819,
+      "residual": {
+        "maxAngleDeg": 0.046695243792243595,
+        "maxRadial": 0.00022075680469703235,
+        "rmsAngleDeg": 0.023065084336111135,
+        "worstAtJdTdb": 2465329.538888889,
+        "maxVelocityError": 0.0009006428657102674
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.15476622986772617,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.09103730431131235,
-          "radial": -0.00009271222410217797,
-          "dLonArcsec": -265.9319166939895,
-          "dLatArcsec": -191.6872817745441,
-          "dDistKm": -174.52546870660782
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.11298066763454916,
-          "radial": -0.00003634286409679532,
-          "dLonArcsec": -324.3979934035451,
-          "dLatArcsec": -245.57754087506885,
-          "dDistKm": -68.57922570514678
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.10852352626742387,
-          "radial": -0.00024491862569154795,
-          "dLonArcsec": -207.33838196497345,
-          "dLatArcsec": -331.20414454563576,
-          "dDistKm": -463.2681274967194
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.11519913129446487,
-          "radial": -0.0003479776314129891,
-          "dLonArcsec": -230.29672318784833,
-          "dLatArcsec": -344.9788846364723,
-          "dDistKm": -659.3341714305877
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.15476622986772617,
-          "radial": -0.00021076743465772685,
-          "dLonArcsec": -429.6833386958042,
-          "dLatArcsec": -354.8821066756711,
-          "dDistKm": -399.63498019480704
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.13801702524100973,
-          "radial": -0.00019725942953019443,
-          "dLonArcsec": -350.0725268194401,
-          "dLatArcsec": -352.6624935392369,
-          "dDistKm": -374.00662528896333
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.10725555822710649,
-          "radial": -0.00009064046190750775,
-          "dLonArcsec": -260.56520182341956,
-          "dLatArcsec": -284.96042493769374,
-          "dDistKm": -171.6834063410759
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.14024473913875773,
-          "radial": -0.00023110560193150941,
-          "dLonArcsec": -439.9829683101416,
-          "dLatArcsec": -247.6285743752125,
-          "dDistKm": -437.07863477253915
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.13800375656391078,
-          "radial": -0.00020560379772412995,
-          "dLonArcsec": -470.0226507485695,
-          "dLatArcsec": -161.01392626906312,
-          "dDistKm": -387.9807707822323
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.09707699201344208,
-          "radial": 0.000016346121713060287,
-          "dLonArcsec": -343.11320004176196,
-          "dLatArcsec": -66.7322855580811,
-          "dDistKm": 30.762206918001176
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+        "retrievedAt": "2026-11-12T09:48:12.094Z",
+        "stepMinutes": 8774
+      },
+      "verdict": "pass"
     },
     {
       "id": "mimas",
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis regressing, node regressing",
-      "horizons": {
-        "command": "601",
-        "center": "500@699",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:36.718Z"
-      },
-      "worst": {
-        "angleDeg": 80.14166985036636,
-        "radial": 0.037004662771743004,
-        "dLonArcsec": -307168.8162905897,
-        "dLatArcsec": -111434.70729093238,
-        "dDistKm": 6769.005856589704
+      "class": "moon",
+      "samples": 1843,
+      "residual": {
+        "maxAngleDeg": 10.172450521977048,
+        "maxRadial": 0.005088670190898798,
+        "rmsAngleDeg": 3.3791042841577403,
+        "worstAtJdTdb": 2473453.347916667,
+        "maxVelocityError": 0.17432292791512569
       },
       "tolerance": {
-        "angleDeg": 1,
+        "angleDeg": 10.5,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": false,
-      "factor": 80.14166985036636,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 1.736244451847687,
-          "radial": 0.004967292932876506,
-          "dLonArcsec": -6878.282739494352,
-          "dLatArcsec": -1209.197084677065,
-          "dDistKm": 937.6740679396987
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 4.631795728049301,
-          "radial": 0.037004662771743004,
-          "dLonArcsec": -15025.05169408214,
-          "dLatArcsec": -7266.758958020046,
-          "dDistKm": 6769.005856589704
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 17.23790527563708,
-          "radial": 0.009702608069621602,
-          "dLonArcsec": -64149.42159612242,
-          "dLatArcsec": -18845.236416736832,
-          "dDistKm": 1821.1842338329257
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 24.549308373938096,
-          "radial": 0.027801593881116284,
-          "dLonArcsec": -97759.77121483197,
-          "dLatArcsec": 14061.949826799051,
-          "dDistKm": 5117.853683329552
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 42.005733641663774,
-          "radial": 0.010962488942639157,
-          "dLonArcsec": -138058.28932951682,
-          "dLatArcsec": 64728.64198279829,
-          "dDistKm": 2046.709076179862
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 50.363442151027144,
-          "radial": 0.01672095144728703,
-          "dLonArcsec": -179135.7683779162,
-          "dLatArcsec": 66534.81889094866,
-          "dDistKm": 3094.7174755811693
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 66.26368405579784,
-          "radial": 0.010665246576552968,
-          "dLonArcsec": -261046.7466061551,
-          "dLatArcsec": -9144.908301931764,
-          "dDistKm": 1978.7072735818028
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 70.54531912161184,
-          "radial": 0.0016496436806827303,
-          "dLonArcsec": -235397.76370326494,
-          "dLatArcsec": -106877.40892494655,
-          "dDistKm": 307.5999548605382
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 80.14166985036636,
-          "radial": 0.012321852342028377,
-          "dLonArcsec": -278294.26193445607,
-          "dLatArcsec": -111434.70729093238,
-          "dDistKm": 2263.974620057732
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 79.33106152702452,
-          "radial": -0.01622334129089278,
-          "dLonArcsec": -307168.8162905897,
-          "dLatArcsec": 19597.02539583564,
-          "dDistKm": -3054.535132040441
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278661+m%27",
+        "retrievedAt": "2026-11-12T09:48:12.478Z",
+        "stepMinutes": 8661
+      },
+      "verdict": "reasoned exception",
+      "reason": "Mimas is held in the 4:2 inclination-type mean-motion resonance with Tethys: the argument 4 lambda(Tethys) - 2 lambda(Mimas) - node(Mimas) - node(Tethys) librates (period about 70 years), and with it Mimas' mean longitude swings by tens of degrees about its mean rate. A uniformly precessing ellipse can only follow the mean rate; the best one over the window leaves the libration, 10.2 deg at most."
     },
     {
       "id": "enceladus",
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "602",
-        "center": "500@699",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:36.898Z"
-      },
-      "worst": {
-        "angleDeg": 0.4588308334316695,
-        "radial": 0.0019246004803136535,
-        "dLonArcsec": -1819.793484179354,
-        "dLatArcsec": -272.42115362584656,
-        "dDistKm": 460.1322209815979
+      "class": "moon",
+      "samples": 1846,
+      "residual": {
+        "maxAngleDeg": 0.47462148580703556,
+        "maxRadial": 0.00016816039257665832,
+        "rmsAngleDeg": 0.224039930365724,
+        "worstAtJdTdb": 2469813.658333333,
+        "maxVelocityError": 0.008325554126724066
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.4588308334316695,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.024305541045450893,
-          "radial": 0.0016320030820842202,
-          "dLonArcsec": 92.88724188209017,
-          "dLatArcsec": -27.999981560226672,
-          "dDistKm": 389.61576920163634
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.4588308334316695,
-          "radial": 0.0012762556321953109,
-          "dLonArcsec": -1819.793484179354,
-          "dLatArcsec": -272.42115362584656,
-          "dDistKm": 302.35401910799743
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.2551063345171627,
-          "radial": 0.0018029211213425001,
-          "dLonArcsec": -1006.912251929316,
-          "dLatArcsec": 162.4820310642093,
-          "dDistKm": 430.50676595702765
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.08682489288174894,
-          "radial": 0.001600804006858589,
-          "dLonArcsec": -343.88627555681524,
-          "dLatArcsec": -47.65073774270974,
-          "dDistKm": 381.2689049023092
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.3094835935430279,
-          "radial": 0.0013756091052482947,
-          "dLonArcsec": -1204.799042071545,
-          "dLatArcsec": 245.20370607406647,
-          "dDistKm": 326.1212931495607
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.07404761161259374,
-          "radial": 0.0019246004803136535,
-          "dLonArcsec": -294.0543709180474,
-          "dLatArcsec": -19.906444958542124,
-          "dDistKm": 460.1322209815979
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.3566198086255733,
-          "radial": 0.0014290398026997574,
-          "dLonArcsec": 1390.8753221844563,
-          "dLatArcsec": -252.18373528797713,
-          "dDistKm": 339.54361547636984
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.03342789900371156,
-          "radial": 0.0015405925167837385,
-          "dLonArcsec": 122.34366656298334,
-          "dLatArcsec": 45.794768160337185,
-          "dDistKm": 365.88313247001173
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.30238234045617346,
-          "radial": 0.0017904744032176977,
-          "dLonArcsec": -1161.2023677470006,
-          "dLatArcsec": 254.53553786541505,
-          "dDistKm": 428.16367063847184
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.01037578581768007,
-          "radial": 0.0012953396005717553,
-          "dLonArcsec": -2.1432200591789297,
-          "dLatArcsec": -37.30147418757497,
-          "dDistKm": 307.18281935605404
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278646+m%27",
+        "retrievedAt": "2026-11-12T09:48:12.879Z",
+        "stepMinutes": 8646
+      },
+      "verdict": "pass"
     },
     {
       "id": "tethys",
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "603",
-        "center": "500@699",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:37.075Z"
-      },
-      "worst": {
-        "angleDeg": 4.695789352951301,
-        "radial": 0.0021587816944580096,
-        "dLonArcsec": 16553.69882304085,
-        "dLatArcsec": 7317.477601266321,
-        "dDistKm": 636.046617701292
+      "class": "moon",
+      "samples": 1819,
+      "residual": {
+        "maxAngleDeg": 0.47926993506248017,
+        "maxRadial": 0.00011837559053521631,
+        "rmsAngleDeg": 0.16336965174069043,
+        "worstAtJdTdb": 2473457.675,
+        "maxVelocityError": 0.008415753484211053
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": false,
-      "factor": 4.695789352951301,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.11872139284102273,
-          "radial": 0.0007304164722120832,
-          "dLonArcsec": 476.40867573518335,
-          "dLatArcsec": 14.059155667931122,
-          "dDistKm": 215.19301402896642
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.24246799024366325,
-          "radial": 0.001289606367034255,
-          "dLonArcsec": 916.522603188605,
-          "dLatArcsec": -301.78328960456895,
-          "dDistKm": 380.00837055933476
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 1.0184895854754215,
-          "radial": 0.00121729339794611,
-          "dLonArcsec": 3328.852184127254,
-          "dLatArcsec": -1711.1391047752911,
-          "dDistKm": 358.76005721068384
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 1.4759316399083113,
-          "radial": 0.0003930858478722825,
-          "dLonArcsec": 4755.0752837892105,
-          "dLatArcsec": -2377.082109553767,
-          "dDistKm": 115.83976953947544
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 2.327213547611399,
-          "radial": 0.0021587816944580096,
-          "dLonArcsec": 8093.916812836096,
-          "dLatArcsec": -3345.837499416072,
-          "dDistKm": 636.046617701292
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 2.949011652828837,
-          "radial": 0.00023512973207346147,
-          "dLonArcsec": 11955.054061928104,
-          "dLatArcsec": -772.1110073934781,
-          "dDistKm": 69.27762037020922
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 3.5137137712768225,
-          "radial": 0.0018870433324177005,
-          "dLonArcsec": 13653.54699903396,
-          "dLatArcsec": 2507.956787115576,
-          "dDistKm": 556.1310629125834
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 4.171368468489973,
-          "radial": 0.0003362065305153489,
-          "dLonArcsec": 13939.21988455736,
-          "dLatArcsec": 6588.136940544466,
-          "dDistKm": 99.08457691705227
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 4.313579697991017,
-          "radial": 0.0013967654734448392,
-          "dLonArcsec": 13728.049577537695,
-          "dLatArcsec": 7317.477601266321,
-          "dDistKm": 411.574302847743
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 4.695789352951301,
-          "radial": 0.0014320599262362308,
-          "dLonArcsec": 16553.69882304085,
-          "dLatArcsec": 6017.051316672445,
-          "dDistKm": 421.9312919788957
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+        "retrievedAt": "2026-11-12T09:48:13.303Z",
+        "stepMinutes": 8774
+      },
+      "verdict": "pass"
     },
     {
       "id": "dione",
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "604",
-        "center": "500@699",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:37.261Z"
-      },
-      "worst": {
-        "angleDeg": 0.21281863007985868,
-        "radial": 0.001017449602219753,
-        "dLonArcsec": -648.1843355752062,
-        "dLatArcsec": 438.5742091193101,
-        "dDistKm": 383.1324550562501
+      "class": "moon",
+      "samples": 1819,
+      "residual": {
+        "maxAngleDeg": 0.06782664759218808,
+        "maxRadial": 0.00023308908523463564,
+        "rmsAngleDeg": 0.029106607686578138,
+        "worstAtJdTdb": 2467681.458333333,
+        "maxVelocityError": 0.0012070320183220856
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.21281863007985868,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.0030154006832768944,
-          "radial": 0.0007808243966421536,
-          "dLonArcsec": 3.698662491160576,
-          "dLatArcsec": -10.20968352211824,
-          "dDistKm": 294.1607381108403
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.020757695500826744,
-          "radial": 0.0006396025946875306,
-          "dLonArcsec": 5.202821395369028,
-          "dLatArcsec": -74.58292090554721,
-          "dDistKm": 241.89442015957832
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.03092189147404361,
-          "radial": 0.001017449602219753,
-          "dLonArcsec": -103.39635917662235,
-          "dLatArcsec": 53.25636072350903,
-          "dDistKm": 383.1324550562501
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.06218181511535055,
-          "radial": 0.000692526296393782,
-          "dLonArcsec": -184.14266334198146,
-          "dLatArcsec": 130.61634968138662,
-          "dDistKm": 261.8912913858891
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.0695150467565656,
-          "radial": 0.001000729028060398,
-          "dLonArcsec": -282.14382794485573,
-          "dLatArcsec": 19.83033395044771,
-          "dDistKm": 376.9362249827385
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.09549334099700951,
-          "radial": 0.0004530169305964505,
-          "dLonArcsec": -249.32370675328457,
-          "dLatArcsec": -245.1893699378843,
-          "dDistKm": 171.2787273440361
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.21281863007985868,
-          "radial": 0.0007287940119956552,
-          "dLonArcsec": -648.1843355752062,
-          "dLatArcsec": -436.11055845637804,
-          "dDistKm": 274.76268044000864
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.15631828856148589,
-          "radial": 0.0007456387056442718,
-          "dLonArcsec": -637.2497776047567,
-          "dLatArcsec": -3.366427159754437,
-          "dDistKm": 281.6073988823891
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.18790042345874922,
-          "radial": 0.0009026345712313867,
-          "dLonArcsec": -523.8168272598614,
-          "dLatArcsec": 438.5742091193101,
-          "dDistKm": 340.55133497142793
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.1891914827440932,
-          "radial": 0.000865029425944924,
-          "dLonArcsec": -557.4269454905334,
-          "dLatArcsec": 427.70317254394854,
-          "dDistKm": 326.3477297900319
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+        "retrievedAt": "2026-11-12T09:48:13.799Z",
+        "stepMinutes": 8774
+      },
+      "verdict": "pass"
     },
     {
       "id": "rhea",
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "605",
-        "center": "500@699",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:37.438Z"
-      },
-      "worst": {
-        "angleDeg": 0.1000351781913844,
-        "radial": 0.0005345983085942539,
-        "dLonArcsec": -307.4816250650201,
-        "dLatArcsec": -241.088946823087,
-        "dDistKm": 281.96047599333525
+      "class": "moon",
+      "samples": 1819,
+      "residual": {
+        "maxAngleDeg": 0.0906815979455837,
+        "maxRadial": 0.0003028659281980236,
+        "rmsAngleDeg": 0.03927886524778023,
+        "worstAtJdTdb": 2462398.779166667,
+        "maxVelocityError": 0.0015358726668116924
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.1000351781913844,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.011067068808355816,
-          "radial": 0.00040059376511396316,
-          "dLonArcsec": -34.20171694610872,
-          "dLatArcsec": 22.54402898073522,
-          "dDistKm": 210.9499261969924
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.032829900683944105,
-          "radial": 0.00013026385663032146,
-          "dLonArcsec": -47.81643157743929,
-          "dLatArcsec": -108.83602597106687,
-          "dDistKm": 68.72053817868233
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.029021555547291376,
-          "radial": 0.0003054664865200888,
-          "dLonArcsec": -4.947206716224173,
-          "dLatArcsec": 104.36812835041778,
-          "dDistKm": 160.85941973894833
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.03540771583457242,
-          "radial": 0.0001375944597221608,
-          "dLonArcsec": -109.38551520234796,
-          "dLatArcsec": -70.62022783132562,
-          "dDistKm": 72.59237226456403
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.027543025698716243,
-          "radial": 0.00032734097956364186,
-          "dLonArcsec": -33.58802353268402,
-          "dLatArcsec": -93.60806571882492,
-          "dDistKm": 172.3637684662938
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.07669407967625881,
-          "radial": 0.0002185257719851049,
-          "dLonArcsec": -259.51679029822117,
-          "dLatArcsec": 109.18788561577699,
-          "dDistKm": 115.28749914240836
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.07852195160482595,
-          "radial": 0.00019281068867864508,
-          "dLonArcsec": -150.5496238422893,
-          "dLatArcsec": -241.088946823087,
-          "dDistKm": 101.53446206909418
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.1000351781913844,
-          "radial": 0.0005345983085942539,
-          "dLonArcsec": -307.4816250650201,
-          "dLatArcsec": 195.62626098874603,
-          "dDistKm": 281.96047599333525
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.09162358546426565,
-          "radial": 0.00012260266488314244,
-          "dLonArcsec": -284.7026689795712,
-          "dLatArcsec": -173.30265402631255,
-          "dDistKm": 64.56507262319326
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.06620059691492525,
-          "radial": 0.0002948600335437894,
-          "dLonArcsec": -218.84768317195267,
-          "dLatArcsec": 100.26949829866894,
-          "dDistKm": 155.55799161952734
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+        "retrievedAt": "2026-11-12T09:48:14.336Z",
+        "stepMinutes": 8774
+      },
+      "verdict": "pass"
     },
     {
       "id": "titan",
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "606",
-        "center": "500@699",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:37.621Z"
-      },
-      "worst": {
-        "angleDeg": 0.05178231137945056,
-        "radial": 0.0003320301483024979,
-        "dLonArcsec": -180.9202912791534,
-        "dLatArcsec": 137.4589243251073,
-        "dDistKm": 415.3035795915127
+      "class": "moon",
+      "samples": 1820,
+      "residual": {
+        "maxAngleDeg": 0.03173837411468932,
+        "maxRadial": 0.00009887348342706634,
+        "rmsAngleDeg": 0.01589906738095147,
+        "worstAtJdTdb": 2470370.944444444,
+        "maxVelocityError": 0.0004596597034206015
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.05178231137945056,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.022329829231933822,
-          "radial": 0.0003320301483024979,
-          "dLonArcsec": -76.1509170635236,
-          "dLatArcsec": -32.27770223605333,
-          "dDistKm": 415.3035795915127
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.047008784750132065,
-          "radial": -0.00029226489388104956,
-          "dLonArcsec": -99.94784056557364,
-          "dLatArcsec": 137.4589243251073,
-          "dDistKm": -347.55066417860985
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.02604223380682487,
-          "radial": -0.000013882701525267463,
-          "dLonArcsec": 94.97282373704365,
-          "dLatArcsec": 38.32482730669682,
-          "dDistKm": -17.096678117513658
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.02751523401368254,
-          "radial": 0.0002087713968814505,
-          "dLonArcsec": -11.166234935626562,
-          "dLatArcsec": -98.50709235601869,
-          "dDistKm": 260.0525618214607
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.015013073638188507,
-          "radial": -0.0003171378458758629,
-          "dLonArcsec": 53.462310129134494,
-          "dLatArcsec": -7.929794023272918,
-          "dDistKm": -376.4785267384052
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.03714661510604385,
-          "radial": 0.0002008116354602439,
-          "dLonArcsec": 143.14134289029425,
-          "dLatArcsec": 6.321020594997151,
-          "dDistKm": 248.77756079769134
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.05178231137945056,
-          "radial": 0.0003047474825811635,
-          "dLonArcsec": -180.9202912791534,
-          "dLatArcsec": -90.68529267418626,
-          "dDistKm": 377.54833969688417
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.03711115373564791,
-          "radial": -0.0002537083665739216,
-          "dLonArcsec": -60.3734874933707,
-          "dLatArcsec": 119.5379720765402,
-          "dDistKm": -301.15565694880485
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.020304448602634428,
-          "radial": 0.0002049388949628366,
-          "dLonArcsec": 32.99112791364678,
-          "dLatArcsec": 65.74427474121123,
-          "dDistKm": 255.25250813484192
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.03973216840114474,
-          "radial": 0.00007903380912775223,
-          "dLonArcsec": -160.1929367162029,
-          "dLatArcsec": -17.577820184448,
-          "dDistKm": 97.33564990329742
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278770+m%27",
+        "retrievedAt": "2026-11-12T09:48:14.761Z",
+        "stepMinutes": 8770
+      },
+      "verdict": "pass"
     },
     {
       "id": "iapetus",
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "608",
-        "center": "500@699",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:37.797Z"
-      },
-      "worst": {
-        "angleDeg": 0.25093286742618964,
-        "radial": 0.0008768830154376975,
-        "dLonArcsec": 855.1507887647858,
-        "dLatArcsec": -340.49697521814505,
-        "dDistKm": 3113.9679771018027
+      "class": "moon",
+      "samples": 1819,
+      "residual": {
+        "maxAngleDeg": 0.1291350197450218,
+        "maxRadial": 0.0006407519749131821,
+        "rmsAngleDeg": 0.05974662624404093,
+        "worstAtJdTdb": 2466475.033333333,
+        "maxVelocityError": 0.0022233400382343743
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.25093286742618964,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.05281338914668893,
-          "radial": 0.000021027535551383108,
-          "dLonArcsec": 195.550551369206,
-          "dLatArcsec": -17.785588997245583,
-          "dDistKm": 75.6709939417839
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.06431025691009262,
-          "radial": 0.00010685550342820808,
-          "dLonArcsec": 64.99721732998296,
-          "dLatArcsec": 222.90481052323798,
-          "dDistKm": 370.22837362670896
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.13840468085007562,
-          "radial": -0.0004934563285882938,
-          "dLonArcsec": 499.6548261920907,
-          "dLatArcsec": -4.006504649200693,
-          "dDistKm": -1795.82490467453
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.25093286742618964,
-          "radial": 0.0003997675806533968,
-          "dLonArcsec": 855.1507887647858,
-          "dLatArcsec": -340.49697521814505,
-          "dDistKm": 1429.3878242106437
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.09121659022151758,
-          "radial": 0.0008286847205641262,
-          "dLonArcsec": 340.46926144656027,
-          "dLatArcsec": 38.038675284683166,
-          "dDistKm": 2876.0968709173203
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.09012572031884153,
-          "radial": -0.00012293432684102798,
-          "dLonArcsec": 291.1791065577745,
-          "dLatArcsec": -148.75564101422862,
-          "dDistKm": -448.75974762916564
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.06168059614582263,
-          "radial": 0.0008768830154376975,
-          "dLonArcsec": 206.30959794461887,
-          "dLatArcsec": -87.6034656712875,
-          "dDistKm": 3113.9679771018027
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.12254175346542626,
-          "radial": 0.00004862116491578229,
-          "dLonArcsec": -345.71321402399917,
-          "dLatArcsec": 291.00871973515865,
-          "dDistKm": 169.5218581314087
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.06482988767568534,
-          "radial": -0.0007710286344289619,
-          "dLonArcsec": 235.80790287223863,
-          "dLatArcsec": 30.71820611297369,
-          "dDistKm": -2822.621337711811
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.12647478751518323,
-          "radial": 0.0003181057511821397,
-          "dLonArcsec": 455.78325793158,
-          "dLatArcsec": -30.359041540129184,
-          "dDistKm": 1123.1455082659722
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+        "retrievedAt": "2026-11-12T09:48:15.203Z",
+        "stepMinutes": 8774
+      },
+      "verdict": "pass"
     },
     {
       "id": "miranda",
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "705",
-        "center": "500@799",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:37.984Z"
-      },
-      "worst": {
-        "angleDeg": 2.722095356471856,
-        "radial": 0.0005033432923606724,
-        "dLonArcsec": -6321.452915292093,
-        "dLatArcsec": 9161.520476783198,
-        "dDistKm": 65.26317594739795
+      "class": "moon",
+      "samples": 1819,
+      "residual": {
+        "maxAngleDeg": 1.739481077424603,
+        "maxRadial": 0.00043375271637926356,
+        "rmsAngleDeg": 1.0033145404779773,
+        "worstAtJdTdb": 2464829.908333333,
+        "maxVelocityError": 0.03023597509378162
       },
       "tolerance": {
-        "angleDeg": 1,
+        "angleDeg": 1.8,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": false,
-      "factor": 2.722095356471856,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.5736089681547162,
-          "radial": -0.0002613516798954273,
-          "dLonArcsec": 156.20070961940655,
-          "dLatArcsec": -2059.5975118827737,
-          "dDistKm": -33.95834759582579
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 1.1826103256335094,
-          "radial": 0.00014081774066917134,
-          "dLonArcsec": -809.8847032994854,
-          "dLatArcsec": -4226.872615217897,
-          "dDistKm": 18.2755926925838
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 2.454796479284248,
-          "radial": 0.00013818389396562885,
-          "dLonArcsec": -5223.384305435866,
-          "dLatArcsec": -8421.056927272664,
-          "dDistKm": 17.92379092606902
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.29824573477435995,
-          "radial": 0.0005033432923606724,
-          "dLonArcsec": -247.59608614763238,
-          "dLatArcsec": 1045.1928005035625,
-          "dDistKm": 65.26317594739795
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.04198983382195574,
-          "radial": 0.000058018498892278975,
-          "dLonArcsec": -361.87666901460034,
-          "dLatArcsec": -107.30196625277131,
-          "dDistKm": 7.529956690117717
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 1.8694636700901077,
-          "radial": -0.000011136309329128269,
-          "dLonArcsec": -849.3606021023879,
-          "dLatArcsec": -6694.05777344206,
-          "dDistKm": -1.4465380992740393
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 2.5515758124088053,
-          "radial": -0.00042701039728481634,
-          "dLonArcsec": -792.2505533525509,
-          "dLatArcsec": 9161.520476783198,
-          "dDistKm": -55.519931898519395
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.1896899698606867,
-          "radial": -0.00021945380689846912,
-          "dLonArcsec": -1997.1187173272028,
-          "dLatArcsec": 544.1068411218907,
-          "dDistKm": -28.52807171572745
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.8956948024571056,
-          "radial": -0.00023595138337466869,
-          "dLonArcsec": -693.9120519274184,
-          "dLatArcsec": -3151.9521532358367,
-          "dDistKm": -30.657060111016037
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 2.722095356471856,
-          "radial": -0.000023818648963217032,
-          "dLonArcsec": -6321.452915292093,
-          "dLatArcsec": 9159.760994815255,
-          "dDistKm": -3.0917218673974274
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+        "retrievedAt": "2026-11-12T09:48:15.628Z",
+        "stepMinutes": 8774
+      },
+      "verdict": "reasoned exception",
+      "reason": "Miranda is near the three-body commensurability with Ariel and Umbriel: the argument lambda(Miranda) - 3 lambda(Ariel) + 2 lambda(Umbriel) turns once in 12.5 years (0.0786 deg/day from the fitted mean motions), and Miranda's longitude carries a sinusoid of about 1.5 deg with that period (the residual of the fit is that sinusoid, along track). A uniformly precessing ellipse cannot follow it: 1.74 deg at most."
     },
     {
       "id": "ariel",
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "701",
-        "center": "500@799",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:38.169Z"
-      },
-      "worst": {
-        "angleDeg": 0.1844294089759321,
-        "radial": 0.0019310797361146122,
-        "dLonArcsec": -561.0368093599391,
-        "dLatArcsec": -640.4918546140465,
-        "dDistKm": 368.2631142063737
+      "class": "moon",
+      "samples": 1846,
+      "residual": {
+        "maxAngleDeg": 0.1752445274055187,
+        "maxRadial": 0.000816430096554224,
+        "rmsAngleDeg": 0.0782376275122811,
+        "worstAtJdTdb": 2464769.881944444,
+        "maxVelocityError": 0.002674635245806886
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.1844294089759321,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.1725783764211428,
-          "radial": -0.0010617971523449446,
-          "dLonArcsec": -175.92442111003948,
-          "dLatArcsec": 606.1923569381207,
-          "dDistKm": -202.75464179557562
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.039541507206829696,
-          "radial": -0.0010255922691680686,
-          "dLonArcsec": -49.87282499960202,
-          "dLatArcsec": 139.22851277710322,
-          "dDistKm": -195.82121838724612
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.12633991996948205,
-          "radial": -0.0008711270679134268,
-          "dLonArcsec": 346.9020752353572,
-          "dLatArcsec": -434.9540732124183,
-          "dDistKm": -166.3281020591855
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.028777506838325986,
-          "radial": -0.0003603147832593355,
-          "dLonArcsec": -561.0368093599391,
-          "dLatArcsec": 25.20774271247319,
-          "dDistKm": -68.78451058077812
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.006520793215551549,
-          "radial": 0.00025417463658355667,
-          "dLonArcsec": -118.36742712221167,
-          "dLatArcsec": 7.543703967951387,
-          "dDistKm": 48.5141362272203
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.09023620714270422,
-          "radial": 0.0010660698714378154,
-          "dLonArcsec": -26.126158282295364,
-          "dLatArcsec": 324.684729683014,
-          "dDistKm": 203.40854120889307
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.08813465781271217,
-          "radial": 0.0013573773405899337,
-          "dLonArcsec": -122.75361850870468,
-          "dLatArcsec": 308.4212491959448,
-          "dDistKm": 259.0116628384888
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.1711007850343006,
-          "radial": 0.0018732586322265405,
-          "dLonArcsec": -253.7200294762897,
-          "dLatArcsec": -583.1001492950634,
-          "dDistKm": 357.3394711149931
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.1844294089759321,
-          "radial": 0.0017611144624533836,
-          "dLonArcsec": -191.72907420579577,
-          "dLatArcsec": -640.4918546140465,
-          "dDistKm": 335.98133245569466
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.11184329492287921,
-          "radial": 0.0019310797361146122,
-          "dLonArcsec": -155.52527256440953,
-          "dLatArcsec": -372.3197056486242,
-          "dDistKm": 368.2631142063737
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278645+m%27",
+        "retrievedAt": "2026-11-12T09:48:16.106Z",
+        "stepMinutes": 8645
+      },
+      "verdict": "pass"
     },
     {
       "id": "umbriel",
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "702",
-        "center": "500@799",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:38.371Z"
-      },
-      "worst": {
-        "angleDeg": 0.10990185186745467,
-        "radial": -0.0006552906399190141,
-        "dLonArcsec": -575.9937895339135,
-        "dLatArcsec": -388.99349218776536,
-        "dDistKm": -174.5596780563891
+      "class": "moon",
+      "samples": 1935,
+      "residual": {
+        "maxAngleDeg": 0.11880283700615243,
+        "maxRadial": 0.000736893255304353,
+        "rmsAngleDeg": 0.04731719093668929,
+        "worstAtJdTdb": 2464717.15,
+        "maxVelocityError": 0.0014275936088614378
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.10990185186745467,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.01077375502580064,
-          "radial": 0.00013660180530045244,
-          "dLonArcsec": -266.17640012591437,
-          "dLatArcsec": 12.57026383440234,
-          "dDistKm": 36.470592281669376
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.05229114873521145,
-          "radial": -0.0006552906399190141,
-          "dLonArcsec": 34.29513602118277,
-          "dLatArcsec": -185.19794538399452,
-          "dDistKm": -174.5596780563891
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.025885786727680812,
-          "radial": -0.0006549256824751312,
-          "dLonArcsec": 213.5691693998524,
-          "dLatArcsec": 59.714640450425804,
-          "dDistKm": -173.6297653235793
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.10990185186745467,
-          "radial": -0.000014242165807213471,
-          "dLonArcsec": 79.92445375984971,
-          "dLatArcsec": -388.99349218776536,
-          "dDistKm": -3.785941872268915
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.07802086436132649,
-          "radial": 0.0004343482391315645,
-          "dLonArcsec": 180.57159036343364,
-          "dLatArcsec": -261.34388561959554,
-          "dDistKm": 115.93826674336195
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.056080264397578294,
-          "radial": 0.0005881629283696712,
-          "dLonArcsec": -87.22151654137633,
-          "dLatArcsec": -191.1889171823276,
-          "dDistKm": 156.4208667473197
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.0750134412858193,
-          "radial": 0.00003904683059997017,
-          "dLonArcsec": -48.37936721305596,
-          "dLatArcsec": -267.4562318608281,
-          "dDistKm": 10.344105126172304
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.017840902645427942,
-          "radial": -0.000024322175695733222,
-          "dLonArcsec": -97.65265684009137,
-          "dLatArcsec": -35.571934337792754,
-          "dDistKm": -6.468138542443514
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.017664752990949707,
-          "radial": -0.00016302766941249822,
-          "dLonArcsec": -44.89813145796688,
-          "dLatArcsec": 48.511398211785206,
-          "dDistKm": -43.543540813326835
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.06442416654470763,
-          "radial": -0.00032967244215639937,
-          "dLonArcsec": -575.9937895339135,
-          "dLatArcsec": -156.82950961940492,
-          "dDistKm": -87.72093455335498
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278247+m%27",
+        "retrievedAt": "2026-11-12T09:48:16.617Z",
+        "stepMinutes": 8247
+      },
+      "verdict": "pass"
     },
     {
       "id": "titania",
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node advancing",
-      "horizons": {
-        "command": "703",
-        "center": "500@799",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:38.546Z"
-      },
-      "worst": {
-        "angleDeg": 0.2990029134225473,
-        "radial": 0.0015761613137335521,
-        "dLonArcsec": -3521.799512671214,
-        "dLatArcsec": 1064.2617681567892,
-        "dDistKm": 687.8017126526832
+      "class": "moon",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.18802692665660345,
+        "maxRadial": 0.0014815240283301827,
+        "rmsAngleDeg": 0.07559655470358724,
+        "worstAtJdTdb": 2473138.370833333,
+        "maxVelocityError": 0.001991920439133368
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.2990029134225473,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.08165982789913347,
-          "radial": -0.0012032742946918712,
-          "dLonArcsec": 261.2094408225403,
-          "dLatArcsec": -202.1519311296288,
-          "dDistKm": -525.601696208775
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.06133246432608005,
-          "radial": 0.0006905788347793523,
-          "dLonArcsec": 540.1531451204391,
-          "dLatArcsec": -207.1473155379863,
-          "dDistKm": 301.60515993851425
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.0905023013359449,
-          "radial": 0.0015761613137335521,
-          "dLonArcsec": 79.65349781593432,
-          "dLatArcsec": -318.51474208540225,
-          "dDistKm": 687.8017126526832
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.05222207693405036,
-          "radial": 0.0003826323073728693,
-          "dLonArcsec": 169.79948980997506,
-          "dLatArcsec": 109.24552994045058,
-          "dDistKm": 166.88896132141352
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.27700378662985087,
-          "radial": -0.0007854842292543389,
-          "dLonArcsec": -3521.799512671214,
-          "dLatArcsec": 770.2148661080855,
-          "dDistKm": -342.39354465323686
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.10084072956001514,
-          "radial": -0.0008104370507252446,
-          "dLonArcsec": -138.98737576100757,
-          "dLatArcsec": -346.7432457477855,
-          "dDistKm": -353.2525527063608
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.14669471214284466,
-          "radial": -0.0004024698097443147,
-          "dLonArcsec": 150.1053963803315,
-          "dLatArcsec": 508.2209538012293,
-          "dDistKm": -175.65256606805323
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.19314003270811117,
-          "radial": 0.00022976655025481132,
-          "dLonArcsec": 1333.6956872297378,
-          "dLatArcsec": 564.0471841862336,
-          "dDistKm": 100.39226906621457
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.06674032242645196,
-          "radial": 0.0008645252296786271,
-          "dLonArcsec": -194.87291453078797,
-          "dLatArcsec": 202.6879086279166,
-          "dDistKm": 377.53700058329105
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.2990029134225473,
-          "radial": 0.001356431677604694,
-          "dLonArcsec": -162.7399497346687,
-          "dLatArcsec": 1064.2617681567892,
-          "dDistKm": 591.0771802986264
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:17.058Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "oberon",
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "horizons": {
-        "command": "704",
-        "center": "500@799",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:38.728Z"
-      },
-      "worst": {
-        "angleDeg": 0.2194297185752964,
-        "radial": -0.0013320457977246563,
-        "dLonArcsec": -1846.28578892507,
-        "dLatArcsec": 732.3099657088882,
-        "dDistKm": -778.2872064238786
+      "class": "moon",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.1487955013210607,
+        "maxRadial": 0.0011268134836339373,
+        "rmsAngleDeg": 0.07052847392181334,
+        "worstAtJdTdb": 2462380.5,
+        "maxVelocityError": 0.001585053150210311
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.2194297185752964,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.1989238591600331,
-          "radial": -0.0013320457977246563,
-          "dLonArcsec": -773.6588082984326,
-          "dLatArcsec": 550.3176384778527,
-          "dDistKm": -778.2872064238786
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.09382731649785349,
-          "radial": 0.00011411969972184707,
-          "dLonArcsec": -1169.8033507300352,
-          "dLatArcsec": 234.74600498117297,
-          "dDistKm": 66.64542271602154
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.13153528853949958,
-          "radial": -0.000715292193872753,
-          "dLonArcsec": 1331.9798445068955,
-          "dLatArcsec": 216.71739633186462,
-          "dDistKm": -416.99087437558177
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.09454753249048649,
-          "radial": 0.0012277153127325277,
-          "dLonArcsec": 148.93063946947223,
-          "dLatArcsec": 324.443250742695,
-          "dDistKm": 716.9276685919762
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.025004632896391724,
-          "radial": 0.0009353187602612044,
-          "dLonArcsec": 9.026375760959127,
-          "dLatArcsec": 89.61873708289829,
-          "dDistKm": 544.2383798408508
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.2194297185752964,
-          "radial": -0.0002706992910689366,
-          "dLonArcsec": -297.4693631728769,
-          "dLatArcsec": 732.3099657088882,
-          "dDistKm": -158.21007694220543
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.12163527629410584,
-          "radial": -0.00022622888038479594,
-          "dLonArcsec": -458.76826370645176,
-          "dLatArcsec": -196.68538836371994,
-          "dDistKm": -131.97186156201363
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.12273096381560938,
-          "radial": -0.0010268511279569153,
-          "dLonArcsec": -794.9059821708488,
-          "dLatArcsec": -66.88281916920857,
-          "dDistKm": -599.5245023555756
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.12018805545545623,
-          "radial": 0.0005247209703868315,
-          "dLonArcsec": -1846.28578892507,
-          "dLatArcsec": 296.33727599091344,
-          "dDistKm": 306.4192230052948
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.08990574483572378,
-          "radial": 0.0007940752074317381,
-          "dLonArcsec": 870.9518720562755,
-          "dLatArcsec": -61.71444093885725,
-          "dDistKm": 462.12479550266266
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:17.532Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "triton",
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis regressing, node regressing",
-      "horizons": {
-        "command": "801",
-        "center": "500@899",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:38.923Z"
-      },
-      "worst": {
-        "angleDeg": 160.71498025828384,
-        "radial": 0.00023449812330830118,
-        "dLonArcsec": -596152.4349601171,
-        "dLatArcsec": 307940.8656450643,
-        "dDistKm": 83.1804284954071
+      "class": "moon",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.012984306437788027,
+        "maxRadial": 7.79394172358814e-7,
+        "rmsAngleDeg": 0.004037790075301298,
+        "worstAtJdTdb": 2473409.810416667,
+        "maxVelocityError": 0.00023787102645999025
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": false,
-      "factor": 160.71498025828384,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 160.71498025828384,
-          "radial": 6.697910893787604e-7,
-          "dLonArcsec": -596152.4349601171,
-          "dLatArcsec": 307940.8656450643,
-          "dDistKm": 0.23764171940088272
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 143.8801993888007,
-          "radial": 0.000007459144270711292,
-          "dLonArcsec": -505194.17706385587,
-          "dLatArcsec": 247447.36142021653,
-          "dDistKm": 2.6464846467971803
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 119.40293756672261,
-          "radial": 0.00010939493191406285,
-          "dLonArcsec": -526737.974461422,
-          "dLatArcsec": 55700.38235478999,
-          "dDistKm": 38.809076326906684
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 96.16485294572527,
-          "radial": 0.00021758963372933091,
-          "dLonArcsec": -427164.5395807845,
-          "dLatArcsec": -129938.49501013933,
-          "dDistKm": 77.184007607162
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 78.76045466599504,
-          "radial": 0.00023449812330830118,
-          "dLonArcsec": -260260.5741850023,
-          "dLatArcsec": -136257.1498632776,
-          "dDistKm": 83.1804284954071
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 62.03168516463953,
-          "radial": 0.00014655023906474157,
-          "dLonArcsec": -234661.0195219574,
-          "dLatArcsec": -45855.807759415104,
-          "dDistKm": 51.98840590685606
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 37.96644601561498,
-          "radial": 0.00003224935875933551,
-          "dLonArcsec": -178809.4628769913,
-          "dLatArcsec": 45894.15664350163,
-          "dDistKm": 11.441703500270844
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 12.097848401858926,
-          "radial": -0.000010042940585200296,
-          "dLonArcsec": -51285.793885638304,
-          "dLatArcsec": 8136.705750115519,
-          "dDistKm": -3.5632711052894592
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 28.148930070865532,
-          "radial": 0.00005801773099139731,
-          "dLonArcsec": -35945.797223107686,
-          "dLatArcsec": -94908.06812501249,
-          "dDistKm": 20.58349674797058
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 46.723876786465134,
-          "radial": 0.00017778244875236198,
-          "dLonArcsec": 37786.454258013735,
-          "dLatArcsec": -164936.21308251403,
-          "dDistKm": 63.0660007892251
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:17.971Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "ceres",
-      "path": "sbdb",
-      "reading": null,
-      "horizons": {
-        "command": "1;",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%271%3B%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:03.076Z"
-      },
-      "worst": {
-        "angleDeg": 3.9413017197458418,
-        "radial": -0.005364821638232291,
-        "dLonArcsec": 14428.375184177503,
-        "dLatArcsec": -1335.03931424436,
-        "dDistKm": -2054396.2018677369
+      "class": "dwarf",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.4513741253121381,
+        "maxRadial": 0.002868483461573773,
+        "rmsAngleDeg": 0.17785194848345298,
+        "worstAtJdTdb": 2473404.270833333,
+        "maxVelocityError": 0.0049054590919728035
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": false,
-      "factor": 3.9413017197458418,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.279668178792818,
-          "radial": 0.00021431251458365393,
-          "dLonArcsec": 1023.698864954531,
-          "dLatArcsec": -27.64390573168569,
-          "dDistKm": 95544.63412261962
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.4873806808473302,
-          "radial": -0.0010404841913631902,
-          "dLonArcsec": 1734.4285561757715,
-          "dLatArcsec": -265.83244419115437,
-          "dDistKm": -436206.9419387207
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 1.074143109323873,
-          "radial": -0.005364821638232291,
-          "dLonArcsec": 3919.7073036243182,
-          "dLatArcsec": 175.601826960758,
-          "dDistKm": -2054396.2018677369
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.6785482259152051,
-          "radial": -0.002187849739678518,
-          "dLonArcsec": 2451.4344739643093,
-          "dLatArcsec": 198.1272549853802,
-          "dDistKm": -929702.6386150513
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 1.3389994432480028,
-          "radial": 0.002735014921070035,
-          "dLonArcsec": 4859.753712201837,
-          "dLatArcsec": -360.23865821377257,
-          "dDistKm": 1212240.98789032
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 2.135156681399135,
-          "radial": 0.0012845826326385286,
-          "dLonArcsec": 7689.391906788023,
-          "dLatArcsec": -912.9407477417437,
-          "dDistKm": 510914.6315022583
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 1.9297064376383224,
-          "radial": -0.0030830538532542764,
-          "dLonArcsec": 6905.027424098444,
-          "dLatArcsec": 930.7098671839512,
-          "dDistKm": -1206523.2819396362
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 1.903133467183347,
-          "radial": 0.0004910482903387804,
-          "dLonArcsec": 6952.999689818171,
-          "dLatArcsec": 300.6320029479234,
-          "dDistKm": 215977.21950024413
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 2.577531841455015,
-          "radial": 0.002948411127831431,
-          "dLonArcsec": 9201.383675569878,
-          "dLatArcsec": -1335.03931424436,
-          "dDistKm": 1271047.2831596069
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 3.9413017197458418,
-          "radial": -0.0005274887358076972,
-          "dLonArcsec": 14428.375184177503,
-          "dLatArcsec": -246.18926175309852,
-          "dDistKm": -202377.5092097168
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%271%3B%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:18.364Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "pluto",
-      "path": "sbdb",
-      "reading": null,
-      "horizons": {
-        "command": "999",
-        "center": "500@10",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27999%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:57:03.168Z"
-      },
-      "worst": {
-        "angleDeg": 0.19897792353243868,
-        "radial": 0.002496779221606691,
-        "dLonArcsec": -737.6579972813943,
-        "dLatArcsec": 73.54062023572254,
-        "dDistKm": 16296478.181756835
+      "class": "dwarf",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.011449644453053756,
+        "maxRadial": 0.0001558605826011657,
+        "rmsAngleDeg": 0.005661740864991064,
+        "worstAtJdTdb": 2473454.127083333,
+        "maxVelocityError": 0.0087821684134217
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.19897792353243868,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.035740385794622236,
-          "radial": 0.0009930625057489437,
-          "dLonArcsec": -127.72180365027452,
-          "dLatArcsec": 20.191804221976994,
-          "dDistKm": 5414234.199072266
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.05545266685042601,
-          "radial": 0.0011239055509667589,
-          "dLonArcsec": -199.28554128450742,
-          "dLatArcsec": 27.760017150581362,
-          "dDistKm": 6272187.0789550785
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.07276116052159949,
-          "radial": 0.001513612143321537,
-          "dLonArcsec": -261.48289677589673,
-          "dLatArcsec": 42.06473244851523,
-          "dDistKm": 8638972.405186523
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.07577663974456131,
-          "radial": 0.0017609562365580355,
-          "dLonArcsec": -271.63775382305175,
-          "dLatArcsec": 52.74492116981904,
-          "dDistKm": 10272973.26498535
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.0872157800278971,
-          "radial": 0.001737366842183155,
-          "dLonArcsec": -315.0206899744262,
-          "dLatArcsec": 54.03417147115874,
-          "dDistKm": 10353577.594776368
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.11469499220135025,
-          "radial": 0.0018300454759863478,
-          "dLonArcsec": -417.7420296474338,
-          "dLatArcsec": 58.7685724876394,
-          "dDistKm": 11129144.120428711
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.13478282380315365,
-          "radial": 0.002143787579415089,
-          "dLonArcsec": -492.3323257505217,
-          "dLatArcsec": 70.82069305085383,
-          "dDistKm": 13288111.929686524
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.14561419793003144,
-          "radial": 0.002277426237105637,
-          "dLonArcsec": -534.0760435853554,
-          "dLatArcsec": 73.54062023572254,
-          "dDistKm": 14376276.939664062
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.1680635970481255,
-          "radial": 0.002271239812094984,
-          "dLonArcsec": -620.4787119400862,
-          "dLatArcsec": 68.24005949971337,
-          "dDistKm": 14588065.479984375
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.19897792353243868,
-          "radial": 0.002496779221606691,
-          "dLonArcsec": -737.6579972813943,
-          "dLatArcsec": 71.76432863052611,
-          "dDistKm": 16296478.181756835
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27999%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:18.596Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     },
     {
       "id": "charon",
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node regressing",
-      "horizons": {
-        "command": "901",
-        "center": "500@999",
-        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2462502.500000+2463719.944444+2464937.388889+2466154.833333+2467372.277778+2468589.722222+2469807.166667+2471024.611111+2472242.055556+2473459.500000",
-        "retrievedAt": "2026-11-12T08:53:39.112Z"
-      },
-      "worst": {
-        "angleDeg": 0.08499951214794779,
-        "radial": 0.0003759808890595938,
-        "dLonArcsec": -346.764708597766,
-        "dLatArcsec": 256.7606073858826,
-        "dDistKm": 7.366455778975039
+      "class": "moon",
+      "samples": 2000,
+      "residual": {
+        "maxAngleDeg": 0.000977828721016799,
+        "maxRadial": 6.944437128061586e-7,
+        "rmsAngleDeg": 0.0003737165071502159,
+        "worstAtJdTdb": 2473443.047916667,
+        "maxVelocityError": 0.000016934817572060817
       },
       "tolerance": {
         "angleDeg": 1,
         "radial": 0.02
       },
-      "gated": true,
-      "pass": true,
-      "factor": 0.08499951214794779,
-      "epochs": [
-        {
-          "jd": 2462502.5,
-          "angleDeg": 0.06743337182172197,
-          "radial": 0.00036817815400954924,
-          "dLonArcsec": -227.9926402050478,
-          "dLatArcsec": 125.0611517525229,
-          "dDistKm": 7.213635915424675
-        },
-        {
-          "jd": 2463719.944444,
-          "angleDeg": 0.02446436140531208,
-          "radial": 0.00006431038035657268,
-          "dLonArcsec": -71.18193914902804,
-          "dLatArcsec": -53.60124992322994,
-          "dDistKm": 1.260402398031205
-        },
-        {
-          "jd": 2464937.388889,
-          "angleDeg": 0.04022553070919768,
-          "radial": 0.0003026942258179228,
-          "dLonArcsec": 202.65083471963408,
-          "dLatArcsec": 21.728666344216663,
-          "dDistKm": 5.931011543083936
-        },
-        {
-          "jd": 2466154.833333,
-          "angleDeg": 0.07139001472716391,
-          "radial": 0.00023250016203920233,
-          "dLonArcsec": -28.73574131449459,
-          "dLatArcsec": 256.7606073858826,
-          "dDistKm": 4.555943918261677
-        },
-        {
-          "jd": 2467372.277778,
-          "angleDeg": 0.08499951214794779,
-          "radial": 0.00010354524705444457,
-          "dLonArcsec": -286.96666453843136,
-          "dLatArcsec": -237.21462072366535,
-          "dDistKm": 2.0292767203114925
-        },
-        {
-          "jd": 2468589.722222,
-          "angleDeg": 0.05812712556290148,
-          "radial": 0.0003759808890595938,
-          "dLonArcsec": -187.1790326721566,
-          "dLatArcsec": 103.76787319199465,
-          "dDistKm": 7.366455778975039
-        },
-        {
-          "jd": 2469807.166667,
-          "angleDeg": 0.009024821646302692,
-          "radial": 0.00007792435893042903,
-          "dLonArcsec": -33.87191263000204,
-          "dLatArcsec": -7.680221636340434,
-          "dDistKm": 1.5271984290778637
-        },
-        {
-          "jd": 2471024.611111,
-          "angleDeg": 0.050199889791408374,
-          "radial": 0.0002741000926800413,
-          "dLonArcsec": 299.77002363839347,
-          "dLatArcsec": -40.61732059513474,
-          "dDistKm": 5.370889655180275
-        },
-        {
-          "jd": 2472242.055556,
-          "angleDeg": 0.0793706635295147,
-          "radial": 0.00026318153838226084,
-          "dLonArcsec": -346.764708597766,
-          "dLatArcsec": 246.24180567557232,
-          "dDistKm": 5.157000924851745
-        },
-        {
-          "jd": 2473459.5,
-          "angleDeg": 0.08058805748441007,
-          "radial": 0.00008372201859887085,
-          "dLonArcsec": -281.7461673557773,
-          "dLatArcsec": -187.24067836179756,
-          "dDistKm": 1.6408141922652721
-        }
-      ]
+      "horizons": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+        "retrievedAt": "2026-11-12T09:48:18.941Z",
+        "stepMinutes": 7977
+      },
+      "verdict": "pass"
     }
   ]
 }

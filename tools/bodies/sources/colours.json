@@ -212,58 +212,74 @@
       "note": "JPL SBDB B-V (EAR-A-5-DDR-UBV-MEAN-VALUES-V1.2)"
     },
     "io": {
-      "bv": 0.653,
-      "vr": 0.352,
-      "source": null,
-      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+      "bv": null,
+      "vr": null,
+      "linearRgb": [
+        0.35947,
+        0.24823,
+        0.1143
+      ],
+      "source": {
+        "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif",
+        "sha256": "135f88cb645bfdb4e045b380971ab2ba14e230590c96c9c86cfe7310fda881ac"
+      },
+      "note": "mean linear RGB of the global colour map planet-bake bakes from (Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif, 65488290 pixels, area-weighted; tools/bodies/mapcolour.py)"
+    },
+    "ganymede": {
+      "bv": null,
+      "vr": null,
+      "linearRgb": [
+        0.1933,
+        0.17889,
+        0.14652
+      ],
+      "source": {
+        "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
+        "sha256": "da47087e75bc530456d8206d5100ad3c687706353700b0cb44a8400957005a33"
+      },
+      "note": "mean linear RGB of the global colour map planet-bake bakes from (Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif, 63944323 pixels, area-weighted; tools/bodies/mapcolour.py)"
     },
     "europa": {
       "bv": 0.653,
       "vr": 0.352,
       "source": null,
-      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
-    },
-    "ganymede": {
-      "bv": 0.653,
-      "vr": 0.352,
-      "source": null,
-      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
     },
     "callisto": {
       "bv": 0.653,
       "vr": 0.352,
       "source": null,
-      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
     },
     "mimas": {
       "bv": 0.653,
       "vr": 0.352,
       "source": null,
-      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
     },
     "iapetus": {
       "bv": 0.653,
       "vr": 0.352,
       "source": null,
-      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
     },
     "miranda": {
       "bv": 0.653,
       "vr": 0.352,
       "source": null,
-      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
     },
     "ariel": {
       "bv": 0.653,
       "vr": 0.352,
       "source": null,
-      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
     },
     "umbriel": {
       "bv": 0.653,
       "vr": 0.352,
       "source": null,
-      "note": "no Johnson B-V found in a fetchable source: neutral (solar colours)"
+      "note": "no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)"
     }
   }
 }

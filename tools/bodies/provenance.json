@@ -3,183 +3,323 @@
   "lobbyEpochUt": 938240818,
   "paths": {
     "mercury": {
-      "path": "approx-pos",
-      "note": "JPL Table 1 row \"Mercury\""
+      "path": "fit",
+      "startFrom": "JPL Table 1 row \"Mercury\" carried to the epoch",
+      "ratesFitted": false,
+      "residual": {
+        "maxAngleDeg": 0.006725,
+        "maxRadial": 0.00003009,
+        "rmsAngleDeg": 0.001834,
+        "samples": 1819
+      }
     },
     "venus": {
-      "path": "approx-pos",
-      "note": "JPL Table 1 row \"Venus\""
+      "path": "fit",
+      "startFrom": "JPL Table 1 row \"Venus\" carried to the epoch",
+      "ratesFitted": false,
+      "residual": {
+        "maxAngleDeg": 0.007476,
+        "maxRadial": 0.0000488,
+        "rmsAngleDeg": 0.003056,
+        "samples": 2000
+      }
     },
     "mars": {
-      "path": "approx-pos",
-      "note": "JPL Table 1 row \"Mars\""
+      "path": "fit",
+      "startFrom": "JPL Table 1 row \"Mars\" carried to the epoch",
+      "ratesFitted": false,
+      "residual": {
+        "maxAngleDeg": 0.02741,
+        "maxRadial": 0.0001705,
+        "rmsAngleDeg": 0.008878,
+        "samples": 2000
+      }
     },
     "jupiter": {
-      "path": "approx-pos",
-      "note": "JPL Table 1 row \"Jupiter\""
+      "path": "fit",
+      "startFrom": "JPL Table 1 row \"Jupiter\" carried to the epoch",
+      "ratesFitted": false,
+      "residual": {
+        "maxAngleDeg": 0.0911,
+        "maxRadial": 0.0006811,
+        "rmsAngleDeg": 0.03774,
+        "samples": 2000
+      }
     },
     "saturn": {
-      "path": "approx-pos",
-      "note": "JPL Table 1 row \"Saturn\""
+      "path": "fit",
+      "startFrom": "JPL Table 1 row \"Saturn\" carried to the epoch",
+      "ratesFitted": false,
+      "residual": {
+        "maxAngleDeg": 0.03283,
+        "maxRadial": 0.001525,
+        "rmsAngleDeg": 0.01037,
+        "samples": 2000
+      }
     },
     "uranus": {
-      "path": "approx-pos",
-      "note": "JPL Table 1 row \"Uranus\""
+      "path": "fit",
+      "startFrom": "JPL Table 1 row \"Uranus\" carried to the epoch",
+      "ratesFitted": false,
+      "residual": {
+        "maxAngleDeg": 0.02586,
+        "maxRadial": 0.0003458,
+        "rmsAngleDeg": 0.01087,
+        "samples": 2000
+      }
     },
     "neptune": {
-      "path": "approx-pos",
-      "note": "JPL Table 1 row \"Neptune\""
+      "path": "fit",
+      "startFrom": "JPL Table 1 row \"Neptune\" carried to the epoch",
+      "ratesFitted": false,
+      "residual": {
+        "maxAngleDeg": 0.01291,
+        "maxRadial": 0.0001805,
+        "rmsAngleDeg": 0.006904,
+        "samples": 2000
+      }
     },
     "phobos": {
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node regressing",
-      "calibrationMaxDeg": 166.3
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (MAR099; P=anomalistic, apsis advancing, node regressing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.2356,
+        "maxRadial": 0.000156,
+        "rmsAngleDeg": 0.09905,
+        "samples": 1892
+      }
     },
     "deimos": {
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node advancing",
-      "calibrationMaxDeg": 44.98
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (MAR099; P=anomalistic, apsis advancing, node advancing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.2357,
+        "maxRadial": 0.000118,
+        "rmsAngleDeg": 0.1023,
+        "samples": 1901
+      }
     },
     "io": {
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis regressing, node regressing",
-      "calibrationMaxDeg": 0.8939
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (JUP365; P=anomalistic, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.03506,
+        "maxRadial": 0.00009661,
+        "rmsAngleDeg": 0.01893,
+        "samples": 1859
+      }
     },
     "europa": {
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis regressing, node regressing",
-      "calibrationMaxDeg": 1.883
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (JUP365; P=anomalistic, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.141,
+        "maxRadial": 0.0006521,
+        "rmsAngleDeg": 0.06778,
+        "samples": 1943
+      }
     },
     "ganymede": {
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.1981
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (JUP365; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.126,
+        "maxRadial": 0.0009485,
+        "rmsAngleDeg": 0.05488,
+        "samples": 2000
+      }
     },
     "callisto": {
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.1654
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (JUP365; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.0467,
+        "maxRadial": 0.0002208,
+        "rmsAngleDeg": 0.02307,
+        "samples": 1819
+      }
     },
     "mimas": {
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis regressing, node regressing",
-      "calibrationMaxDeg": 28.79,
-      "tablePathCalibrationMaxDeg": 24.93,
-      "fit": {
-        "rmsKm": 837.7237201779966,
-        "maxKm": 1618.6895403187941,
-        "samples": 143
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (SAT441; P=sidereal, apsis advancing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 10.17,
+        "maxRadial": 0.005089,
+        "rmsAngleDeg": 3.379,
+        "samples": 1843
       }
     },
     "enceladus": {
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.6151,
-      "tablePathCalibrationMaxDeg": 6.031,
-      "fit": {
-        "rmsKm": 369.2572242051863,
-        "maxKm": 411.2775548848724,
-        "samples": 145
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (SAT441; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.4746,
+        "maxRadial": 0.0001682,
+        "rmsAngleDeg": 0.224,
+        "samples": 1846
       }
     },
     "tethys": {
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 1.046,
-      "tablePathCalibrationMaxDeg": 59.54,
-      "fit": {
-        "rmsKm": 531.7988377512869,
-        "maxKm": 674.5713183615313,
-        "samples": 145
-      },
-      "apsisDropped": "the listed apsidal period is too short for a slowly precessing ellipse: periapsis held fixed (moves the position by at most e a)"
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (SAT441; P=sidereal, apsis advancing, node advancing, apsis held): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.4793,
+        "maxRadial": 0.0001184,
+        "rmsAngleDeg": 0.1634,
+        "samples": 1819
+      }
     },
     "dione": {
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.1825,
-      "tablePathCalibrationMaxDeg": 151.3,
-      "fit": {
-        "rmsKm": 287.6997724469817,
-        "maxKm": 325.95320048881865,
-        "samples": 145
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (SAT441; P=sidereal, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.06783,
+        "maxRadial": 0.0002331,
+        "rmsAngleDeg": 0.02911,
+        "samples": 1819
       }
     },
     "rhea": {
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.1202,
-      "tablePathCalibrationMaxDeg": 151.8,
-      "fit": {
-        "rmsKm": 163.57981375092703,
-        "maxKm": 245.16026316023093,
-        "samples": 145
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (SAT441; P=anomalistic, apsis regressing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.09068,
+        "maxRadial": 0.0003029,
+        "rmsAngleDeg": 0.03928,
+        "samples": 1819
       }
     },
     "titan": {
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.05718,
-      "tablePathCalibrationMaxDeg": 143.2,
-      "fit": {
-        "rmsKm": 688.9127684437864,
-        "maxKm": 877.1886276969435,
-        "samples": 144
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (SAT441; P=anomalistic, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.03174,
+        "maxRadial": 0.00009887,
+        "rmsAngleDeg": 0.0159,
+        "samples": 1820
       }
     },
     "iapetus": {
-      "path": "sat-fit",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.2106,
-      "tablePathCalibrationMaxDeg": 140.6,
-      "fit": {
-        "rmsKm": 3284.674315300698,
-        "maxKm": 5170.856467745634,
-        "samples": 144
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (SAT441; P=anomalistic, apsis advancing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.1291,
+        "maxRadial": 0.0006408,
+        "rmsAngleDeg": 0.05975,
+        "samples": 1819
       }
     },
     "miranda": {
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 2.038
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 1.739,
+        "maxRadial": 0.0004338,
+        "rmsAngleDeg": 1.003,
+        "samples": 1819
+      }
     },
     "ariel": {
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.1744
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.1752,
+        "maxRadial": 0.0008164,
+        "rmsAngleDeg": 0.07824,
+        "samples": 1846
+      }
     },
     "umbriel": {
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.1196
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.1188,
+        "maxRadial": 0.0007369,
+        "rmsAngleDeg": 0.04732,
+        "samples": 1935
+      }
     },
     "titania": {
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node advancing",
-      "calibrationMaxDeg": 0.2607
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.188,
+        "maxRadial": 0.001482,
+        "rmsAngleDeg": 0.0756,
+        "samples": 2000
+      }
     },
     "oberon": {
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.2068
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.1488,
+        "maxRadial": 0.001127,
+        "rmsAngleDeg": 0.07053,
+        "samples": 2000
+      }
     },
     "triton": {
-      "path": "sat-table",
-      "reading": "P=sidereal, apsis regressing, node regressing",
-      "calibrationMaxDeg": 165.2
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (NEP098; P=sidereal, apsis regressing, node regressing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.01298,
+        "maxRadial": 7.794e-7,
+        "rmsAngleDeg": 0.004038,
+        "samples": 2000
+      }
     },
     "ceres": {
-      "path": "sbdb",
-      "note": "1 Ceres (A801 AA), osculating at JD 2461200.5 TDB (JPL solution 2021-04-13 11:04:44)"
+      "path": "fit",
+      "startFrom": "SBDB osculating elements of JD 2461200.5 carried to the epoch",
+      "ratesFitted": false,
+      "residual": {
+        "maxAngleDeg": 0.4514,
+        "maxRadial": 0.002868,
+        "rmsAngleDeg": 0.1779,
+        "samples": 2000
+      }
     },
     "pluto": {
-      "path": "sbdb",
-      "note": "134340 Pluto (1930 BM), osculating at JD 2457588.5 TDB (JPL solution )"
+      "path": "fit",
+      "startFrom": "SBDB osculating elements of JD 2457588.5 carried to the epoch",
+      "ratesFitted": false,
+      "residual": {
+        "maxAngleDeg": 0.01145,
+        "maxRadial": 0.0001559,
+        "rmsAngleDeg": 0.005662,
+        "samples": 2000
+      }
     },
     "charon": {
-      "path": "sat-table",
-      "reading": "P=anomalistic, apsis advancing, node regressing",
-      "calibrationMaxDeg": 0.08206
+      "path": "fit",
+      "startFrom": "JPL satellite mean elements (PLU060; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "residual": {
+        "maxAngleDeg": 0.0009778,
+        "maxRadial": 6.944e-7,
+        "rmsAngleDeg": 0.0003737,
+        "samples": 2000
+      }
     },
     "sun": {
       "path": "root",
@@ -269,12 +409,14 @@
         "note": "pck00011 BODY199 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL Table 1",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
-          "retrievedAt": "2026-11-12T08:44:59.810Z"
-        },
-        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27199%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+            "retrievedAt": "2026-11-12T09:48:00.561Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion; the starting values' node and apsis rates) fitted to 1819 window states; started from JPL Table 1 row \"Mercury\" carried to the epoch"
       },
       "shape": {
         "value": {
@@ -363,12 +505,14 @@
         "note": "pck00011 BODY299 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL Table 1",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
-          "retrievedAt": "2026-11-12T08:44:59.810Z"
-        },
-        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27299%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:07.976Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion; the starting values' node and apsis rates) fitted to 2000 window states; started from JPL Table 1 row \"Venus\" carried to the epoch"
       },
       "atmosphere": {
         "value": "19 rows, 0-200 km",
@@ -488,12 +632,14 @@
         "note": "pck00011 BODY499 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL Table 1",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
-          "retrievedAt": "2026-11-12T08:44:59.810Z"
-        },
-        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27499%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:08.350Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion; the starting values' node and apsis rates) fitted to 2000 window states; started from JPL Table 1 row \"Mars\" carried to the epoch"
       },
       "atmosphere": {
         "value": {
@@ -631,12 +777,14 @@
         "note": "pck00011 BODY599 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL Table 1",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
-          "retrievedAt": "2026-11-12T08:44:59.810Z"
-        },
-        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27599%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:00.938Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion; the starting values' node and apsis rates) fitted to 2000 window states; started from JPL Table 1 row \"Jupiter\" carried to the epoch"
       },
       "atmosphere": {
         "value": {
@@ -756,12 +904,14 @@
         "note": "pck00011 BODY699 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL Table 1",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
-          "retrievedAt": "2026-11-12T08:44:59.810Z"
-        },
-        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27699%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:08.712Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion; the starting values' node and apsis rates) fitted to 2000 window states; started from JPL Table 1 row \"Saturn\" carried to the epoch"
       },
       "atmosphere": {
         "value": {
@@ -897,12 +1047,14 @@
         "note": "pck00011 BODY799 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL Table 1",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
-          "retrievedAt": "2026-11-12T08:44:59.810Z"
-        },
-        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27799%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:08.965Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion; the starting values' node and apsis rates) fitted to 2000 window states; started from JPL Table 1 row \"Uranus\" carried to the epoch"
       },
       "atmosphere": {
         "value": {
@@ -1022,12 +1174,14 @@
         "note": "pck00011 BODY899 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL Table 1",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/planets/approx_pos.html",
-          "retrievedAt": "2026-11-12T08:44:59.810Z"
-        },
-        "note": "elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27899%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:09.244Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion; the starting values' node and apsis rates) fitted to 2000 window states; started from JPL Table 1 row \"Neptune\" carried to the epoch"
       },
       "atmosphere": {
         "value": {
@@ -1149,12 +1303,18 @@
         "note": "pck00011 BODY401 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (MAR099), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 317.7 Dec 52.9; reading: P=anomalistic, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462403.312627%27&STOP_TIME=%27JD+2462405.224827%27&STEP_SIZE=%2719+m%27",
+            "retrievedAt": "2026-11-12T09:48:01.131Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278436+m%27",
+            "retrievedAt": "2026-11-12T09:48:01.320Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1892 window states and a dense span about the epoch; started from JPL satellite mean elements (MAR099; P=anomalistic, apsis advancing, node regressing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 127.547,
@@ -1229,12 +1389,18 @@
         "note": "pck00011 BODY402 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (MAR099), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 316.6 Dec 53.5; reading: P=anomalistic, apsis advancing, node advancing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.481227%27&STOP_TIME=%27JD+2462408.056227%27&STEP_SIZE=%2776+m%27",
+            "retrievedAt": "2026-11-12T09:48:10.238Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278396+m%27",
+            "retrievedAt": "2026-11-12T09:48:10.481Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1901 window states and a dense span about the epoch; started from JPL satellite mean elements (MAR099; P=anomalistic, apsis advancing, node advancing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 71.371,
@@ -1309,20 +1475,30 @@
         "note": "pck00011 BODY501 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (JUP365), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 268.1 Dec 64.5; reading: P=anomalistic, apsis regressing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.980531%27&STOP_TIME=%27JD+2462409.556923%27&STEP_SIZE=%27106+m%27",
+            "retrievedAt": "2026-11-12T09:48:01.768Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278585+m%27",
+            "retrievedAt": "2026-11-12T09:48:01.964Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1859 window states and a dense span about the epoch; started from JPL satellite mean elements (JUP365; P=anomalistic, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 20968,
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.63, 0.63, 0.63],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.63 (tools/bodies/lib/colour.mjs)"
+        "value": [0.8637, 0.5964, 0.2746],
+        "source": {
+          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif",
+          "sha256": "135f88cb645bfdb4e045b380971ab2ba14e230590c96c9c86cfe7310fda881ac"
+        },
+        "note": "mean linear RGB of the global colour map planet-bake bakes from (Io_GalileoSSI-Voyager_Global_Mosaic_ClrMerge_1km.tif, 65488290 pixels, area-weighted; tools/bodies/mapcolour.py); luminance scaled to the geometric albedo 0.63"
       },
       "terrain.maxRenderLevel": {
         "value": 18,
@@ -1384,12 +1560,18 @@
         "note": "pck00011 BODY502 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (JUP365), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 268.1 Dec 64.5; reading: P=anomalistic, apsis regressing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462393.692338%27&STOP_TIME=%27JD+2462414.845116%27&STEP_SIZE=%27212+m%27",
+            "retrievedAt": "2026-11-12T09:48:10.963Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278214+m%27",
+            "retrievedAt": "2026-11-12T09:48:11.178Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1943 window states and a dense span about the epoch; started from JPL satellite mean elements (JUP365; P=anomalistic, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 17967.1,
@@ -1397,7 +1579,7 @@
       },
       "render.meanColor": {
         "value": [0.67, 0.67, 0.67],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.67 (tools/bodies/lib/colour.mjs)"
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.67 (tools/bodies/lib/colour.mjs)"
       },
       "terrain.maxRenderLevel": {
         "value": 18,
@@ -1459,20 +1641,30 @@
         "note": "pck00011 BODY503 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (JUP365), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 268.2 Dec 64.6; reading: P=anomalistic, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462382.801963%27&STOP_TIME=%27JD+2462425.735491%27&STEP_SIZE=%27429+m%27",
+            "retrievedAt": "2026-11-12T09:48:11.479Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:11.658Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 2000 window states and a dense span about the epoch; started from JPL satellite mean elements (JUP365; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 30288.9,
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.43, 0.43, 0.43],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.43 (tools/bodies/lib/colour.mjs)"
+        "value": [0.4628, 0.4283, 0.3508],
+        "source": {
+          "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
+          "sha256": "da47087e75bc530456d8206d5100ad3c687706353700b0cb44a8400957005a33"
+        },
+        "note": "mean linear RGB of the global colour map planet-bake bakes from (Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif, 63944323 pixels, area-weighted; tools/bodies/mapcolour.py); luminance scaled to the geometric albedo 0.43"
       },
       "terrain.maxRenderLevel": {
         "value": 19,
@@ -1534,12 +1726,18 @@
         "note": "pck00011 BODY504 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (JUP365), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 268.7 Dec 64.8; reading: P=anomalistic, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462354.197407%27&STOP_TIME=%27JD+2462454.340047%27&STEP_SIZE=%271001+m%27",
+            "retrievedAt": "2026-11-12T09:48:11.919Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+            "retrievedAt": "2026-11-12T09:48:12.094Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1819 window states and a dense span about the epoch; started from JPL satellite mean elements (JUP365; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 27746.1,
@@ -1547,7 +1745,7 @@
       },
       "render.meanColor": {
         "value": [0.17, 0.17, 0.17],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.17 (tools/bodies/lib/colour.mjs)"
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.17 (tools/bodies/lib/colour.mjs)"
       },
       "terrain.maxRenderLevel": {
         "value": 19,
@@ -1609,12 +1807,18 @@
         "note": "pck00011 BODY601 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (SAT441), sat-fit",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis regressing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 143 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462401.441461%27&STOP_TIME=%27JD+2462407.095993%27&STEP_SIZE=%2757+m%27), rms 837.7 km"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462401.441461%27&STOP_TIME=%27JD+2462407.095993%27&STEP_SIZE=%2757+m%27",
+            "retrievedAt": "2026-11-12T09:48:12.309Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278661+m%27",
+            "retrievedAt": "2026-11-12T09:48:12.478Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1843 window states and a dense span about the epoch; started from JPL satellite mean elements (SAT441; P=sidereal, apsis advancing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 2281.57,
@@ -1622,7 +1826,7 @@
       },
       "render.meanColor": {
         "value": [0.6, 0.6, 0.6],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
       },
       "terrain.maxRenderLevel": {
         "value": 15,
@@ -1684,12 +1888,18 @@
         "note": "pck00011 BODY602 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (SAT441), sat-fit",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 145 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.158073%27&STOP_TIME=%27JD+2462408.379381%27&STEP_SIZE=%2782+m%27), rms 369.3 km"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.158073%27&STOP_TIME=%27JD+2462408.379381%27&STEP_SIZE=%2782+m%27",
+            "retrievedAt": "2026-11-12T09:48:12.699Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278646+m%27",
+            "retrievedAt": "2026-11-12T09:48:12.879Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1846 window states and a dense span about the epoch; started from JPL satellite mean elements (SAT441; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 2902.04,
@@ -1764,12 +1974,18 @@
         "note": "pck00011 BODY603 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (SAT441), sat-fit",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 145 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.605321%27&STOP_TIME=%27JD+2462409.932133%27&STEP_SIZE=%27113+m%27), rms 531.8 km"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.605321%27&STOP_TIME=%27JD+2462409.932133%27&STEP_SIZE=%27113+m%27",
+            "retrievedAt": "2026-11-12T09:48:13.130Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+            "retrievedAt": "2026-11-12T09:48:13.303Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1819 window states and a dense span about the epoch; started from JPL satellite mean elements (SAT441; P=sidereal, apsis advancing, node advancing, apsis held): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 6113.73,
@@ -1844,12 +2060,18 @@
         "note": "pck00011 BODY604 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (SAT441), sat-fit",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 145 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.057979%27&STOP_TIME=%27JD+2462412.479475%27&STEP_SIZE=%27164+m%27), rms 287.7 km"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.057979%27&STOP_TIME=%27JD+2462412.479475%27&STEP_SIZE=%27164+m%27",
+            "retrievedAt": "2026-11-12T09:48:13.626Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+            "retrievedAt": "2026-11-12T09:48:13.799Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1819 window states and a dense span about the epoch; started from JPL satellite mean elements (SAT441; P=sidereal, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 6462.53,
@@ -1924,12 +2146,18 @@
         "note": "pck00011 BODY605 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (SAT441), sat-fit",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 40.6 Dec 83.5; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 145 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462390.716218%27&STOP_TIME=%27JD+2462417.821236%27&STEP_SIZE=%27271+m%27), rms 163.6 km"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462390.716218%27&STOP_TIME=%27JD+2462417.821236%27&STEP_SIZE=%27271+m%27",
+            "retrievedAt": "2026-11-12T09:48:14.132Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+            "retrievedAt": "2026-11-12T09:48:14.336Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1819 window states and a dense span about the epoch; started from JPL satellite mean elements (SAT441; P=anomalistic, apsis regressing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 8789,
@@ -2004,12 +2232,18 @@
         "note": "pck00011 BODY606 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (SAT441), sat-fit",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 36.4 Dec 84; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 144 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462356.432383%27&STOP_TIME=%27JD+2462452.105071%27&STEP_SIZE=%27957+m%27), rms 688.9 km"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462356.432383%27&STOP_TIME=%27JD+2462452.105071%27&STEP_SIZE=%27957+m%27",
+            "retrievedAt": "2026-11-12T09:48:14.602Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278770+m%27",
+            "retrievedAt": "2026-11-12T09:48:14.761Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1820 window states and a dense span about the epoch; started from JPL satellite mean elements (SAT441; P=anomalistic, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "atmosphere": {
         "value": "40 rows, 0-1300 km",
@@ -2126,12 +2360,18 @@
         "note": "pck00011 BODY608 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (SAT441), sat-fit",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "Laplace frame -> pole RA 288.7 Dec 78.9; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000); inclination, node, periapsis and mean anomaly fitted at the lobby epoch to 144 Horizons states (https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462166.275721%27&STOP_TIME=%27JD+2462642.261733%27&STEP_SIZE=%274760+m%27), rms 3284.7 km"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462166.275721%27&STOP_TIME=%27JD+2462642.261733%27&STEP_SIZE=%274760+m%27",
+            "retrievedAt": "2026-11-12T09:48:15.023Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+            "retrievedAt": "2026-11-12T09:48:15.203Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1819 window states and a dense span about the epoch; started from JPL satellite mean elements (SAT441; P=anomalistic, apsis advancing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "shape": {
         "value": {
@@ -2150,7 +2390,7 @@
       },
       "render.meanColor": {
         "value": [0.6, 0.6, 0.6],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.6 (tools/bodies/lib/colour.mjs)"
       },
       "terrain.maxRenderLevel": {
         "value": 17,
@@ -2212,12 +2452,18 @@
         "note": "pck00011 BODY705 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (URA182), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.028290%27&STOP_TIME=%27JD+2462408.509164%27&STEP_SIZE=%2785+m%27",
+            "retrievedAt": "2026-11-12T09:48:15.448Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+            "retrievedAt": "2026-11-12T09:48:15.628Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1819 window states and a dense span about the epoch; started from JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 2714.4,
@@ -2225,7 +2471,7 @@
       },
       "render.meanColor": {
         "value": [0.27, 0.27, 0.27],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.27 (tools/bodies/lib/colour.mjs)"
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.27 (tools/bodies/lib/colour.mjs)"
       },
       "terrain.maxRenderLevel": {
         "value": 15,
@@ -2287,12 +2533,18 @@
         "note": "pck00011 BODY701 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (URA182), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.707590%27&STOP_TIME=%27JD+2462411.829864%27&STEP_SIZE=%27151+m%27",
+            "retrievedAt": "2026-11-12T09:48:15.904Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278645+m%27",
+            "retrievedAt": "2026-11-12T09:48:16.106Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1846 window states and a dense span about the epoch; started from JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 6663.98,
@@ -2300,7 +2552,7 @@
       },
       "render.meanColor": {
         "value": [0.34, 0.34, 0.34],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.34 (tools/bodies/lib/colour.mjs)"
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.34 (tools/bodies/lib/colour.mjs)"
       },
       "terrain.maxRenderLevel": {
         "value": 16,
@@ -2362,12 +2614,18 @@
         "note": "pck00011 BODY702 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (URA182), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462391.836196%27&STOP_TIME=%27JD+2462416.701258%27&STEP_SIZE=%27249+m%27",
+            "retrievedAt": "2026-11-12T09:48:16.419Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278247+m%27",
+            "retrievedAt": "2026-11-12T09:48:16.617Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 1935 window states and a dense span about the epoch; started from JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 6730.75,
@@ -2375,7 +2633,7 @@
       },
       "render.meanColor": {
         "value": [0.18, 0.18, 0.18],
-        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V found in a fetchable source: neutral (solar colours)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.18 (tools/bodies/lib/colour.mjs)"
+        "note": "B-V 0.653, V-R 0.352 (no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)); Sun B-V 0.653, V-R 0.352; luminance scaled to the geometric albedo 0.18 (tools/bodies/lib/colour.mjs)"
       },
       "terrain.maxRenderLevel": {
         "value": 16,
@@ -2437,12 +2695,18 @@
         "note": "pck00011 BODY703 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (URA182), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node advancing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462378.151120%27&STOP_TIME=%27JD+2462430.386334%27&STEP_SIZE=%27522+m%27",
+            "retrievedAt": "2026-11-12T09:48:16.881Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:17.058Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 2000 window states and a dense span about the epoch; started from JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 9081.39,
@@ -2517,12 +2781,18 @@
         "note": "pck00011 BODY704 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (URA182), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "equatorial frame -> pole RA 77.311 Dec 15.175; reading: P=sidereal, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462363.879016%27&STOP_TIME=%27JD+2462444.658438%27&STEP_SIZE=%27808+m%27",
+            "retrievedAt": "2026-11-12T09:48:17.336Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:17.532Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 2000 window states and a dense span about the epoch; started from JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 8764.82,
@@ -2597,12 +2867,18 @@
         "note": "pck00011 BODY801 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (NEP098), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "equatorial frame -> parentEquator (the parent's pole); reading: P=sidereal, apsis regressing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462386.631127%27&STOP_TIME=%27JD+2462421.906327%27&STEP_SIZE=%27353+m%27",
+            "retrievedAt": "2026-11-12T09:48:17.795Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:17.971Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 2000 window states and a dense span about the epoch; started from JPL satellite mean elements (NEP098; P=sidereal, apsis regressing, node regressing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 15570.4,
@@ -2675,12 +2951,14 @@
         "note": "pck00011 BODY2000001 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "SBDB osculating elements at JD 2461200.5",
-        "source": {
-          "url": "https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=1&full-prec=true&phys-par=true",
-          "retrievedAt": "2026-11-12T08:45:00.427Z"
-        },
-        "note": "heliocentric ecliptic J2000 osculating elements and mean motion"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%271%3B%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:18.364Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion; the starting values' node and apsis rates) fitted to 2000 window states; started from SBDB osculating elements of JD 2461200.5 carried to the epoch"
       },
       "shape": {
         "value": {
@@ -2769,12 +3047,14 @@
         "note": "pck00011 BODY999 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "SBDB osculating elements at JD 2457588.5",
-        "source": {
-          "url": "https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=134340&full-prec=true&phys-par=true",
-          "retrievedAt": "2026-11-12T08:45:00.577Z"
-        },
-        "note": "heliocentric ecliptic J2000 osculating elements and mean motion"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27999%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:18.596Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion; the starting values' node and apsis rates) fitted to 2000 window states; started from SBDB osculating elements of JD 2457588.5 carried to the epoch"
       },
       "navballSwitchAltitude": {
         "value": 13679.1,
@@ -2852,12 +3132,18 @@
         "note": "pck00011 BODY901 pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut 938240818; rate = the mean rate W1 + 2 W2 d there"
       },
       "orbit": {
-        "value": "JPL satellite mean elements (PLU060), sat-table",
-        "source": {
-          "url": "https://ssd.jpl.nasa.gov/sats/elem/",
-          "retrievedAt": "2026-11-12T08:44:59.991Z"
-        },
-        "note": "equatorial frame -> parentEquator (the parent's pole); reading: P=anomalistic, apsis advancing, node regressing (chosen over the calibration window 2010-2029 against Horizons, https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&TLIST=2455197.500000+2455995.611111+2456793.722222+2457591.833333+2458389.944444+2459188.055556+2459986.166667+2460784.277778+2461582.388889+2462380.500000)"
+        "value": "fitted to JPL Horizons over 2029-09-01..2060-01-01",
+        "source": [
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462385.107061%27&STOP_TIME=%27JD+2462423.430393%27&STEP_SIZE=%27383+m%27",
+            "retrievedAt": "2026-11-12T09:48:18.766Z"
+          },
+          {
+            "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+            "retrievedAt": "2026-11-12T09:48:18.941Z"
+          }
+        ],
+        "note": "precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion, node and apsis rates) fitted to 2000 window states and a dense span about the epoch; started from JPL satellite mean elements (PLU060; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch"
       },
       "navballSwitchAltitude": {
         "value": 6975.94,

@@ -162,6 +162,28 @@ describe('staged body library', () => {
     expect(lib.bodies['mars']!.terrain!.tileset).toBe('mars');
   });
 
+  it('every body has a tolerance row; a widened row gives its reason; every fit residual is inside its row', () => {
+    interface Row { id: string; class: string; angleDeg?: number; radial?: number; reason?: string }
+    const tol = readJson(join(ROOT, 'tools/bodies/tolerances.json')) as { classes: Record<string, { angleDeg: number; radial: number }>; bodies: Row[] };
+    const fits = readJson(join(ROOT, 'tools/bodies/sources/orbit-fits.json')) as { bodies: Record<string, { residual: { maxAngleDeg: number; maxRadial: number }; def: unknown }> };
+    for (const name of BRIEF_LIST.slice(1)) {
+      const id = idOf(name);
+      const row = tol.bodies.find((r) => r.id === id);
+      expect(row, id).toBeDefined();
+      if (row!.class === 'pinned') {
+        expect(['earth', 'moon']).toContain(id);
+        continue;
+      }
+      const cls = tol.classes[row!.class]!;
+      const bound = { angleDeg: row!.angleDeg ?? cls.angleDeg, radial: row!.radial ?? cls.radial };
+      if (bound.angleDeg > cls.angleDeg || bound.radial > cls.radial) expect((row!.reason ?? '').length, id).toBeGreaterThan(40);
+      const f = fits.bodies[id]!;
+      expect(f.residual.maxAngleDeg, id).toBeLessThanOrEqual(bound.angleDeg);
+      expect(f.residual.maxRadial, id).toBeLessThanOrEqual(bound.radial);
+      expect((readJson(join(STAGED, 'bodies', `${id}.json`)) as { orbit: unknown }).orbit, id).toEqual(f.def);
+    }
+  });
+
   it('the generator reproduces every staged file byte for byte (generate --check)', () => {
     const files = generateFiles();
     for (const [rel, content] of files) expect(readFileSync(join(ROOT, rel), 'utf8'), rel).toBe(content);

@@ -154,9 +154,23 @@ export async function buildAtmosphereSources(nssdc, earthLive) {
 
 // ------------------------------------------------------------------------------------------- colours
 
-const NEUTRAL_NOTE = 'no Johnson B-V found in a fetchable source: neutral (solar colours)';
+const NEUTRAL_NOTE = 'no Johnson B-V in a fetchable source and no global colour map (a monochrome mosaic or none): neutral (solar colours) until planet-bake reports the mean colour of its baked level-0 albedo (request bodies-ephemeris-5)';
 
-export async function buildColourSources(sbdbCeres) {
+/**
+ * Mean linear RGB of a global colour map planet-bake bakes from (its cached download, read only, verified by
+ * planet-bake's sha256 side file), by tools/bodies/mapcolour.py.
+ */
+export function mapColour(bakeConfig, key) {
+  const srcCfg = bakeConfig.sources[key];
+  const name = srcCfg.url.split('/').pop();
+  const path = join(REPO_ROOT, 'data/cache/planets', bakeConfig.id, 'dl', key, name);
+  const verified = readFileSync(`${path}.verified`, 'utf8').trim().split(':');
+  need(srcCfg.bands.length === 3, `${bakeConfig.id}: ${key} map is not RGB`);
+  const out = JSON.parse(execFileSync('python', ['-I', join(REPO_ROOT, 'tools/bodies/mapcolour.py'), path], { encoding: 'utf8', maxBuffer: 1 << 20 }));
+  return { linearRgb: out.linearRgb.map((x) => Number(x.toPrecision(5))), pixels: out.pixels, url: srcCfg.url, sha256: verified[2], credit: srcCfg.credit };
+}
+
+export async function buildColourSources(sbdbCeres, bakeConfigs) {
   const ra = await fetchDoc(DOCS.ramirez);
   const abs = /citation_abstract" content="([^"]*)/.exec(ra.text);
   need(abs, 'Ramirez 2012: no abstract');
@@ -213,7 +227,12 @@ export async function buildColourSources(sbdbCeres) {
   bodies.charon = { bv: Number(pc[2]), vr: null, source: src(bp.meta), note: `${DOCS.buie.cite} (Charon's value adopted there from Buie et al. 1997)` };
   // Ceres: SBDB (Tedesco UBV mean values).
   bodies.ceres = { bv: Number(sbdbCeres.phys.BV.value), vr: null, source: src(sbdbCeres.source), note: `JPL SBDB B-V (${sbdbCeres.phys.BV.ref})` };
-  for (const id of ['io', 'europa', 'ganymede', 'callisto', 'mimas', 'iapetus', 'miranda', 'ariel', 'umbriel']) bodies[id] = { bv: sun.bv, vr: sun.vr, source: null, note: NEUTRAL_NOTE };
+  // Bodies with a global colour map (planet-bake's source): the map's mean linear colour, area-weighted.
+  for (const [id, key] of [['io', 'albedo'], ['ganymede', 'colour']]) {
+    const m = mapColour(bakeConfigs[id], key);
+    bodies[id] = { bv: null, vr: null, linearRgb: m.linearRgb, source: { url: m.url, sha256: m.sha256 }, note: `mean linear RGB of the global colour map planet-bake bakes from (${m.url.split('/').pop()}, ${m.pixels} pixels, area-weighted; tools/bodies/mapcolour.py)` };
+  }
+  for (const id of ['europa', 'callisto', 'mimas', 'iapetus', 'miranda', 'ariel', 'umbriel']) bodies[id] = { bv: sun.bv, vr: sun.vr, source: null, note: NEUTRAL_NOTE };
   return { description: 'Broadband colour indices (Johnson B-V; V-R in the Cousins system) of the Sun and the bodies, for the mean colour of the far-field disc', sun, bodies };
 }
 

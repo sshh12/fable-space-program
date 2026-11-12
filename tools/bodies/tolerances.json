@@ -1,0 +1,41 @@
+{
+  "description": "Tolerances of the staged orbits against JPL Horizons over the validity window 2029-09-01..2060-01-01 (the lead's decision on request bodies-ephemeris-4), judged by tools/bodies/validate.mjs on the residual of the fitted orbit at every window sample. angleDeg = largest angle between the model and Horizons positions seen from the parent (heliocentric direction for the planets, orbital longitude and latitude for the moons); radial = largest |model distance - Horizons distance| / Horizons distance. A row without bounds takes its class's. A row with bounds above its class's MUST give the physical reason a steady precessing ellipse cannot follow the body; the validator fails on a body over its class tolerance without such a row. Earth and the Moon are pinned by the design (ARCHITECTURE 8.2): reported, not judged.",
+  "classes": {
+    "planet": { "angleDeg": 0.1, "radial": 0.002 },
+    "moon": { "angleDeg": 1, "radial": 0.02 },
+    "dwarf": { "angleDeg": 1, "radial": 0.02 }
+  },
+  "bodies": [
+    { "id": "mercury", "class": "planet" },
+    { "id": "venus", "class": "planet" },
+    { "id": "earth", "class": "pinned", "reason": "The v1 Almanac low-precision Sun, inverted (ARCHITECTURE 8.2), so the lunar mission's lighting, windows and start time are unchanged. The formula is referred to the mean equinox of date: in the J2000 frame of the other planets Earth's heliocentric longitude is off by the precession since J2000 (0.41 deg in 2029 rising to 0.84 deg in 2060); of date it is within the formula's 0.01 deg. Whether to move it is decided at activation (wave 4.4)." },
+    { "id": "mars", "class": "planet" },
+    { "id": "jupiter", "class": "planet" },
+    { "id": "saturn", "class": "planet" },
+    { "id": "uranus", "class": "planet" },
+    { "id": "neptune", "class": "planet" },
+    { "id": "moon", "class": "pinned", "reason": "The frozen v1 ellipse (ARCHITECTURE 8.2): no nodal regression (18.6 years) and no apsidal precession (8.85 years), which the sim-orbits acceptance tests pin; it drifts from the real Moon by up to 169 deg over the window (162 deg at the ten epochs first measured). Whether to move it is decided at activation (wave 4.4)." },
+    { "id": "phobos", "class": "moon" },
+    { "id": "deimos", "class": "moon" },
+    { "id": "io", "class": "moon" },
+    { "id": "europa", "class": "moon" },
+    { "id": "ganymede", "class": "moon" },
+    { "id": "callisto", "class": "moon" },
+    { "id": "mimas", "class": "moon", "angleDeg": 10.5, "reason": "Mimas is held in the 4:2 inclination-type mean-motion resonance with Tethys: the argument 4 lambda(Tethys) - 2 lambda(Mimas) - node(Mimas) - node(Tethys) librates (period about 70 years), and with it Mimas' mean longitude swings by tens of degrees about its mean rate. A uniformly precessing ellipse can only follow the mean rate; the best one over the window leaves the libration, 10.2 deg at most." },
+    { "id": "enceladus", "class": "moon" },
+    { "id": "tethys", "class": "moon" },
+    { "id": "dione", "class": "moon" },
+    { "id": "rhea", "class": "moon" },
+    { "id": "titan", "class": "moon" },
+    { "id": "iapetus", "class": "moon" },
+    { "id": "miranda", "class": "moon", "angleDeg": 1.8, "reason": "Miranda is near the three-body commensurability with Ariel and Umbriel: the argument lambda(Miranda) - 3 lambda(Ariel) + 2 lambda(Umbriel) turns once in 12.5 years (0.0786 deg/day from the fitted mean motions), and Miranda's longitude carries a sinusoid of about 1.5 deg with that period (the residual of the fit is that sinusoid, along track). A uniformly precessing ellipse cannot follow it: 1.74 deg at most." },
+    { "id": "ariel", "class": "moon" },
+    { "id": "umbriel", "class": "moon" },
+    { "id": "titania", "class": "moon" },
+    { "id": "oberon", "class": "moon" },
+    { "id": "triton", "class": "moon" },
+    { "id": "ceres", "class": "dwarf" },
+    { "id": "pluto", "class": "dwarf" },
+    { "id": "charon", "class": "moon" }
+  ]
+}

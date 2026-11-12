@@ -2,8 +2,8 @@
 // body, the radii table, and the provenance of every generated number. Pure function of the source tables
 // (tools/bodies/sources) and the live v1 Earth / Moon / Sun files; no network, no clock.
 import { CATALOGUE, BODY_ORDER } from './catalogue.mjs';
-import { AU_M, DEG } from './kepler.mjs';
-import { LOBBY_EPOCH_UT, approxPosOrbit, readingName, round, roundDef, satFrame, satelliteOrbit, sbdbOrbit } from './orbits.mjs';
+import { AU_M } from './kepler.mjs';
+import { LOBBY_EPOCH_UT, round } from './orbits.mjs';
 import { pckRotation } from './pck.mjs';
 import { buildAtmosphere } from './atmospheres.mjs';
 import { meanColourFromIndices } from './colour.mjs';
@@ -104,50 +104,19 @@ export function buildLibrary(S, live, bake) {
     rotation[id] = { mode: 'fixedRate', poleRaDeg: round(r.poleRaDeg, 12), poleDecDeg: round(r.poleDecDeg, 12), w0Deg: round(((r.wDeg % 360) + 360) % 360), rateDegPerDay: round(r.rateDegPerDay), epochUt: LOBBY_EPOCH_UT };
     prov(id, 'rotation', rotation[id], pckSrc, `pck00011 BODY${CATALOGUE[id].naif} pole and prime meridian (linear, quadratic and nutation-precession terms) evaluated at the lobby epoch ut ${LOBBY_EPOCH_UT}; rate = the mean rate W1 + 2 W2 d there`);
   }
-  const poleOf = (id) => (id === 'earth' ? { raDeg: live.earth.json.rotation.poleRaDeg, decDeg: live.earth.json.rotation.poleDecDeg } : { raDeg: rotation[id].poleRaDeg, decDeg: rotation[id].poleDecDeg });
 
   // ---------------------------------------------------------------------------------------------- orbits
+  // The lead's decision on request bodies-ephemeris-4: every orbit but Earth's and the Moon's is the precessing
+  // ellipse fitted to Horizons over the validity window (tools/bodies/fit-orbits.mjs); the published tables are
+  // its starting values and provenance.
   const orbit = {};
   for (const id of BODY_ORDER) {
-    const c = CATALOGUE[id];
     if (id === 'sun' || id === 'earth' || id === 'moon') continue;
-    if (c.approxPos) {
-      const t = S.approxPos.table1[c.approxPos];
-      orbit[id] = approxPosOrbit(t, AU);
-      paths[id] = { path: 'approx-pos', note: `JPL Table 1 row "${c.approxPos}"` };
-      prov(id, 'orbit', 'JPL Table 1', src(S.approxPos.source), 'elements and rates of Table 1 (mean ecliptic and equinox of J2000); M = L - long.peri., argPe = long.peri. - node, mean motion = L rate - long.peri. rate');
-    } else if (c.sbdb) {
-      const sb = S.sbdb[c.sbdb];
-      orbit[id] = sbdbOrbit(sb, AU);
-      paths[id] = { path: 'sbdb', note: `${sb.object.fullname}, osculating at JD ${sb.epochJdTdb} TDB (${sb.orbitSource ?? 'JPL'} solution ${sb.solutionDate ?? ''})`.trim() };
-      prov(id, 'orbit', `SBDB osculating elements at JD ${sb.epochJdTdb}`, src(sb.source), 'heliocentric ecliptic J2000 osculating elements and mean motion');
-    } else {
-      const row = S.satElem.rows[c.satName];
-      let frame = satFrame(row, c.parent);
-      if (frame === 'positive-pole-of-parent') {
-        const p = poleOf(c.parent);
-        frame = { pole: { raDeg: round((p.raDeg + 180) % 360, 12), decDeg: round(-p.decDeg, 12) } };
-      }
-      const ctx = { parentPole: poleOf(c.parent), muSum: (gmKm[c.parent] + gmKm[id]) * 1e9 };
-      const cal = S.states.calibration[id].rows;
-      const table = satelliteOrbit({ row, frame, path: 'sat-table', calibration: cal, ctx, muSum: ctx.muSum });
-      let chosen = table.best;
-      let path = 'sat-table';
-      if (c.parent === 'saturn' && table.best.calibrationMaxDeg > 1) {
-        const span = S.states.fitSpans[id];
-        if (!span) throw new Error(`no Horizons fit span for ${id}`);
-        const fit = satelliteOrbit({ row, frame, path: 'sat-fit', calibration: cal, fitSpan: span.rows, ctx, muSum: ctx.muSum });
-        chosen = fit.best;
-        path = 'sat-fit';
-        paths[id] = { path, reading: readingName(chosen.reading), calibrationMaxDeg: round(chosen.calibrationMaxDeg, 4), tablePathCalibrationMaxDeg: round(table.best.calibrationMaxDeg, 4), fit: chosen.fit, ...(chosen.apsisDropped ? { apsisDropped: "the listed apsidal period is too short for a slowly precessing ellipse: periapsis held fixed (moves the position by at most e a)" } : {}) };
-      } else {
-        paths[id] = { path, reading: readingName(chosen.reading), calibrationMaxDeg: round(chosen.calibrationMaxDeg, 4) };
-      }
-      orbit[id] = chosen.def;
-      const frameText = typeof frame === 'string' ? `${frame} (the parent's pole)` : `pole RA ${frame.pole.raDeg} Dec ${frame.pole.decDeg}`;
-      prov(id, 'orbit', `JPL satellite mean elements (${row.ephemeris}), ${path}`, src(S.satElem.source), `${row.frame} frame -> ${frameText}; reading: ${readingName(chosen.reading)} (chosen over the calibration window 2010-2029 against Horizons, ${S.states.calibration[id].source.url})${path === 'sat-fit' ? `; inclination, node, periapsis and mean anomaly fitted at the lobby epoch to ${chosen.fit.samples} Horizons states (${S.states.fitSpans[id].source.url}), rms ${chosen.fit.rmsKm.toFixed(1)} km` : ''}`);
-    }
-    orbit[id] = roundDef(orbit[id]);
+    const f = S.orbitFits.bodies[id];
+    if (!f) throw new Error(`${id}: no fitted orbit in tools/bodies/sources/orbit-fits.json (run node tools/bodies/fit-orbits.mjs)`);
+    orbit[id] = f.def;
+    paths[id] = { path: 'fit', startFrom: f.startFrom, ratesFitted: f.ratesFitted, residual: { maxAngleDeg: round(f.residual.maxAngleDeg, 4), maxRadial: round(f.residual.maxRadial, 4), rmsAngleDeg: round(f.residual.rmsAngleDeg, 4), samples: f.residual.samples } };
+    prov(id, 'orbit', 'fitted to JPL Horizons over 2029-09-01..2060-01-01', f.horizons.map((h) => ({ url: h.url, retrievedAt: h.retrievedAt })), `precessing ellipse (a, e, i, node, argPe, M at the lobby epoch, mean motion${f.ratesFitted ? ', node and apsis rates' : "; the starting values' node and apsis rates"}) fitted to ${f.residual.samples} window states${f.horizons.length > 1 ? ' and a dense span about the epoch' : ''}; started from ${f.startFrom}`);
   }
 
   // ---------------------------------------------------------------------------------------- the bodies
@@ -319,6 +288,6 @@ function meanColorOf(id, S, albedo, prov) {
   const col = S.colours.bodies[id];
   if (!col) throw new Error(`no colour indices for ${id} in tools/bodies/sources/colours.json`);
   const value = meanColourFromIndices(col, S.colours.sun, albedo);
-  prov('render.meanColor', value, col.source, `B-V ${col.bv}, ${col.vr === null ? 'red from the B-V slope' : `V-R ${col.vr}`} (${col.note}); Sun B-V ${S.colours.sun.bv}, V-R ${S.colours.sun.vr}; luminance scaled to the geometric albedo ${albedo} (tools/bodies/lib/colour.mjs)`);
+  prov('render.meanColor', value, col.source, col.linearRgb ? `${col.note}; luminance scaled to the geometric albedo ${albedo}` : `B-V ${col.bv}, ${col.vr === null ? 'red from the B-V slope' : `V-R ${col.vr}`} (${col.note}); Sun B-V ${S.colours.sun.bv}, V-R ${S.colours.sun.vr}; luminance scaled to the geometric albedo ${albedo} (tools/bodies/lib/colour.mjs)`);
   return value;
 }

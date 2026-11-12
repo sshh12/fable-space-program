@@ -25,6 +25,7 @@ export function loadSources() {
     atmospheres: s('atmospheres'),
     demRelief: s('dem-relief'),
     colours: s('colours'),
+    orbitFits: s('orbit-fits'),
   };
 }
 

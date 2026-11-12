@@ -13,18 +13,18 @@
         "decDeg": 64.5
       }
     },
-    "a": 421800000,
-    "e": 0.004,
-    "iDeg": 0,
-    "lanDeg": 0,
-    "argPeDeg": 49.1,
-    "meanAnomalyDeg": 330.9,
-    "epochUt": 0,
+    "a": 421765680.383264,
+    "e": 0.00412956024877269,
+    "iDeg": 0.0377777257447013,
+    "lanDeg": 263.089714392814,
+    "argPeDeg": 35.5715654659001,
+    "meanAnomalyDeg": 142.528727210264,
+    "epochUt": 938240818,
     "rates": {
-      "argPeDeg": -27006.751687922,
-      "lanDeg": 0
+      "lanDeg": -4887.53428005661,
+      "argPeDeg": -22123.9483109846
     },
-    "meanMotionDegPerDay": 204.228436313631
+    "meanMotionDegPerDay": 204.228492338517
   },
   "rotation": {
     "mode": "fixedRate",
@@ -43,7 +43,7 @@
   },
   "navballSwitchAltitude": 20968,
   "render": {
-    "meanColor": [0.63, 0.63, 0.63],
+    "meanColor": [0.8637, 0.5964, 0.2746],
     "geometricAlbedo": 0.63,
     "surface": null,
     "atmosphere": null,

@@ -191,6 +191,6 @@ void firstNumber;
   const nssdcJson = JSON.parse(readFileSync(join(OUT, 'nssdc.json'), 'utf8'));
   const earthLive = JSON.parse(readFileSync(join(REPO_ROOT, 'data/defs/bodies/earth.json'), 'utf8'));
   write('atmospheres', await buildAtmosphereSources(nssdcJson, earthLive));
-  write('colours', await buildColourSources(JSON.parse(readFileSync(join(OUT, 'sbdb-ceres.json'), 'utf8'))));
+  write('colours', await buildColourSources(JSON.parse(readFileSync(join(OUT, 'sbdb-ceres.json'), 'utf8')), loadBake().configs));
   write('dem-relief', await buildDemRelief(loadBake().configs));
 }

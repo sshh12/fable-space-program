@@ -1,0 +1,1722 @@
+{
+  "bodies": {
+    "mercury": {
+      "frame": "ecliptic",
+      "startFrom": "JPL Table 1 row \"Mercury\" carried to the epoch",
+      "ratesFitted": false,
+      "start": {
+        "a": 57909242998.02507,
+        "e": 0.20564159673954643,
+        "iDeg": 7.0032107683323686,
+        "lanDeg": 48.2935007817938,
+        "argPeDeg": 29.21200697453636,
+        "meanAnomalyDeg": 44614.55140029247,
+        "meanMotionDegPerDay": 4.092334391098151,
+        "nodeRateDegPerDay": -0.0000034316443531827513,
+        "apsisRateDegPerDay": 0.000004393617796030117
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "ecliptic",
+        "a": 57909119087.1691,
+        "e": 0.205641621450473,
+        "iDeg": 7.00230576763538,
+        "lanDeg": 48.293634001826,
+        "argPeDeg": 29.2094571366708,
+        "meanAnomalyDeg": 334.554562622379,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -0.12534081,
+          "argPeDeg": 0.2858177
+        },
+        "meanMotionDegPerDay": 4.09233439474198
+      },
+      "residual": {
+        "maxAngleDeg": 0.0067253009121409114,
+        "maxRadial": 0.000030088567443136262,
+        "rmsAngleDeg": 0.0018343207035030936,
+        "samples": 1819
+      },
+      "precessionFraction": 0.0000019121756421633398,
+      "horizons": [
+        {
+          "kind": "window",
+          "step": "8774 min",
+          "rows": 1819,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27199%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+          "retrievedAt": "2026-11-12T09:48:00.561Z"
+        }
+      ]
+    },
+    "jupiter": {
+      "frame": "ecliptic",
+      "startFrom": "JPL Table 1 row \"Jupiter\" carried to the epoch",
+      "ratesFitted": false,
+      "start": {
+        "a": 778335654243.9717,
+        "e": 0.048346837429586044,
+        "iDeg": 1.3038507488515032,
+        "lanDeg": 100.53476590660573,
+        "argPeDeg": -85.74309964731769,
+        "meanAnomalyDeg": 921.866888391994,
+        "meanMotionDegPerDay": 0.0830810020826831,
+        "nodeRateDegPerDay": 0.000005604135797399042,
+        "apsisRateDegPerDay": 0.000005818663381245722
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "ecliptic",
+        "a": 778353899282.75,
+        "e": 0.0481501979775371,
+        "iDeg": 1.30350107489821,
+        "lanDeg": 100.537306526843,
+        "argPeDeg": 274.57336760783,
+        "meanAnomalyDeg": 201.572668918981,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": 0.20469106,
+          "argPeDeg": 0.00783561999999997
+        },
+        "meanMotionDegPerDay": 0.0830709317045575
+      },
+      "residual": {
+        "maxAngleDeg": 0.09109930118845141,
+        "maxRadial": 0.0006810581413315612,
+        "rmsAngleDeg": 0.0377379349634042,
+        "samples": 2000
+      },
+      "precessionFraction": 0.0001375065735300773,
+      "horizons": [
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27599%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:00.938Z"
+        }
+      ]
+    },
+    "phobos": {
+      "frame": {
+        "pole": {
+          "raDeg": 317.7,
+          "decDeg": 52.9
+        }
+      },
+      "startFrom": "JPL satellite mean elements (MAR099; P=anomalistic, apsis advancing, node regressing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 9375000,
+        "e": 0.015,
+        "iDeg": 1.037285537145795,
+        "lanDeg": 116.10981460407041,
+        "argPeDeg": 314.2705458393206,
+        "meanAnomalyDeg": 214.45242558395444,
+        "meanMotionDegPerDay": 1127.8756952682888,
+        "nodeRateDegPerDay": -0.42853316668154634,
+        "apsisRateDegPerDay": 0.4674907272889595
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 317.7,
+            "decDeg": 52.9
+          }
+        },
+        "a": 9374907.26591751,
+        "e": 0.0151341547798316,
+        "iDeg": 1.07126845204621,
+        "lanDeg": 116.530168184558,
+        "argPeDeg": 314.798861149331,
+        "meanAnomalyDeg": 213.361997081862,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -15916.3024121915,
+          "argPeDeg": 31811.6363378555
+        },
+        "meanMotionDegPerDay": 1128.40986899692
+      },
+      "residual": {
+        "maxAngleDeg": 0.23560848833057435,
+        "maxRadial": 0.0001559772311353863,
+        "rmsAngleDeg": 0.09904555415663309,
+        "samples": 1892
+      },
+      "precessionFraction": 0.0007718428913155453,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "19 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462403.312627%27&STOP_TIME=%27JD+2462405.224827%27&STEP_SIZE=%2719+m%27",
+          "retrievedAt": "2026-11-12T09:48:01.131Z"
+        },
+        {
+          "kind": "window",
+          "step": "8436 min",
+          "rows": 1892,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27401%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278436+m%27",
+          "retrievedAt": "2026-11-12T09:48:01.320Z"
+        }
+      ]
+    },
+    "io": {
+      "frame": {
+        "pole": {
+          "raDeg": 268.1,
+          "decDeg": 64.5
+        }
+      },
+      "startFrom": "JPL satellite mean elements (JUP365; P=anomalistic, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 421800000,
+        "e": 0.004,
+        "iDeg": 0.05622208604419248,
+        "lanDeg": 256.45054877882865,
+        "argPeDeg": 48.34523872101482,
+        "meanAnomalyDeg": 136.40108026816088,
+        "meanMotionDegPerDay": 204.22843631363133,
+        "nodeRateDegPerDay": 0,
+        "apsisRateDegPerDay": -0.739404563666584
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 268.1,
+            "decDeg": 64.5
+          }
+        },
+        "a": 421765680.383264,
+        "e": 0.00412956024877269,
+        "iDeg": 0.0377777257447013,
+        "lanDeg": 263.089714392814,
+        "argPeDeg": 35.5715654659001,
+        "meanAnomalyDeg": 142.528727210264,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -4887.53428005661,
+          "argPeDeg": -22123.9483109846
+        },
+        "meanMotionDegPerDay": 204.228492338517
+      },
+      "residual": {
+        "maxAngleDeg": 0.03506198408399624,
+        "maxRadial": 0.00009661084493842866,
+        "rmsAngleDeg": 0.018930382686885024,
+        "samples": 1859
+      },
+      "precessionFraction": 0.004276325376995608,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "106 min",
+          "rows": 144,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.980531%27&STOP_TIME=%27JD+2462409.556923%27&STEP_SIZE=%27106+m%27",
+          "retrievedAt": "2026-11-12T09:48:01.768Z"
+        },
+        {
+          "kind": "window",
+          "step": "8585 min",
+          "rows": 1859,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27501%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278585+m%27",
+          "retrievedAt": "2026-11-12T09:48:01.964Z"
+        }
+      ]
+    },
+    "venus": {
+      "frame": "ecliptic",
+      "startFrom": "JPL Table 1 row \"Venus\" carried to the epoch",
+      "ratesFitted": false,
+      "start": {
+        "a": 108209647997.7917,
+        "e": 0.006764509454712887,
+        "iDeg": 3.3944415016879232,
+        "lanDeg": 76.59728113386029,
+        "argPeDeg": 55.005983816630646,
+        "meanAnomalyDeg": 17448.341134998198,
+        "meanMotionDegPerDay": 1.6021303957289528,
+        "nodeRateDegPerDay": -0.0000076028522929500345,
+        "apsisRateDegPerDay": 7.346447638603709e-8
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "ecliptic",
+        "a": 108208878951.535,
+        "e": 0.00675053712707448,
+        "iDeg": 3.39424857154461,
+        "lanDeg": 76.5972627103405,
+        "argPeDeg": 54.9634344919183,
+        "meanAnomalyDeg": 168.38540665422,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -0.27769418,
+          "argPeDeg": 0.28037747
+        },
+        "meanMotionDegPerDay": 1.60213037713253
+      },
+      "residual": {
+        "maxAngleDeg": 0.0074757072184025415,
+        "maxRadial": 0.000048796081211474325,
+        "rmsAngleDeg": 0.0030562049100025987,
+        "samples": 2000
+      },
+      "precessionFraction": 0.00000479131840885199,
+      "horizons": [
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27299%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:07.976Z"
+        }
+      ]
+    },
+    "mars": {
+      "frame": "ecliptic",
+      "startFrom": "JPL Table 1 row \"Mars\" carried to the epoch",
+      "ratesFitted": false,
+      "start": {
+        "a": 227944643918.296,
+        "e": 0.0934175340194675,
+        "iDeg": 1.8472738955539676,
+        "lanDeg": 49.47255373549742,
+        "argPeDeg": -73.28405527153282,
+        "meanAnomalyDeg": 5709.872453321503,
+        "meanMotionDegPerDay": 0.5240207604136893,
+        "nodeRateDegPerDay": -0.000008010223956194387,
+        "apsisRateDegPerDay": 0.000012167306776180697
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "ecliptic",
+        "a": 227940333990.569,
+        "e": 0.0934371159676395,
+        "iDeg": 1.84605116067859,
+        "lanDeg": 49.4707538840665,
+        "argPeDeg": 286.722238212015,
+        "meanAnomalyDeg": 309.867083400499,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -0.29257343,
+          "argPeDeg": 0.73698431
+        },
+        "meanMotionDegPerDay": 0.524020764011067
+      },
+      "residual": {
+        "maxAngleDeg": 0.027409465218657145,
+        "maxRadial": 0.0001705105002613349,
+        "rmsAngleDeg": 0.008877841502420972,
+        "samples": 2000
+      },
+      "precessionFraction": 0.00003850521223229419,
+      "horizons": [
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27499%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:08.350Z"
+        }
+      ]
+    },
+    "saturn": {
+      "frame": "ecliptic",
+      "startFrom": "JPL Table 1 row \"Saturn\" carried to the epoch",
+      "ratesFitted": false,
+      "start": {
+        "a": 1426610791207.636,
+        "e": 0.053710188365051086,
+        "iDeg": 2.486567490029825,
+        "lanDeg": 113.57659747586655,
+        "argPeDeg": -21.102284019378107,
+        "meanAnomalyDeg": 320.94021162961127,
+        "meanMotionDegPerDay": 0.03348152208542095,
+        "nodeRateDegPerDay": -0.000007903571252566737,
+        "apsisRateDegPerDay": -0.000011470832580424366
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "ecliptic",
+        "a": 1426590724154.09,
+        "e": 0.0540686556849236,
+        "iDeg": 2.48720006996395,
+        "lanDeg": 113.57354758977,
+        "argPeDeg": 338.710630094839,
+        "meanAnomalyDeg": 321.074646937067,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -0.28867794,
+          "argPeDeg": -0.13029422
+        },
+        "meanMotionDegPerDay": 0.0335107273755985
+      },
+      "residual": {
+        "maxAngleDeg": 0.03283061478704913,
+        "maxRadial": 0.0015252121490616055,
+        "rmsAngleDeg": 0.01037226123735724,
+        "samples": 2000
+      },
+      "precessionFraction": 0.0005781552759460231,
+      "horizons": [
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27699%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:08.712Z"
+        }
+      ]
+    },
+    "uranus": {
+      "frame": "ecliptic",
+      "startFrom": "JPL Table 1 row \"Uranus\" carried to the epoch",
+      "ratesFitted": false,
+      "start": {
+        "a": 2870570917399.6074,
+        "e": 0.04724436725404737,
+        "iDeg": 0.7719155466638651,
+        "lanDeg": 74.02953274951022,
+        "argPeDeg": 97.04606196578169,
+        "meanAnomalyDeg": 269.5547475784061,
+        "meanMotionDegPerDay": 0.011720026695140315,
+        "nodeRateDegPerDay": 0.000001161009993155373,
+        "apsisRateDegPerDay": 0.000011171877070499658
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "ecliptic",
+        "a": 2870324181340.28,
+        "e": 0.047251542905873,
+        "iDeg": 0.77160101218179,
+        "lanDeg": 73.9933212374052,
+        "argPeDeg": 97.2196257567035,
+        "meanAnomalyDeg": 269.408249867935,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": 0.04240589,
+          "argPeDeg": 0.36564692
+        },
+        "meanMotionDegPerDay": 0.0117267032338341
+      },
+      "residual": {
+        "maxAngleDeg": 0.02585685744904754,
+        "maxRadial": 0.00034584476645067684,
+        "rmsAngleDeg": 0.010868272192949469,
+        "samples": 2000
+      },
+      "precessionFraction": 0.0010516926042838672,
+      "horizons": [
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27799%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:08.965Z"
+        }
+      ]
+    },
+    "neptune": {
+      "frame": "ecliptic",
+      "startFrom": "JPL Table 1 row \"Neptune\" carried to the epoch",
+      "ratesFitted": false,
+      "start": {
+        "a": 4498408110465.123,
+        "e": 0.008605657704818775,
+        "iDeg": 1.7701486346963466,
+        "lanDeg": 131.78271342814028,
+        "argPeDeg": -86.91380843992621,
+        "meanAnomalyDeg": -35.03862916793675,
+        "meanMotionDegPerDay": 0.005989921092128679,
+        "nodeRateDegPerDay": -1.3926461327857632e-7,
+        "apsisRateDegPerDay": -0.00000882723175906913
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "ecliptic",
+        "a": 4503161730362.62,
+        "e": 0.00970675150915111,
+        "iDeg": 1.77026079366842,
+        "lanDeg": 131.790354017913,
+        "argPeDeg": 272.395599151194,
+        "meanAnomalyDeg": 325.712953479736,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -0.00508664,
+          "argPeDeg": -0.317328
+        },
+        "meanMotionDegPerDay": 0.00597625488555069
+      },
+      "residual": {
+        "maxAngleDeg": 0.012914985695170822,
+        "maxRadial": 0.00018051573717709545,
+        "rmsAngleDeg": 0.0069042218655652144,
+        "samples": 2000
+      },
+      "precessionFraction": 0.0015003537406054722,
+      "horizons": [
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27899%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:09.244Z"
+        }
+      ]
+    },
+    "deimos": {
+      "frame": {
+        "pole": {
+          "raDeg": 316.6,
+          "decDeg": 53.5
+        }
+      },
+      "startFrom": "JPL satellite mean elements (MAR099; P=anomalistic, apsis advancing, node advancing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 23457000,
+        "e": 0.0001,
+        "iDeg": 1.7859131935351273,
+        "lanDeg": 217.09159089854438,
+        "argPeDeg": 242.939201083046,
+        "meanAnomalyDeg": 88.97467708489796,
+        "meanMotionDegPerDay": 285.1139562516045,
+        "nodeRateDegPerDay": 0.017537834223622,
+        "apsisRateDegPerDay": 0.017537834223622
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 316.6,
+            "decDeg": 53.5
+          }
+        },
+        "a": 23457504.8119708,
+        "e": 0.000286896723756697,
+        "iDeg": 1.80046143356999,
+        "lanDeg": 217.635441644517,
+        "argPeDeg": 228.526563956409,
+        "meanAnomalyDeg": 102.663041236985,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -658.354002685611,
+          "argPeDeg": 1285.3891656495
+        },
+        "meanMotionDegPerDay": 285.14472973484
+      },
+      "residual": {
+        "maxAngleDeg": 0.23572976652616695,
+        "maxRadial": 0.00011797315427170368,
+        "rmsAngleDeg": 0.10228040800315696,
+        "samples": 1901
+      },
+      "precessionFraction": 0.00012341815828814773,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "76 min",
+          "rows": 144,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.481227%27&STOP_TIME=%27JD+2462408.056227%27&STEP_SIZE=%2776+m%27",
+          "retrievedAt": "2026-11-12T09:48:10.238Z"
+        },
+        {
+          "kind": "window",
+          "step": "8396 min",
+          "rows": 1901,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27402%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40499%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278396+m%27",
+          "retrievedAt": "2026-11-12T09:48:10.481Z"
+        }
+      ]
+    },
+    "europa": {
+      "frame": {
+        "pole": {
+          "raDeg": 268.1,
+          "decDeg": 64.5
+        }
+      },
+      "startFrom": "JPL satellite mean elements (JUP365; P=anomalistic, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 671100000,
+        "e": 0.009,
+        "iDeg": 0.45451028485512157,
+        "lanDeg": 192.36569050541513,
+        "argPeDeg": 286.87155773025796,
+        "meanAnomalyDeg": 70.65264838504152,
+        "meanMotionDegPerDay": 102.11424712158376,
+        "nodeRateDegPerDay": -0.03263447067636436,
+        "apsisRateDegPerDay": -0.7396834544407521
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 268.1,
+            "decDeg": 64.5
+          }
+        },
+        "a": 671060258.684261,
+        "e": 0.00928603861089706,
+        "iDeg": 0.466705353199805,
+        "lanDeg": 189.521848510042,
+        "argPeDeg": 288.866003823343,
+        "meanAnomalyDeg": 71.4722357581327,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -1194.76858304279,
+          "argPeDeg": -25815.1906367479
+        },
+        "meanMotionDegPerDay": 102.114214060049
+      },
+      "residual": {
+        "maxAngleDeg": 0.14103592720002736,
+        "maxRadial": 0.0006521007454724347,
+        "rmsAngleDeg": 0.06778271752965441,
+        "samples": 1943
+      },
+      "precessionFraction": 0.007562153508856694,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "212 min",
+          "rows": 144,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462393.692338%27&STOP_TIME=%27JD+2462414.845116%27&STEP_SIZE=%27212+m%27",
+          "retrievedAt": "2026-11-12T09:48:10.963Z"
+        },
+        {
+          "kind": "window",
+          "step": "8214 min",
+          "rows": 1943,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27502%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278214+m%27",
+          "retrievedAt": "2026-11-12T09:48:11.178Z"
+        }
+      ]
+    },
+    "ganymede": {
+      "frame": {
+        "pole": {
+          "raDeg": 268.2,
+          "decDeg": 64.6
+        }
+      },
+      "startFrom": "JPL satellite mean elements (JUP365; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 1070400000,
+        "e": 0.001,
+        "iDeg": 0.2528357429735952,
+        "lanDeg": 339.63242013660954,
+        "argPeDeg": 359.23931001527825,
+        "meanAnomalyDeg": 175.18715978190232,
+        "meanMotionDegPerDay": 50.31033089104627,
+        "nodeRateDegPerDay": -0.00715196269822335,
+        "apsisRateDegPerDay": 0.007278664721105159
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 268.2,
+            "decDeg": 64.6
+          }
+        },
+        "a": 1070429833.87008,
+        "e": 0.00216989017045075,
+        "iDeg": 0.235150778106887,
+        "lanDeg": 335.96085769085,
+        "argPeDeg": 8.40373993538776,
+        "meanAnomalyDeg": 169.708359874061,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -207.776587470775,
+          "argPeDeg": 419.995699209285
+        },
+        "meanMotionDegPerDay": 50.3117978082057
+      },
+      "residual": {
+        "maxAngleDeg": 0.12598761590988936,
+        "maxRadial": 0.0009485000072320636,
+        "rmsAngleDeg": 0.054875377410810625,
+        "samples": 2000
+      },
+      "precessionFraction": 0.00022855187168141614,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "429 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462382.801963%27&STOP_TIME=%27JD+2462425.735491%27&STEP_SIZE=%27429+m%27",
+          "retrievedAt": "2026-11-12T09:48:11.479Z"
+        },
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27503%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:11.658Z"
+        }
+      ]
+    },
+    "callisto": {
+      "frame": {
+        "pole": {
+          "raDeg": 268.7,
+          "decDeg": 64.8
+        }
+      },
+      "startFrom": "JPL satellite mean elements (JUP365; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 1882700000,
+        "e": 0.007,
+        "iDeg": 0.21085316264689222,
+        "lanDeg": 279.17018255863644,
+        "argPeDeg": 96.25127647008001,
+        "meanAnomalyDeg": 311.0611662380944,
+        "meanMotionDegPerDay": 21.56923364512859,
+        "nodeRateDegPerDay": -0.0017074099257316522,
+        "apsisRateDegPerDay": 0.0018390161571032414
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 268.7,
+            "decDeg": 64.8
+          }
+        },
+        "a": 1882744037.01836,
+        "e": 0.00721354258274862,
+        "iDeg": 0.209344320050267,
+        "lanDeg": 278.752890975144,
+        "argPeDeg": 95.0631230234688,
+        "meanAnomalyDeg": 312.654180232467,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -45.1941014020927,
+          "argPeDeg": 107.794231204215
+        },
+        "meanMotionDegPerDay": 21.5693581835747
+      },
+      "residual": {
+        "maxAngleDeg": 0.04669524370050083,
+        "maxRadial": 0.0002207568046833997,
+        "rmsAngleDeg": 0.02306508433563886,
+        "samples": 1819
+      },
+      "precessionFraction": 0.00013682582404120873,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "1001 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462354.197407%27&STOP_TIME=%27JD+2462454.340047%27&STEP_SIZE=%271001+m%27",
+          "retrievedAt": "2026-11-12T09:48:11.919Z"
+        },
+        {
+          "kind": "window",
+          "step": "8774 min",
+          "rows": 1819,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27504%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40599%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+          "retrievedAt": "2026-11-12T09:48:12.094Z"
+        }
+      ]
+    },
+    "mimas": {
+      "frame": {
+        "pole": {
+          "raDeg": 40.6,
+          "decDeg": 83.5
+        }
+      },
+      "startFrom": "JPL satellite mean elements (SAT441; P=sidereal, apsis advancing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 186000000,
+        "e": 0.02,
+        "iDeg": 1.5919750049695418,
+        "lanDeg": 120.6598343593119,
+        "argPeDeg": 97.00885732102066,
+        "meanAnomalyDeg": 163.47081343872117,
+        "meanMotionDegPerDay": 378.9956151264619,
+        "nodeRateDegPerDay": 0.9996209770462032,
+        "apsisRateDegPerDay": 2.9988629311386097
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 40.6,
+            "decDeg": 83.5
+          }
+        },
+        "a": 185223059.21734,
+        "e": 0.0196819483704849,
+        "iDeg": 1.58070462972994,
+        "lanDeg": 119.769511090183,
+        "argPeDeg": 95.1425707314702,
+        "meanAnomalyDeg": 163.914858957087,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -36510.6381511336,
+          "argPeDeg": 73068.3155885825
+        },
+        "meanMotionDegPerDay": 381.002205220617
+      },
+      "residual": {
+        "maxAngleDeg": 10.172450516047737,
+        "maxRadial": 0.005088670188907026,
+        "rmsAngleDeg": 3.379104283978319,
+        "samples": 1843
+      },
+      "precessionFraction": 0.00525062959236101,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "57 min",
+          "rows": 143,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462401.441461%27&STOP_TIME=%27JD+2462407.095993%27&STEP_SIZE=%2757+m%27",
+          "retrievedAt": "2026-11-12T09:48:12.309Z"
+        },
+        {
+          "kind": "window",
+          "step": "8661 min",
+          "rows": 1843,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27601%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278661+m%27",
+          "retrievedAt": "2026-11-12T09:48:12.478Z"
+        }
+      ]
+    },
+    "enceladus": {
+      "frame": {
+        "pole": {
+          "raDeg": 40.6,
+          "decDeg": 83.5
+        }
+      },
+      "startFrom": "JPL satellite mean elements (SAT441; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 238400000,
+        "e": 0.005,
+        "iDeg": 0.04228553314202316,
+        "lanDeg": 182.4043730245622,
+        "argPeDeg": 61.819292649182415,
+        "meanAnomalyDeg": 14.107287068259252,
+        "meanMotionDegPerDay": 262.3939093813618,
+        "nodeRateDegPerDay": 0,
+        "apsisRateDegPerDay": 0.33800627001630884
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 40.6,
+            "decDeg": 83.5
+          }
+        },
+        "a": 238034130.601484,
+        "e": 0.00474528621219927,
+        "iDeg": 0.0359888145901261,
+        "lanDeg": 184.017522445057,
+        "argPeDeg": 57.5149731453719,
+        "meanAnomalyDeg": 16.958712793012,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": 15.2321155554757,
+          "argPeDeg": 12329.5807307127
+        },
+        "meanMotionDegPerDay": 262.393924145348
+      },
+      "residual": {
+        "maxAngleDeg": 0.47462148771938434,
+        "maxRadial": 0.00016816039263927154,
+        "rmsAngleDeg": 0.22403993033835962,
+        "samples": 1846
+      },
+      "precessionFraction": 0.0012896624393243213,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "82 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.158073%27&STOP_TIME=%27JD+2462408.379381%27&STEP_SIZE=%2782+m%27",
+          "retrievedAt": "2026-11-12T09:48:12.699Z"
+        },
+        {
+          "kind": "window",
+          "step": "8646 min",
+          "rows": 1846,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27602%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278646+m%27",
+          "retrievedAt": "2026-11-12T09:48:12.879Z"
+        }
+      ]
+    },
+    "tethys": {
+      "frame": {
+        "pole": {
+          "raDeg": 40.6,
+          "decDeg": 83.5
+        }
+      },
+      "startFrom": "JPL satellite mean elements (SAT441; P=sidereal, apsis advancing, node advancing, apsis held): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 295000000,
+        "e": 0.001,
+        "iDeg": 1.0956575690950432,
+        "lanDeg": 269.42382545657443,
+        "argPeDeg": 37.81330925022749,
+        "meanAnomalyDeg": 2.9345644723723243,
+        "meanMotionDegPerDay": 190.5001276751974,
+        "nodeRateDegPerDay": 0.1978374715711675,
+        "apsisRateDegPerDay": 0.1978374715711675
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 40.6,
+            "decDeg": 83.5
+          }
+        },
+        "a": 294672338.912971,
+        "e": 0.000135492891772893,
+        "iDeg": 1.0920735575508,
+        "lanDeg": 270.904704645544,
+        "argPeDeg": 22.5857583863099,
+        "meanAnomalyDeg": 16.7989422774285,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -7224.56142213018,
+          "argPeDeg": 14449.4880651243
+        },
+        "meanMotionDegPerDay": 190.499688309636
+      },
+      "residual": {
+        "maxAngleDeg": 0.4792699360815724,
+        "maxRadial": 0.00011837559053744127,
+        "rmsAngleDeg": 0.1633696516960617,
+        "samples": 1819
+      },
+      "precessionFraction": 0.0020766722834976623,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "113 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462398.605321%27&STOP_TIME=%27JD+2462409.932133%27&STEP_SIZE=%27113+m%27",
+          "retrievedAt": "2026-11-12T09:48:13.130Z"
+        },
+        {
+          "kind": "window",
+          "step": "8774 min",
+          "rows": 1819,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27603%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+          "retrievedAt": "2026-11-12T09:48:13.303Z"
+        }
+      ]
+    },
+    "dione": {
+      "frame": {
+        "pole": {
+          "raDeg": 40.6,
+          "decDeg": 83.5
+        }
+      },
+      "startFrom": "JPL satellite mean elements (SAT441; P=sidereal, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 377700000,
+        "e": 0.002,
+        "iDeg": 0.048826931218690875,
+        "lanDeg": 147.26288023633143,
+        "argPeDeg": 266.7994081246944,
+        "meanAnomalyDeg": 16.008804492060886,
+        "meanMotionDegPerDay": 131.61916606129907,
+        "nodeRateDegPerDay": 0,
+        "apsisRateDegPerDay": -0.08425596541011765
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 40.6,
+            "decDeg": 83.5
+          }
+        },
+        "a": 377414621.00082,
+        "e": 0.00218784941012944,
+        "iDeg": 0.0362677963471671,
+        "lanDeg": 176.98947685715,
+        "argPeDeg": 232.792460406916,
+        "meanAnomalyDeg": 20.2815393012229,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": 103.445897968809,
+          "argPeDeg": 2974.58222078759
+        },
+        "meanMotionDegPerDay": 131.450658048698
+      },
+      "residual": {
+        "maxAngleDeg": 0.06782664629740108,
+        "maxRadial": 0.0002330890852267372,
+        "rmsAngleDeg": 0.029106607676794894,
+        "samples": 1819
+      },
+      "precessionFraction": 0.0006626365565780988,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "164 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.057979%27&STOP_TIME=%27JD+2462412.479475%27&STEP_SIZE=%27164+m%27",
+          "retrievedAt": "2026-11-12T09:48:13.626Z"
+        },
+        {
+          "kind": "window",
+          "step": "8774 min",
+          "rows": 1819,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27604%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+          "retrievedAt": "2026-11-12T09:48:13.799Z"
+        }
+      ]
+    },
+    "rhea": {
+      "frame": {
+        "pole": {
+          "raDeg": 40.6,
+          "decDeg": 83.5
+        }
+      },
+      "startFrom": "JPL satellite mean elements (SAT441; P=anomalistic, apsis regressing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 527200000,
+        "e": 0.001,
+        "iDeg": 0.2771076492664568,
+        "lanDeg": 56.51329591877014,
+        "argPeDeg": 170.91389848794546,
+        "meanAnomalyDeg": 120.36772735570293,
+        "meanMotionDegPerDay": 79.69004115769265,
+        "nodeRateDegPerDay": 0.027550699744725547,
+        "apsisRateDegPerDay": -0.0014904117602556402
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 40.6,
+            "decDeg": 83.5
+          }
+        },
+        "a": 527067673.798142,
+        "e": 0.00096575808802994,
+        "iDeg": 0.337792832069986,
+        "lanDeg": 44.4350369728972,
+        "argPeDeg": 176.503427828946,
+        "meanAnomalyDeg": 126.851467875959,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -959.739654625695,
+          "argPeDeg": 1010.43256404499
+        },
+        "meanMotionDegPerDay": 79.6886573450767
+      },
+      "residual": {
+        "maxAngleDeg": 0.09068159794547243,
+        "maxRadial": 0.00030286592820073685,
+        "rmsAngleDeg": 0.03927886524675897,
+        "samples": 1819
+      },
+      "precessionFraction": 0.0003471527420565076,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "271 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462390.716218%27&STOP_TIME=%27JD+2462417.821236%27&STEP_SIZE=%27271+m%27",
+          "retrievedAt": "2026-11-12T09:48:14.132Z"
+        },
+        {
+          "kind": "window",
+          "step": "8774 min",
+          "rows": 1819,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27605%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+          "retrievedAt": "2026-11-12T09:48:14.336Z"
+        }
+      ]
+    },
+    "titan": {
+      "frame": {
+        "pole": {
+          "raDeg": 36.4,
+          "decDeg": 84
+        }
+      },
+      "startFrom": "JPL satellite mean elements (SAT441; P=anomalistic, apsis regressing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 1221900000,
+        "e": 0.029,
+        "iDeg": 0.33541741372249934,
+        "lanDeg": 10.546198329087309,
+        "argPeDeg": 213.19990104766822,
+        "meanAnomalyDeg": 157.4246008800031,
+        "meanMotionDegPerDay": 22.57697620035511,
+        "nodeRateDegPerDay": -0.0014339093695790572,
+        "apsisRateDegPerDay": -0.004276952762239598
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 36.4,
+            "decDeg": 84
+          }
+        },
+        "a": 1221865021.51857,
+        "e": 0.0286803064930753,
+        "iDeg": 0.350556013836303,
+        "lanDeg": 8.62935613182555,
+        "argPeDeg": 214.934933061566,
+        "meanAnomalyDeg": 157.607874823895,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -41.4901916550995,
+          "argPeDeg": 93.2534740172511
+        },
+        "meanMotionDegPerDay": 22.5755596820533
+      },
+      "residual": {
+        "maxAngleDeg": 0.03173837379956464,
+        "maxRadial": 0.00009887348326150408,
+        "rmsAngleDeg": 0.01589906737781497,
+        "samples": 1820
+      },
+      "precessionFraction": 0.00011309314180321241,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "957 min",
+          "rows": 144,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462356.432383%27&STOP_TIME=%27JD+2462452.105071%27&STEP_SIZE=%27957+m%27",
+          "retrievedAt": "2026-11-12T09:48:14.602Z"
+        },
+        {
+          "kind": "window",
+          "step": "8770 min",
+          "rows": 1820,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27606%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278770+m%27",
+          "retrievedAt": "2026-11-12T09:48:14.761Z"
+        }
+      ]
+    },
+    "iapetus": {
+      "frame": {
+        "pole": {
+          "raDeg": 288.7,
+          "decDeg": 78.9
+        }
+      },
+      "startFrom": "JPL satellite mean elements (SAT441; P=anomalistic, apsis advancing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 3561700000,
+        "e": 0.028,
+        "iDeg": 7.546688549357896,
+        "lanDeg": 71.19400561675347,
+        "argPeDeg": 284.6179474506772,
+        "meanAnomalyDeg": 163.25537858186158,
+        "meanMotionDegPerDay": 4.53794848072132,
+        "nodeRateDegPerDay": 0.000314866196094676,
+        "apsisRateDegPerDay": 0.0009075815027081563
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 288.7,
+            "decDeg": 78.9
+          }
+        },
+        "a": 3560843232.85538,
+        "e": 0.0285069532873655,
+        "iDeg": 7.5881181795223,
+        "lanDeg": 71.2355374976165,
+        "argPeDeg": 283.397222024167,
+        "meanAnomalyDeg": 164.390114854358,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -10.6491199273383,
+          "argPeDeg": 18.8594337439395
+        },
+        "meanMotionDegPerDay": 4.53772352299907
+      },
+      "residual": {
+        "maxAngleDeg": 0.1291350197454492,
+        "maxRadial": 0.0006407519749140021,
+        "rmsAngleDeg": 0.059746626243614785,
+        "samples": 1819
+      },
+      "precessionFraction": 0.00011378902936462808,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "4760 min",
+          "rows": 144,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462166.275721%27&STOP_TIME=%27JD+2462642.261733%27&STEP_SIZE=%274760+m%27",
+          "retrievedAt": "2026-11-12T09:48:15.023Z"
+        },
+        {
+          "kind": "window",
+          "step": "8774 min",
+          "rows": 1819,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27608%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40699%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+          "retrievedAt": "2026-11-12T09:48:15.203Z"
+        }
+      ]
+    },
+    "miranda": {
+      "frame": {
+        "pole": {
+          "raDeg": 77.31099999999998,
+          "decDeg": 15.175
+        }
+      },
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 129846000,
+        "e": 0.001,
+        "iDeg": 4.424251265133457,
+        "lanDeg": 219.11356238156588,
+        "argPeDeg": 276.7989531270182,
+        "meanAnomalyDeg": 68.55196596501071,
+        "meanMotionDegPerDay": 254.63588254217964,
+        "nodeRateDegPerDay": -0.05541273308413766,
+        "apsisRateDegPerDay": 0.05484862538633514
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 77.311,
+            "decDeg": 15.175
+          }
+        },
+        "a": 129827788.192904,
+        "e": 0.00134875022798358,
+        "iDeg": 4.4272500842674,
+        "lanDeg": 219.10310144337,
+        "argPeDeg": 273.008913790356,
+        "meanAnomalyDeg": 71.2143055943329,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -2023.95917845372,
+          "argPeDeg": 4020.44751094674
+        },
+        "meanMotionDegPerDay": 254.635963615502
+      },
+      "residual": {
+        "maxAngleDeg": 1.7394810769040918,
+        "maxRadial": 0.0004337527163224631,
+        "rmsAngleDeg": 1.0033145404635255,
+        "samples": 1819
+      },
+      "precessionFraction": 0.00043227929103878984,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "85 min",
+          "rows": 144,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462400.028290%27&STOP_TIME=%27JD+2462408.509164%27&STEP_SIZE=%2785+m%27",
+          "retrievedAt": "2026-11-12T09:48:15.448Z"
+        },
+        {
+          "kind": "window",
+          "step": "8774 min",
+          "rows": 1819,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27705%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278774+m%27",
+          "retrievedAt": "2026-11-12T09:48:15.628Z"
+        }
+      ]
+    },
+    "ariel": {
+      "frame": {
+        "pole": {
+          "raDeg": 77.31099999999998,
+          "decDeg": 15.175
+        }
+      },
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 190929000,
+        "e": 0.001,
+        "iDeg": 0.017617238543392675,
+        "lanDeg": 75.04815058796336,
+        "argPeDeg": 216.56871643377423,
+        "meanAnomalyDeg": 122.09509527267267,
+        "meanMotionDegPerDay": 142.80155729156664,
+        "nodeRateDegPerDay": 0,
+        "apsisRateDegPerDay": 0.03410353563432257
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 77.311,
+            "decDeg": 15.175
+          }
+        },
+        "a": 190929254.549727,
+        "e": 0.00105615049437139,
+        "iDeg": 0.023501180597206,
+        "lanDeg": 103.451341824713,
+        "argPeDeg": 199.81494138838,
+        "meanAnomalyDeg": 110.541919604156,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -220.52221068799,
+          "argPeDeg": 837.172267215452
+        },
+        "meanMotionDegPerDay": 142.818763868018
+      },
+      "residual": {
+        "maxAngleDeg": 0.17524452631137932,
+        "maxRadial": 0.0008164300965152704,
+        "rmsAngleDeg": 0.07823762752200006,
+        "samples": 1846
+      },
+      "precessionFraction": 0.00016048680780342896,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "151 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462396.707590%27&STOP_TIME=%27JD+2462411.829864%27&STEP_SIZE=%27151+m%27",
+          "retrievedAt": "2026-11-12T09:48:15.904Z"
+        },
+        {
+          "kind": "window",
+          "step": "8645 min",
+          "rows": 1846,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27701%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278645+m%27",
+          "retrievedAt": "2026-11-12T09:48:16.106Z"
+        }
+      ]
+    },
+    "umbriel": {
+      "frame": {
+        "pole": {
+          "raDeg": 77.31099999999998,
+          "decDeg": 15.175
+        }
+      },
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 265986000,
+        "e": 0.004,
+        "iDeg": 0.08043275679380614,
+        "lanDeg": 92.04478675104431,
+        "argPeDeg": 345.2752895561808,
+        "meanAnomalyDeg": 306.4226016845607,
+        "meanMotionDegPerDay": 86.86109129724198,
+        "nodeRateDegPerDay": -0.007584949658452088,
+        "apsisRateDegPerDay": 0.00778520103498827
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 77.311,
+            "decDeg": 15.175
+          }
+        },
+        "a": 265980997.144766,
+        "e": 0.00378122297409111,
+        "iDeg": 0.0882795984697097,
+        "lanDeg": 90.316774605801,
+        "argPeDeg": 348.436342508709,
+        "meanAnomalyDeg": 304.951870104531,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -227.074263585815,
+          "argPeDeg": 530.040461810507
+        },
+        "meanMotionDegPerDay": 86.8605775661595
+      },
+      "residual": {
+        "maxAngleDeg": 0.11880283699437175,
+        "maxRadial": 0.0007368932553048025,
+        "rmsAngleDeg": 0.047317190932410186,
+        "samples": 1935
+      },
+      "precessionFraction": 0.0001670690819980374,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "249 min",
+          "rows": 144,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462391.836196%27&STOP_TIME=%27JD+2462416.701258%27&STEP_SIZE=%27249+m%27",
+          "retrievedAt": "2026-11-12T09:48:16.419Z"
+        },
+        {
+          "kind": "window",
+          "step": "8247 min",
+          "rows": 1935,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27702%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%278247+m%27",
+          "retrievedAt": "2026-11-12T09:48:16.617Z"
+        }
+      ]
+    },
+    "titania": {
+      "frame": {
+        "pole": {
+          "raDeg": 77.31099999999998,
+          "decDeg": 15.175
+        }
+      },
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node advancing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 436298000,
+        "e": 0.002,
+        "iDeg": 0.03675057142930862,
+        "lanDeg": 9.616268651339729,
+        "argPeDeg": 223.7750220969636,
+        "meanAnomalyDeg": 174.29727107814713,
+        "meanMotionDegPerDay": 41.349115916051794,
+        "nodeRateDegPerDay": 0.0005992927873166594,
+        "apsisRateDegPerDay": 0.0022988594289817567
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 77.311,
+            "decDeg": 15.175
+          }
+        },
+        "a": 436282149.047685,
+        "e": 0.00110771218543843,
+        "iDeg": 0.0553043729426711,
+        "lanDeg": 19.9455051329019,
+        "argPeDeg": 240.775062221369,
+        "meanAnomalyDeg": 146.979608056937,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": 143.558911523734,
+          "argPeDeg": 34.9671394990622
+        },
+        "meanMotionDegPerDay": 41.3465257636538
+      },
+      "residual": {
+        "maxAngleDeg": 0.18802692665710238,
+        "maxRadial": 0.0014815240283300461,
+        "rmsAngleDeg": 0.0755965547040413,
+        "samples": 2000
+      },
+      "precessionFraction": 0.00021327561432177376,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "522 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462378.151120%27&STOP_TIME=%27JD+2462430.386334%27&STEP_SIZE=%27522+m%27",
+          "retrievedAt": "2026-11-12T09:48:16.881Z"
+        },
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27703%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:17.058Z"
+        }
+      ]
+    },
+    "oberon": {
+      "frame": {
+        "pole": {
+          "raDeg": 77.31099999999998,
+          "decDeg": 15.175
+        }
+      },
+      "startFrom": "JPL satellite mean elements (URA182; P=sidereal, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 583511000,
+        "e": 0.002,
+        "iDeg": 0.19330756825884698,
+        "lanDeg": 21.619533891388652,
+        "argPeDeg": 207.7872795223561,
+        "meanAnomalyDeg": 334.37119217942006,
+        "meanMotionDegPerDay": 26.738381069034208,
+        "nodeRateDegPerDay": -0.00511222255089553,
+        "apsisRateDegPerDay": 0.0011021622273418184
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": {
+          "pole": {
+            "raDeg": 77.311,
+            "decDeg": 15.175
+          }
+        },
+        "a": 583449518.670418,
+        "e": 0.00185696199967227,
+        "iDeg": 0.200056974801604,
+        "lanDeg": 21.7103212163436,
+        "argPeDeg": 176.21599831014,
+        "meanAnomalyDeg": 5.87056651990412,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": -70.4257090289768,
+          "argPeDeg": 162.940564931085
+        },
+        "meanMotionDegPerDay": 26.7369474677616
+      },
+      "residual": {
+        "maxAngleDeg": 0.14879550132011943,
+        "maxRadial": 0.0011268134836408647,
+        "rmsAngleDeg": 0.07052847392066688,
+        "samples": 2000
+      },
+      "precessionFraction": 0.00016685036857338304,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "808 min",
+          "rows": 144,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462363.879016%27&STOP_TIME=%27JD+2462444.658438%27&STEP_SIZE=%27808+m%27",
+          "retrievedAt": "2026-11-12T09:48:17.336Z"
+        },
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27704%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40799%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:17.532Z"
+        }
+      ]
+    },
+    "triton": {
+      "frame": "parentEquator",
+      "startFrom": "JPL satellite mean elements (NEP098; P=sidereal, apsis regressing, node regressing): a, e, precession rates, with the mean motion of the osculating orbit (Horizons); plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 354800000,
+        "e": 0.0001,
+        "iDeg": 157.33298681564537,
+        "lanDeg": 193.33017483509866,
+        "argPeDeg": 94.55502793247614,
+        "meanAnomalyDeg": 268.6689096796804,
+        "meanMotionDegPerDay": 61.254603628216174,
+        "nodeRateDegPerDay": -0.0032920049544674567,
+        "apsisRateDegPerDay": -0.004751759521066326
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "parentEquator",
+        "a": 354759071.877029,
+        "e": 0.000126515913958466,
+        "iDeg": 157.327625550771,
+        "lanDeg": 193.331248788893,
+        "argPeDeg": 104.810347971323,
+        "meanAnomalyDeg": 258.414828927572,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": 53.4534691701799,
+          "argPeDeg": 94.3637097574033
+        },
+        "meanMotionDegPerDay": 61.2561426047503
+      },
+      "residual": {
+        "maxAngleDeg": 0.012984306299891082,
+        "maxRadial": 7.793941718547273e-7,
+        "rmsAngleDeg": 0.004037790055259926,
+        "samples": 2000
+      },
+      "precessionFraction": 0.00008995816237999878,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "353 min",
+          "rows": 144,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462386.631127%27&STOP_TIME=%27JD+2462421.906327%27&STEP_SIZE=%27353+m%27",
+          "retrievedAt": "2026-11-12T09:48:17.795Z"
+        },
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27801%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40899%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:17.971Z"
+        }
+      ]
+    },
+    "ceres": {
+      "frame": "ecliptic",
+      "startFrom": "SBDB osculating elements of JD 2461200.5 carried to the epoch",
+      "ratesFitted": false,
+      "start": {
+        "a": 413720779525.95984,
+        "e": 0.07969229514816586,
+        "iDeg": 10.58802780183462,
+        "lanDeg": 80.24862682043221,
+        "argPeDeg": 73.29421453021587,
+        "meanAnomalyDeg": 532.3923420918802,
+        "meanMotionDegPerDay": 0.21430445064843,
+        "nodeRateDegPerDay": 0,
+        "apsisRateDegPerDay": 0
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "ecliptic",
+        "a": 414049139753.143,
+        "e": 0.0773237656178187,
+        "iDeg": 10.5907530311412,
+        "lanDeg": 79.9030748267584,
+        "argPeDeg": 73.7075925346865,
+        "meanAnomalyDeg": 172.129937134257,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": 0,
+          "argPeDeg": 0
+        },
+        "meanMotionDegPerDay": 0.214058288871114
+      },
+      "residual": {
+        "maxAngleDeg": 0.45137412530556864,
+        "maxRadial": 0.002868483461574556,
+        "rmsAngleDeg": 0.17785194848344543,
+        "samples": 2000
+      },
+      "precessionFraction": 0,
+      "horizons": [
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%271%3B%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:18.364Z"
+        }
+      ]
+    },
+    "pluto": {
+      "frame": "ecliptic",
+      "startFrom": "SBDB osculating elements of JD 2457588.5 carried to the epoch",
+      "ratesFitted": false,
+      "start": {
+        "a": 5922374659953.067,
+        "e": 0.2518378778576892,
+        "iDeg": 17.14771140999114,
+        "lanDeg": 110.2923840543057,
+        "argPeDeg": 113.7090015158565,
+        "meanAnomalyDeg": 57.738884772523235,
+        "meanMotionDegPerDay": 0.003956838955553025,
+        "nodeRateDegPerDay": 0,
+        "apsisRateDegPerDay": 0
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "ecliptic",
+        "a": 5917333767765.9,
+        "e": 0.249065725722739,
+        "iDeg": 17.1396640086232,
+        "lanDeg": 110.299661560041,
+        "argPeDeg": 114.153462101042,
+        "meanAnomalyDeg": 57.6756073358532,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": 0,
+          "argPeDeg": 0
+        },
+        "meanMotionDegPerDay": 0.00396096083703012
+      },
+      "residual": {
+        "maxAngleDeg": 0.011449644452369448,
+        "maxRadial": 0.00015586058259964798,
+        "rmsAngleDeg": 0.005661740864988737,
+        "samples": 2000
+      },
+      "precessionFraction": 0,
+      "horizons": [
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27999%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%4010%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:18.596Z"
+        }
+      ]
+    },
+    "charon": {
+      "frame": "parentEquator",
+      "startFrom": "JPL satellite mean elements (PLU060; P=anomalistic, apsis advancing, node regressing): a, e, mean motion and precession rates; plane and phase of the osculating orbit at the epoch",
+      "ratesFitted": true,
+      "start": {
+        "a": 19600000,
+        "e": 0.0001,
+        "iDeg": 0.08204711219145323,
+        "lanDeg": 11.369879889985171,
+        "argPeDeg": 139.26348848966038,
+        "meanAnomalyDeg": 209.3531837844482,
+        "meanMotionDegPerDay": 56.36253131643146,
+        "nodeRateDegPerDay": 0,
+        "apsisRateDegPerDay": 0
+      },
+      "def": {
+        "kind": "kepler",
+        "frame": "parentEquator",
+        "a": 19595764.4819141,
+        "e": 0.000160871364259786,
+        "iDeg": 0.0826600388156809,
+        "lanDeg": 11.4759402038709,
+        "argPeDeg": 143.900014762374,
+        "meanAnomalyDeg": 204.610921769585,
+        "epochUt": 938240818,
+        "rates": {
+          "lanDeg": 3.21459125256634,
+          "argPeDeg": -3.15335895804676
+        },
+        "meanMotionDegPerDay": 56.3625288810189
+      },
+      "residual": {
+        "maxAngleDeg": 0.000977828672946967,
+        "maxRadial": 6.944437118556137e-7,
+        "rmsAngleDeg": 0.00037371650104241845,
+        "samples": 2000
+      },
+      "precessionFraction": 0.0000015912550864827205,
+      "horizons": [
+        {
+          "kind": "dense span about the epoch",
+          "step": "383 min",
+          "rows": 145,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462385.107061%27&STOP_TIME=%27JD+2462423.430393%27&STEP_SIZE=%27383+m%27",
+          "retrievedAt": "2026-11-12T09:48:18.766Z"
+        },
+        {
+          "kind": "window",
+          "step": "7977 min",
+          "rows": 2000,
+          "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND=%27901%27&OBJ_DATA=%27NO%27&MAKE_EPHEM=%27YES%27&EPHEM_TYPE=%27VECTORS%27&CENTER=%27500%40999%27&REF_PLANE=%27FRAME%27&REF_SYSTEM=%27ICRF%27&VEC_TABLE=%272%27&VEC_CORR=%27NONE%27&VEC_LABELS=%27NO%27&OUT_UNITS=%27KM-S%27&CSV_FORMAT=%27YES%27&TIME_TYPE=%27TDB%27&TIME_DIGITS=%27FRACSEC%27&START_TIME=%27JD+2462380.500000%27&STOP_TIME=%27JD+2473459.500000%27&STEP_SIZE=%277977+m%27",
+          "retrievedAt": "2026-11-12T09:48:18.941Z"
+        }
+      ]
+    }
+  },
+  "description": "Orbits fitted to JPL Horizons over the validity window (tools/bodies/fit-orbits.mjs): KeplerOrbitDef elements at the lobby epoch with mean motion and linear node and apsis rates, the starting values they were fitted from, and the residuals over the window",
+  "lobbyEpochUt": 938240818,
+  "window": {
+    "startJdTdb": 2462380.5,
+    "stopJdTdb": 2473459.5
+  }
+}

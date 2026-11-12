@@ -10,7 +10,12 @@
 export const LUMA = [0.2126, 0.7152, 0.0722];
 const BAND_NM = { B: 440, V: 550, R: 640 };
 
-export function meanColourFromIndices({ bv, vr }, sun, albedo) {
+export function meanColourFromIndices({ bv, vr, linearRgb }, sun, albedo) {
+  if (linearRgb) {
+    // a measured mean colour (a global colour map): keep its chromaticity, luminance = the geometric albedo
+    const y0 = linearRgb[0] * LUMA[0] + linearRgb[1] * LUMA[1] + linearRgb[2] * LUMA[2];
+    return linearRgb.map((x) => Number(((x * albedo) / y0).toPrecision(4)));
+  }
   const b = 10 ** (-0.4 * (bv - sun.bv));
   const r = vr === null || vr === undefined ? 1 + (1 - b) * ((BAND_NM.R - BAND_NM.V) / (BAND_NM.V - BAND_NM.B)) : 10 ** (0.4 * (vr - sun.vr));
   const rgb = [r, 1, b];
