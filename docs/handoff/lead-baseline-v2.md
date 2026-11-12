@@ -4,7 +4,9 @@ The lead's step before wave 3 of `docs/WORK_PACKAGES_V2.json` (MIGRATION_V2 step
 amendments of 2026-11-11: five other agents were working in the tree, the reference images are deferred to
 the visually signed-off tree, the document swap comes last.
 
-It changed no behaviour: the suites give the results they gave before it (section 9).
+It changed no behaviour: the suites give the results they gave before it (section 9). An independent review
+followed (six majors, five minors); what it changed is in section 12, and sections 3, 4 and 5 below are
+written for the state after it.
 
 ## Running log
 
@@ -161,13 +163,20 @@ readBaselineManifest(store?), tileSnapshot(), describeComparison(c)
 - Difference measure on 8-bit sRGB, alpha ignored: `meanAbs` = mean over pixels and channels of |a - b|;
   `p999` = 99.9th percentile over pixels of the largest channel difference. One changed row of 720 (0.139 %
   of the pixels) moves `p999`; a faint change everywhere moves `meanAbs`.
-- Deterministic capture: the page is opened with frozen presentation time (`deterministic=1&paused=1` on the
-  labs), then `isIdle()`, 64 presented frames, `isIdle()` again, 4 frames, screenshot.
-- Recording: two fresh loads; the first capture is the reference; tolerance = max(floor, 3 x the difference
-  of the two), floor `{ meanAbs: 0.02, p999: 1 }`. The manifest entry stores file, sha256, size, tolerance,
-  the two-recording difference, commit, Chrome, adapter, the tile sets' content hashes and the lead's note.
+- Capture is FRAME-EXACT (review fix E): the page is opened with frozen presentation time
+  (`deterministic=1&paused=1` on the labs); when `isIdle()` the harness calls
+  `window.__test.renderExact(frames)`, a new optional hook of the contract: the page restarts every temporal
+  sequence, renders exactly `frames` frames and holds the last one on screen, and the screenshot is of
+  that held frame. `captureDeterministic` refuses a page without the hook. **The render core does not have it
+  yet: request `docs/requests/lead-3.md` (open, for the shared-code maintainer and the app) states the exact
+  semantics. Until it is in, no reference image can be recorded.** `captureSettled` is the old
+  wait-and-shoot, for pictures that are not references.
+- Recording: THREE or more fresh loads; the first capture is the reference; tolerance = max(floor, 3 x the
+  largest difference between any two loads), floor `{ meanAbs: 0.02, p999: 1 }`. The manifest entry stores
+  file, sha256, size, tolerance, that difference, the number of loads, commit, Chrome, adapter, the tile
+  sets' content hashes and the lead's note.
 - A comparison refuses a reference file whose sha256 is not the manifest's, names tile sets whose content
-  hash differs from the recording's, and on failure writes `out/screens/baselines/<name>.actual.png` and
+  hash differs from the recording's and a changed Chrome version or adapter, and on failure writes `out/screens/baselines/<name>.actual.png` and
   `.diff.png` (differences x 8).
 - Manifest: `tests/browser/baselines.manifest.json` (tracked): `dir` (`data/baselines`, git-ignored),
   `viewport` 1280 x 720, `floor`, and 25 checkpoints, ALL `pending`: pad-noon, pad-sunset,
@@ -182,7 +191,8 @@ readBaselineManifest(store?), tileSnapshot(), describeComparison(c)
   clean); `tests/browser/shell/baseline-tooling.spec.ts` (the difference measure on synthetic images, always;
   the browser proof with `BASELINE_TOOLING_PROOF=1`).
 
-Proof on two checkpoints (2026-11-11 23:55, RTX 5090, Chrome 157, on a PROOF manifest under
+Proof on two checkpoints WITH THE OLD CAPTURE (wait about 64 frames, then a screenshot; two loads), which
+is what showed that capture to be inadequate (2026-11-11 23:55, RTX 5090, Chrome 157, on a PROOF manifest under
 `out/qa/baseline-proof/`, not the tracked one; the captures were looked at):
 
 | Checkpoint | Two recordings differ by | Tolerance (3 x, at least the floor) | Third capture | One pixel row changed by 48 levels |
@@ -190,11 +200,13 @@ Proof on two checkpoints (2026-11-11 23:55, RTX 5090, Chrome 157, on a PROOF man
 | leo-day | mean 0.12825, p99.9 7, max 95, 18.3 % of pixels | mean 0.38475, p99.9 21 | mean 0.1140, p99.9 6: clean | p99.9 48: caught |
 | translunar-earth | mean 0.00247, p99.9 0, max 112, 0.05 % of pixels | mean 0.02 and p99.9 1 (the floor) | mean 0.0024, p99.9 0: clean | p99.9 48, mean 0.0246: caught |
 
-A reference file that is not the recorded one (sha256) is refused. For the lead when recording: `leo-day` is
-not stable between two loads in deterministic mode (18 % of the pixels differ slightly: the specular
-highlights of the vehicle and fine cloud and surface detail), so its tolerance comes out at 21 levels at the
-99.9th percentile; a checkpoint that loose is worth a look at what still varies before it is accepted as a
-gate (`translunar-earth` is stable to 0.05 % of its pixels).
+A reference file that is not the recorded one (sha256) is refused. `leo-day` differed in 18 % of its pixels
+between two loads (the specular highlights of the vehicle, fine cloud and surface detail: whatever integrates
+over frames was at another phase), and a tolerance of 21 levels at the 99.9th percentile would let a
+130 x 130 pixel patch change by 21 levels and pass. That is why the capture is now frame-exact and the
+tolerance comes from three loads. The proof has to be repeated with the lead once `renderExact` exists
+(the command below); the acceptance is that the three loads of each checkpoint differ by no more than the
+floor.
 
 Commands:
 
@@ -212,45 +224,75 @@ at lift-off, 2560 x 1440).
 
 ## 4. Mission baseline
 
-- `tests/mission/baseline-v1.json` (36 kB), written by `tools/dev/record-mission-baseline.ts` from the flight
-  `npm run test:mission` flies: state hash **3f3a131cdd88eba7**, 593,636 steps, 65,725 rails advances, 214,135
-  control ticks, 680,497.16 s of simulation, start 938240818.839663, tiles earth `ab20fdfc579d4015` / moon
-  `597c5d666b132450`, Node v24.16.0; splashdown in "Central Pacific" at 15.337 deg N, -141.53 deg E.
-- Per milestone (17: LIFTOFF ... SPLASHDOWN): `ut`, `captureUt`, MET, vessel, SOI body, situation, BCI
-  position and velocity, classical elements (`a`, `e`, `i`, `lan`, `argPe`, `nu`, energy, `h`), apoapsis and
-  periapsis altitude, sub-point, altitude, speeds, mass, and the milestone's own `data`.
-- `tolerances` in the file state how step 3.1 compares (MIGRATION_V2 principle 3): elements 1e-6 relative,
-  touchdown within 50 m, splashdown in the same recovery zone, event times within 1 s. For a milestone under
-  thrust the elements are those at `captureUt` (at most one control tick after `ut`): compare those through
-  `ut`, altitude and `data`.
-- `node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/dev/record-mission-baseline.ts --check` re-flies and
-  compares byte for byte (about 50 s). Step 3.1 reads the file; only the lead re-records it.
+- `tests/mission/baseline-v1.json` (format 2), the record of the v1 code on the v1 clock: state hash
+  **3f3a131cdd88eba7**, 593,636 steps, 65,725 rails advances, 214,135 control ticks, 680,497.16 s of
+  simulation, start 938240818.839663, tiles earth `ab20fdfc579d4015` / moon `597c5d666b132450`, Node v24.16.0;
+  splashdown in "Central Pacific" at 15.337 deg N, -141.53 deg E.
+- Per milestone (17: LIFTOFF ... SPLASHDOWN): `ut`, `captureUt`, `captureOffset` (how long after the event
+  the state was taken: 0 for twelve, 1/60 to 1/40 s for MAX_Q, FAIRING_JETTISON, LUNAR_LIFTOFF,
+  ENTRY_INTERFACE and SPLASHDOWN), MET, vessel, SOI body, situation, BCI position and velocity, classical
+  elements, apoapsis and periapsis altitude, sub-point, altitude, speeds, mass, and the milestone's `data`.
+- **It is not compared by a fixed tolerance** (review fix A; the 1e-6 / 50 m / 1 s of the first version is
+  gone). The scripted pilot decides at 30 Hz, so a flight is a chaotic function of its start instant:
+  sim-core-v2 measured that a 2 ms start shift of the unmodified v1 code moves EARTH_ORBIT by 4.8e-5 in da/a,
+  TLI by 1.6e-3, the lunar touchdown by 47 s and the splashdown by 15 s, while the unshifted code reproduces
+  the record bit for bit. Two comparisons (`tools/dev/mission-baseline.ts`, tested in
+  `mission-baseline.test.ts`):
+  - **EXACT**, for a step that must not change behaviour and starts at the bit-identical instant: every
+    milestone's event time, capture time and state equal. It says at which milestone a difference starts.
+  - **ENVELOPE**, for a step that legitimately moves time (the tick grid, later the session switch): per
+    milestone, the difference from the baseline in event mission time and in da/a must be within twice the
+    largest such difference among the control flights (the reference code with shifted starts only, recorded
+    by the step's owner in a controls file), with floors of one control tick (1/30 s) and 1e-12; and the
+    mission gates must pass.
+  - In both: angles as wrapped absolute differences, `nu` never compared, the capture offset stated.
+- Commands (the first two fly nothing):
+
+```
+npx tsx tools/dev/record-mission-baseline.ts --exact <record.json>
+npx tsx tools/dev/record-mission-baseline.ts --envelope <record.json> --controls <controls.json>
+node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/dev/record-mission-baseline.ts --check                    # fly, EXACT against the baseline
+node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/dev/record-mission-baseline.ts --out <file> [--label x]   # fly, write a record
+```
+
+  `captureMilestones(label)` of that tool gives an owner the same record from its own `fly()` set-up (control
+  flights with shifted starts); a controls file is `{ "controls": [ <record>, ... ] }`. Only the lead rewrites
+  the baseline (`--record-baseline`). The format-2 file was derived from the first recording; nothing was
+  re-flown for it.
 - `tests/mission/golden.json`: its `tiles.moon` was stale (`d250015b4e1a23f8`): the Moon's albedo layer was
   re-baked on 2026-11-11 15:14 (request sky-lighting-6; 131,072 albedo tiles, no height tile), which changed
   the manifest's content hash and made the determinism test stop before comparing the state hash. The
-  re-flown hash and step count are identical, so only that field was updated (c079c0a).
+  re-flown hash and step count were identical, so only that field was updated (c079c0a).
 
 ## 5. Terrain guard (`tests/unit/terrain-core/terrain-guard.*`)
 
-- `terrain-guard.heights.json`: the real `TerrainProvider` at 2,000 fixed directions per body on Earth and on
-  the Moon (1,200 uniform, 800 in discs of 200 km, 20 km, 2 km and 200 m about the launch site and the
-  landing target, from data), asked three ways: collision surface, band limit 25 m, band limit 1,000 m;
-  float64 bit patterns, compared bit for bit.
+- `terrain-guard.heights.json` holds THE DIRECTIONS THEMSELVES (bit patterns) and the heights there, per
+  body, in groups: `uniform` (1,200 points over the sphere) and one group per named place (800 points in
+  discs of 200 km, 20 km, 2 km and 200 m): today `site:ka-lae-lc1` on Earth and the landing target on the
+  Moon, 2,000 points per body. A group is seeded from a hash of `<bodyId>:<group key>`, never from an index
+  into the library. The test samples the stored directions, three ways (collision surface, band limits 25 m
+  and 1,000 m), bit for bit. So thirty more bodies, a second site, the site's rename or a new scenario move
+  no point (review fix B: the first version re-derived the directions from the library and would have been
+  re-dealt by the Madrakah site).
+- A new place is APPENDED as a group (`--add-place`); every existing point keeps its index, direction and
+  height. A changed height is reported with its point, group, latitude and longitude, so a step that adds
+  flatten discs can assert that only points inside the new discs changed (`heightDifferences`, `distanceTo`).
 - `terrain-guard.tiles.json`: every tile directory (earth 8,380 directories, 697,349 files, 10.30 GB; moon
-  2,344, 164,877, 3.39 GB): file count and name hash, plus bytes and content hash.
+  2,344, 164,877, 3.39 GB): file count, name hash and bytes; and the content hash.
 - Commands:
 
 ```
-node tools/dev/heavy.mjs --class=cpu  -- npx vitest run tests/unit/terrain-core/terrain-guard.test.ts                        # 9 s: heights, file counts and names
-TERRAIN_GUARD_FULL=1 node tools/dev/heavy.mjs --class=bake -- npx vitest run tests/unit/terrain-core/terrain-guard.test.ts   # 45 s: also bytes and content of every file
-node tools/dev/heavy.mjs --class=bake -- npx tsx tests/unit/terrain-core/terrain-guard.record.ts [--heights|--tiles]         # the lead only
+node tools/dev/heavy.mjs --class=cpu  -- npx vitest run tests/unit/terrain-core/terrain-guard.test.ts                        # 29 s: heights; every directory's count, names and bytes (by stat)
+TERRAIN_GUARD_FULL=1 node tools/dev/heavy.mjs --class=bake -- npx vitest run tests/unit/terrain-core/terrain-guard.test.ts   # about a minute: also the content of every file
+node tools/dev/heavy.mjs --class=cpu  -- npx tsx tests/unit/terrain-core/terrain-guard.record.ts --add-place <bodyId> <key> <latDeg> <lonDeg>   # the lead only
+node tools/dev/heavy.mjs --class=cpu  -- npx tsx tests/unit/terrain-core/terrain-guard.record.ts --resample                  # the lead only: keep the directions, sample again
+node tools/dev/heavy.mjs --class=bake -- npx tsx tests/unit/terrain-core/terrain-guard.record.ts --tiles                     # the lead only
 ```
 
 - A bake that ADDS tiles to an existing tile set (`site-bake`: the Madrakah region into `earth`) makes the
-  directories it adds to differ; the package states which, and the lead re-records after checking that no
-  other directory changed. New pads add flatten discs: heights inside a new disc change, and the lead
-  re-records the heights then (wave 4.1d). A new site or a new scenario landing target changes the fixed
-  directions themselves (they are derived from the definitions): re-record with it.
+  directories it adds to differ; the package states which, and the lead re-records the summaries after
+  checking that no other directory changed, and appends the new site's group. New pads change the heights
+  inside their flatten discs: the lead resamples after checking that only those points changed.
 
 ## 6. Root configuration
 
@@ -370,3 +412,38 @@ disc; the terrain owner's to bring in line).
 - `tests/unit/terrain-core/realData.test.ts > launch-site pads are flat within 5 cm over flatRadius` has been
   red since the pad shape of request terrain-render-6; it needs its owner (the test should assert the core
   and the slab areas, or the shape's relief share).
+
+## 12. Review fixes (2026-11-12)
+
+An independent reviewer found behaviour unchanged and the contracts and configuration complete, with six
+majors and five minors. All were addressed; nothing was re-flown and nothing was recorded in a browser.
+
+| # | Finding | What was done | Commit |
+|---|---|---|---|
+| A | One blanket tolerance in `baseline-v1.json` could not fit the milestones; then, from sim-core-v2's measurements, no tolerance can (a 2 ms start shift moves the flight) | The record is compared EXACT or by ENVELOPE (section 4); the file is format 2 with per-milestone `captureOffset` and no tolerance; `tools/dev/mission-baseline.ts` with 14 tests; MIGRATION_V2 principle 3, step 3.1 and section 8 describe the modes and sim-core-v2's same-start reference `tests/mission/reference-v1-aligned.json` | 431930f |
+| B | The terrain guard's directions depended on the library (body index, the list of places) | Directions stored in the heights file, grouped, seeded by name; new places append; the present guard was confirmed green on the working tree first, then re-recorded; the every-commit form also compares bytes by stat (section 5) | cde7b30 |
+| C | A gate slot read free while the wrapped command lived after its wrapper was killed | The slot file records the command's pid; a `node ...` command is started without a shell; when both pids are dead a waiter looks once at the process table for live processes they started (orphans) and the slot stays held until those are gone (`--status`: HELD BY ORPHANS); on a signal the wrapper kills the command's tree (`taskkill /T /F`). Measured: a killed wrapper takes its direct child with it, but `npx tsx script` behind it ran to its end, and so did a detached process; both now hold the slot. **For platform-delivery:** a process orphaned twice is not seen, so `deploy/local/stack.mjs` takes its own exclusive lock under `data/stack` as well | d01a8cc |
+| D | Holes in `boundaries.test.ts` | No Node builtin in the headless directories or `src/net` except `src/terrain/fs*.ts` (a `*.node.ts` name is no excuse there); Node networking and threads nowhere outside `server/` and `bots/`; the headless ban gains `crypto.*`, `process.*`, `setImmediate`, `queueMicrotask`, `new Worker`, bare `Date(`; template-literal dynamic imports are imports and template interpolations are scanned; each proven on a planted violation (93 tests) | 2da43e5 |
+| E | The reference capture was not frame-exact (18 % of leo-day's pixels differed between loads) | `TestApi.renderExact?(frames)` in the contract; `captureDeterministic` uses it and refuses a page without it; three or more loads; a comparison reports a changed Chrome or adapter. The render-core side is request `lead-3` (open). Nothing recorded; to be proven with the lead | 04a8231 |
+| F | `.wslconfig` | Not written and not to be written by an agent; hand-off, STATUS and OPEN_QUESTIONS now say that `platform-delivery` (3.1) needs the Docker VM cap for its compose suite and does not start Docker until the user has written the file | a928b4c |
+| 7 | Stub scan missed identifiers, lower-case comments, vitest's name, render sections | Identifier words (camelCase, snake_case); TODO / FIXME in any case inside comments; standing allow-list entries for `stubGlobal` / `stubEnv` and `data/defs/render` (Earth and Moon excepted) | 340ebbe |
+| 8 | `build-client.mjs` could expose a half-written build, race, or prune a served build | Builds into `<hash>.tmp-<pid>` and renames; a lock per output (two callers at once: one build); a build with a live `data/stack/client/<hash>.use-<pid>` file beside it is never pruned (**the launcher writes that file before serving a build**) | 340ebbe |
+| 9 | `FrameEpochTracker` mis-rebased a holder that skipped a snapshot | `SnapshotFrame.previous`: the origins of the last `FRAME_HISTORY_EPOCHS` (8) epochs in the current frame, in every snapshot; the tracker rebases from the epoch its consumer last observed and tells a holder older than the history to reset. **The producer of `frame` (sim-core-v2, step 3.5; later the view builders) fills `previous`** | a44b849 |
+| 10 | Contract nits | `launchWindows` / `describeConic` take the target revision; `ClockState.untilTick`, `CensusEntry.horizonTick` / `.limitTick` are `number \| null` (no Infinity in JSON types; tested); `limits.subscriptionsPerSecond` 5 and `limits.accountsPerAddressPerHour` 10 (**the lead's choice**: section 26 gives no number), `contact.defaultCrashTolerance` 6 m/s; a test holds `data/defs/rules/default.json` equal to the defaults once it exists; `MarkerKindV2` comment; `SettingsModel.audio.buses` covers the v2 buses | 423a106 |
+| 11 | The deferred joins lived only in this hand-off | Rows in MIGRATION_V2's lead-steps table (before 3.2, after 3.2, before 4.1, with 4.1c, after 4.3) and a LEAD NOTE in twelve briefs of WORK_PACKAGES_V2.json | 6f75c04 |
+
+Rejected: nothing. Two findings were answered differently from the letter of the review, on evidence:
+A (the coordinator's correction replaced tolerance classes by the two modes), and C (the command's pid alone
+does not cover the reproduced case: through the shell that pid is `cmd.exe`, which dies with the wrapper
+while the command lives, so the orphan search was added).
+
+Suites after the fixes (2026-11-12 01:50, sub-wave 3.1 running in the tree with uncommitted work):
+
+| Suite | Result |
+|---|---|
+| `npm run typecheck` (both configurations) | No error in the lead's paths or caused by a contract change. 9 errors, all in `tests/unit/bodies/*.test.ts` (untracked work in progress of `bodies-ephemeris`) |
+| Unit (`npx vitest run`) | 131 files, 1424 tests: 1404 pass, 10 skipped, 10 fail in 6 files, all other packages' work in progress (`tests/unit/bodies` 2 files that do not compile + 3 tests, `tests/unit/planet-bake` 1, `tests/unit/site-bake` 5, `tests/unit/terrain-render/selection.test.ts` 1). The lead's suites pass: boundaries 93, root configuration 12, mission record 14, frame 14, rules 6, terrain guard 6 |
+| Headless mission | NOT flown again: the tree holds sim-core-v2's uncommitted tick-grid work and the instruction was to derive from the existing records. `npx tsx tools/dev/record-mission-baseline.ts --exact tests/mission/baseline-v1.json` (no flight): all 17 milestones equal, state hash 3f3a131cdd88eba7 |
+| Browser | None run (one GPU slot; nothing of the fixes needed one). The frame-exact proof waits for request lead-3 |
+| `node tools/dev/check-stubs.mjs`, `check-secrets.mjs` | OK (20 allowed uses); OK |
+
