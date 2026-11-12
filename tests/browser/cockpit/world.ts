@@ -276,6 +276,16 @@ export const WORLD_VIEWS: WorldView[] = [
   // through another window on the console.
   { name: 'world-leo-earth-side-window', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, windowBelow: 0.35, fovDeg: 70 }, checks: { maxBlack: 0.3 } },
   { name: 'world-leo-sun-patch-console', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, seat: { yaw: 8, pitch: 2 }, fovDeg: 70 }, checks: {} },
+  // The same orbit from the PILOT'S couch (the centre one, 0.72 m to the commander's right), the head tipped
+  // back a little: both forward windows with the Earth in them over the three displays and the caution
+  // panel, the sun patch across the console. What a first-person cockpit is for: the view the round's list
+  // asks to choose (request cockpit-18 asks for it as the player's default).
+  {
+    name: 'world-leo-pilot-seat',
+    query: 'scene=lowOrbit&roll=180',
+    recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, free: { kind: 'interior', eye: { seat: [0.72, 0, 0] }, look: { seat: [0.72, 2.4, 5] } }, fovDeg: 75 },
+    checks: { maxBlack: 0.3 },
+  },
   // The night side: the sun behind the Earth, nothing toggled: the cabin under its floods at their standby
   // level and its displays (what a player sees who has touched nothing).
   { name: 'world-night-displays-floods', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', seat: { yaw: 20, pitch: -2 }, fovDeg: 70 }, checks: { dark: true, maxBlack: 0.25 } },
@@ -296,5 +306,5 @@ export const WORLD_VIEWS: WorldView[] = [
   },
   // From outside: looking in through a forward window by day (the sun's way in) and on the night side.
   { name: 'world-chase-window-sun', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, free: { kind: 'external', eye: { through: 'sun', from: { display: 0 }, out: 0.9 }, look: { display: 0 } }, fovDeg: 40 }, checks: {} },
-  { name: 'world-chase-window-night', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', lights: true, free: { kind: 'external', eye: { through: 'fwd-left', from: { seat: [0.1, -0.1, 0.3] }, out: 1.0 }, look: { seat: [0.1, -0.1, 0.3] } }, fovDeg: 50 }, checks: { dark: true } },
+  { name: 'world-chase-window-night', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', lights: true, free: { kind: 'external', eye: { through: 'fwd-left', from: { seat: [0.1, -0.1, 0.3] }, out: 0.6 }, look: { seat: [0.1, -0.1, 0.3] } }, fovDeg: 55 }, checks: { dark: true } },
 ];

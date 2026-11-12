@@ -26,6 +26,8 @@ interface AppView {
   lights?: boolean;
   /** The cabin is in the dark apart from its own lamps (a darker picture is right). */
   night?: boolean;
+  /** The view is of a window with the sunlit world in it: the cabin round it is keyed low, as in a photograph. */
+  window?: boolean;
 }
 
 const VIEWS: AppView[] = [
@@ -38,10 +40,9 @@ const VIEWS: AppView[] = [
   { name: 'app-leo-seat-floods', scenario: 'qa-leo', lights: true },
   // On the Moon after touchdown (10-lunar-touchdown-cockpit).
   { name: 'app-lunar-surface-seat', scenario: 'qa-lunar-surface' },
-  // Out of the windows from the seat in orbit: up at the forward windows over the console, and to either side.
-  { name: 'app-leo-windows-forward', scenario: 'qa-leo', yaw: 20, pitch: 38 },
-  { name: 'app-leo-window-left', scenario: 'qa-leo', yaw: -62, pitch: 10 },
-  { name: 'app-leo-window-right', scenario: 'qa-leo', yaw: 88, pitch: 12 },
+  // Out of the window from the seat in orbit: in this scenario's attitude the Earth's limb stands in the
+  // commander's side window (the forward windows look into space).
+  { name: 'app-leo-window-left', scenario: 'qa-leo', yaw: -58, pitch: -12, window: true },
 ];
 
 const lum = (r: number, g: number, b: number): number => 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -115,7 +116,7 @@ for (const v of VIEWS) {
     expect(info.errors.filter((x) => /cockpit/i.test(x))).toEqual([]);
     // The cabin reads: a player who has touched nothing sees the panel, the blankets and the couches. A frame
     // from the seat is neither a black frame nor a burnt-out one.
-    expect(st.median, `${v.name}: the frame's median (0..255)`).toBeGreaterThan(v.night ? 10 : 22);
+    expect(st.median, `${v.name}: the frame's median (0..255)`).toBeGreaterThan(v.night || v.window ? 10 : 22);
     expect(st.black, `${v.name}: share of the frame below 4 / 255`).toBeLessThan(0.25);
     expect(st.clipped, `${v.name}: share of the frame above 250 / 255`).toBeLessThan(0.2);
   });

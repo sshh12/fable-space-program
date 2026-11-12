@@ -101,3 +101,10 @@ Reproduction to build first: the integration lab, `scene=lunarSurface&hud=0&paus
 `setSunInVesselFrame(normalize([-0.5, 0.5, 0.7]))`, the eye 38 cm inside the left side window (the request's
 frame), with the measure of `tests/browser/render-core/shadows.spec.ts` ("a shadow edge at arm's length is
 smooth": row-to-row variation along the edge) taken on the well floor.
+
+## Checked by the cockpit in round 5 (2026-11-12)
+Still open (the maintainer's note above: read, not started), so the lunar view was not re-shot for it. The grain is
+in every sunlit window well of the round's pictures: `out/screens/cockpit/world-leo-earth-side-window.png` (the new
+framing from farther back: both forward windows' wells, the pebbled bright faces at x 760-900, y 190-700 and
+x 1190-1330, y 440-830), `world-leo-pilot-seat.png`, `world-pad-noon-forward-window.png`. The acceptance stays as
+written above: one smooth ramp on the well faces, no isolated dark or bright pixels.
