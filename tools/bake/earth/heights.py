@@ -589,6 +589,25 @@ def repair_spikes(region_id: str) -> dict:
     return report
 
 
+TERRARIUM_CREDIT = ("AWS Terrain Tiles (Terrarium; USGS 3DEP 10 m in Hawai'i), attribution: "
+                    "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")
+
+
+def vertex_spacing_m(region: dict, level: int) -> float:
+    """Vertex spacing (m) of `level` at the region's centre (first shape point)."""
+    from earth import regional
+    la, lo = regmod.shape_points(region)[0]
+    f, x, y, _, _ = cube.dir_to_tile(cube.lat_lon_to_dir(np.radians(la), np.radians(lo)), level)
+    return float(regional.texel_metres(int(f), level, int(x), int(y)))
+
+
+def source_finer_than_parent(region: dict, level: int) -> bool:
+    """True when the region's land source (`sources.height.resolutionM`; absent = finer than every level, as
+    3DEP 10 m is at Ka Lae) samples more finely than the parent level's vertices at the region."""
+    res = region["sources"]["height"].get("resolutionM")
+    return res is None or float(res) < vertex_spacing_m(region, level - 1)
+
+
 def source_land_tiles(region: dict, level: int) -> list[tuple[int, int, int]]:
     """Tiles of a regional level that touch the area where the regional source has weight and hold land (a
     stored interior vertex above sea level: 3DEP; every regional land vertex is at least one quantum above 0)."""
@@ -614,14 +633,18 @@ def layer_manifest(regions: list[dict]) -> dict:
     for reg in regions:
         for L in regmod.levels(reg):
             coverage.setdefault(str(L), []).extend(regmod.coverage_rects(reg, L))
-            source_coverage.setdefault(str(L), []).extend(regmod.tile_set_rects(source_land_tiles(reg, L)))
-        s = ("AWS Terrain Tiles (Terrarium; USGS 3DEP 10 m in Hawai'i), attribution: "
-             "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")
+            if source_finer_than_parent(reg, L):
+                source_coverage.setdefault(str(L), []).extend(regmod.tile_set_rects(source_land_tiles(reg, L)))
+            else:
+                source_coverage.setdefault(str(L), [])
+        s = reg["sources"]["height"].get("credit", TERRARIUM_CREDIT)
         if s not in sources:
             sources.append(s)
     # sourceCoverage (docs/requests/terrain-core-1.md and -4.md, optional, additive): the rectangles of the
     # tiles where a regional level holds data genuinely finer than its parent: tiles that touch the area where
-    # the regional source has non-zero weight AND hold land (3DEP). Sea-only tiles hold the ETOPO 15" sea floor
-    # (~900 m shortest wavelength) and stay in `coverage` only.
+    # the regional source has non-zero weight AND hold land (3DEP, SRTM). Sea-only tiles hold the ETOPO 15" sea
+    # floor (~900 m shortest wavelength) and stay in `coverage` only, and so does every tile of a level whose
+    # parent's vertex spacing is already finer than the land source (ARCHITECTURE 10.2: the parent's procedural
+    # detail continues there; a 30 m source adds nothing at a level whose parent samples every 19 m).
     return {"encoding": "frt1-height", "ext": "hgt", "globalMaxLevel": paths.GLOBAL_MAX_LEVEL,
             "coverage": coverage, "sourceCoverage": source_coverage, "heightScales": scales, "sources": sources}

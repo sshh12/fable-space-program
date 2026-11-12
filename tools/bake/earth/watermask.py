@@ -384,7 +384,8 @@ def layer_manifest(regions: list[dict]) -> dict:
     for reg in regions:
         for L in regmod.levels(reg):
             coverage.setdefault(str(L), []).extend(regmod.coverage_rects(reg, L))
-        s = ("ESA WorldCover 2021 v200 inland water (CC BY 4.0) and the regional height sign (3DEP land, sea floor "
+        land = reg["sources"]["height"].get("landSurvey", "3DEP")
+        s = (f"ESA WorldCover 2021 v200 inland water (CC BY 4.0) and the regional height sign ({land} land, sea floor "
              "on the WorldCover coastline of the ocean)")
         if s not in sources:
             sources.append(s)

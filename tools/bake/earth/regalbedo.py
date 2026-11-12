@@ -82,8 +82,11 @@ def fit(region_id: str) -> dict:
     p = _fit_path(region_id)
     reg = regmod.load(region_id)
     inp = _inputs(region_id)
+    # sparsely vegetated ground: above the vegetation on the Hawaiian volcanoes; every height on a desert coast
+    # (region file `sources.albedo.deshadeFitMinHeightM`)
+    min_h = float(reg["sources"]["albedo"].get("deshadeFitMinHeightM", FIT_MIN_HEIGHT_M))
     key = str({"centre": reg["shape"], "years": reg["sources"]["albedo"]["years"], "v": 4,
-               "sigma": FIT_SIGMA_M, "minHeight": FIT_MIN_HEIGHT_M,
+               "sigma": FIT_SIGMA_M, "minHeight": min_h,
                "inputs": {"height": inp["height"], "albedoGlobal": inp["albedoGlobal"]}})
     if p.is_file():
         f = read_json(p)
@@ -112,7 +115,10 @@ def fit(region_id: str) -> dict:
     land = (HC > 5.0) & (Y > 0.003)
     tm = regional.texel_metres(face, FIT_LEVEL, xs[len(xs) // 2], ys[len(ys) // 2])
     lr = deshade.local_log_ratio(Y, land, sigma_px=FIT_SIGMA_M / tm)
-    sel = land & (HC > FIT_MIN_HEIGHT_M) & (np.hypot(NE, NN) > math.sin(math.radians(2.0))) & (Y < 0.6)
+    sel = land & (HC > min_h) & (np.hypot(NE, NN) > math.sin(math.radians(2.0))) & (Y < 0.6)
+    if int(sel.sum()) < 1000:
+        raise RuntimeError(f"regalbedo {region_id}: only {int(sel.sum())} texels to fit the de-shading on (need 1000); "
+                           "set sources.albedo.deshadeFitMinHeightM in the region file")
     acc = deshade.Accumulator(1)
     acc.add(0, NE[sel], NN[sel], lr[sel])
     a, b = acc.solve(min_n=1000)[0]

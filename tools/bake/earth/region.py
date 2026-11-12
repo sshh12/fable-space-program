@@ -25,8 +25,15 @@ def region_file(region_id: str):
     return paths.REGIONS_DIR / f"{region_id}.json"
 
 
-def list_regions() -> list[str]:
-    return sorted(p.stem for p in paths.REGIONS_DIR.glob(f"{paths.TILESET}-*.json"))
+def list_regions(include_hidden: bool = False) -> list[str]:
+    """Region ids of the tile set. Regions that are staged or half swapped (stage.py) are left out unless asked
+    for: their tiles are not in the live tile set, so no default loop may bake, list, sheet or verify them."""
+    ids = sorted(p.stem for p in paths.REGIONS_DIR.glob(f"{paths.TILESET}-*.json"))
+    if include_hidden:
+        return ids
+    from earth import stage
+    hidden = stage.hidden_regions()
+    return [r for r in ids if r not in hidden]
 
 
 @lru_cache(maxsize=None)

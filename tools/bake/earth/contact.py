@@ -353,6 +353,11 @@ def write_all(region_ids: list[str]) -> None:
     place_sheets()
     raw_tile_sheet()
     cloud_sheet()
+    write_regions(region_ids)
+
+
+def write_regions(region_ids: list[str]) -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
     for r in region_ids:
         regional_sheets(r)
         regional_hillshade(r)

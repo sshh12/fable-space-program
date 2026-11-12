@@ -19,6 +19,12 @@ LOSSLESS_LAYERS = {"albedo"}
 
 
 def tile_file(layer: str, face: int, level: int, x: int, y: int) -> Path:
+    """Path of a tile: in the live tile set, or in the stage of a region that is being baked away from it
+    (stage.py; every read and write of the bake goes through here)."""
+    from earth import stage
+    root = stage.route(face, level, x, y)
+    if root is not None:
+        return root / layer / str(face) / str(level) / str(x) / f"{y}.{EXT[layer]}"
     return layout.tile_file(paths.TILESET, layer, face, level, x, y, EXT[layer])
 
 

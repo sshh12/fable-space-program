@@ -191,15 +191,21 @@ class RegionalHeight:
         component that stays shallower is a lake or pond cut by the grid edge and counts as inland water."""
         p = self._ocean_path()
         if not p.is_file():
-            from earth.worldcover import PX_PER_DEG, WATER
-            a = np.asarray(self.wc.data)
-            water = (a == 0) | (a == WATER)
-            del a
+            from earth.worldcover import PX_PER_DEG
+            a = self.wc.data
             # connectivity of the water OPENED by an OPEN_PX square: pockets that touch the sea only through a
             # channel narrower than OPEN_PX px are not the ocean (on the cliffed lava coasts these are dark rock
             # WorldCover reads as water, and the 9.6 m height grid could not hold the channel anyway)
-            opened = ndimage.binary_opening(water, structure=np.ones((OPEN_PX, OPEN_PX), bool))
-            lab, n = ndimage.label(opened, structure=np.ones((3, 3), int))
+            opened = ndimage.binary_opening(self._water_rows(a, 0, a.shape[0]),
+                                            structure=np.ones((OPEN_PX, OPEN_PX), bool))
+            # labels as uint16 when they fit (half the memory of int32; the same labels): a grid of a billion
+            # pixels (a long coast) would otherwise need 4 GB for them
+            try:
+                lab = np.empty(opened.shape, np.uint16)
+                n = ndimage.label(opened, structure=np.ones((3, 3), int), output=lab)
+            except RuntimeError:
+                log("regsrc: more than 65535 water components: int32 labels")
+                lab, n = ndimage.label(opened, structure=np.ones((3, 3), int))
             del opened
             border = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
             border = border[border > 0]
@@ -208,9 +214,18 @@ class RegionalHeight:
             rng = np.random.default_rng(0)
             marine = []
             for b in border:
-                idx = np.flatnonzero(lab == b)
-                pick = idx[rng.integers(0, idx.size, min(idx.size, 20000))]
-                r, c = np.divmod(pick, lab.shape[1])
+                # 20,000 random pixels of the component, drawn exactly as from its sorted flat indices, without
+                # materialising them (the ocean component can hold most of a billion pixels)
+                per_row = np.concatenate([(lab[r0:r0 + 2048] == b).sum(axis=1) for r0 in range(0, lab.shape[0], 2048)])
+                size = int(per_row.sum())
+                k = rng.integers(0, size, min(size, 20000))
+                csum = np.cumsum(per_row)
+                r = np.searchsorted(csum, k, side="right")
+                c = np.empty_like(r)
+                for row in np.unique(r):
+                    cols = np.flatnonzero(lab[row] == b)
+                    sel = r == row
+                    c[sel] = cols[k[sel] - (csum[row] - per_row[row])]
                 la = (self.wc.r_top - r - 0.5) / PX_PER_DEG
                 lo = (self.wc.c_left + c + 0.5) / PX_PER_DEG
                 if float(self.g.bicubic(la, lo).min()) <= MARINE_DEPTH_M:
@@ -219,19 +234,34 @@ class RegionalHeight:
                 raise ValueError(f"regsrc: no water component on the WorldCover grid border reaches "
                                  f"{MARINE_DEPTH_M:g} m in ETOPO: no ocean to ramp")
             border = np.array(marine)
-            ocean = np.isin(lab, border)
+            ocean = np.empty(lab.shape, bool)
+            for r0 in range(0, lab.shape[0], 2048):
+                ocean[r0:r0 + 2048] = np.isin(lab[r0:r0 + 2048], border)
             del lab
             # its own shore: water within OPEN_PX // 2 px of the opened ocean (what the opening shaved off it)
-            ocean = ndimage.binary_dilation(ocean, structure=np.ones((OPEN_PX, OPEN_PX), bool)) & water
-            inland = int((water & ~ocean).sum())
+            ocean = ndimage.binary_dilation(ocean, structure=np.ones((OPEN_PX, OPEN_PX), bool))
+            inland = 0
+            for r0 in range(0, ocean.shape[0], 2048):
+                w = self._water_rows(a, r0, min(r0 + 2048, ocean.shape[0]))
+                ocean[r0:r0 + 2048] &= w
+                inland += int((w & ~ocean[r0:r0 + 2048]).sum())
             log(f"regsrc: {n} components of the opened WorldCover water, {border.size} of them the ocean; inland "
                 f"water {inland} px ({inland * 82e-6:.2f} km2)")
-            del water
             tmp = p.with_name(p.stem + ".partial.npy")
             np.save(tmp, np.packbits(ocean, axis=1))
             del ocean
             tmp.replace(p)
         self._ocean10 = np.load(p, mmap_mode="r")
+
+    @staticmethod
+    def _water_rows(a, r0: int, r1: int) -> np.ndarray:
+        """WorldCover water (class 80 or no data, i.e. open ocean beyond the land tiles) of rows r0..r1."""
+        from earth.worldcover import WATER
+        out = np.empty((r1 - r0, a.shape[1]), bool)
+        for q0 in range(r0, r1, 2048):
+            blk = np.asarray(a[q0:min(q0 + 2048, r1)])
+            out[q0 - r0:q0 - r0 + blk.shape[0]] = (blk == 0) | (blk == WATER)
+        return out
 
     def _ocean_px(self, iy: np.ndarray, ix: np.ndarray) -> np.ndarray:
         """Ocean bit of WorldCover pixels (row iy, column ix); pixels beyond the grid are open ocean."""

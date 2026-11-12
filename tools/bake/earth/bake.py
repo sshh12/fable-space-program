@@ -22,6 +22,15 @@ skipped on a re-run with the same configuration):
     status      print what is baked and the disk use
     despike     remove needle samples from the stored regional heights of --region (or every region) without
                 their sources, re-derive the coarser regional tiles they reach, rewrite the manifest
+    stage       bake every regional layer of a NEW --region away from the live tile set (stage.py): its tiles go
+                to data/cache/earth/stage/<region>/tiles, the manifest is not touched, and no default step sees
+                the region until it is swapped in
+    swap        move the staged tiles of --region into data/tiles/earth (new directories only), then write the
+                manifest once, atomically
+    pads        resolve the pads of a launch site on the baked tiles of --region (padresolve.py): --site,
+                --nominal, --fixed, --azimuth, --classes; writes data/staged/sites/<site>.pads.json
+    quality     ground-quality material at the pads of --region (groundquality.py): resolution, slope histograms,
+                top-down renders (out/bake/earth/site-bake/)
 
 Runs under the bake venv (data/cache/earth/venv), creating it from requirements.txt when missing.
 """
@@ -60,8 +69,18 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("step", choices=["site", "heights", "albedo", "watermask", "night", "landcover", "clouds",
                                      "globals", "region", "all", "manifest", "contact", "recovery", "cleanup",
-                                     "status", "despike"])
-    ap.add_argument("--region", help="region id (data/defs/regions/<id>.json); default: every earth-* region")
+                                     "status", "despike", "stage", "swap", "pads", "quality"])
+    ap.add_argument("--region", help="region id (data/defs/regions/<id>.json); default: every earth-* region that "
+                                     "is not staged")
+    # pads / quality (padresolve.py, groundquality.py): the site is named here, no site file is read
+    ap.add_argument("--site", help="pads: site id (output data/staged/sites/<site>.pads.json)")
+    ap.add_argument("--nominal", help="pads: nominal location 'latDeg,lonDeg' the complex is resolved around")
+    ap.add_argument("--fixed", action="append", default=[],
+                    help="pads: a pad that stays where it is, 'id:class:latDeg:lonDeg:elevationM' (repeatable)")
+    ap.add_argument("--azimuth", type=float, default=90.0, help="pads: pad azimuth, deg (LC-1: 90)")
+    ap.add_argument("--search-km", type=float, help="pads: search radius (default: the region's siteResolution)")
+    ap.add_argument("--classes", default="heavy=4:2500,medium=6:1500,light=6:1000",
+                    help="pads: class=count:spacingM,... (ARCHITECTURE 9.3)")
     a = ap.parse_args(argv)
     set_below_normal()
     regions = [a.region] if a.region else regmod.list_regions()
@@ -73,7 +92,7 @@ def main(argv: list[str]) -> int:
         pipeline.status()
         return 0
     log(f"bake {a.step} (regions: {', '.join(regions) or 'none'}); {disk_report()}")
-    pipeline.run(a.step, regions, region_given=bool(a.region))
+    pipeline.run(a.step, regions, region_given=bool(a.region), args=a)
     log(f"bake {a.step} done; {disk_report()}")
     return 0
 

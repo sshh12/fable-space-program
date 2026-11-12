@@ -5,7 +5,37 @@ from earth import paths, region as regmod
 from earth.util import disk_report, log
 
 
-def run(step: str, regions: list[str], region_given: bool = False) -> None:
+def run(step: str, regions: list[str], region_given: bool = False, args=None) -> None:
+    if step in ("stage", "swap", "pads", "quality") and not region_given:
+        raise ValueError(f"bake.py {step} needs --region")
+    if step == "stage":
+        # a new region baked away from the live tile set (stage.py); the manifest is not touched
+        from earth import albedo, heights, landcover, stage, watermask
+        from earth.util import dir_size
+        for r in regions:
+            stage.begin(r)
+            heights.bake_region(r)
+            watermask.bake_region(r)
+            albedo.bake_region(r)
+            landcover.bake_region(r)
+            b, n = dir_size(stage.tiles_root(r))
+            log(f"stage {r}: {n} tiles, {b / 1e9:.2f} GB under {stage.tiles_root(r)}")
+        return
+    if step == "swap":
+        from earth import stage
+        for r in regions:
+            log(f"swap {r}: {stage.swap(r)}")
+        return
+    if step == "pads":
+        from earth import padresolve
+        for r in regions:
+            padresolve.run(r, args)
+        return
+    if step == "quality":
+        from earth import groundquality
+        for r in regions:
+            groundquality.run(r, args)
+        return
     if step == "site":
         from earth import site
         for r in regions:
@@ -89,7 +119,10 @@ def run(step: str, regions: list[str], region_given: bool = False) -> None:
         return
     if step == "contact":
         from earth import contact
-        contact.write_all(regmod.list_regions())
+        if region_given:
+            contact.write_regions(regions)          # the regional sheets of the named region only (staged or live)
+        else:
+            contact.write_all(regmod.list_regions())
         return
     if step == "recovery":
         from earth import recovery

@@ -52,6 +52,20 @@ def layer_status() -> dict[str, bool]:
     return out
 
 
+def region_attribution(region: dict, layer: str | None = None) -> list[str]:
+    """Attribution lines a region adds for its own sources (`sources.<layer>.attribution` in the region file),
+    for one layer or for all of them."""
+    out = []
+    for name, src in region.get("sources", {}).items():
+        if layer is None or name == layer:
+            out += [a for a in src.get("attribution", []) if a not in out]
+    return out
+
+
+def layer_dict(layer: str, regions: list[dict]) -> dict:
+    return _layer_dict(layer, regions)
+
+
 def _layer_dict(layer: str, regions: list[dict]) -> dict:
     if layer == "height":
         from earth import heights
@@ -82,15 +96,19 @@ def globals_dict() -> dict:
     return g
 
 
-def build_hash(layer: str, scope: str | None = None) -> str:
+def build_hash(layer: str, scope: str | None = None, include: set[str] | frozenset = frozenset()) -> str:
     """Hash of the resumability records of a layer (unit markers hold the hash of the configuration they
     were baked with, plus the per-layer .cfg / .done markers). It changes whenever tiles of the layer are
     re-baked with a different configuration; stored as the layer's `build` field, it makes the manifest's
     contentHash (computed from the manifest body by layout.write_manifest) change too, as the contract's
     cache busting requires. Dependent steps put it into their own configuration so that they re-run when an
-    input layer was re-baked. scope: None = all records, "global" = the global levels only, or a region id."""
+    input layer was re-baked. scope: None = all records, "global" = the global levels only, or a region id.
+    With scope None the records of regions that are staged or half swapped (stage.py) are left out, except those
+    in `include`: they are not part of the live tile set until the swap writes the manifest."""
+    from earth import stage
     h = hashlib.sha256()
     prefix = f"{paths.TILESET}-"
+    hidden = [r for r in stage.hidden_regions() if r not in include] if scope is None else []
     for p in sorted(paths.STATE.rglob("*")):
         rel = p.relative_to(paths.STATE).as_posix()
         top = rel.split("/")[0]
@@ -99,6 +117,8 @@ def build_hash(layer: str, scope: str | None = None) -> str:
         if scope == "global" and f"-{prefix}" in top:
             continue
         if scope not in (None, "global") and f"-{scope}" not in top:
+            continue
+        if any(f"-{r}" in top for r in hidden):
             continue
         h.update(rel.encode("utf-8"))
         h.update(p.read_bytes())
@@ -115,6 +135,8 @@ def write_all(region_ids: list[str], only: str | None = None) -> None:
         attribution = list(ATTRIBUTION[layer])
         if layer == "watermask":
             attribution = attribution[:1] + (attribution[1:] if regs else [])
+        for reg in regs:
+            attribution += [a for a in region_attribution(reg, layer) if a not in attribution]
         entry = _layer_dict(layer, regs)
         entry["build"] = build_hash(layer)
         layout.merge_layer(paths.TILESET, paths.RADIUS, layer, entry,
