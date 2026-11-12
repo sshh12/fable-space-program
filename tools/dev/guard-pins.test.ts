@@ -8,14 +8,20 @@
  *   tests/unit/sim-vessel/trajectory-fixtures/*    the six flights of the per-vessel step
  *   tests/mission/reference-v1-aligned.json        the ascent of the v1 clock from the tick-aligned start
  *   tests/mission/controls-v1.json                 four flights of the unmodified v1 code with shifted starts
+ *   tests/mission/baseline-v1.json                 the mission record of the v1 code: the reference of the ENVELOPE
  *   tests/unit/sim-vessel/corpus/*.bin             vessel blobs as earlier builds wrote them (only ever added)
+ *
+ * Not pinned, on purpose: tests/mission/golden.json (re-baselined behind a guard at the steps MIGRATION_V2
+ * principle 5 names) and the terrain guard's two files (the lead re-records them when pads are added; they
+ * are in the lead's path and their own test compares them with the tiles).
  *
  * Text files are hashed with LF line endings (what the repository stores), blobs as their bytes. A blob in
  * the corpus that has no pin fails as well: adding one is adding a pin.
  *
  * Last recorded: the trajectory guard with the tick-pure rule (lead decision D1 of the sim-core-v2 review);
  * the corpus gained its version 3 blobs in the same change. The six fixtures, the reference and the
- * controls are as first recorded.
+ * controls are as first recorded. The mission baseline was pinned by the lead at the review of this file
+ * (2026-11-12), as recorded in 431930f.
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -30,6 +36,7 @@ export const GUARD_PINS: Readonly<Record<string, string>> = {
   'tests/mission/trajectory-guard.json': 'e9ac71ad733dbc0f1352b741c3124fcf8545ed4f1dc82d4cf9247a63ad751274',
   'tests/mission/reference-v1-aligned.json': 'b6a5e00d809f679d7018eec875bfcb5f60dff7be2057847acdb7dad770a5e640',
   'tests/mission/controls-v1.json': '7582dcb1408e410a1e11b297a10aeef5effda965f27eb5ad9cc69885107ce49f',
+  'tests/mission/baseline-v1.json': '4e77752a47a08e743e39e6592c13d2ee671a3968ae4f69156461ce383b342932',
   'tests/unit/sim-vessel/trajectory-fixtures/ascent.json': 'e2139f9227cf88f0abc949867155d604277511f77844eb9c86fa481abf292f25',
   'tests/unit/sim-vessel/trajectory-fixtures/entry.json': 'cd8934642aa3f2d4d2115e9b129f84e820f6615f27625c5b40a8ecbcb5152634',
   'tests/unit/sim-vessel/trajectory-fixtures/lunar-ascent.json': '35763b3cbb4b7afa6d95916020a750a9f9b677f442cec9114fc8b58e2ff7f4d9',
@@ -78,7 +85,7 @@ describe('recorded files are what was recorded', () => {
 
   it('the guard, the six fixtures, the reference, the controls and every blob of the corpus are pinned', () => {
     const pinned = Object.keys(GUARD_PINS);
-    for (const file of ['tests/mission/trajectory-guard.json', 'tests/mission/reference-v1-aligned.json', 'tests/mission/controls-v1.json']) expect(pinned).toContain(file);
+    for (const file of ['tests/mission/trajectory-guard.json', 'tests/mission/reference-v1-aligned.json', 'tests/mission/controls-v1.json', 'tests/mission/baseline-v1.json']) expect(pinned).toContain(file);
     const fixtures = fs.readdirSync(path.join(repoRoot, 'tests/unit/sim-vessel/trajectory-fixtures')).filter((f) => f.endsWith('.json'));
     expect(fixtures).toHaveLength(6);
     for (const f of fixtures) expect(pinned, WHO).toContain(`tests/unit/sim-vessel/trajectory-fixtures/${f}`);
