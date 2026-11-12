@@ -258,7 +258,9 @@ fn jetSample(inst: PlumeInstance, pos: vec3f, dir: vec3f, re: f32, shape: vec4f,
   // expansion they ride with the gas. They thin out along the jet.
   let halo = inst.light.y;
   let rrS = rr - 0.45 * big * grow * g.rb;
-  let sig = 0.05 * re + 0.6 * g.mixing + 0.12 * max(g.rb - re, 0.0);
+  // (Dense smoke has a surface: the column of a solid motor ends within a fraction of its mixing layer, on
+  // the outline its eddies give it. With the soft edge of a thin haze it was an out-of-focus cone.)
+  let sig = (0.05 * re + 0.6 * g.mixing + 0.12 * max(g.rb - re, 0.0)) * mix(1.0, 0.3, saturate(inst.smoke.w / 3.0));
   let ragged = 1.0 - smoothstep(g.rb - 1.5 * sig, g.rb + 1.5 * sig, rrS);
   let lump = mix(1.0, 0.3 + 1.4 * n.g, turb) * mix(1.0, 0.3 + 1.4 * n3.g, grow);
   let along = exp(-xc * inst.light.z);

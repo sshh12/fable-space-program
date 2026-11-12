@@ -21,7 +21,7 @@ import type { EmitterDesc } from './particles';
 export const MAX_CANOPIES = 12;
 const INST_FLOATS = 40;
 const STYLE_FLOATS = 32;
-const MAX_LINES = 1024;
+const MAX_LINES = 2048;
 const LINE_FLOATS = 12;
 type StyleName = 'drogue' | 'main';
 
@@ -644,12 +644,12 @@ export class ChuteSystem {
           const span = v3.sub(p.confluence, at);
           const len = v3.len(span);
           const side = v3.normalize(v3.add(v3.scale(p.X, Math.cos(th + 1.3 * h(1))), v3.scale(p.Z, Math.sin(th + 1.3 * h(1)))));
-          const bow = len * (0.12 + 0.28 * h(2));
+          const bow = len * (0.05 + 0.12 * h(2));
           const ctrl = v3.add(v3.addScaled(v3.addScaled(at, span, 0.45 + 0.2 * h(3)), side, bow * (0.6 + 0.4 * Math.sin(sway))), v3.scale(p.slackDown, 0.25 * bow));
           const curve = (u: number): Vec3 => v3.add(v3.add(v3.scale(at, (1 - u) * (1 - u)), v3.scale(ctrl, 2 * u * (1 - u))), v3.scale(p.confluence, u * u));
           let prevPt = at;
-          for (let k = 1; k <= 4; k++) {
-            const pt = curve(k / 4);
+          for (let k = 1; k <= 8; k++) {
+            const pt = curve(k / 8);
             addLine(prevPt, pt, s.def.lineWidth, p.fade * (p.lineFade ?? 1), lineColor);
             prevPt = pt;
           }
