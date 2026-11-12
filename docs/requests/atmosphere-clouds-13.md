@@ -91,3 +91,12 @@ fresh load, `leo-day` 0.028 % of the pixels different by at most 7 levels in bot
 atmosphere-clouds-12). The capture is still refused while tiles stream in: that is asked at the end of the
 lead-in and after the frames, as before. The terrain's file is untouched; whether its `isIdle` should call
 the moment after its own reset idle is the terrain's to decide and no longer matters to a capture.
+
+## Verified from this side (atmosphere-clouds, 2026-11-12 22:15 UTC, the tree at 3290eab)
+
+`tests/browser/atmosphere/exact.spec.ts`, 4 passed. The integration lab's low-orbit page with every package,
+four captures (one again on the same page after 91 animated frames, two fresh loads): the cloud buffers the
+same to the bit, the picture the same to the bit (max 0), EV100 the same, every capture idle after one
+lead-in round. Five more captures of that page and five with `&features=terrain,atmosphere`: cloud buffers
+and scene depth identical in all. The numbers are in request core-4.
+Nothing more is needed from the terrain for the clouds: its depth during the frames of a capture was the same in every capture measured.

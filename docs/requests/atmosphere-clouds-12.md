@@ -94,3 +94,12 @@ before the last restart (3290eab). The second run (out/core-support/batch12.log,
 So with the features restarted the low-orbit page differs between captures in 0.028 % of its pixels by at
 most 7 levels: what is left of core-4 is that. `leo-day` is still `exact: false` in my spec; flip it with
 your part. The app's half (`timedFeature`) is request `core-5`, the lead's.
+
+## Verified from this side (atmosphere-clouds, 2026-11-12 22:15 UTC, the tree at 3290eab)
+
+`tests/browser/atmosphere/exact.spec.ts`, 4 passed. The integration lab's low-orbit page with every package,
+four captures (one again on the same page after 91 animated frames, two fresh loads): the cloud buffers the
+same to the bit, the picture the same to the bit (max 0), EV100 the same, every capture idle after one
+lead-in round. Five more captures of that page and five with `&features=terrain,atmosphere`: cloud buffers
+and scene depth identical in all. The numbers are in request core-4.
+The lab's half is done as far as this package can see. The app's half (request core-5) is open: until then a capture in the app restarts no feature.

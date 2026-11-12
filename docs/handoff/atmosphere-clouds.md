@@ -11,15 +11,19 @@ done, what was not and why, measured numbers, perf; where it differs from sectio
 state). Section 11 is round 1, sections 1 - 10 describe the package as round 1 left it. Two things are NOT
 met and are stated first:
 
-- **The clouds are not yet photoreal in every view.** Cumulus from the pad, a cloud sea from above, the
-  day side from low orbit and the low-sun views now read as clouds (section 11), but a deck seen from just
-  under its base is smooth painted lobes, cloud seen into a setting sun is one warm tan, and from orbit
-  the fields are popcorn of one size with soft edges and soft shadows.
-- **The atmosphere budget line could not be confirmed as a p99.** Its medians are 0.36 - 0.59 ms (budget
-  0.8 / 0.9); the p99 of the median window was inside the budget in 15 of 16 rows of the last run and at
-  0.93 ms in one, and in an earlier run on a loaded machine three rows read 1.3 - 4.1 ms. The excess is
-  always a single spike of 0.2 - 0.4 ms (quiet) or milliseconds (loaded) in one pass, with nothing of the
-  package's own behind it (section 5, "the composite spike"). The lead has to re-measure on a quiet machine.
+- **The clouds are not yet photoreal in every view.** Round 2 took out the comb of streaks under a low sun,
+  gave the fields seen from orbit cells of two sizes with outlines and shadows, the cumulus heads and the
+  decks cells, and made the night side dark. Still not there (section 12, "Not fixed"): cloud edges at 1:1
+  from the pad and on the ascent are soft, far banks and veils are sheets, clouds against the sun are not
+  silhouettes with bright rims, the inside of a cloud is a gradient, the twilight sky is lavender, and the
+  planet still dims as it recedes (clouds on a disc of 48 px carry half the light they carry at 550 px).
+- **The atmosphere budget line is not confirmed as a p99.** Its medians are 0.23 - 0.59 ms (budget 0.8 /
+  0.9); the p99 of the median window is inside in 14 of 16 rows of the last run and at 0.807 and 0.826 ms
+  against 0.8 in two (the pad and the ground under cumulus, quality 1), so `atmosphere.perf.spec.ts` FAILS
+  on its first assertion. The excess is a single spike of 0.2 - 0.3 ms in the composite pass in one or two
+  frames of 160, with nothing of the package's own behind it (section 5, "the composite spike"; it was
+  0.869 at the pad in round 1). The lead has to re-measure on a quiet machine. The cloud line is met in
+  every row at both quality scales, at quality 0.7 without margin (0.898 of 0.9).
 
 ## 1. Where things are
 
@@ -514,68 +518,109 @@ or as enlarged crops next to the photographs of `out/qa/ref/` named in the criti
 - Lab: `&ap=key.i:value` overrides one component of a vector tunable. Specs: `integrated.spec.ts` (the real
   app under the drogues, the integration lab at four scenes: pictures and where the camera looks),
   `explore.spec.ts` takes `before` (JavaScript run before a scene settles).
+- **What the round's cost was traded against** (all in `clouds.ts` / `shaders/clouds.ts`, each with its
+  reason in a comment): one mesoscale lookup per column; three cone samples towards the sun inside a layer
+  (`coneStride`); steps up to twice as long where a pixel is wider than 300 m - 1 km (`wideStep`); under a
+  low sun the shadow map's long step count with a third of its lines per frame (`rounds` 3); half the shadow
+  steps where a half-resolution pixel covers more than four texels of the map (`shadowCoarse`, with
+  hysteresis; the switch re-marches the map); the airglow is integrated only in frames whose exposure can
+  show it (`airglowShows`). Below a quality scale of 0.85 (the governor's lever): the shadow map over twice
+  as many frames, no finest erosion octave at the eye (`detailEye`), the light's normal without erosion.
+  Two more savings at that scale (two samples away from the sun, two slope directions) changed the mean
+  luminance from the ground by 8 % and were taken out again.
 
 ### Frame-exact captures and start-up (request core-4, NOTICE-core-5)
 
 - `AtmosphereFeature.resetTemporal()` (the core calls it at every restart of the temporal sequences):
   drops the cloud radiance and geometry history, re-marches the whole shadow map in the next frame with its
   extent, its ratio along v, its coarse step count and its anchor chosen from the scene as on a fresh page
-  (all four have hysteresis), clears the light-change detection and snaps the cloud clock to simulation
-  time. `CloudSystem.resetTemporal(cloudTime)` with a time (the lab's `__atmo.resetTemporal()`: clock at 0)
-  does the same and sets the clock.
+  (all four have hysteresis), clears the light-change detection and sets the cloud clock to 0. That is
+  where the clock stands when the clouds of a freshly loaded page first draw (the coverage map loads after
+  the first frames; from then on the clock counts simulation time, rate-limited): a capture shows the
+  weather a fresh page shows, and the lab's `__atmo.resetTemporal()` does the same.
 - The march sequence (sub-pixel ray position, golden-ratio step phase) and the shadow map's refresh phase
   (rounds of 16, 32, 48 or 96 frames) run on `coreOf(ctx).sequenceIndex()`. `frameIndex & 3` (checkerboard
   phase, light-change slot) and `& 1` (history parity) stay on the frame index.
-- Proof: `tests/browser/atmosphere/exact.spec.ts` (three views - low orbit by day, low orbit towards a low
-  sun, cumulus from the pad - each captured four times: again on the same page after 91 animated frames with
-  the camera and the sun somewhere else, and on two fresh loads; compared bit for bit): browser run queued when this was written (commit f02a304); see the request for the result.
+- Proof in this package's lab: `tests/browser/atmosphere/exact.spec.ts` (three views - low orbit by day,
+  low orbit towards a low sun, cumulus from the pad - each captured four times: again on the same page
+  after 91 animated frames with the camera and the sun somewhere else, and on two fresh loads; compared bit
+  for bit): maximum difference 0 in all nine comparisons (the run of the final code).
+- **With every package the acceptance was reached only after two things outside the package were changed,
+  both found in this round, filed, and done by the shared-code maintainer; a third is open (the app):**
+  1. The integration lab and the app hand the core WRAPPERS of the features (`guardFeature`,
+     `timedFeature`) that had no `resetTemporal`: the core's call never reached a feature on those pages,
+     and the residue the maintainer measured on the lab's low-orbit page (0.7 - 1.7 % of the pixels by up
+     to 13 levels between two captures of one page, sometimes between fresh loads) was the clouds' history
+     running on through the lead-in. Found by reading back what the cloud passes work with (with the
+     terrain on the page the cloud buffers of a second capture differ after one frame while the scene depth
+     is the same; the atmosphere alone is the same to the bit). Request `atmosphere-clouds-12`: the lab's
+     wrapper was fixed by the maintainer within the hour (d637112); the app's is the lead's file (request
+     `core-5`, open).
+  2. With the call forwarded, the terrain is busy right after its own `resetTemporal`, so the core returns
+     every capture of a page with the terrain as not idle and no picture can be taken. Request
+     `atmosphere-clouds-13`: the core asks who is busy before the last restart now (3290eab).
+  The test of that page: `tests/browser/atmosphere/exactIntegrated.ts`, run from
+  `exact.spec.ts` (the lab's `leo-day` page four times: the cloud buffers to the bit, the exposure, the
+  picture inside the floor of the reference manifest). It skips itself, naming the request, while another
+  feature is busy where the frames of a capture begin, and runs as soon as none is.
+  It skipped itself while request 13 was open and ran after the maintainer's change of the core (3290eab): the cloud buffers identical in all four captures, the picture identical to the bit (max 0), EV100 15.023396782498619 in all; ten more captures (five of that page, five with the terrain and the atmosphere alone) had the same cloud buffers and scene depth. So core-4's acceptance is reached on the lab. NOT in the app: its wrapper still drops the call (request `core-5`, the lead's file).
+  The flag
+  `'leo-day': exact` in the maintainer's `tests/browser/integration/exact.spec.ts` was not touched.
+- For diagnosis: `CloudSystem.readShadowMaps()` (the shadow map as marched and as published, the marched
+  quarter before the resolve) and `AtmosphereDebug.uniformBlock()`.
 - `init` is async and ends in `await core.shaders.warm([...])` over every tracked pipeline of the package
   (march, tile march, composites, the five table passes, the eight cloud passes); no forcing `get()` is left.
 - `AtmosphereFeature.status()` is there for the app's loading screen (the app does not show it yet).
+- Known and left alone: the cloud clock is not a function of simulation time alone. It starts at 0 when
+  the clouds first draw, except on a page whose coverage map and noise are ready in the very first frame,
+  where it starts at the simulation time (`advanceCloudClock` with `lastUt` null). The integration tests
+  read the clock from the feature for that reason (`cloudClock` in tests/browser/integration/helpers.ts).
+  Making it one or the other everywhere moves the weather of every scene by a fixed longitude, so it was
+  not done in a fix round.
 
 ### Measured in round 2 (functional suite of the final state, 2026-11-12)
 
-Functional suite: 57 passed, 1 failed in the last full run; the failure was the quality-scale test with two lighting savings at a lowered quality scale that changed the mean luminance from the ground by 8 %, taken out again since (re-run queued). Unit: 136 (atmosphere and boundaries). Numbers of that run:
+Functional suite on the final shader code: 60 passed, 1 skipped (the explore tool), none failed; afterwards `screens.spec.ts` and `exact.spec.ts` were run again with the changes that followed (the settled exposure, the cloud clock at a restart, the test of the integrated page): 6 and 4 passed. Unit: 136 (atmosphere and boundaries). Numbers of the suite:
 
 | Check | Round 1 | Round 2 |
 |---|---|---|
 | Share of the sky a map cover of 0.4 covers (16 places, straight up) | 0.465 | 0.481 (band 0.3 - 0.5) |
 | Overcast from 25 km, luminance at sun 30 / 10 / 3 deg over 60 deg | 0.722 / 0.370 / 0.089 | 0.694 / 0.337 / 0.088 |
-| Sunset under cumulus: sunlit cloud R/B, shade R/B, sky overhead R/B | 3.74, 1.55, 0.50 | 4.86, 1.52, 0.45 |
+| Sunset under cumulus: sunlit cloud R/B, shade R/B, sky overhead R/B | 3.74, 1.55, 0.50 | 4.52, 1.60, 0.45 |
 | Isolated dark pixels (60,000 km, crescent, Moon's distance, wide) | 0 / 0 / 2 / 0 | 0 / 0 / 0 / 0 |
-| 60,000 km: correlation of opacity with map cover; opacity by cover bin | 0.913; 0.08 .. 0.92 | 0.934; 0.07, 0.17, 0.30, 0.52, 0.75, 0.93 |
-| Lit quad under an overcast deck / clear | 0.16 | 0.131 (bounds 0.1 - 0.3) |
+| 60,000 km: correlation of opacity with map cover; opacity by cover bin | 0.913; 0.08 .. 0.92 | 0.931; 0.07, 0.18, 0.30, 0.51, 0.75, 0.93 |
+| Lit quad under an overcast deck / clear | 0.16 | 0.132 (bounds 0.1 - 0.3) |
 | Broken layer: quad behind the cloud / in the gap / in front of the cloud | 0.002 / 0.86 / 0.837 (fails) | 0.000 / 0.882 / 0.970 |
-| 50 km: transparent against opaque, bright quad, per channel | luminance 1.027; red -12 %, blue +29 % | +2.9 / +2.7 / +2.3 % |
-| Night limb, moon down: band; brightest of 15 probes of the night side | band 3.6e-3 cd/m^2; surface brighter than the band (critique) | 3.4e-3 cd/m^2; 0.13 of the band |
+| 50 km: transparent against opaque, bright quad, per channel | luminance 1.027; red -12 %, blue +29 % | +2.9 / +2.7 / +2.3 % (dark quad -3.8 / -3.6 / -3.2 %) |
+| Night limb, moon down: band; brightest of 15 probes of the night side | band 3.6e-3 cd/m^2; surface brighter than the band (critique) | 3.6e-3 cd/m^2; 0.12 of the band |
 | Night side, moon up: brightest cloud probe; against the darkest | not lit by the moon | 3.3e-2 cd/m^2, rgb 1.10 : 1 : 0.89; 51 x |
-| Quality scale 1 -> 0.7, mean cloud luminance (ground, above a deck, orbit) | -0.99 / -2.54 / - % | re-run queued (-1.1 / -1.5 / +0.2 % before the last cost changes) |
-| Animated 1440p against deterministic, ten views | within 1.7 % | within 1.3 % |
+| Quality scale 1 -> 0.7, mean cloud luminance (ground, above a deck, orbit) | -0.99 / -2.54 / - % | -0.70 / +2.55 / -0.57 % (bound 3 %) |
+| Animated 1440p against deterministic, ten views | within 1.7 % | within 0.7 % |
 | Thinnest extinction the tunables accept: mean cloud transmittance of an overcast | 0.022 | 0.027 (bound 0.03) |
-| Twilight, anti-solar sky: arch rgb; above it | 46.4, 40.6, 66.1; 40.5, 41.8, 78.8 | unchanged |
+| Twilight, anti-solar sky: arch rgb; above it | 46.4, 40.6, 66.1; 40.5, 41.8, 78.8 | 46.5, 40.6, 66.1; 40.5, 41.9, 78.8 (unchanged: item 17 is not fixed) |
 | The planet as a Lambert sphere (lab, flux over E (R/d)^2 Phi): 547 px at phase 20 / 58 / 97; 48 px; 16 px | 0.39 / 0.34 / 0.29; 0.22; 0.20 | 0.44 / 0.39 / 0.35; 0.23; 0.22 |
 
 ### Perf, round 2
 
 `atmosphere.perf.spec.ts`, 1440p, attribution mode, 7 ms ballast, five windows of 160 frames, p99 of the
-median window (p50 in brackets), ms. The gate's one GPU slot was held by this run alone. PROVISIONAL: the table is of the run before the last three changes (finest erosion octave left out below quality 0.85, `resetTemporal`, pipelines created ahead); the final run was queued when this was written.
+median window (p50 in brackets), ms. The gate's one GPU slot was held by this run alone. Run of the final shader code (2026-11-12 16:47 UTC).
 
 | Scene | atmosphere, q 1 | clouds, q 1 | atmosphere, q 0.7 | clouds, q 0.7 |
 |---|---|---|---|---|
-| pad (budget 0.8) | **0.803** (0.562) | 1.073 (0.954) | 0.499 (0.491) | **0.905** (0.797) |
-| ascent 10 km | 0.828 (0.578) | 0.970 (0.897) | 0.754 (0.506) | 0.802 (0.745) |
-| low orbit | 0.457 (0.447) | 0.863 (0.807) | 0.646 (0.392) | 0.794 (0.742) |
-| low orbit, low sun | 0.401 (0.392) | 0.948 (0.876) | 0.364 (0.342) | 0.752 (0.672) |
-| 60,000 km | 0.507 (0.266) | 1.137 (1.048) | 0.237 (0.229) | 0.680 (0.634) |
-| ground, cumulus overhead (0.8) | 0.579 (0.571) | 1.117 (1.031) | 0.501 (0.494) | **0.909** (0.834) |
-| inside a deck | 0.809 (0.578) | 0.697 (0.690) | 0.554 (0.503) | 0.693 (0.685) |
-| above a deck | 0.839 (0.588) | 1.061 (0.976) | 0.763 (0.509) | 0.794 (0.723) |
+| pad (atmosphere budget 0.8) | **0.807** (0.570) | 1.078 (0.966) | 0.724 (0.490) | 0.891 (0.790) |
+| ascent 10 km | 0.814 (0.588) | 0.985 (0.904) | 0.740 (0.505) | 0.800 (0.749) |
+| low orbit | 0.676 (0.454) | 0.870 (0.808) | 0.399 (0.390) | 0.796 (0.744) |
+| low orbit, low sun | 0.647 (0.393) | 0.951 (0.878) | 0.566 (0.341) | 0.753 (0.672) |
+| 60,000 km | 0.275 (0.268) | 1.131 (1.050) | 0.237 (0.229) | 0.681 (0.631) |
+| ground, cumulus overhead (0.8) | **0.826** (0.574) | 1.132 (1.034) | 0.726 (0.493) | 0.898 (0.814) |
+| inside a deck | 0.840 (0.581) | 0.702 (0.695) | 0.738 (0.503) | 0.692 (0.685) |
+| above a deck | 0.822 (0.592) | 1.056 (0.987) | 0.515 (0.509) | 0.782 (0.717) |
 
 Budgets: atmosphere 0.9 (0.8 at the pad and under cumulus), clouds 1.3 at quality 1 and 0.9 at 0.7.
 
-- **Clouds at quality 1**: met in every scene (worst 1.137 of 1.3). The round's model costs more than round 1's (pad 0.71 -> 0.95 p50): the cells and statistics in the column, the eroded normals; taken back where it did not show: one mesoscale lookup, three cone samples for a layer, steps up to twice as long where a pixel is wider than 300 m - 1 km, a third of the shadow lines per frame under a low sun, half the shadow steps from far away.
-- **Clouds at quality 0.7**: NOT met in two scenes by 0.005 and 0.009 ms (pad 0.905, cumulus overhead 0.909 against 0.9) in that run; the finest erosion octave was then left out below quality 0.85 (re-run queued). The shadow pass costs the same whether a 16th or a 32nd of its lines is marched (0.185 ms at the pad either way): it is the million fragments of the full-map draw that are discarded, not the marched ones. Drawing the refreshed texels as points instead would take about 0.1 ms off every frame; not built.
-- **Atmosphere**: p50 0.23 - 0.59 everywhere. The p99 at the pad is 0.803 against 0.8: the composite's median is 0.042 ms and its p99 0.278 (the spike of sections 5 and 11, unchanged: one or two frames in 160). The airglow is no longer integrated in frames whose exposure cannot show it (0.02 ms at the pad).
+- **Clouds at quality 1**: met in every scene (worst 1.132 of 1.3). The round's model costs more than round 1's (pad 0.71 -> 0.97 p50): the cells and statistics in the column, the eroded normals; what was traded for it is listed under "What changed".
+- **Clouds at quality 0.7**: met in every scene, without margin in two: cumulus overhead 0.898 and the pad 0.891 against 0.9 (single windows of the pad row read 0.907 and 0.900; in the run before the last lever the two rows were 0.909 and 0.905). The shadow pass costs the same whether a 16th or a 32nd of its lines is marched (0.185 ms at the pad either way): it is the million fragments of the full-map draw that are discarded, not the marched ones. Drawing the refreshed texels as points instead would take about 0.1 ms off every frame and give the margin back; not built.
+- **Atmosphere**: every median is inside (0.23 - 0.59 ms). The p99 of the median window is NOT inside in two rows at quality 1: the pad 0.807 and cumulus overhead 0.826 against 0.8 (the spec stops at the first). It is the spike of sections 5 and 11, unchanged: the composite's median is 0.042 ms and its p99 0.270 at the pad, one or two frames in 160 (in the run before this one the same two rows read 0.803 and 0.579: the spike falls into the median window or not). Round 1 measured 0.869 at the pad. The airglow is no longer integrated in frames whose exposure cannot show it (0.02 ms at the pad); the second aerial volume (`'atmosphere.aerialTransmittance'`) costs nothing measurable (skyAerial 0.115 ms).
 
 ### The items of the round-1 critiques
 
@@ -609,9 +654,23 @@ Numbers in the first column are those of the critics' "previousItemsStillOpen"; 
   of sky alone has no lit geometry, so the meter fell back on its prior, sunny 16 for the sun outside the
   atmosphere (EV 15.08 for a sky of 225 cd/m^2). Request `atmosphere-clouds-10`, resolved in part by the
   shared-code maintainer during this round (038cf6f: the prior takes the sun through the camera's air). The
-  lab frame went from a mean 8-bit luma of 9.7 to 27: a deep twilight blue instead of near black, still a
-  dark frame. Counting the sky itself in the meter (part 2 of the request) was not built; re-open it with the
-  next mission pictures if the frame is still too dark.
+  lab's frame of sky alone went from a mean 8-bit luma of 9.7 to 27 (a deep twilight blue instead of near
+  black); the app's chase view under the drogues, the sun 1.2 deg up, is a dawn picture with pink cloud
+  tops and a horizon (`integrated-app-drogues.png`, mean luma 128). Counting the sky itself in the meter
+  (part 2 of the request) was not built.
+- **Found in this round's last pictures, not in the mission's: the twilight pictures of the pad were washed
+  out** (`pad-sunset.png`: sky 231, 234, 242, mean luma 196; `pad-anti-twilight.png` 203, 203, 225 at the top
+  against 109, 110, 142 in round 1). Two causes, neither in the sky's radiance (the anti-twilight numbers of
+  `sky.spec.ts` are unchanged). (a) The screenshot spec took its pictures 40 frames after a change of scene,
+  with the meter still stops away from where it settles; `screens.spec.ts` now waits for the exposure to
+  settle wherever it uses the core's own (it logs both: +2.3 deg 12.58 after 40 frames, 11.40 settled;
+  -0.3 deg 10.88, 10.15; -2.5 deg 9.08, 7.50) and asserts that it has. (b) With the sun's light gone the
+  meter exposed for the ground and did not count the sky: request `atmosphere-clouds-11`, resolved by the
+  shared-code maintainer in this round (c9656d7: at twilight the sky's pixels are metered). The pictures
+  now: `pad-sunset-minus-10min.png` (mean luma 115), `pad-sunset.png` (101: a glow on the horizon under a
+  grey-lavender sky, dark ground), `pad-anti-twilight.png` (98: the pink belt over the Earth's shadow),
+  `clouds-ground-sunset.png` (102), `clouds-ground-after-sunset.png` (95), `clouds-under-deck.png` (154).
+- `integrated-chutes.png` (the integration lab's chutes scene, 2.4 km up) is a uniform grey: the camera stands inside a cumulus there (read from the cloud buffer: cloud from 0 m in front of the eye, 0 - 1 % of the view comes through). Correct, and no evidence of anything else.
 - **06 / 07 / 13, Earth from orbit and from afar.** The orbit view gains the crisp cloud fields and the
   shadows above; from afar the planet no longer dims with distance as much (below).
 
@@ -627,6 +686,10 @@ Numbers in the first column are those of the critics' "previousItemsStillOpen"; 
   every channel within 5 % (bright quad +2.9 / +2.7 / +2.3 %; before: red -12 %, blue +29 %).
 - **Filed: `atmosphere-clouds-10`** (render core, exposure of a sky-only frame under a low sun): part 1
   resolved by the maintainer (038cf6f), part 2 not built.
+- **Filed: `atmosphere-clouds-11`** (render core, exposure in twilight: the sky washes out once the sun's
+  light is gone): resolved by the maintainer (c9656d7).
+- **`core-4`** (blocking; frame-exact captures): done, section "Frame-exact captures and start-up" above;
+  answered in the request.
 - Still open from earlier rounds: `-1` and `-2` (non-blocking), `-5` (ocean), `-8` (bake-earth: a coverage
   map with dynamic range inside systems).
 

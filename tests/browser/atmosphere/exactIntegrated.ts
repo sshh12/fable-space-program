@@ -6,10 +6,10 @@
  * are the same to the bit in all four, the exposure is the same, and the picture is inside the floor of the
  * reference manifest (mean 0.02, 99.9th percentile 1 level).
  *
- * The test skips itself while ANOTHER feature is busy right after a restart of the temporal sequences (the
- * core then returns every capture as not idle and no picture can be taken: request atmosphere-clouds-13,
- * the terrain after its own `resetTemporal`), and runs as soon as none is. The atmosphere being busy there
- * is a failure.
+ * The test skips itself while ANOTHER feature is busy where the frames of a capture begin (the core then
+ * returns the capture as not idle and no picture can be taken: so it was with the terrain until the core
+ * asked before the last restart, request atmosphere-clouds-13), and runs as soon as none is. The atmosphere
+ * being busy there is a failure.
  *
  * A function, not a spec: `exact.spec.ts` defines the test with it.
  */
@@ -51,17 +51,17 @@ export function defineIntegratedExact(): void {
     test.setTimeout(900_000);
     await openPage(page, INTEGRATED_LEO_DAY, { timeoutMs: 240_000 });
     await assertDiscreteGpu(page);
-    // Can this page be captured at all? One frame, and who was busy right after the restart before it.
+    // Can this page be captured at all? One frame, and who was busy where it began.
     await page.waitForFunction(() => window.__test!.isIdle(), undefined, { timeout: 240_000 });
     const first = await page.evaluate(async () => {
       const held = await window.__test!.renderExact!(1);
       const info = window.__lab!.renderer.exactInfo();
       return { idle: held.idle, busyBefore: info?.busyBefore ?? [], busyAfter: info?.busyAfter ?? [], rounds: info?.rounds ?? 0 };
     });
-    expect(first.busyBefore, 'the atmosphere is idle right after resetTemporal').not.toContain('atmosphere');
+    expect(first.busyBefore, 'the atmosphere is idle where the frames of a capture begin').not.toContain('atmosphere');
     const others = first.busyBefore.filter((id) => id !== 'atmosphere');
-    if (others.length > 0) console.log(`[exact] integrated leo-day: NOT RUN, ${others.join(', ')} busy right after the restart of a capture (lead-in rounds ${first.rounds}, busy after the frame: ${JSON.stringify(first.busyAfter)}): request atmosphere-clouds-13`);
-    test.skip(others.length > 0, `${others.join(', ')} busy right after the restart of a capture: no capture of this page is idle (request atmosphere-clouds-13)`);
+    if (others.length > 0) console.log(`[exact] integrated leo-day: NOT RUN, ${others.join(', ')} busy where the frames of a capture begin (lead-in rounds ${first.rounds}, busy after the frame: ${JSON.stringify(first.busyAfter)}): request atmosphere-clouds-13`);
+    test.skip(others.length > 0, `${others.join(', ')} busy where the frames of a capture begin: no capture of this page is idle (request atmosphere-clouds-13)`);
     const a = await capture(page);
     // Another history on the same page: the hold ends, 91 animated frames pass, deterministic again.
     await page.evaluate(() => window.__test!.setDeterministic(false));
