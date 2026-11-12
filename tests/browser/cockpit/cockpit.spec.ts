@@ -10,6 +10,7 @@
  *  - the GPU occlusion bake agrees with its CPU reference.
  */
 import type { Page } from '@playwright/test';
+import { DISPLAY_CPU_BUDGET } from '../../../src/render/cockpit/displays';
 import { assertDiscreteGpu, expect, expectNoErrors, openPage, test, waitIdle } from '../harness';
 
 test.use({ viewport: { width: 1280, height: 720 } });
@@ -64,8 +65,16 @@ test('draws the interior from the seat, three displays painting at 15 Hz, no err
   expect(st.lod).toBe('lod0');
   expect(st.layout).toBe('kestrel');
   const rate = st.displays.paints / 3 / (seconds / 1000);
-  expect(rate, 'paints per display per second').toBeGreaterThan(11);
+  // 15 Hz each, unless a paint costs more main-thread time than the displays' budget allows at 15 Hz (round 4,
+  // request app-integration-12: the displays together stay within DISPLAY_CPU_BUDGET of main-thread time
+  // per second, so a page that paints in up to 0.48 ms keeps its 15 Hz and a dearer one is paced down).
+  const costPerPaint = st.displays.cpuMs / Math.max(1, st.displays.paints);
+  const paced = Math.min(15, DISPLAY_CPU_BUDGET / 3 / costPerPaint);
+  console.log(`displays: ${rate.toFixed(1)} paints per display per second, ${costPerPaint.toFixed(2)} ms per paint (the budget allows ${paced.toFixed(1)} Hz), ${((st.displays.cpuMs / (seconds / 1000)) / 60).toFixed(3)} ms per 60 Hz frame`);
+  expect(rate, 'paints per display per second').toBeGreaterThan(0.75 * paced);
   expect(rate).toBeLessThan(16.5);
+  // The brief's CPU line, here too: under 0.4 ms of main-thread time per frame at 60 frames a second.
+  expect(st.displays.cpuMs / (seconds / 1000) / 60, 'display paint + upload + mips, ms of main thread per 60 Hz frame').toBeLessThan(0.4);
   // Staggered: never more than one display per frame except for page changes (none here).
   expect(st.displays.paints).toBeLessThanOrEqual(st.displays.frames);
   const dbg = await page.evaluate(() => window.__cockpit!.debug());

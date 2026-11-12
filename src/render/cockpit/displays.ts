@@ -76,8 +76,12 @@ export class MfdDisplays {
   private readonly mipViews: GPUTextureView[][] = [];
   private readonly mipGroups: GPUBindGroup[][] = [];
   private readonly period: number;
-  /** Main-thread cost of one paint of each display (paint, upload, mips; ms), smoothed: what paces it. */
-  private readonly cost: number[] = [];
+  /**
+   * Main-thread cost of the last few paints of each display (paint, upload, mips; ms). Their MEDIAN paces
+   * the display once there are three: one slow paint (the first of a page: fonts, a cold code path) must
+   * not slow the display down for seconds.
+   */
+  private readonly costs: number[][] = [];
   /** Page each layer shows and the snapshot tick it was painted from. */
   readonly painted: { page: MfdPage | null; tick: number; at: number }[] = [];
   stats: DisplayStats = { paints: 0, cpuMs: 0, paintMs: 0, copyMs: 0, mipMs: 0, frames: 0 };
@@ -128,7 +132,7 @@ export class MfdDisplays {
       this.contexts.push(ctx);
       // Staggered: display i first paints i / count of a period after start.
       this.next.push((i / count) * this.period);
-      this.cost.push(0);
+      this.costs.push([]);
       this.dirty.add(i);
       this.painted.push({ page: null, tick: -1, at: -1 });
       const views: GPUTextureView[] = [];
@@ -164,8 +168,8 @@ export class MfdDisplays {
    * frames of the cabin coming back into view (request app-integration-12).
    *
    * Pacing: a display's slot comes every 1 / rateHz, or later when its page is dear to paint: its paints are
-   * spaced so that their smoothed cost stays within DISPLAY_CPU_BUDGET of main-thread time per second of
-   * wall time. A page that paints in half a millisecond keeps its 15 Hz; one that takes five is painted
+   * spaced so that their typical cost (the median of the last five) stays within DISPLAY_CPU_BUDGET of
+   * main-thread time per second of wall time. A page that paints in half a millisecond keeps its 15 Hz; one that takes five is painted
    * about once a second (and should be made cheaper: the painter is src/ui's).
    */
   update(time: number, snapshot: SimSnapshot, pageOf: (display: number) => MfdPage, encoder: GPUCommandEncoder, visible = true): void {
@@ -192,7 +196,7 @@ export class MfdDisplays {
       this.dirty.delete(i);
       const page = pageOf(i);
       // A page other than the one painted last starts from the plain rate (its cost is not known yet).
-      if (this.painted[i]!.page !== page) this.cost[i] = 0;
+      if (this.painted[i]!.page !== page) this.costs[i]!.length = 0;
       const a = performance.now();
       this.painter.paint(this.contexts[i]!, this.width, this.height, page, snapshot, this.defs);
       const b = performance.now();
@@ -204,9 +208,11 @@ export class MfdDisplays {
       this.stats.mipMs += performance.now() - c;
       this.painted[i] = { page, tick: snapshot.tick, at: time };
       this.stats.paints++;
-      const spent = performance.now() - a;
-      this.cost[i] = this.cost[i]! > 0 ? this.cost[i]! + (spent - this.cost[i]!) * 0.25 : spent;
-      const interval = Math.max(this.period, this.cost[i]! / (DISPLAY_CPU_BUDGET / this.next.length));
+      const recent = this.costs[i]!;
+      recent.push(performance.now() - a);
+      if (recent.length > 5) recent.shift();
+      const typical = recent.length >= 3 ? [...recent].sort((x, y) => x - y)[recent.length >> 1]! : 0;
+      const interval = Math.max(this.period, typical / (DISPLAY_CPU_BUDGET / this.next.length));
       this.next[i] = Math.max(this.next[i]! + interval, time + interval * 0.5);
     }
     this.stats.cpuMs += performance.now() - t0;
