@@ -64,6 +64,14 @@ the log are the hand-off proper.
   8-bit copy so their 4.25 GB downloads are deleted at once). Unit tests: 55 of 55 (19 tile sets through the
   real TerrainProvider, one body at a time).
 
+- 04:20 (12:20 UTC) Mars' first albedo looked wrong (the dark maria blue, not dark: MDIM 2.1 is
+  brightness-normalised, so its luminance had lost the albedo pattern while the colour map's chroma was
+  kept); `albedo.colourMode: detail` makes the colour map set albedo and colour and the mono map add only
+  detail. Re-baked (albedo pass only): Syrtis Major 1.27 x darker than its ring, Hellas bright, polar caps
+  white. Final: verify.py --all 666 checks, 0 failed; vitest 77 of 77 (with PLANET_BAKE_REQUIRE=1); terrain
+  guard 6 of 6; check-stubs, boundaries (93), typecheck of my paths clean. All downloads and intermediates
+  deleted (`data/cache/planets` 89 kB of resume state). Disk 32.4 GB free.
+
 ## 1. What consumers get
 
 ### Tile sets `data/tiles/<id>/` (served at `/tiles/<id>/`), one per solid body
@@ -159,9 +167,11 @@ config change only (levels, sources, landmarks).
    craters brighter); the run-time model draws the rest with complementary weights, so each crater exists
    once (`generic.test.ts`). Mimas also gets Herschel (139 km) at its Gazetteer position (solar-system.md
    5.3 asks for it). Without baked relief these bodies would be smooth ellipsoids with painted craters.
-5. **Mars albedo** = MDIM 2.1 mono 232 m (luminance) x Viking colour 925 m (chroma), the design's own
-   "finer" source, so level 6 (325 m texels) carries real detail; the 925 m colour alone would be a 3x
-   upsample there.
+5. **Mars albedo** = Viking colour 925 m (albedo and colour) x the detail of MDIM 2.1 mono 232 m (the
+   design's own "finer" source, read at 464 m) as a ratio to itself at 925 m (`colourMode: detail`), so level
+   6 (325 m texels) carries real detail; the 925 m colour alone would be a 3x upsample there. (MDIM 2.1 is
+   brightness-normalised: used as luminance it erased the dark maria.) Ganymede uses the other mode
+   (`chroma`: its 1 km mono map keeps the albedo pattern, the 1,435 m colour map gives the chroma).
 6. **Resampling.** Finest height level: the DEM area-filtered over each vertex's local spacing (mips +
    Catmull-Rom + longitude taps), as the Moon's global levels; coarser levels: the existing full-weighting
    pyramid. Albedo: the finest level area-filtered from the source, coarser levels 2 x 2 means in linear
@@ -187,9 +197,9 @@ config change only (levels, sources, landmarks).
 | Landmark tests per baked body catch a flipped or shifted map | 35 landmark tests over the 18 map bodies + Mimas' Herschel, all pass (verify.py; the DEM ones also through the TerrainProvider in `tilesets.test.ts`). Examples: Olympus Mons DEM part 20,014 m at the Gazetteer centre (brief: about 21 km; the summit is 1.3 deg south), Arsia Mons 17,711 m (MEGDR 17,755), Badwater/Hellas -8,189 m (MOLA -8,206), Rachmaninoff -5,287 m (lowest point of Mercury -5.38 km), Maxwell Montes 10,676 m, Occator's Cerealia Facula 2.0 x its ring, Pele/Loki (Loki 1.8 x darker), Tros, Galileo Regio, Valhalla, Xanadu 17 x Belet, Iapetus 6.4 x, Sputnik Planitia 17 x Belton Regio and 1.7 km deep, Herschel 9.3 km deep. Procedural bodies (Deimos, Miranda, Ariel, Umbriel, Titania, Oberon) have no map to flip and no landmark. |
 | Manifests promise only tiles that exist; no zero-length tile | verify.py: for every body and layer, promised = on disk exactly (no missing, no extra, no empty, no stray or `.partial` file); every height tile decodes to finite heights and shares its in-face edges with its neighbours to one quantisation step; every albedo tile is a 256 x 256 opaque RGB WebP |
 | Every tile set loads through the TerrainProvider, lazily, one body at a time | `tests/unit/planet-bake/tilesets.test.ts`: for each of the 25 bodies a provider for that body alone, collision and band-limited heights at 24 points finite and inside the recorded range, residency complete after `ensureLoaded`, only that body's tiles cached; with `PLANET_BAKE_REQUIRE=1` a configured body that is not baked fails. 77 of 77 tests pass (with the generic-model and staged-output tests and the terrain guard) |
-| data/ under 22 GB with raw downloads deleted; >= 25 GB free; sizes per body | Baked data (rule 13d: tiles, sky, staged, defs) 16.8 GB, of which the 25 new tile sets 2.97 GB (planned about 2.8); every raw download and intermediate deleted (`data/cache/planets` holds only the resume state files). Disk 32 GB free at the end. The floor was breached twice for minutes during the bakes (24.2 GB in batch 1 when other packages' data/packs (14 GB) and caches grew under it; 24 GB in batch 3 while Mars' MOLA copy was written): each time the batch stopped or the step finished and its clean-up restored it; since then a bake fetches and prepares one source at a time and big bodies bake in two passes |
+| data/ under 22 GB with raw downloads deleted; >= 25 GB free; sizes per body | Baked data (rule 13d: tiles, sky, staged, defs) 16.65 GB, of which the 25 new tile sets 2.82 GB (planned about 2.8; 147,612 tiles, planned about 148,000); every raw download and intermediate deleted (`data/cache/planets` holds only the resume state files). Disk 32.4 GB free at the end. The floor was breached twice for minutes during the bakes (24.2 GB in batch 1 when other packages' data/packs (14 GB) and caches grew under it; 24 GB in batch 3 while Mars' MOLA copy was written): each time the batch stopped or the step finished and its clean-up restored it; since then a bake fetches and prepares one source at a time and big bodies bake in two passes |
 | Bakes through the gate, at most 6 worker processes | Every bake ran as `node tools/dev/heavy.mjs --class=bake -- ...` (three batches plus the Mars albedo re-run), pools of 6 below-normal workers (`moon/rt.pool`); downloads, verification, sheets and the giants' maps (single processes) under `--class=cpu` |
-| Self-verify | `python -I tools/bake/planet/verify.py --all`: see section 5 for the final count; `npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts`: 77 of 77 |
+| Self-verify | `python -I tools/bake/planet/verify.py --all`: 666 checks, 0 failed (75 s; `out/bake/planet/verify.txt`); `npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts`: 77 of 77 |
 
 Also checked (verify.py): radii of every config = `data/staged/bodies/radii.json` (mean, a, b, c, to 0.5 m);
 every staged terrain section of bodies-ephemeris names the tile set and carries exactly the resolved
@@ -204,7 +214,7 @@ Levels per solar-system.md 5.2 (at most 6 albedo, 5 height). Sizes are the tile 
 |---|---|---|---|---|---|---|---|
 | Mercury | 0-5 | 0-5 | 8,190 / 491.8 | 8,190 / 189.4 | MDIS BDR 166 m mono (read at 332 m), tint | MESSENGER DEM 665 m (sphere 2,439.4 km) | rocky |
 | Venus | 0-4 | 0-4 | 2,046 / 158.2 | 2,046 / 15.3 | Magellan C3-MDIR 2,025 m radar, tint | Magellan topography 4,641 m (sphere 6,051.0 km) | rocky |
-| Mars | 0-5 | 0-6 | 8,190 / 564.8 | 32,766 / MARS_ALBEDO_MB | Viking colour 925 m x MDIM 2.1 232 m detail (read at 464 m) | MGS MOLA 463 m on the IAU ellipsoid | rocky |
+| Mars | 0-5 | 0-6 | 8,190 / 564.8 | 32,766 / 331.5 | Viking colour 925 m x MDIM 2.1 232 m detail (read at 464 m) | MGS MOLA 463 m on the IAU ellipsoid | rocky |
 | Phobos | 0-3 | 0-3 | 510 / 2.3 | 510 / 4.5 | Viking 40 ppd (DLR), tint | ellipsoid 13.0 x 11.4 x 9.1 km | rocky |
 | Deimos | 0-2 | 0-2 | 126 / 1.6 | 126 / 0.1 | procedural | ellipsoid + procedural craters | rocky |
 | Io | 0-3 | 0-5 | 510 / 3.7 | 8,190 / 21.0 | Galileo SSI / Voyager colour 1 km | ellipsoid | rocky |
@@ -227,7 +237,7 @@ Levels per solar-system.md 5.2 (at most 6 albedo, 5 height). Sizes are the tile 
 | Pluto | 0-5 | 0-5 | 8,190 / 285.9 | 8,190 / 40.6 | New Horizons 300 m mono, tint | New Horizons DEM 300 m (sphere 1,188.3 km) | icy |
 | Charon | 0-4 | 0-4 | 2,046 / 56.1 | 2,046 / 8.7 | New Horizons 300 m mono, tint | New Horizons DEM 300 m (sphere 606.0 km) | icy |
 | Ceres | 0-4 | 0-4 | 2,046 / 145.0 | 2,046 / 13.7 | Dawn FC 20 ppd (DLR) | Dawn HAMO DTM 60 ppd (sphere 470.0 km) | rocky |
-| **25 bodies** | | | **41,550 / 1,893** | **106,062 / TOTAL_ALBEDO_MB** | | | |
+| **25 bodies** | | | **41,550 / 1,893** | **106,062 / 914** | | | |
 
 Plus `globals/albedo-lowres.png` per body (15.7 MB in all). Giants (`data/staged/render`, 8.3 MB, tracked):
 Jupiter 4096 x 2048 WebP (NASA PIA07782), Saturn 4096 x 2048 WebP (Cassini ISS, PDS), Uranus and Neptune
@@ -236,7 +246,7 @@ Licences: every USGS / NASA / PDS product public domain; OPAL CC BY 4.0 with its
 the credit line. Nothing from Bjorn Jonsson (no-copy request) or Solar System Scope is used.
 
 Timings (6 workers, other agents' jobs running): small bodies 3-60 s each, Ganymede 3.7 min, Mercury 1.2 +
-3.6 min, Mars 4.3 + 14.7 min, Pluto 1.3 + 1.5 min; downloads at about 60 MB/s from the USGS bucket.
+3.6 min, Mars 4.3 min (height) + 17.6 min (albedo, level 6), Pluto 1.3 + 1.5 min; downloads at about 60 MB/s from the USGS bucket.
 Disk peak of a pass about 5.3 GB (Mercury's 4.25 GB BDR plus its 8-bit half-resolution copy, minutes).
 
 ## 6. Known limits (say plainly)
