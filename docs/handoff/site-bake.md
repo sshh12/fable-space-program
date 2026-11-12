@@ -15,3 +15,20 @@ Status: IN PROGRESS. This file is the running log of the package; the final sect
   bilinear heights = the collision surface, level-12 water mask and land cover), for both sites; (4) region checks
   (`verify.py --region`), hillshades, contact sheets and the Q8 ground-quality note; (5) the swap: tiles moved into
   `data/tiles/earth` (new directories only, by rename), then the manifest written once, atomically.
+- 00:49. Full terrain guard (`TERRAIN_GUARD_FULL=1`, bytes of every file) passes on the tree as found.
+- 00:55. Reconnaissance (Terrarium z12 over the coverage box, 1,496 tiles): the nominal point 19.0 N 57.8 E is 4 km
+  inside Ras Madrakah; the coast runs north-south from the headland to Duqm, the south coast turns west; inland a
+  very flat gravel plain (12-60 m) with hills of 50-110 m on the headland. Region centred on the nominal point.
+- 00:59. Commit 6fcc425 (staging code, region file). Stage bake started (`bake.py stage --region earth-madrakah`,
+  gate class bake, 6 workers). WorldCover grid 43,200 x 30,700 px (3x Ka Lae's): the ocean-connectivity step was
+  rewritten to give identical output in about 4 GB instead of about 13 GB (uint16 labels, row-chunked sampling).
+  572 water components, 1 of them the ocean; 24 km2 inland water; 2,204 Terrarium z14 tiles.
+- 01:10. Pad rule question found on Ka Lae's own tiles (60 m gridded exploration within 45 km of LC-1): with every
+  test of LC-1's rule gated (incl. bare land cover and the open-ocean sector 60-130 deg), NO second pad fits; LC-1
+  itself reaches the bare-ground share exactly (0.80). Flat + dry + clear of the shore: 16 pads within 4.8 km of
+  LC-1; + bare land cover: 16 pads 7-13 km west on the Kahuku lava flows (sector to the east blocked by the
+  island); + ocean sector without land cover: 5 pads. Decision (brief's own words, and its acceptance names only
+  slope and distance): the pad gates are flat, dry, clear of the shore with LC-1's numbers; bare ground and the
+  ocean sector are reported per pad. Section "Pads" has the measured numbers.
+- 01:14. Commit 08b23d2 (pad resolver, ground-quality tool, `verify.py --region`, tests). Swap atomicity test
+  green (2 of 2).
