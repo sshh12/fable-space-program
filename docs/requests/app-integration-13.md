@@ -1,4 +1,4 @@
-Status: open
+Status: open (audio share done in 666a52c: engine voices are built ahead, see "Answer on the audio share"; the sim's share: proposal not implemented, see its answer; the vfx's share open)
 From: app-integration-v1
 Owner path: src/sim/world (the step in which a stage fires or the stack leaves the pad; sim-world-pilot), src/render/vfx (first frame of a plume; vfx), src/audio (engine start; audio)
 Blocking: no   (single frames: they do not move a window's p99, but they are the frames nearest to the 33 ms line)
@@ -87,3 +87,60 @@ unproven. The measurement stands (5.5 ms cold, 0.6-0.7 ms warm for the release s
 and the request stays open for the owner of the session after this package (`session-switch` or
 `island-core`). Since the measurement the release path changed (per-craft stage state, the split over tree
 edges and links): whoever implements the rehearsal should measure again first.
+
+## Answer on the audio share (shared-code maintainer, 666a52c, 2026-11-12): voices built ahead
+
+**Reproduced** in the audio lab (`labs/audio`, the live context): the `update` of the frame
+of an ignition cost 1.0 to 1.4 ms against 0.07 ms otherwise. An engine voice is 39 nodes, and of those the
+20 s delay line of the airborne path alone takes 0.44 ms to create (a 2 s one 0.06 ms; a gain 0.004, a
+biquad 0.011, a wave shaper 0.14).
+
+**Built.** The model lists the silent clusters of the active vessel that can still fire
+(`ModelOutput.standby`, at most `engines.standbyVoices` = 8 in `data/defs/audio/engines.json`) and the graph
+builds their voices ahead: one per `apply`, none in an `apply` that built a sounding voice, the sources not
+started. With its first targets a voice built ahead re-arms its smoothed parameters and starts its sources
+at the seeded offsets, so the frame of the ignition creates no node.
+
+| Frame of the ignition, audio `update`, ms (audio lab) | before | now |
+|---|---|---|
+| booster cluster heard at 120 m (first / second time) | 1.41 / 1.03 | 0.54 / 0.20 |
+| lander engine from the cabin | 1.18 | 0.38 |
+| the whole vehicle, four clusters lighting at once | not measured | 0.31 to 0.50 |
+
+Not measured by me in the app: `tests/browser/app/app.perf.spec.ts` is yours; the audio stage of the
+ignition frames (1.85 ms on the pad, 1.54 ms in lunar orbit in your table) is the number to read again.
+
+**Cost.** A voice standing by holds 20 s of mono delay line (3.8 MB) and about 39 idle nodes; the mission
+vehicle on the pad has six (23 MB). The offline render of 12 s took 0.99 s with six standing against 0.87 s
+without. A voice whose cluster fell silent is disposed after its drain as before and built again a frame
+later (that frame costs the millisecond, away from any event).
+
+**The sound's start, as heard** (your "must not change"). Rendered offline both ways and compared window by
+window (`tests/browser/audio/audio-offline.spec.ts`, "engine voices built ahead sound like voices built when
+they first sound"): the level is the same (gain within 0.5 %, under 0.05 dB), the onset is the same (lag 0
+samples), and the structure-borne path is the same waveform down to the noise floor. The airborne path is
+NOT sample-identical: a residual of 2e-5 to 1.6e-2 of the path's level for the vehicle (the test's stack;
+its bound is 0.05, and 0.005 on the structure-borne path), 6e-2 for the lone lander's hiss in a probe.
+
+Why: the measurements below fit, to three digits, a delay line that is read at a position held in single
+precision and interpolated linearly (Chrome's `DelayNode` as observed; I did not read its source). A
+constant fractional delay is then rounded to a grid whose step depends on where the line's write position
+stands, that is, on the node's age: 1/16 or 1/8 of a sample for a 20 s line. A microtest (two delay lines
+of the same constant delay fed the same white noise, the second created half a second later; 2026-11-12
+15:05, `out/core-support/delay-age.json`):
+
+| line, delay in frames | residual between the two, of the level | what the rounding predicts |
+|---|---|---|
+| 20 s, 14117.29 (rounds to 11/16 on one grid, 6/8 on the other) | 6.05e-2 (largest sample 0.124) | 6.03e-2 (0.125) |
+| 20 s, 14117.6448 (rounds to 0.375 on both) | 0 | 0 |
+| 1 s, 14117.6448 (91/256 against 45/128) | 6.5e-3 | not computed |
+| 1 s, 14117.29 (rounds alike on both) | 0 | 0 |
+| either line, the delay under automation at that moment | 0 | |
+
+The output levels of the two 20 s cases (0.4461 and 0.4209 for noise of 0.577 RMS) are those of linear
+interpolation at the rounded fractions (0.4459 and 0.4208). So no two voices are sample-identical unless
+their delay lines are equally old: a voice built ahead is older than one built at the ignition, and two
+voices built on demand at different moments differ the same way. The shift is at most an eighth of a sample
+(2.6 microseconds); level and onset are untouched. The audio code cannot remove it short of a shorter line.
+
+The sim's and the vfx's shares are theirs; the request stays open for them.

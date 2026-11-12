@@ -1,4 +1,4 @@
-Status: open
+Status: open (the core's half is built and verified: see "Resolution of the core's half"; translunar-earth meets the acceptance, leo-day is captured idle and equally exposed but its clouds differ between captures: request core-4, blocking; the app's hook is src/app's)
 From: lead (lead-baseline-v2, review fix E)
 Owner path: src/render/core (renderer.ts: the temporal sequences; lab/labApp.ts: the labs' window.__test), src/core/testing/testApi.ts (the base test API), src/app/testHooks.ts (the app's window.__test; app-integration)
 Blocking: yes, for recording the reference images of ARCHITECTURE 31.3 (the lead records them on the visually signed-off tree, before sub-wave 3.2); nothing else waits for it
@@ -62,3 +62,61 @@ reset.
 
 The harness side is done (`captureDeterministic` in `tests/browser/harness.ts` calls the hook and refuses a
 page without it; `captureSettled` is the old behaviour for screenshots that are not references).
+
+## Resolution of the core's half (shared-code maintainer, 038cf6f, 06c9167, 85c5c2c)
+
+**What exists.** `window.__test.renderExact(frames)` on every page made with `createLabApp`;
+`CoreRenderer.renderExact(frames, renderFrame)`, `holding`, `exactInfo()`; for features
+`TemporalFeature.resetTemporal?()` (the one way to hear the restart) and `coreOf(ctx).sequenceIndex()` (the
+frames since the sequences last started, for CPU-side sequences); RENDER_API section 13, "Frame-exact
+capture", lists what must reset; NOTICE-core-5 tells the packages. `setDeterministic`, `setPaused`,
+`waitFrames`, `isIdle` and a normal frame are as they were.
+
+**The order, as built** (where it departs from the request's text, and why):
+
+1. Every temporal sequence of the core at its origin (TAA jitter and history, the frame count of the frame
+   uniforms, the blue-noise offset, `frame.realTime`, the shadow cascades' captures and stagger, the emitter
+   hints), every feature's `resetTemporal()`, and ONE step of `frame.frameIndex` (2 to 65 frames, to 16
+   short of a multiple of 64). The frame index is not set to 0: caches are stamped with it and it must stay
+   monotonic. The step is what features without a `resetTemporal` drop their histories by (a failed
+   continuity test); the frame uniforms count from 0.
+2. The exposure: metered from nothing over 16 lead-in frames, each waiting for the histogram of the one
+   before and taking its target at once, then held. Not inside the N frames: the histogram is read back
+   asynchronously, so inside one task no frame can meter. If a feature is not idle after the 16 frames (the
+   step set it to work), the rest of a block of 64 frames is rendered and the metering repeated, up to 8
+   times; from the step to the last frame of the capture the frame index is consecutive.
+3. The sequences start again (no step; the first frame's index is a multiple of 64) and exactly `frames`
+   frames are rendered in one task. `idle` is false when anyone was busy before or after them; such a
+   capture is NOT held (held, the work could never finish), the harness waits for idle and asks again.
+4. Hold, as specified. The governor: deterministic mode already holds the render scale at 1.
+
+**Verified** (one gated run, 2026-11-12 14:58; `tests/browser/render-core/exact.spec.ts`,
+`tests/browser/integration/exact.spec.ts`, and your proof with `BASELINE_TOOLING_PROOF=1`):
+
+| Page | Result |
+|---|---|
+| core lab (`scene=pad&site=moonview`), 32 frames | the same page after another history and a fresh load: max difference 0; EV100 15.529194927028358 three times; one metering |
+| integration lab, translunar, every package, 64 frames | another history and a fresh load: max 0; EV100 15.07810637273619 three times; one metering |
+| your proof, `translunar-earth` | three loads max 0; the next capture clean; the planted pixel row caught |
+| integration lab, low orbit, every package | idle at the first attempt in all three captures (three meterings each: the terrain is at work for 80 to 144 frames after the step), EV100 15.023396782498619 three times; the PICTURES differ: another history mean 0.305 / p99.9 17 / max 54 / 19.1 % of pixels, a fresh load 0.149 / 9 / 86 / 15.6 % |
+| your proof, `leo-day` | three loads max 0, then the next fresh load differs: mean 0.138, p99.9 10, max 45, 15.3 % of pixels: FAILS |
+
+So the acceptance is met for `translunar-earth` and not for `leo-day`. What differs there is the clouds
+(`out/screens/integration/exact-leo-day-same-page.diff.png`: the cloud fields' edges and cell detail, nothing
+visible on the vessel or cloud-free ground). Before this round's last change the low-orbit page could not be
+captured at all (the terrain busy at every attempt, five of five, twice).
+
+**Open, and whose:**
+
+1. The clouds: request `core-4` (atmosphere-clouds, blocking). Their march sequence and shadow rounds run
+   on the absolute frame index (a golden-ratio phase, rounds of 48 or 96 frames), and the atmosphere feature
+   has no `resetTemporal`. Three loads agreeing and a fourth not is what equal frame-index multiples would
+   give; treat a `leo-day` reference recorded before `core-4` as unreliable even if three loads agree.
+2. The terrain: request `core-2` (terrain-render), the addition of 15:10. Not a correctness fault any more:
+   each capture with terrain in view takes three meterings instead of one (128 more frames).
+3. The app: `src/app/testHooks.ts` needs `renderExact: (n) => renderer.renderExact(n, () => <the app's frame
+   at the fixed step>)` and the frame loop must skip its frame while `renderer.holding` (the core refuses
+   `render` during a hold anyway). Not mine.
+4. Other packages: the vehicle has `resetTemporal` (vessel and site). Ocean, vfx, sky and cockpit have
+   none; nothing of theirs differed on these two pages, which show no sea surface near, no plume and no
+   cabin. Checkpoints that do are unproven.
