@@ -119,3 +119,46 @@ pull-push), `procedural` (map-less bodies: `procedural.ts` through `npx tsx`, up
 `data/cache/planets/<id>/work/state.json` and is skipped when unchanged, so an interrupted bake resumes.
 At most 6 worker processes, below-normal priority (`moon/rt.pool`). Adding a body or deepening one is a
 config change only (levels, sources, landmarks).
+
+## 3. Decisions, interpretations and deviations (each within the design; say so if you disagree)
+
+1. **Giants from mission maps, not Solar System Scope.** The brief: "Solar System Scope CC BY 4.0 where no
+   mission map exists". Mission maps exist for all four giants and the rings, and SSS cannot be fetched by
+   our tooling (its server drops non-browser clients; imitating a browser was refused by the permission
+   system and not worked around). Jupiter: Cassini PIA07782 (NASA/JPL/SSI). Saturn: Cassini ISS global
+   colour map (PDS, doi:10.17189/rkkb-6y30). Uranus, Neptune: Hubble OPAL (CC BY 4.0; no openly licensed
+   Voyager global map exists). Rings: Cassini UVIS occultation optical depth (PDS) + NSSDC region albedos.
+2. **Venus cloud tops: not staged.** Not in this brief's list, and no openly licensed global cloud-top map
+   exists (ESA VMC mosaics are under the ESA standard licence; Akatsuki UVI level-3 frames are CC BY
+   compatible but are single-epoch half-globes that would need compositing). planet-render decides.
+3. **Height reference.** "Height = ellipsoid radius - mean radius + DEM" is implemented as reference
+   surface + DEM, the reference being the surface the DEM is given against: the IAU ellipsoid for bodies
+   without a DEM and for Mars (MOLA's areoid is replaced by the ellipsoid, the brief's rule), and the DEM's
+   own sphere where the product says so in its label (Mercury 2,439.4 km, Venus 6,051.0 km, Ceres 470.0 km,
+   Pluto 1,188.3 km, Charon 606.0 km). Adding the ellipsoid to a sphere-referenced DEM would count the
+   body's flattening twice (Ceres: 41 km).
+4. **Procedural bodies** (Deimos, Mimas, Miranda, Ariel, Umbriel, Titania, Oberon): the crater population of
+   their amplification model, at the diameters the run-time model does not draw (above 4 postings of the
+   global max level, up to 0.4 R), is baked into BOTH the height (as the bodies' DEM) and the albedo (fresh
+   craters brighter); the run-time model draws the rest with complementary weights, so each crater exists
+   once (`generic.test.ts`). Mimas also gets Herschel (139 km) at its Gazetteer position (solar-system.md
+   5.3 asks for it). Without baked relief these bodies would be smooth ellipsoids with painted craters.
+5. **Mars albedo** = MDIM 2.1 mono 232 m (luminance) x Viking colour 925 m (chroma), the design's own
+   "finer" source, so level 6 (325 m texels) carries real detail; the 925 m colour alone would be a 3x
+   upsample there.
+6. **Resampling.** Finest height level: the DEM area-filtered over each vertex's local spacing (mips +
+   Catmull-Rom + longitude taps), as the Moon's global levels; coarser levels: the existing full-weighting
+   pyramid. Albedo: the finest level area-filtered from the source, coarser levels 2 x 2 means in linear
+   light (no re-sampling of the source, no re-decoding of lossy tiles).
+7. **Albedo calibration.** Every 8-bit mosaic is read as a display (sRGB) image; one gain per body sets the
+   area-weighted mean luminance to the NSSDC geometric albedo (as the Moon: mean 0.13 against 0.12);
+   Enceladus capped at 0.9 (geometric albedo 1.0) so its detail survives 8-bit sRGB; Iapetus calibrated on
+   its bright hemisphere (0.5). Mono maps take an approximate tint per body (in the config).
+8. **No de-shading.** Most mosaics carry their imaging geometry's shading (Viking, MDIS, Galileo, Cassini;
+   the Enceladus map is high-pass filtered, i.e. mostly shading). The Moon's albedo was de-shaded; here the
+   placeholder-quality allowance of the expansion applies. On DEM bodies the renderer's normal-map shading
+   adds to the baked shading at low sun.
+9. **West-labelled USGS mosaics are east-increasing in layout** (running log 01:45): the config key
+   `lonPositive` describes the pixel layout, and every USGS file used is east-increasing.
+10. **Landmark kinds**: `demHeight`, `albedoContrast`, `albedoCompare`, `craterDepth` and `albedoTexture`
+    (luminance standard deviation, for craters in shaded mosaics where the mean says nothing).
