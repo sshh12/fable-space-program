@@ -1,4 +1,4 @@
-Status: resolved (contract 95dac27; loader validation and the 17 titles 15c6393)
+Status: resolved (contract field: 95dac27 by lead-baseline-v2; loader and data: 15c6393)
 From: flight-ui
 Owner path: src/core/contracts/defs.ts (MilestoneRuleDef), src/core/defs/loader.ts (validation), data/defs/scenarios/*.json (shared-code maintainer; scenario data)
 Blocking: no
@@ -56,8 +56,6 @@ not move. Both are in since commit 15c6393 (shared-code maintainer): the request
   simulation ignores the field (the headless mission's state hash does not include the definitions).
 - `src/core/defs/loader.test.ts`: the field passes through, an empty or non-string title is refused, and every
   milestone of every scenario in `data/defs` has a title without an underscore.
-- **Not done here: `MilestoneRuleDef.title?: string` in `src/core/contracts/defs.ts`.** The contracts belong to
-  the v2-baseline agent this round; request `docs/requests/core-1.md` asks for the field with your wording.
-  Until it is in, the value is in the loaded library and can be read as
-  `(rule as { title?: string }).title` in `milestoneTitle`; with the field, drop the cast.
+- `MilestoneRuleDef.title?: string` is in `src/core/contracts/defs.ts` (commit 95dac27, by the v2-baseline agent,
+  who owns the contracts this round; request core-1 crossed with it). `milestoneTitle` can read `rule.title`.
 

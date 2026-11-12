@@ -123,8 +123,8 @@ describe('definition loader', () => {
     await expect(loadDefs(memorySource(files([good[1], good[0]])))).rejects.toThrow(/prerequisite/);
     // A display title is optional (request flight-ui-5); when present it is a non-empty string.
     const titled = (await loadDefs(memorySource(files([{ ...good[0], title: 'Lift-off' }, good[1]])))).scenarios['s']!.milestones;
-    expect((titled[0] as { title?: string }).title).toBe('Lift-off');
-    expect((titled[1] as { title?: string }).title).toBeUndefined();
+    expect(titled[0]!.title).toBe('Lift-off');
+    expect(titled[1]!.title).toBeUndefined();
     await expect(loadDefs(memorySource(files([{ ...good[0], title: '' }])))).rejects.toThrow(/"title" must be a non-empty string/);
     await expect(loadDefs(memorySource(files([{ ...good[0], title: 7 }])))).rejects.toThrow(/"title" must be a non-empty string/);
   });
@@ -133,13 +133,13 @@ describe('definition loader', () => {
     const lib = await loadDefs(fsDefSource());
     for (const s of Object.values(lib.scenarios)) {
       for (const m of s.milestones) {
-        const title = (m as { title?: string }).title;
+        const title = m.title;
         expect(title, `${s.id} ${m.id}`).toBeTruthy();
         // A title is a phrase, not the id title-cased.
         expect(title).not.toMatch(/_/);
       }
     }
-    const titles = Object.fromEntries(lib.scenarios['lunar-direct']!.milestones.map((m) => [m.id, (m as { title?: string }).title]));
+    const titles = Object.fromEntries(lib.scenarios['lunar-direct']!.milestones.map((m) => [m.id, m.title]));
     expect(titles['TLI_COMPLETE']).toBe('TLI complete');
     expect(titles['MOON_SOI_ENTER']).toBe("Entered the Moon's sphere of influence");
   });

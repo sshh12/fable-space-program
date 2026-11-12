@@ -382,22 +382,50 @@ describe.skipIf(!HAS_EARTH)('real Earth tiles', () => {
     tp = await createTerrainProvider(defs, createFsTileSource(TILES), { bodies: ['earth'] });
   }, 300_000);
 
-  it('launch-site pads are flat within 5 cm over flatRadius', async () => {
+  it('launch-site pads are flat within 5 cm: over flatRadius, or over the core and the areas of a shaped pad', async () => {
     for (const s of Object.values(defs.sites).filter((x) => x.bodyId === 'earth')) {
       const c = latLonToDir(s.location.latDeg * DEG, s.location.lonDeg * DEG);
       await tp.ensureLoaded('earth', c, s.pad.blendRadius, `pad-${s.id}`);
       const h0 = tp.heightAt('earth', c, 1);
       if (typeof s.location.padElevation === 'number') expect(h0).toBeCloseTo(s.location.padElevation, 6);
       const rng = prng(31);
+      const deviation = (east: number, north: number): number => {
+        const d = offset(c, east, north, R);
+        return Math.max(Math.abs(tp.heightAt('earth', d) - h0), Math.abs(tp.heightAt('earth', d, 0.3) - h0));
+      };
+      const shape = s.pad.shape;
+      // The exactly flat part: the whole disc, or (request terrain-render-6) the core of a shaped pad.
+      const flat = shape ? shape.coreRadius : s.pad.flatRadius;
       let worst = 0;
+      for (let i = 0; i < 2000; i++) {
+        const r = (flat - 1) * Math.sqrt(rng.next());
+        const a = rng.range(0, 2 * Math.PI);
+        worst = Math.max(worst, deviation(r * Math.cos(a), r * Math.sin(a)));
+      }
+      console.log(`[real earth] pad ${s.id}: elevation ${h0.toFixed(3)} m, max deviation over ${shape ? 'the core' : 'flatRadius'} (${flat} m) ${worst.toExponential(2)} m`);
+      expect(worst).toBeLessThan(0.05);
+      if (!shape) continue;
+      // Its level areas (rectangles in the pad's east / north frame, turned clockwise by their heading).
+      let worstArea = 0;
+      for (const area of shape.areas) {
+        const h = area.headingDeg * DEG;
+        for (let i = 0; i < 200; i++) {
+          const x = (area.halfEast - 1) * rng.range(-1, 1);
+          const y = (area.halfNorth - 1) * rng.range(-1, 1);
+          worstArea = Math.max(worstArea, deviation(area.east + x * Math.cos(h) + y * Math.sin(h), area.north - x * Math.sin(h) + y * Math.cos(h)));
+        }
+      }
+      // Elsewhere inside flatRadius the ground keeps a share of its relief: not flat, and not the natural slope either.
+      let relief = 0;
       for (let i = 0; i < 2000; i++) {
         const r = (s.pad.flatRadius - 1) * Math.sqrt(rng.next());
         const a = rng.range(0, 2 * Math.PI);
-        const d = offset(c, r * Math.cos(a), r * Math.sin(a), R);
-        worst = Math.max(worst, Math.abs(tp.heightAt('earth', d) - h0), Math.abs(tp.heightAt('earth', d, 0.3) - h0));
+        relief = Math.max(relief, deviation(r * Math.cos(a), r * Math.sin(a)));
       }
-      console.log(`[real earth] pad ${s.id}: elevation ${h0.toFixed(3)} m, max deviation over flatRadius ${worst.toExponential(2)} m`);
-      expect(worst).toBeLessThan(0.05);
+      console.log(`[real earth] pad ${s.id}: max deviation on the ${shape.areas.length} areas ${worstArea.toExponential(2)} m, inside flatRadius (${s.pad.flatRadius} m, relief share ${shape.reliefShare}) ${relief.toFixed(2)} m`);
+      expect(worstArea).toBeLessThan(0.05);
+      if (shape.reliefShare > 0) expect(relief).toBeGreaterThan(0.05);
+      expect(relief).toBeLessThan(15);
     }
   }, 300_000);
 
