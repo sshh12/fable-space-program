@@ -408,13 +408,13 @@ function assertPartsFit(ctx: CabinContext, sections: SectionFrame[], parts: Foot
   }
 }
 
-/** Wicket guard: a U of round bar standing across the row beside a switch. */
+/** Wicket guard: a U of 3 mm satin round bar standing across the row beside a switch. */
 function wicket(ctx: CabinContext, f: Frame): void {
-  const r = 0.0011;
+  const r = 0.0015;
   const h = 0.019;
   const half = 0.0125;
   const pts = [local(f, 0, -half, -0.001), local(f, 0, -half, h - 0.004), local(f, 0, -half + 0.004, h), local(f, 0, half - 0.004, h), local(f, 0, half, h - 0.004), local(f, 0, half, -0.001)];
-  ctx.b.tube(pts, r, 6, ctx.m('aluminium'));
+  ctx.b.tube(pts, r, 8, ctx.m('satinSteel'));
 }
 
 /**

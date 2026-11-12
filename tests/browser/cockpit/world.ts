@@ -276,8 +276,12 @@ export const WORLD_VIEWS: WorldView[] = [
   // through another window on the console.
   { name: 'world-leo-earth-side-window', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 } }, windowBelow: 0.82, fovDeg: 60 }, checks: { maxBlack: 0.3 } },
   { name: 'world-leo-sun-patch-console', query: 'scene=lowOrbit&roll=180', recipe: { sun: { onto: { display: 0 }, through: 'side-right' }, seat: { yaw: 8, pitch: 2 }, fovDeg: 70 }, checks: {} },
-  // The night side: the sun behind the Earth, the cabin under its floods and displays.
-  { name: 'world-night-displays-floods', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', lights: true, seat: { yaw: 20, pitch: -2 }, fovDeg: 70 }, checks: { dark: true } },
+  // The night side: the sun behind the Earth, nothing toggled: the cabin under its floods at their standby
+  // level and its displays (what a player sees who has touched nothing).
+  { name: 'world-night-displays-floods', query: 'scene=lowOrbit&roll=180', recipe: { sun: 'eclipse', seat: { yaw: 20, pitch: -2 }, fovDeg: 70 }, checks: { dark: true, maxBlack: 0.25 } },
+  // The climb with the engines at full thrust: the plume's lights stay outside the hull, the pages read
+  // (request app-integration-5).
+  { name: 'world-ascent-plume-displays', query: 'scene=ascent&throttle=1', recipe: { seat: { yaw: 22, pitch: -2 }, fovDeg: 70 }, checks: {} },
   // Entry: the shock layer outside the windows, the floods on.
   { name: 'world-reentry-plasma', query: 'scene=reentry', recipe: { lights: true, seat: { yaw: 16, pitch: 40 }, fovDeg: 70 }, checks: { dark: true, litPanes: ['fwd-left', 'fwd-right'] } },
   // On the lunar surface, the sun 30 degrees up and off to the side of the window's axis, the floods on:

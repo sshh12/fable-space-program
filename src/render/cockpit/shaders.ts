@@ -521,13 +521,14 @@ fn cabinProbeAtFp(p: vec3f, d: vec3f, roughness: f32, fp: f32) -> vec3f {
   let dir = normalize(cabinProbeDir(p, d));
   if (lod < 3.0) { return textureSampleLevel(cabinProbe, linearClamp, dir, lod).rgb * cabin.probe.w; }
   // The coarse mips are a few texels per face: a single bilinear lookup draws a bright window there as a
-  // blocky lozenge on a flat glossy panel. Two lookups half a texel apart (of that mip) across the diagonal
-  // of the texel grid round it off.
+  // blocky lozenge with creases along the texel grid on a flat satin panel. Four lookups half a texel apart
+  // (of that mip) on both axes turn the tent into a smooth bell: no crease in either direction.
   let t = normalize(cross(dir, select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(dir.y) > 0.9)));
   let b = cross(dir, t);
   let a = 0.5 * exp2(lod) / texelsPerRad;
-  let s = textureSampleLevel(cabinProbe, linearClamp, dir + (t + b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t + b) * a, lod).rgb;
-  return s * (0.5 * cabin.probe.w);
+  let s = textureSampleLevel(cabinProbe, linearClamp, dir + (t + b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t + b) * a, lod).rgb
+        + textureSampleLevel(cabinProbe, linearClamp, dir + (t - b) * a, lod).rgb + textureSampleLevel(cabinProbe, linearClamp, dir - (t - b) * a, lod).rgb;
+  return s * (0.25 * cabin.probe.w);
 }
 /// Radians per pixel swept by a reflected direction r (screen derivatives; uniform control flow only).
 fn reflectionFootprint(r: vec3f) -> f32 { return max(length(dpdx(r)), length(dpdy(r))); }
@@ -1273,7 +1274,7 @@ ${CASTER_COMMON}
 }
 `;
 
-/** Displays: the MFD images as emitters behind glass (MATERIAL_ID.display), with the RGB stripe structure up close; and in the cabin probe. */
+/** Displays: the MFD images as emitters behind glass, with the RGB stripe structure up close; and in the cabin probe. */
 export const DISPLAY_WGSL = (decls: string): string => /* wgsl */ `
 ${HEAD(decls)}
 

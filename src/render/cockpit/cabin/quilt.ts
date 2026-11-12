@@ -33,6 +33,20 @@ export function upholsteryHeight(y: number): number {
   return UPHOLSTERY.height * Math.max(0, Math.cos(Math.PI * f)) ** UPHOLSTERY.power;
 }
 
+/**
+ * The quilt's relief as a MESH can carry it (the blanket's grid is about a quarter of a cell): the pillow of
+ * every cell without the crease at its seams, which a grid that does not follow the diagonal seams can only
+ * draw as a row of flat triangles. The crease, the thread and the puckers are shaded per pixel from
+ * quiltHeight's own gradient (shaders.ts); the mesh gives the pillows their silhouette and parallax.
+ */
+export function quiltMeshHeight(qx: number, qy: number): number {
+  const ax = (qx + qy) * Math.SQRT1_2;
+  const ay = (qx - qy) * Math.SQRT1_2;
+  const fx = ax - Math.floor(ax) - 0.5;
+  const fy = ay - Math.floor(ay) - 0.5;
+  return QUILT.height * 0.9 * Math.max(0, Math.cos(Math.PI * fx) * Math.cos(Math.PI * fy));
+}
+
 /** Height (m) of the quilt's relief at quilt coordinates q: 0 on the seams, QUILT.height on a cell's crown. */
 export function quiltHeight(qx: number, qy: number): number {
   const ax = (qx + qy) * Math.SQRT1_2;

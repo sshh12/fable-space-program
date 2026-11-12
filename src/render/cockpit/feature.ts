@@ -12,7 +12,7 @@
  *    for reflections and bounce light);
  *  - drawShadow: the interior is a MOVING caster in every-frame cascades only (cascade 0 is vessel-anchored
  *    in cockpit view), drawn with its window openings closed: the cockpit lights its cabin itself;
- *  - drawGBuffer: interior, display screens (MATERIAL_ID.display), the attitude ball;
+ *  - drawGBuffer: interior, display screens, the attitude ball (all lit by the cockpit, written as emission);
  *  - drawTransparent (order 100, after plumes and plasma): window panes and cover glass;
  *  - drawOverlay: g-induced tunnel vision when the camera is the interior view.
  */

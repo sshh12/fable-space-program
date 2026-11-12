@@ -11,7 +11,7 @@ import { DEG, v3, type Vec3 } from '@/core/math';
 import { frameAt, type Attr } from '../mesh';
 import { azimuthOf, coneNormal, conePointAt, openingsOf, radialDir, revPoint, type Opening } from '../mould';
 import { FLAG_ENCLOSURE, FLAG_OVERLAY, type CabinContext } from './context';
-import { QUILT, quiltHeight } from './quilt';
+import { QUILT, quiltMeshHeight } from './quilt';
 
 const TWO_PI = 2 * Math.PI;
 /** Azimuth in [0, 2 pi): the grid seam is at +Z (dorsal), between the forward windows. */
@@ -525,12 +525,12 @@ function blanket(ctx: CabinContext, a0: number, a1: number, y0: number, y1: numb
     let pinch = 0;
     for (const [sx, sy] of studs) pinch = Math.max(pinch, Math.exp(-((xm - sx) ** 2 + (ym - sy) ** 2) / (0.024 * 0.024)));
     const sag = 0.0024 * (Math.sin(xm * 9 + ph[0]!) * Math.sin(ym * 7 + ph[1]!) + 0.5 * Math.sin(xm * 17 + ym * 13 + ph[2]!));
-    const thick = 0.003 + (th * (1 - 0.5 * pinch) + sag) * e;
+    const thick = BLANKET_LINER + (th * (1 - 0.5 * pinch) + sag) * e;
     // Quilt coordinates: metric bay coordinates turned, scaled to cells, shifted, and bent a little.
     const wx = 0.07 * Math.sin(ym * 11 + ph[3]!) + 0.04 * Math.sin(xm * 23 + ph[0]!);
     const wy = 0.07 * Math.sin(xm * 10 + ph[2]!) + 0.04 * Math.sin(ym * 19 + ph[1]!);
     const q: [number, number] = [(cs * xm - sn * ym) / cell + phase[0] + wx, (sn * xm + cs * ym) / cell + phase[1] + wy];
-    const relief = plain ? 0 : quiltHeight(q[0], q[1]) * e * (1 - 0.6 * pinch);
+    const relief = plain ? 0 : quiltMeshHeight(q[0], q[1]) * e * (1 - 0.6 * pinch);
     return { p: wallPoint(ctx, a, y, thick + relief + lift), base: wallPoint(ctx, a, y, thick + lift), uv: plain ? [xm, ym] : q };
   };
   // Grid: fine rows over the rolled rim, an even grid inside.
@@ -603,7 +603,7 @@ function blanket(ctx: CabinContext, a0: number, a1: number, y0: number, y1: numb
 /** Hard close-out panel on the lower cone: flat in (az, y), chamfered, with fasteners at the corners. */
 function closeoutPanel(ctx: CabinContext, a0: number, a1: number, y0: number, y1: number): void {
   const { b, mould: m } = ctx;
-  const inset = 0.012;
+  const inset = CLOSEOUT_INSET;
   const ns = Math.max(2, Math.ceil(((a1 - a0) * m.innerRadius(y0)) / 0.06));
   const attr = ctx.m('closeout');
   const chamfer = 0.006;

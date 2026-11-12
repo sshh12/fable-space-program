@@ -32,7 +32,7 @@ const VIEWS: AppView[] = [
   // Parking orbit, straight from the seat, nothing touched: the picture of the mission run (06-earth-orbit-cockpit).
   { name: 'app-leo-seat', scenario: 'qa-leo' },
   // Along the console to both sides: where its ends meet the hull (request cockpit-lead-1).
-  { name: 'app-leo-console-left', scenario: 'qa-leo', yaw: -62, pitch: 4 },
+  { name: 'app-leo-console-left', scenario: 'qa-leo', yaw: -30, pitch: -2 },
   { name: 'app-leo-console-right', scenario: 'qa-leo', yaw: 62, pitch: 4 },
   // The lights action on: the floods at full.
   { name: 'app-leo-seat-floods', scenario: 'qa-leo', lights: true },
