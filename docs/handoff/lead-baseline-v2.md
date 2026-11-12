@@ -794,3 +794,47 @@ has its 16 / 20 / 20 points against its own disc, four per quarter on each side 
 in a flat disc and 12 outside every disc of the field; `padZoneOf`), `tools/dev/guard-pins.test.ts` 3 of 3.
 `npm run typecheck:paths -- tests/unit/terrain-core` (both configurations) clean. The mission was not flown
 (nothing it reads changed). No browser run.
+
+## 19. The launch complex restated as resolved: 25 pads, 600 launches an hour (2026-11-12, documents only)
+
+The lead's order: restate ARCHITECTURE 9.3 to the layouts as resolved and follow the number through.
+
+| | As planned | As resolved |
+|---|---|---|
+| Pads | 32 (16 per site) | 25: Madrakah 16 (4 / 6 / 6), Ka Lae 9 (2 / 2 / 5); 6 heavy, 8 medium, 11 light |
+| Sustained launch slots per wall hour (150 s cycle) | 768 | 600 |
+| Reservoir (14 days) / first day | 258,000 / 276,000 | 201,600 / 216,000 |
+| Slots in a 5-minute cohort | 64 | 50 |
+
+**ARCHITECTURE**: decision 54 and carried decision 1; 5.9 (the formula's figures, the per-class figure, "no
+literal anywhere"); 9.3 (rewritten: the layouts are what the resolve run placed, the gates and radii, Ka
+Lae 9 and Madrakah 16 as resolved, 25 pads and 600 an hour, the count per site is data); 16.3 (the table
+recomputed: the reservoir lasts 21 days / 59 hours and 6.0 days / 21 and 46 hours at 500 / 2,000 / 5,000
+concurrent; a paragraph on classes; "more pads at a site" is what the ground takes); 28.7 (the release
+complex, not "32 pads"; programme 3 also reports per class and the hour the horizon fills); 29.2 (the
+launch-slot budget row; the stage-3 bottleneck list); 31.3; the two risk rows of 34.
+
+**OPEN_QUESTIONS_V2**: rows Q8 and Q14 of the defaults the user let stand keep their wording and say what
+is in force; a summary row and a new open item **L1** with the old and new figures, what no longer holds,
+what still holds and four ways to restore the front-page day (16-day horizon, 135 s cycle, three more
+pads, or accept 216,000). Nothing was chosen: "proceeding on" is the complex as it is.
+
+**MIGRATION_V2**: steps 3.9 and 4.1d and the data table say "the pads as resolved (16 and 9)".
+
+**Briefs** (a LEAD NOTE each, one shared opening with the figures and "no count or rate is a literal"):
+`universe-directory` (its launch-slot acceptance asserts the formula against the data, per class),
+`deploy-loadtest` (the release complex; programme 3 reports per class and the hour the horizon fills; no
+tuning of a mix to make the day fit), `shell-menu` (the spawn flow takes counts and rates from data; a
+full horizon is said plainly), `fleet-models-pads` and `final-gate`. `fleet-data` had its counts in
+section 18.
+
+**What no longer holds at 600** (all in L1): (1) a front-page day at the design load (5,000 concurrent
+for 24 hours, one launch per 30-minute session: 240,000) no longer fits: 216,000 in the first day, the
+reservoir empty after 21 hours; it fits at half a launch per session; (2) the menu's case "no slot inside
+the cohort horizon" is now inside the design day and the architecture does not say what the menu shows;
+(3) the heavy class has 6 pads, 144 launches an hour, a quarter of the total, and four of the eight
+vehicles are heavy: the capacity statements never distinguished classes; (4) "up to about 48 pads per
+100 km of coast" was optimistic: the ground took 9 at Ka Lae.
+
+Not touched: the cost model (a front-page day does not cost more with fewer launches), the brief of
+site-bake (closed), any code or test. No suite was run: documents only.
