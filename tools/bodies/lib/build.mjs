@@ -196,7 +196,7 @@ export function buildLibrary(S, live, bake) {
     def.render = id === 'sun' ? sunLive.render : { meanColor: meanColorOf(id, S, albedo[id], (f, v, s, n) => prov(id, f, v, s, n)), geometricAlbedo: albedo[id], surface: null, atmosphere: null, clouds: null, ocean: null };
     bodies[id] = { json: def };
     if (solidNew) {
-      terrain[id] = terrainSection(id, c, R, pck, bake, S.demRelief.bodies, moonLive.terrain.surfaceFriction, (f, v, s, n) => prov(id, f, v, s, n));
+      terrain[id] = terrainSection(id, c, R, bake, S.bakeManifests.bodies, moonLive.terrain.surfaceFriction, (f, v, s, n) => prov(id, f, v, s, n));
     }
     radii.push(radiiRow(id, R, pck, c.naif));
     if (id === 'sun') paths.sun = { path: 'root', note: 'root attractor; emission block of data/defs/bodies/sun.json' };
@@ -231,12 +231,12 @@ function saturnRings(S) {
  * The terrain section of a new solid body. The amplification is planet-bake's (it defines the models and
  * bakes the large craters of the same population, so seed and parameters must be the ones its bake used):
  * the model key, seed and overrides of tools/bake/planet/bodies/<id>.json over the model's parameter file
- * data/defs/terrain/<model>.amplification.json (both read only). The elevation bounds enclose everything the
- * height function can return: the bake's reference surface (ellipsoid radii or a DEM's sphere) relative to the
- * mean radius, the DEM's published range, the bake's procedural craters (depth and rim of the largest), and the
- * run-time crater classes below the data level.
+ * data/defs/terrain/<model>.amplification.json (both read only). The elevation bounds are the baked height
+ * range (tools/bodies/sources/bake-manifests.json: `layers.height.elevation` of every manifest, snapshotted by
+ * fetch-sources.mjs so generation reads tracked files only), widened by the run-time crater classes below the
+ * data level.
  */
-function terrainSection(id, c, R, pck, bake, relief, friction, prov) {
+function terrainSection(id, c, R, bake, manifests, friction, prov) {
   const level = Math.round(Math.log2((R * Math.PI) / 2 / DEEPEST_TILE_EDGE_M));
   const cfg = bake.configs[id];
   if (!cfg) throw new Error(`${id}: no planet-bake config tools/bake/planet/bodies/${id}.json (planet-bake defines the amplification of every new solid body)`);
@@ -249,49 +249,16 @@ function terrainSection(id, c, R, pck, bake, relief, friction, prov) {
   const amplification = { model: a.model, seed: a.seed, params: { ...base.params, ...a.params } };
   if (Math.abs(cfg.radii.mean - R) > 0.5) throw new Error(`${id}: planet-bake mean radius ${cfg.radii.mean} differs from the definition's ${R}`);
 
-  // Elevation bounds (m, relative to the datum sphere R). Once planet-bake has baked the body, its manifest's
-  // recorded height range is the basis; before that, the bake's inputs bound what it can produce.
+  const m = manifests[id];
+  if (!m) throw new Error(`${id}: no baked height range in tools/bodies/sources/bake-manifests.json (bake the body, then run node tools/bodies/fetch-sources.mjs)`);
+  if (Math.abs(m.radius - R) > 0.5) throw new Error(`${id}: the baked manifest's radius ${m.radius} differs from the definition's ${R}`);
   const p = amplification.params;
   const h = cfg.height;
-  const ref = h.reference;
-  let lo;
-  let hi;
-  const parts = [];
-  const baked = bake.manifests[id]?.layers?.height?.elevation;
-  if (baked) {
-    lo = baked.min;
-    hi = baked.max;
-    parts.push(`the baked height range of data/tiles/${id}/manifest.json (${lo}..${hi} m)`);
-  } else if (ref === 'ellipsoid') {
-    const r = pck[`BODY${c.naif}_RADII`].map((x) => x * 1e3);
-    lo = Math.min(...r) - R;
-    hi = Math.max(...r) - R;
-    parts.push(`ellipsoid ${lo.toFixed(0)}..${hi.toFixed(0)} m`);
-  } else {
-    lo = hi = ref.sphere - R;
-    parts.push(`DEM sphere ${ref.sphere} m (${lo.toFixed(0)} m)`);
-  }
-  if (h.dem && !baked) {
-    const d = relief[id];
-    if (!d) throw new Error(`${id}: the bake has a DEM but tools/bodies/sources/dem-relief.json has no range for it`);
-    lo += d.min * h.dem.scale + h.dem.offset;
-    hi += d.max * h.dem.scale + h.dem.offset;
-    parts.push(`DEM ${d.min}..${d.max} (x ${h.dem.scale} + ${h.dem.offset})`);
-  }
-  if (h.craters && !baked) {
-    // the bake's crater population uses the same depth-to-diameter ratio at every size (src/terrain/craters.ts),
-    // so its largest craters are that deep; request bodies-ephemeris-5 asks planet-bake about complex craters
-    const D = h.craters.maxDiameterRadii * R;
-    lo -= p.freshDepthToDiameter * D;
-    hi += p.rimHeightToDiameter * D;
-    parts.push(`procedural craters to ${(D / 1e3).toFixed(1)} km (depth ${p.freshDepthToDiameter} D, rim ${p.rimHeightToDiameter} D)`);
-  }
   const posting = (R * Math.PI) / 2 / (256 * 2 ** h.maxLevel);
   const Dr = p.craterMaxDiameterInPostings * posting;
-  lo -= p.freshDepthToDiameter * Dr;
-  hi += p.rimHeightToDiameter * Dr;
-  parts.push(`run-time craters to ${Dr.toFixed(0)} m`);
-  if (!baked && !h.dem && !h.craters) parts.push('no DEM and no baked craters: the ellipsoid and the run-time craters only');
+  const lo = m.elevation.min - p.freshDepthToDiameter * Dr;
+  const hi = m.elevation.max + p.rimHeightToDiameter * Dr;
+  const parts = [`the baked height range of data/tiles/${id}/manifest.json (${m.elevation.min}..${m.elevation.max} m, content hash ${m.contentHash})`, `run-time craters to ${Dr.toFixed(0)} m`];
 
   const def = {
     tileset: id,
@@ -304,7 +271,7 @@ function terrainSection(id, c, R, pck, bake, relief, friction, prov) {
     amplification,
   };
   prov('terrain.maxRenderLevel', level, null, `round(log2(R pi/2 / ${DEEPEST_TILE_EDGE_M} m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent`);
-  prov('terrain.elevation', [def.minElevation, def.maxElevation], !baked && h.dem ? relief[id].source : null, parts.join('; '));
+  prov('terrain.elevation', [def.minElevation, def.maxElevation], null, parts.join('; '));
   prov('terrain.amplification', `${a.model} seed ${a.seed} overrides ${JSON.stringify(a.params)}`, null, `planet-bake: tools/bake/planet/bodies/${id}.json over data/defs/terrain/${a.model}.amplification.json`);
   prov('terrain.residentLevel', def.residentLevel, null, `min(${RESIDENT_LEVEL}, the pyramid's depth ${h.maxLevel}): the contract's rule for generated bodies (BodyTerrainDef.residentLevel, request bodies-ephemeris-3)`);
   prov('terrain.surfaceFriction', friction, null, "the Moon's (data/defs/bodies/moon.json): regolith-covered surfaces");

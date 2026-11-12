@@ -215,9 +215,9 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.45202,
-        0.31336,
-        0.14419
+        0.84895,
+        0.58902,
+        0.26599
       ],
       "source": {
         "path": "data/staged/render/albedo-means.json (planet-bake)"
@@ -228,9 +228,9 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.30593,
-        0.28517,
-        0.23549
+        0.4734,
+        0.43892,
+        0.35898
       ],
       "source": {
         "path": "data/staged/render/albedo-means.json (planet-bake)"
@@ -241,9 +241,9 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.55963,
-        0.477,
-        0.38931
+        0.78297,
+        0.66545,
+        0.54203
       ],
       "source": {
         "path": "data/staged/render/albedo-means.json (planet-bake)"
@@ -254,9 +254,9 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.17286,
-        0.14922,
-        0.12333
+        0.21657,
+        0.18607,
+        0.15294
       ],
       "source": {
         "path": "data/staged/render/albedo-means.json (planet-bake)"
@@ -267,9 +267,9 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.62897,
-        0.62897,
-        0.62897
+        0.60053,
+        0.60053,
+        0.60053
       ],
       "source": {
         "path": "data/staged/render/albedo-means.json (planet-bake)"
@@ -280,9 +280,9 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.32012,
-        0.30811,
-        0.29266
+        0.34453,
+        0.33066,
+        0.31218
       ],
       "source": {
         "path": "data/staged/render/albedo-means.json (planet-bake)"
@@ -293,9 +293,9 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.33642,
-        0.33751,
-        0.33737
+        0.31957,
+        0.32104,
+        0.32172
       ],
       "source": {
         "path": "data/staged/render/albedo-means.json (planet-bake)"
@@ -306,9 +306,9 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.41836,
-        0.40798,
-        0.40416
+        0.39904,
+        0.389,
+        0.38051
       ],
       "source": {
         "path": "data/staged/render/albedo-means.json (planet-bake)"
@@ -319,9 +319,9 @@
       "bv": null,
       "vr": null,
       "linearRgb": [
-        0.22174,
-        0.22159,
-        0.22061
+        0.21035,
+        0.21038,
+        0.20978
       ],
       "source": {
         "path": "data/staged/render/albedo-means.json (planet-bake)"

@@ -1,0 +1,230 @@
+{
+  "description": "The height range and identity of planet-bake's baked tile sets (data/tiles/<id>/manifest.json: layers.height.elevation, radius, residentHeightLevel, contentHash), the basis of the staged terrain sections' elevation bounds; tests/unit/bodies checks it against the live manifests where they exist",
+  "bodies": {
+    "ariel": {
+      "radius": 578900,
+      "elevation": {
+        "min": -5812.88,
+        "max": 2766.19
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "950675dcd9901e65"
+    },
+    "callisto": {
+      "radius": 2410300,
+      "elevation": {
+        "min": 0,
+        "max": 0
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "587c2b7ad34feb5b"
+    },
+    "ceres": {
+      "radius": 469700,
+      "elevation": {
+        "min": -27649.32,
+        "max": 17355.49
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "b6eaab0b89ba7fe6"
+    },
+    "charon": {
+      "radius": 606000,
+      "elevation": {
+        "min": -14130.8,
+        "max": 6907.54
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "9510b3515eca6466"
+    },
+    "deimos": {
+      "radius": 6200,
+      "elevation": {
+        "min": -1135.88,
+        "max": 1603.56
+      },
+      "residentHeightLevel": 2,
+      "contentHash": "676a0f9f122f1ca7"
+    },
+    "dione": {
+      "radius": 561400,
+      "elevation": {
+        "min": -1800,
+        "max": 2000
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "c22b18294808bd98"
+    },
+    "enceladus": {
+      "radius": 252100,
+      "elevation": {
+        "min": -4470.05,
+        "max": 4726.46
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "1308da806d610b1e"
+    },
+    "europa": {
+      "radius": 1560800,
+      "elevation": {
+        "min": -1300,
+        "max": 1800
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "c8abb218237ba48b"
+    },
+    "ganymede": {
+      "radius": 2631200,
+      "elevation": {
+        "min": 0,
+        "max": 0
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "93a5de28998b1cc4"
+    },
+    "iapetus": {
+      "radius": 734300,
+      "elevation": {
+        "min": -22200,
+        "max": 11400
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "18b5e1cafdae9de6"
+    },
+    "io": {
+      "radius": 1821490,
+      "elevation": {
+        "min": -5790,
+        "max": 7910
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "eea8111816a84917"
+    },
+    "mars": {
+      "radius": 3389500,
+      "elevation": {
+        "min": -18353.3,
+        "max": 26110.44
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "5007e42ba39df96a"
+    },
+    "mercury": {
+      "radius": 2439400,
+      "elevation": {
+        "min": -5381.85,
+        "max": 4499.61
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "45f4563f62640c2a"
+    },
+    "mimas": {
+      "radius": 198200,
+      "elevation": {
+        "min": -9626.13,
+        "max": 9858.36
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "03b86f80e275add8"
+    },
+    "miranda": {
+      "radius": 235800,
+      "elevation": {
+        "min": -5445.85,
+        "max": 4819.03
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "618b22e7aa41a94c"
+    },
+    "oberon": {
+      "radius": 761400,
+      "elevation": {
+        "min": -6066.72,
+        "max": 1019.84
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "3db3eb0a04150a79"
+    },
+    "phobos": {
+      "radius": 11080,
+      "elevation": {
+        "min": -2927.85,
+        "max": 2938.79
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "ea80f45352b86469"
+    },
+    "pluto": {
+      "radius": 1188300,
+      "elevation": {
+        "min": -4100.79,
+        "max": 6496.65
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "287403cc6766d438"
+    },
+    "rhea": {
+      "radius": 763500,
+      "elevation": {
+        "min": -1100,
+        "max": 1500
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "eed1db418f308196"
+    },
+    "tethys": {
+      "radius": 531100,
+      "elevation": {
+        "min": -4800,
+        "max": 7300
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "575223da1b58060a"
+    },
+    "titan": {
+      "radius": 2574760,
+      "elevation": {
+        "min": -290,
+        "max": 390
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "9eb04e3c9786ba74"
+    },
+    "titania": {
+      "radius": 788900,
+      "elevation": {
+        "min": -7313.29,
+        "max": 1205.78
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "f0d011f9967c2c67"
+    },
+    "triton": {
+      "radius": 1352600,
+      "elevation": {
+        "min": 0,
+        "max": 0
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "5d796a5dfc79110c"
+    },
+    "umbriel": {
+      "radius": 584700,
+      "elevation": {
+        "min": -5716,
+        "max": 1108.59
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "2d09b6b2ecd217ce"
+    },
+    "venus": {
+      "radius": 6051800,
+      "elevation": {
+        "min": -3967.8,
+        "max": 10896.45
+      },
+      "residentHeightLevel": 3,
+      "contentHash": "20c75de9c36047e4"
+    }
+  }
+}

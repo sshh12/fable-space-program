@@ -172,11 +172,20 @@ void firstNumber;
 // Atmosphere profiles, heating constants, ratios of specific heats; colour indices; DEM ranges.
 {
   const { readFileSync } = await import('node:fs');
-  const { buildAtmosphereSources, buildColourSources, buildDemRelief } = await import('./lib/derivedSources.mjs');
+  const { buildAtmosphereSources, buildColourSources } = await import('./lib/derivedSources.mjs');
   const { loadBake } = await import('./lib/sources.mjs');
   const nssdcJson = JSON.parse(readFileSync(join(OUT, 'nssdc.json'), 'utf8'));
   const earthLive = JSON.parse(readFileSync(join(REPO_ROOT, 'data/defs/bodies/earth.json'), 'utf8'));
   write('atmospheres', await buildAtmosphereSources(nssdcJson, earthLive));
   write('colours', await buildColourSources(JSON.parse(readFileSync(join(OUT, 'sbdb-ceres.json'), 'utf8'))));
-  write('dem-relief', await buildDemRelief(loadBake().configs));
+  // planet-bake's baked height ranges (git-ignored manifests), snapshotted so generation reads tracked files only
+  const { loadBakedManifests } = await import('./lib/sources.mjs');
+  const ids = Object.entries(loadBake().configs).filter(([, c]) => c.kind === 'solid').map(([id]) => id).sort();
+  const manifests = loadBakedManifests(ids);
+  const missing = ids.filter((id) => !manifests[id]);
+  if (missing.length) throw new Error(`no baked manifest for ${missing.join(', ')}: run planet-bake first`);
+  write('bake-manifests', {
+    description: "The height range and identity of planet-bake's baked tile sets (data/tiles/<id>/manifest.json: layers.height.elevation, radius, residentHeightLevel, contentHash), the basis of the staged terrain sections' elevation bounds; tests/unit/bodies checks it against the live manifests where they exist",
+    bodies: Object.fromEntries(ids.map((id) => { const m = manifests[id]; return [id, { radius: m.radius, elevation: { min: m.layers.height.elevation.min, max: m.layers.height.elevation.max }, residentHeightLevel: m.residentHeightLevel, contentHash: m.contentHash }]; })),
+  });
 }

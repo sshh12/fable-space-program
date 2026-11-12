@@ -23,7 +23,7 @@ export function loadSources() {
     nssdc: s('nssdc'),
     states: s('horizons-states'),
     atmospheres: s('atmospheres'),
-    demRelief: s('dem-relief'),
+    bakeManifests: s('bake-manifests'),
     colours: s('colours'),
     orbitFits: s('orbit-fits'),
   };
@@ -32,8 +32,8 @@ export function loadSources() {
 /**
  * planet-bake's body configs (tools/bake/planet/bodies/<id>.json) and model parameter files
  * (data/defs/terrain/<model>.amplification.json), read only: the terrain sections take the amplification of
- * the bake (seed, overrides) so the baked and the run-time crater populations are one. The baked manifests
- * (data/tiles/<id>/manifest.json), where they exist, give the terrain sections their height range.
+ * the bake (seed, overrides) so the baked and the run-time crater populations are one. All tracked: generation
+ * reads no baked data (the manifests' height ranges come through tools/bodies/sources/bake-manifests.json).
  */
 export function loadBake() {
   const dir = join(REPO_ROOT, 'tools/bake/planet/bodies');
@@ -44,12 +44,7 @@ export function loadBake() {
     const p = join(LIVE_DEFS, 'terrain', `${m}.amplification.json`);
     if (existsSync(p)) models[m] = readJson(p);
   }
-  const manifests = {};
-  for (const id of Object.keys(configs)) {
-    const p = join(REPO_ROOT, 'data/tiles', id, 'manifest.json');
-    if (existsSync(p)) manifests[id] = readJson(p);
-  }
-  return { configs, models, manifests };
+  return { configs, models };
 }
 
 /** The live v1 files (raw text and parsed), which the staged Earth, Moon and Sun derive from. */
@@ -60,4 +55,14 @@ export function loadLive() {
     moon: { text: raw('bodies/moon.json'), json: JSON.parse(raw('bodies/moon.json')) },
     sun: { text: raw('bodies/sun.json'), json: JSON.parse(raw('bodies/sun.json')) },
   };
+}
+
+/** The baked manifests (data/tiles/<id>/manifest.json, git-ignored) of the bodies planet-bake bakes, or {} where absent. */
+export function loadBakedManifests(ids) {
+  const out = {};
+  for (const id of ids) {
+    const p = join(REPO_ROOT, 'data/tiles', id, 'manifest.json');
+    if (existsSync(p)) out[id] = readJson(p);
+  }
+  return out;
 }

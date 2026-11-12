@@ -43,7 +43,7 @@
   },
   "navballSwitchAltitude": 6730.75,
   "render": {
-    "meanColor": [0.1802, 0.18, 0.1792],
+    "meanColor": [0.18, 0.18, 0.1795],
     "geometricAlbedo": 0.18,
     "surface": null,
     "atmosphere": null,

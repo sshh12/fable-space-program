@@ -448,7 +448,7 @@
       },
       "terrain.elevation": {
         "value": [-5749, 4567],
-        "note": "the baked height range of data/tiles/mercury/manifest.json (-5381.85..4499.61 m); run-time craters to 1871 m"
+        "note": "the baked height range of data/tiles/mercury/manifest.json (-5381.85..4499.61 m, content hash 45f4563f62640c2a); run-time craters to 1871 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4101 overrides {}",
@@ -574,7 +574,7 @@
       },
       "terrain.elevation": {
         "value": [-5788, 11231],
-        "note": "the baked height range of data/tiles/venus/manifest.json (-3967.8..10896.45 m); run-time craters to 9283 m"
+        "note": "the baked height range of data/tiles/venus/manifest.json (-3967.8..10896.45 m, content hash 20c75de9c36047e4); run-time craters to 9283 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4102 overrides {\"craterEquilibriumFraction\":0.0002}",
@@ -718,7 +718,7 @@
       },
       "terrain.elevation": {
         "value": [-18863, 26205],
-        "note": "the baked height range of data/tiles/mars/manifest.json (-18353.3..26110.44 m); run-time craters to 2600 m"
+        "note": "the baked height range of data/tiles/mars/manifest.json (-18353.3..26110.44 m, content hash 5007e42ba39df96a); run-time craters to 2600 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4103 overrides {\"craterEquilibriumFraction\":0.004}",
@@ -1331,8 +1331,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-1987, 1922],
-        "note": "the baked height range of data/tiles/phobos/manifest.json (-1980..1920 m); run-time craters to 34 m"
+        "value": [-2935, 2941],
+        "note": "the baked height range of data/tiles/phobos/manifest.json (-2927.85..2938.79 m, content hash ea80f45352b86469); run-time craters to 34 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4104 overrides {}",
@@ -1422,7 +1422,7 @@
       },
       "terrain.elevation": {
         "value": [-1144, 1605],
-        "note": "the baked height range of data/tiles/deimos/manifest.json (-1135.88..1603.56 m); run-time craters to 38 m"
+        "note": "the baked height range of data/tiles/deimos/manifest.json (-1135.88..1603.56 m, content hash 676a0f9f122f1ca7); run-time craters to 38 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4105 overrides {}",
@@ -1498,7 +1498,7 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.8613, 0.5971, 0.2748],
+        "value": [0.8613, 0.5976, 0.2699],
         "source": {
           "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
@@ -1510,7 +1510,7 @@
       },
       "terrain.elevation": {
         "value": [-6886, 8112],
-        "note": "the baked height range of data/tiles/io/manifest.json (-5790..7910 m); run-time craters to 5588 m"
+        "note": "the baked height range of data/tiles/io/manifest.json (-5790..7910 m, content hash eea8111816a84917); run-time craters to 5588 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4106 overrides {\"craterEquilibriumFraction\":0.000001}",
@@ -1586,7 +1586,7 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.768, 0.6546, 0.5342],
+        "value": [0.7697, 0.6542, 0.5329],
         "source": {
           "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
@@ -1598,7 +1598,7 @@
       },
       "terrain.elevation": {
         "value": [-2258, 1992],
-        "note": "the baked height range of data/tiles/europa/manifest.json (-1300..1800 m); run-time craters to 4788 m"
+        "note": "the baked height range of data/tiles/europa/manifest.json (-1300..1800 m, content hash c8abb218237ba48b); run-time craters to 4788 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4107 overrides {\"craterEquilibriumFraction\":0.0005}",
@@ -1674,7 +1674,7 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.46, 0.4288, 0.3541],
+        "value": [0.4621, 0.4285, 0.3504],
         "source": {
           "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
@@ -1686,7 +1686,7 @@
       },
       "terrain.elevation": {
         "value": [-1615, 323],
-        "note": "the baked height range of data/tiles/ganymede/manifest.json (0..0 m); run-time craters to 8072 m"
+        "note": "the baked height range of data/tiles/ganymede/manifest.json (0..0 m, content hash 93a5de28998b1cc4); run-time craters to 8072 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4108 overrides {}",
@@ -1762,7 +1762,7 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.1929, 0.1665, 0.1376],
+        "value": [0.1936, 0.1663, 0.1367],
         "source": {
           "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
@@ -1774,7 +1774,7 @@
       },
       "terrain.elevation": {
         "value": [-1479, 296],
-        "note": "the baked height range of data/tiles/callisto/manifest.json (0..0 m); run-time craters to 7395 m"
+        "note": "the baked height range of data/tiles/callisto/manifest.json (0..0 m, content hash 587c2b7ad34feb5b); run-time craters to 7395 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4109 overrides {}",
@@ -1862,7 +1862,7 @@
       },
       "terrain.elevation": {
         "value": [-9748, 9883],
-        "note": "the baked height range of data/tiles/mimas/manifest.json (-9626.13..9858.36 m); run-time craters to 608 m"
+        "note": "the baked height range of data/tiles/mimas/manifest.json (-9626.13..9858.36 m, content hash 03b86f80e275add8); run-time craters to 608 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4110 overrides {}",
@@ -1951,8 +1951,8 @@
         "note": "round(log2(R pi/2 / 10 m)): the deepest tile edge of the Earth (level 20) and Moon (level 18) precedent"
       },
       "terrain.elevation": {
-        "value": [-3955, 4531],
-        "note": "the baked height range of data/tiles/enceladus/manifest.json (-3800..4500 m); run-time craters to 773 m"
+        "value": [-4625, 4758],
+        "note": "the baked height range of data/tiles/enceladus/manifest.json (-4470.05..4726.46 m, content hash 1308da806d610b1e); run-time craters to 773 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4111 overrides {}",
@@ -2042,7 +2042,7 @@
       },
       "terrain.elevation": {
         "value": [-5126, 7366],
-        "note": "the baked height range of data/tiles/tethys/manifest.json (-4800..7300 m); run-time craters to 1629 m"
+        "note": "the baked height range of data/tiles/tethys/manifest.json (-4800..7300 m, content hash 575223da1b58060a); run-time craters to 1629 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4112 overrides {}",
@@ -2132,7 +2132,7 @@
       },
       "terrain.elevation": {
         "value": [-2145, 2069],
-        "note": "the baked height range of data/tiles/dione/manifest.json (-1800..2000 m); run-time craters to 1722 m"
+        "note": "the baked height range of data/tiles/dione/manifest.json (-1800..2000 m, content hash c22b18294808bd98); run-time craters to 1722 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4113 overrides {}",
@@ -2222,7 +2222,7 @@
       },
       "terrain.elevation": {
         "value": [-1569, 1594],
-        "note": "the baked height range of data/tiles/rhea/manifest.json (-1100..1500 m); run-time craters to 2342 m"
+        "note": "the baked height range of data/tiles/rhea/manifest.json (-1100..1500 m, content hash eed1db418f308196); run-time craters to 2342 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4114 overrides {}",
@@ -2354,7 +2354,7 @@
       },
       "terrain.elevation": {
         "value": [-1080, 548],
-        "note": "the baked height range of data/tiles/titan/manifest.json (-290..390 m); run-time craters to 3950 m"
+        "note": "the baked height range of data/tiles/titan/manifest.json (-290..390 m, content hash 9eb04e3c9786ba74); run-time craters to 3950 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4115 overrides {\"craterEquilibriumFraction\":0.0005}",
@@ -2441,7 +2441,7 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.6205, 0.5972, 0.5673],
+        "value": [0.6221, 0.5971, 0.5637],
         "source": {
           "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
@@ -2453,7 +2453,7 @@
       },
       "terrain.elevation": {
         "value": [-22651, 11491],
-        "note": "the baked height range of data/tiles/iapetus/manifest.json (-22200..11400 m); run-time craters to 2253 m"
+        "note": "the baked height range of data/tiles/iapetus/manifest.json (-22200..11400 m, content hash 18b5e1cafdae9de6); run-time craters to 2253 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4116 overrides {}",
@@ -2529,7 +2529,7 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.2693, 0.2702, 0.2701],
+        "value": [0.269, 0.2702, 0.2708],
         "source": {
           "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
@@ -2541,7 +2541,7 @@
       },
       "terrain.elevation": {
         "value": [-5591, 4848],
-        "note": "the baked height range of data/tiles/miranda/manifest.json (-5445.85..4819.03 m); run-time craters to 723 m"
+        "note": "the baked height range of data/tiles/miranda/manifest.json (-5445.85..4819.03 m, content hash 618b22e7aa41a94c); run-time craters to 723 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4117 overrides {}",
@@ -2617,7 +2617,7 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.347, 0.3384, 0.3352],
+        "value": [0.3474, 0.3387, 0.3313],
         "source": {
           "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
@@ -2629,7 +2629,7 @@
       },
       "terrain.elevation": {
         "value": [-6169, 2838],
-        "note": "the baked height range of data/tiles/ariel/manifest.json (-5812.88..2766.19 m); run-time craters to 1776 m"
+        "note": "the baked height range of data/tiles/ariel/manifest.json (-5812.88..2766.19 m, content hash 950675dcd9901e65); run-time craters to 1776 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4118 overrides {}",
@@ -2705,7 +2705,7 @@
         "note": "radius x 20000/1737400 (the Moon precedent)"
       },
       "render.meanColor": {
-        "value": [0.1802, 0.18, 0.1792],
+        "value": [0.18, 0.18, 0.1795],
         "source": {
           "path": "data/staged/render/albedo-means.json (planet-bake)"
         },
@@ -2717,7 +2717,7 @@
       },
       "terrain.elevation": {
         "value": [-6075, 1181],
-        "note": "the baked height range of data/tiles/umbriel/manifest.json (-5716..1108.59 m); run-time craters to 1794 m"
+        "note": "the baked height range of data/tiles/umbriel/manifest.json (-5716..1108.59 m, content hash 2d09b6b2ecd217ce); run-time craters to 1794 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4119 overrides {}",
@@ -2807,7 +2807,7 @@
       },
       "terrain.elevation": {
         "value": [-7798, 1303],
-        "note": "the baked height range of data/tiles/titania/manifest.json (-7313.29..1205.78 m); run-time craters to 2420 m"
+        "note": "the baked height range of data/tiles/titania/manifest.json (-7313.29..1205.78 m, content hash f0d011f9967c2c67); run-time craters to 2420 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4120 overrides {}",
@@ -2897,7 +2897,7 @@
       },
       "terrain.elevation": {
         "value": [-6534, 1114],
-        "note": "the baked height range of data/tiles/oberon/manifest.json (-6066.72..1019.84 m); run-time craters to 2336 m"
+        "note": "the baked height range of data/tiles/oberon/manifest.json (-6066.72..1019.84 m, content hash 3db3eb0a04150a79); run-time craters to 2336 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4121 overrides {}",
@@ -2987,7 +2987,7 @@
       },
       "terrain.elevation": {
         "value": [-830, 166],
-        "note": "the baked height range of data/tiles/triton/manifest.json (0..0 m); run-time craters to 4150 m"
+        "note": "the baked height range of data/tiles/triton/manifest.json (0..0 m, content hash 5d796a5dfc79110c); run-time craters to 4150 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4122 overrides {\"craterEquilibriumFraction\":0.002}",
@@ -3082,7 +3082,7 @@
       },
       "terrain.elevation": {
         "value": [-27791, 17382],
-        "note": "the baked height range of data/tiles/ceres/manifest.json (-27649.32..17355.49 m); run-time craters to 721 m"
+        "note": "the baked height range of data/tiles/ceres/manifest.json (-27649.32..17355.49 m, content hash b6eaab0b89ba7fe6); run-time craters to 721 m"
       },
       "terrain.amplification": {
         "value": "rocky-generic seed 4125 overrides {}",
@@ -3166,7 +3166,7 @@
       },
       "terrain.elevation": {
         "value": [-4284, 6534],
-        "note": "the baked height range of data/tiles/pluto/manifest.json (-4100.79..6496.65 m); run-time craters to 911 m"
+        "note": "the baked height range of data/tiles/pluto/manifest.json (-4100.79..6496.65 m, content hash 287403cc6766d438); run-time craters to 911 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4123 overrides {}",
@@ -3254,7 +3254,7 @@
       },
       "terrain.elevation": {
         "value": [-14317, 6945],
-        "note": "the baked height range of data/tiles/charon/manifest.json (-14130.8..6907.54 m); run-time craters to 930 m"
+        "note": "the baked height range of data/tiles/charon/manifest.json (-14130.8..6907.54 m, content hash 9510b3515eca6466); run-time craters to 930 m"
       },
       "terrain.amplification": {
         "value": "icy-generic seed 4124 overrides {}",

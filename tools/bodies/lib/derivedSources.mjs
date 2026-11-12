@@ -1,6 +1,6 @@
 // Readers for the second group of sources (atmosphere profiles, heating constants, ratios of specific heats,
 // colour indices, DEM ranges). Each returns plain data with its source; fetch-sources.mjs writes the results
-// to tools/bodies/sources/{atmospheres,colours,dem-relief}.json. PDFs are read by tools/bodies/pdftext.py
+// to tools/bodies/sources/{atmospheres,colours}.json. PDFs are read by tools/bodies/pdftext.py
 // (python -I, pypdf), only as text.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -226,48 +226,4 @@ export async function buildColourSources(sbdbCeres) {
     bodies[id] = { bv: null, vr: null, linearRgb: m.meanLinearRgb, source: { path: 'data/staged/render/albedo-means.json (planet-bake)' }, note: `chromaticity of planet-bake's baked level-0 albedo (${m.colourBasis})` };
   }
   return { description: 'Broadband colour indices (Johnson B-V; V-R in the Cousins system) of the Sun and the bodies, for the mean colour of the far-field disc', sun, bodies };
-}
-
-// -------------------------------------------------------------------------------------------- DEM ranges
-
-/**
- * Height range of each DEM planet-bake bakes: the published range where the product states one (Mars: the
- * GDAL statistics of the USGS file; Venus: the USGS product page), otherwise the storage range of the file
- * (its TIFF header: 16-bit signed samples, -32768 = no data), which bounds what the bake can produce.
- */
-export async function buildDemRelief(bakeConfigs) {
-  const out = {};
-  for (const [id, cfg] of Object.entries(bakeConfigs)) {
-    if (!cfg.height?.dem) continue;
-    const url = cfg.sources[cfg.height.dem.source].url;
-    const name = url.split('/').pop();
-    if (id === 'mars') {
-      const r = await fetchCached('usgs-dem-mars', `${name}.aux.xml`, `${url}.aux.xml`);
-      const mn = /STATISTICS_MINIMUM">(-?[\d.]+)</.exec(r.text);
-      const mx = /STATISTICS_MAXIMUM">(-?[\d.]+)</.exec(r.text);
-      need(mn && mx, 'Mars DEM aux.xml: no statistics');
-      out[id] = { min: Number(mn[1]), max: Number(mx[1]), kind: 'published statistics (GDAL .aux.xml of the USGS product)', source: src(r.meta) };
-    } else if (id === 'venus') {
-      const r = await fetchCached('usgs-dem-venus', 'venus_magellan_global_topography_4641m.html', 'https://astrogeology.usgs.gov/search/map/venus_magellan_global_topography_4641m');
-      const m = /data range of (-?\d+) to (-?\d+) meters/.exec(r.text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '));
-      need(m, 'Venus DEM product page: no data range');
-      out[id] = { min: Number(m[1]), max: Number(m[2]), kind: 'published data range (USGS product page)', source: src(r.meta) };
-    } else {
-      const r = await fetchCached(`usgs-dem-${id}`, `${name}.head`, url, { headers: { Range: 'bytes=0-65535' } });
-      const b = readFileSync(r.path);
-      const le = b.toString('latin1', 0, 2) === 'II';
-      const u16 = (o) => (le ? b.readUInt16LE(o) : b.readUInt16BE(o));
-      const u32 = (o) => (le ? b.readUInt32LE(o) : b.readUInt32BE(o));
-      need(u16(2) === 42, `${id} DEM: not a classic TIFF`);
-      const ifd = u32(4);
-      const tags = {};
-      for (let i = 0; i < u16(ifd); i++) {
-        const o = ifd + 2 + 12 * i;
-        tags[u16(o)] = u16(o + 8);
-      }
-      need(tags[258] === 16 && tags[339] === 2, `${id} DEM: samples are not 16-bit signed (bits ${tags[258]}, format ${tags[339]})`);
-      out[id] = { min: -32767, max: 32767, kind: 'storage range of the file (16-bit signed samples, -32768 = no data; TIFF header), no published range', source: src(r.meta) };
-    }
-  }
-  return { description: 'Height range of the DEM of each body planet-bake bakes from a DEM (DN units before the bake config\'s scale and offset)', bodies: out };
 }

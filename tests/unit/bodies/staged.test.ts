@@ -55,6 +55,25 @@ function refsOf(v: unknown, out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * planet-bake's baked tile sets are git-ignored (absent on CI): the generator reads their height ranges through
+ * the tracked snapshot tools/bodies/sources/bake-manifests.json. Where the tiles ARE present, the snapshot must
+ * equal them (otherwise run node tools/bodies/fetch-sources.mjs and regenerate). Skipped, explicitly, without them.
+ */
+const SNAPSHOT = JSON.parse(readFileSync(join(ROOT, 'tools/bodies/sources/bake-manifests.json'), 'utf8')) as {
+  bodies: Record<string, { radius: number; elevation: { min: number; max: number }; residentHeightLevel: number; contentHash: string }>;
+};
+const HAS_BAKED_TILES = Object.keys(SNAPSHOT.bodies).every((id) => existsSync(join(ROOT, 'data/tiles', id, 'manifest.json')));
+
+describe.skipIf(!HAS_BAKED_TILES)('the manifest snapshot equals the baked tile sets (needs data/tiles)', () => {
+  it.each(Object.keys(SNAPSHOT.bodies))('%s', (id) => {
+    const m = readJson(join(ROOT, 'data/tiles', id, 'manifest.json')) as { radius: number; residentHeightLevel: number; contentHash: string; layers: { height: { elevation: { min: number; max: number } } } };
+    const s = SNAPSHOT.bodies[id]!;
+    // + 0: a manifest may hold -0, which JSON writes back as 0
+    expect({ radius: m.radius, elevation: { min: m.layers.height.elevation.min + 0, max: m.layers.height.elevation.max + 0 }, residentHeightLevel: m.residentHeightLevel, contentHash: m.contentHash }).toEqual(s);
+  });
+});
+
 describe('staged body library', () => {
   it.each(BRIEF_LIST)('%s: staged file exists and equals its typed fixture entry', (name) => {
     const id = idOf(name);
