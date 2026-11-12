@@ -55,6 +55,21 @@ function changedShare(a: Buffer, b: Buffer, threshold = 10): number {
   return n / (pa.width * pa.height);
 }
 
+/** Mean luma (0..255) of a rectangle of a screenshot. */
+function meanLuma(a: Buffer, x0: number, y0: number, x1: number, y1: number): number {
+  const p = PNG.sync.read(a);
+  let sum = 0;
+  let n = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = (y * p.width + x) * 4;
+      sum += 0.2126 * p.data[i]! + 0.7152 * p.data[i + 1]! + 0.0722 * p.data[i + 2]!;
+      n++;
+    }
+  }
+  return sum / n;
+}
+
 /** Presentation state of every part of the stack (history the lab does not want to wait for). */
 const sootEverything = (): void => {
   const lab = window.__veh!;
@@ -101,6 +116,10 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'site-wires-from-mast-foot', query: 'scene=pad&sun=175,60&eye=-95,-112,14&at=-30,10,-30&fov=60' },
       { name: 'site-aerial', query: 'scene=pad&sun=160,55&eye=330,180,420&at=-90,-118,0&fov=42' },
       { name: 'site-tank-farm-berm', query: 'scene=pad&sun=175,60&eye=118,-109,170&at=192,-115,262&fov=50' },
+      // The fence and the gate where the access road and the crawlerway enter, and the pad across the fence.
+      { name: 'site-fence-gate', query: 'scene=pad&sun=160,50&eye=74,-115.2,420&at=30,-116.5,350&fov=55' },
+      { name: 'site-fence-pad', query: 'scene=pad&sun=200,40&eye=-96,-116,-247&at=0,-85,0&fov=50' },
+      { name: 'site-trench-burnt', query: 'scene=pad&sun=175,60&eye=3,-104,-58&at=0,-116,-8&fov=55' },
       { name: 'site-overview-night', query: 'scene=pad&sun=290,-28&env=night&eye=250,-15,330&at=-40,-112,-20&fov=42', minNonBlack: 0.02 },
       { name: 'site-pad-night', query: 'scene=pad&sun=290,-28&env=night&eye=120,-100,150&at=0,-70,0&fov=40', minNonBlack: 0.02 },
     ]);
@@ -119,6 +138,9 @@ test.describe('vehicle and pad screenshots', () => {
       { name: 'stage-lander-space', query: `${SPACE}&stage=5&${SUN_SPACE}&eye=13,-2,8&at=0,-3.6,0&fov=45`, minNonBlack: 0.03 },
       { name: 'stage-ascent-space', query: `${SPACE}&stage=7&${SUN_SPACE}&eye=8.5,0.5,5.5&at=0,-1.4,0&fov=45`, minNonBlack: 0.03 },
       { name: 'stage-capsule-space', query: `${SPACE}&stage=8&${SUN_SPACE}&eye=5,2.6,4.2&at=0,1.1,0&fov=45`, minNonBlack: 0.03 },
+      // The bases a chase camera looks straight at: the third stage in the parking orbit, the lander from below.
+      { name: 'stage-m3-aft-space', query: `${SPACE}&stage=4&stages=1&coast=2&hold=1&solo=1&focus=payload-adapter&sunv=0.5,-0.6,0.6&eye=7,-17,6&at=0,-10.5,0&fov=50`, minNonBlack: 0.05 },
+      { name: 'stage-lander-underside', query: `${SPACE}&stage=5&sunv=0.4,-0.8,0.45&eye=3.6,-10.5,3.2&at=0,-5.6,0&fov=50`, minNonBlack: 0.05 },
       { name: 'interstage-interior', query: `${SPACE}&stage=1&stages=1&coast=2&hold=1&solo=1&focus=interstage-1&sunv=0.35,0.85,0.4&eye=3.4,8.5,4.2&at=0,-1.6,0&fov=60`, minNonBlack: 0.1 },
     ]);
   });
@@ -174,6 +196,11 @@ test.describe('vehicle and pad screenshots', () => {
     expect(changedShare(shots['frost-prelaunch']!, shots['frost-shed']!, 3)).toBeGreaterThan(0.04);
     expect(changedShare(shots['frost-prelaunch']!, shots['frost-shed']!, 10)).toBeGreaterThan(0.005);
     expect(changedShare(shots['frost-line-prelaunch']!, shots['frost-line-shed']!, 3)).toBeGreaterThan(0.06);
+    // A loaded tank can be told from an empty one: the frosted barrel is visibly whiter than its paint.
+    const frosted = meanLuma(shots['frost-prelaunch']!, 600, 320, 700, 600);
+    const bare = meanLuma(shots['frost-shed']!, 600, 320, 700, 600);
+    console.log(`frost: barrel luma ${frosted.toFixed(1)} frosted, ${bare.toFixed(1)} bare (ratio ${(frosted / bare).toFixed(3)})`);
+    expect(frosted / bare).toBeGreaterThan(1.08);
     expect(changedShare(shots['aft-clean']!, shots['aft-sooted']!)).toBeGreaterThan(0.01);
     expect(changedShare(shots['engines-clean']!, shots['engines-sooted']!)).toBeGreaterThan(0.004);
   });

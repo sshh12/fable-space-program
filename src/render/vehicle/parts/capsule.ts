@@ -574,8 +574,11 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       for (const sb of [-0.26, 0.26]) b.at(on(o.hw + 0.004, sb, -0.004), () => box(b, 0.07, 0.03, 0.13, [0, 0.015, 0], 'hinge'));
       b.mat('alu-machined');
       b.at(on(-o.hw + 0.1, 0, 0), () => {
-        rod(b, [0, 0.032, -0.08], [0, 0.032, 0.08], 0.011, 8, 'handle');
-        for (const sb of [-0.08, 0.08]) rod(b, [0, -0.004, sb], [0, 0.032, sb], 0.009, 8, 'handle');
+        // A solid pull bar on a base plate, not a rod standing off the skin: the gap under a stand-off rail is
+        // below what the shadow cascades and the screen-space contact shadow resolve, and its shadow was a
+        // ragged band wider than the rail (request vehicle-pad-10).
+        box(b, 0.05, 0.006, 0.22, [0, 0.003, 0], 'handle');
+        box(b, 0.022, 0.03, 0.18, [0, 0.019, 0], 'handle');
       });
       b.mat('steel-bare');
       for (let i = 0; i < 12; i++) {
