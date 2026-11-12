@@ -80,6 +80,18 @@ export class TileNode {
   /** Request priority of the current frame (streaming). */
   priority = 0;
   wantedFrame = -1;
+  /**
+   * Warp cap under which the tile is drawn (the largest cap of the observers within the range of its level)
+   * and the frame of the camera selection that set it: the tile's morph floor is capMorph(level, cap).
+   */
+  cap = 0;
+  capFrame = -1;
+  /** Frame in which a counted selection pass last used the tile (drawn, a parent of something drawn, or wanted): the pools' live demand. */
+  neededFrame = -1;
+  /** The tile found no room in a full pool and was given up: it is not requested again before this frame. */
+  deferUntil = -1;
+  /** Frame in which the tile's request entered the queue. */
+  queuedAt = -1;
 
   constructor(
     readonly key: TileKey,
@@ -124,6 +136,13 @@ export interface LodObserverFixed {
   bias: number;
   /** True for vessel observers (their surroundings are requested with priority). */
   vessel: boolean;
+  /**
+   * Fractional warp cap (lod.ts) of the ground this observer moves over; absent: SelectParams.cap. Each
+   * observer brings its own cap to the tiles within its ranges: a far camera that sweeps the body at
+   * kilometres per second (the map view over a turning planet, a warp pass) does not coarsen the ground under
+   * a vessel that stands still.
+   */
+  cap?: number;
 }
 
 export interface ViewFrustum {
@@ -153,6 +172,11 @@ export interface SelectParams {
   fadeSeconds: number;
   /** Request-only pass (prefetch): nothing is emitted or activated; priorities are scaled by this. */
   prefetch: number;
+  /**
+   * The tiles this pass uses count as live demand on the pools (TileNode.neededFrame). Default: camera
+   * selections do, request-only passes do not.
+   */
+  counted?: boolean;
 }
 
 export interface DrawItem {
@@ -250,14 +274,43 @@ export class BodyQuadtree {
     n.children = null;
   }
 
-  /** Smallest distance (m, after the observers' bias) from any observer to the tile; a true lower bound of vertex distances. */
+  /**
+   * Smallest distance (m, after the observers' bias) from any observer to the tile; a true lower bound of
+   * vertex distances. `limit` = the range of the tile's own level (the distance beyond which it does not
+   * matter). Also sets `capDraw` and `capSplit`: the largest warp cap of the observers within `limit` (under
+   * which the tile is drawn) and within the range of its children (under which it may be refined).
+   */
   distance(n: TileNode, limit: number): number {
     let best = Infinity;
     const s = n.sphere;
     const fr = n.frame;
     const r1 = this.radius + n.hMin;
     const r2 = this.radius + n.hMax;
-    const observers = this.p.observers;
+    const p = this.p;
+    const observers = p.observers;
+    if (!this.mixedCaps) {
+      for (let i = 0; i < observers.length; i++) {
+        const o = observers[i]!;
+        const ox = s.cx - o.pos.x;
+        const oy = s.cy - o.pos.y;
+        const oz = s.cz - o.pos.z;
+        const dc = Math.sqrt(ox * ox + oy * oy + oz * oz);
+        const lower = dc - s.r - o.bias;
+        if (lower >= best || lower >= limit) {
+          // Cannot beat the best so far, or is beyond the range that matters: the sphere bound is enough.
+          if (lower < best) best = lower;
+          continue;
+        }
+        const d = shellDistanceRaw(fr, o.dir, o.r, r1, r2) - o.bias;
+        if (d < best) best = d;
+      }
+      this.capDraw = this.capSplit = this.commonCap;
+      return best > 0 ? best : 0;
+    }
+    // Observers with different caps: every one within the limit is measured exactly, for its cap.
+    const split = levelRange(n.level + 1, p.K, this.faceSize, p.relief);
+    let capDraw = -1;
+    let capSplit = -1;
     for (let i = 0; i < observers.length; i++) {
       const o = observers[i]!;
       const ox = s.cx - o.pos.x;
@@ -265,16 +318,28 @@ export class BodyQuadtree {
       const oz = s.cz - o.pos.z;
       const dc = Math.sqrt(ox * ox + oy * oy + oz * oz);
       const lower = dc - s.r - o.bias;
-      if (lower >= best || lower >= limit) {
-        // Cannot beat the best so far, or is beyond the range that matters: the sphere bound is enough.
+      if (lower >= limit) {
         if (lower < best) best = lower;
         continue;
       }
       const d = shellDistanceRaw(fr, o.dir, o.r, r1, r2) - o.bias;
       if (d < best) best = d;
+      const cap = o.cap ?? p.cap;
+      if (d < limit && cap > capDraw) capDraw = cap;
+      if (d < split && cap > capSplit) capSplit = cap;
     }
+    // Nobody within range: the tile is a coarse stand-in, held to the slowest observer's cap.
+    this.capDraw = capDraw >= 0 ? capDraw : this.commonCap;
+    this.capSplit = capSplit >= 0 ? capSplit : this.capDraw;
     return best > 0 ? best : 0;
   }
+
+  /** Results of the last distance() besides the distance (see there). */
+  private capDraw = 0;
+  private capSplit = 0;
+  /** Do the observers of the pass have different caps, and the cap they share (else the largest of them). */
+  private mixedCaps = false;
+  private commonCap = 0;
 
   private nearVessel(n: TileNode): boolean {
     const s = n.sphere;
@@ -350,17 +415,33 @@ export class BodyQuadtree {
       this.items.length = 0;
       this.fading = 0;
     }
+    this.counted = params.counted ?? params.prefetch === 0;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const o of params.observers) {
+      const c = o.cap ?? params.cap;
+      if (c < lo) lo = c;
+      if (c > hi) hi = c;
+    }
+    this.mixedCaps = hi > lo;
+    this.commonCap = params.observers.length > 0 ? hi : params.cap;
     for (const root of this.roots) {
       if (root.state !== TILE_READY) {
         this.want(root, 1e9, 0);
         continue;
       }
-      this.visit(root, this.distance(root, Infinity), params.frustum ? this.frustumClass(root, Infinity) : 0);
+      const d = this.distance(root, Infinity);
+      this.visit(root, d, params.frustum ? this.frustumClass(root, Infinity) : 0, this.capDraw, this.capSplit);
     }
   }
 
+  private counted = false;
+
   private want(n: TileNode, priority: number, frustumClass: number): void {
     const p = this.p;
+    // Given up for want of room (streamer.ts): its parent stands in until the retry time.
+    if (n.deferUntil > p.frameIndex) return;
+    if (this.counted) n.neededFrame = p.frameIndex;
     let pr = priority * (frustumClass === 0 ? 1 : 0.25);
     if (p.prefetch > 0) pr *= p.prefetch;
     if (n.wantedFrame !== p.frameIndex) {
@@ -373,12 +454,15 @@ export class BodyQuadtree {
     n.lastTouched = p.frameIndex;
   }
 
-  private visit(n: TileNode, d: number, cls: number): void {
+  private visit(n: TileNode, d: number, cls: number, capDraw: number, capSplit: number): void {
     const p = this.p;
     const emitting = p.prefetch === 0;
     n.lastTouched = p.frameIndex;
+    if (this.counted) n.neededFrame = p.frameIndex;
     let settled = true;
     if (emitting) {
+      n.cap = capDraw;
+      n.capFrame = p.frameIndex;
       if (n.lastCovered !== p.frameIndex - 1 && n.lastCovered !== p.frameIndex) {
         n.activatedAt = p.time;
         n.fadeSeconds = n.level === 0 ? 0 : p.fadeSeconds;
@@ -389,7 +473,7 @@ export class BodyQuadtree {
     }
     const level = n.level;
     const childRange = levelRange(level + 1, p.K, this.faceSize, p.relief);
-    if (level >= capMaxLevel(p.cap, p.maxLevel) || d >= childRange) {
+    if (level >= capMaxLevel(capSplit, p.maxLevel) || d >= childRange) {
       if (emitting) this.emit(n, -1, cls === 0);
       return;
     }
@@ -408,10 +492,11 @@ export class BodyQuadtree {
         if (ccls !== 2 && !hidden) {
           if (c.state === TILE_READY) {
             if (settled) {
-              this.visit(c, dc, ccls);
+              this.visit(c, dc, ccls, this.capDraw, this.capSplit);
               continue;
             }
             c.lastTouched = p.frameIndex;
+            if (this.counted) c.neededFrame = p.frameIndex;
           } else {
             const size = this.faceSize / 2 ** c.level;
             this.want(c, (childRange / Math.max(dc, 0.05 * size)) * (this.nearVessel(c) ? 4 : 1), ccls);

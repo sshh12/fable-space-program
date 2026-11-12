@@ -396,6 +396,8 @@ export interface MeshSystem {
   drawSpotShadows(pass: GPURenderPassEncoder, viewProj: Mat4, frameIndex: number): void;
   /** True when no texture is still loading. */
   isIdle(): boolean;
+  /** Texture loads started so far and still outstanding, for a progress display (request app-integration-11). */
+  loads(): { pending: number; total: number };
 }
 
 interface GpuMaterial {
@@ -612,6 +614,7 @@ export function createMeshSystem(args: {
     },
     registerProceduralTexture: (id, texture) => textures.registerProcedural(id, texture),
     isIdle: () => textures.pendingLoads() === 0,
+    loads: () => ({ pending: textures.pendingLoads(), total: textures.startedLoads() }),
 
     createModel(data, options = {}) {
       if (data.lods.length === 0) throw new Error(`model ${data.name}: no LODs`);

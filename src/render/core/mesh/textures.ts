@@ -25,6 +25,7 @@ export class TextureManager {
   private readonly defaults: Record<TextureRole, GPUTextureView>;
   private readonly mips: MipGenerator;
   private pending = 0;
+  private started = 0;
 
   constructor(
     private readonly device: GPUDevice,
@@ -57,6 +58,11 @@ export class TextureManager {
     return this.pending;
   }
 
+  /** Texture loads started so far (those still outstanding are `pendingLoads`). */
+  startedLoads(): number {
+    return this.started;
+  }
+
   /** Resolve a material texture: a registered procedural id, else a URL (absolute, or relative to the assets base). */
   resolve(idOrUrl: string | undefined, role: TextureRole): TextureRef {
     if (!idOrUrl) return { view: this.defaults[role], version: 0 };
@@ -74,6 +80,7 @@ export class TextureManager {
     }
     const url = /^(https?:)?\/|^data:|^blob:/.test(idOrUrl) ? idOrUrl : `${this.assetsUrl}/${idOrUrl}`;
     this.pending++;
+    this.started++;
     this.load(url, srgb).then(
       (tex) => {
         ref.view = tex.createView();

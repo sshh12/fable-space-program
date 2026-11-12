@@ -12,6 +12,43 @@ import { activeVessel, bodyById, vesselComRoot, viewForward, viewUp } from './ca
 
 /** Vessels closer than this to a surface are LOD observers (terrain under the gear at full detail). */
 export const OBSERVER_SURFACE_DISTANCE = 2000;
+/** Margin around a vessel's footprint within which the ground counts as under it, m. */
+export const OBSERVER_FOOTPRINT_MARGIN = 2;
+
+/**
+ * Where a vessel meets the ground, as a LOD observer: the point on the vertical through its centre of mass
+ * at the height of its lowest part, with the radius of its footprint about that vertical as the bias (the
+ * envelope cylinders of its parts, `PartDef.bounds`, in their attitude: a stack standing on the pad has the
+ * footprint of its base, the same stack lying on its side that of its length). The ground within the
+ * footprint is then at distance zero, and beyond it the levels fall off as they would for a camera at the
+ * vessel's foot. The bounding sphere about the centre of mass that was used before is mostly air for a tall
+ * vehicle: 40 m of bias around a 5 m base asked for five times the finest tiles the gear can touch (request
+ * app-integration-7). A vessel whose parts have no envelope keeps the bounding sphere.
+ */
+export function vesselGroundObserver(defs: DefLibrary, v: VesselSnapshot): LodObserver {
+  const com = vesselComRoot(v);
+  const rl = v3.len(v.r);
+  if (!(rl > 0)) return { positionRoot: com, radiusBias: v.boundingRadius };
+  const down = v3.scale(v.r, -1 / rl);
+  let below = -Infinity;
+  let lateral = 0;
+  for (const p of v.parts) {
+    const b = defs.parts[p.def]?.bounds;
+    if (!b) continue;
+    const q = quat.mul(v.q, p.localRot);
+    const axis = quat.rotate(q, v3.unitY());
+    const half = 0.5 * (b.yMax - b.yMin);
+    const centre = v3.add(v.rRoot, v3.add(quat.rotate(v.q, p.localPos), v3.scale(axis, 0.5 * (b.yMax + b.yMin))));
+    const rel = v3.sub(centre, com);
+    const along = v3.dot(rel, down);
+    const cos = Math.abs(v3.dot(axis, down));
+    const sin = Math.sqrt(Math.max(0, 1 - cos * cos));
+    below = Math.max(below, along + half * cos + b.radius * sin);
+    lateral = Math.max(lateral, v3.len(v3.addScaled(rel, down, -along)) + half * sin + b.radius * cos);
+  }
+  if (below === -Infinity) return { positionRoot: com, radiusBias: v.boundingRadius };
+  return { positionRoot: v3.addScaled(com, down, Math.max(0, below)), radiusBias: Math.min(v.boundingRadius, lateral + OBSERVER_FOOTPRINT_MARGIN) };
+}
 
 /**
  * Static pressure at the camera. The vessel's own ambient pressure is carried to the eye with the isothermal
@@ -49,8 +86,9 @@ export function buildAudioListener(defs: DefLibrary, s: SimSnapshot, camera: Cam
 }
 
 /**
- * The camera plus every vessel within OBSERVER_SURFACE_DISTANCE of a surface. The active vessel uses its radar
- * altitude; other vessels the TerrainProvider when given, else their height above the body's datum sphere.
+ * The camera plus every vessel within OBSERVER_SURFACE_DISTANCE of a surface (as `vesselGroundObserver`). The
+ * active vessel uses its radar altitude; other vessels the TerrainProvider when given, else their height
+ * above the body's datum sphere.
  */
 export function buildLodObservers(defs: DefLibrary, s: SimSnapshot, camera: CameraState, terrain?: TerrainProvider): LodObserver[] {
   const out: LodObserver[] = [{ positionRoot: v3.clone(camera.positionRoot), radiusBias: 0 }];
@@ -68,7 +106,7 @@ export function buildLodObservers(defs: DefLibrary, s: SimSnapshot, camera: Came
         height = r - body.radius - terrain.heightAt(body.id, dirFixed, 10);
       }
     }
-    if (height < OBSERVER_SURFACE_DISTANCE) out.push({ positionRoot: vesselComRoot(v), radiusBias: v.boundingRadius });
+    if (height < OBSERVER_SURFACE_DISTANCE) out.push(vesselGroundObserver(defs, v));
   }
   return out;
 }

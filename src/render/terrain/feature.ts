@@ -13,7 +13,7 @@ import { coreOf, MAX_BODIES, type SceneBindings, type Tracked } from '@/render/c
 import { createFetchTileSource, type TerrainAuthority } from '@/terrain';
 import { createGridMesh, GRID_VERTEX_LAYOUT, type GridMesh } from './gridMesh';
 import { loadLowResAlbedo, srgbToLinear } from './lowResAlbedo';
-import { capMaxLevel, capMorph, GRID_QUADS, GRID_VERTS, levelRange, lodK, morphWindow, smooth01, warpLevelCap, type ReliefFloor } from './lod';
+import { capMaxLevel, capMorph, fitLodScale, GRID_QUADS, GRID_VERTS, GroundSpeed, levelRange, LOD_K_MAX, LOD_K_MIN, lodK, morphWindow, POOL_LOW, smooth01, warpLevelCap, type ReliefFloor } from './lod';
 import { buildMaterialUniform, createNoiseTexture, loadMaterialSet, readSurfaceParams, type MaterialSet, type SiteGroundPlan, type SurfaceParams } from './materials';
 import { BodyQuadtree, TILE_READY, type DrawItem, type LodObserverFixed, type SelectParams, type TileNode, type ViewFrustum } from './quadtree';
 import { CoverRenderer, type CoverBodyInfo, type CoverSite } from './cover';
@@ -23,7 +23,7 @@ import { BODY_UNIFORM_BYTES, MAX_OBSERVERS, RECORD_BYTES, RECORD_FLOATS, TERRAIN
 import { regolithBrdfWgsl, TERRAIN_BRDF_WGSL } from './shaders/lighting';
 import { buildSitePlan, MAX_SITES } from './sitePlan';
 import { MATERIAL_UNIFORM_FLOATS, TERRAIN_GBUFFER_WGSL, TERRAIN_WATER_WGSL } from './shaders/surface';
-import { TileStreamer, type StreamBody, type StreamerOptions, type StreamStats } from './streamer';
+import { TileStreamer, type PoolDemand, type StreamBody, type StreamerOptions, type StreamStats } from './streamer';
 import type { BoundSphere } from './tileMath';
 
 /** Supplies the main-thread height authority (the one the simulation uses, so rocks and collision agree). */
@@ -67,6 +67,16 @@ export interface TerrainBodyStats {
   K: number;
 }
 
+/** The last settled view of a surface with a vessel on it, kept resident while the camera is in the map view. */
+interface ParkedView {
+  /** The camera of that view (body-fixed), its frustum and its K. */
+  eye: LodObserverFixed;
+  frustum: ViewFrustum;
+  K: number;
+  /** Where the vessel observer nearest to the eye stood (body-fixed): the view is dropped when it has left. */
+  anchor: Vec3;
+}
+
 export interface TerrainDebug {
   /**
    * selectMs = CPU time of the frame's LOD selection (every body, what is drawn); prefetchMs = time of the
@@ -79,6 +89,12 @@ export interface TerrainDebug {
     instances: number;
     selectMs: number;
     prefetchMs: number;
+    /**
+     * Factor on the split distances that fits the view into the tile pools (1 = the full ranges of the
+     * render height, lod.ts `fitLodScale`) and the live demand it is fitted to.
+     */
+    lodScale: number;
+    demand: PoolDemand;
     /**
      * Main-thread time of the last frame, ms: `hooks` = everything the feature did (prepare and every draw
      * hook); its parts: `stream` (requests, dispatch, uploads; `upload` of it is the tile uploads), `build`
@@ -114,6 +130,15 @@ export interface TerrainDebug {
   readTile(bodyId: string, key: TileKey): Promise<{ heights: Float32Array; albedo: Uint8Array | null; aux: Uint8Array | null; normal: Uint8Array }>;
   /** Ids of the bodies drawn. */
   bodies(): string[];
+  /**
+   * What the latest camera selection of a body wants and has (request app-integration-11), per level
+   * 0..maxRenderLevel: `wanted[l]` = tiles of level l the selection uses (drawn, parents of drawn tiles, and
+   * tiles it asked for), `resident[l]` = those of them that are READY; `wantedLevel` = the deepest level
+   * wanted, `residentLevel` = the deepest level down to which every wanted tile is resident. A tile that was
+   * given up for want of a pool layer is not wanted until it is retried. Null for a body that is not drawn.
+   * One walk over the body's nodes: cheap enough for every frame of a loading screen.
+   */
+  residency(bodyId: string): { wantedLevel: number; residentLevel: number; wanted: number[]; resident: number[] } | null;
 }
 
 export interface TerrainFeature extends RenderFeature {
@@ -154,15 +179,21 @@ interface BodyState {
   prevRot: Mat3;
   prevCentre: Vec3;
   prevCamFixed: Vec3 | null;
-  lastStep: number;
+  /** Ground speed of the camera and of the frame's other observers (by their place in the list), for their warp caps. */
+  speedTrack: GroundSpeed;
+  observerTracks: { prev: Vec3 | null; track: GroundSpeed }[];
   speed: number;
   velFixed: Vec3;
+  /** Warp cap of the camera (the other observers carry their own). */
   cap: number;
   /** Per level, for this frame: the morph floor of the warp cap and 1 / range(level). */
   capMorph: Float32Array;
   invRange: Float32Array;
   K: number;
+  /** K the smoothed `K` is heading for (full K of the render height times the pool fit). */
+  targetK: number;
   pinNear: boolean | null;
+  parked: ParkedView | null;
   observers: LodObserverFixed[];
   lists: { full: [number, number]; quad: [number, number]; waterFull: [number, number]; waterQuad: [number, number] };
   stats: TerrainBodyStats;
@@ -171,6 +202,10 @@ interface BodyState {
 const MAX_INSTANCES = 1 << 16;
 /** The second selection pass (prefetch) runs every this many frames. */
 const PREFETCH_EVERY = 8;
+/** A camera that moved less than this share of its distance to the vessel in a frame is a settled view (worth parking). */
+const PARK_STEP = 0.02;
+/** The parked view is dropped when its vessel has moved this far, m. */
+const PARK_REACH = 150;
 /** Distance (in body radii) within which the preload level is resident and drawn: the whole-body shadow cascade then casts from tiles with quads of about three of its texels. */
 const RELIEF_RADII = 16;
 /** Fade-in used for a few seconds after a camera cut, s (there is no continuity to protect right after a cut). */
@@ -243,6 +278,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   let coverEnabled = true;
   let selectMs = 0;
   let prefetchMs = 0;
+  // Fit of the view into the tile pools (lod.ts fitLodScale): factor on K, and the demand it was fitted to.
+  let lodScale = 1;
+  let demand: PoolDemand = { tiles: 0, images: 0, ratio: 0 };
   const cpu = { hooks: 0, stream: 0, upload: 0, build: 0, rocks: 0, cover: 0, shadow: 0, gbuffer: 0 };
   // Time of the frame's prepare and of all its draw hooks so far, ms.
   let prepareMs = 0;
@@ -272,7 +310,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     if (n.level > 0 && morphEnabled) {
       const age = time - n.activatedAt;
       const fade = n.fadeSeconds > 0 && age < n.fadeSeconds ? 1 - smooth01(age / n.fadeSeconds) : 0;
-      force = Math.max(fade, b.capMorph[n.level]!);
+      // The cap of the observers the tile is drawn for (quadtree.ts); the camera's for a tile only a shadow cascade draws.
+      force = Math.max(fade, n.capFrame === frameIndex && n.cap !== b.cap ? capMorph(n.level, n.cap) : b.capMorph[n.level]!);
       invRange = b.invRange[n.level]!;
     }
     const m = b.rot;
@@ -391,14 +430,17 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       prevRot: mat3.identity(),
       prevCentre: v3.zero(),
       prevCamFixed: null,
-      lastStep: 0,
+      speedTrack: new GroundSpeed(),
+      observerTracks: [],
       speed: 0,
       velFixed: v3.zero(),
       cap: terrain.maxRenderLevel + 1,
       capMorph: new Float32Array(terrain.maxRenderLevel + 2),
       invRange: new Float32Array(terrain.maxRenderLevel + 2),
       K: 0,
+      targetK: 0,
       pinNear: null,
+      parked: null,
       observers: [],
       lists: { full: zero, quad: zero, waterFull: zero, waterQuad: zero },
       stats: { selected: 0, visible: 0, waterTiles: 0, casters: 0, deepestLevel: 0, cap: 0, groundSpeed: 0, fading: 0, nodes: 0, K: 0 },
@@ -450,18 +492,19 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const camR = v3.len(cam);
     const camDir = v3.scale(cam, 1 / camR);
 
-    // Ground speed per wall-clock second in the body-fixed frame (time warp included), with single-frame
-    // jumps (camera cuts) rejected: the smaller of the last two frame steps, then smoothed.
+    // Ground speed per wall-clock second in the body-fixed frame (time warp included), with camera cuts and
+    // view blends rejected (lod.ts GroundSpeed).
+    const horizontalStep = (from: Vec3, to: Vec3, dir: Vec3): number => {
+      const d = v3.sub(to, from);
+      const radial = v3.dot(d, dir);
+      return Math.sqrt(Math.max(0, v3.lenSq(d) - radial * radial));
+    };
     let cut = b.prevCamFixed === null;
+    let moved = 0;
     if (b.prevCamFixed) {
+      b.speed = b.speedTrack.update(horizontalStep(b.prevCamFixed, cam, camDir), dt);
       const d = v3.sub(cam, b.prevCamFixed);
-      const radial = v3.dot(d, camDir);
-      const horizontal = Math.sqrt(Math.max(0, v3.lenSq(d) - radial * radial));
-      const step = horizontal / dt;
-      const accepted = Math.min(step, b.lastStep);
-      b.lastStep = step;
-      b.speed += (accepted - b.speed) * (1 - Math.exp(-dt / 0.3));
-      const moved = v3.len(d);
+      moved = v3.len(d);
       cut = moved > Math.max(50, 0.25 * Math.max(pose.cameraAltitude, 0));
       if (!cut) b.velFixed = v3.scale(d, 1 / dt);
     }
@@ -469,22 +512,38 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     if (cut) fastFadeUntil = clock + FAST_FADE_WINDOW;
     b.cap = warpLevelCap(b.tree.faceSize, b.speed, terrain.maxRenderLevel);
 
-    const targetK = lodK(frame.renderSize[1], frame.camera.fovY, ctx.quality.terrainPxPerQuad);
+    // The full K of the render height, shrunk where the view would not fit into the tile pools.
+    const targetK = Math.min(LOD_K_MAX, Math.max(LOD_K_MIN, lodK(frame.renderSize[1], frame.camera.fovY, ctx.quality.terrainPxPerQuad) * lodScale));
+    b.targetK = targetK;
     b.K = b.K === 0 || cut ? targetK : b.K + (targetK - b.K) * (1 - Math.exp(-dt / 0.25));
     for (let level = 1; level < b.invRange.length; level++) {
       b.invRange[level] = 1 / levelRange(level, b.K, b.tree.faceSize, b.relief);
       b.capMorph[level] = capMorph(level, b.cap);
     }
 
-    // Observers: the camera first, then the frame's LOD observers that are not the camera itself.
-    const obs: LodObserverFixed[] = [{ pos: cam, r: camR, dir: camDir, bias: 0, vessel: false }];
+    // Observers: the camera first, then the frame's LOD observers that are not the camera itself. Each has
+    // the warp cap of its own ground speed: a vessel standing on the pad keeps its ground at full depth under
+    // a map camera that sweeps the turning planet at two kilometres per second.
+    const obs: LodObserverFixed[] = [{ pos: cam, r: camR, dir: camDir, bias: 0, vessel: false, cap: b.cap }];
     for (const o of frame.observers) {
       if (obs.length >= MAX_OBSERVERS) break;
       const rel = v3.sub(o.positionRoot, frame.camera.positionRoot);
       if (v3.lenSq(rel) < 1 && o.radiusBias === 0) continue;
       const pos = v3.add(cam, quat.rotateInv(pose.qFixedToRoot, rel));
       const r = v3.len(pos);
-      obs.push({ pos, r, dir: v3.scale(pos, 1 / r), bias: o.radiusBias, vessel: true });
+      const dir = v3.scale(pos, 1 / r);
+      const i = obs.length - 1;
+      const t = (b.observerTracks[i] ??= { prev: null, track: new GroundSpeed() });
+      const speed = t.prev ? t.track.update(horizontalStep(t.prev, pos, dir), dt) : 0;
+      t.prev = pos;
+      let cap = warpLevelCap(b.tree.faceSize, speed, terrain.maxRenderLevel);
+      // Riding with the camera (a chase or cockpit view): one cap, and the cheaper selection that goes with it.
+      if (Math.abs(cap - b.cap) < 0.05) cap = b.cap;
+      obs.push({ pos, r, dir, bias: o.radiusBias, vessel: true, cap });
+    }
+    for (let i = obs.length - 1; i < b.observerTracks.length; i++) {
+      b.observerTracks[i]!.prev = null;
+      b.observerTracks[i]!.track.reset();
     }
     b.observers = obs;
 
@@ -516,9 +575,36 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     };
     b.tree.select(base);
 
+    // The view a vessel on the surface was last looked at from stays resident while the camera is in the map
+    // (request app-integration-6): leaving the map shows the ground as it was left.
+    const map = frame.camera.kind === 'map';
+    if (!map) {
+      let nearest = Infinity;
+      let anchor: Vec3 | null = null;
+      for (let i = 1; i < obs.length; i++) {
+        const d = v3.dist(obs[i]!.pos, cam);
+        if (d < nearest) {
+          nearest = d;
+          anchor = obs[i]!.pos;
+        }
+      }
+      if (!anchor) b.parked = null;
+      else if (!cut && moved <= PARK_STEP * Math.max(1, nearest)) b.parked = { eye: { pos: cam, r: camR, dir: camDir, bias: 0, vessel: false, cap: terrain.maxRenderLevel + 1 }, frustum, K: b.K, anchor: v3.clone(anchor) };
+    } else if (b.parked) {
+      const anchor = b.parked.anchor;
+      if (!obs.some((o, i) => i > 0 && v3.dist(o.pos, anchor) < PARK_REACH)) b.parked = null;
+      else if (frameIndex % PREFETCH_EVERY === 2) {
+        const tPark = performance.now();
+        b.tree.select({ ...base, observers: [b.parked.eye, ...obs.slice(1)], frustum: b.parked.frustum, K: b.parked.K, window: morphWindow(b.parked.K), prefetch: 1, counted: true });
+        prefetchMs += performance.now() - tPark;
+      }
+    }
+
     // Predictive prefetch (request only): where the camera will be in two seconds, and the predicted
-    // impact point of the active vessel on this body.
+    // impact point of the active vessel on this body. Only with room to spare in the pools: what it asks for
+    // is not needed yet.
     if (frameIndex % PREFETCH_EVERY !== 0 && frameIndex % PREFETCH_EVERY !== 4) return;
+    if (lodScale < 1 || demand.ratio >= POOL_LOW) return;
     const tPrefetch = performance.now();
     prefetchBody(b, frame, base, frustum, cut);
     prefetchMs += performance.now() - tPrefetch;
@@ -530,7 +616,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       const ahead = v3.addScaled(cam, b.velFixed, 2);
       if (v3.dist(ahead, cam) > 1) {
         const r = v3.len(ahead);
-        b.tree.select({ ...base, observers: [{ pos: ahead, r, dir: v3.scale(ahead, 1 / r), bias: 0, vessel: false }], frustum: { eye: ahead, planes: frustum.planes }, prefetch: 0.3 });
+        b.tree.select({ ...base, observers: [{ pos: ahead, r, dir: v3.scale(ahead, 1 / r), bias: 0, vessel: false, cap: base.cap }], frustum: { eye: ahead, planes: frustum.planes }, prefetch: 0.3 });
       }
     } else if (frameIndex % PREFETCH_EVERY === 4) {
       const impact = frame.snapshot.patches.current.flatMap((p) => p.markers).find((m) => m.kind === 'impact' && m.bodyId === b.id && m.latitude !== undefined && m.longitude !== undefined);
@@ -546,7 +632,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         const r = v3.len(eye);
         b.tree.select({
           ...base,
-          observers: [{ pos: eye, r, dir: v3.scale(eye, 1 / r), bias: 0, vessel: true }],
+          observers: [{ pos: eye, r, dir: v3.scale(eye, 1 / r), bias: 0, vessel: true, cap: base.cap }],
           frustum: { eye, planes: [side(east, -1), side(east, 1), side(north, -1), side(north, 1)] },
           occluderRadius: 0,
           prefetch: 0.2,
@@ -886,6 +972,17 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       const t1 = performance.now();
       selectMs = t1 - t0 - prefetchMs;
       ctx.perf.cpuBegin('terrain.stream');
+      // Fit the view into the pools: the live demand of the last passes against the capacity, and the factor
+      // on K that the next selection runs with (the body nearest to the camera carries almost all of it).
+      demand = streamer.demand(frameIndex, PREFETCH_EVERY - 1);
+      let lead: BodyState | null = null;
+      for (const b of active) if (!lead || frame.bodies[b.bodyIndex]!.cameraAltitude < frame.bodies[lead.bodyIndex]!.cameraAltitude) lead = b;
+      if (lead) {
+        const fullK = lodK(frame.renderSize[1], frame.camera.fovY, ctx.quality.terrainPxPerQuad);
+        // (Never below what K's own floor lets take effect: the way back up would be idle time.)
+        lodScale = Math.max(Math.min(1, LOD_K_MIN / fullK), fitLodScale(lodScale, Math.min(1, lead.K / fullK), demand.ratio, frame.realDt));
+      }
+      streamer.noteFit(lodScale, demand);
       streamer.update(frameIndex);
       ctx.perf.cpuEnd('terrain.stream');
       const t2 = performance.now();
@@ -1016,8 +1113,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       if (!streamer.isIdle()) return false;
       if (rocks && !rocks.isIdle()) return false;
       if (cover && !cover.isIdle()) return false;
-      // A tile still relaxing from its fade-in changes the image.
-      return bodies.every((b) => b.frameIndex !== frameIndex || b.tree.fading === 0);
+      // A tile still relaxing from its fade-in changes the image, and so do level ranges that are still moving.
+      return bodies.every((b) => b.frameIndex !== frameIndex || (b.tree.fading === 0 && Math.abs(b.K - b.targetK) <= 0.002 * b.targetK));
     },
 
     rocks: rocksFeature,
@@ -1038,6 +1135,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
           instances: instanceCount,
           selectMs,
           prefetchMs,
+          lodScale,
+          demand: { ...demand },
           cpu: { ...cpu, hooks: prepareMs + drawMs },
           materialBytes: bodies.reduce((a, b) => a + b.set.bytes, 0),
           rocks: rocks ? rocks.stats() : { instances: 0, chunks: 0, triangles: 0 },
@@ -1058,6 +1157,27 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       },
       provider: () => provider,
       bodies: () => bodies.map((b) => b.id),
+      residency(bodyId) {
+        const b = bodies.find((x) => x.id === bodyId);
+        if (!b || b.frameIndex < 0) return null;
+        const levels = b.def.terrain!.maxRenderLevel + 1;
+        const wanted = new Array<number>(levels).fill(0);
+        const resident = new Array<number>(levels).fill(0);
+        for (const n of b.tree.allNodes()) {
+          if (n.neededFrame !== b.frameIndex || n.level >= levels) continue;
+          wanted[n.level]!++;
+          if (n.state === TILE_READY) resident[n.level]!++;
+        }
+        let wantedLevel = 0;
+        let residentLevel = -1;
+        let complete = true;
+        for (let l = 0; l < levels; l++) {
+          if (wanted[l]! > 0) wantedLevel = l;
+          if (complete && resident[l] === wanted[l]) residentLevel = l;
+          else complete = false;
+        }
+        return { wantedLevel, residentLevel: Math.min(residentLevel, wantedLevel), wanted, resident };
+      },
       readyTiles(bodyId, level, latDeg, lonDeg, limit) {
         const b = bodies.find((x) => x.id === bodyId);
         if (!b) return [];

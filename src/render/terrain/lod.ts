@@ -85,6 +85,84 @@ export function warpLevelCap(faceSize: number, groundSpeed: number, maxLevel: nu
   return Math.min(maxLevel + 1, Math.max(0, c));
 }
 
+/** Seconds of frames whose slowest one is an observer's ground speed (GroundSpeed). */
+export const SPEED_WINDOW_SECONDS = 0.25;
+/** Doublings per second by which a ground speed may rise: the warp cap falls by at most this many levels a second. */
+export const SPEED_RISE_LEVELS = 8;
+/** Speed from which a rise is counted, m/s (below it no level of any body is capped). */
+export const SPEED_FLOOR = 1;
+
+/**
+ * Ground speed of one LOD observer per wall-clock second, for its warp cap. The slowest frame of the last
+ * SPEED_WINDOW_SECONDS is taken, so a camera cut, a view blend (0.6 s of a camera flying between two rigs)
+ * and a single long frame are not flight; a speed that rises is followed by SPEED_RISE_LEVELS doublings a
+ * second (the cap falls level by level, an eighth of a second each, and every level has faded into its parent
+ * before it is dropped, whatever the jump: a smoothing of the speed itself let the cap fall six levels in the
+ * first frame of a thousandfold warp), one that falls at once (the cap rises, and what comes back fades in
+ * tile by tile anyway). The moment a camera comes to rest the ground under it
+ * has its full detail again: after a return from the map view that used to take one to five seconds.
+ */
+export class GroundSpeed {
+  speed = 0;
+  private readonly speeds: number[] = [];
+  private readonly spans: number[] = [];
+  private total = 0;
+
+  /** One frame in which the observer moved `step` metres over the ground in `dt` seconds. */
+  update(step: number, dt: number): number {
+    const span = Math.max(dt, 1e-4);
+    this.speeds.push(step / span);
+    this.spans.push(span);
+    this.total += span;
+    // Keep the shortest run of frames that covers the window, and never fewer than three (one long frame
+    // with a cut in it is not flight either).
+    while (this.spans.length > 3 && this.total - this.spans[0]! >= SPEED_WINDOW_SECONDS) {
+      this.total -= this.spans.shift()!;
+      this.speeds.shift();
+    }
+    let slowest = Infinity;
+    for (const s of this.speeds) if (s < slowest) slowest = s;
+    if (slowest <= this.speed) this.speed = slowest;
+    else this.speed = Math.min(slowest, Math.max(this.speed, SPEED_FLOOR) * 2 ** (SPEED_RISE_LEVELS * span));
+    return this.speed;
+  }
+
+  reset(): void {
+    this.speed = 0;
+    this.speeds.length = 0;
+    this.spans.length = 0;
+    this.total = 0;
+  }
+}
+
+/**
+ * Share of the largest pool that the live demand may take before the level ranges are shrunk (POOL_HIGH), the
+ * share they are shrunk or grown to (POOL_TARGET) and the share below which they grow again (POOL_LOW).
+ */
+export const POOL_HIGH = 0.92;
+export const POOL_TARGET = 0.86;
+export const POOL_LOW = 0.78;
+/** Smallest factor on the split distances (the ranges are never shrunk below LOD_K_MIN either). */
+export const LOD_SCALE_MIN = 0.4;
+/** Largest growth of the factor per second. */
+export const LOD_SCALE_GROWTH = 0.5;
+
+/**
+ * The factor on K that fits a view into the tile pools (request app-integration-7). `ratio` = live demand /
+ * capacity of the fullest pool, measured with the ranges at `usedScale` of their full size. The demand of a
+ * view goes with the area of its rings, K^2, so the factor that brings it to POOL_TARGET is
+ * usedScale sqrt(POOL_TARGET / ratio). It only moves when the demand leaves the band POOL_LOW..POOL_HIGH (a
+ * tenth of K of hysteresis), down at once (K itself follows smoothly), up by LOD_SCALE_GROWTH per second.
+ */
+export function fitLodScale(scale: number, usedScale: number, ratio: number, dt: number): number {
+  if (ratio > POOL_HIGH) return Math.max(LOD_SCALE_MIN, Math.min(scale, usedScale * Math.sqrt(POOL_TARGET / ratio)));
+  if (scale < 1 && ratio < POOL_LOW) {
+    const fit = usedScale * Math.sqrt(POOL_TARGET / Math.max(ratio, 0.01));
+    return Math.min(1, Math.max(scale, Math.min(fit, scale * (1 + LOD_SCALE_GROWTH * Math.max(0, dt)))));
+  }
+  return scale;
+}
+
 /** Morph floor the cap imposes on tiles of `level` (see warpLevelCap). */
 export function capMorph(level: number, cap: number): number {
   const k = level + 1 - cap;

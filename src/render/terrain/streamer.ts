@@ -6,6 +6,14 @@
  * -> UPLOADING (result waits for its turn in the upload budget) -> READY (layers written, mips encoded).
  * A READY tile with READY children, a pinned tile (always-resident levels) and a tile touched recently are
  * never evicted, so a drawn tile's parents and image owners are always resident.
+ *
+ * Full pools (request app-integration-7). The pools are fixed, and a view can ask for more tiles than they
+ * hold (the pad at 1440p with a vessel observer did). Three things keep that from costing anything but
+ * detail: `demand()` reports the live demand on each pool so that the feature can shrink its level ranges
+ * until the view fits (feature.ts, `lodScale`); a frame looks for an evictable tile at most once per kind of
+ * layer (the search walks every node: with hundreds of arrived tiles waiting it was 2 to 3 ms a frame); and a
+ * tile that has waited STALL_GIVE_UP_FRAMES for a layer is given up and not requested again for
+ * STALL_RETRY_FRAMES, so the streamer comes to rest with its parent drawn in its place.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { RenderContext } from '@/core/contracts/render';
@@ -63,6 +71,10 @@ const STALE_FRAMES = 12;
 /** Frames a READY tile is protected from eviction after it was last touched. */
 const KEEP_FRAMES = 90;
 const IMAGE_SIZE = 256;
+/** Frames an arrived tile waits for a layer in a full pool before it is given up. */
+export const STALL_GIVE_UP_FRAMES = 240;
+/** Frames a tile that was given up is not requested again. */
+export const STALL_RETRY_FRAMES = 900;
 
 interface WorkerSlot {
   worker: Worker;
@@ -76,6 +88,17 @@ interface Arrived {
   body: StreamBody;
   /** performance.now() from which the result may be uploaded (artificial streaming delay). */
   at: number;
+  /** Frames in which it found no layer. */
+  stalled: number;
+}
+
+/** Live demand on the pools: tiles a counted selection pass used within the last `window` frames, and the pinned ones. */
+export interface PoolDemand {
+  /** Tiles (one height and one normal layer each), and those of them that own an image. */
+  tiles: number;
+  images: number;
+  /** Largest share of a pool the demand takes (tiles / tile layers, images / image layers). */
+  ratio: number;
 }
 
 export interface StreamStats {
@@ -91,6 +114,14 @@ export interface StreamStats {
   cancelledTotal: number;
   /** Uploads that had to wait because a pool was full and nothing could be evicted. */
   stalledTotal: number;
+  /** Arrived tiles waiting for a layer in this frame. */
+  stalled: number;
+  /** Tiles given up after STALL_GIVE_UP_FRAMES without a layer (their parents stand in; retried later). */
+  droppedTotal: number;
+  /** Live demand on the tile and image pools (`demand()`) and the factor on K the feature fits the view with (1 = full ranges). */
+  demandTiles: number;
+  demandImages: number;
+  lodScale: number;
   /** Tiles uploaded without their night lights because the night pool was full (0 with a pool of the right size). */
   nightDropped: number;
   /** Bakes the height authority flagged as computed on incomplete data. */
@@ -141,6 +172,11 @@ export class TileStreamer {
     evictedTotal: 0,
     cancelledTotal: 0,
     stalledTotal: 0,
+    stalled: 0,
+    droppedTotal: 0,
+    demandTiles: 0,
+    demandImages: 0,
+    lodScale: 1,
     nightDropped: 0,
     incompleteBakes: 0,
     maxUploadTiles: 0,
@@ -160,6 +196,10 @@ export class TileStreamer {
   private uploadTimeCount = 0;
   private bakeSum = 0;
   private imageSum = 0;
+  /** Kinds of eviction (bit 0: needs an image layer, bit 1: needs a night layer only) that found nothing this frame. */
+  private evictFailed = 0;
+  /** Arrived tiles without a layer in the last upload pass. */
+  private stalledNow = 0;
 
   constructor(
     private readonly ctx: RenderContext,
@@ -235,6 +275,7 @@ export class TileStreamer {
   private enqueue(n: TileNode, body: StreamBody, priority: number): void {
     n.state = TILE_QUEUED;
     n.priority = priority;
+    n.queuedAt = this.frame;
     this.queue.add(n);
     this.queueBody.set(n, body);
   }
@@ -270,7 +311,7 @@ export class TileStreamer {
     this.imageSum += msg.imageMs;
     this.s.jobs++;
     job.node.state = TILE_UPLOADING;
-    this.arrived.push({ result: msg, node: job.node, body: job.body, at: performance.now() + this.delayMs });
+    this.arrived.push({ result: msg, node: job.node, body: job.body, at: performance.now() + this.delayMs, stalled: 0 });
   }
 
   /**
@@ -279,9 +320,10 @@ export class TileStreamer {
    */
   update(frameIndex: number): void {
     this.frame = frameIndex;
+    this.evictFailed = 0;
     for (const body of this.bodies) {
       for (const n of body.tree.wanted) {
-        if (n.state === TILE_EMPTY && !n.failed) this.enqueue(n, body, n.priority);
+        if (n.state === TILE_EMPTY && !n.failed && n.deferUntil <= frameIndex) this.enqueue(n, body, n.priority);
       }
       body.tree.wanted.length = 0;
     }
@@ -300,6 +342,7 @@ export class TileStreamer {
     st.queued = this.queue.size;
     st.loading = this.jobs.size;
     st.uploading = this.arrived.length;
+    st.stalled = this.stalledNow;
     st.ready = this.readyCount;
     st.freeTileLayers = this.heights.freeLayers;
     st.freeImageLayers = this.albedo.freeLayers;
@@ -310,10 +353,12 @@ export class TileStreamer {
 
   private dispatch(): void {
     if (this.queue.size === 0) return;
+    // While finished tiles wait for a layer, baking more of them only adds to the wait: pinned tiles alone go out.
+    const blocked = this.stalledNow >= this.workers.length;
     for (const slot of this.workers) {
       if (!slot.ready || slot.job) continue;
       let best: TileNode | null = null;
-      for (const n of this.queue) if (!best || n.priority > best.priority) best = n;
+      for (const n of this.queue) if ((!blocked || n.pinned) && (!best || n.priority > best.priority)) best = n;
       if (!best) return;
       const body = this.queueBody.get(best)!;
       this.queue.delete(best);
@@ -335,8 +380,10 @@ export class TileStreamer {
   private upload(): void {
     if (this.arrived.length === 0) {
       this.s.lastUploadMs = 0;
+      this.stalledNow = 0;
       return;
     }
+    let stalled = 0;
     const t0 = performance.now();
     const o = this.options;
     const device = this.ctx.device;
@@ -375,6 +422,15 @@ export class TileStreamer {
         this.s.stalledTotal++;
         // A pinned tile that finds no room means the pools are too small for the always-resident levels.
         if (n.pinned && !this.failed && t0 - a.at > 20_000) this.fail(`terrain: no free texture layer for an always-resident tile of "${a.body.id}" (pools too small)`);
+        // Given up after a long wait: the parent keeps standing in, and the tile is not asked for again for a while.
+        if (!n.pinned && ++a.stalled > STALL_GIVE_UP_FRAMES) {
+          this.arrived.splice(i, 1);
+          this.discard(a);
+          n.deferUntil = this.frame + STALL_RETRY_FRAMES;
+          this.s.droppedTotal++;
+          continue;
+        }
+        stalled++;
         i++;
         continue;
       }
@@ -423,6 +479,9 @@ export class TileStreamer {
       this.s.uploadedTotal++;
       count++;
     }
+    this.stalledNow = stalled;
+    // With uploads stalled for good, what is still queued behind them is given up with them.
+    if (stalled > 0 && count === 0) this.giveUpQueue();
     const tMips = performance.now();
     if (count > 0) {
       const encoder = device.createCommandEncoder({ label: 'terrain.upload' });
@@ -451,6 +510,18 @@ export class TileStreamer {
     if (ms > this.s.maxUploadMs) this.s.maxUploadMs = ms;
   }
 
+  /** Requests that have waited STALL_GIVE_UP_FRAMES in the queue behind stalled uploads are given up with them. */
+  private giveUpQueue(): void {
+    for (const n of this.queue) {
+      if (n.pinned || this.frame - n.queuedAt <= STALL_GIVE_UP_FRAMES) continue;
+      this.queue.delete(n);
+      this.queueBody.delete(n);
+      n.state = TILE_EMPTY;
+      n.deferUntil = this.frame + STALL_RETRY_FRAMES;
+      this.s.droppedTotal++;
+    }
+  }
+
   /** Make sure the pools have a layer of every kind the tile needs, evicting least-recently-used tiles if not. */
   private reserve(n: TileNode, image: boolean, night: boolean): boolean {
     for (let guard = 0; guard < 8; guard++) {
@@ -458,9 +529,36 @@ export class TileStreamer {
       const needImage = image && this.albedo.freeLayers === 0;
       const needNight = night && this.night.freeLayers === 0;
       if (!needTile && !needImage && !needNight) return true;
-      if (!this.evictOne(n, needImage, needNight)) return false;
+      // One search per kind of layer and frame: when it found nothing, the next tile of the frame finds nothing either.
+      // (Bit 4 = a search among all tiles, whose failure covers the two narrower ones.)
+      const kind = needImage ? 1 : needNight ? 2 : 4;
+      if ((this.evictFailed & (kind | 4)) !== 0) return false;
+      if (!this.evictOne(n, needImage, needNight)) {
+        this.evictFailed |= kind;
+        return false;
+      }
     }
     return false;
+  }
+
+  /**
+   * Live demand on the pools: tiles that a counted selection pass used within the last `window` frames
+   * (drawn, parents of drawn tiles, wanted and on their way) and the pinned ones. What is merely resident
+   * (touched a while ago, kept until its layer is needed) is not demand.
+   */
+  demand(frameIndex: number, window: number): PoolDemand {
+    let tiles = 0;
+    let images = 0;
+    const since = frameIndex - window;
+    for (const body of this.bodies) {
+      for (const n of body.tree.allNodes()) {
+        if (n.state === TILE_EMPTY) continue;
+        if (!n.pinned && n.neededFrame < since) continue;
+        tiles++;
+        if (n.state === TILE_READY ? n.imageLayer >= 0 : ownsData(body.albedoLayer, n)) images++;
+      }
+    }
+    return { tiles, images, ratio: Math.max(tiles / this.options.tileLayers, images / this.options.imageLayers) };
   }
 
   private evictOne(keep: TileNode, needImage: boolean, needNight: boolean): boolean {
@@ -514,6 +612,13 @@ export class TileStreamer {
     if (n.parent) n.parent.readyChildren--;
     this.readyCount--;
     this.s.evictedTotal++;
+  }
+
+  /** The feature's fit of the view into the pools, for the stats. */
+  noteFit(lodScale: number, demand: PoolDemand): void {
+    this.s.lodScale = lodScale;
+    this.s.demandTiles = demand.tiles;
+    this.s.demandImages = demand.images;
   }
 
   /** Nothing queued, baking or waiting for upload (also after a reported worker failure, so callers do not wait forever). */

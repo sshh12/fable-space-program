@@ -48,12 +48,15 @@ export interface CoreShaderLibrary extends ShaderLibrary {
   tracked<T>(build: () => T): Tracked<T>;
   /** Number of modules whose compilation info has not arrived yet. */
   pendingCompilations(): number;
+  /** The same with the number of modules created so far, for a progress display (request app-integration-11). */
+  compilations(): { pending: number; total: number };
 }
 
 export function createShaderLibrary(device: GPUDevice, reportError: (message: string) => void): CoreShaderLibrary {
   const chunks = new Map<string, string>();
   const versions = new Map<string, number>();
   let pending = 0;
+  let total = 0;
   let tracking: Set<string> | null = null;
 
   const lib: CoreShaderLibrary = {
@@ -75,6 +78,7 @@ export function createShaderLibrary(device: GPUDevice, reportError: (message: st
       if (tracking) for (const n of expanded.includes) tracking.add(n);
       const module = device.createShaderModule({ label, code: expanded.code });
       pending++;
+      total++;
       module.getCompilationInfo().then(
         (info) => {
           pending--;
@@ -121,6 +125,7 @@ export function createShaderLibrary(device: GPUDevice, reportError: (message: st
       return t;
     },
     pendingCompilations: () => pending,
+    compilations: () => ({ pending, total }),
   };
   return lib;
 }
