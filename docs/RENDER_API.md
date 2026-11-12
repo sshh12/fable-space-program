@@ -744,12 +744,14 @@ function instanceInFrame(parent: ParentPose, localPos: Vec3, localRot: Quat | nu
   the way from paint to coat; the coverage mask it replaced had bare-ish and full-white pixels side by
   side there (1.72 to 3.23, steps to 0.47: dashes). Soot (request `vehicle-pad-7`):
   `density = saturate(weight x (0.67 + 0.66 x streaks))`, the streaks a noise in [0, 1] of cells 6 cm x 1.5 m
-  (and 24 cm x 6 m) along v that gives way to its mean under a pixel. A thin deposit is a brown veil (the
-  albedo is multiplied towards (0.50, 0.38, 0.26) by `smoothstep(0, 0.5, density)`: tiles, seams and
-  markings still show), a thick one near black (towards (0.030, 0.024, 0.019) by
-  `0.94 x smoothstep(0.3, 1, density)`); roughness goes to 0.92 by `smoothstep(0, 0.7, density)` and the
-  metalness out by `smoothstep(0.15, 0.9, density)`. Weight 0.25 is a tan veil (about two thirds of the
-  paint's luminance), 0.5 brown, 1 near black; nothing has an edge unless the weight has one. The clear
+  (and 24 cm x 6 m) along v that gives way to its mean under a pixel. A thin deposit is a grey veil with a
+  little warmth (the albedo is multiplied towards (0.42, 0.38, 0.33) by `smoothstep(0, 0.5, density)`:
+  tiles, seams and markings still show), a thick one neutral black (towards (0.022, 0.021, 0.020) by
+  `0.96 x smoothstep(0.2, 0.85, density)`; request `vehicle-pad-13`: it was a saturated brown, (0.50, 0.38,
+  0.26) and (0.030, 0.024, 0.019) by `0.94 x smoothstep(0.3, 1, density)`); roughness goes to 0.92 by
+  `smoothstep(0, 0.7, density)` and the metalness out by `smoothstep(0.15, 0.9, density)`. Weight 0.25 is
+  a grey veil (about two thirds of the paint's luminance), 0.5 dark grey, 1 near black; nothing has an
+  edge unless the weight has one. The clear
   coat and the anisotropy written to RT4 are multiplied by
   `(1 - smoothstep(0, 0.35, soot density)) x (1 - frost cover)`: a sooted or frosted tank has no mirror on
   top. `terrain` shading keeps plain blends of the masks (grime on site structures).

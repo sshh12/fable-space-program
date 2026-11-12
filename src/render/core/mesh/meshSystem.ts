@@ -207,13 +207,14 @@ fn blackbody(T: f32) -> vec3f {
     roughness = mix(roughness, 0.42, wear);
     let uvm = v.uv / max(abs(material.misc.zw), vec2f(1e-6));
     // Soot is a density, not a mask: the weight, modulated by a third in streaks of 6 cm x 1.5 m (and
-    // 24 cm x 6 m) along the flow. A thin deposit is a brown veil over the surface (its albedo is multiplied,
-    // so tiles, seams and markings still show); a thick one is near black. Roughness, metalness and the clear
-    // coat follow the density continuously: nothing has an edge unless the weight has one.
+    // 24 cm x 6 m) along the flow. A thin deposit is a grey veil with a little warmth over the surface (its
+    // albedo is multiplied, so tiles, seams and markings still show); a thick one is neutral black (request
+    // vehicle-pad-13: soot is close to neutral, not coffee brown). Roughness, metalness and the clear coat
+    // follow the density continuously: nothing has an edge unless the weight has one.
     let sootDensity = saturate(saturate(I.params.y * v.masks.b) * (0.67 + 0.66 * layerStreaks(uvm, vec2f(0.06, 1.5), 7)));
     let sootVeil = smoothstep(0.0, 0.5, sootDensity);
-    let soot = smoothstep(0.3, 1.0, sootDensity);
-    albedo = mix(albedo * mix(vec3f(1.0), vec3f(0.50, 0.38, 0.26), sootVeil), vec3f(0.030, 0.024, 0.019), soot * 0.94);
+    let soot = smoothstep(0.2, 0.85, sootDensity);
+    albedo = mix(albedo * mix(vec3f(1.0), vec3f(0.42, 0.38, 0.33), sootVeil), vec3f(0.022, 0.021, 0.020), soot * 0.96);
     roughness = mix(roughness, 0.92, smoothstep(0.0, 0.7, sootDensity));
     metallic *= 1.0 - smoothstep(0.15, 0.9, sootDensity);
     // Frost is a coat with a thickness, not a mask (request vehicle-pad-11): the weight, modulated by a

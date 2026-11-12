@@ -204,14 +204,14 @@ test('soot and frost lie on the paint, each as a graded density, and the clear c
   // The clean paint is even: no pattern of its own.
   expect(Math.max(...clean.luma) / Math.min(...clean.luma)).toBeLessThan(1.3);
 
-  // Full layers: the soot's brown-black (albedo 0.03 against 0.3) and the frost's white (0.95).
+  // Full layers: the soot's black (albedo 0.02 against 0.3) and the frost's white (0.95).
   const sooted = await face(1, 0);
   await saveScreenshot(page, 'render-core', 'mesh-soot-full');
   const frosted = await face(0, 1);
   // Soot is a density (request vehicle-pad-7). A quarter of the weight: a tan veil, the paint shows through.
   const quarter = await face(0.25, 0);
   await saveScreenshot(page, 'render-core', 'mesh-soot-quarter');
-  // Half the weight: brown, in streaks along the flow, with no bare paint and no black cut-out in it.
+  // Half the weight: dark grey, in streaks along the flow, with no bare paint and no black cut-out in it.
   const half = await face(0.5, 0);
   await saveScreenshot(page, 'render-core', 'mesh-soot-half');
   const halfFrost = await face(0, 0.5);
@@ -269,7 +269,7 @@ test('soot and frost lie on the paint, each as a graded density, and the clear c
       `mean ${(mean(half.luma) / level).toFixed(2)}, neighbour difference across / along the streaks ${(across / along).toFixed(2)}; half frost mean ${(mean(halfFrost.luma) / level).toFixed(2)}; thin frost (0.35) min ${(Math.min(...thinFrost.luma) / level).toFixed(2)} mean ${(mean(thinFrost.luma) / level).toFixed(2)}; ` +
       `environment mirrored at 80 degrees: clean ${coatClean.toFixed(0)} cd/m^2, sooted ${coatSoot.toFixed(0)}, frosted ${coatFrost.toFixed(0)}`,
   );
-  // Thick soot is near black everywhere (its streaks are a third of the density: brown-black to black).
+  // Thick soot is near black everywhere (its streaks are a third of the density: grey-black to black).
   expect(mean(sooted.luma) / level).toBeLessThan(0.3);
   expect(Math.max(...sooted.luma) / level, 'the lightest pixel under full soot').toBeLessThan(0.45);
   expect(mean(frosted.luma) / level).toBeGreaterThan(2.3);
