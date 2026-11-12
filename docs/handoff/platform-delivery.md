@@ -438,3 +438,8 @@ was re-recorded in format 2 during this work; the browser terrain check reads it
   (exit 0xC0000142, STATUS_DLL_INIT_FAILED; pg_ctl too, so the launcher killed the postmaster: the stack went
   down cleanly). Queued again in the other order (the GPU slot first, the stack inside it), so the stack slot
   is not held while the GPU queue is long.
+- 06:37 the requeued browser run reached the GPU slot and stopped at once: port 47220 was still held by the
+  Postgres of the 04:53 run (the orphaned launcher could not start taskkill either). `npm run stack -- down`
+  stopped it; the launcher now stops a Postgres of its own stack name that a dead launcher left running before
+  it checks the ports (c.f. the 01:12 lesson: leftovers of one's own name are the launcher's to clean). Queued
+  a third time.
