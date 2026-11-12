@@ -48,7 +48,7 @@ class Colour:
         return out
 
 
-def ortho(body: config.Body, hr: TileReader, col: Colour, lon0: float, hl: int, al: int) -> np.ndarray:
+def ortho(body: config.Body, hr: TileReader, col: Colour, lon0: float, hl: int, al: int, exposure: float) -> np.ndarray:
     n = VIEW
     k = (np.arange(n) + 0.5) / n * 2 - 1
     px, py = np.meshgrid(k, -k, indexing="xy")
@@ -75,7 +75,7 @@ def ortho(body: config.Body, hr: TileReader, col: Colour, lon0: float, hl: int, 
     lam = np.clip(np.sum(nrm * sun, axis=-1), 0, 1)
     rgb = np.zeros((n, n, 3))
     rgb[inside] = col.sample(d[inside], al)
-    img = rgb * lam[..., None] * 2.2
+    img = rgb * lam[..., None] * exposure
     img[~inside] = 0.0
     return (srgb_encode(np.clip(img, 0, 1)) * 255 + 0.5).astype(np.uint8)
 
@@ -113,7 +113,10 @@ def sheet(bid: str) -> Path:
     al = min(A, 4)
     lowres = np.asarray(Image.open(rt.TILES_ROOT / bid / "globals" / "albedo-lowres.png").convert("RGB"))
     shade, ex, (lo, hi) = hillshade_equirect(body, hr, hl)
-    views = [ortho(body, hr, col, lon, hl, al) for lon in (0, 90, 180, 270)]
+    # exposure: the body's mean albedo lit head-on lands at middle grey (as a camera would expose it)
+    mean_lin = float((srgb_decode(lowres / 255.0) @ np.array([0.2126, 0.7152, 0.0722])).mean())
+    exposure = 0.45 / max(mean_lin, 1e-3)
+    views = [ortho(body, hr, col, lon, hl, al, exposure) for lon in (0, 90, 180, 270)]
     W = 1024 * 2 + 30
     H = 512 + VIEW + 70
     canvas = Image.new("RGB", (W, H), (20, 20, 24))
@@ -134,7 +137,7 @@ def sheet(bid: str) -> Path:
     for i, v in enumerate(views):
         x0 = 10 + i * (VIEW + 20)
         canvas.paste(Image.fromarray(v), (x0, 512 + 55))
-        dr.text((x0, 512 + 38), f"sub-observer 0 N {(0, 90, 180, 270)[i]} E", fill=(255, 255, 0))
+        dr.text((x0, 512 + 38), f"sub-observer 0 N {(0, 90, 180, 270)[i]} E (exposure x{exposure:.1f})", fill=(255, 255, 0))
     out = rt.OUT / f"{bid}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(out, optimize=True)
