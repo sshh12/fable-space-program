@@ -6,7 +6,7 @@ the physical attitude indicator, the window glass, the cabin light and the crew-
 Owned paths: `src/render/cockpit/**`, `data/defs/visuals/cockpits/**`, `labs/cockpit/**`,
 `tests/browser/cockpit/**`, `tests/unit/cockpit/**`, `tools/cockpit/**`, `public/assets/cockpit/**`, this file.
 
-State: built, reviewed, fixed, reworked in visual rounds 1 to 4 (sections 7 to 10: what the critics and the user
+State: built, reviewed, fixed, reworked in visual rounds 1 to 5 (sections 7 to 11: what the critics and the user
 listed and what was done about each item, what is still open). Sections 1-6 describe the package as it is now.
 
 ## 1. API
@@ -45,15 +45,19 @@ await renderer.addFeature(feature);   // init is async: it loads public/assets/c
   takes). The floods always burn: at the layout's `lighting.floodStandby` share of their flux, at full with
   the active vessel's lights command (`floodLevel`).
 - Feature extras (tests, labs): `model(layoutId)`, `occlusion(layoutId)` (the baked occlusion stream),
-  `stats()` (`CockpitFrameStats`: active, layout, vesselId, vesselActive, lod, inside, triangles, cabin
-  polygons, sunLit, tunnel, vibration, prepare ms), `displays` (`MfdDisplays`: stats, painted pages),
-  `controlStates()`.
+  `stats()` (`CockpitFrameStats`: active, layout, vesselId, vesselActive, lod, inside, triangles,
+  drawnTriangles (after frustum culling), cabin polygons, sunLit, tunnel, vibration, prepare ms), `displays`
+  (`MfdDisplays`: stats with paints per display, painted pages, `pacer`), `controlStates()`,
+  `setDebugView(n)`, and `setAblation(mask, families)` with the `ABLATE` bits (cost attribution: single terms
+  of the shading, single draws, assembly families switched off; cockpit lab `&ablate=<mask>&without=<family,..>`).
 - Pure helpers (run in vitest): `buildCockpitModel(defs, id)`, `displayVertices`, `meshBvh`, `buildBvh` /
   `bvhRay`, `occlusionAt` / `occlusionSources` / `unpackOcclusion` / `bakeVertex`, `sunMapLayout` /
   `sunTileUniform` / `sunEnters`, `probeFaceMatrix` / `probeDirection` / `PROBE_FACES`, `loadCockpitLayout`,
   `validateLayout`, `bindingState` / `controlStates` / `readoutText` / `instrumentSource`, `digitMask`,
-  `cabinSources`, `floodLevel`, `castCabinRay`, `insideDistance`, `openingsOf`, `seatFrames`, and the penetration
-  check `findPenetrations` / `wallDepthByGroup` (`penetration.ts`, section 3).
+  `cabinSources`, `floodLevel`, `castCabinRay`, `insideDistance`, `openingsOf`, `seatFrames`, the penetration
+  check `findPenetrations` / `wallDepthByGroup` (`penetration.ts`, section 3), the displays' pacing rule
+  `DisplayPacer` (`pacing.ts`), the lamps' shadow-map projection `lampMatrix` / `lampProject` (`lampmap.ts`) and
+  the full detail level's draw chunks `buildChunks` / `visibleRuns` (`feature.ts`).
 
 ## 2. What is there
 
@@ -170,6 +174,14 @@ apertures, 3 that times the sun map, 4 probe reflection, 5 polygon sources, 6 bo
   inter-reflected light with a direction (irradiance about its normal x baked AO), fed back into the next
   frame's probe. There is no uniform ambient term any more. The sunlight a patch throws back into the cabin
   is part of this bounce.
+- **The flood lights' shadow maps** (`lampmap.ts`, round 5): one perspective depth map per lamp (1024^2, a layer
+  of a depth array; `transport.lampMapSize`) from the middle of its lens along the lens normal over its beam
+  (63 degrees to every side), casters = the full detail level without the enclosure, rendered at start and,
+  one layer a frame, after a lever, a guard, a selector or a hand controller moved. `cabinLight` reads it per
+  pixel inside the beam (the point moved a texel and a half off its surface, four bilinear comparisons) in
+  place of the vertex's baked visibility of that lamp, which remains the test of whether the lamp reaches the
+  surface at all and the visibility of the lens's spill outside the beam (`floodBeam`: a fifth of the lens's
+  luminance leaves it to every side, the rest in the beam).
 - **Occlusion bake** (`occlusion.ts`): at init, on the GPU, per vertex of every detail level against that
   level's BVH: ambient occlusion (96 rays within 0.45 m), and per window, per display and **per flood** the
   unblocked share of the form-factor kernel (24 points each); one sample pattern for all vertices (smooth
@@ -265,10 +277,15 @@ world-chase-window-night.
 9. **The floods are not off without the lights command** (the brief ties them to `lightsOn`): they burn at
    `lighting.floodStandby` (0.3) of their flux and the command brings them to full. A cabin that is black
    until the player finds the lights key reads as broken (the lead's item 2 of round 3).
-10. **The displays are not always painted at 15 Hz** (the brief: 15 Hz, staggered): nothing is painted while no
-    camera can see the screens, and a display whose page costs more than about 0.48 ms to paint is painted
-    less often, so that the three together stay within 0.36 ms of main-thread time per frame (the brief's own
-    0.4 ms line; request app-integration-12). `DISPLAY_CPU_BUDGET` in `displays.ts`.
+10. **The displays are not always painted at 15 Hz** (the brief: 15 Hz, staggered). The rule (`pacing.ts`, the
+    lead's decision of round 5): nothing is painted while no camera can read the screens; a display showing a
+    fast flight-data page (`displays.fastPages`: flight, entry, landing) is painted 15 times a second whatever
+    the page costs; the other displays share what those leave of `DISPLAY_CPU_BUDGET` (0.36 ms of main thread
+    per 60 Hz frame for all displays; the brief's own line is 0.4 ms; request app-integration-12) by their
+    paint cost, never under `displays.slowMinHz` (2 Hz); one paint per frame unless a fast page would
+    otherwise fall under its rate.
+11. **The full detail level is drawn in frustum-culled chunks** (round 5): the brief's "reduced LOD when the
+    camera is outside" is unchanged; inside, what lies beside and behind the view is not sent to the GPU.
 
 ## 5. Requests
 
@@ -304,10 +321,11 @@ world-chase-window-night.
   the procedural bake (no photographed or generated PBR sets; none of the 50 USD budget spent); no crew; the
   stowage is two soft bags and a checklist card (no tape, loose items or document pouches beyond the flight
   data file); hard parts are boxes with chamfers; ring frames, close-outs and lockers carry little breakup.
-- **No lamp casts a sharp shadow**: flood and window visibility is baked per vertex; the floods are beams
-  (pools of light, darker walls) and since round 3 stand where the cabin sees them, but a switch lever, a
-  guard or a hatch rod throws no shadow of its own. Shadow maps for the floods were not built (cost against
-  the 0.8 ms line).
+- **Lamp shadows are a point source's**: since round 5 every flood has a shadow map (section 2), so levers,
+  straps, bags and the console throw shadows and stand in contact shadows; the map is taken from the middle of
+  the lens, so a shadow's edge is as soft as the filter (about three texels: a few millimetres), not as the
+  lens's length would make it far from the caster. Window, display and bounce light are still shadowed per
+  vertex (baked visibility and ambient occlusion).
 - **Range**: an interior camera cannot hold a sunlit landscape and the cabin in one exposure. The core's
   meter stops down up to 3 EV for bright areas of a few per cent (cockpit-12, part 1): since round 3 (the
   windows' light at its true level) a sun patch on the console is about four stops over an Earth-lit cabin and
