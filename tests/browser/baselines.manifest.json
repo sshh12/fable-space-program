@@ -1,0 +1,158 @@
+{
+ "version": 1,
+ "dir": "data/baselines",
+ "viewport": [1280, 720],
+ "floor": { "meanAbs": 0.02, "p999": 1 },
+ "checkpoints": {
+  "pad-noon": {
+   "what": "The stack on the pad at local noon, from the ground beside it",
+   "page": "/labs/integration/?scene=pad&sun=180,65&sunsite=earth,18.987556,-155.603239&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "pad-sunset": {
+   "what": "The same view at sunset (the sun 3 degrees up in the west)",
+   "page": "/labs/integration/?scene=pad&sun=270,3&sunsite=earth,18.987556,-155.603239&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "ascent-cloud-deck": {
+   "what": "The ascent through a cloud deck, seen from the pad",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "ascent-10km": {
+   "what": "The stack and its plume at 10 km",
+   "page": "/labs/integration/?scene=ascent&start=10000&throttle=1&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "ascent-40km": {
+   "what": "The stack and its plume at 40 km",
+   "page": "/labs/integration/?scene=ascent&start=40000&throttle=1&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "leo-day": {
+   "what": "Low Earth orbit over the day side, the limb in frame",
+   "page": "/labs/integration/?scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "leo-terminator": {
+   "what": "Low Earth orbit across the terminator",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "leo-night": {
+   "what": "Low Earth orbit over the night side, with city lights and stars",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "leo-nadir-day": {
+   "what": "Low Earth orbit looking straight down at a continent by day",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "leo-nadir-night": {
+   "what": "Low Earth orbit looking straight down at a continent by night",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "translunar-earth": {
+   "what": "Translunar coast, the Earth in frame",
+   "page": "/labs/integration/?scene=translunar&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "translunar-moon": {
+   "what": "Translunar coast, the Moon in frame",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "lunar-terminator-20000km": {
+   "what": "The lunar terminator from 20,000 km",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "lunar-terminator-5000km": {
+   "what": "The lunar terminator from 5,000 km",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "lunar-orbit-low-sun": {
+   "what": "Low lunar orbit at low sun",
+   "page": "/labs/integration/?scene=lunarOrbit&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "lunar-touchdown": {
+   "what": "The lander 12 m above the landing target on its descent engine, the sun 15 degrees up",
+   "page": "/labs/integration/?scene=lunarSurface&throttle=0.4&hover=12&sun=100,15&sunsite=moon,0.661471,23.435999&orbit=40,12,45&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "lunar-surface-cockpit": {
+   "what": "The lunar surface from the cockpit",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "reentry-peak-heating": {
+   "what": "The capsule in the plasma sheath at peak heating",
+   "page": "/labs/integration/?scene=reentry&orbit=160,10,30&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "parachute-descent": {
+   "what": "The capsule under its main canopies at 2,500 m",
+   "page": "/labs/integration/?scene=chutes&start=2500&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "splashdown": {
+   "what": "The capsule at the water under its canopies",
+   "page": "/labs/integration/?scene=chutes&start=120&hud=0&governor=off&deterministic=1&paused=1",
+   "frames": 64,
+   "status": "pending"
+  },
+  "shoreline": {
+   "what": "A shoreline: land, surf and near ocean in one frame",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "ocean-climb-2m": {
+   "what": "Open ocean from 2 m (the climb to 400 km must show no ring at any of its four stations)",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "ocean-climb-200m": {
+   "what": "Open ocean from 200 m",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "ocean-climb-20km": {
+   "what": "Open ocean from 20 km",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  },
+  "ocean-climb-400km": {
+   "what": "Open ocean from 400 km",
+   "page": null,
+   "frames": 64,
+   "status": "pending"
+  }
+ }
+}
