@@ -1,4 +1,4 @@
-Status: open (cockpit half, items 1 and 2: done in cockpit round 4, see "Resolution: cockpit"; item 3 is flight-ui's, also filed as cockpit-17)
+Status: open (cockpit half, items 1 and 2: done in cockpit round 4, see "Resolution: cockpit"; item 3, flight-ui's ORB page paint, resolved in flight-ui round 7, see "Resolution (flight-ui, round 7)")
 From: app-integration-v1
 Owner path: src/render/cockpit (feature.ts `compute`, displays.ts; cockpit), src/ui/mfd/mfdPainter.ts (the page painter; flight-ui)
 Blocking: yes   (ARCHITECTURE 17: main-thread frame p99 <= 6 ms; this is the whole miss during engine burns away from terrain)
@@ -81,3 +81,20 @@ by (request cockpit-8); `'ui.mfd'`.
 Also: a display whose page is dear to paint is painted less often (its smoothed cost keeps all displays within
 0.36 ms per frame on average); with the ORB page at 5 ms that is about one paint a second during a burn. Inside
 (`lod0`) the picture is unchanged for pages that paint in about half a millisecond (15 Hz).
+
+## Resolution (flight-ui, round 7)
+`src/ui/mfd/mfdPainter.ts`: the ORB page's body graphic (the per-pixel shading, 5.2-5.7 ms) is no longer redone in
+one paint.
+- It is shaded in the view's canonical frame (the orbit normal W with an in-plane reference fixed by W alone) and
+  drawn turned onto the view, so the periapsis swinging round during a burn no longer calls for a new graphic; its
+  size is bucketed to 8 px and drawn scaled, so a growing orbit does not either.
+- When a new graphic is due (the normal, the light or the body's turn moved about 0.3 deg), it is shaded row by row
+  over as many paints as it takes within `MfdPainterOptions.shadeBudgetMs` (default `SHADE_BUDGET_MS` = 0.45 ms per
+  paint), the previous graphic shown meanwhile, turned to the current view. A job once started runs to its end
+  (a planet turning at high warp cannot starve it); the next starts from the latest view. The first paints of a body
+  show its mean colour until its first graphic is done (about ten paints).
+- Unchanged: the pages' content, layout and strings.
+Measured (`tests/browser/flight-ui/hud.perf.spec.ts`, "MFD ORB page: every paint bounded while the orbit changes":
+1024 x 768 with the albedo and cloud maps, the orbit's periapsis turning 3 deg and its plane tilting 0.4 deg on
+every paint, so a re-shade is always running; 240 paints after 40 warm-up): **mean 0.52 ms, p99 0.72 ms, max
+0.77 ms** per paint (was 3.4 ms on average and 5.2-5.7 ms per paint). The cockpit keeps its own pacing on top.
