@@ -31,7 +31,7 @@ describe('check-stubs', () => {
       'server/roles/api.ts': 'const x = 1; // FIXME before release\n',
       'src/universe/expiry.ts': '/** Stubbed until the directory exists. */\nexport const sweep = () => {};\n',
       'data/defs/parts/dock-port-c.json': '{ "visual": "placeholder" }\n',
-      'src/ok.ts': 'export const methodology = "autodidact"; // todo-list apps are fine, so is a stubborn bug\n',
+      'src/ok.ts': 'export const todoList = ["autodidact"]; // a stubborn bug stays one\n',
     });
     expect(findings.map((f) => `${f.file}:${f.line}:${f.word}`)).toEqual([
       'src/sim/island/step.ts:2:TODO',
@@ -42,6 +42,34 @@ describe('check-stubs', () => {
     const { open, stale } = judge(findings, []);
     expect(open).toHaveLength(4);
     expect(stale).toEqual([]);
+  });
+
+  it('finds the words inside identifiers and, for TODO and FIXME, in any case inside a comment', () => {
+    const findings = scanText({
+      'src/session/local.ts': 'const stubSession = makeSession();\nexport const isPlaceholder = true;\nconst FAKE_STUB = 1;\nlet placeholder_mesh = null;\n',
+      'src/sim/a.ts': 'const stubborn = 1; // a stubborn bug\nconst todo = [];\ntodo.push(1);\n',
+      'src/sim/b.ts': 'step(); // todo: the contact pass\n/*\n * Fixme before the release.\n */\nconst glob = "src/**/*.test.ts"; const later = todo;\n',
+      'tools/bake/x.py': 'n = len(todo) // 20\n# ToDo: window the reads\n',
+      'server/x.ts': "const url = 'http://example.org/todo';\n",
+      'tests/unit/x.test.ts': "vi.stubGlobal('fetch', fake);\nvi.unstubAllGlobals();\n",
+    });
+    expect(findings.map((f) => `${f.file}:${f.line}:${f.word}`)).toEqual([
+      'src/session/local.ts:1:stub',
+      'src/session/local.ts:2:placeholder',
+      'src/session/local.ts:3:stub',
+      'src/session/local.ts:4:placeholder',
+      'src/sim/b.ts:1:TODO',
+      'src/sim/b.ts:3:FIXME',
+      'tools/bake/x.py:2:TODO',
+      'tests/unit/x.test.ts:1:stub',
+    ]);
+    // vitest's own name is allowed everywhere by a standing entry of the real allow-list.
+    const allow = JSON.parse(fs.readFileSync(path.join(repoRoot, 'tools/dev/check-stubs.allow.json'), 'utf8')) as { path: string }[];
+    const { open } = judge(findings.filter((f) => f.file === 'tests/unit/x.test.ts'), allow);
+    expect(open).toEqual([]);
+    // The simple bodies' render sections may say placeholder; Earth's and the Moon's may not.
+    const render = scanText({ 'data/defs/render/mimas.surface.json': '{ "note": "placeholder" }\n', 'data/defs/render/earth.surface.json': '{ "note": "placeholder" }\n' });
+    expect(judge(render, allow).open.map((f: Finding) => f.file)).toEqual(['data/defs/render/earth.surface.json']);
   });
 
   it('allows exactly what the allow-list names, and reports an entry nothing uses', () => {

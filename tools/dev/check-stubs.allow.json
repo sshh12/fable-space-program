@@ -10,5 +10,8 @@
   {"path":"src/render/cockpit/cabin/fixtures.ts","word":"stub","contains":"stub","reason":"geometry: the short end of a pipe run in the cabin is called a stub"},
   {"path":"src/ui/icons.ts","word":"stub","contains":"short downward stubs","reason":"geometry: the short strokes of an icon"},
   {"path":"src/camera/chaseRig.ts","word":"placeholder","contains":"placeholder parts","reason":"names the FakeSim's stand-in parts (no part envelope): the case the chase rig falls back for"},
-  {"path":"tests/unit/camera/chase.test.ts","word":"placeholder","contains":"Placeholder parts","reason":"a test of the chase rig on the FakeSim's stand-in parts"}
+  {"path":"tests/unit/camera/chase.test.ts","word":"placeholder","contains":"Placeholder parts","reason":"a test of the chase rig on the FakeSim's stand-in parts"},
+  {"path":"data/defs/render/","except":["data/defs/render/earth.","data/defs/render/moon."],"word":"placeholder","standing":true,"reason":"PROMPT.txt (expansion): the render sections of bodies other than Earth and the Moon may be marked as placeholder visuals; Earth and the Moon are excepted"},
+  {"path":"*","word":"stub","contains":"stubGlobal","standing":true,"reason":"vitest's API: vi.stubGlobal / vi.unstubAllGlobals replace a global for the duration of a test"},
+  {"path":"*","word":"stub","contains":"stubEnv","standing":true,"reason":"vitest's API: vi.stubEnv / vi.unstubAllEnvs"}
 ]

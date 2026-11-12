@@ -16,6 +16,12 @@
  * data/defs/ (the definitions ship with the build), the names of the baked tile sets (the build emits their
  * listing), the Vite and TypeScript configuration, the plugins it loads and the lockfile.
  *
+ * A build is written to <output>.tmp-<pid> and renamed into place when complete; one builder at a time per
+ * output (a lock file with the builder's pid; a second caller waits and then finds the finished build).
+ * After a stack build, older builds are removed, except the most recent other one and every build IN USE: a
+ * build is in use while a file data/stack/client/<hash>.use-<pid> with a live pid exists, which the stack
+ * launcher writes before it serves the build and removes when it stops.
+ *
  * Prints one line of JSON on success: { target, dir, hash, built, seconds, files, bytes }.
  */
 import { createHash } from 'node:crypto';
@@ -115,19 +121,63 @@ if (opts['print-hash']) {
   process.exit(0);
 }
 
-const outDir = target === 'stack' ? path.join(repoRoot, 'data', 'stack', 'client', hash) : path.join(repoRoot, 'out', 'ci', 'client');
+const parent = target === 'stack' ? path.join(repoRoot, 'data', 'stack', 'client') : path.join(repoRoot, 'out', 'ci');
+const outDir = target === 'stack' ? path.join(parent, hash) : path.join(parent, 'client');
 const rel = path.relative(repoRoot, outDir).replace(/\\/g, '/');
 const marker = path.join(outDir, COMPLETE);
+const lockFile = path.join(parent, `${path.basename(outDir)}.lock`);
 
-if (target === 'stack' && fs.existsSync(marker)) {
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+function reportExisting() {
   const done = JSON.parse(fs.readFileSync(marker, 'utf8'));
   console.log(JSON.stringify({ target, dir: rel, hash, built: false, seconds: 0, files: done.files, bytes: done.bytes }));
+}
+
+if (target === 'stack' && fs.existsSync(marker)) {
+  reportExisting();
   process.exit(0);
 }
 
-// A half-written directory (an interrupted build) is rebuilt from nothing.
-fs.rmSync(outDir, { recursive: true, force: true });
-fs.mkdirSync(outDir, { recursive: true });
+// One builder per output directory: an exclusive lock file with the builder's pid. A second caller waits for
+// the first and then finds the finished directory; a lock whose builder is dead is taken over.
+fs.mkdirSync(parent, { recursive: true });
+for (let waited = 0; ; waited += 500) {
+  try {
+    fs.writeFileSync(lockFile, String(process.pid), { flag: 'wx' });
+    break;
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    const holder = Number(fs.readFileSync(lockFile, 'utf8').trim());
+    if (!Number.isInteger(holder) || !alive(holder)) {
+      fs.rmSync(lockFile, { force: true });
+      continue;
+    }
+    if (waited > 15 * 60_000) fail(`another build of ${rel} (pid ${holder}) has held its lock for 15 minutes`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+const unlock = () => fs.rmSync(lockFile, { force: true });
+process.on('exit', unlock);
+
+if (target === 'stack' && fs.existsSync(marker)) {
+  // The builder we waited for finished it.
+  reportExisting();
+  process.exit(0);
+}
+
+// Build into a directory of our own and rename it into place when it is complete: a reader never sees a
+// half-written build, and an interrupted one leaves only a .tmp-<pid> directory that the next run removes.
+const tmpDir = `${outDir}.tmp-${process.pid}`;
+fs.rmSync(tmpDir, { recursive: true, force: true });
+fs.mkdirSync(tmpDir, { recursive: true });
 
 const t0 = Date.now();
 const { build } = await import('vite');
@@ -135,20 +185,36 @@ await build({
   root: repoRoot,
   configFile: path.join(repoRoot, 'vite.config.ts'),
   logLevel: 'warn',
-  build: { outDir, emptyOutDir: true },
+  build: { outDir: tmpDir, emptyOutDir: true },
 });
-const stats = dirStats(outDir);
+const stats = dirStats(tmpDir);
 const seconds = (Date.now() - t0) / 1000;
-fs.writeFileSync(marker, `${JSON.stringify({ hash, sourceFiles: fileCount, ...stats, builtAt: new Date().toISOString() })}\n`);
+fs.writeFileSync(path.join(tmpDir, COMPLETE), `${JSON.stringify({ hash, sourceFiles: fileCount, ...stats, builtAt: new Date().toISOString() })}\n`);
+// An incomplete directory under the final name (a build interrupted before this scheme) gives way.
+fs.rmSync(outDir, { recursive: true, force: true });
+fs.renameSync(tmpDir, outDir);
 
 if (target === 'stack') {
-  // Keep the two most recent builds; older source hashes are intermediates (data/ has a size cap).
-  const parent = path.dirname(outDir);
-  const others = fs
-    .readdirSync(parent, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && e.name !== hash)
+  // Housekeeping (data/ has a size cap). A build is IN USE while a file <hash>.use-<pid> with a live pid lies
+  // beside it: the stack launcher writes one before it serves a build and removes it when it stops. Kept:
+  // this build, every build in use, and the most recent other one. Removed: older builds, the .tmp-<pid>
+  // directories and the use files of processes that are gone.
+  const entries = fs.readdirSync(parent, { withFileTypes: true });
+  const inUse = new Set();
+  for (const e of entries) {
+    const m = /^([0-9a-f]{16})\.use-(\d+)$/.exec(e.name);
+    if (!m) continue;
+    if (alive(Number(m[2]))) inUse.add(m[1]);
+    else fs.rmSync(path.join(parent, e.name), { force: true });
+  }
+  for (const e of entries) {
+    const m = /^[0-9a-f]{16}\.tmp-(\d+)$/.exec(e.name);
+    if (m && e.isDirectory() && !alive(Number(m[1]))) fs.rmSync(path.join(parent, e.name), { recursive: true, force: true });
+  }
+  const others = entries
+    .filter((e) => e.isDirectory() && /^[0-9a-f]{16}$/.test(e.name) && e.name !== hash && !inUse.has(e.name))
     .map((e) => ({ name: e.name, t: fs.statSync(path.join(parent, e.name)).mtimeMs }))
-    .sort((a, b) => b.t - a.t);
+    .sort((x, y) => y.t - x.t);
   for (const o of others.slice(1)) fs.rmSync(path.join(parent, o.name), { recursive: true, force: true });
 }
 

@@ -6,8 +6,12 @@
  *
  *     TODO   FIXME   stub   placeholder
  *
- * (whole words; `stub` and `placeholder` in any case and with their plurals) outside the allow-list
- * tools/dev/check-stubs.allow.json. The allow-list holds the legitimate uses, each with its reason: the
+ * outside the allow-list tools/dev/check-stubs.allow.json. How a line is read:
+ *  - `stub` and `placeholder` (with their plurals; stubbed, stubbing) count in any case and INSIDE
+ *    identifiers: a line is split into identifier words (camelCase, snake_case, digits), so `stubSession`,
+ *    `isPlaceholder`, `FAKE_STUB` and `placeholderMesh` are found and `stubborn` is not;
+ *  - `TODO` and `FIXME` count as written anywhere, and in any case inside a comment (`// todo: ...`).
+ * The allow-list holds the legitimate uses. The allow-list holds the legitimate uses, each with its reason: the
  * placeholder visuals PROMPT.txt permits for the simple bodies, the HTML `placeholder` attribute, test
  * doubles named stubs by their framework, and sentences that state the rule itself.
  *
@@ -18,7 +22,7 @@
  * files), index.html and the root configuration. Not scanned: docs/ (it states the rule and quotes
  * requests), binary files, files over 2 MB, and this tool's own files (with its test, which plants the words).
  *
- * Allow-list entries: { "path": <file, or a directory ending in "/">, "word"?: <one of the four, default
+ * Allow-list entries: { "path": <file, a directory ending in "/", or "*" for any file>, "word"?: <one of the four, default
  * any>, "contains"?: <text the line must contain>, "except"?: [<path prefixes the entry does not cover>],
  * "standing"?: true, "reason": <why this is not unfinished work> }. An entry that matches nothing is an error (the list must not outlive what it excuses), unless it
  * is "standing": a permission that holds for a whole directory whether or not a file uses it today.
@@ -37,12 +41,81 @@ const SELF = ['tools/dev/check-stubs.mjs', 'tools/dev/check-stubs.allow.json', '
 const TEXT = /\.(ts|tsx|mts|mjs|cjs|js|json|html|css|wgsl|py|md|txt|yml|yaml|toml|sql|sh|ps1|dockerfile)$/i;
 const MAX_BYTES = 2 * 1024 * 1024;
 
-const WORDS = [
-  ['TODO', /\bTODO\b/],
-  ['FIXME', /\bFIXME\b/],
-  ['stub', /\bstub(s|bed|bing)?\b/i],
-  ['placeholder', /\bplaceholders?\b/i],
-];
+const WORD_NAMES = ['TODO', 'FIXME', 'stub', 'placeholder'];
+const STUB_WORDS = new Set(['stub', 'stubs', 'stubbed', 'stubbing']);
+const PLACEHOLDER_WORDS = new Set(['placeholder', 'placeholders']);
+
+/** The words of a line's identifiers, lower-cased: fooBarBaz, foo_bar, FOO_BAR and HTTPServer2 are split. */
+function identifierWords(line) {
+  const words = [];
+  for (const token of line.match(/[A-Za-z][A-Za-z0-9]*/g) ?? []) {
+    for (const w of token.match(/[A-Z]+(?![a-z])|[A-Z]?[a-z]+/g) ?? []) words.push(w.toLowerCase());
+  }
+  return words;
+}
+
+/** The comment part of each line of a file ('' where a line has none): line comments (two slashes, or a hash in scripts), HTML comments and block comments. */
+function commentParts(file, lines) {
+  const out = [];
+  if (/\.json$/i.test(file)) return lines.map(() => '');
+  if (/\.(py|sh|ya?ml|toml|ps1|dockerfile)$/i.test(file) || /(^|\/)Dockerfile$/.test(file)) {
+    // Hash comments only (in these languages // and /* are operators or paths).
+    for (const line of lines) out.push(/(^|\s)#(.*)$/.exec(line)?.[2] ?? '');
+    return out;
+  }
+  // C-like and HTML: a comment opener counts only at the start of a line or after white space or
+  // punctuation, so a glob ('src/**/*.ts'), a URL or a regular expression does not open one.
+  const OPEN_BLOCK = /(^|[\s;,{}()])\/\*/;
+  const OPEN_LINE = /(^|[\s;,{}()])\/\//;
+  let inBlock = false;
+  for (const line of lines) {
+    let text = '';
+    let rest = line;
+    if (inBlock) {
+      const end = rest.indexOf('*/');
+      if (end < 0) {
+        out.push(rest);
+        continue;
+      }
+      text += rest.slice(0, end);
+      rest = rest.slice(end + 2);
+      inBlock = false;
+    }
+    for (;;) {
+      const block = OPEN_BLOCK.exec(rest);
+      const lineComment = OPEN_LINE.exec(rest);
+      if (block && (!lineComment || block.index < lineComment.index)) {
+        const start = block.index + block[0].length;
+        const end = rest.indexOf('*/', start);
+        if (end < 0) {
+          text += ` ${rest.slice(start)}`;
+          inBlock = true;
+          break;
+        }
+        text += ` ${rest.slice(start, end)}`;
+        rest = rest.slice(end + 2);
+        continue;
+      }
+      if (lineComment) text += ` ${rest.slice(lineComment.index + lineComment[0].length)}`;
+      break;
+    }
+    const html = /<!--(.*?)(-->|$)/.exec(line);
+    if (html) text += ` ${html[1]}`;
+    out.push(text);
+  }
+  return out;
+}
+
+/** The words of the scan that a line contains. */
+function wordsIn(line, comment) {
+  const found = [];
+  if (/\bTODO\b/.test(line) || /\btodo\b/i.test(comment)) found.push('TODO');
+  if (/\bFIXME\b/.test(line) || /\bfixme\b/i.test(comment)) found.push('FIXME');
+  const words = identifierWords(line);
+  if (words.some((w) => STUB_WORDS.has(w))) found.push('stub');
+  if (words.some((w) => PLACEHOLDER_WORDS.has(w))) found.push('placeholder');
+  return found;
+}
 
 function listFiles() {
   const res = spawnSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
@@ -71,10 +144,9 @@ export function scan(files = listFiles(), read = (f) => fs.readFileSync(path.joi
     }
     if (text.includes('\0')) continue;
     const lines = text.split(/\r?\n/);
+    const comments = commentParts(file, lines);
     for (let i = 0; i < lines.length; i++) {
-      for (const [word, re] of WORDS) {
-        if (re.test(lines[i])) findings.push({ file, line: i + 1, word, text: lines[i].trim().slice(0, 200) });
-      }
+      for (const word of wordsIn(lines[i], comments[i])) findings.push({ file, line: i + 1, word, text: lines[i].trim().slice(0, 200) });
     }
   }
   return findings;
@@ -88,7 +160,7 @@ export function judge(findings, allow) {
   for (const f of findings) {
     const i = allow.findIndex(
       (a) =>
-        (a.path.endsWith('/') ? f.file.startsWith(a.path) : f.file === a.path) &&
+        (a.path === '*' || (a.path.endsWith('/') ? f.file.startsWith(a.path) : f.file === a.path)) &&
         !(a.except ?? []).some((x) => f.file.startsWith(x)) &&
         (a.word === undefined || a.word === f.word) &&
         (a.contains === undefined || f.text.includes(a.contains)),
@@ -107,7 +179,7 @@ function loadAllow() {
   if (!Array.isArray(allow)) throw new Error('check-stubs.allow.json must be an array');
   for (const a of allow) {
     if (typeof a.path !== 'string' || typeof a.reason !== 'string' || a.reason.trim() === '') throw new Error(`allow-list entry needs "path" and "reason": ${JSON.stringify(a)}`);
-    if (a.word !== undefined && !WORDS.some(([w]) => w === a.word)) throw new Error(`allow-list entry has an unknown "word": ${JSON.stringify(a)}`);
+    if (a.word !== undefined && !WORD_NAMES.includes(a.word)) throw new Error(`allow-list entry has an unknown "word": ${JSON.stringify(a)}`);
   }
   return allow;
 }
