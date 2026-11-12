@@ -1037,6 +1037,8 @@ keeps its mass; the second material is sampled from a third of the two weights (
 copies and projection planes with small shares are dropped sooner (0.07, 0.18), and the far and aerial
 layers' relief casts shadows only where the body asks for it (`reliefShadowFar`: Moon 1, Earth 0). The
 cover's shadow lists are kept per cascade while the view rests (3bbe7ab).
+After the run on that state (ef4df85): crowns cast their middle level from 32 texels and nothing casts under 4,
+tussocks and clinker are drawn from 5 px, and open ground sees at least 0.45 of its sky.
 
 **2. The pop detector** now looks at the picture without the detail layers (`PLAIN` in `pops.spec.ts`:
 tiles, their normal maps and imagery, rocks and ground cover, which is everything that has levels of
@@ -1062,27 +1064,32 @@ where there were 50 : 1.
 placement puts nearest to the kiawe-eye view: `TerrainDebug.nearestCover`). Request core-2 says that
 `tests/browser/integration/exact.spec.ts` can be run against 24c6b8b or later.
 
-**The run after the cuts** (run 5: the whole terrain suite, functional and perf, on ed8136f; 1440p,
-`withGpuLock`, other agents' CPU jobs running). Perf: 8 of 12 (was 6): the 10 km view, LEO, the four lunar
-and far views, the 60 s descent (selection p99 0.64 ms, upload p99 1.98 ms, largest 2.91 ms, no frame over
-33 ms) and the warp pass. **Bold** = over its line.
+**Performance on the final code** (run 6: the whole terrain suite on ef4df85; 1440p, `withGpuLock`, other
+agents' CPU jobs running; run 5, on the code before the last three small changes, in brackets where it
+differs by more than noise). 7 of 12 perf tests pass: the 10 km view, LEO, the four lunar and far views and
+the warp. **Bold** = over its line.
 
 | View | Terrain G-buffer + cover (budget) | Shadows + cover (budget) | Rocks | Main thread p99 / median (budget 1) | Selection p99 |
 |---|---|---|---|---|---|
-| pad | 1.23 + 0.36 = **1.58** (1.5) | 0.21 + 0.12 = 0.33 (0.5) | 0.00 | 0.88 / 0.50 (cover 0.08) | 0.50 |
-| stony ground | 2.66 + 0.09 = **2.75** (1.5) | 0.29 + 0.20 = 0.49 (0.5) | 0.10 (0.3) | **1.05** / 0.61 (cover 0.08) | 0.56 |
-| kiawe | 1.09 + 0.64 = **1.72** (1.5) | 0.28 + 0.35 = **0.62** (0.5) | 0.01 | 0.98 / 0.55 (cover 0.11) | 0.55 |
-| thickets, 120 m | 2.50 + 0.77 = **3.27** (1.5) | 0.15 + 0.27 = 0.42 (0.5) | 0.00 | 0.85 / 0.49 (cover 0.08) | 0.51 |
-| 10 km | 1.48 (1.5) | 0.07 (0.5) | - | 0.48 / 0.27 | 0.32 |
-| LEO | 0.25 (1.5) | 0.07 (0.4) | - | 0.42 / 0.21 | 0.26 |
-| lunar orbit | 0.81 (1.8) | 0.05 (0.6) | - | 0.40 / 0.21 | 0.27 |
-| lunar surface | 1.19 (1.8) | 0.26 (0.6) | 0.05 (0.3) | 0.87 / 0.50 | 0.55 |
-| Moon from 5,000 km | 1.09 (1.8) | 0.05 (0.6) | - | 0.36 / 0.17 | 0.22 |
-| Earth from 20,000 km | 0.25 (1.5) | 0.04 (0.4) | - | 0.31 / 0.16 | 0.19 |
+| pad | 1.24 + 0.35 = **1.59** (1.5) | 0.21 + 0.10 = 0.30 (0.5) | 0.00 | 0.90 / 0.55 (cover 0.08) | 0.55 |
+| stony ground | 2.66 + 0.09 = **2.75** (1.5) | 0.29 + 0.17 = 0.46 (0.5) | 0.10 (0.3) | **1.11** / 0.61 (cover 0.07) | 0.57 |
+| kiawe | 1.30 + 0.64 = **1.93** (1.5) [1.09 + 0.64 = 1.72] | 0.25 + 0.31 = **0.57** (0.5) [0.62] | 0.01 | **1.06** / 0.57 (cover 0.10) [0.98] | 0.57 |
+| thickets, 120 m | 2.49 + 0.78 = **3.26** (1.5) | 0.14 + 0.24 = 0.38 (0.5) | 0.00 | 0.91 / 0.51 (cover 0.08) | 0.55 |
+| 10 km | 1.47 (1.5) | 0.07 (0.5) | - | 0.60 / 0.30 | 0.41 |
+| LEO | 0.25 (1.5) | 0.07 (0.4) | - | 0.50 / 0.22 | 0.35 |
+| lunar orbit | 0.81 (1.8) | 0.05 (0.6) | - | 0.45 / 0.20 | 0.32 |
+| lunar surface | 1.19 (1.8) | 0.27 (0.6) | 0.05 (0.3) | 0.95 / 0.52 | 0.54 |
+| Moon from 5,000 km | 1.09 (1.8) | 0.05 (0.6) | - | 0.35 / 0.18 | 0.23 |
+| Earth from 20,000 km | 0.26 (1.5) | 0.04 (0.4) | - | 0.34 / 0.17 | 0.22 |
 
-Against the run before the cuts: shadows with the cover 0.99 / 1.46 / 2.39 / 1.72 -> 0.33 / 0.49 / 0.62 /
-0.42 ms; main thread p99 1.11 / 1.22 / 1.28 / 1.05 -> 0.88 / 1.05 / 0.98 / 0.85 ms (the cover's share 0.27
-to 0.37 -> 0.08 to 0.11); G-buffer with the cover 1.66 / 3.01 / 2.25 / 3.66 -> 1.58 / 2.75 / 1.72 / 3.27 ms.
+- 60 s lunar descent: 0 frames over 33 ms (largest 20.2 ms), selection p99 0.53 ms; **upload time p99 2.10 ms
+  against 2** (1.98 in run 5, 2.23 in run 4: it stands at its limit and falls either side with the load),
+  largest 2.26 ms (limit 6); pools 1,046 MiB. Warp: passed.
+- Against the run before the cuts (run 4): shadows with the cover 0.99 / 1.46 / 2.39 / 1.72 -> 0.30 / 0.46 /
+  0.57 / 0.38 ms; main thread p99 1.11 / 1.22 / 1.28 / 1.05 -> 0.90 / 1.11 / 1.06 / 0.91 ms (the cover's
+  share 0.27 to 0.37 -> 0.07 to 0.10 ms; what is left over 1 ms is the selection at 0.55 with rocks and
+  records, and it moves by 0.1 ms between runs); G-buffer with the cover 1.66 / 3.01 / 2.25 / 3.66 -> 1.59 /
+  2.75 / 1.72 to 1.93 / 3.26 ms.
 
 **What is not met, how far, and the trade** (for the coordinator's decision):
 - *Stony ground, G-buffer 2.75 against 1.5.* The terrain alone is 2.66 there: 1.04 without any detail layer
@@ -1092,20 +1099,65 @@ to 0.37 -> 0.08 to 0.11); G-buffer with the cover 1.66 / 3.01 / 2.25 / 3.66 -> 1
   two scales and no relief shadows: the lava field at eye height would be the flat print of round 0 again.
   The other way is a redesign: the layers composited once into a cached clipmap around the camera and read
   with one sample (a package of its own).
-- *Thickets from 120 m, 3.27 against 1.5.* Terrain 2.50 (1.30 without detail, measured) plus the cover's
-  0.77, which is the middle level of the trees and shrubs in view. Same trade for the terrain; for the cover,
+- *Thickets from 120 m, 3.26 against 1.5.* Terrain 2.49 (1.30 without detail, measured) plus the cover's
+  0.78, which is the middle level of the trees and shrubs in view. Same trade for the terrain; for the cover,
   the middle level only from 60 px across or half the shrub density would bring it to about 0.4.
-- *Among kiawe, 1.72 against 1.5 and shadows 0.62 against 0.5.* Terrain 1.09, cover 0.64 and 0.35. The cover
-  would have to cost 0.41 and 0.22: trees' middle level from 60 px across in the G-buffer and no middle
-  level in the shadows (every crown's shadow from its coarsest mesh: larger, softer sprays on the ground
-  beside the eye).
-- *Pad, 1.58 against 1.5.* 0.08 over; tussocks and stones are drawn from 5 px now (ef4df85), which the next
-  run measures.
-- *Main thread on stony ground, p99 1.05 against 1.* Selection 0.56 of it; a selection kept at rest (request
-  core-2, part 3) is what remains to do.
+- *Among kiawe, 1.72 to 1.93 against 1.5, shadows 0.57 to 0.62 against 0.5.* Terrain 1.1 to 1.3, cover 0.64
+  and 0.31 to 0.35. The cover would have to cost about 0.3 and 0.22: the trees' middle level from 60 px
+  across in the G-buffer, and no middle level in the shadows (every crown's shadow from its coarsest mesh:
+  larger, softer sprays on the ground beside the eye).
+- *Pad, 1.59 against 1.5.* 0.09 over: terrain 1.24 (0.83 without detail), cover 0.35. Drawing tussocks and
+  stones only from 5 px changed nothing measurable; the next step would be the pad's detail layers
+  (0.4 ms: the far layer's share) or the tussocks' finest blades.
+- *Main thread on stony ground and among kiawe, p99 1.06 to 1.11 against 1* (0.98 and 1.05 in run 5; medians
+  0.57 to 0.61). A selection kept at rest (request core-2, part 3) is what remains to do.
+- *Upload time in the descent, p99 2.10 against 2* in this run.
 
-Functional suite in the same run: 21 of 22. Failed: the integrated views, on its sanity check that less
-than a tenth of a frame is black (`fractionNonBlack > 0.9`): `integrated-stony-ground` at the daylight
-exposure had 10.4 % of its pixels under 8 of 255, the shadowed hollows of the lava. Not a check to lower:
-open ground now sees at least 0.45 of its sky (ef4df85). The views after it in the list (10 km, 40 km, LEO
-over Hawai'i) were not rendered in that run.
+**Functional suite on the final code.** Run 6: 21 of 22: `integrity` (no holes, decode, collision surface,
+hand-over, jitter), `pops` (control 6 block spikes in 5 frames, worst 7.81; six paths 0 spikes, worst 1.10 /
+1.78 / 1.01), `smoke`, `views`, the close kiawe and the game views passed; the integrated views failed on
+their check that less than a tenth of a frame is black: `integrated-stony-ground` at EV100 14.5 had 10.4 %
+of its pixels under 8 of 255 (the shadowed hollows of the lava), and the loop stopped there, so the 10 km,
+40 km and LEO pictures were not taken. Raising the occlusion floor did not change that (the hollows are
+dark because shadowed basalt at that exposure is). The exposure was the fault: at 14.5 the sky stood at 0.18
+to 0.23 of white where the reference photographs have 0.55. The ground views are now taken at the
+photographs' exposure (EV100 13.5), and the check is soft, so every view is rendered whatever one of them
+reports (4f549f8; test files only, no renderer code after ef4df85).
+
+Run 8 (the integrated views and the Earth's reviewed views, on 5313817): both pass. All thirteen integrated
+views were rendered and none fails the check (mean of the frame 61.6 to 147.7 of 255;
+`integrated-stony-ground` 92.3, was 66.1); `integrated-10km`, `-40km` and `-leo-hawaii` are current again.
+Run 7, the first attempt, lost the views from 30 m up to another package's edit in the shared tree: the
+ocean's surface shader did not compile for some minutes (`ocean.surface:1590: cannot assign 'vec2<f32>' to
+'f32'`, since corrected by its owner), the frame went black and the lab reported it; nothing of the
+terrain's.
+
+The terrain lab's ground views had been 0.8 of a stop darker than the integration lab's: the pairs of
+exposures (15.8 / 14.5, then 14.8 / 13.5) assumed that lab's ground to be 1.3 stops brighter at the same
+exposure, and it is half a stop (the one view both labs have with no sky in it, same camera and sun:
+38.2 against 61.6 of 255). They are taken at EV100 14.0 now: 57.0 against 61.6 (5313817). That lab has no
+atmosphere, so its sky is black; the integrated views are the ones to judge the ground under a sky by.
+
+On 5313817: scoped typecheck of the package's paths clean; `tests/unit/terrain-render` and
+`tools/dev/boundaries.test.ts` 153 of 153 in 8 files (the narrow-field crack test that ran out of its 30 s
+under machine load earlier passed in this run).
+
+**Where it stands, by this package's own eye** (pictures of runs 6 to 8 in `out/screens/terrain/`):
+- Photo lens, about 7. Reads as a photograph: kiawe and tussocks on the lava at eye height
+  (`integrated-kiawe-eye`, `integrated-kiawe-close`, `integrated-grass-eye`), the broken lava field under
+  the sky (`integrated-stony-ground`), the coast from 200 m, the island from 10 km to orbit, the lunar soil
+  and blocks at standing height. Against it: pasture on lava from 120 m to 1 km keeps the outlines of its
+  land-cover patches, yellow-green shapes with hard borders (`integrated-kiawe-120m`, `integrated-1km`);
+  the ground around the apron from 30 m is a mottled print with a pale rim; lava at grazing angles is a
+  print on smooth swells (request terrain-render-9); pahoehoe from 1.7 m has pale bluish patches of sheen
+  (`integrated-ground-close`); on the Moon the small craters from 300 m are dark ellipses of one look, two
+  or three of the blocks in `moon-standing` are half-domes, rock shadows near the eye are as soft as the
+  cascades' texels, and nothing between 5 and 50 km up is crisp.
+- Artifact lens, about 7. Gone: the placeholder crowns and stick trunks, the line across the island, the
+  ponds, the ochre and turquoise rim, the white sheet (the ocean's), the pale loaves, the ink blot
+  (`moon-300m`), the failing detector control. Left: the stipple of the leaf coverage test when a crown is
+  enlarged four times, straight edges in the self-shadow of some small craters, the hard borders of the
+  land-cover patches, the minors listed above as unchanged.
+- No blocker in the pictures. What stands against the brief is the five perf tests above (four ground
+  views over their GPU lines, two of them also 0.06 to 0.11 ms over the main-thread line, and the descent's
+  upload p99 at 2.10 against 2): the coordinator's decision, with the trades as listed.
