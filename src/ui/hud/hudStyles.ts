@@ -30,7 +30,7 @@ export const HUD_CSS = /* css */ `
   --caution: ${UI_COLORS.caution};
   --warning: ${UI_COLORS.warning};
   --gap: calc(var(--u) * 1.4);
-  --lcol: calc(var(--u) * 25);
+  --lcol: calc(var(--u) * 26.5);
   --rcol: calc(var(--u) * 25.5);
   position: absolute;
   inset: 0;
@@ -192,10 +192,12 @@ export const HUD_CSS = /* css */ `
 .hud .rcol { position: absolute; right: var(--gap); top: calc(var(--gap) + var(--u) * 4.4); width: var(--rcol); display: flex; flex-direction: column; gap: calc(var(--u) * 0.8); align-items: stretch; max-height: calc(100% - var(--u) * 8); }
 
 /* ---------------------------------------------------------------- clock + warp */
-.hud .clock .metrow { display: flex; align-items: baseline; justify-content: space-between; gap: calc(var(--u) * 0.8); height: 1.66em; contain: size layout style; }
+.hud .clock .metrow { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.8); height: 2.05em; contain: size layout style; }
 .hud .clock .met { font-size: 1.32em; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
-.hud .clock .wf { display: flex; align-items: baseline; gap: 0.45em; white-space: nowrap; }
+/* The warp word (RAILS / PHYSICS) over the factor, right-aligned: the row holds "T+ 88d 88:88:88" and "×100k". */
+.hud .clock .wf { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; white-space: nowrap; line-height: 1.02; }
 .hud .clock .wf .rails { font-size: 0.78em; letter-spacing: 0.09em; text-transform: uppercase; color: var(--label); font-weight: 600; }
+.hud .clock .wf .rails:empty { display: none; }
 .hud .clock .wf .factor { font-size: 1.05em; font-weight: 700; letter-spacing: 0.02em; }
 .hud .clock .ut { font-size: 0.82em; color: var(--label); height: 1.25em; contain: size layout style; }
 .hud .warp { display: flex; align-items: center; gap: calc(var(--u) * 0.6); margin-top: calc(var(--u) * 0.4); }
@@ -302,10 +304,13 @@ export const HUD_CSS = /* css */ `
 .hud .tile.active { border-color: rgba(95, 227, 154, 0.7); background: rgba(9, 30, 22, 0.97); box-shadow: 0 0 0 1px rgba(95, 227, 154, 0.2), var(--edge); }
 .hud .tile.active .sn { color: var(--good); }
 .hud .tile.active .ico { background: rgba(95, 227, 154, 0.18); color: var(--good); }
-.hud .tile.active .act { flex: none; margin-left: auto; font-size: 0.78em; font-weight: 700; color: var(--good); letter-spacing: 0.06em; border: 1px solid rgba(95, 227, 154, 0.55); border-radius: 0.3em; padding: 0 0.35em; line-height: 1.35; }
 /* The name of what burns is never cut: a long one ("Heron descent stage") sends the ACTIVE tag to a line of its own. */
-.hud .tile.active .l1 { flex-wrap: wrap; row-gap: calc(var(--u) * 0.15); }
-.hud .tile.active .name { flex: 1 0 auto; max-width: 100%; }
+/* The next tile never cuts what Space will do: its name and its action words wrap (one tile may grow a line). */
+.hud .tile.next .name { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; }
+.hud .tile.next .l2 { height: auto; min-height: 1.25em; }
+.hud .tile.next .meta { white-space: pre-wrap; overflow: visible; text-overflow: clip; line-height: 1.25; }
+/* The active tile: green edge, icon and number say active (no badge competing with the name). */
+.hud .tile.active .name { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; }
 /* Locked: an amber, dimmed tile with a padlock plate and the reason at label size. */
 .hud .tile.next.locked { border-color: rgba(255, 187, 77, 0.85); background: repeating-linear-gradient(135deg, rgba(52, 36, 10, 0.97) 0, rgba(52, 36, 10, 0.97) calc(var(--u) * 0.9), rgba(40, 28, 8, 0.97) calc(var(--u) * 0.9), rgba(40, 28, 8, 0.97) calc(var(--u) * 1.8)); box-shadow: 0 0 0 1px rgba(255, 187, 77, 0.25), var(--edge); cursor: not-allowed; }
 .hud .tile.next.locked .sn { color: var(--caution); }
@@ -373,7 +378,7 @@ export const HUD_CSS = /* css */ `
 
 .hud .nbwrap { display: flex; flex-direction: column; align-items: center; }
 /* Speed (in the navball's frame, its mode named) and heading: one window on the bezel's top arc. */
-.hud .bottom .speed { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.8); width: calc(var(--u) * 29); height: calc(var(--u) * 3.05); margin-bottom: calc(var(--u) * -0.35); padding: 0 calc(var(--u) * 0.9); border-radius: calc(var(--u) * 0.7); cursor: pointer; contain: size layout style; }
+.hud .bottom .speed { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 0.8); width: calc(var(--u) * 31); height: calc(var(--u) * 3.05); margin-bottom: calc(var(--u) * -0.35); padding: 0 calc(var(--u) * 0.9); border-radius: calc(var(--u) * 0.7); cursor: pointer; contain: size layout style; }
 .hud .speed .spd { display: flex; align-items: baseline; gap: 0.5em; white-space: nowrap; }
 .hud .speed .mode { color: var(--accent); font-size: 0.78em; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .hud .speed .sv { font-size: 1.32em; font-weight: 600; letter-spacing: 0.01em; }
@@ -435,7 +440,7 @@ export const HUD_CSS = /* css */ `
 @keyframes hud-pulse { 50% { opacity: 1; } }
 
 /* ---------------------------------------------------------------- left panels */
-.hud .orbit .apsis { display: grid; grid-template-columns: auto 1fr auto; gap: calc(var(--u) * 0.5); align-items: baseline; height: 1.34em; contain: size layout style; }
+.hud .orbit .apsis { display: grid; grid-template-columns: auto 1fr auto; gap: calc(var(--u) * 0.8); align-items: baseline; height: 1.34em; contain: size layout style; }
 .hud .orbit .apsis .lbl { letter-spacing: 0.04em; }
 .hud .orbit .apsis .sub { text-align: right; min-width: 4.2em; font-size: 0.78em; }
 /* A periapsis below the surface (long value, no time): both rows put the time after the label and the value at

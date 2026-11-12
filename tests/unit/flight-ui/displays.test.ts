@@ -14,6 +14,9 @@ import {
   describeStages,
   describeWarp,
   formatApsis,
+  formatDeltaV,
+  formatSpeedReadout,
+  formatWarp,
   formatBearing,
   formatCountdown,
   formatDuration,
@@ -43,6 +46,7 @@ import { ablatorGauge, drawBarGauge, type Frame } from '@/ui/mfd/mfdPainter';
 import {
   describeAirData,
   describeChuteEnvelope,
+  hasGroundTrack,
   isEntering,
   landingTargetExpanded,
   milestoneSoiBody,
@@ -95,6 +99,8 @@ describe('formatters', () => {
     expect(n(formatDuration(3 * 86400 + 4 * 3600 + 5 * 60 + 6))).toBe('3d 04:05');
     expect(n(formatCountdown(600))).toBe('T− 10:00');
     expect(n(formatCountdown(-12))).toBe('T+ 0:12');
+    // A day or more away: to the hour (the HUD's time column holds "T− 10d 8h", not "T− 10d 08:11").
+    expect(n(formatCountdown(10 * 86400 + 8 * 3600 + 11 * 60))).toBe('T− 10d 8h');
     expect(n(formatMet(3725))).toBe('T+ 01:02:05');
     expect(formatUt(0)).toBe('2000-01-01 12:00:00 UTC');
     expect(formatUt(86400 + 3661)).toBe('2000-01-02 13:01:01 UTC');
@@ -166,7 +172,7 @@ describe('display models', () => {
     const v = describeLandingTarget(withImpact)!;
     expect(landingTargetRows(v)[4]).toEqual(['Impact miss', `1${NBSP}234${NBSP}m · 090°`]);
     const withEntry = { ...s, readouts: { ...s.readouts, landingTarget: { ...lt, predicted: { kind: 'entry' as const, ut: s.ut + 100, latitude: 0, longitude: 0, missDistance: 12, missBearingDeg: 271 } } } };
-    expect(landingTargetRows(describeLandingTarget(withEntry)!)[4]![0]).toBe('Entry interface');
+    expect(landingTargetRows(describeLandingTarget(withEntry)!)[4]![0]).toBe('Entry point');
   });
 
   it('lights the recovery zone only once something says where the vessel comes down', () => {
@@ -229,10 +235,11 @@ describe('display models', () => {
       expect(rows.find((r) => r.label === 'Heading')!.value).toBe(formatBearing(s.navball.headingDeg));
       expect(rows.find((r) => r.label === 'Heading')!.value).toBe(f.heading);
     }
-    // On the ground the automatic altimeter reads sea level (the HUD rule), whatever the radar altitude.
+    // On the ground the automatic altimeter reads the height over the ground (round 7: a landing site off the datum
+    // read its datum height, -1 902 m at Tranquility Base, and jumped to radar at lift-off).
     const pad = snap('pad');
-    expect(describeFlight(pad).altitudeSource).toBe('asl');
-    expect(buildMfdPage('flight', pad, defs).rows[0]!.label).toBe('Altitude');
+    expect(describeFlight(pad).altitudeSource).toBe('radar');
+    expect(buildMfdPage('flight', pad, defs).rows[0]!.label).toBe('Radar alt');
     // The landing page reads radar altitude and the same vertical / horizontal speed strings.
     const landing = buildMfdPage('landing', at(850, 3.21), defs).rows;
     expect(landing[0]).toMatchObject({ label: 'Radar alt', value: describeFlight(at(850, 3.21), 'radar').altitude });
@@ -372,13 +379,13 @@ describe('display models', () => {
       expect(texts).toContain(`NORTH UP · TRACK ${formatBearing(expectedTrack)}`);
     });
 
-    it('does not move the target when a slow drift crosses the 0.1 m/s ground-track threshold', () => {
+    it('does not move the target when a slow drift crosses the ground-track threshold', () => {
       // The same geometry just below (no track: down/cross-range 0) and just above (track due east) the threshold.
       const d = 250;
       const brg = 120;
       const rel = ((brg - 90) * Math.PI) / 180;
-      const below = paintLanding(withTarget(0.09, { distance: d, bearingDeg: brg, downRange: 0, crossRange: 0 }));
-      const above = paintLanding(withTarget(0.11, { distance: d, bearingDeg: brg, downRange: d * Math.cos(rel), crossRange: d * Math.sin(rel) }));
+      const below = paintLanding(withTarget(0.9, { distance: d, bearingDeg: brg, downRange: 0, crossRange: 0 }));
+      const above = paintLanding(withTarget(1.1, { distance: d, bearingDeg: brg, downRange: d * Math.cos(rel), crossRange: d * Math.sin(rel) }));
       expect(Math.hypot(above.target.x - below.target.x, above.target.y - below.target.y)).toBeLessThan(1e-9);
       expect(below.trackLineDeg).toBeNull();
       expect(above.trackLineDeg).toBeCloseTo(90, 6);
@@ -512,12 +519,14 @@ describe('round-2 display rules', () => {
 
   it('reports the stage that owns the running engines as active, with its live numbers', () => {
     const base = snap('ascent');
-    const stages = base.staging.stages.map((x, i) => ({ ...x, fired: i === 0, propellantFraction: i === 0 ? 0.6 : x.propellantFraction, deltaVNow: i === 0 ? 1890 : x.deltaVNow }));
+    const stages = base.staging.stages.map((x, i) => ({ ...x, fired: i === 0, propellantFraction: i === 0 ? 0.6 : x.propellantFraction, deltaVVac: i === 0 ? 1890 : x.deltaVVac, deltaVNow: i === 0 ? 1650 : x.deltaVNow }));
     const s = { ...base, staging: { ...base.staging, nextStage: 1, stages } };
     const st = describeStages(s);
     expect(st.active).toBe(0);
     expect(st.tiles[0]!.active).toBe(true);
+    // Every stage's delta-v in vacuum (the header's basis); the active stage's figure at the current pressure apart.
     expect(n(st.tiles[0]!.deltaV)).toBe('1 890 m/s');
+    expect(n(st.tiles[0]!.deltaVNow)).toBe('1 650 m/s');
     // A fired stage the sim no longer reports (its engines shut down) is not active.
     const off = { ...s, staging: { ...s.staging, stages: stages.map((x, i) => (i === 0 ? { ...x, propellantFraction: null } : x)) } };
     expect(describeStages(off).active).toBe(-1);
@@ -813,5 +822,80 @@ describe('round-6 mission read-outs', () => {
     }
     expect(milestoneSoiBody('MOON_SOI_ENTER', s, defs)).toBe('moon');
     expect(milestoneSoiBody('TLI_COMPLETE', s, defs)).toBeNull();
+  });
+});
+
+/** Round 7: what the real game reaches and the lab did not (docs/qa/wave2/flight-ui.r6.combined.json). */
+describe('round-7 real-flight values', () => {
+  it('formats the real mission extremes to fit their windows', () => {
+    expect(n(formatWarp(100_000))).toBe('×100k');
+    expect(n(formatWarp(1000))).toBe('×1k');
+    expect(n(formatWarp(4))).toBe('×4');
+    // The navball speed readout: whole m/s from 10 km/s (a lunar return's 10 835.5 m/s).
+    expect(n(formatSpeedReadout(10_835.5))).toBe('10 836 m/s');
+    expect(n(formatSpeedReadout(7788.54))).toBe('7 788.5 m/s');
+  });
+
+  it('reads the height over the ground in AUTO near it, landed included, never below zero', () => {
+    // Landed at Tranquility Base, 1 902 m below the Moon's datum, standing on the gear.
+    const surface = snap('lunarSurface');
+    const landed = { ...surface, readouts: { ...surface.readouts, altitudeAsl: -1902, altitudeRadar: 2.1 } };
+    const f = describeFlight(landed);
+    expect(f.altitudeSource).toBe('radar');
+    expect(n(f.altitude)).toBe('2.1 m');
+    // The lift-off continues from that number: 54 m up, the same reference.
+    const up = { ...landed, readouts: { ...landed.readouts, altitudeAsl: -1850, altitudeRadar: 54 } };
+    expect(n(describeFlight(up).altitude)).toBe('54.0 m');
+    // Afloat slightly below sea level: 0, not "−0.1 m".
+    expect(n(describeFlight({ ...landed, readouts: { ...landed.readouts, altitudeRadar: -0.1 } }).altitude)).toBe('0.0 m');
+    // The MFD flight and landing pages read the same.
+    expect(buildMfdPage('flight', landed, defs).rows[0]).toMatchObject({ label: 'Radar alt', value: f.altitude });
+    expect(buildMfdPage('landing', landed, defs).rows[0]!.value).toBe(f.altitude);
+    // Above 2 km: sea level / datum again.
+    expect(describeFlight({ ...landed, readouts: { ...landed.readouts, altitudeAsl: 3000, altitudeRadar: 4900 } }).altitudeSource).toBe('asl');
+  });
+
+  it('resolves down-range and cross-range only along a real ground track', () => {
+    // A vertical climb drifting 2 m/s sideways at 300 m/s up (pitch 89.6 deg): no track.
+    expect(hasGroundTrack(2, 300)).toBe(false);
+    expect(hasGroundTrack(9, 202)).toBe(false);
+    // A pitched-over ascent, a lunar approach, an entry: a track.
+    expect(hasGroundTrack(120, 300)).toBe(true);
+    expect(hasGroundTrack(8, -2)).toBe(true);
+    expect(hasGroundTrack(7783, -504)).toBe(true);
+    // Hovering: none.
+    expect(hasGroundTrack(0.5, 0)).toBe(false);
+    const asc = snap('ascent');
+    const lt = asc.readouts.landingTarget!;
+    const climb = { ...asc, readouts: { ...asc.readouts, horizontalSpeed: 2, verticalSpeed: 300, landingTarget: { ...lt, downRange: 1.2e6, crossRange: -2.0e6, predicted: null } } };
+    const rows = landingTargetRows(describeLandingTarget(climb)!);
+    expect(rows.map((r) => r[0])).not.toContain('Down-range');
+    expect(rows.map((r) => r[0])).not.toContain('Cross-range');
+  });
+
+  it('shows no chute light without air: in lunar orbit and on the Moon the ENT page reads "—"', () => {
+    for (const scene of ['lunarOrbit', 'lunarSurface'] as const) {
+      const base = snap(scene);
+      const s = { ...base, readouts: { ...base.readouts, chuteEnvelope: 'safe' as const } };
+      expect(describeChuteEnvelope(s, defs), scene).toBeNull();
+      const row = buildMfdPage('entry', s, defs).rows.find((r) => r.label === 'Chutes')!;
+      expect(row.value, scene).toBe('—');
+    }
+    // Above the Earth's atmosphere too (low orbit, 200 km).
+    const orbit = snap('lowOrbit');
+    expect(describeChuteEnvelope({ ...orbit, readouts: { ...orbit.readouts, chuteEnvelope: 'risky' } }, defs)).toBeNull();
+  });
+
+  it('gives every stage its vacuum delta-v, so the rows add up to the total', () => {
+    const pad = snap('pad');
+    // At the pad's pressure the sim's per-stage figures fall (the lunar lift-off stage to a third of its vacuum figure).
+    const stages = pad.staging.stages.map((x) => ({ ...x, deltaVNow: x.deltaVVac * 0.3 }));
+    const s = { ...pad, staging: { ...pad.staging, stages } };
+    const st = describeStages(s, defs);
+    for (const [i, t] of st.tiles.entries()) {
+      if (!t.hasEngines) continue;
+      expect(t.deltaV, `stage ${i + 1}`).toBe(formatDeltaV(stages[i]!.deltaVVac));
+    }
+    // (The rows' sum against the header is asserted on the lab's pad, whose stage figures are computed: screens spec.)
   });
 });

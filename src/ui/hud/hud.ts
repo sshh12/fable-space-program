@@ -65,6 +65,7 @@ import {
   landingTargetRows,
   describeAirData,
   describeChuteEnvelope,
+  hasGroundTrack,
   milestoneSoiBody,
   milestoneTitle,
   orbitPhase,
@@ -899,8 +900,7 @@ export function createHud(opts: HudOptions): HudImpl {
     // burning (the stage group of its engines: "Meridian M-3"), with the event that lit it in its tooltip.
     const title = role === 'active' ? (t.burnName ?? t.label) : t.label;
     const head: HTMLElement[] = [el('span', 'sn', [t.number]), el('div', 'name', [title])];
-    if (role === 'active') head.push(el('span', 'act', ['ACTIVE'], { title: 'Active stage: its engines are running or armed' }));
-    else if (!locked) head.push(el('span', 'hint', [keyCap(keyFor('stage') ?? 'Space')]));
+    if (role === 'next' && !locked) head.push(el('span', 'hint', [keyCap(keyFor('stage') ?? 'Space')]));
     let line2: HTMLElement;
     if (locked) {
       line2 = el('div', 'l2 lockline', [el('b', '', ['LOCKED']), el('span', '', ['staging interlock'])]);
@@ -918,7 +918,7 @@ export function createHud(opts: HudOptions): HudImpl {
     // The burning stage shows an engine (what runs), whatever event icon its stage carries.
     const icon = locked ? LOCK_ICON : STAGE_ICONS[stageIconFor(role === 'active' && t.hasEngines ? 'engine' : t.icon)];
     const tile = el('div', `tile ${role}`, [el('div', 'ico', [svgIcon(icon)]), el('div', 'main', mainParts)]);
-    if (role === 'active') tile.title = `Burning since stage ${t.number}: ${t.label}`;
+    if (role === 'active') tile.title = `Active stage (its engines run or are armed), lit by stage ${t.number}: ${t.label}. Δv in vacuum${t.deltaVNow ? `; ${t.deltaVNow} at the current air pressure` : ''}`;
     if (role === 'next') {
       if (locked) tile.classList.add('locked');
       tile.setAttribute(INTERACTIVE_ATTR, '');
@@ -976,7 +976,8 @@ export function createHud(opts: HudOptions): HudImpl {
     }
     // The total only while something can still burn: with only chutes or separations left it would read "Δv 0".
     const canBurn = active !== null || remaining.some((t) => t.hasEngines);
-    stagesMore.set(canBurn ? `Δv ${st.deltaVTotal} total` : remaining.length === 0 ? 'all fired' : `${remaining.length} left`);
+    // Every delta-v of the stack is in vacuum (the stages fire high up); the header says so and adds them up.
+    stagesMore.set(canBurn ? `Δv ${st.deltaVTotal} vac` : remaining.length === 0 ? 'all fired' : `${remaining.length} left`);
     stagesMoreAlone.set(later.length === 0);
   }
 
@@ -1138,7 +1139,7 @@ export function createHud(opts: HudOptions): HudImpl {
     const lt = r.landingTarget;
     const st = s.staging;
     const activeStage = describeActiveStage(s);
-    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${phase.suborbital}|${r.periapsisAltitude < 0}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.gDose > 0}|${liftRelevant && r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${ltExpanded}|${r.horizontalSpeed >= 0.1}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${st.nextStage}|${st.lockout}|${st.stages.length}|${activeStage}|${s.mission.failed}`;
+    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${phase.suborbital}|${r.periapsisAltitude < 0}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.gDose > 0}|${liftRelevant && r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${ltExpanded}|${hasGroundTrack(r.horizontalSpeed, r.verticalSpeed)}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${st.nextStage}|${st.lockout}|${st.stages.length}|${activeStage}|${s.mission.failed}`;
     textClock += dt;
     const due = textClock >= TEXT_PERIOD - 1e-4;
     if (forceText || due || sig !== lastSig) {
@@ -1176,8 +1177,11 @@ export function createHud(opts: HudOptions): HudImpl {
     warpLimit.set(w.limit ?? '');
     warpLimitShow.set(w.limit !== null);
 
-    // Altitude: the reference is the body's (sea level where there is an ocean, the datum elsewhere).
-    altLabel.set(`Altitude · ${f.altitudeSource === 'radar' ? 'radar' : altitudeDatumName(s, defs)}${altMode === 'auto' ? ' · auto' : ''}`);
+    // Altitude: the reference is named (radar, or sea level where there is an ocean, the datum elsewhere); standing
+    // on a surface the title says so in place of the AUTO tag.
+    const vs = activeVesselOf(s)?.situation;
+    const resting = vs === 'prelaunch' ? 'on pad' : vs === 'landed' ? 'landed' : vs === 'splashed' ? 'splashed' : null;
+    altLabel.set(`Altitude · ${f.altitudeSource === 'radar' ? 'radar' : altitudeDatumName(s, defs)}${resting ? ` · ${resting}` : altMode === 'auto' ? ' · auto' : ''}`);
     altValue.set(f.altitude);
     vsIcon.set(f.verticalTrend);
     vsValue.set(f.verticalSpeed);

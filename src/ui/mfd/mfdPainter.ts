@@ -47,6 +47,7 @@ import {
 import {
   activeVesselOf,
   describeFlight,
+  altitudeValue,
   describeAirData,
   describeChuteEnvelope,
   describeLandingTarget,
@@ -781,7 +782,7 @@ function paintFlight(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): v
   // A speed cannot be negative: the speed tape's scale ends at zero.
   drawTape(ctx, f, leftX, tapeY, tapeW, tapeH, speed, formatNumber(speed, 1), fl.speedMode === 'surface' ? 'SRF SPD m/s' : 'ORB SPD m/s', 'right', (v) => formatNumber(v, 0), 60, 0);
   const radar = fl.altitudeSource === 'radar';
-  const alt = radar ? r.altitudeRadar : r.altitudeAsl;
+  const alt = altitudeValue(s, fl.altitudeSource);
   const altFmt = (v: number): string => (Math.abs(alt) >= 2e4 ? `${formatNumber(v / 1000, 0)}` : formatNumber(v, 0));
   const altTitle = `${radar ? 'RADAR ALT' : 'ALT'} ${Math.abs(alt) >= 2e4 ? 'km' : 'm'}`;
   const vsiW = w * 0.055;

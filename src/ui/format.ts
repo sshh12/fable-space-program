@@ -59,6 +59,9 @@ export const formatApsis = (m: number): string => formatLength(m, 'apsis');
 /** Speed in m/s with 0.1 m/s precision. */
 export const formatSpeed = (mps: number): string => `${formatNumber(mps, Math.abs(mps) < 1e5 ? 1 : 0)}${NBSP}m/s`;
 
+/** The navball's big speed readout: 0.1 m/s below 10 km/s, whole metres per second above ("10 836 m/s"). */
+export const formatSpeedReadout = (mps: number): string => `${formatNumber(mps, Math.abs(mps) < 1e4 ? 1 : 0)}${NBSP}m/s`;
+
 /** Below this magnitude (m/s) vertical speed reads as level. */
 const LEVEL_SPEED = 0.05;
 
@@ -100,9 +103,15 @@ export function formatDuration(seconds: number): string {
 }
 
 /** Countdown "T− 12:34" (time until) or "T+ 12:34" (time since, negative input). */
+/**
+ * Countdown "T− 9:53" / "T+ 0:12"; a day or more away it is read to the hour, "T− 10d 8h" (minutes are noise at
+ * that range, and the string keeps to the width of the panels' time column).
+ */
 export function formatCountdown(secondsUntil: number): string {
   if (!Number.isFinite(secondsUntil)) return '—';
-  return secondsUntil >= 0 ? `T${MINUS}${NBSP}${formatDuration(secondsUntil)}` : `T+${NBSP}${formatDuration(-secondsUntil)}`;
+  const a = Math.abs(secondsUntil);
+  const body = a >= 86400 ? `${Math.floor(a / 86400)}d${NBSP}${Math.floor((a % 86400) / 3600)}h` : formatDuration(a);
+  return secondsUntil >= 0 ? `T${MINUS}${NBSP}${body}` : `T+${NBSP}${body}`;
 }
 
 /** Mission elapsed time, always with hours: "T+ 00:12:34" / "T+ 1d 02:03:04". */
@@ -171,7 +180,8 @@ export function formatForce(n: number): string {
 }
 
 /** Warp factor "×1", "×1 000". */
-export const formatWarp = (factor: number): string => `×${formatNumber(factor, 0)}`;
+/** Warp factor: "×4", "×100", and from a thousand in thousands, "×1k" ... "×100k" (fits the clock panel). */
+export const formatWarp = (factor: number): string => (factor >= 1000 ? `×${formatNumber(factor / 1000, 0)}k` : `×${formatNumber(factor, 0)}`);
 
 /**
  * A signed range with the sign spelled out: "12.3 km ahead" / "4.5 km behind" (positive = `pos`).

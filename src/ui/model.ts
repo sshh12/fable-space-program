@@ -22,6 +22,7 @@ import {
   formatRadAsDeg,
   formatSignedRange,
   formatSpeed,
+  formatSpeedReadout,
   formatTwr,
   formatVerticalSpeed,
   formatWarp,
@@ -46,10 +47,20 @@ export const RADAR_ALTITUDE_SWITCH = 2000;
 
 export type AltitudeMode = 'auto' | 'asl' | 'radar';
 
-/** Altimeter source: `auto` = radar below RADAR_ALTITUDE_SWITCH in flight, sea level otherwise. */
+/**
+ * Altimeter source: `auto` = radar (height of the vessel's lowest point over the ground or sea under it) below
+ * RADAR_ALTITUDE_SWITCH, standing on the ground included, sea level / datum above. Near the ground the pilot needs
+ * the height over it: a lander at rest at Tranquility Base reads about 0 m, not its datum height of -1.9 km, and
+ * lifts off from that number without a jump. The reference is always named in the altimeter's title.
+ */
 export function altitudeSource(s: SimSnapshot, mode: AltitudeMode = 'auto'): 'radar' | 'asl' {
   if (mode !== 'auto') return mode;
-  return !isLanded(activeVesselOf(s)) && s.readouts.altitudeRadar < RADAR_ALTITUDE_SWITCH ? 'radar' : 'asl';
+  return s.readouts.altitudeRadar < RADAR_ALTITUDE_SWITCH ? 'radar' : 'asl';
+}
+
+/** The altitude an altimeter source reads: radar altitude never below 0 (a vessel afloat or settling on its gear). */
+export function altitudeValue(s: SimSnapshot, src: 'radar' | 'asl'): number {
+  return src === 'radar' ? Math.max(0, s.readouts.altitudeRadar) : s.readouts.altitudeAsl;
 }
 
 /**
@@ -112,13 +123,13 @@ export function describeFlight(s: SimSnapshot, mode: AltitudeMode = 'auto'): Fli
   const speedMode = s.navball.mode === 'surface' ? 'surface' : 'orbit';
   return {
     altitudeSource: src,
-    altitude: formatAltitude(src === 'radar' ? r.altitudeRadar : r.altitudeAsl),
+    altitude: formatAltitude(altitudeValue(s, src)),
     verticalSpeed: formatVerticalSpeed(r.verticalSpeed),
     verticalTrend: verticalTrend(r.verticalSpeed),
     horizontalSpeed: formatSpeed(speedMode === 'surface' ? r.horizontalSpeed : orbitalHorizontalSpeed(r.speedOrbital, r.verticalSpeed)),
     horizontalSpeedSurface: formatSpeed(r.horizontalSpeed),
     speedMode,
-    speed: formatSpeed(speedMode === 'surface' ? r.speedSurface : r.speedOrbital),
+    speed: formatSpeedReadout(speedMode === 'surface' ? r.speedSurface : r.speedOrbital),
     pitch: formatDeg(s.navball.pitchDeg),
     heading: formatBearing(s.navball.headingDeg),
     roll: formatDeg(s.navball.rollDeg),
@@ -166,6 +177,16 @@ export interface LandingTargetView {
  */
 export const ON_TARGET_DISTANCE = 0.5;
 
+/** A ground track needs this horizontal speed (m/s) ... */
+export const TRACK_MIN_SPEED = 1;
+/** ... and a flight path no steeper than this (deg from the horizontal). */
+export const TRACK_MAX_CLIMB_DEG = 75;
+
+/** True when the motion over the ground has a direction worth resolving distances along. */
+export function hasGroundTrack(horizontalSpeed: number, verticalSpeed: number): boolean {
+  return horizontalSpeed >= TRACK_MIN_SPEED && Math.atan2(Math.abs(verticalSpeed), horizontalSpeed) <= (TRACK_MAX_CLIMB_DEG * Math.PI) / 180;
+}
+
 export function describeLandingTarget(s: SimSnapshot): LandingTargetView | null {
   const lt = s.readouts.landingTarget;
   if (!lt) return null;
@@ -173,8 +194,10 @@ export function describeLandingTarget(s: SimSnapshot): LandingTargetView | null 
   const name = target?.name ?? lt.targetId;
   const isZone = target?.kind === 'recovery';
   const p = lt.predicted;
-  // The readout resolves the separation along the ground track only when there is one (>= 0.1 m/s).
-  const tracked = s.readouts.horizontalSpeed >= 0.1;
+  // The readout resolves the separation along the ground track only when there is one: a horizontal speed of
+  // TRACK_MIN_SPEED or more and a flight path flatter than TRACK_MAX_CLIMB_DEG. In a vertical climb (or a
+  // descent under chutes) the few m/s of drift point anywhere: no down-range / cross-range then, "vertical".
+  const tracked = hasGroundTrack(s.readouts.horizontalSpeed, s.readouts.verticalSpeed);
   return {
     targetId: lt.targetId,
     name,
@@ -222,14 +245,14 @@ export function landingTargetRows(v: LandingTargetView): [string, string][] {
   else if (v.predicted) rows.push(['Ground track', 'vertical']);
   // An impact is where the vessel comes down; the entry interface only where it meets the atmosphere (its
   // miss from the target centre says nothing about the splash point), so the row is named for what it is.
-  if (v.predicted) rows.push([v.predicted.label === 'Impact' ? 'Impact miss' : 'Entry interface', `${v.predicted.miss} · ${v.predicted.missBearing}`]);
+  if (v.predicted) rows.push([v.predicted.label === 'Impact' ? 'Impact miss' : 'Entry point', `${v.predicted.miss} · ${v.predicted.missBearing}`]);
   else if (v.tracked) rows.push(['Predicted arrival', v.noPrediction]);
   else rows.push(['Track · arrival', v.noPrediction]);
   return rows;
 }
 
 /** True for the prediction row of landingTargetRows (drawn under a rule). */
-export const isPredictionRow = (label: string): boolean => label.endsWith(' miss') || label === 'Entry interface' || label === 'Predicted arrival' || label === 'Track · arrival';
+export const isPredictionRow = (label: string): boolean => label.endsWith(' miss') || label === 'Entry point' || label === 'Predicted arrival' || label === 'Track · arrival';
 
 /** Below this surface speed (m/s), descending through the air, the vessel comes down close to its sub-point. */
 export const TERMINAL_DESCENT_SPEED = 250;
@@ -378,8 +401,15 @@ export interface StageTileView {
    * burn time and propellant are live. At most one tile is active.
    */
   active: boolean;
+  /**
+   * Delta-v in vacuum, for every stage alike (the figures add up to Readouts.deltaVTotal, the header's total):
+   * a stage fires high up, and at the pad's pressure the lunar ascent stage would read a third of what it has.
+   */
   deltaV: string;
+  /** The same in vacuum (kept for the MFD's explicit row). */
   deltaVVac: string;
+  /** Delta-v at the current ambient pressure ('' when it equals the vacuum figure to 1 %): the active stage in air. */
+  deltaVNow: string;
   twr: string;
   /**
    * What the engines do at full throttle, named: 'TWR' and the thrust-to-weight ratio at local gravity near a
@@ -545,8 +575,9 @@ export function describeStages(s: SimSnapshot, defs?: DefLibrary): StagesView {
       fired: info.fired,
       next: i === st.nextStage,
       active: i === active,
-      deltaV: hasEngines ? formatDeltaV(info.deltaVNow) : '',
+      deltaV: hasEngines ? formatDeltaV(info.deltaVVac) : '',
       deltaVVac: hasEngines ? formatDeltaV(info.deltaVVac) : '',
+      deltaVNow: hasEngines && Math.abs(info.deltaVNow - info.deltaVVac) > 0.01 * info.deltaVVac ? formatDeltaV(info.deltaVNow) : '',
       twr: hasEngines ? formatTwr(info.twr) : '',
       thrustLabel: weak ? 'Accel' : 'TWR',
       thrustValue: !hasEngines ? '' : weak ? `${formatNumber(stageAcceleration(s, defs, i) ?? info.twr * gLocal!, 2)}${NBSP}m/s²` : formatTwr(info.twr),
@@ -786,7 +817,9 @@ function envelopeWords(e: ParachuteEnvelope, inside: boolean): string {
  */
 export function describeChuteEnvelope(s: SimSnapshot, defs: DefLibrary): ChuteEnvelopeView | null {
   const env = s.readouts.chuteEnvelope;
-  if (env === null) return null;
+  // A parachute needs air: on the Moon or above the atmosphere the light means nothing (the sim judges its envelope
+  // from altitude, Mach and q alone, so q = 0 on the Moon would read SAFE; request flight-ui-9).
+  if (env === null || !inAtmosphere(s, defs)) return null;
   const light = env.toUpperCase();
   const tone = env === 'safe' ? 'good' : env === 'risky' ? 'caution' : 'warning';
   const v = activeVesselOf(s);

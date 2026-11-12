@@ -423,7 +423,7 @@ test.describe('flight-ui controls', () => {
       if (query.includes('impact')) expect(hud[4]![0]).toBe('Impact miss');
       if (query.includes('entry')) {
         // An entry-interface prediction alone says nothing about the splash point: no zone light.
-        expect(hud[4]![0]).toBe('Entry interface');
+        expect(hud[4]![0]).toBe('Entry point');
         await expect(page.locator('.hud .lt .zone')).toBeHidden();
       }
       if (query === 'scene=lunarOrbit') expect(await page.locator('.hud .lt .pname').textContent()).toBe('Tranquility Base');
