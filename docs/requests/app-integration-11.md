@@ -1,4 +1,4 @@
-Status: open (parts 2-6 done in 189d1e2, aea5efa, 1e5bceb; part 7 done in cce44d3; part 1, asynchronous pipeline creation: measured and planned below, not built)
+Status: open (parts 2-6 done in 189d1e2, aea5efa, 1e5bceb; part 7 done in cce44d3; part 1: the core's half built in 038cf6f (`shaders.warm`, the core's own pipelines), the packages' creation sites open: terrain by request core-2, the others by NOTICE-core-5)
 From: app-integration-v1
 Owner path: src/render/core (pipeline creation, shader library, mesh system; shared-code maintainer), src/render/terrain (streamer.ts, feature.ts; terrain-render), src/render/atmosphere (feature.ts; atmosphere-clouds)
 Blocking: no   (the loading screen shows what each subsystem exposes today; this asks for a shorter load and for the numbers the screen lacks)
@@ -141,3 +141,57 @@ interface AtmosphereStatus {
 Test: `tests/browser/atmosphere/clouds.spec.ts`, "status: tables, noise and the coverage map are reported as built
 once the page is idle" (with the baked map `{ tablesReady: true, noiseReady: true, coverage: { loaded: 1, total: 1 } }`;
 with `clouds: false` `coverage: { loaded: 0, total: 0 }`).
+
+## Part 1, the core's half: built (shared-code maintainer, 038cf6f); the packages' halves are open
+
+**What exists.** `CoreShaderLibrary.warm(items): Promise<void>` creates the pipelines of tracked builds with
+`createRenderPipelineAsync` / `createComputePipelineAsync` (a dry run of each `build` in which the device's
+two synchronous creation calls start the asynchronous creation of the same descriptor and hand back a
+stand-in; rounds for builds that read their own pipeline; a chunk replaced meanwhile is followed), then
+calls the ordinary `get()`: the synchronous creation that `build` performs is answered from the device's
+pipeline cache. No feature changes how it holds its pipelines. Also `shaders.warmed()` (everything started
+so far is there), `shaders.warming()` (`{ pending, total }`), both counted in `pendingCompilations()` /
+`compilations()` so the loading screen's row and `isIdle()` see them; `CoreRenderer.warm()`;
+`RendererOptions.pipelineWarm` and `?warm=0` for an A/B. RENDER_API section 5 ("Pipelines created ahead")
+with the recipe in 17.8; NOTICE-core-5. Not as planned above in two points: the items are named by the
+caller (a library-wide `warm()` would also build items of other packages that are not meant to exist yet),
+and nothing is thrown (the dry run returns a stand-in, so a build with several pipelines takes one round).
+
+**Who uses it.** The core's own thirteen pipelines (tone map, ambient occlusion, resolve and bloom, the
+exposure meter, the far exposure, the half-resolution depth, the mesh system's, and the lighting stage,
+which is now created with the renderer instead of in the first frame). The terrain renderer's adoption is
+request `core-2` (the edits are written out there; the package has its own owner now). Every other package:
+its next round, by the notice. `createLabApp` awaits `renderer.warm()` after its feature list; for `src/app`
+that is one line before the frame loop starts and the lead's decision (with most pipelines still
+synchronous it would hold the first frame until the GPU process's queue has drained).
+
+**Measured on the device** (`tests/browser/render-core/warm.spec.ts`, RTX 5090, 2026-11-12 10:00): six
+pipelines with a heavy fragment shader each, created synchronously and used: 886 ms; created ahead: 184 ms;
+the synchronous creation after it: 0.6 ms (3.1 ms with `layout: 'auto'`).
+
+**Measured on the pad load** (the game at its default start, `/?capture=0&scale=1&governor=off&mute=1`, 2560 x
+1440, a fresh browser per column, back to back, 2026-11-12 12:53 to 12:59; `warm=0` is the tree without the
+core's creation ahead; seconds; "frame 0" is the main thread's time in the first frame):
+
+| | `warm=0` | default | `warm=0` again | default again |
+|---|---|---|---|---|
+| cold load: view revealed | 51.1 | 48.4 | 38.4 | 34.7 |
+| reload: view revealed | 39.1 | 44.7 | 38.3 | 34.4 |
+| cold: "shader modules compiled" row ends | 38.7 | 36.1 | 27.9 | 25.0 |
+| reload: the row ends | 28.3 | 33.0 | 27.4 | 23.3 |
+| cold: frame 0 | 6.1 | 5.7 | 4.4 | 3.6 |
+| reload: frame 0 | 3.7 | 6.1 | 4.4 | 3.8 |
+
+Three of the four pairs are 2.7 to 3.9 s shorter with the core's pipelines created ahead, one is 5.5 s
+longer, and the two `warm=0` columns differ from each other by 12.7 s (other agents' jobs ran on the machine
+throughout). So the core's half alone does not shorten the pad load by an amount these four runs can tell
+from their own spread, which is what thirteen of roughly eighty pipelines would give: the queue in the GPU
+process is the packages' pipelines, created synchronously in their `init`, and it is as long as before. The
+28.7 s of the same probe at 09:36 is not a "before" for this table: the tree gained the visual fixers'
+shaders in between and the machine was busier (the six-pipeline control took 886 ms at 10:00 and 1,610 ms
+at 11:16).
+
+**Open** (why the request stays open): the packages' creation sites (terrain 7, cockpit 12, vfx 15, ocean 6,
+sky 6, atmosphere 5, ui / map / app 6, by this request's count), each by its owner; and the pad load measured
+again once they have. Part B of the problem (the terrain's streaming that starts after the compiles and
+proceeds a level per round trip) is unchanged by this.
