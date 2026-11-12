@@ -7,11 +7,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   CHASE_BODY_BLEND_SECONDS,
+  CHASE_DISC_ROLL,
   CHASE_DISTANCE_PER_RADIUS,
   CHASE_SUN_OFFSET,
   chaseAutoDistance,
   chaseDistanceLimits,
   chaseReferenceElevation,
+  chaseReferenceRoll,
   createChaseRig,
   createCockpitRig,
   createMapRig,
@@ -55,17 +57,23 @@ function bodyInFrame(s: SimSnapshot, c: CameraState, bodyId: string): { centre: 
   return { centre, radius, below: v3.dot(dir, viewUp(c.qViewToRoot)) < 0, nearLimb: centre - radius, farLimb: centre + radius };
 }
 
-describe('reference elevation', () => {
+describe('reference elevation and roll', () => {
+  const rhoAt = (altitude: number, radius = 6371e3): number => Math.asin(radius / (radius + altitude));
+  /** Elevation of the default view, degrees, with the share of the roll that the default view applies. */
+  const at = (altitude: number, radius = 6371e3): number => {
+    const rho = rhoAt(altitude, radius);
+    return chaseReferenceElevation(rho, FOV, 12 * DEG, chaseReferenceRoll(rho) / CHASE_DISC_ROLL) / DEG;
+  };
+
   it('is the view along the horizon near a body and rises over the vehicle with the altitude', () => {
-    const at = (altitude: number, radius = 6371e3): number => chaseReferenceElevation(Math.asin(radius / (radius + altitude)), FOV) / DEG;
     expect(at(30)).toBe(12);
     expect(at(185e3)).toBe(12);
     // The Moon from 105 km.
     expect(at(105e3, 1737.4e3)).toBe(12);
     expect(at(1000e3)).toBeCloseTo(20.3, 0);
-    expect(at(35786e3)).toBeGreaterThan(65);
-    expect(at(378000e3)).toBeGreaterThan(68);
-    expect(at(378000e3)).toBeLessThan(75);
+    expect(at(35786e3)).toBeGreaterThan(55);
+    expect(at(378000e3)).toBeGreaterThan(65);
+    expect(at(378000e3)).toBeLessThan(72);
     // Continuous in the altitude, and never below the view along the horizon.
     let prev = at(1);
     for (let h = 1; h < 1e9; h *= 1.02) {
@@ -74,20 +82,44 @@ describe('reference elevation', () => {
       expect(Math.abs(e - prev)).toBeLessThan(1.2);
       prev = e;
     }
+    // Level (no roll applied: the player's camera) the limb is a third of the half field under the centre at every distance.
+    expect(chaseReferenceElevation(1 * DEG, FOV) / DEG).toBeCloseTo(90 - 1 - 0.36 * 27.5, 9);
   });
 
-  it('keeps the body in the frame at every distance, under the vehicle', () => {
+  it('rolls the default view only for a body that is a disc, and smoothly', () => {
+    expect(chaseReferenceRoll(rhoAt(185e3))).toBe(0);
+    expect(chaseReferenceRoll(rhoAt(105e3, 1737.4e3))).toBe(0);
+    expect(chaseReferenceRoll(rhoAt(10000e3))).toBe(0);
+    expect(chaseReferenceRoll(rhoAt(378000e3))).toBe(CHASE_DISC_ROLL);
+    expect(chaseReferenceRoll(rhoAt(60000e3, 1737.4e3))).toBe(CHASE_DISC_ROLL);
+    let prev = 0;
+    for (let rho = 30 * DEG; rho > 0.5 * DEG; rho *= 0.99) {
+      const r = chaseReferenceRoll(rho);
+      expect(r).toBeGreaterThanOrEqual(prev);
+      expect(r - prev).toBeLessThan(2 * DEG);
+      prev = r;
+    }
+  });
+
+  it('keeps the body in the frame at every distance: below the vehicle as a horizon, beside it to the lower left as a disc', () => {
     const half = FOV / 2;
+    const halfH = Math.atan((Math.tan(half) * 16) / 9);
     for (let rho = 0.01 * DEG; rho < 89.9 * DEG; rho *= 1.05) {
-      const e = chaseReferenceElevation(rho, FOV);
+      const roll = chaseReferenceRoll(rho);
+      const e = chaseReferenceElevation(rho, FOV, 12 * DEG, roll / CHASE_DISC_ROLL);
       // The view direction is `e` below the horizontal; the body's centre is straight down: 90 deg - e from the axis.
       const centre = Math.PI / 2 - e;
       const near = centre - rho;
-      expect(near, `limb of a body of ${(rho / DEG).toFixed(2)} deg`).toBeLessThan(0.7 * half);
-      // A small disc is whole in the frame and clear of the middle, where the vehicle is.
-      if (rho < 4 * DEG) {
-        expect(centre + rho).toBeLessThan(half);
+      expect(near, `limb of a body of ${(rho / DEG).toFixed(2)} deg`).toBeLessThan(0.75 * half);
+      if (rho < 6 * DEG) {
+        // A small disc: whole in the frame, clear of the middle (the vehicle), and not in the bottom middle,
+        // where a flight display has its instruments (the bottom 45 % of the half height, a third of the width).
+        const x = centre * Math.sin(roll);
+        const y = centre * Math.cos(roll);
+        expect(y + rho).toBeLessThan(half);
+        expect(x + rho).toBeLessThan(halfH);
         expect(near).toBeGreaterThan(0.6 * half);
+        expect(x - rho > halfH / 3 || y + rho < 0.45 * half, `disc of ${(rho / DEG).toFixed(2)} deg at ${(x / DEG).toFixed(1)}, ${(y / DEG).toFixed(1)} deg`).toBe(true);
       }
     }
   });
@@ -110,9 +142,19 @@ describe('default framing of the chase rig', () => {
       const c = rig.update(s, IDLE, DT);
       const f = bodyInFrame(s, c, body);
       expect(f.below).toBe(true);
-      // The near limb is inside the frame with room to spare; from afar the whole disc is.
+      // The near limb is inside the frame with room to spare; from afar the whole disc is, to the lower left.
       expect(f.nearLimb).toBeLessThan(0.75 * (FOV / 2));
-      if (f.radius < 4 * DEG) expect(f.farLimb).toBeLessThan(FOV / 2);
+      if (f.radius < 4 * DEG) {
+        const toBody = v3.normalize(v3.sub(s.bodies.find((b) => b.id === body)!.rRoot, c.positionRoot));
+        const x = v3.dot(toBody, quat.rotate(c.qViewToRoot, v3.unitX()));
+        const y = v3.dot(toBody, viewUp(c.qViewToRoot));
+        expect(x).toBeLessThan(-Math.sin(10 * DEG));
+        expect(y).toBeLessThan(0);
+        expect(Math.asin(-y) + f.radius).toBeLessThan(FOV / 2);
+        expect(rig.roll).toBe(CHASE_DISC_ROLL);
+      } else if (f.radius > 20 * DEG) {
+        expect(rig.roll).toBe(0);
+      }
       // The vehicle is at the centre.
       const toVessel = v3.normalize(v3.sub(vesselComRoot(v), c.positionRoot));
       expect(v3.dot(toVessel, viewForward(c.qViewToRoot))).toBeGreaterThan(1 - 1e-9);
@@ -120,7 +162,7 @@ describe('default framing of the chase rig', () => {
   }
 
   it('the frame is level with the body in both navball modes (the horizon is horizontal)', () => {
-    const fake = createFakeSim(defs, { scene: 'translunar', parts: labVehicleParts(defs) });
+    const fake = createFakeSim(defs, { scene: 'lowOrbit', parts: labVehicleParts(defs) });
     const rig = createChaseRig({ defs });
     for (const mode of ['orbit', 'surface'] as const) {
       fake.commands.setNavballMode(mode);
@@ -351,17 +393,27 @@ describe("the player's camera persists", () => {
     const b = rig.update(low, { yaw: 0.3, pitch: -0.2, zoom: 1 }, DT);
     expect(quat.angleBetween(a.qViewToRoot, b.qViewToRoot)).toBeGreaterThan(0.2);
     expect(rig.offsets.pitch).toBeCloseTo(0.2, 9);
-    // Far from the body the reference elevation is higher; the player's offset rides on it.
+    // Far from the body the default view is rolled (the disc beside the vehicle). The player tilts the camera:
+    // the elevation moves by what they asked for and stays there while the roll eases out of their view.
     const far = snapshot('translunar');
+    const v = vesselOf(far);
+    const elevationOf = (c: CameraState): number => Math.asin(v3.dot(v3.normalize(v3.sub(c.positionRoot, vesselComRoot(v))), v3.normalize(v.r)));
     const rig2 = createChaseRig({ defs });
     rig2.activate(null, far);
-    rig2.update(far, { yaw: 0, pitch: 0.2, zoom: 1 }, DT);
-    expect(rig2.offsets.pitch).toBeCloseTo(-0.2, 9);
-    const c = rig2.update(far, IDLE, DT);
-    const v = vesselOf(far);
-    const elevation = Math.asin(v3.dot(v3.normalize(v3.sub(c.positionRoot, vesselComRoot(v))), v3.normalize(v.r)));
+    const e0 = elevationOf(rig2.update(far, IDLE, DT));
+    expect(rig2.roll).toBe(CHASE_DISC_ROLL);
+    let c = rig2.update(far, { yaw: 0, pitch: 0.2, zoom: 1 }, DT);
+    expect(elevationOf(c)).toBeCloseTo(e0 - 0.2, 6);
+    for (let i = 0; i < 600; i++) {
+      c = rig2.update(far, IDLE, DT);
+      expect(elevationOf(c)).toBeCloseTo(e0 - 0.2, 6);
+    }
+    expect(rig2.roll).toBe(0);
+    // Level again: the camera's right is horizontal.
+    expect(Math.abs(v3.dot(quat.rotate(c.qViewToRoot, v3.unitX()), v3.normalize(v.r)))).toBeLessThan(1e-9);
+    // And the offset is from the level reference.
     const ref = chaseReferenceElevation(Math.asin(defs.bodies[v.bodyId]!.radius / v3.len(v.r)), FOV);
-    expect(elevation).toBeCloseTo(ref - 0.2, 6);
+    expect(rig2.offsets.pitch).toBeCloseTo(e0 - 0.2 - ref, 6);
   });
 
   it('setOrbit places the camera absolutely and resetView swings back to the default framing', () => {
@@ -379,7 +431,7 @@ describe("the player's camera persists", () => {
     let prev = rig.update(s, IDLE, DT);
     let worst = 0;
     let last = prev;
-    for (let i = 0; i < 240; i++) {
+    for (let i = 0; i < 900; i++) {
       last = rig.update(s, IDLE, DT);
       worst = Math.max(worst, quat.angleBetween(prev.qViewToRoot, last.qViewToRoot) / DEG);
       prev = last;

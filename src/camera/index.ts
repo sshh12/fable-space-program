@@ -8,6 +8,7 @@ export { createCockpitRig, findCockpitSeat, resolveSeatPose, type CockpitRigOpti
 export {
   CHASE_AUTO_SECONDS,
   CHASE_BODY_BLEND_SECONDS,
+  CHASE_DISC_ROLL,
   CHASE_DISTANCE_PER_RADIUS,
   CHASE_FRAME_BLEND_SECONDS,
   CHASE_SUN_OFFSET,
@@ -15,6 +16,7 @@ export {
   chaseDistanceLimits,
   chaseReferenceElevation,
   chaseReferenceFrame,
+  chaseReferenceRoll,
   createChaseRig,
   vesselRadiusAboutCom,
   type ChaseRig,

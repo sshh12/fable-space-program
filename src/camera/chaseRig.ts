@@ -15,8 +15,11 @@
  * pitch. The reference elevation keeps the body in the frame where the geometry allows it
  * (`chaseReferenceElevation`): near the body the view runs along the horizon with the limb below the vehicle
  * (12 degrees of elevation, as on the pad); as the vessel climbs away the camera rises over it, so that the
- * body stays in the lower part of the picture behind the vehicle, down to a small disc under it from deep
- * space. In orbit mode the default azimuth puts the eye on the sunward side of the vessel, CHASE_SUN_OFFSET
+ * body stays in the lower part of the picture behind the vehicle. A body that has become a disc (far out: the
+ * Earth from beyond 16,000 km, the Moon from beyond 4,500 km) is put beside the vehicle, in the lower left of
+ * the frame, by rolling the default view (`chaseReferenceRoll`): straight below the vehicle is where a flight
+ * display's instruments are, and a small disc there is hidden. The roll belongs to the default framing: it
+ * eases out when the player turns or tilts the camera, whose frame is then level again. In orbit mode the default azimuth puts the eye on the sunward side of the vessel, CHASE_SUN_OFFSET
  * off the sun's line: the vehicle is lit and the sun is behind the camera, not a starburst over the vehicle;
  * it follows the sun around the orbit (once per revolution) until the player turns the camera. On a surface
  * the default azimuth is the vessel's (behind the nose; from starboard while it stands). The distance is the
@@ -85,11 +88,17 @@ export const CHASE_SUN_SECONDS = 2.5;
 export const CHASE_SUN_RATE = 15 * DEG;
 /** Below this horizontal share of the sun's direction (the sun near the zenith or the nadir) the azimuth is left where it is. */
 const CHASE_SUN_HORIZONTAL = 0.2;
-/** The limb of a large body lies this share of the half field of view below the frame's centre. */
+/** The limb of a body lies this share of the half field of view from the frame's centre (below it in a level view). */
 export const CHASE_LIMB_BELOW = 0.36;
-/** A body small enough clears the vehicle: its disc starts this share of the half field of view below the centre, and ends inside the frame. */
-export const CHASE_DISC_BELOW = 0.66;
-const CHASE_FRAME_MARGIN = 0.055;
+/** The same for a disc in the rolled default view: it clears the vehicle. */
+export const CHASE_DISC_OFF = 0.72;
+/** Roll of the default view for a small disc, rad: the body is this far round from straight below, to the left. */
+export const CHASE_DISC_ROLL = 65 * DEG;
+/** Angular radius from which the roll comes in, and the one from which it is whole, rad. */
+export const CHASE_DISC_FROM = 16 * DEG;
+export const CHASE_DISC_FULL = 6 * DEG;
+/** Time constant of the roll, s. */
+export const CHASE_ROLL_SECONDS = 0.6;
 const MAX_ELEVATION = 89 * DEG;
 
 type RefMode = 'surface' | 'orbit';
@@ -167,19 +176,27 @@ const wrapAngle = (a: number): number => a - 2 * Math.PI * Math.round(a / (2 * M
 /**
  * Elevation of the chase camera above the horizontal plane that keeps a body of angular radius
  * `angularRadius` (rad, seen from the vessel) in a frame of vertical field of view `fovY`, the vehicle at its
- * centre and the body below it. Near the body (the limb less than `base` + CHASE_LIMB_BELOW of the half
- * field under the horizontal) it is `base`: the view along the horizon. Higher up the camera rises so that the
- * limb stays CHASE_LIMB_BELOW of the half field under the centre; a body small enough to fit under the
- * vehicle is put there whole (its disc from CHASE_DISC_BELOW of the half field down, or as far down as the
- * frame holds it). Continuous in the angular radius (not monotone: where the disc starts to fit under the
- * vehicle the camera comes down by four degrees to put it there).
+ * centre. Near the body (the limb less than `base` + CHASE_LIMB_BELOW of the half field under the horizontal)
+ * it is `base`: the view along the horizon. Higher up the camera rises so that the limb stays CHASE_LIMB_BELOW
+ * of the half field from the centre. `side` (0..1) is the share of the roll of `chaseReferenceRoll` that is
+ * applied: with it the limb moves out to CHASE_DISC_OFF of the half field, clear of the vehicle. Continuous in
+ * both arguments.
  */
-export function chaseReferenceElevation(angularRadius: number, fovY: number, base = 12 * DEG): number {
+export function chaseReferenceElevation(angularRadius: number, fovY: number, base = 12 * DEG, side = 0): number {
   const half = fovY / 2;
   const rho = clamp(angularRadius, 0, Math.PI / 2);
-  // Angle from the frame's centre down to the near limb: under the vehicle if the whole disc then fits.
-  const limb = Math.max(CHASE_LIMB_BELOW * half, Math.min(CHASE_DISC_BELOW * half, (1 - CHASE_FRAME_MARGIN) * half - 2 * rho));
+  const limb = half * (CHASE_LIMB_BELOW + (CHASE_DISC_OFF - CHASE_LIMB_BELOW) * clamp(side, 0, 1));
   return clamp(Math.max(base, Math.PI / 2 - rho - limb), -MAX_ELEVATION, MAX_ELEVATION);
+}
+
+/**
+ * Roll of the default chase view about its axis for a body of angular radius `angularRadius`, rad: 0 while
+ * the body is a horizon or a large disc (the frame is level), CHASE_DISC_ROLL for a small disc, which then
+ * stands to the lower left of the vehicle instead of straight below it.
+ */
+export function chaseReferenceRoll(angularRadius: number): number {
+  const t = clamp((CHASE_DISC_FROM - angularRadius) / (CHASE_DISC_FROM - CHASE_DISC_FULL), 0, 1);
+  return CHASE_DISC_ROLL * t * t * (3 - 2 * t);
 }
 
 export interface ChaseRig extends FlightCameraRig {
@@ -195,6 +212,8 @@ export interface ChaseRig extends FlightCameraRig {
   readonly offsets: { azimuth: number; pitch: number; zoom: number };
   /** True until the player turns the camera (or `setOrbit` places it): the azimuth is the default one and follows it. */
   readonly autoAzimuth: boolean;
+  /** Roll of the view about its axis now, rad (0 once the player has turned or tilted the camera). */
+  readonly roll: number;
 }
 
 export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
@@ -212,6 +231,9 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
   let azimuth = 0;
   // The azimuth is the default one (and follows the sun in orbit mode) until the player turns the camera.
   let autoAzimuth = true;
+  // The default view may roll (a small disc beside the vehicle) until the player turns or tilts the camera.
+  let autoRoll = true;
+  let roll = 0;
   // The player's offset from the reference elevation and factor on the default distance.
   let pitch = 0;
   let zoom = 1;
@@ -226,12 +248,13 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
   let lastDir: Vec3 | null = null;
   let lastFrame: Quat | null = null;
 
-  const referenceElevation = (s: SimSnapshot, v: VesselSnapshot): number => {
-    if (!frameBody) return baseElevation;
+  const angularRadius = (v: VesselSnapshot): number => {
     const r = v3.len(v.r);
     const radius = bodyDef(defs, v.bodyId).radius;
-    return chaseReferenceElevation(r > radius ? Math.asin(radius / r) : Math.PI / 2, fovY, baseElevation);
+    return r > radius ? Math.asin(radius / r) : Math.PI / 2;
   };
+  const referenceElevation = (s: SimSnapshot, v: VesselSnapshot): number =>
+    frameBody ? chaseReferenceElevation(angularRadius(v), fovY, baseElevation, roll / CHASE_DISC_ROLL) : baseElevation;
 
   /**
    * Azimuth of the eye on the sunward side of the vessel, CHASE_SUN_OFFSET off the sun's line on the side
@@ -278,6 +301,8 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
     pitch = 0;
     zoom = 1;
     autoAzimuth = true;
+    autoRoll = true;
+    roll = frameBody ? chaseReferenceRoll(angularRadius(v)) : 0;
     autoDistance = chaseAutoDistance(defs, v, distanceRadii);
     distance = autoDistance;
     azimuth = defaultAzimuth(s, v, chaseReferenceFrame(s, v, refMode));
@@ -313,6 +338,9 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
     get autoAzimuth() {
       return autoAzimuth;
     },
+    get roll() {
+      return roll;
+    },
     isAvailable: (s) => s.vessels.some((x) => x.id === s.activeVesselId),
     setOrbit(az, el, dist) {
       pendingOrbit = { azimuth: az, elevation: el, distance: dist };
@@ -333,8 +361,10 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
       if (opts.startBehindPreviousView && from && from.kind !== 'map') {
         const a = anglesOf(chaseReferenceFrame(s, v, refMode), v3.neg(quat.rotate(from.qViewToRoot, { x: 0, y: 0, z: -1 })));
         azimuth = a.azimuth;
-        pitch = clamp(a.elevation, -MAX_ELEVATION, MAX_ELEVATION) - referenceElevation(s, v);
         autoAzimuth = false;
+        autoRoll = false;
+        roll = 0;
+        pitch = clamp(a.elevation, -MAX_ELEVATION, MAX_ELEVATION) - referenceElevation(s, v);
       }
     },
     update(s: SimSnapshot, input: CameraInput, realDt: number): CameraState {
@@ -359,7 +389,15 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
         startSwing(CHASE_BODY_BLEND_SECONDS);
       }
 
-      const ref = referenceElevation(s, v);
+      // The roll of the default view: in for a small disc, out when the player has taken the camera.
+      if (input.yaw !== 0 || input.pitch !== 0) autoRoll = false;
+      const before = referenceElevation(s, v);
+      const rollTarget = autoRoll && frameBody ? chaseReferenceRoll(angularRadius(v)) : 0;
+      roll += (rollTarget - roll) * approach(realDt, CHASE_ROLL_SECONDS);
+      if (Math.abs(rollTarget - roll) < 1e-6) roll = rollTarget;
+      let ref = referenceElevation(s, v);
+      // (What the player set is an elevation: it stays where it is while the reference moves with the roll.)
+      if (!autoRoll && ref !== before) pitch += before - ref;
       // Player input (grab-the-scene convention: positive yaw turns the view right).
       if (input.yaw !== 0) {
         azimuth -= input.yaw;
@@ -382,6 +420,7 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
         startSwing(CHASE_BODY_BLEND_SECONDS / 2);
         azimuth = defaultAzimuth(s, v, chaseReferenceFrame(s, v, refMode));
         autoAzimuth = true;
+        autoRoll = true;
         pitch = 0;
         zoom = 1;
         pendingReset = false;
@@ -389,6 +428,9 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
       if (pendingOrbit) {
         azimuth = pendingOrbit.azimuth;
         autoAzimuth = false;
+        autoRoll = false;
+        roll = 0;
+        ref = referenceElevation(s, v);
         pitch = clamp(pendingOrbit.elevation, -MAX_ELEVATION, MAX_ELEVATION) - ref;
         zoom = clamp(pendingOrbit.distance, lim.min, lim.max) / auto;
         swing = null;
@@ -420,11 +462,13 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
       if (r < g.radius + clearance) eye = v3.addScaled(g.centre, rel, (g.radius + clearance) / r);
 
       const up = quat.rotate(frame, v3.unitZ());
+      // The roll turns the camera about its own axis (view +Z points at the viewer): the body below goes to the left.
+      const level = lookRotation(v3.sub(target, eye), up);
       return {
         mode: 'chase',
         kind: 'external',
         positionRoot: eye,
-        qViewToRoot: lookRotation(v3.sub(target, eye), up),
+        qViewToRoot: roll === 0 ? level : quat.normalize(quat.mul(level, quat.fromAxisAngle(v3.unitZ(), roll))),
         fovY,
         insideVesselId: null,
         focusVesselId: v.id,

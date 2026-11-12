@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { capMaxLevel, fitLodScale, GroundSpeed, levelRange, LOD_SCALE_MIN, lodK, morphWindow, POOL_HIGH, POOL_LOW, POOL_TARGET, SPEED_RISE_LEVELS, SPEED_WINDOW_SECONDS, warpLevelCap } from '@/render/terrain/lod';
-import { BodyQuadtree, TILE_EMPTY, type LodObserverFixed, type SelectParams } from '@/render/terrain/quadtree';
+import { BodyQuadtree, EAGER_LEVELS, TILE_EMPTY, type LodObserverFixed, type SelectParams } from '@/render/terrain/quadtree';
 import { converge, countCracks, makeReady, observer, R, type Sim } from './cdlodTwin';
 
 const DT = 1 / 60;
@@ -218,8 +218,8 @@ describe('live demand on the pools', () => {
   });
 });
 
-describe('asking for a view whole (eager requests after a cut)', () => {
-  it('one pass wants the whole chain of tiles under the view, coarser tiles first; a plain pass only the next level', () => {
+describe('asking for a view several levels at a time (eager requests after a cut)', () => {
+  it('one pass wants EAGER_LEVELS levels below what is resident, coarser tiles first; a plain pass only the next level', () => {
     const K = lodK(1440, (55 * Math.PI) / 180, 8);
     const obs = [observer(0.7, 23.4, 300)];
     const plain = new BodyQuadtree(R, -9130, 10790);
@@ -231,28 +231,31 @@ describe('asking for a view whole (eager requests after a cut)', () => {
     const tree = new BodyQuadtree(R, -9130, 10790);
     for (const root of tree.roots) makeReady(tree, root);
     tree.select({ ...params(obs, K, 14), frameIndex: 1, time: 10, eager: true });
-    const levels = new Set(tree.wanted.map((n) => n.level));
-    for (let l = 1; l <= 14; l++) expect(levels.has(l), `level ${l} wanted`).toBe(true);
-    // Under the observer a parent is asked for before its child.
-    const at = (l: number): number => Math.max(...tree.wanted.filter((n) => n.level === l).map((n) => n.priority));
-    expect(at(1)).toBeGreaterThan(0);
-    // What it wants holds everything the converged selection draws near the observer.
-    const wantedIds = new Set(tree.wanted.map((n) => n.id));
-    const full = new BodyQuadtree(R, -9130, 10790);
-    const items = converge(full, params(obs, K, 14));
-    const drawn = items.filter((it) => it.node.level >= 1);
-    const missing = drawn.filter((it) => !wantedIds.has(it.node.id));
-    expect(drawn.length).toBeGreaterThan(50);
-    expect(missing.length).toBe(0);
-    // And not much more: the inherited bounds are wider than the tiles' own.
-    expect(tree.wanted.length).toBeLessThan(4 * (drawn.length + items.length));
-    // Nothing is drawn below what is resident.
+    expect(new Set(tree.wanted.map((n) => n.level))).toEqual(new Set([1, 2, 3]));
+    expect(EAGER_LEVELS).toBe(3);
+    // Nothing is drawn below what is resident, and what is asked for is not counted as demand before it is used.
     expect(tree.items.every((it) => it.node.level === 0)).toBe(true);
-    for (const n of tree.wanted) makeReady(tree, n);
-    tree.wanted.length = 0;
-    tree.select({ ...params(obs, K, 14), frameIndex: 2, time: 20, eager: true });
-    expect(tree.wanted.length).toBe(0);
-    expect(Math.max(...tree.items.map((it) => it.node.level))).toBe(14);
+    expect(tree.wanted.filter((n) => n.level > 1).every((n) => n.neededFrame < 1)).toBe(true);
+    // The view completes in a third of the passes, with the same tiles and hardly a tile too many.
+    const passes = (eager: boolean): { passes: number; baked: number; drawn: string[] } => {
+      const t = new BodyQuadtree(R, -9130, 10790);
+      for (const root of t.roots) makeReady(t, root);
+      let baked = 0;
+      for (let pass = 1; pass < 100; pass++) {
+        t.select({ ...params(obs, K, 14), frameIndex: pass, time: 10 * pass, eager });
+        if (t.wanted.length === 0) return { passes: pass, baked, drawn: t.items.map((it) => `${it.node.id}:${it.quadrant}`).sort() };
+        baked += t.wanted.length;
+        for (const n of t.wanted) makeReady(t, n);
+        t.wanted.length = 0;
+      }
+      throw new Error('did not converge');
+    };
+    const slow = passes(false);
+    const fast = passes(true);
+    expect(slow.passes).toBe(15);
+    expect(fast.passes).toBeLessThanOrEqual(6);
+    expect(fast.drawn).toEqual(slow.drawn);
+    expect(fast.baked).toBeLessThan(1.15 * slow.baked);
   });
 });
 
