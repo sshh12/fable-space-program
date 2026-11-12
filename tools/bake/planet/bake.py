@@ -34,13 +34,30 @@ CODE_VERSION = {"prepare": 1, "procedural": 1, "height": 1, "albedo": 2, "manife
 SOLID_STEPS = ("fetch", "prepare", "procedural", "height", "albedo", "manifest")
 
 
-def fingerprint(body: config.Body, step: str) -> str:
+def fingerprint(body: config.Body, step: str, with_landmarks: bool = False) -> str:
+    """What a step's output depends on: the config (its landmark tests excepted: they only read the tiles), the
+    step's code version and, for the procedural relief and the manifest, the resolved amplification."""
     h = hashlib.sha256()
-    h.update(json.dumps(body.raw, sort_keys=True).encode("utf-8"))
+    raw = body.raw if with_landmarks else {k: v for k, v in body.raw.items() if k != "landmarks"}
+    h.update(json.dumps(raw, sort_keys=True).encode("utf-8"))
     h.update(f"{step}:{CODE_VERSION.get(step, 1)}".encode("ascii"))
     if step in ("procedural", "manifest"):
         h.update(json.dumps(procedural.resolved_amplification(body), sort_keys=True).encode("utf-8"))
     return h.hexdigest()[:16]
+
+
+def step_done(body: config.Body, step: str) -> bool:
+    """Done with the current fingerprint; a state written before landmarks left the fingerprint (it then
+    matches the old form on the same config) is accepted and rewritten."""
+    fp = fingerprint(body, step)
+    if rt.is_done(body.id, step, fp):
+        return True
+    if rt.is_done(body.id, step, fingerprint(body, step, with_landmarks=True)):
+        st = rt.load_state(body.id)
+        st[step]["fingerprint"] = fp
+        rt.write_json(rt.state_path(body.id), st)
+        return True
+    return False
 
 
 def source_keys(body: config.Body, steps: list[str] | None = None) -> list[str]:
@@ -120,7 +137,7 @@ def bake_solid(body: config.Body, steps: list[str], record: bool, force: bool) -
     rt.work_dir(body.id).mkdir(parents=True, exist_ok=True)
     t_all = time.time()
     compute = [s for s in steps if s not in ("fetch", "prepare")]
-    pending = [s for s in compute if force or not rt.is_done(body.id, s, fingerprint(body, s))]
+    pending = [s for s in compute if force or not step_done(body, s)]
     # sources: those the pending compute steps read (all of them for an explicit fetch/prepare-only run)
     need = pending if compute else None
     if "fetch" in steps or pending:
