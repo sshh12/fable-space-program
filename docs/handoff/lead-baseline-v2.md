@@ -617,3 +617,85 @@ Suites (05:25): the terrain guard 7 of 7 through the gate, in the every-commit f
 in the full form (`TERRAIN_GUARD_FULL=1`, bake slot, 54 s). `npm run test:mission`: 5 files, 36 of 36.
 `npm run typecheck:paths -- tests/unit/terrain-core` (both configurations) clean. `check-stubs`,
 `check-secrets` OK. No browser run.
+
+## 16. Request site-bake-1, second time: the GLO-30 re-bake of Madrakah, replaced in place (2026-11-12, 10:25-10:50)
+
+site-bake re-baked the Madrakah region on Copernicus GLO-30 and replaced its tiles in the live `earth` set
+at 09:44 (manifest `f70a61d55dca902f` -> `f5e6ef420bda7cea`). Same procedure as section 15, with the audit
+a replacing bake needs: audit first against the guard's OWN records, re-record only if clean.
+
+**Audit: clean; site-bake's claim holds in every number.**
+
+| | Recorded | Byte-identical | Changed | Added or removed |
+|---|---|---|---|---|
+| `earth` | 9,220 directories | 8,713 | 507: the root as named (`manifest.json`, 21,925 -> 22,126 bytes) and 506 of the footprint's 840 directories (30,989 files, 0.349 GB) | 0 |
+| `moon` | 2,344 directories | 2,344 | 0 | 0 |
+
+Replaced directories `{layer}/2/{level}/{x}`, as the audit printed them (they are site-bake's table, row for row):
+
+| Layer | Level 8 | Level 9 | Level 10 | Level 11 | Level 12 |
+|---|---|---|---|---|---|
+| height | 4 (44-47) | 8 (88-95) | 15 (176-190) | 29 (353-381) | 56 (707-762) |
+| albedo | 9 (43-51) | 13 (87-95, 99-102) | 20 (175-190, 199-202) | 36 (352-381, 398-403) | 67 (706-763, 797-805) |
+| watermask | 8 (43-50) | 9 (88-95, 100) | 18 (176-190, 199-201) | 32 (352-380, 399-401) | 55 (706, 709-760, 799-800) |
+| landcover | 8 (43-50) | 11 (87-95, 99-100) | 19 (175-190, 199-201) | 32 (352-380, 399-401) | 57 (706-760, 799-800) |
+
+- The footprint the changed directories were held against is the guard's, not the builder's: the 840
+  directories the recording of f072a36 has and its parent does not (from git; written to
+  `out/terrain-guard/footprint-earth-madrakah.json`). All 506 replaced directories are inside it; every one
+  keeps its file names; nothing was added or removed. The audit: `out/terrain-guard/replaced.json`.
+- Heights, every stored direction of both bodies sampled on the new tiles: 497 of the 800 points of
+  `site:madrakah` changed on the collision query, 525 on the 25 m band-limited one, 0 on the 1,000 m one;
+  0 of the 1,200 uniform Earth points, 0 of the 800 of `site:ka-lae-lc1`, 0 of the Moon's 2,000.
+
+**Re-recorded, and why.** The tile summary (the 506 directories and the root now hold the GLO-30 tiles) and
+the heights of `site:madrakah` alone (the land heights under that place changed source; its `recordedOn`
+is now `f5e6ef420bda7cea`); checked against the committed files: 507 Earth summary entries differ and no
+key, and in the heights file every direction and every height outside the group is the same string. The
+golden's `tiles.earth` is `f5e6ef420bda7cea`. No pin changed: none of the three files is pinned.
+`tests/mission/baseline-v1.json` is not touched.
+
+**New in the guard** (the lead's files): `auditTiles(recorded, current, { expectChanged, mayChange,
+additions })` replaces the additions-only audit (`auditAdditions` is now its additive case);
+`spliceGroup(body, key, sampled)`; the recorder modes `--tiles-replaced --footprint <file> [--changed ...]`
+and `--resample-group <bodyId> <key> [--dry-run]`. Each writes only when its audit has no violation. Two
+unit tests plant the violations (a directory outside the footprint changed by content alone, a new
+directory, a file added inside the footprint, a directory gone, a footprint entry never recorded; a point
+of another group or a uniform point that moved).
+
+**For the lead.**
+
+- **The mission's determinism test is red since 10:16, and not because of the tiles.** The state hash is
+  `e7cdbc4b452f686d`, the golden `b8221b0fd316207e` (596,933 steps both). Commit 01c4d2f (cockpit round 6,
+  request cockpit-18) changed `cameras.cockpit.seat` of `data/defs/vehicles/meridian-lunar.json` from
+  `cdr` to `plt`. That field is in the hashed state twice: the codec's vehicle reference carries
+  `vehicleHash` = the content hash of the WHOLE `VehicleDef` (`src/sim/vessel/codec.ts`), and the command
+  part carries the camera seat (`CommandRuntime.cameraSeat`). Measured in two flights through the gate
+  (scripts kept in the scratchpad, nothing written to the repository): (a) the flight as the tree is makes
+  2,218 Earth tile requests, none of them inside the Madrakah footprint; (b) with that one field put back
+  to `cdr` in memory and everything else as it is, GLO-30 tiles included, the flight ends at
+  `b8221b0fd316207e`, 596,933 steps: the golden. So the re-bake did not change the flight, and the flight
+  itself (steps, trajectory guard, the other 35 mission tests) is as it was. **The golden hash was not
+  touched.** Either the lead authorises a re-baseline to `e7cdbc4b452f686d` (it would be the sixth;
+  MIGRATION_V2 principle 5 counts five), or presentation fields are taken out of what the state hash
+  covers (then any later edit of a camera, a name or a cockpit id in a vehicle file stops breaking it).
+  Until then `npm run test:mission` is 35 of 36 for every package.
+- **The group `site:madrakah` no longer sits on the pads.** It is centred on the first layout's reference
+  point (18.996043 N 57.793818 E); the pads moved 9-41 km north (lc-1 now 19.078241 N 57.786868 E). Its 200 m
+  and 2 km discs hold no pad; when fleet-data writes the site file, the rule "only points inside new
+  flatten discs may change" will have almost nothing to hold at Madrakah. A group about the present
+  reference pad (and one in the medium and light field further north) can be appended with `--add-place`
+  before that. Not done here: the order was this group only.
+- **Request lead-4 is not settled and now covers Madrakah**: `region_is_baked` is False for both regions
+  (Madrakah's was True at 05:25; its region file was edited at 10:27, after the bake, uncommitted).
+- **fleet-data's brief**: the note written after site-bake's first hand-off was out of date (Madrakah's
+  reference pad and elevation, Ka Lae's withdrawn layout, the radii as resolved); it is rewritten to the
+  follow-up round.
+- **Before sub-wave 3.2** (MIGRATION_V2, lead steps): move `TilePackIndex` and `PackList` from
+  `src/terrain/packIndex.ts` into the terrain contract (platform-delivery's request). Not now: the visual
+  fixers compile against the tree.
+
+Suites (10:45): the terrain guard 9 of 9 through the gate (the 7 of section 15 and the two new ones) and
+`tools/dev/guard-pins.test.ts` 3 of 3. Mission through the gate: 35 of 36. The one failure is not of this step: the determinism test gets the state hash e7cdbc4b452f686d where the golden has b8221b0fd316207e (596,933 steps both), because commit 01c4d2f (10:16, cockpit round 6) changed a field of the vehicle file that is in the hashed state; with that field put back in memory the flight on the new tiles ends at the golden exactly, and it asks for no tile of the Madrakah footprint (hand-off of lead-baseline-v2, section 16). The golden hash was not touched. `npm run typecheck:paths -- tests/unit/terrain-core`
+(both configurations) clean. The full form of the guard was not run a second time after the recording (the
+recording IS a full-form pass, and the bake slot is planet-bake's most of the time). No browser run.
