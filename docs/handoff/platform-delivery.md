@@ -433,3 +433,8 @@ was re-recorded in format 2 during this work; the browser terrain check reads it
 - 03:20-03:30 D7 derating built and run: this machine (bundle, data/tiles) and Railway (`ops` at 8 vCPU / 8 GB,
   terrain through the pack source from the bucket, buildId d85310b07e61351a; the `ops` service
   cbd6d484-99b0-42b3-99a2-0ae58596a37b deleted after the run). Numbers in section 6 and the capacity report.
+- 04:53 the packs-and-deployed browser run that waited in the GPU queue since 03:19 died as it got the slot:
+  its parent shell had been stopped, and on Windows the orphaned launcher could no longer start the command
+  (exit 0xC0000142, STATUS_DLL_INIT_FAILED; pg_ctl too, so the launcher killed the postmaster: the stack went
+  down cleanly). Queued again in the other order (the GPU slot first, the stack inside it), so the stack slot
+  is not held while the GPU queue is long.
