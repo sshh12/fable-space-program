@@ -8,8 +8,13 @@
  * the rest of cascade 1 at a small weight, only makes the edges ragged), normalised to unit variance.
  * Because the smooth part is long-crested and band-limited, its rare excursions above the threshold are bars along
  * the dominant crests a few metres long, not the round specks that the excursions of the short chop alone are.
- *   active   = max(active x e^(-dt / tauA), ramp(c - threshold))     the breaker itself: thick, bright
+ *   breaking = max(ramp(c - threshold), breaking of the texel or a neighbour a frame ago x ramp(c - (threshold - hold)))
+ *   active   = max(active x e^(-dt / tauA), breaking)                 the breaker itself: thick, bright
  *   residual = max(residual x e^(-dt / tauR), active)                 what it leaves behind: thins out into lace
+ * A crest that has begun to break goes on breaking while it stays nearly as steep (the lower threshold), and the
+ * breaking runs along it: so a whitecap is a bar along its crest, as long as the crest stays steep, that travels
+ * with the crest for a second or two and leaves a streak of thinning foam behind, not a round patch that flashes
+ * where three wave trains happen to meet.
  * The texels are LAGRANGIAN plane coordinates (the surface pass samples with its undisplaced position), so the
  * crest moves through them at its phase speed and the foam it sheds stays on the water and rides the orbital motion.
  *
@@ -59,7 +64,7 @@ export const FOAM_MAP_WGSL = /* wgsl */ `
 struct FoamParams {
   rates: vec4f,     // x = factor on active foam over this frame, y = on residual foam, z = threshold, w = ramp (criterion sigmas)
   weights: vec4f,   // long-wave layer, cascade 0, cascade 1 low-passed, fine part
-  misc: vec4f,      // x = mip of cascade 1's low-pass, y = 0, z = threshold drop of the old-foam proxy, w = its density
+  misc: vec4f,      // x = mip of cascade 1's low-pass, y = threshold drop for a crest that already breaks (sigmas), z = threshold drop of the old-foam proxy, w = its density
   sigma: vec4f,     // 1 / standard deviation of the criterion at levels 0..2
   trail: vec4f,     // xy = velocity of the breaking crests (plane axes, m/s), z = decay rate of active foam, w = of residual foam (1/s)
   levels: array<vec4f, ${FOAM_LEVELS}>,   // xy = plane offset of texel (0, 0)'s centre from the reference point (m), z = texel (m), w = 0 no update / 1 new history / 2 with history
@@ -127,9 +132,19 @@ fn foam(@builtin(global_invocation_id) id: vec3u) {
   let src = vec2i(id.xy) + fm.shifts[id.z].xy;
   var breaker = fresh;
   var left = fresh;
+  // How far the crest is breaking here now (stored in a: what the neighbours read next frame).
+  var breaking = fresh;
   if (lv.w > 1.5 && all(src >= vec2i(0)) && all(src < vec2i(${FOAM_SIZE}))) {
     let prev = textureLoad(foamPrev, src, id.z, 0);
-    breaker = max(prev.r * fm.rates.x, fresh);
+    // A crest that broke here or next to here a frame ago goes on breaking while it stays nearly as steep.
+    let hi = vec2i(${FOAM_SIZE - 1});
+    let n0 = textureLoad(foamPrev, clamp(src + vec2i(1, 0), vec2i(0), hi), id.z, 0).a;
+    let n1 = textureLoad(foamPrev, clamp(src - vec2i(1, 0), vec2i(0), hi), id.z, 0).a;
+    let n2 = textureLoad(foamPrev, clamp(src + vec2i(0, 1), vec2i(0), hi), id.z, 0).a;
+    let n3 = textureLoad(foamPrev, clamp(src - vec2i(0, 1), vec2i(0), hi), id.z, 0).a;
+    let was = max(prev.a, max(max(n0, n1), max(n2, n3)));
+    breaking = max(fresh, was * saturate((c - (fm.rates.z - fm.misc.y)) / fm.rates.w));
+    breaker = max(prev.r * fm.rates.x, breaking);
     left = max(prev.g * fm.rates.y, breaker);
   } else {
     // Without a history (a level starting, a texel scrolling in): what the breakers of the last few seconds would
@@ -144,7 +159,7 @@ fn foam(@builtin(global_invocation_id) id: vec3u) {
       left = max(left, was * exp(-fm.trail.w * age));
     }
   }
-  textureStore(foamOut, vec2i(id.xy), id.z, vec4f(breaker, left, c, 1.0));
+  textureStore(foamOut, vec2i(id.xy), id.z, vec4f(breaker, left, c, breaking));
 }
 `;
 
@@ -250,7 +265,7 @@ export class OceanFoamMap {
     const i = new Int32Array(this.data);
     f.set([Math.exp(-t.foamDecay * dt), Math.exp(-t.foamResidualDecay * dt), t.foamSigma, t.foamRampSigma], 0);
     f.set([FOAM_WEIGHTS.long, FOAM_WEIGHTS.c0, FOAM_WEIGHTS.c1, FOAM_WEIGHTS.fine], 4);
-    f.set([this.lowLod, 0, t.foamOldDrop, t.foamOldDensity], 8);
+    f.set([this.lowLod, t.foamHoldDrop, t.foamOldDrop, t.foamOldDensity], 8);
     f.set([1 / this.sigma[0]!, 1 / this.sigma[1]!, 1 / this.sigma[2]!, 0], 12);
     // Breaking crests travel downwind at about the phase speed of the waves that carry the criterion.
     f.set([Math.sin(t.windDir) * FOAM_CREST_SPEED, Math.cos(t.windDir) * FOAM_CREST_SPEED, t.foamDecay, t.foamResidualDecay], 16);

@@ -54,7 +54,7 @@ struct OceanUniforms {
   fade: vec4f,          // x = fadeStart, y = fadeEnd, z = radius of complete wave detail, w = lift of the flat band surface (m)
   wind: vec4f,          // x = U10 (m/s), y = Cox-Munk mean square slope, z = slope variance below the finest cascade, w = choppiness (already in the textures)
   time: vec4f,          // x = tau = frac(t / T), y = tau of the previous frame, z = T (s), w = dt (s)
-  glint: vec4f,         // x = reactive-mask value inside the sun's glitter path, y = slope variance left to the lobe below every wave layer, zw = 0
+  glint: vec4f,         // x = reactive-mask value inside the sun's glitter path, y = slope variance left to the lobe below every wave layer, z = factor on the wave detail from the camera's height (1 low .. 0 high), w = 0
   shore: vec4f,         // x = shore foam depth (m), y = refraction distortion, z = chromatic offset, w = statistical whitecap coverage
   counts: vec4u,        // x = swell components, y = vessels, z = ripples, w = flags (bit 0 = wake texture valid, bits 8..11 = debug view, bits 16..20 = wave layers updated this frame)
   wake: vec4f,          // xy = plane offset of the wake texture centre from the reference point, z = extent (m), w = 1 / extent
@@ -227,8 +227,25 @@ fn oceanFftDisplacement(p: vec2f, filterWidth: f32, amp: vec4f, prev: bool) -> O
   return o;
 }
 
-/// Fraction (0..1) of complete wave detail at eye distance d: 1 inside fade.z, 0 from fadeStart on.
-fn oceanDetail(d: f32) -> f32 { return 1.0 - smoothstep(oceanU.fade.z, oceanU.fade.x, d); }
+/// Fraction (0..1) of complete wave detail at eye distance d: 1 inside fade.z, 0 from fadeStart on; and 0
+/// everywhere for a camera so high that no pixel resolves more than the far-wave bank of brdf_water draws.
+fn oceanDetail(d: f32) -> f32 { return (1.0 - smoothstep(oceanU.fade.z, oceanU.fade.x, d)) * oceanU.glint.z; }
+
+/// Height of the shared swell at sphere offset 'delta' as it was 'back' seconds ago (deep-water dispersion; for the
+/// foam a breaking swell crest leaves behind, not for the drawn surface).
+fn oceanSwellHeightBack(delta: vec3f, back: f32) -> f32 {
+  var h = 0.0;
+  let invR = 1.0 / oceanU.cHat.w;
+  for (var i = 0u; i < min(oceanU.counts.x, OCEAN_MAX_SWELL); i++) {
+    let dk = oceanU.swellDirK[i];
+    let ap = oceanU.swellAmpPhase[i];
+    let dd = dot(dk.xyz, delta);
+    let dn = ap.z + dd * invR;
+    let w = smoothstep(0.15, 0.5, sqrt(max(0.0, 1.0 - dn * dn)));
+    h += ap.x * w * cos(ap.y + dk.w * dd + sqrt(OCEAN_G * dk.w) * back);
+  }
+  return h;
+}
 
 struct OceanSurfacePoint {
   delta: vec3f,      // final sphere offset of the displaced point from the reference (body-fixed, m), on the sea-level sphere

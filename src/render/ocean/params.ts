@@ -42,6 +42,12 @@ export interface OceanTunables {
   fadeEnd: number;
   /** Wave detail is complete inside detailFadeFraction x fadeStart and zero at fadeStart. */
   detailFadeFraction: number;
+  /**
+   * Camera heights above the sea (m) between which the wave detail fades out everywhere: from the upper one no pixel
+   * resolves more of the sea than the far-wave bank of brdf_water draws, and the near field is the flat surface.
+   */
+  detailAltitudeStart: number;
+  detailAltitudeEnd: number;
   /** 0..1: how strongly the imagery colour tints the deep-water colour. */
   imageryTint: number;
   /** Decay rates (1/s) of the breaker's own foam and of the foam it leaves behind (foamMap.ts). */
@@ -50,6 +56,8 @@ export interface OceanTunables {
   /** A wave breaks where the breaking criterion exceeds foamSigma of its standard deviations, fully over foamRampSigma more. */
   foamSigma: number;
   foamRampSigma: number;
+  /** A crest that already breaks goes on breaking while the criterion stays within foamHoldDrop sigmas below foamSigma. */
+  foamHoldDrop: number;
   /**
    * Foam of a texel without history (scrolled in, or a level starting): old foam of density foamOldDensity where
    * the criterion is within foamOldDrop sigmas below the threshold.
@@ -83,15 +91,16 @@ export interface OceanTunables {
   capillaryScale: number;
   /** Slope variance left to the GGX lobe even where a pixel is a few millimetres (shortest capillaries). */
   unresolvedFloor: number;
-  /** Mesoscale variability of the slope variance (log amplitude) and the depth of slicks (0..1). */
+  /** Mesoscale variability of the slope variance (log amplitude) and the depth of slick fronts (0..1). */
   windVariability: number;
   slickStrength: number;
-  /** Gusts ("cat's paws", 0.3-1.5 km): log amplitude of the slope variance; calm filaments (~150 m wide): depth 0..1. */
+  /** Gusts ("cat's paws", 0.5-2 km): log amplitude of the slope variance; slick filaments (30-300 m wide): depth 0..1. */
   gustVariability: number;
   filamentStrength: number;
   /**
    * Side of a glitter facet (m): a pixel whose footprint holds N = area / size^2 facets shows a Poisson number of
-   * them mirroring the sun (brdf_water). About the size of the wavelets that carry a sun image.
+   * them mirroring the sun (brdf_water). The size of the patches that carry the BRIGHT sun images (the glints of a
+   * sea are far from equal: a few flat patches of some centimetres outshine the many small ones, which are the sheen).
    */
   glintFacetSize: number;
   /** Reactive-mask value inside the sun's glitter path (sparkles are new every few frames). */
@@ -159,11 +168,14 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     fadeStart,
     fadeEnd,
     detailFadeFraction: need(file, p, 'detailFadeFraction', (v) => v > 0 && v < 1),
+    detailAltitudeStart: need(file, p, 'detailAltitudeStartM', positive),
+    detailAltitudeEnd: need(file, p, 'detailAltitudeEndM', (v) => v > (p.detailAltitudeStartM ?? Infinity)),
     imageryTint: need(file, p, 'imageryTint', fraction),
     foamDecay: need(file, p, 'foamDecayPerS', positive),
     foamResidualDecay: need(file, p, 'foamResidualDecayPerS', positive),
     foamSigma: need(file, p, 'foamSigma', positive),
     foamRampSigma: need(file, p, 'foamRampSigma', positive),
+    foamHoldDrop: need(file, p, 'foamHoldDropSigma', (v) => v >= 0),
     foamOldDrop: need(file, p, 'foamOldDropSigma', (v) => v >= 0),
     foamOldDensity: need(file, p, 'foamOldDensity', fraction),
     foamAlbedo: need(file, p, 'foamAlbedo', fraction),

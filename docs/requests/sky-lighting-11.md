@@ -66,3 +66,23 @@ the same imagery as the tiles, area-weighted over the sphere, linear):
 - `render.geometricAlbedo` and `render.meanColor` (the request's second way) are the physical values and are also
   what the planetshine on a vessel uses; they should stay.
 
+
+## Ocean part (ocean package, visual fix round 2, 2026-11-12): nothing to change in src/render/ocean
+The request stays open for atmosphere-clouds. What `brdf_water` gives the far sheet away from the glint, from the
+constants in force (`data/defs/render/earth.ocean.json`, `data/defs/bodies/earth.json` `render.ocean`):
+
+| term | value | where it comes from |
+|---|---|---|
+| water-leaving reflectance (pi Rrs, deep water, sun and view overhead) | 0.0006, 0.0069, 0.024 (linear r, g, b); luminance 0.007 | absorption 0.45 / 0.06 / 0.028 per m, backscatter 0.0021 / 0.003 / 0.0045 per m, Lee et al. `rrs = (0.084 + 0.17 u) u`; half of the imagery's chroma is mixed in (`imageryTint` 0.5) |
+| mirrored sky and sun (Fresnel, F0 0.02) | 0.021 for a sun overhead, 0.06 at 60 deg from the vertical, 0.066 for the diffuse sky | `waterFresnel`, the mean Fresnel of the visible facets |
+| whitecaps | 0.001 | 0.117 % coverage at 7 m/s x foam albedo 0.85 |
+| ocean away from the glint, all together | 0.03 to 0.07 | |
+
+That is the "about 0.06" the request asks of the ocean (clear open ocean has an albedo of 0.03 to 0.10 with the
+sun height). The water-leaving part is the open ocean's own (0.001, 0.008, 0.03 in the terrain part's words): the
+ocean shades with its own absorption and backscatter, the dark imagery value (linear 0.0006, 0.0017, 0.0069) only
+tints it, so nothing has to be raised on the ocean's side either. The glint itself adds, inside its lobe, up to
+E F D / (4 cos cos): about 5,000 cd/m2 at the mirror point for an overhead sun at 7 m/s (Cox-Munk variance 0.039),
+against about 330 cd/m2 of the sea beside it; integrated over the disc of a distant Earth it is a few per cent of
+the planet's flux at phases under 60 deg and more toward the crescent, where the far image's Lambert law has no
+such term (it may be what lifts the 48 px disc at phase 140 to 1.07 in the table above; not measured here).

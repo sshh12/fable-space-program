@@ -46,11 +46,14 @@ export const PRESETS: Record<string, OceanPreset> = {
   // keep its glitter out of the frame).
   down150: { sun: [180, 30], camera: { alt: 150, heading: 0, pitch: -89.9 } },
   alt500: { sun: [10, 48], camera: { alt: 500, heading: 10, pitch: -28 } },
-  alt3k: { sun: [12, 50], camera: { alt: 3000, heading: 12, pitch: -32 } },
-  alt10k: { sun: [15, 50], camera: { alt: 10000, heading: 15, pitch: -40 } },
-  alt30k: { sun: [18, 48], camera: { alt: 30000, heading: 18, pitch: -38 } },
+  // From 3 km up the views are the ones the reference photographs show (aircraft and orbital photographs of sun
+  // glint are oblique, with the sun a third of the way up): the glint is seen at 55-60 deg from the vertical, where
+  // the water mirrors three times more than under a high sun seen from above.
+  alt3k: { sun: [12, 32], camera: { alt: 3000, heading: 12, pitch: -24 } },
+  alt10k: { sun: [15, 30], camera: { alt: 10000, heading: 15, pitch: -27 } },
+  alt30k: { sun: [18, 30], camera: { alt: 30000, heading: 18, pitch: -30 } },
   alt100k: { sun: [20, 30], camera: { alt: 100000, heading: 20, pitch: -24, fov: 55 } },
-  leo: { sun: [0, 58], camera: { alt: 400000, heading: 0, pitch: -55, fov: 60 } },
+  leo: { sun: [0, 34], camera: { alt: 400000, heading: 0, pitch: -38, fov: 60 } },
   shore: { sun: [150, 38], beach: true, camera: { north: 215, alt: 3.5, heading: 4, pitch: -7 } },
   // Standing in the shallows 30 m off the waterline, looking along the shore: shelf water from 0 to 3 m deep.
   shoreAlong: { sun: [150, 38], beach: true, camera: { north: 335, east: -160, alt: 4, heading: 78, pitch: -6 } },

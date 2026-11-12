@@ -44,7 +44,8 @@
  *   roughness FRACTION of the Cox-Munk slope variance already carried by n (0 = none, the far sheet)
  *   albedo    imagery colour of the water;  param = encodeWaterDepth(depth below the sea surface)
  *   metallic  resolved foam coverage x opacity, clearcoatRoughness its weight against the statistical whitecaps
- *             (0 far), clearcoat the albedo of that foam relative to the body's foam albedo (thin lace is greyer)
+ *             (0 far), clearcoat the albedo of that foam relative to the body's foam albedo
+ *   t         where clearcoatRoughness is set (the forward pass): the normal of the foam's own relief
  *
  * Private inputs a forward pass may set before calling (the deferred pass leaves the defaults):
  *   waterAnchor    xyz = a camera-relative point, w = how far (0..1) it replaces the point brdf_water looks its
@@ -134,16 +135,38 @@ fn waterHash(i: vec2i, seed: i32) -> u32 {
   h = (h ^ (h >> 15u)) * 0x846ca68bu;
   return h ^ (h >> 16u);
 }
-fn waterGrad2(i: vec2i, seed: i32, d: vec2f) -> f32 {
+fn waterGradVec(i: vec2i, seed: i32) -> vec2f {
   let hb = waterHash(i, seed) & 7u;
   let sx = select(1.0, -1.0, (hb & 1u) != 0u);
   let sy = select(1.0, -1.0, (hb & 2u) != 0u);
-  let diag = 0.70710678 * (sx * d.x + sy * d.y);
-  let axis = sy * select(d.x, d.y, (hb & 1u) != 0u);
-  return select(axis, diag, hb < 4u);
+  let axis = select(vec2f(sy, 0.0), vec2f(0.0, sy), (hb & 1u) != 0u);
+  return select(axis, vec2f(0.70710678 * sx, 0.70710678 * sy), hb < 4u);
 }
-/// 2-D gradient noise (fieldNoise2) at the lattice coordinate cell + off: 'cell' is the large part (its integer
-/// part and its fraction are taken exactly), 'off' the small precise part.
+/// 2-D gradient noise (fieldNoise2G) at the lattice coordinate cell + off: 'cell' is the large part (its integer
+/// part and its fraction are taken exactly), 'off' the small precise part. x = the value, yz = its gradient per
+/// lattice unit.
+fn waterNoise2G(cell: vec2f, off: vec2f, seed: i32) -> vec3f {
+  let cb = floor(cell);
+  let x = (cell - cb) + off;
+  let xf = floor(x);
+  let i = vec2i(cb) + vec2i(xf);
+  let t = x - xf;
+  let u = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+  let du = 30.0 * t * t * (t * (t - 2.0) + 1.0);
+  let ga = waterGradVec(i, seed);
+  let gb = waterGradVec(i + vec2i(1, 0), seed);
+  let gc = waterGradVec(i + vec2i(0, 1), seed);
+  let gd = waterGradVec(i + vec2i(1, 1), seed);
+  let a = dot(ga, t);
+  let b = dot(gb, t - vec2f(1.0, 0.0));
+  let c = dot(gc, t - vec2f(0.0, 1.0));
+  let d = dot(gd, t - vec2f(1.0, 1.0));
+  let ab = mix(a, b, u.x);
+  let cd = mix(c, d, u.x);
+  let g = mix(mix(ga, gb, u.x), mix(gc, gd, u.x), u.y) + vec2f(du.x * mix(b - a, d - c, u.y), du.y * (cd - ab));
+  return vec3f(mix(ab, cd, u.y), g) * ${f(FIELD.noiseScale)};
+}
+/// The same, the value alone.
 fn waterNoise2(cell: vec2f, off: vec2f, seed: i32) -> f32 {
   let cb = floor(cell);
   let x = (cell - cb) + off;
@@ -151,102 +174,146 @@ fn waterNoise2(cell: vec2f, off: vec2f, seed: i32) -> f32 {
   let i = vec2i(cb) + vec2i(xf);
   let t = x - xf;
   let u = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-  let a = waterGrad2(i, seed, t);
-  let b = waterGrad2(i + vec2i(1, 0), seed, t - vec2f(1.0, 0.0));
-  let c = waterGrad2(i + vec2i(0, 1), seed, t - vec2f(0.0, 1.0));
-  let d = waterGrad2(i + vec2i(1, 1), seed, t - vec2f(1.0, 1.0));
+  let a = dot(waterGradVec(i, seed), t);
+  let b = dot(waterGradVec(i + vec2i(1, 0), seed), t - vec2f(1.0, 0.0));
+  let c = dot(waterGradVec(i + vec2i(0, 1), seed), t - vec2f(0.0, 1.0));
+  let d = dot(waterGradVec(i + vec2i(1, 1), seed), t - vec2f(1.0, 1.0));
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * ${f(FIELD.noiseScale)};
 }
-/// Noise of the chart point displaced by 'w' (chart m), lattice period 'scale' (along, across), lattice offset 'o'.
-fn waterChartNoise(ch: WaterChart, w: vec2f, scale: vec2f, o: vec2f, seed: i32) -> f32 {
-  return waterNoise2(ch.base / scale, (ch.d + w) / scale + o, seed);
+/// Noise of the chart point, lattice period 'scale' (along, across), lattice offset 'o'.
+fn waterChartNoise(ch: WaterChart, scale: vec2f, o: vec2f, seed: i32) -> f32 {
+  return waterNoise2(ch.base / scale, ch.d / scale + o, seed);
 }
 /// Weight of a noise octave of period 'scale' (m) seen with 'footprint' (m): 1 well resolved, 0 below about two pixels.
 fn waterOctave(footprint: f32, scale: f32) -> f32 { return 1.0 - smoothstep(0.25, 0.6, footprint / scale); }
-/// Fraction of a footprint 'fp' (noise units) centred 'dist' from a line that lies within 'half' of the line (the
+/// Fraction of a footprint 'fp' (noise units) centred 'dist' from a line that lies within 'hw' of the line (the
 /// line's edges soft over half its width even where the footprint is sharp).
-fn waterLineCover(dist: f32, half: f32, fp: f32) -> f32 {
-  let w = max(fp, 0.5 * half);
-  return saturate((min(dist + 0.5 * w, half) - max(dist - 0.5 * w, -half)) / w);
+fn waterLineCover(dist: f32, hw: f32, fp: f32) -> f32 {
+  let w = max(max(fp, 0.5 * hw), 1e-9);
+  return saturate((min(dist + 0.5 * w, hw) - max(dist - 0.5 * w, -hw)) / w);
 }
 
-/// The roughness field before normalisation (fieldModel.fieldRaw) at chart point 'ch' seen with 'footprint'
-/// (surface m). q = (wind variability, slick strength, gust variability, filament strength).
-fn waterFieldRaw(ch: WaterChart, q: vec4f, footprint: f32) -> f32 {
-  let fp = footprint / ch.cosLat;
-  let z = vec2f(0.0);
-  // The flow that films and calm water follow: two octaves of displacement (marbling).
-  var w = vec2f(waterChartNoise(ch, z, vec2f(${f(FIELD.warp0)}), vec2f(3.1, 7.7), 13), waterChartNoise(ch, z, vec2f(${f(FIELD.warp0)}), vec2f(9.2, 1.3), 14)) * ${f(FIELD.warp0Amp)};
-  w += vec2f(waterChartNoise(ch, z, vec2f(${f(FIELD.warp1)}), vec2f(4.4, 2.9), 22), waterChartNoise(ch, z, vec2f(${f(FIELD.warp1)}), vec2f(6.3, 8.1), 23)) * ${f(FIELD.warp1Amp)};
-  let n0 = waterChartNoise(ch, 0.5 * w, vec2f(${f(FIELD.wind)}), z, 11);
-  let wind = exp(1.3 * q.x * n0);
-  // Surface films survive where the wind is light: calm pools only there, filaments (swept together by the
-  // currents) over a wider range of wind.
-  let calm = smoothstep(0.35, -0.1, n0);
-  let calmL = smoothstep(0.65, 0.0, n0);
-  var slick = 0.0;
-  var pool = 0.0;
-  if (calmL > 0.0) {
-    // Slick filaments: the ZERO SET of a flow-warped noise stretched along the wind: single lines that meander
-    // along the wind, end and rejoin (never the nested rings of a contour map), their width and strength varying
-    // along them with a gate; antialiased by the footprint.
-    let gate = waterChartNoise(ch, w, vec2f(${f(FIELD.lineGate)}), z, 16);
-    let t1 = waterChartNoise(ch, w, vec2f(${f(FIELD.line1Along)}, ${f(FIELD.line1Across)}), z, 15);
-    let g1 = ${f(0.9 / FIELD.line1Across)};
-    let l1 = waterLineCover(abs(t1), ${f(FIELD.line1Half)} * g1 * (0.5 + 1.5 * smoothstep(-0.2, 0.6, gate)), fp * g1) * smoothstep(-0.45, 0.05, gate);
-    let t2 = waterChartNoise(ch, 0.7 * w, vec2f(${f(FIELD.line2Along)}, ${f(FIELD.line2Across)}), z, 17);
-    let g2 = ${f(0.9 / FIELD.line2Across)};
-    let l2 = waterLineCover(abs(t2), ${f(FIELD.line2Half)} * g2 * (0.6 + 0.8 * smoothstep(0.5, -0.5, gate)), fp * g2) * smoothstep(0.25, -0.35, gate);
-    // Fine threads wound more tightly by the flow (the marbling of a glint seen from orbit).
-    let t3 = waterChartNoise(ch, 1.25 * w, vec2f(${f(FIELD.line3Along)}, ${f(FIELD.line3Across)}), z, 25);
-    let g3 = ${f(0.9 / FIELD.line3Across)};
-    let l3 = waterLineCover(abs(t3), ${f(FIELD.line3Half)} * g3, fp * g3) * smoothstep(-0.3, 0.2, gate);
-    slick = max(max(l1, 0.8 * l2), 0.6 * l3) * calmL;
-    // Calm pools: hard-edged tongues of the same flow, their edges frayed into streaks by the finer line noise.
-    let tp = waterChartNoise(ch, w, vec2f(${f(FIELD.poolAlong)}, ${f(FIELD.poolAcross)}), z, 18) + 0.15 * t2;
-    let ep = 0.012 + ${f((0.5 * 0.9) / FIELD.poolAcross)} * fp;
-    pool = smoothstep(0.3 - ep, 0.3 + ep, tp) * calm;
+/// The stream function of the surface currents at chart point 'ch' (fieldStream): psi, and its gradient per chart
+/// metre. Its level sets are the streamlines that slick filaments and fronts lie along.
+struct WaterStream { psi: f32, g: vec2f }
+fn waterStream(ch: WaterChart, footprint: f32) -> WaterStream {
+  let z0 = waterNoise2G(ch.base / ${f(FIELD.psi0)}, ch.d / ${f(FIELD.psi0)} + vec2f(3.1, 7.7), 13);
+  let z1 = waterNoise2G(ch.base / ${f(FIELD.psi1)}, ch.d / ${f(FIELD.psi1)} + vec2f(4.4, 2.9), 22);
+  var s: WaterStream;
+  s.psi = z0.x + ${f(FIELD.psiA1)} * z1.x;
+  s.g = z0.yz / ${f(FIELD.psi0)} + z1.yz * ${f(FIELD.psiA1 / FIELD.psi1)};
+  let o2 = waterOctave(footprint, ${f(FIELD.psi2)});
+  if (o2 > 0.0) {
+    let z2 = waterNoise2G(ch.base / ${f(FIELD.psi2)}, ch.d / ${f(FIELD.psi2)} + vec2f(6.3, 8.1), 23);
+    s.psi += ${f(FIELD.psiA2)} * o2 * z2.x;
+    s.g += z2.yz * (${f(FIELD.psiA2 / FIELD.psi2)} * o2);
   }
-  // Gusts (cat's paws) and wind rows: streaks along the wind.
-  var rows = 0.0;
-  let og = waterOctave(fp, ${f(FIELD.gustAcross)});
+  return s;
+}
+
+/// The roughness field before normalisation (fieldModel.fieldRaw) at chart point 'ch'. The footprint it is seen with
+/// is an ellipse on the sea (surface m): fpS.x across the view, fpS.y along the unit direction 'vh' of the view in
+/// the chart's axes. q = (wind variability, front strength, gust variability, filament strength).
+fn waterFieldRaw(ch: WaterChart, q: vec4f, fpS: vec2f, vh: vec2f) -> f32 {
+  let fp = fpS.x / ch.cosLat;
+  let fpM = max(fpS.x, fpS.y) / ch.cosLat;
+  let n0 = waterChartNoise(ch, vec2f(${f(FIELD.wind)}), vec2f(0.0), 11);
+  var n1 = 0.0;
+  let ow = waterOctave(fpM, ${f(FIELD.wind2)});
+  if (ow > 0.0) { n1 = waterChartNoise(ch, vec2f(${f(FIELD.wind2)}), vec2f(1.9, 5.3), 12) * ow; }
+  let wind = exp(1.3 * q.x * (n0 + 0.5 * n1));
+  // Surface films survive where the wind is light: fronts only there, filaments over a wider range of wind.
+  let calm = 1.0 - smoothstep(-0.1, 0.35, n0);
+  let films = 1.0 - smoothstep(-0.3, 0.45, n0);
+  let st = waterStream(ch, fpM);
+  var slick = 0.0;
+  var front = 0.0;
+  if (films > 0.0) {
+    let gl = length(st.g);
+    // The footprint's extent across the streamlines (along the gradient of psi).
+    var al = 0.0;
+    if (gl > 0.0) { al = abs(dot(st.g, vh)) / gl; }
+    let fpd = sqrt(sq(fpM * al) + sq(fp) * (1.0 - al * al));
+    {
+      // Filaments: one streamline per cell of psi x lines, in the cells that hold one; where it lies in its cell,
+      // how wide it is and where along its length it shows are the cell's own, its width on the sea its width in
+      // psi over the current's speed. The cells on either side are looked at too (a footprint that reaches across
+      // a cell boundary sees the neighbour's line).
+      let g = ${f(FIELD.lines)} * gl;
+      let v = st.psi * ${f(FIELD.lines)};
+      let ci = floor(v);
+      let fpv = fpd * g;
+      let gate = waterChartNoise(ch, vec2f(${f(FIELD.lineGate)}), vec2f(0.0), 16);
+      var cov = 0.0;
+      for (var j = -1; j <= 1; j++) {
+        let cj = ci + f32(j);
+        let h = waterHash(vec2i(i32(cj), 7), 41);
+        // (Filaments come in bundles: runs of cells, dense or nearly empty.)
+        let dense = f32(waterHash(vec2i(i32(floor(cj / ${f(FIELD.lineBundle)})), 9), 47) & 1023u) / 1024.0 < ${f(FIELD.lineDense)};
+        if (f32(h & 1023u) / 1024.0 >= select(${f(FIELD.lineOutside)}, ${f(FIELD.lineInBundle)}, dense)) { continue; }
+        let r2 = f32((h >> 10u) & 1023u) / 1024.0;
+        let r3 = f32((h >> 20u) & 1023u) / 1024.0;
+        let shown = smoothstep(-0.35, 0.25, gate + (r2 - 0.5) * 0.9);
+        let hw = min((${f(FIELD.lineHalfMin)} + ${f(FIELD.lineHalfMax - FIELD.lineHalfMin)} * r3) * shown, ${f(FIELD.lineHalfCap)} * g);
+        cov += waterLineCover(abs(v - (cj + 0.2 + 0.6 * r2)), hw, fpv);
+      }
+      slick = mix(min(cov, 1.0), ${f(FIELD.lineMean)}, smoothstep(0.8, 1.6, fpv)) * films * smoothstep(${f(FIELD.lineSlow0)}, ${f(FIELD.lineSlow1)}, gl);
+    }
+  }
+  if (calm > 0.0) {
+    // Fronts: one long line (a level set of a slow noise, bent by the currents), calm right behind it, the open
+    // sea's roughness again some kilometres further on. Distances from the function's value over its gradient.
+    let zf = waterNoise2G(ch.base / ${f(FIELD.front)}, ch.d / ${f(FIELD.front)} + vec2f(2.7, 6.1), 18);
+    let phi = zf.x - ${f(FIELD.frontLevel)} + ${f(FIELD.frontBend)} * st.psi;
+    let gp = zf.yz / ${f(FIELD.front)} + ${f(FIELD.frontBend)} * st.g;
+    let pl = max(length(gp), 1e-12);
+    let d = phi / pl;
+    let ax = abs(dot(gp, vh)) / pl;
+    let edge = max(sqrt(sq(fpM * ax) + sq(fp) * (1.0 - ax * ax)), ${f(FIELD.frontEdge)});
+    front = smoothstep(-edge, edge, d) * exp(-max(d, 0.0) / ${f(FIELD.frontTail)}) * calm;
+  }
+  // Gusts (cat's paws): broad and weak.
+  var gust = 0.0;
+  let og = waterOctave(fpM, ${f(FIELD.gust0Across)});
   if (og > 0.0) {
-    rows = 1.1 * waterChartNoise(ch, 0.05 * w, vec2f(${f(FIELD.gustAlong)}, ${f(FIELD.gustAcross)}), z, 20) * og;
-    let o1 = waterOctave(fp, ${f(FIELD.row1Across)});
+    gust = waterChartNoise(ch, vec2f(${f(FIELD.gust0Along)}, ${f(FIELD.gust0Across)}), vec2f(0.0), 20) * og;
+    let o1 = waterOctave(fpM, ${f(FIELD.gust1)});
+    // (Turned by atan(0.6 / 0.8) against the first octave's lattice.)
     if (o1 > 0.0) {
-      rows += waterChartNoise(ch, z, vec2f(${f(FIELD.row1Along)}, ${f(FIELD.row1Across)}), z, 24) * o1;
-      let o2 = waterOctave(fp, ${f(FIELD.row2Across)});
-      if (o2 > 0.0) { rows += 0.7 * waterChartNoise(ch, z, vec2f(${f(FIELD.row2Along)}, ${f(FIELD.row2Across)}), z, 19) * o2; }
+      let rb = vec2f(0.8 * ch.base.x + 0.6 * ch.base.y, 0.8 * ch.base.y - 0.6 * ch.base.x);
+      let rd = vec2f(0.8 * ch.d.x + 0.6 * ch.d.y, 0.8 * ch.d.y - 0.6 * ch.d.x);
+      gust += 0.6 * waterNoise2(rb / ${f(FIELD.gust1)}, rd / ${f(FIELD.gust1)}, 24) * o1;
     }
   }
   // Internal-wave packets in a few places: narrow rough bands (where the wave's convergence crosses) 1.3 km apart,
-  // bent by the flow, on calmer water between them.
+  // bent by the currents, on calmer water between them.
   var iw = 0.0;
-  let oi = waterOctave(fp, ${f(0.5 * FIELD.internalWave)});
+  let oi = waterOctave(fpM, ${f(0.5 * FIELD.internalWave)});
   if (oi > 0.0) {
-    let packet = smoothstep(0.45, 0.6, waterChartNoise(ch, z, vec2f(${f(FIELD.internalPatch)}), vec2f(5.5, 2.5), 21));
+    let packet = smoothstep(0.45, 0.6, waterChartNoise(ch, vec2f(${f(FIELD.internalPatch)}), vec2f(5.5, 2.5), 21));
     if (packet > 0.0) {
-      let crest = pow(0.5 + 0.5 * sin(TWO_PI * (fract(ch.base.x / ${f(FIELD.internalWave)}) + (ch.d.x + w.x) / ${f(FIELD.internalWave)})), 6.0);
+      let xw = ch.d.x + ${f(FIELD.internalBend)} * st.psi;
+      let crest = pow(0.5 + 0.5 * sin(TWO_PI * (fract(ch.base.x / ${f(FIELD.internalWave)}) + xw / ${f(FIELD.internalWave)})), 6.0);
       // Trains of eight crests, the leading one strongest (a soliton packet), not an endless grating.
-      let train = exp(-3.0 * fract(fract(ch.base.x / ${f(8 * FIELD.internalWave)}) + (ch.d.x + w.x) / ${f(8 * FIELD.internalWave)}));
+      let train = exp(-3.0 * fract(fract(ch.base.x / ${f(8 * FIELD.internalWave)}) + xw / ${f(8 * FIELD.internalWave)}));
       iw = (crest - 0.2256) * 1.5 * packet * oi * train;
     }
   }
-  return wind * exp(1.5 * q.z * rows) * (1.0 + 0.25 * iw) * (1.0 - 0.9 * q.w * slick) * (1.0 - 0.55 * q.y * pool);
+  return wind * exp(1.5 * q.z * gust) * (1.0 + 0.18 * iw) * (1.0 - 0.9 * q.w * slick) * (1.0 - 0.55 * q.y * front);
 }
 /// The roughness field (mean 1) at the chart point of variant 0 'ch'; 'c', 'dlt', 'radius', 'wind' as it was made
 /// from (the other cut of the chart is blended in near the +-180 deg meridian). invMean = 1 / fieldMean.
-fn waterField(ch: WaterChart, c: vec3f, dlt: vec3f, radius: f32, wind: vec2f, q: vec4f, invMean: f32, footprint: f32) -> f32 {
-  var m = waterFieldRaw(ch, q, footprint);
-  if (ch.seam > 0.0) { m = mix(m, waterFieldRaw(waterChartOf(c, dlt, radius, wind, 1.0), q, footprint), ch.seam); }
+fn waterField(ch: WaterChart, c: vec3f, dlt: vec3f, radius: f32, wind: vec2f, q: vec4f, invMean: f32, fpS: vec2f, vh: vec2f) -> f32 {
+  var m = waterFieldRaw(ch, q, fpS, vh);
+  if (ch.seam > 0.0) { m = mix(m, waterFieldRaw(waterChartOf(c, dlt, radius, wind, 1.0), q, fpS, vh), ch.seam); }
   return m * invMean;
 }
 `;
 
 // Deferred path: the field per shaded point (evaluated once per point by waterPoint).
 const FIELD_PER_PIXEL = /* wgsl */ `
-fn waterFieldOf(ch: WaterChart, c: vec3f, dlt: vec3f, radius: f32, wind: vec2f, q: vec4f, invMean: f32, footprint: f32) -> f32 {
-  return waterField(ch, c, dlt, radius, wind, q, invMean, footprint);
+fn waterFieldOf(ch: WaterChart, c: vec3f, dlt: vec3f, radius: f32, wind: vec2f, q: vec4f, invMean: f32, fpS: vec2f, vh: vec2f) -> f32 {
+  return waterField(ch, c, dlt, radius, wind, q, invMean, fpS, vh);
 }`;
 
 // Forward near field: the pass sets waterFieldValue from its baked field texture before lighting (the noise
@@ -256,9 +323,9 @@ fn waterFieldOf(ch: WaterChart, c: vec3f, dlt: vec3f, radius: f32, wind: vec2f, 
 const FIELD_FROM_PASS = /* wgsl */ `
 var<private> waterFieldValue: f32 = 1.0;
 var<private> waterFieldBaked: f32 = 1.0;
-fn waterFieldOf(ch: WaterChart, c: vec3f, dlt: vec3f, radius: f32, wind: vec2f, q: vec4f, invMean: f32, footprint: f32) -> f32 {
+fn waterFieldOf(ch: WaterChart, c: vec3f, dlt: vec3f, radius: f32, wind: vec2f, q: vec4f, invMean: f32, fpS: vec2f, vh: vec2f) -> f32 {
   if (waterFieldBaked >= 1.0) { return waterFieldValue; }
-  return mix(waterField(ch, c, dlt, radius, wind, q, invMean, footprint), waterFieldValue, waterFieldBaked);
+  return mix(waterField(ch, c, dlt, radius, wind, q, invMean, fpS, vh), waterFieldValue, waterFieldBaked);
 }`;
 
 /** Rows of WATER_BODY per frame body. */
@@ -339,8 +406,7 @@ struct WaterPoint {
   glintU: vec2f,    // uniform random numbers of the pixel's glitter cells at the two levels
   glintN: vec2f,    // facets per cell at the two levels
   glintT: f32,      // blend from the finer level to the coarser
-  glintS: vec2f,    // shape of the glint inside a cell larger than the pixel (1 elsewhere)
-  glintK: vec2f,    // weight of the drawn factor at the two levels (0 = the smooth lobe)
+  glintW: f32,      // weight of the drawn factor (0 = the smooth lobe: the pixel resolves the facets)
 }
 var<private> waterPt: WaterPoint;
 
@@ -355,8 +421,7 @@ fn waterPoint(s: Surface) -> WaterPoint {
   pt.glintU = vec2f(0.5);
   pt.glintN = vec2f(1.0);
   pt.glintT = 0.0;
-  pt.glintS = vec2f(1.0);
-  pt.glintK = vec2f(0.0);
+  pt.glintW = 0.0;
   if (s.bodyIndex >= 0) {
     let bi = u32(s.bodyIndex);
     let b = frame.bodies[bi];
@@ -387,28 +452,26 @@ fn waterPoint(s: Surface) -> WaterPoint {
     let fpMinor = s.viewDist * 2.0 * frame.cameraUp.w * frame.renderSize.w;
     let sinG = max(dot(s.v, s.up), 0.02);
     let fpMajor = fpMinor / sinG;
-    // (The field is filtered with one width: the geometric mean of the footprint's axes, up to four times the minor.)
-    pt.field = waterFieldOf(ch, cF, dF, radius, wind, waterBodyParam(s, 2u), wb.w, fpMinor * sqrt(min(fpMajor / fpMinor, 16.0)));
+    // The wind axes on the surface (the chart's axes), and the direction of the view in them.
+    var east = cross(b.fixedZ.xyz, s.up);
+    if (dot(east, east) < 1e-10) { east = b.fixedX.xyz; }
+    east = normalize(east);
+    let north = cross(s.up, east);
+    let along = east * wind.x + north * wind.y;
+    let across = east * wind.y - north * wind.x;
+    var vh = vec2f(dot(s.v, along), dot(s.v, across));
+    vh = vh / max(length(vh), 1e-4);
+    pt.field = waterFieldOf(ch, cF, dF, radius, wind, waterBodyParam(s, 2u), wb.w, vec2f(fpMinor, fpMajor), vh);
 
-    // Far waves: the bank's slopes in the wind axes, each component band-limited by the footprint along its own
-    // direction (the long axis of the footprint lies along the view).
-    if (waterFarWeight > 0.0 && fpMinor < 110.0) {
-      var east = cross(b.fixedZ.xyz, s.up);
-      if (dot(east, east) < 1e-10) { east = b.fixedX.xyz; }
-      east = normalize(east);
-      let north = cross(s.up, east);
-      let along = east * wind.x + north * wind.y;
-      let across = east * wind.y - north * wind.x;
-      var vh = vec2f(dot(s.v, along), dot(s.v, across));
-      vh = vh / max(length(vh), 1e-4);
+    // Far waves: the bank's slopes in the wind axes. A component is drawn where the pixel resolves it in EVERY
+    // direction: the footprint's long axis counts whatever the wave's heading. (Band-limited along its own heading
+    // only, a wave that crosses the view survives to the horizon while its neighbours along the view are gone, and
+    // the sea is combed into lines that fan out from the camera; a sea of real heights shows the opposite.)
+    let fpe = sqrt(0.5 * (fpMinor * fpMinor + fpMajor * fpMajor));
+    if (waterFarWeight > 0.0 && fpe < 110.0) {
       var g = vec2f(0.0);
       var variance = 0.0;
       let time = frame.time.x;
-      // Wave groups: each component waxes and wanes in its own places (its envelope a different mix of two slow
-      // noises), so the few components a coarse footprint still resolves never cross into an even plaid; on the
-      // flank of the glint, where a tilt of a degree changes the radiance several times, that lattice would show.
-      let gA = 1.8 * waterChartNoise(ch, vec2f(0.0), vec2f(1100.0, 700.0), vec2f(1.7, 4.2), 31);
-      let gB = 1.8 * waterChartNoise(ch, vec2f(0.0), vec2f(800.0, 1300.0), vec2f(3.3, 0.6), 32);
       for (var k = 0u; k < 2u; k++) {
         var c2 = ch;
         var wgt = 1.0 - ch.seam;
@@ -421,18 +484,10 @@ fn waterPoint(s: Surface) -> WaterPoint {
         for (var i = 0u; i < WATER_FAR_N; i++) {
           let wa = WATER_FAR_A[bi * WATER_FAR_N + i];
           let wd = WATER_FAR_B[bi * WATER_FAR_N + i];
-          let kTrue = wd.z / c2.cosLat;
-          let al = abs(dot(wd.xy, vh));
-          let fpe = sqrt(sq(fpMajor * al) + sq(fpMinor) * (1.0 - al * al));
-          let band = exp(-0.5 * sq(1.3 * kTrue * fpe));
+          let band = exp(-0.5 * sq(1.3 * wd.z / c2.cosLat * fpe));
           if (band < 0.01) { continue; }
-          let ang = 2.39996 * f32(i);
-          // Each component's crests also bend and drift in phase over a kilometre (the other mix of the same two
-          // noises): a few straight crossing gratings become an irregular, short-crested pattern.
-          let ph = TWO_PI * fract(dot(wa.xy, c2.base) / TWO_PI) + dot(wa.xy, c2.d) + wd.w - wa.w * time + 2.5 * (sin(ang) * gA - cos(ang) * gB);
-          // (x 0.8: the envelope's mean square is about 1.55, the bank keeps its variance on average.)
-          let groups = 0.8 * max(1.0 + cos(ang) * gA + sin(ang) * gB, 0.0);
-          let a = wa.z * band * wgt * groups;
+          let ph = TWO_PI * fract(dot(wa.xy, c2.base) / TWO_PI) + dot(wa.xy, c2.d) + wd.w - wa.w * time;
+          let a = wa.z * band * wgt;
           g -= a * sin(ph) * wd.xy;
           variance += 0.5 * a * a;
         }
@@ -442,35 +497,35 @@ fn waterPoint(s: Surface) -> WaterPoint {
       pt.resolved = clamp(pt.resolved + variance * fw * fw / waterCoxMunk(s), 0.0, 1.0);
     }
 
-    // Glitter cells: two levels of sea-anchored cells no larger than the pixel's width on the sea (half of it to
-    // all of it for the finer level; at grazing angles up to 1.4 times wider and correspondingly shorter than the
-    // pixel: the horizontal dashes of a distant sun path), so a sparkle is a point of the image, not a block.
-    let fpGeo = fpMinor * sqrt(min(fpMajor / fpMinor, 2.0));
+    // Glitter cells: two levels of sea-anchored cells about as wide as the pixel is on the sea (half of it to all
+    // of it for the finer level). At grazing angles a cell is up to three times wider than the pixel and many times
+    // shorter than the pixel's footprint is long, so a sparkle of a distant sun path is a short dash across the view.
+    let fpGeo = fpMinor * sqrt(min(fpMajor / fpMinor, 9.0));
     let lv = max(log2(fpGeo / WATER_GLINT_BASE) - 1.0, 0.0);
     let l0 = floor(lv);
     pt.glintT = lv - l0;
     let facet = max(waterBodyParam(s, 3u).x, 1e-6);
-    let tk = frame.time.x * WATER_GLINT_RATE;
-    for (var k = 0u; k < 2u; k++) {
-      let level = l0 + f32(k);
-      let cs = WATER_GLINT_BASE * exp2(level);
-      // Powers of two: the division of the coarse coordinate is exact, so the lattice is fixed to the planet.
-      let cb = ch.base / cs;
-      let x = (cb - floor(cb)) + ch.d / cs;
-      let xf = floor(x);
-      let idx = vec2i(floor(cb)) + vec2i(xf);
-      let h = waterHash(idx, i32(level) + 301);
-      // Each cell is re-drawn at its own instants.
-      let ti = i32(floor(tk + f32(h & 1023u) / 1024.0));
-      let h2 = waterHash(vec2i(i32(h >> 10u), ti), 977);
-      pt.glintU[k] = (f32(h2 >> 8u) + 0.5) / 16777216.0;
-      // The facets the pixel integrates: those of its whole footprint on the sea (at a grazing angle many cells
-      // long), or of the cell where the pixel is smaller than one. The cell's draw stands for the pixel.
-      pt.glintN[k] = max(cs * cs, fpMinor * fpMajor) / facet;
-      // A cell larger than the pixel (close to the camera): its facet is a round glint, the cell's energy on a disc.
-      pt.glintS[k] = mix(1.0, 1.2732 * (1.0 - smoothstep(0.4, 0.5, length(x - xf - 0.5))), saturate(1.0 - fpGeo / cs));
-      // A sparkle in a cell of many square metres is dimmer than the sea around it: the lobe stays smooth there.
-      pt.glintK[k] = 1.0 - smoothstep(2.5, 8.0, cs);
+    // A pixel smaller than a facet resolves it: the lobe on the resolved normal is the glint itself, nothing is drawn.
+    pt.glintW = smoothstep(1.0, 6.0, fpMinor * fpMajor / facet);
+    if (pt.glintW > 0.0) {
+      let tk = frame.time.x * WATER_GLINT_RATE;
+      for (var k = 0u; k < 2u; k++) {
+        let level = l0 + f32(k);
+        let cs = WATER_GLINT_BASE * exp2(level);
+        // Powers of two: the division of the coarse coordinate is exact, so the lattice is fixed to the planet.
+        let cb = ch.base / cs;
+        let x = (cb - floor(cb)) + ch.d / cs;
+        let xf = floor(x);
+        let idx = vec2i(floor(cb)) + vec2i(xf);
+        let h = waterHash(idx, i32(level) + 301);
+        // Each cell is re-drawn at its own instants.
+        let ti = i32(floor(tk + f32(h & 1023u) / 1024.0));
+        let h2 = waterHash(vec2i(i32(h >> 10u), ti), 977);
+        pt.glintU[k] = (f32(h2 >> 8u) + 0.5) / 16777216.0;
+        // The facets the pixel integrates: those of its whole footprint on the sea (at a grazing angle many cells
+        // long), or of the cell where the pixel is smaller than one. The cell's draw stands for the pixel.
+        pt.glintN[k] = max(cs * cs, fpMinor * fpMajor) / facet;
+      }
     }
   }
   // A shading normal facing away from the eye (a wave face seen from behind at a grazing angle) is turned to the
@@ -488,20 +543,43 @@ fn waterAlphaOf(s: Surface, pt: WaterPoint) -> f32 {
 }
 fn waterAlpha(s: Surface) -> f32 { return waterAlphaOf(s, waterPoint(s)); }
 
-/// The glitter factor of one cell that holds on average 'mean' mirroring facets, for the cell's uniform random
-/// number u: (1 + k) / k x u^(1/k), expectation 1, variance 1 / (k (k + 2)); continuous in the mean. Means so small
-/// that a lit facet would be a stray pixel far outside the sun path keep the smooth lobe.
-fn waterGlintCell(u: f32, mean: f32, shape: f32, weight: f32) -> f32 {
-  let w = smoothstep(1e-5, 3e-4, mean) * weight;
-  if (w <= 0.0) { return 1.0; }
-  let k = max(mean, 1e-6);
-  return mix(1.0, (1.0 + k) / k * pow(u, 1.0 / k) * shape, w);
+/// Standard normal deviate for a uniform random number (Tukey's lambda distribution: within 1 % out to 3 sigma).
+fn waterNormalOf(u: f32) -> f32 { return 5.0633 * (pow(u, 0.135) - pow(1.0 - u, 0.135)); }
+
+/// The glitter factor of one cell that holds on average 'mean' facets mirroring the source, for the cell's uniform
+/// random number u: a Poisson number of lit facets over its mean (expectation 1). Few facets: most cells show the
+/// dark water and a few a sparkle of one facet's radiance; many: a grain, then a sheen. A single facet counts for at
+/// most 32 times the lobe (five stops over it): rarer, brighter ones are drawn as more, fainter ones, so far out on
+/// the flanks of the path the sparkles fade with the lobe instead of standing alone as stray stars.
+fn waterGlintCell(u: f32, mean: f32) -> f32 {
+  let k = max(mean, 0.03125);
+  var draw = 1.0;
+  if (k < 10.0) {
+    // The inverse of the Poisson distribution's cumulative sum.
+    var p = exp(-k);
+    var c = p;
+    var n = 0.0;
+    for (var i = 0; i < 40; i++) {
+      if (u <= c) { break; }
+      n += 1.0;
+      p *= k / n;
+      c += p;
+    }
+    if (n >= 40.0) { n = k; }
+    draw = n / k;
+  } else {
+    draw = max(1.0 + waterNormalOf(u) * inverseSqrt(k), 0.0);
+  }
+  // The glints of a real sea are not equal: beside the few bright ones a footprint holds many faint ones, a sheen
+  // whose share grows with their number (a dense path is bright between its sparkles, not holed).
+  return mix(draw, 1.0, k / (k + 6.0));
 }
 /// The glitter factor of the lobe for a source that one facet mirrors with probability 'pFacet'.
 fn waterGlint(pt: WaterPoint, pFacet: f32) -> f32 {
-  let f0 = waterGlintCell(pt.glintU.x, pFacet * pt.glintN.x, pt.glintS.x, pt.glintK.x);
-  let f1 = waterGlintCell(pt.glintU.y, pFacet * pt.glintN.y, pt.glintS.y, pt.glintK.y);
-  return mix(f0, f1, pt.glintT);
+  if (pt.glintW <= 0.0) { return 1.0; }
+  let f0 = waterGlintCell(pt.glintU.x, pFacet * pt.glintN.x);
+  let f1 = waterGlintCell(pt.glintU.y, pFacet * pt.glintN.y);
+  return mix(1.0, mix(f0, f1, pt.glintT), pt.glintW);
 }
 
 fn waterFoamCoverage(s: Surface) -> f32 {
@@ -700,8 +778,11 @@ fn brdfWaterDirect(s: Surface, l: vec3f) -> vec3f {
   }
   let body = waterBodyDirect(s, l).total;
   let c = waterFoamCoverage(s);
-  // Foam: a diffuse layer lit on the slope of the wave it rides.
-  let foam = waterFoamAlbedo(s) / PI * max(dot(normalize(pt.n + s.up), l), 0.0);
+  // Foam: a diffuse layer of bubbles, lit on the slope of the wave it rides or, where the pass hands it in, on its
+  // own relief; light spreads inside it, so its terminator is soft.
+  var nFoam = normalize(pt.n + s.up);
+  if (s.clearcoatRoughness > 0.5) { nFoam = s.t; }
+  let foam = waterFoamAlbedo(s) / PI * saturate((dot(nFoam, l) + 0.25) / 1.25);
   return (vec3f(spec) + body) * (1.0 - c) + vec3f(foam * c);
 }
 

@@ -9,7 +9,7 @@ import { loadDefs } from '@/core/defs/loader';
 import { TWO_PI } from '@/core/math';
 import { buildCascades } from '@/render/ocean/cascades';
 import { buildFarWaves, FAR_WAVE_COUNT, farWaveVariance, peakWavelength } from '@/render/ocean/farWaves';
-import { fieldMean, fieldNoise2, fieldRaw, lineCover } from '@/render/ocean/fieldModel';
+import { fieldMean, fieldNoise2, fieldNoise2G, fieldRaw, fieldStream, lineCover } from '@/render/ocean/fieldModel';
 import { buildFoamLace, laceCoverage } from '@/render/ocean/foamLace';
 import { oceanTunables } from '@/render/ocean/params';
 import { swellSlopeVariance } from '@/render/ocean/swell';
@@ -34,6 +34,49 @@ describe('roughness field', () => {
     expect(Math.sqrt(s2 / n)).toBeGreaterThan(0.36);
     expect(Math.sqrt(s2 / n)).toBeLessThan(0.46);
     expect(max).toBeLessThan(1.5);
+  });
+
+  it('the noise comes with its own gradient (what the widths of the slick lines are measured with)', () => {
+    const h = 1e-5;
+    for (let i = 0; i < 200; i++) {
+      const x = i * 0.737 + 0.31;
+      const y = i * 0.419 - 3.3;
+      const g = fieldNoise2G(x, y, 9);
+      expect(g.v).toBeCloseTo(fieldNoise2(x, y, 9), 12);
+      expect(g.dx).toBeCloseTo((fieldNoise2(x + h, y, 9) - fieldNoise2(x - h, y, 9)) / (2 * h), 4);
+      expect(g.dy).toBeCloseTo((fieldNoise2(x, y + h, 9) - fieldNoise2(x, y - h, 9)) / (2 * h), 4);
+    }
+    // The stream function's gradient likewise (per metre).
+    const s0 = fieldStream(2.2e6, 1.4e6, 0);
+    const d = 0.5;
+    expect(s0.gx).toBeCloseTo((fieldStream(2.2e6 + d, 1.4e6, 0).psi - fieldStream(2.2e6 - d, 1.4e6, 0).psi) / (2 * d), 8);
+    expect(s0.gy).toBeCloseTo((fieldStream(2.2e6, 1.4e6 + d, 0).psi - fieldStream(2.2e6, 1.4e6 - d, 0).psi) / (2 * d), 8);
+  });
+
+  it('a slick filament lies along a streamline: seen end-on it stays a line, crossing the view it fades', () => {
+    // The darkest point of a 20 km square with slicks (a filament's core), searched on a 50 m lattice.
+    let best = { x: 0, y: 0, m: Infinity };
+    for (let j = 0; j < 400; j++) {
+      for (let i = 0; i < 400; i++) {
+        const x = 1.9e6 + 37 + i * 50;
+        const y = 1.2e6 + 11 + j * 50;
+        const m = fieldRaw(x, y, t, 0);
+        if (m < best.m) best = { x, y, m };
+      }
+    }
+    // It is a line, not a broad calm region: a footprint of 3 km around it sees mostly open water.
+    const wide = fieldRaw(best.x, best.y, t, 3000);
+    expect(best.m).toBeLessThan(0.6 * wide);
+    const st = fieldStream(best.x, best.y, 0);
+    const gl = Math.hypot(st.gx, st.gy);
+    // A footprint 10 m wide and 800 m long: laid along the streamline it still lies on the filament, laid across
+    // it (along the gradient of the stream function) it covers the filament's width and the water beside it.
+    const along = fieldRaw(best.x, best.y, t, 10, 800, -st.gy / gl, st.gx / gl);
+    const crossing = fieldRaw(best.x, best.y, t, 10, 800, st.gx / gl, st.gy / gl);
+    // (The gusts under so long a footprint are averaged in both, so the two differ by the filament alone.)
+    console.log(`filament: sharp ${best.m.toFixed(3)}, 3 km footprint ${wide.toFixed(3)}, 10 x 800 m along ${along.toFixed(3)}, across ${crossing.toFixed(3)}`);
+    expect(along).toBeLessThan(0.85 * wide);
+    expect(crossing).toBeGreaterThan(along + 0.1 * wide);
   });
 
   it('normalised by fieldMean the field has mean 1 elsewhere on the planet too, and stays positive', () => {

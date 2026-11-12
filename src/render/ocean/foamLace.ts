@@ -11,7 +11,9 @@
  *
  * The texture holds E[T] and E[T^2] per texel with a box-filtered mip chain, so a pixel that covers many texels
  * gets the mean and the spread of T inside its footprint and from them the covered FRACTION (surfaceWgsl.ts),
- * which again averages to rho: the coverage is the same seen from 3 m and from 3 km.
+ * which again averages to rho: the coverage is the same seen from 3 m and from 3 km. Beside them it holds the
+ * gradient of T: foam is thicker where T is further above the threshold, so the gradient is the slope of the foam's
+ * own relief, which the surface pass lights (foam with thickness, not a flat cut-out).
  */
 import { hash4, hashToUnit } from '@/core/math';
 
@@ -23,6 +25,11 @@ export interface FoamLace {
   size: number;
   /** Per mip level: E[T], E[T^2] interleaved (size >> level squared texels). */
   levels: Float32Array[];
+  /**
+   * Per mip level: the gradient of T per unit of the tile coordinate (d/du, d/dv interleaved), of T smoothed over
+   * three texels, box-filtered like the moments: the relief of the foam (its thickness follows T).
+   */
+  gradients: Float32Array[];
 }
 
 /** Periodic value noise in [0, 1) with `period` lattice cells per tile, at tile coordinate (u, v) in [0, 1). */
@@ -117,7 +124,39 @@ export function buildFoamLace(seed: number, size = LACE_SIZE): FoamLace {
     }
     levels.push(dst);
   }
-  return { size, levels };
+  // The gradient of T (smoothed over 3 x 3 texels: the equalised ranks carry grain), central differences, periodic.
+  const at = (i: number, j: number): number => base[((((j % size) + size) % size) * size + (((i % size) + size) % size)) * 2]!;
+  const smooth = new Float32Array(n);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      let s = 0;
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) s += at(i + a, j + b);
+      smooth[j * size + i] = s / 9;
+    }
+  }
+  const sm = (i: number, j: number): number => smooth[(((j % size) + size) % size) * size + (((i % size) + size) % size)]!;
+  const grad0 = new Float32Array(n * 2);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      grad0[(j * size + i) * 2] = 0.5 * size * (sm(i + 1, j) - sm(i - 1, j));
+      grad0[(j * size + i) * 2 + 1] = 0.5 * size * (sm(i, j + 1) - sm(i, j - 1));
+    }
+  }
+  const gradients = [grad0];
+  for (let s = size >> 1; s >= 1; s >>= 1) {
+    const src = gradients[gradients.length - 1]!;
+    const dst = new Float32Array(s * s * 2);
+    const w = s * 2;
+    for (let j = 0; j < s; j++) {
+      for (let i = 0; i < s; i++) {
+        for (let c = 0; c < 2; c++) {
+          dst[(j * s + i) * 2 + c] = 0.25 * (src[(2 * j * w + 2 * i) * 2 + c]! + src[(2 * j * w + 2 * i + 1) * 2 + c]! + src[((2 * j + 1) * w + 2 * i) * 2 + c]! + src[((2 * j + 1) * w + 2 * i + 1) * 2 + c]!);
+        }
+      }
+    }
+    gradients.push(dst);
+  }
+  return { size, levels, gradients };
 }
 
 /**

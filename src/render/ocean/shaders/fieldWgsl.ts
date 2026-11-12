@@ -32,7 +32,7 @@ ${WATER_FIELD_WGSL}
   let c = oceanU.cHat.xyz * oceanU.cHat.w;
   let dlt = oceanSphereOffset(plane);
   let ch = waterChartOf(c, dlt, oceanU.cHat.w, bake.wind.xy, 0.0);
-  return vec4f(waterField(ch, c, dlt, oceanU.cHat.w, bake.wind.xy, bake.q, bake.wind.z, bake.area.w), 0.0, 0.0, 1.0);
+  return vec4f(waterField(ch, c, dlt, oceanU.cHat.w, bake.wind.xy, bake.q, bake.wind.z, vec2f(bake.area.w), vec2f(1.0, 0.0)), 0.0, 0.0, 1.0);
 }
 `;
 

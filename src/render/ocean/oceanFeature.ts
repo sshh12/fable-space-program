@@ -178,7 +178,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   // current chart, re-baked when the chart or the body changes or the reference drifts a quarter of the margin.
   let fieldTex: GPUTexture;
   let fieldView: GPUTextureView;
-  // The foam lace (foamLace.ts): E[T], E[T^2] with a mip chain.
+  // The foam lace (foamLace.ts): E[T], E[T^2] and the gradient of T, with a mip chain.
   let laceTex: GPUTexture;
   let laceView: GPUTextureView;
   let fieldBakeBuffer: GPUBuffer;
@@ -196,7 +196,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
    * the forward surface and the reactive mask run. From higher up every water pixel is in the band, where the
    * forward surface would only repeat the deferred sheet's radiance (surfaceWgsl.ts), so nothing is drawn.
    */
-  let active: { body: BodyOcean; chart: OceanChart; ref: ChartReference; vf: VesselFrame; tau: number; dt: number; cameraHeight: number; near: boolean; layerMask: number; foamLevels: FoamLevelFrame[] } | null = null;
+  let active: { body: BodyOcean; chart: OceanChart; ref: ChartReference; vf: VesselFrame; tau: number; dt: number; cameraHeight: number; near: boolean; waves: boolean; layerMask: number; foamLevels: FoamLevelFrame[] } | null = null;
   let wasNear = false;
   let lastUt = 0;
   /** Height of the camera above the sea of the nearest ocean body in the latest frame (NaN: none). */
@@ -388,7 +388,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         capillaryAmplitude: b?.detail[0]?.amplitude ?? 0,
         longWave: b ? { length: b.cascades.long.band.length, kHigh: b.cascades.long.band.kHigh, heightRms: Math.sqrt(b.cascades.long.heightVariance), slopeVariance: b.cascades.long.slopeVariance, gain: b.cascades.long.gain } : null,
         windSpeed: t?.windSpeed ?? 0,
-        layerMask: a?.near ? a.layerMask : 0,
+        layerMask: a?.waves ? a.layerMask : 0,
         vesselZones: a?.vf.zones.length ?? 0,
         ripples: a?.vf.ripples.length ?? 0,
         wetSlots: lastWetSlots,
@@ -522,15 +522,22 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       laceTex = core.createTextureChecked({
         label: 'ocean.foamLace',
         size: [lace.size, lace.size],
-        format: 'rg16float',
+        format: 'rgba16float',
         mipLevelCount: lace.levels.length,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       });
       lace.levels.forEach((lv, m) => {
-        const half = new Uint16Array(lv.length);
-        for (let k = 0; k < lv.length; k++) half[k] = f32ToF16(lv[k]!);
+        // r = E[T], g = E[T^2], ba = the gradient of T per unit of the tile coordinate.
+        const gr = lace.gradients[m]!;
+        const half = new Uint16Array(lv.length * 2);
+        for (let k = 0; k < lv.length / 2; k++) {
+          half[k * 4] = f32ToF16(lv[k * 2]!);
+          half[k * 4 + 1] = f32ToF16(lv[k * 2 + 1]!);
+          half[k * 4 + 2] = f32ToF16(gr[k * 2]!);
+          half[k * 4 + 3] = f32ToF16(gr[k * 2 + 1]!);
+        }
         const w = lace.size >> m;
-        device.queue.writeTexture({ texture: laceTex, mipLevel: m }, half, { bytesPerRow: w * 4 }, [w, w]);
+        device.queue.writeTexture({ texture: laceTex, mipLevel: m }, half, { bytesPerRow: w * 8 }, [w, w]);
       });
       laceView = laceTex.createView();
       fieldTex = core.createTextureChecked({
@@ -712,12 +719,18 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const waveBound = swellAmplitudeBound(t.swell) + 3 * body.fftHeightRms + t.rippleAmplitude * 1.5;
       // Water within fadeStart of the camera (the nearest water point is the nadir, at most waveBound above sea level).
       const near = camAboveSea - waveBound < t.fadeStart;
+      // The wave detail fades out with the camera's height: from detailAltitudeEnd no pixel resolves more of the sea
+      // than the far-wave bank of brdf_water draws, the near field is the flat surface shaded with that bank, and
+      // neither the FFT nor the foam map runs.
+      const ramp = Math.min(1, Math.max(0, (camAboveSea - t.detailAltitudeStart) / (t.detailAltitudeEnd - t.detailAltitudeStart)));
+      const detailScale = 1 - ramp * ramp * (3 - 2 * ramp);
+      const waves = near && detailScale > 0;
       // A new FFT history (no stale previous frame or foam) whenever the waves start being drawn again.
-      if (near && !wasNear) {
+      if (waves && !wasNear) {
         body.fft?.reset();
         body.foam?.reset();
       }
-      wasNear = near;
+      wasNear = waves;
       const tau = frac(ut / t.repeatPeriod);
       reactiveValue = t.taaReactive * reactiveScale;
       // Wave layers worth updating: no water is nearer than the nadir, so no pixel sees a layer sharper than the nadir
@@ -725,11 +738,13 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const pixelAngle = 2 / (frame.projUnjittered[5]! * frame.renderSize[1]);
       const nadirFootprint = Math.max(camAboveSea - waveBound, 0.05) * pixelAngle;
       let layerMask = 0;
-      [...body.cascades.spectra, body.cascades.long].forEach((sp, c) => {
-        if (Math.log2((nadirFootprint * FFT_SIZE) / sp.band.length) < OCEAN_LOD_CUT + 0.75) layerMask |= 1 << c;
-      });
+      if (waves) {
+        [...body.cascades.spectra, body.cascades.long].forEach((sp, c) => {
+          if (Math.log2((nadirFootprint * FFT_SIZE) / sp.band.length) < OCEAN_LOD_CUT + 0.75) layerMask |= 1 << c;
+        });
+      }
       // The foam map follows the camera's nadir; a level no pixel resolves is not updated.
-      const foamLevels = near ? ensureFoam(body).prepare(ref.x, ref.y, chart, nadirFootprint, dt) : [];
+      const foamLevels = waves ? ensureFoam(body).prepare(ref.x, ref.y, chart, nadirFootprint, dt) : [];
       // Field texture: covers fadeEnd plus a margin around the reference; re-centred when the reference has
       // moved a quarter of the margin (every few km of flight), or the chart or the body changed.
       const margin = 0.25 * t.fadeEnd;
@@ -760,6 +775,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         fadeStart: t.fadeStart,
         fadeEnd: t.fadeEnd,
         detailRadius: t.detailFadeFraction * t.fadeStart,
+        detailScale,
         // The flat band surface sits this much above the sheet: covers the chord sag of the coarsest cells and
         // depth rounding, so the coplanar surfaces never z-fight under 'greater-equal'.
         bandLift: 0.05 + (t.fadeEnd / 48) ** 2 / (8 * t.seaRadius),
@@ -840,7 +856,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       }
       if (patchCount > 0) device.queue.writeBuffer(patchBuffer, 0, patchData, 0, patchCount * 4);
       ctx.perf.counter('ocean.patches', patchCount);
-      active = { body, chart, ref, vf, tau, dt, cameraHeight: camAboveSea, near, layerMask, foamLevels };
+      active = { body, chart, ref, vf, tau, dt, cameraHeight: camAboveSea, near, waves, layerMask, foamLevels };
       const fft = ensureFft(body);
       ctx.resources.publish('ocean.displacement', fft.dispView);
       ctx.resources.publish('ocean.derivatives', fft.derivView);
@@ -851,7 +867,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       if (!a) return;
       // The splash wake accumulates whenever a vessel is at the water; the waves only when they are drawn.
       vessels.updateWake(encoder, a.vf, a.dt, ctx.perf.gpuPass('ocean.wake') as GPUComputePassTimestampWrites | undefined);
-      if (!a.near) return;
+      if (!a.waves) return;
       const fft = ensureFft(a.body);
       fft.update(encoder, a.tau, a.layerMask, ctx.perf.gpuPass('ocean.fft') as GPUComputePassTimestampWrites | undefined);
       ensureFoam(a.body).update(encoder, _frame.frameBindGroup, ctx.perf.gpuPass('ocean.foam') as GPUComputePassTimestampWrites | undefined);

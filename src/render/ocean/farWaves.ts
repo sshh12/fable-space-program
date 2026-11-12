@@ -15,7 +15,7 @@ import { TWO_PI } from '@/core/math';
 import type { OceanTunables } from './params';
 import { jonswapPeak } from './spectrum';
 
-export const FAR_WAVE_COUNT = 10;
+export const FAR_WAVE_COUNT = 14;
 
 export interface FarWave {
   /** Wave vector in the wind chart (rad per chart metre): along the wind, across it (to the right). */
@@ -28,23 +28,30 @@ export interface FarWave {
   phase: number;
 }
 
+/** Longest and shortest component, in peak wavelengths: the others are spaced evenly in the logarithm between them. */
+const LONGEST = 3.2;
+const SHORTEST = 0.44;
 /**
- * Wavelength / peak wavelength, share of the slope variance, direction off the wind (deg) of each component. The
- * spread widens with frequency, as a wind sea's does (narrow about the peak, cos^2s with falling s above it): the
- * long components, the only ones a coarse footprint resolves, cross at small angles (long-crested swell lines, not a
- * plaid of two trains 60 deg apart).
+ * Share of the slope variance and direction off the wind (deg) of each component, longest first. The shares follow
+ * the slope spectrum (most around the peak); the spread widens with frequency, as a wind sea's does (narrow about
+ * the peak, cos^2s with falling s above it), and the angles are uneven, so the sum is the irregular, short-crested
+ * pattern of a wind sea, with groups of its own, and never the plaid of two or three trains.
  */
-const SHAPE: readonly [number, number, number][] = [
-  [3.2, 0.03, -7],
-  [2.45, 0.05, 10],
-  [1.9, 0.07, -13],
-  [1.5, 0.09, 4],
-  [1.2, 0.12, -18],
-  [1.0, 0.16, 15],
-  [0.82, 0.14, -24],
-  [0.66, 0.13, 27],
-  [0.54, 0.11, -33],
-  [0.44, 0.1, 36],
+const SHAPE: readonly [number, number][] = [
+  [0.02, -6],
+  [0.03, 9],
+  [0.04, -13],
+  [0.055, 4],
+  [0.07, 17],
+  [0.085, -21],
+  [0.1, 11],
+  [0.115, -8],
+  [0.115, 24],
+  [0.1, -29],
+  [0.09, 33],
+  [0.075, -17],
+  [0.06, 40],
+  [0.045, -37],
 ];
 
 /** Peak wavelength of the body's wind sea (JONSWAP, deep water), m. */
@@ -56,7 +63,8 @@ export function peakWavelength(t: OceanTunables): number {
 /** The bank for a body whose long waves carry `slopeVariance` (both axes summed) when fully resolved. */
 export function buildFarWaves(t: OceanTunables, slopeVariance: number): FarWave[] {
   const lambdaP = peakWavelength(t);
-  return SHAPE.map(([rel, share, deg], i) => {
+  return SHAPE.map(([share, deg], i) => {
+    const rel = LONGEST * (SHORTEST / LONGEST) ** (i / (SHAPE.length - 1));
     const k = TWO_PI / (rel * lambdaP);
     const a = (deg * Math.PI) / 180;
     return {

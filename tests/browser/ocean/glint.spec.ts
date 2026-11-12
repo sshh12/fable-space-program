@@ -114,6 +114,10 @@ test('from LEO the glint is a broad patch at the mirror point with the Cox-Munk 
     window.__lab!.renderer.setJitter(false);
     // The glint is the difference of two frames (with and without the direct specular): one exposure for both.
     window.__lab!.renderer.setExposureOverride(14);
+    // Seen from nearly overhead under a high sun (the preset itself is the oblique view of orbital photographs): the
+    // whole lobe lies inside the frame, every sector of every ring of facet slopes.
+    window.__ocean!.setSun([0, 58]);
+    window.__ocean!.setCamera({ alt: 400000, heading: 0, pitch: -55, fov: 60 });
   });
   await waitIdle(page, 12);
   await saveScreenshot(page, 'ocean', 'glint-leo');
