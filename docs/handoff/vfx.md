@@ -972,11 +972,23 @@ The vacuum burn's first window, the one line over budget at the end of round 2 (
 vacuum are followed 160 exit radii instead of 400. The crown's sheet at full resolution costs under 0.38 ms in the
 windows that hold the splash.
 
-After that run, two changes to `smoke.ts` (commit `5d0ea70`): the light scattered about inside the cloud comes
-from above and from the sun's side when the eye is inside it (the flat tile of the failed sheet), and the gas
-a jet draws in dries out what rises beside the jet column (in the game at T+6 s the exhaust of the first
-seconds stood round the vehicle as a ring, seen as an arch of cloud behind it: `dev/a8-liftoff-t6.png` of the
-05:17 run). PENDING_FINAL_RUN
+After that run (commit `5d0ea70`): the light scattered about inside the cloud comes from above and from the
+sun's side for an eye inside it, and the gas a jet draws in dries out what rises beside the jet column. The
+whole suite again at 07:15 (56 tests, 16.7 min): 53 passed, 3 failed.
+
+- The sheet of the chase-camera lift-off again: the tile from inside the cloud by day still had 3 colour
+  buckets. The fill was clipped: inside sunlit steam the gas was as bright as the cloud's outside. Since
+  `0e36eb6` an eye inside the cloud sees graded fog (less than half as bright towards the ground as overhead,
+  none of it over white).
+- `atmosphere.spec.ts`, "behind a synthetic overcast deck ...": 0.38316 against a bound of 0.38308 (5 % of the
+  clear reading). The probe sat 40 m below the nozzles, which since this round's flame (narrower, dimmer
+  towards the tip) is its ragged end above the deck: the clear reading there was 4.7, 18.6 and 7.7 in three
+  runs. The probe now sits 25 m down, in the body of the flame, as its comment always said.
+- Perf, chase camera: p99 1.335 ms in one of the four windows (1.060, 1.151, 1.177, 1.335; budget 1.3; the
+  05:17 run had 1.235 as its worst). The two jets cover more of that frame than the old cloud did. The pad
+  cloud is marched in 34 steps now (`padSmoke.steps`, was 42).
+
+PENDING_LAST_RUN
 
 ### 10.4 Requests
 
