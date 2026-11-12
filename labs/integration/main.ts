@@ -43,7 +43,7 @@ import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import { DEG, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';
-import { coreOf, type SceneBindings, type Tracked } from '@/render/core';
+import { coreOf, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
 import { installTestApi } from '@/core/testing/testApi';
 import { createLabApp, createLabPlanetFeature, lookRotation, type LabApp } from '@/render/core/lab';
 import { createFetchTileSource, createTerrainProvider } from '@/terrain';
@@ -280,6 +280,24 @@ function guardFeature(inner: RenderFeature, onThrow: (message: string) => void, 
   };
   if (inner.order !== undefined) feature['order'] = inner.order;
   if (inner.requires !== undefined) feature['requires'] = inner.requires;
+  if (inner.quality !== undefined) feature['quality'] = inner.quality;
+  // What the core calls beside the hooks (request atmosphere-clouds-12): a feature with accumulation of its
+  // own is restarted at a frame-exact capture through `resetTemporal`, and the core asks the object it was
+  // given, which is this wrapper. Without this line no feature of any package was restarted on this page.
+  // (A member the contract gains later has to be added here too: the wrapper copies named members.)
+  const reset = (inner as RenderFeature & TemporalFeature).resetTemporal;
+  if (typeof reset === 'function') {
+    feature['resetTemporal'] = (): void => {
+      if (!enabled) return;
+      try {
+        reset.call(inner);
+      } catch (e) {
+        enabled = false;
+        broken = true;
+        onThrow(`resetTemporal threw: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    };
+  }
   for (const hook of HOOKS) {
     const fn = inner[hook] as ((...args: unknown[]) => void) | undefined;
     if (typeof fn !== 'function' || (hook === 'drawShadow' && !castShadows)) continue;
