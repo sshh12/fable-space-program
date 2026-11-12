@@ -702,7 +702,7 @@ SETS = {
             # The leaf sprays of the shrubs and trees (tools/terrain/gen_foliage.py).
             "foliage": "foliage.webp",
             "kinds": [
-                {"id": "tussock", "shape": "tuft", "radiusM": [0.16, 0.55], "heightPerRadius": [1.1, 2.0], "rangeM": 180.0, "minPixels": 3.5, "nearM": 0.0, "chunkM": 16.0,
+                {"id": "tussock", "shape": "tuft", "radiusM": [0.16, 0.55], "heightPerRadius": [1.1, 2.0], "rangeM": 180.0, "minPixels": 5.0, "nearM": 0.0, "chunkM": 16.0,
                  "tint": [0.13, 0.125, 0.045], "tintDry": [0.26, 0.21, 0.09], "clump": 0.7, "clumpM": 9.0},
                 {"id": "scrub", "shape": "bush", "radiusM": [0.4, 2.3], "heightPerRadius": [0.7, 1.1], "rangeM": 700.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 64.0,
                  "tint": [0.038, 0.054, 0.023], "tintDry": [0.07, 0.07, 0.036], "clump": 0.6, "clumpM": 40.0},
@@ -711,7 +711,7 @@ SETS = {
                 # Stands of kiawe as single meshes, from where the single trees have shrunk away out to 7 km.
                 {"id": "stand", "shape": "grove", "radiusM": [12.0, 24.0], "heightPerRadius": [0.26, 0.36], "rangeM": 7000.0, "minPixels": 4.0, "nearM": 1800.0, "chunkM": 512.0,
                  "tint": [0.04, 0.053, 0.024], "tintDry": [0.07, 0.075, 0.038], "clump": 0.5, "clumpM": 120.0},
-                {"id": "clinker", "shape": "stone", "radiusM": [0.035, 0.2], "heightPerRadius": [0.9, 1.6], "rangeM": 60.0, "minPixels": 4.0, "nearM": 0.0, "chunkM": 16.0,
+                {"id": "clinker", "shape": "stone", "radiusM": [0.035, 0.2], "heightPerRadius": [0.9, 1.6], "rangeM": 60.0, "minPixels": 5.0, "nearM": 0.0, "chunkM": 16.0,
                  "tint": [0.04, 0.036, 0.034], "tintDry": [0.06, 0.05, 0.044], "clump": 0.9, "clumpM": 7.0},
             ],
             "classDensity": {

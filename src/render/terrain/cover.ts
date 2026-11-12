@@ -193,8 +193,8 @@ const SHAPE_LEAFY: Record<CoverShape, boolean> = { tuft: false, bush: true, tree
  * and 0.37 ms; a tussock under six texels across leaves no shadow that a map of those texels could show.
  */
 const SHADOW_FINE_TEXELS = 1e9;
-const SHADOW_MIDDLE_TEXELS = 24;
-const SHADOW_MIN_TEXELS = 3;
+const SHADOW_MIDDLE_TEXELS = 32;
+const SHADOW_MIN_TEXELS = 4;
 /**
  * An instance takes its finest mesh in the G-buffer when its radius spans this many pixels, the middle one
  * from this many (20: a tree 40 pixels across; below that its sprays are a few pixels each and the coarsest

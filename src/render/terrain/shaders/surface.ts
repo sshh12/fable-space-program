@@ -1309,7 +1309,9 @@ ${DETAIL_WGSL}
   }
   // (The hollows of the detail layers keep a share of the sky: with the product of four layers' occlusion
   // the hollows of broken ground were black blotches, 35 times darker than the ground around them.)
-  var packed = gbufferPack(albedo, s.ao * max(detail.ao, 0.4) * siteAo, n, rough, metallic, materialId, param, velocity, emissive);
+  // At a daylight exposure a tenth of the frame on broken lava was still under 8 of 255 (measured in
+  // integrated-stony-ground): the tile's occlusion times the layers'. Open ground sees at least 0.45 of its sky.
+  var packed = gbufferPack(albedo, max(s.ao * max(detail.ao, 0.55), 0.45) * siteAo, n, rough, metallic, materialId, param, velocity, emissive);
   // RT4.b of the terrain materials: the share of the sun that relief below the mesh keeps off the pixel
   // (read by this package's brdf_terrain and brdf_regolith; every other writer of these materials leaves 0).
   // Towards the terminator of the terrain's own slope the march gives way: there nearly every point lies

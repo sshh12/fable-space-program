@@ -560,7 +560,7 @@
           2.0
         ],
         "rangeM": 180.0,
-        "minPixels": 3.5,
+        "minPixels": 5.0,
         "nearM": 0.0,
         "chunkM": 16.0,
         "tint": [
@@ -672,7 +672,7 @@
           1.6
         ],
         "rangeM": 60.0,
-        "minPixels": 4.0,
+        "minPixels": 5.0,
         "nearM": 0.0,
         "chunkM": 16.0,
         "tint": [
