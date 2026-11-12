@@ -2,29 +2,38 @@
  * The terrain guard (lead-owned; MIGRATION_V2 section 8, ARCHITECTURE 10): what must not change while bakes
  * add bodies and regions and the terrain code is generalised.
  *
- *  1. HEIGHTS. The real TerrainProvider on the real baked tiles, asked at 2,000 fixed body-fixed directions
- *     per terrain body, three ways: the collision surface, and the band-limited surface at two band limits.
- *     Compared BIT FOR BIT (the float64 bit patterns are stored).
+ *  1. HEIGHTS. The real TerrainProvider on the real baked tiles, asked at fixed body-fixed directions per
+ *     terrain body (2,000 today), three ways: the collision surface, and the band-limited surface at two
+ *     band limits. Compared BIT FOR BIT (the float64 bit patterns are stored).
  *  2. TILES. A summary of every tile directory (tile set / layer / face / level): file count, a hash of the
- *     sorted file names and, in the full form, total bytes and a hash of every file's content.
+ *     sorted file names, total bytes (by stat) and, in the full form, a hash of every file's content.
+ *
+ * THE DIRECTIONS ARE STORED, NOT REGENERATED. terrain-guard.heights.json holds, per body, the directions
+ * themselves (bit patterns) in GROUPS: one `uniform` group over the sphere and one group per named place (a
+ * launch site, a landing target) in discs about it. The test samples the stored directions, so nothing that
+ * happens to the definition library afterwards (thirty more bodies, a second site, a renamed site, a new
+ * scenario) moves a single point. A group's points are a pure function of the body id, the group key and
+ * the place (seeded from a hash of `<bodyId>:<key>`), so a new place is APPENDED as a new group and every
+ * existing point keeps its index, its direction and its recorded height. A later step that adds flatten
+ * discs can therefore assert that the only heights that changed are those of points inside the new discs
+ * (`heightDifferences` returns each changed point with its group, latitude and longitude).
  *
  * Files (all `terrain-guard.*`, owned by the lead; nobody else rewrites them):
- *   terrain-guard.ts            this module: the fixed directions, the sampling, the directory summary
+ *   terrain-guard.ts            this module: groups, sampling, the directory summary, the comparisons
  *   terrain-guard.test.ts       the comparison (part of the unit suite; skips a body whose tiles are not baked)
- *   terrain-guard.record.ts     the recorder (the lead's act): npx tsx tests/unit/terrain-core/terrain-guard.record.ts
- *   terrain-guard.heights.json  the recorded heights
+ *   terrain-guard.record.ts     the recorder (the lead's act)
+ *   terrain-guard.heights.json  the recorded directions and heights
  *   terrain-guard.tiles.json    the recorded directory summaries
  *
  * Commands:
  *   node tools/dev/heavy.mjs --class=cpu -- npx vitest run tests/unit/terrain-core/terrain-guard.test.ts
- *       heights bit for bit; every directory's file count and name hash
+ *       heights bit for bit; every directory's file count, name hash and bytes
  *   TERRAIN_GUARD_FULL=1 node tools/dev/heavy.mjs --class=bake -- npx vitest run tests/unit/terrain-core/terrain-guard.test.ts
- *       additionally every directory's bytes and content hash (reads every tile: minutes). A bake package
- *       runs this form before its hand-off: "existing tiles byte-identical".
+ *       additionally every directory's content hash (reads every tile). A bake package runs this form
+ *       before its hand-off: "existing tiles byte-identical".
  *
  * A bake that ADDS tiles makes the summary of the directories it adds to differ; that is the point: the
  * package states which directories it changed, and the lead re-records after checking that nothing else did.
- * Likewise new pads add flatten discs: heights inside a new disc change, and the lead re-records then.
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -45,30 +54,40 @@ export const TILES_ROOT = path.join(REPO_ROOT, 'data', 'tiles');
 export const HEIGHTS_FILE = path.join(GUARD_DIR, 'terrain-guard.heights.json');
 export const TILES_FILE = path.join(GUARD_DIR, 'terrain-guard.tiles.json');
 
-/** Directions per body, and how they are spread. */
-export const POINTS_PER_BODY = 2000;
-/** Share of the points that are uniform on the sphere; the rest cluster about the body's named places. */
-const UNIFORM_SHARE = 0.6;
-/** Cluster radii about a named place (a launch site, a scenario's landing target), m. */
-const CLUSTER_RADII = [200_000, 20_000, 2_000, 200];
+/** Points of the uniform group and of each place group. */
+export const UNIFORM_POINTS = 1200;
+export const PLACE_POINTS = 800;
+/** Radii of the discs about a named place, m: a quarter of a place group's points in each. */
+export const CLUSTER_RADII = [200_000, 20_000, 2_000, 200] as const;
 /** Band limits of the two band-limited queries, m. */
 export const BAND_LIMITS = [25, 1000] as const;
 /** Radius loaded about each point before it is asked, m. */
 const LOAD_RADIUS = 40;
-const SEED = 20261111;
+
+export interface GuardGroup {
+  /** 'uniform', or a place: 'site:<id>' / 'landing:<lat>,<lon>' as the place was called when it was recorded. */
+  key: string;
+  /** Number of points; they are the next `count` points of the body, in group order. */
+  count: number;
+  /** A place group's centre, degrees (information; the directions are what is compared). */
+  latDeg?: number;
+  lonDeg?: number;
+}
 
 export interface GuardBodyHeights {
   /** Content hash of the tile set's manifest when the heights were recorded (information; the heights are the guard). */
   tilesetContentHash: string;
-  points: number;
-  /** Hex of the float64 bit patterns (16 characters per point, big-endian), in point order. */
+  /** Reference radius the place discs were laid out on, m. */
+  radius: number;
+  groups: GuardGroup[];
+  /** Hex of the float64 bit patterns, big-endian, in point order: 48 characters per direction (x, y, z), 16 per height. */
+  directions: string;
   collision: string;
   band: Record<string, string>;
 }
 
 export interface GuardHeights {
-  seed: number;
-  pointsPerBody: number;
+  format: 2;
   bandLimits: number[];
   node: string;
   bodies: Record<string, GuardBodyHeights>;
@@ -78,8 +97,9 @@ export interface DirSummary {
   files: number;
   /** sha256 (16 hex) of the sorted file names. */
   names: string;
-  /** Full form only: total bytes and sha256 (16 hex) of every file's bytes in name order. */
-  bytes?: number;
+  /** Total bytes of the files (by stat in the every-commit form, by reading in the full form: the same number). */
+  bytes: number;
+  /** Full form only: sha256 (16 hex) of every file's name and bytes in name order. */
   content?: string;
 }
 
@@ -100,11 +120,13 @@ export function bakedTerrainBodies(defs: DefLibrary): { bodyId: string; tileset:
     .sort((a, b) => (a.bodyId < b.bodyId ? -1 : 1));
 }
 
-const dirOf = (latDeg: number, lonDeg: number): Vec3 => {
+export const dirOf = (latDeg: number, lonDeg: number): Vec3 => {
   const lat = latDeg * DEG;
   const lon = lonDeg * DEG;
   return { x: Math.cos(lat) * Math.cos(lon), y: Math.cos(lat) * Math.sin(lon), z: Math.sin(lat) };
 };
+
+export const latLonOf = (d: Vec3): { latDeg: number; lonDeg: number } => ({ latDeg: Math.asin(Math.max(-1, Math.min(1, d.z))) / DEG, lonDeg: Math.atan2(d.y, d.x) / DEG });
 
 /** Unit direction at tangent offset (east, north) metres from `dir` on a sphere of radius R. */
 function offset(dir: Vec3, east: number, north: number, R: number): Vec3 {
@@ -119,47 +141,57 @@ function offset(dir: Vec3, east: number, north: number, R: number): Vec3 {
   return { x: x / m, y: y / m, z: z / m };
 }
 
-/**
- * The named places of a body, from data only: every launch site on it (its reference point) and every
- * scenario's landing target on it, in a fixed order. The guard keeps the places it was recorded with (it
- * stores nothing but the heights), so adding a site or a scenario changes the directions: re-record then.
- */
-function namedPlaces(defs: DefLibrary, bodyId: string): Vec3[] {
-  const places: { key: string; dir: Vec3 }[] = [];
-  for (const s of Object.values(defs.sites)) if (s.bodyId === bodyId) places.push({ key: `site:${s.id}`, dir: dirOf(s.location.latDeg, s.location.lonDeg) });
-  for (const sc of Object.values(defs.scenarios)) {
-    const t = sc.suggestedLanding;
-    if (t && t.bodyId === bodyId) places.push({ key: `landing:${t.latDeg.toFixed(6)},${t.lonDeg.toFixed(6)}`, dir: dirOf(t.latDeg, t.lonDeg) });
+/** FNV-1a over the UTF-16 code units: the seed of a group is a function of its names only. */
+export function seedOf(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
   }
-  const unique = new Map(places.map((p) => [p.key, p.dir]));
-  return [...unique.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map((e) => e[1]);
+  return h >>> 0;
 }
 
-/** The fixed directions of a body: a pure function of the seed, the body's index and its named places. */
-export function guardDirections(defs: DefLibrary, bodyId: string): Vec3[] {
-  const body = defs.bodies[bodyId]!;
-  const index = Object.keys(defs.bodies).sort().indexOf(bodyId);
-  const rng = new Prng(SEED + index * 7919);
+/**
+ * The directions of one group: a pure function of the body id, the group key and, for a place, its centre
+ * and the body's radius. Used only when a group is CREATED; afterwards the stored directions are the truth.
+ */
+export function groupDirections(bodyId: string, group: GuardGroup, radius: number): Vec3[] {
+  const rng = new Prng(seedOf(`${bodyId}:${group.key}`));
   const u = (): number => rng.nextU32() / 4294967296;
-  const places = namedPlaces(defs, bodyId);
-  const uniform = places.length === 0 ? POINTS_PER_BODY : Math.round(POINTS_PER_BODY * UNIFORM_SHARE);
   const out: Vec3[] = [];
-  for (let i = 0; i < uniform; i++) {
-    const z = 2 * u() - 1;
-    const lon = 2 * Math.PI * u();
-    const r = Math.sqrt(Math.max(0, 1 - z * z));
-    out.push({ x: r * Math.cos(lon), y: r * Math.sin(lon), z });
+  if (group.latDeg === undefined || group.lonDeg === undefined) {
+    for (let i = 0; i < group.count; i++) {
+      const z = 2 * u() - 1;
+      const lon = 2 * Math.PI * u();
+      const r = Math.sqrt(Math.max(0, 1 - z * z));
+      out.push({ x: r * Math.cos(lon), y: r * Math.sin(lon), z });
+    }
+    return out;
   }
-  for (let i = uniform; i < POINTS_PER_BODY; i++) {
-    const k = i - uniform;
-    const place = places[k % places.length]!;
-    const radius = CLUSTER_RADII[Math.floor(k / places.length) % CLUSTER_RADII.length]!;
+  const centre = dirOf(group.latDeg, group.lonDeg);
+  for (let i = 0; i < group.count; i++) {
+    const disc = CLUSTER_RADII[Math.floor((i * CLUSTER_RADII.length) / group.count)]!;
     // Uniform over the disc of that radius about the place.
-    const rho = radius * Math.sqrt(u());
+    const rho = disc * Math.sqrt(u());
     const az = 2 * Math.PI * u();
-    out.push(offset(place, rho * Math.sin(az), rho * Math.cos(az), body.radius));
+    out.push(offset(centre, rho * Math.sin(az), rho * Math.cos(az), radius));
   }
   return out;
+}
+
+/** The named places of a body as the library has them now (for creating groups; the guard never re-derives them). */
+export function namedPlaces(defs: DefLibrary, bodyId: string): GuardGroup[] {
+  const places = new Map<string, GuardGroup>();
+  for (const s of Object.values(defs.sites)) {
+    if (s.bodyId === bodyId) places.set(`site:${s.id}`, { key: `site:${s.id}`, count: PLACE_POINTS, latDeg: s.location.latDeg, lonDeg: s.location.lonDeg });
+  }
+  for (const sc of Object.values(defs.scenarios)) {
+    const t = sc.suggestedLanding;
+    if (!t || t.bodyId !== bodyId) continue;
+    const key = `landing:${t.latDeg.toFixed(6)},${t.lonDeg.toFixed(6)}`;
+    places.set(key, { key, count: PLACE_POINTS, latDeg: t.latDeg, lonDeg: t.lonDeg });
+  }
+  return [...places.values()].sort((a, b) => (a.key < b.key ? -1 : 1));
 }
 
 const f64 = new Float64Array(1);
@@ -176,46 +208,82 @@ export function hexToNumber(hex: string): number {
   return f64[0]!;
 }
 
-/** Sample the three height queries at the fixed directions of every baked terrain body. */
-export async function sampleHeights(defs: DefLibrary, onBody?: (bodyId: string, seconds: number) => void): Promise<GuardHeights> {
-  const terrain = await createTerrainProvider(defs, createFsTileSource(TILES_ROOT));
-  const bodies: Record<string, GuardBodyHeights> = {};
-  for (const { bodyId, tileset } of bakedTerrainBodies(defs)) {
-    const t0 = Date.now();
-    const dirs = guardDirections(defs, bodyId);
-    let collision = '';
-    const band: Record<string, string> = Object.fromEntries(BAND_LIMITS.map((l) => [String(l), '']));
-    for (const dir of dirs) {
-      await terrain.ensureLoaded(bodyId, dir, LOAD_RADIUS, 'terrain-guard');
-      collision += bitsHex(terrain.heightAt(bodyId, dir));
-      for (const l of BAND_LIMITS) band[String(l)] += bitsHex(terrain.heightAt(bodyId, dir, l));
-    }
-    const manifest = JSON.parse(fs.readFileSync(path.join(TILES_ROOT, tileset, 'manifest.json'), 'utf8')) as { contentHash?: string };
-    bodies[bodyId] = { tilesetContentHash: manifest.contentHash ?? 'unknown', points: dirs.length, collision, band };
-    onBody?.(bodyId, (Date.now() - t0) / 1000);
-  }
-  return { seed: SEED, pointsPerBody: POINTS_PER_BODY, bandLimits: [...BAND_LIMITS], node: process.version, bodies };
+export const directionsHex = (dirs: Vec3[]): string => dirs.map((d) => bitsHex(d.x) + bitsHex(d.y) + bitsHex(d.z)).join('');
+export function directionsOf(hex: string): Vec3[] {
+  const out: Vec3[] = [];
+  for (let i = 0; i + 48 <= hex.length; i += 48) out.push({ x: hexToNumber(hex.slice(i, i + 16)), y: hexToNumber(hex.slice(i + 16, i + 32)), z: hexToNumber(hex.slice(i + 32, i + 48)) });
+  return out;
 }
 
-/** The first differences between two hex strings of heights: point index, recorded and current value. */
-export function heightDifferences(recorded: string, current: string, max = 8): { index: number; recorded: number; current: number }[] {
-  const out: { index: number; recorded: number; current: number }[] = [];
+export interface SampledHeights {
+  collision: string;
+  band: Record<string, string>;
+}
+
+type Terrain = Awaited<ReturnType<typeof createTerrainProvider>>;
+export const openTerrain = (defs: DefLibrary): Promise<Terrain> => createTerrainProvider(defs, createFsTileSource(TILES_ROOT));
+
+/** The three height queries at the given directions of one body. */
+export async function sampleHeights(terrain: Terrain, bodyId: string, dirs: Vec3[]): Promise<SampledHeights> {
+  let collision = '';
+  const band: Record<string, string> = Object.fromEntries(BAND_LIMITS.map((l) => [String(l), '']));
+  for (const dir of dirs) {
+    await terrain.ensureLoaded(bodyId, dir, LOAD_RADIUS, 'terrain-guard');
+    collision += bitsHex(terrain.heightAt(bodyId, dir));
+    for (const l of BAND_LIMITS) band[String(l)] += bitsHex(terrain.heightAt(bodyId, dir, l));
+  }
+  return { collision, band };
+}
+
+/** The group a point index belongs to. */
+export function groupOf(groups: GuardGroup[], index: number): GuardGroup | null {
+  let start = 0;
+  for (const g of groups) {
+    if (index < start + g.count) return g;
+    start += g.count;
+  }
+  return null;
+}
+
+export interface ChangedPoint {
+  index: number;
+  group: string;
+  latDeg: number;
+  lonDeg: number;
+  recorded: number;
+  current: number;
+}
+
+/** Every point whose height differs between two hex strings (at most `max`), with where it is. */
+export function heightDifferences(body: GuardBodyHeights, recorded: string, current: string, max = Infinity): ChangedPoint[] {
+  const out: ChangedPoint[] = [];
+  const dirs = directionsOf(body.directions);
   const n = Math.max(recorded.length, current.length) / 16;
   for (let i = 0; i < n && out.length < max; i++) {
     const a = recorded.slice(i * 16, i * 16 + 16);
     const b = current.slice(i * 16, i * 16 + 16);
-    if (a !== b) out.push({ index: i, recorded: a.length === 16 ? hexToNumber(a) : Number.NaN, current: b.length === 16 ? hexToNumber(b) : Number.NaN });
+    if (a === b) continue;
+    const where = dirs[i] ? latLonOf(dirs[i]!) : { latDeg: Number.NaN, lonDeg: Number.NaN };
+    out.push({ index: i, group: groupOf(body.groups, i)?.key ?? 'none', ...where, recorded: a.length === 16 ? hexToNumber(a) : Number.NaN, current: b.length === 16 ? hexToNumber(b) : Number.NaN });
   }
   return out;
+}
+
+/** Great-circle distance on a sphere of `radius` between a point of the guard and a place, m. */
+export function distanceTo(point: { latDeg: number; lonDeg: number }, latDeg: number, lonDeg: number, radius: number): number {
+  const a = dirOf(point.latDeg, point.lonDeg);
+  const b = dirOf(latDeg, lonDeg);
+  return radius * Math.acos(Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z)));
 }
 
 const short = (h: ReturnType<typeof createHash>): string => h.digest('hex').slice(0, 16);
 
 /**
- * Summaries of every directory of a tile set that holds files. `full` also reads every file (bytes and a
- * content hash). Directory names are relative to the tile set root, forward slashes; '.' is the root.
+ * Summaries of every directory of a tile set that holds files: count, names and bytes; `full` also reads
+ * every file for the content hash. Directory names are relative to the tile set root, forward slashes; '.'
+ * is the root.
  */
-export function summariseTileset(tileset: string, full: boolean): Record<string, DirSummary> {
+export async function summariseTileset(tileset: string, full: boolean): Promise<Record<string, DirSummary>> {
   const root = path.join(TILES_ROOT, tileset);
   const out: Record<string, DirSummary> = {};
   const stack = ['.'];
@@ -229,19 +297,23 @@ export function summariseTileset(tileset: string, full: boolean): Record<string,
     }
     if (names.length === 0) continue;
     names.sort();
-    const summary: DirSummary = { files: names.length, names: short(createHash('sha256').update(names.join('\n'))) };
+    const summary: DirSummary = { files: names.length, names: short(createHash('sha256').update(names.join('\n'))), bytes: 0 };
     if (full) {
       const h = createHash('sha256');
-      let bytes = 0;
       for (const name of names) {
         const buf = fs.readFileSync(path.join(abs, name));
-        bytes += buf.length;
+        summary.bytes += buf.length;
         h.update(name);
         h.update('\0');
         h.update(buf);
       }
-      summary.bytes = bytes;
       summary.content = short(h);
+    } else {
+      // Sizes by stat, a batch at a time (hundreds of thousands of files: the stats are the cost).
+      for (let i = 0; i < names.length; i += 256) {
+        const sizes = await Promise.all(names.slice(i, i + 256).map((name) => fs.promises.stat(path.join(abs, name)).then((st) => st.size)));
+        for (const s of sizes) summary.bytes += s;
+      }
     }
     out[rel] = summary;
   }
@@ -258,7 +330,8 @@ export function tileDifferences(recorded: Record<string, DirSummary>, current: R
     if (!a) out.push(`${k}: new directory (${b!.files} files)`);
     else if (!b) out.push(`${k}: directory is gone (had ${a.files} files)`);
     else if (a.files !== b.files || a.names !== b.names) out.push(`${k}: ${a.files} files recorded, ${b.files} now (names ${a.names} -> ${b.names})`);
-    else if (full && (a.bytes !== b.bytes || a.content !== b.content)) out.push(`${k}: content changed (${a.bytes} bytes ${a.content} -> ${b.bytes} bytes ${b.content})`);
+    else if (a.bytes !== b.bytes) out.push(`${k}: ${a.bytes} bytes recorded, ${b.bytes} now`);
+    else if (full && a.content !== b.content) out.push(`${k}: content changed (${a.content} -> ${b.content})`);
     if (out.length >= max) break;
   }
   return out;

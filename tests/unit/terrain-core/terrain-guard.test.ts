@@ -1,7 +1,7 @@
 /**
- * The terrain guard (see terrain-guard.ts): the recorded heights bit for bit, and the summary of every tile
- * directory. Runs on the real baked tiles; a body whose tile set is not baked on this machine is skipped
- * with a note (CI has no tiles), a body that is baked but was never recorded fails.
+ * The terrain guard (see terrain-guard.ts): the recorded heights bit for bit at the STORED directions, and
+ * the summary of every tile directory. Runs on the real baked tiles; a body whose tile set is not baked on
+ * this machine is skipped with a note (CI has no tiles), a body that is baked but was never recorded fails.
  */
 import fs from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -10,16 +10,26 @@ import {
   BAND_LIMITS,
   bakedTerrainBodies,
   bitsHex,
-  guardDirections,
+  CLUSTER_RADII,
+  directionsHex,
+  directionsOf,
+  distanceTo,
+  groupDirections,
+  groupOf,
   heightDifferences,
   HEIGHTS_FILE,
   hexToNumber,
+  latLonOf,
   loadRealDefs,
-  POINTS_PER_BODY,
+  openTerrain,
+  PLACE_POINTS,
   sampleHeights,
+  seedOf,
   summariseTileset,
   tileDifferences,
   TILES_FILE,
+  UNIFORM_POINTS,
+  type GuardBodyHeights,
   type GuardHeights,
   type GuardTiles,
 } from './terrain-guard';
@@ -44,45 +54,103 @@ describe('terrain guard', () => {
     expect(Number.isNaN(hexToNumber(bitsHex(Number.NaN)))).toBe(true);
     expect(bitsHex(1)).toBe('3ff0000000000000');
     expect(bitsHex(-0)).toBe('8000000000000000');
+    const dirs = [{ x: 0.6, y: -0.8, z: 0 }, { x: 0, y: 0, z: -1 }];
+    expect(directionsOf(directionsHex(dirs))).toEqual(dirs);
   });
 
-  it('the fixed directions are unit vectors, the same on every call, 2,000 per body', () => {
-    for (const { bodyId } of baked) {
-      const a = guardDirections(defs, bodyId);
-      const b = guardDirections(defs, bodyId);
-      expect(a).toHaveLength(POINTS_PER_BODY);
-      expect(a).toEqual(b);
-      for (const d of a) expect(Math.abs(Math.hypot(d.x, d.y, d.z) - 1)).toBeLessThan(1e-12);
+  it('the stored directions are unit vectors laid out in their groups: 2,000 per body today', () => {
+    expect(recordedHeights.format).toBe(2);
+    for (const [bodyId, body] of Object.entries(recordedHeights.bodies)) {
+      const dirs = directionsOf(body.directions);
+      const total = body.groups.reduce((n, g) => n + g.count, 0);
+      expect(dirs.length, bodyId).toBe(total);
+      expect(total, bodyId).toBeGreaterThanOrEqual(UNIFORM_POINTS + PLACE_POINTS);
+      expect(body.collision.length, bodyId).toBe(total * 16);
+      for (const l of BAND_LIMITS) expect(body.band[String(l)]!.length, bodyId).toBe(total * 16);
+      for (const d of dirs) expect(Math.abs(Math.hypot(d.x, d.y, d.z) - 1)).toBeLessThan(1e-12);
+      expect(body.groups[0], bodyId).toEqual({ key: 'uniform', count: UNIFORM_POINTS });
+      expect(new Set(body.groups.map((g) => g.key)).size, bodyId).toBe(body.groups.length);
+      // Every point of a place group lies inside the largest disc about its place, a quarter inside the smallest.
+      let start = 0;
+      for (const g of body.groups) {
+        if (g.latDeg !== undefined && g.lonDeg !== undefined) {
+          const dist = dirs.slice(start, start + g.count).map((d) => distanceTo(latLonOf(d), g.latDeg!, g.lonDeg!, body.radius));
+          expect(Math.max(...dist), `${bodyId} ${g.key}`).toBeLessThanOrEqual(CLUSTER_RADII[0] * 1.001);
+          expect(dist.filter((x) => x <= CLUSTER_RADII[CLUSTER_RADII.length - 1]! * 1.001).length, `${bodyId} ${g.key}`).toBeGreaterThanOrEqual(g.count / CLUSTER_RADII.length);
+        }
+        start += g.count;
+      }
+    }
+    expect(Object.fromEntries(Object.entries(recordedHeights.bodies).map(([id, b]) => [id, b.groups.reduce((n, g) => n + g.count, 0)]))).toMatchObject({ earth: 2000, moon: 2000 });
+  });
+
+  it('a group is a function of the body id, its key and its place only: other bodies and other places do not move it', () => {
+    // The seed is a hash of the names, never an index into the library.
+    expect(seedOf('earth:uniform')).toBe(seedOf('earth:uniform'));
+    expect(seedOf('earth:uniform')).not.toBe(seedOf('moon:uniform'));
+    expect(seedOf('earth:site:a')).not.toBe(seedOf('earth:site:b'));
+    const near = (a: { x: number; y: number; z: number }[], b: { x: number; y: number; z: number }[]): number => Math.max(...a.map((d, i) => Math.hypot(d.x - b[i]!.x, d.y - b[i]!.y, d.z - b[i]!.z)));
+    for (const [bodyId, body] of Object.entries(recordedHeights.bodies)) {
+      // The stored directions are what the generator gives for the stored groups. (To rounding: the stored
+      // bits are the truth, and a later runtime may round a cosine differently.)
+      const regenerated = body.groups.flatMap((g) => groupDirections(bodyId, g, body.radius));
+      const stored = directionsOf(body.directions);
+      expect(regenerated.length, bodyId).toBe(stored.length);
+      expect(near(regenerated, stored), bodyId).toBeLessThan(1e-12);
+    }
+    // Appending a place leaves every earlier point where it was.
+    const earth = recordedHeights.bodies['earth'];
+    if (earth) {
+      const added = { key: 'site:planted', count: PLACE_POINTS, latDeg: 19.0, lonDeg: 57.8 };
+      const stored = directionsOf(earth.directions);
+      const after = [...earth.groups, added].flatMap((g) => groupDirections('earth', g, earth.radius));
+      expect(after.length).toBe(stored.length + PLACE_POINTS);
+      expect(near(after.slice(0, stored.length), stored)).toBeLessThan(1e-12);
+      expect(groupOf([...earth.groups, added], after.length - 1)!.key).toBe('site:planted');
+      // And so does a library with more bodies in it: nothing here takes the library as an argument.
+      expect(groupDirections.length).toBe(3);
     }
   });
 
-  it('heights at the fixed directions are bit-identical to the recording: collision and band-limited queries', async () => {
+  it('a changed height is reported with its point, group and place', () => {
+    const body: GuardBodyHeights = { tilesetContentHash: 'x', radius: 1000, groups: [{ key: 'uniform', count: 1 }, { key: 'site:s', count: 2, latDeg: 10, lonDeg: 20 }], directions: directionsHex([{ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }]), collision: '', band: {} };
+    const recorded = bitsHex(5) + bitsHex(6) + bitsHex(7);
+    expect(heightDifferences(body, recorded, recorded)).toEqual([]);
+    const changed = heightDifferences(body, recorded, bitsHex(5) + bitsHex(6) + bitsHex(7.5));
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toMatchObject({ index: 2, group: 'site:s', recorded: 7, current: 7.5 });
+    expect(changed[0]!.latDeg).toBeCloseTo(90, 9);
+    expect(distanceTo({ latDeg: 0, lonDeg: 0 }, 0, 90, 1000)).toBeCloseTo((1000 * Math.PI) / 2, 6);
+  });
+
+  it('heights at the stored directions are bit-identical to the recording: collision and band-limited queries', async () => {
     if (baked.length === 0) {
       console.log('[terrain guard] no tile set is baked on this machine: the height comparison is skipped');
       return;
     }
-    const current = await sampleHeights(defs);
+    const terrain = await openTerrain(defs);
     const problems: string[] = [];
     for (const { bodyId } of baked) {
       const rec = recordedHeights.bodies[bodyId];
-      const cur = current.bodies[bodyId]!;
       if (!rec) {
         problems.push(`${bodyId}: baked but never recorded (the lead records it: terrain-guard.record.ts)`);
         continue;
       }
-      const describe = (kind: string, a: string, b: string): void => {
-        if (a === b) return;
-        const diffs = heightDifferences(a, b);
-        problems.push(`${bodyId} ${kind}: ${diffs.map((d) => `#${d.index} ${d.recorded} -> ${d.current} (${(d.current - d.recorded).toExponential(2)} m)`).join('; ')}`);
+      const cur = await sampleHeights(terrain, bodyId, directionsOf(rec.directions));
+      const check = (kind: string, a: string, b: string): void => {
+        const diffs = heightDifferences(rec, a, b);
+        if (diffs.length === 0) return;
+        const shown = diffs.slice(0, 8).map((d) => `#${d.index} (${d.group}, ${d.latDeg.toFixed(4)} N ${d.lonDeg.toFixed(4)} E) ${d.recorded} -> ${d.current}`);
+        problems.push(`${bodyId} ${kind}: ${diffs.length} points changed: ${shown.join('; ')}`);
       };
-      describe('collision', rec.collision, cur.collision);
-      for (const l of BAND_LIMITS) describe(`band ${l} m`, rec.band[String(l)] ?? '', cur.band[String(l)]!);
-      console.log(`[terrain guard] ${bodyId}: ${cur.points} directions x ${1 + BAND_LIMITS.length} queries (tile set ${cur.tilesetContentHash}, recorded on ${rec.tilesetContentHash})`);
+      check('collision', rec.collision, cur.collision);
+      for (const l of BAND_LIMITS) check(`band ${l} m`, rec.band[String(l)] ?? '', cur.band[String(l)]!);
+      console.log(`[terrain guard] ${bodyId}: ${rec.groups.map((g) => `${g.key} ${g.count}`).join(' + ')} directions x ${1 + BAND_LIMITS.length} queries (recorded on tile set ${rec.tilesetContentHash})`);
     }
     expect(problems).toEqual([]);
   }, 600_000);
 
-  it(`every tile directory matches its recorded summary (${FULL ? 'file names, bytes and content' : 'file count and names; TERRAIN_GUARD_FULL=1 also reads every file'})`, () => {
+  it(`every tile directory matches its recorded summary (${FULL ? 'file names, bytes and content' : 'file count, names and bytes; TERRAIN_GUARD_FULL=1 also reads every file'})`, async () => {
     if (baked.length === 0) {
       console.log('[terrain guard] no tile set is baked on this machine: the directory comparison is skipped');
       return;
@@ -94,9 +162,11 @@ describe('terrain guard', () => {
         problems.push(`${tileset}: baked but never recorded (the lead records it: terrain-guard.record.ts)`);
         continue;
       }
-      const cur = summariseTileset(tileset, FULL);
+      const t0 = Date.now();
+      const cur = await summariseTileset(tileset, FULL);
       for (const d of tileDifferences(rec, cur, FULL)) problems.push(`${tileset}/${d}`);
-      console.log(`[terrain guard] ${tileset}: ${Object.keys(cur).length} directories, ${Object.values(cur).reduce((n, d) => n + d.files, 0)} files`);
+      const total = Object.values(cur);
+      console.log(`[terrain guard] ${tileset}: ${total.length} directories, ${total.reduce((n, d) => n + d.files, 0)} files, ${(total.reduce((n, d) => n + d.bytes, 0) / 1e9).toFixed(2)} GB in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     }
     expect(problems).toEqual([]);
   }, 3_600_000);
