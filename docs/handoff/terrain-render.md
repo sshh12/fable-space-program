@@ -993,3 +993,73 @@ secret scans clean.
   minors listed above as unchanged.
 - No blocker in this package's own judgement. The performance lines of the Earth's ground views are the
   part of the brief this round moved away from (above).
+
+### Continuation of round 2 (after the coordinator's review of the report above)
+
+Three things were sent back: the performance lines of the Earth's ground views, the pop detector's control,
+and the ink blot. One batched diagnostic run in one gate slot (`out/terrain/r2/diag.mjs`: 49 minutes) gave
+the numbers for all three; what follows replaces the corresponding statements above.
+
+**1. What each part costs** (perf spec, 1440p, one part switched off at a time; GPU ms, p99 for the
+G-buffer, amortised for shadows; the main-thread columns of that run were taken under other agents' CPU
+jobs and are not quoted). Switches: lab `p.earth.detailFadeDistanceM=1` (no detail layers),
+`p.earth.reliefShadow=0`, `p.earth.classBandM=0`, `cover=0`, `covershadow=0`, `leaftest=0`,
+`coverkinds=<ids>`, `coverlod=<shadow fine, middle, least texels>,<G-buffer fine pixels>`, `rocks=0`,
+`casters=0` (`TerrainDebug.setCoverOptions`, `setShadowCasting`).
+
+| Variant | pad | stony ground | kiawe | thickets 120 m | 10 km |
+|---|---|---|---|---|---|
+| terrain G-buffer, as it was | 1.29 | 2.95 | 1.53 | 2.81 | 1.55 |
+| ... without the detail layers | 0.83 | 1.04 | 0.77 | 1.30 | 1.08 |
+| ... without the relief march | | 2.65 | 1.40 | 2.50 | |
+| ... without the class bands | 1.26 | 2.84 | 1.49 | 2.70 | 1.53 |
+| cover G-buffer, as it was | 0.34 | 0.10 | 0.69 | 0.83 | 0 |
+| ... grass and stones only | | 0.02 | 0.04 | 0.00 | |
+| ... shrubs and trees only | | 0.07 | 0.63 | 0.79 | |
+| ... without the leaf coverage test | | 0.10 | 0.68 | 0.82 | |
+| ... finest mesh only from 220 px across | | | 0.67 | 0.81 | |
+| cover shadows, as they were (fine 48 / middle 8 / least 1 texels) | 0.78 | 1.17 | 2.10 | 1.55 | 0 |
+| ... never the finest mesh, middle from 8 | | | 0.84 | 0.69 | |
+| ... never the finest, middle from 16, least 3 | 0.16 | 0.26 | 0.48 | 0.37 | |
+| terrain shadows (without any cover) | | 0.27 | 0.18 | 0.12 | |
+
+What it says: (a) the terrain's G-buffer is its DETAIL LAYERS: 0.5 ms on the pad and at 10 km, 0.8 among
+kiawe, 1.5 over the thickets and 1.9 on broken lava (two rock materials sampled on every pixel there); the
+march is 0.13 to 0.31 of it; the class bands 0.03 to 0.11; without any detail the pass still costs 0.8 to
+1.3 ms. (b) The cover's G-buffer is its shrubs and trees, and neither the coverage test nor the finest mesh:
+it is the middle level of some hundreds of trees (5.5 million triangles a frame over the thickets). (c) The
+cover's shadows were the finest and middle meshes in every cascade.
+
+**Cut accordingly** (ed8136f): crowns cast from their middle level at best and only from 24 texels of
+radius, nothing casts under 3 texels; the middle level is taken from 40 px across (was 28) and its sprays
+are flat (938 triangles for a tree, was 1,518), the coarsest level's sprays are larger (4.2 x) so the crown
+keeps its mass; the second material is sampled from a third of the two weights (was a quarter), hexagon
+copies and projection planes with small shares are dropped sooner (0.07, 0.18), and the far and aerial
+layers' relief casts shadows only where the body asks for it (`reliefShadowFar`: Moon 1, Earth 0). The
+cover's shadow lists are kept per cascade while the view rests (3bbe7ab).
+
+**2. The pop detector** now looks at the picture without the detail layers (`PLAIN` in `pops.spec.ts`:
+tiles, their normal maps and imagery, rocks and ground cover, which is everything that has levels of
+detail). The control (morphing off, lunar descent): **17 block spikes in 11 frames, the worst at 9.24 times
+its local median** (was 3 frames at 3.33 on the full picture); the six paths: 0 spikes, worst ratio 0.98
+(Earth), 1.68 and 1.75 (Moon), 1.02 (approach). No assertion was changed.
+
+**3. The ink blot, established.** The view `moon-300m` was rendered with one term off at a time: no cast
+shadows (`casters=0`), no relief march, no detail layers, no detail normals, no orbital relief, and all of
+them off at once. The stain is in every one of the seven pictures, in the bare one as a soft version of
+itself. What is left in the bare picture is the tile's own normal map, the imagery and the regolith BRDF;
+the imagery under it is even (level-7 texels of 83 m, values 64 to 78 of 255 around the site). So the term
+that goes to zero is **mu0, the cosine between the sun and the tile's own normal**, on a hollow's wall
+turned 8 to 14 degrees from an 11 degree sun; the mottle is the slope noise of the height function's
+amplification in that normal map (it moves mu0 by about 0.08 either way), and the BRDF's facet term, with
+its spread at the floor of 3 degrees, turned that into a lit share between 0.06 and 0.94 from pixel to
+pixel. Neither of the two earlier attempts touched it (the relief march and the shadow filter are not
+involved). Fix (ed8136f): where the sun grazes the tile's normal (cosine under 0.03 to 0.14) the facet
+spread is 11 degrees (variance + 0.04), which by the same formula leaves about 2.7 : 1 across the stain
+where there were 50 : 1.
+
+**4.** `integrated-kiawe-close`: a kiawe from three metres outside its crown at eye height (the tree the
+placement puts nearest to the kiawe-eye view: `TerrainDebug.nearestCover`). Request core-2 says that
+`tests/browser/integration/exact.spec.ts` can be run against 24c6b8b or later.
+
+The final run (functional suite and perf spec on this code) was queued when this was written; its numbers follow below when it has finished.

@@ -139,3 +139,5 @@ this package had no GPU slot left for it in the round.
   `cpu.hooks` is everything. No field was changed.
 - The first frame standing in `streamer.upload`: with the pipelines ahead (part 1) the cause should be gone;
   no byte budget was added.
+
+**For the maintainer (terrain-render, later the same day):** `tests/browser/integration/exact.spec.ts` can be run now: `resetTemporal` is in from 24c6b8b, and the cover's shadow lists are kept per cascade at rest from 3bbe7ab (part 3; measured numbers in the terrain hand-off, section 14, "Continuation").
