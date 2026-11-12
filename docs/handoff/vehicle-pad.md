@@ -136,11 +136,15 @@ node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts su
 node tools/dev/heavy.mjs --class=cpu  -- npx tsx tools/vehicle/site-ground.ts verify             # exit 1 if the survey no longer bounds the terrain
 ```
 
-Browser specs: `screens.spec.ts` (8 screenshot tests with 67 views in the vehicle lab, live captures: jitter
+Browser specs: `screens.spec.ts` (8 screenshot tests with 72 views in the vehicle lab, live captures: jitter
 and noise running, 72 frames of temporal accumulation; and the LOD dolly test), `staging.spec.ts`, `game.spec.ts` (the integration lab on the real
-terrain, sky and exposure: 9 pad views, 4 flight views, 3 lunar ground views, and the terrain-to-pad-plane gap
-under every structure), `vehicle.perf.spec.ts`, `adhoc.spec.ts` (`VEH_ADHOC`). Pictures: `out/screens/vehicle/`
-(`game-*` are the integrated game).
+terrain, sky and exposure: 13 pad views, 6 flight views of which two are the flown capsule in the real
+simulation's state (`sim=real&scenario=qa-drogues`), 3 lunar ground views, the live terrain against the ground
+survey, and the terrain-to-pad-plane gap under every structure that stands on a level area),
+`vehicle.perf.spec.ts`, `adhoc.spec.ts` (`VEH_ADHOC`). Pictures: `out/screens/vehicle/` (108 files; `game-*`
+are the integrated game). The pad, lunar and survey tests of `game.spec.ts` skip themselves when the
+integration lab could not load the terrain package (another package's shader in mid-edit does that): run it
+again before concluding.
 
 Lab query (`/labs/vehicle/?...`): `scene=pad|lowOrbit|lunarSurface`, `stage=<n>`, `stages=<n>&coast=<s>&hold=1`,
 `focus=<text>`, `solo=1`, `eye=x,y,z&at=x,y,z` (vessel frame, nose up; on the pad x = south, z = west),
@@ -149,50 +153,42 @@ Lab query (`/labs/vehicle/?...`): `scene=pad|lowOrbit|lunarSurface`, `stage=<n>`
 underfoot and places a vessel on legs by its foot pads; separated pieces get the relative motion they have in
 flight.
 
-## 4. Acceptance, measured (2026-11-11, this machine, other agents' GPU and CPU jobs running throughout)
+## 4. Acceptance, measured (2026-11-12, this machine, other agents' GPU, CPU and bake jobs running throughout)
 
 | Criterion | Result |
 |---|---|
 | Every part def has a generator and a visual file | 25 of 25 |
-| Meshes: unit normals, orthonormal tangents, no degenerate triangles, closed components watertight, none inside-out | pass for every model and LOD of the parts and of the complex (42 unit tests in 5 files with the boundary test) |
+| Meshes: unit normals, orthonormal tangents, no degenerate triangles, closed components watertight, none inside-out | pass for every model and LOD of the parts and of the complex (38 unit tests in 4 files; the boundary test, 93 tests, green) |
 | Bounds within 5 % of `PartDef.bounds` | pass (feedlines, blisters and clamp keepers were sized to this limit) |
 | Mated attach interfaces meet within 5 mm | 33 interfaces, gap 0 to 1.24 mm, no overlap |
 | Capsule skin on the shared mould line within 2 mm; openings at the file's azimuth / y / size | pass (the test reads the file) |
 | Nothing under a fairing or boost cover reaches through it | boost cover over the capsule: least clearance 25.5 mm; fairing over the descent stage 156 mm |
-| Triangles, full stack | LOD0 1,245,846 (1.0 to 1.6 M), LOD1 298,770, LOD2 28,764 (< 60 k) |
-| Launch complex triangles (all models) | LOD0 279,252, LOD1 75,318, LOD2 8,900 |
+| Triangles, full stack | LOD0 1,305,108 (1.0 to 1.6 M), LOD1 311,570, LOD2 28,676 (< 60 k) |
+| Launch complex triangles (all models, 34 structures) | LOD0 394,480, LOD1 120,916, LOD2 18,178 |
 | No vessel caster in a staggered cascade | 0 staggered submissions (`staging.spec.ts`) |
 | Staging sequence with `splitForStage` | all 10 stages; separated pieces are full models and clear the stack |
-| LOD: nothing left dithered | dolly of 12 distances from 7 to 360 m: 273 cross-fades started, 0 items fading 60 frames after each stop |
-| Terrain under the site | largest terrain-to-pad-plane gap under the 26 structures 0.000 m in the integration lab (`game.spec.ts`), 0.02 m at 450 m by `site-ground.ts` |
-| Vehicle G-buffer < 0.8 ms | 0.017 ms (stack filling the view), 0.075 ms (tower at 15 m), p99; p50 0.015 / 0.066 |
-| Vehicle shadows < 0.4 ms | last run: 0.360 ms (fill; windows 0.360 / 0.363 / 0.358), 0.252 ms (tower; 0.252 / 0.380 / 0.251), p99; p50 0.007 / 0.014. **Two of the three runs of the final code failed this line in the fill view (1.075 and 2.230 ms p99)**, see below |
-| Site G-buffer + shadow < 0.5 ms | 0.077 + 0.019 ms (fill), 0.032 + 0.043 ms (tower), p99; p50 0.066 + 0.017 / 0.029 + 0.041 |
-| CPU instance update < 0.3 ms | 0.240 ms p50, 0.34 to 0.44 ms p95 (site 0.12 ms) |
+| LOD: nothing left dithered | dolly of 12 distances from 7 to 360 m: 271 cross-fades started, 0 items fading 60 frames after each stop |
+| The complex on the real ground | the survey bounds the terrain: 219,240 samples of the height authority (`site-ground.ts verify`) and 775 live samples in the integration lab (`game.spec.ts`), worst excess over its bounds 0.000 m in both; every vertex of the ground model is at least 2 cm over the upper bound or at least 0.3 m under the lower one, every level face is above the upper bound at its centre (`site.test.ts`); largest terrain-to-pad-plane gap under the 22 structures that stand on level areas 0.000 m |
+| Vehicle G-buffer < 0.8 ms | 0.022 ms (stack filling the view), 0.071 ms (tower at 15 m), p99; p50 0.019 / 0.068 |
+| Vehicle shadows < 0.4 ms | 0.224 ms (fill; windows 0.233 / 0.224 / 0.224), 0.230 ms (tower; 0.015 / 0.249 / 0.230), p99; p50 0.006 / 0.014 |
+| Site G-buffer + shadow < 0.5 ms | 0.069 + 0.024 ms (fill), 0.033 + 0.044 ms (tower), p99; p50 0.066 + 0.022 / 0.030 + 0.042. In the run before, the fill view read 0.070 + 0.260 ms (inside the line): the site's shadow passes show the same rare long frames as the vehicle's did in round 1 |
+| CPU instance update < 0.3 ms | 0.250 ms p50 / 0.415 ms p95 (fill), 0.225 / 0.305 ms (tower); the site's own update 0.195 / 0.165 ms p50. **The run before failed this line** (0.310 and 0.305 ms p50) under a multi-process bake; see below |
 | `expectNoErrors` | in every vehicle-lab test |
 
-Perf: 2560 x 1440, `perf=features&scale=1&governor=off`, ballast 6.96 ms, p99 of timestamp queries, median of
-three 240-frame windows, under `withGpuLock`, with two to three other agents' browser jobs on the GPU in
-every run. The spec was run six times in this round and passed once (the last run; figures above). What the
-failures were:
+Perf: 2560 x 1440, `perf=features&scale=1&governor=off`, ballast 6.9 ms, p99 of timestamp queries, median of
+three 240-frame windows, under `withGpuLock`. The spec was run twice on the final code. Run 1 (06:55, with a
+multi-process terrain bake and a CPU job running, other agents' browser jobs queued behind it): every GPU
+line passed (fill 0.022 / 0.224 / 0.070 + 0.260 ms, tower 0.072 / 0.259 / 0.034 + 0.045 ms) and the CPU line
+failed by a hair (0.310 and 0.305 ms p50 for the vessel feature's update; the site's 0.290 and 0.255 ms).
+Nothing in the vessel feature's update path had changed since round 1 (0.240 ms then), so I took the miss for
+load and did not touch the assertion; I did cut the site's own per-frame work (the fence in runs of 180 m
+instead of 60 m: a third of its items) and ran again. Run 2 (08:39, a bake and a CPU job starting during it):
+all lines passed with the figures in the table. The CPU line has little margin under load (p95 0.31 to
+0.42 ms): most of the update is three `MeshBatch.add` calls per instance (the camera's copy and the two
+caster batches), each of which builds its matrices again. The lead should re-measure on a quiet machine
+(PACKAGE_RULES 16).
 
-- Runs 1 to 3: the site's shadow line in the tower view, 1.74 / 1.62 / 1.70 ms p99 against a median of
-  0.055 ms. A probe (same view, 240 frames per variant) put it in the two finest cascades and in one caster:
-  with the tower's lattice (rails, treads and gusset plates on 23 levels) left out of them the site's shadow
-  passes were 0.026 ms p50 and 0.028 to 0.038 ms p99; with it, 0.6 to 1.6 ms p99 at the same median. Fixed:
-  in the fine cascades the lattice now casts through its bracing alone (a shadow-only model), and ordinary
-  structures cast from LOD 1 (site shadow triangles per frame in the tower view 508,320 before, under 310,000
-  after). The site line has passed in every run since (0.07 to 0.10 ms).
-- Runs 4 and 5: with the site's passes short, the same kind of event (a pass of microseconds at the median
-  taking 1 to 2.4 ms in more than one frame in a hundred) showed in the vehicle's shadow line instead: fill
-  view 1.075 and 2.230 ms p99 (windows 2.301 / 0.797 / 1.075 and 2.352 / 2.230 / 0.623), tower 0.296 and
-  0.631 ms. Nothing in the vessel feature's shadow path changed between the runs in which this line passed
-  (runs 1 to 3: 0.007 to 0.30 ms) and these. I could not find a cause in the workload and take it for time lost
-  to other GPU clients in whichever shadow pass is running, but have not proven it: it needs the quiet machine
-  (PACKAGE_RULES 16). Even in the passing run the vehicle's shadow line in the fill view is 0.36 ms, 10 % under
-  its budget (0.225 ms in the first hand-off).
-
-Generated assets: 89.9 MB in 63 files under `public/assets/vehicle` (limit 120 MB). No API key was used and no
+Generated assets: 91 MB in 69 files under `public/assets/vehicle` (limit 120 MB). No API key was used and no
 money was spent: every texture and decal is baked procedurally. No Modal app was touched.
 
 ## 5. Deviations from the brief (wave-1 reality and decisions)
@@ -211,53 +207,67 @@ money was spent: every texture and decal is baked procedurally. No Modal app was
 9. The decal sheet lives at `data/defs/visuals/parts/livery.json`.
 10. A wire cannot be drawn with sub-pixel coverage: it is four gauges (true, 0.22, 0.7, 2.2 m), each used
     where it is one to three pixels wide.
-11. Lamps are spot lights at their lenses (request 2, part 1): floodlight banks aimed at the vehicle, the
-    tower's lamps across at it, landing lamps down at the touchdown area. None casts a shadow (part 2 open).
+11. Lamps are spot lights at their lenses (request 2): floodlight banks aimed at the vehicle with a second
+    wide spot on the apron from every pole, the tower's lamps across at the vehicle, landing lamps down at the
+    touchdown area. The core shadows the two brightest shadow-casting spots at the camera (the banks, the
+    landing lamps).
 12. The heat shield's glow is compressed against a black body (`shieldGlowLuminance`): sunlit white at 1,900 K,
     eight times that at 3,100 K, so the face keeps its gradient instead of burning out to a flat disc.
+13. A site's earthworks are built on a ground survey that is DATA (section `visuals/sites/<siteId>`, written
+    by `tools/vehicle/site-ground.ts survey`), not on the terrain provider at run time: the features may import
+    only `src/core` and the render core, and the app constructs the site feature without options. The survey
+    bounds the terrain (upper and lower) and is checked against the tiles by the tool and against the live
+    terrain by `game.spec.ts`.
 
 ## 6. Known weaknesses (stated plainly)
 
-- Night: no local light casts a shadow (request 2, part 2 open). The banks are spots aimed at the vehicle and
-  it is the brightest thing on the pad, but the tower and masts throw no shadows across the apron, the far side
-  of the vehicle is lit wherever a bank's cone reaches it, there are no beams in the haze, and the lander's legs
-  cast no shadow in its landing lights.
-- Frost: the core draws a thin coat as a few solid streaks, not as a veil, so markings carry a weight of 0.27
-  (nearly bare, letters whole) and read as clear windows in the coat (request 6).
-- The integration lab's lunar scene has the lander's legs stowed (request 5): `game-moon-*` views show the
-  legs folded up; the vehicle lab's `lander-*` views show the landed lander.
-- Perf: the vehicle's shadow line failed its p99 budget in two of the last three runs under load and is within 10 % of it in the third (section 4).
+- The ground survey is a snapshot: when the terrain inside the site changes (tiles, pad shape, amplification)
+  the roads are fill over the surface as it WAS. `site-ground.ts verify` and `game.spec.ts` catch it; nothing
+  re-surveys by itself. The survey is per site, in the frame of the site's reference point; the sixteen pads
+  of v2 have no structures of their own yet (request sim-core-v2-2, resolution).
+- Earthworks can only fill: the terrain draws over anything cut into it. A road therefore stands a quarter
+  metre and more above the highest ground along it, and its embankment is taller where the ground is rough.
+- The terrain's ground cover does not know the roads and the fence line (request 8): shrubs and trees stand
+  at the shoulders.
+- Night: no beams in the air (no transparent pass in this package); the core shadows two spots, so the
+  shadows of tower and masts across the apron come from the two banks nearest the camera only; site lights
+  are capped at 12 per frame (vessel 4) of the core's 16, the nearest win.
+- Frost is told by its structure (lanes, frost lines, rime on dark structure), not by its brightness: sunlit
+  white paint and frost are a few per cent apart in display luma (the tone curve's shoulder). No vapour and no
+  falling ice (request 9).
+- A marking under soot is a label of even tone: the shader's soot streaks live in texture space and a
+  decal's coordinates are atlas coordinates.
 - Glass is opaque: no inner panes, no cabin behind the windows from outside (the cockpit package's glazing
   replaces the panes when `exteriorGlass` is false).
-- The capsule's markings are atlas rectangles in the film's colour: closer than before, still a faintly visible
-  patch at grazing light (no tile seams under the lettering).
-- Stages seen whole from 40 m are still mostly clean barrels: the 5 % bounds criterion limits anything that
-  stands off the skin to 0.22 m (M-1, M-2) and 0.16 m (M-3), so feedlines are 0.15 m lines and blisters are low.
-- Fairing petals and the cork shoulder are plain; the escape motor has a manifold and nozzle rings but no
-  fluting. Tower joints have gusset plates but no bolt groups; weathering of the steelwork is vertex grime.
-- No perimeter fence, camera towers, parked vehicles or vegetation dressing on the site; the perimeter road is
-  a regular twelve-sided loop.
-- Vent fog and falling ice at lift-off are the effects package's; this package exposes no anchor points for
-  them yet.
+- Stand-off fittings thinner than the contact march resolves get a ragged contact shadow (request 10; the
+  hatch handle was made solid).
+- Lightning masts beyond about 450 m are solid posts; fence fabric beyond about 100 m is a faint veil.
+- Fairing petals have no panel joints, vents or rails; the capsule's nose has no docking mechanism; tower
+  joints have gusset plates but no bolt groups; the launch mount's water system is plain painted pipe.
 - A broken leg is posed in the part's own frame: the feature does not know the terrain.
-- Soot, frost amount and nozzle heat are presentation models inside the feature, not simulation outputs.
-- Site lights are capped at 8 per frame (vessel 4) of the core's 16.
-- Not tested: more than one site, a site on unflattened ground (`groundHeight` is implemented, not exercised),
-  vehicles other than the one defined.
+- Soot, frost amount and nozzle heat are presentation models inside the feature, not simulation outputs
+  (the capsule's scorch is the exception: it follows the shield's `ablatorFraction`).
+- Not tested: more than one site, a site on unflattened ground under its structures' origins (`groundHeight`
+  is implemented, not exercised), vehicles other than the one defined.
 
 ## 7. Requests
 
 | File | To | State | What |
 |---|---|---|---|
-| `docs/requests/vehicle-pad-1.md` | render core, mesh shader | resolved (ad38ab3) | clear coat under soot and frost, texture-space break-up of both, frost and soot colours. Used: frost and soot are plain vertex weights on the skin now |
-| `docs/requests/vehicle-pad-2.md` | render core, contracts | part 1 resolved (d48e735), part 2 open | spot lights (used by every lamp), shadowed local lights (not built) |
-| `docs/requests/vehicle-pad-3.md` | terrain render | open (the terrain package is drawing a site ground plan from the structures' footprint parameters as of this writing) | site ground as graded earthwork instead of a concrete disc |
-| `docs/requests/vehicle-pad-4.md` | render core, contracts | resolved (95d2c70) | alpha-cutout materials. Used: `grating` |
-| `docs/requests/vehicle-pad-5.md` | integration lab (core-support) | open | lunar scene with the lander's legs deployed |
-| `docs/requests/vehicle-pad-6.md` | render core, mesh shader | open | thin frost as a veil instead of sparse streaks |
+| `docs/requests/vehicle-pad-1.md` | render core, mesh shader | resolved (ad38ab3) | clear coat under soot and frost, texture-space break-up of both, frost and soot colours |
+| `docs/requests/vehicle-pad-2.md` | render core, contracts | resolved (d48e735, 1426e0d) | spot lights (every lamp), shadows of the two brightest spots |
+| `docs/requests/vehicle-pad-3.md` | terrain render | resolved (4d55e12, 34548f5; item 1 declined in part) | site ground plan instead of a concrete disc |
+| `docs/requests/vehicle-pad-4.md` | render core, contracts | resolved (95d2c70) | alpha-cutout materials. Used: `grating`, `chainlink` |
+| `docs/requests/vehicle-pad-5.md` | integration lab | resolved (f184651) | lunar scene with the lander's legs deployed |
+| `docs/requests/vehicle-pad-6.md` | render core, mesh shader | resolved (94e4266) | thin frost as a veil instead of sparse streaks |
+| `docs/requests/vehicle-pad-7.md` | render core, mesh shader | resolved (038cf6f, 06c9167) | soot as a density instead of a mask. Used: every soot weight of the package |
+| `docs/requests/vehicle-pad-8.md` | terrain render | open | ground cover and loose rocks off the roads, stone pads and fence line of a site; a strip of disturbed soil; word when the height function changes inside a site |
+| `docs/requests/vehicle-pad-9.md` | vfx | open | vent vapour, vapour down the frosted barrels and falling ice, from the vents and frost bands the visual files declare |
+| `docs/requests/vehicle-pad-10.md` | render core, lighting | open | contact shadows of thin stand-off casters |
 
-Against these paths: `cockpit-11` (ports in the boost cover, dark lining) resolved in 9a5339a. No other
-open request in `docs/requests` is against these paths.
+Against these paths: `cockpit-11` (ports in the boost cover) resolved in 9a5339a; `sim-core-v2-2` (a site
+with structures and no ground survey must fail at load) resolved in 37d3ad2. No other open request in
+`docs/requests` is against these paths.
 
 ## 8. First review: findings and what was done
 
@@ -332,3 +342,65 @@ capsule skin).
 
 Not done in this part, and why: shadows of local lights (request 2 part 2, not built by the core); fence, camera
 towers, parked vehicles; bolt groups at tower joints; fairing petal detail; vent-fog anchors; inner window panes.
+
+## 10. Visual close-out, round 2 (2026-11-12)
+
+Work list: `docs/qa/wave2/vehicle-pad.r1.combined.json` (photo 5/10, artifact 5/10; 1 blocker, 10 majors, 10
+minors; 19 earlier items still open). Pictures are in `out/screens/vehicle/` (`game-*` are the integrated
+game); every one named here was looked at, most of them twice (after the first change and after the fix of
+what the first look showed).
+
+| # (r1 finding) | Item | What was done | Shows in |
+|---|---|---|---|
+| 1 (blocker) | The terrain buries roads and stone | Found which side was wrong: both. The pad shape (terrain-render-6) keeps a quarter of the natural relief between the level areas (-2.1 .. +2.8 m inside the fence, 0.1 to 0.3 m hummocks at metre scale) and my earthworks assumed the pad plane. Fixed on my side: a ground survey of the site from the height authority (section `visuals/sites/<siteId>`, 5 m grid, highest and lowest terrain round every node; `site-ground.ts survey` / `verify`), and every earthwork built on it: road grade lines from the smoothed upper envelope of the ground along them plus a quarter metre of fill, shoulders and embankment feet under the lowest ground, the stone field inside the level core, stone pads as rounded rectangles on the level areas, berms, fence posts, lamp posts, camera towers and pipe supports standing in the ground under them, pipe runs lifted to clear it. A site with structures and no survey does not load. Unit test: every vertex of the ground model is fill over the upper bound or a foot under the lower one; game spec: 775 live terrain samples of the integration lab lie inside the survey's bounds (worst excess 0.000 m). Request 8 to the terrain (ground cover off the roads and the fence line) | `game-site-aerial`, `game-site-perimeter-road`, `game-site-farm-road`, `game-site-gate`, `game-site-fence-pad`, `game-site-tank-farm-low` |
+| 2 | Base blankets are a printed lattice | The lattice came from a quilt texture on lathed discs (azimuth / radius coordinates): gone. Base close-outs of the stages and both lander stages are flat sheets with PLANAR coordinates in a new material (`blanket-base`: hand-laid panels in four unequal courses, slanted end joints, laced and taped seams, dull cloth at roughness 0.74). Engine boots are plain dark cloth, pleated twice as deep | `stage-lander-underside`, `stage-m3-aft-space`, `stage-m1-aft-space`, `stage-m2-aft-space` |
+| 3 | The capsule is spotless at splashdown | The scorch was there but as a mask on the windward side only, cut off at a threshold. It is now a density over the whole back shell driven by the shield's ablation history in the snapshot (`ablatorFraction`: 0.58 after the nominal lunar return = full char): a veil everywhere, heavier to windward, thick at the shoulder, carried up the cone in streaks, gathered in the lee of windows and hatch; tape strips, frames, fairings and the forward bay take the shell's soot. Shown in the real simulation's state (scenario `qa-drogues`, nothing set by hand) | `game-chutes-capsule-flown`, `game-chutes-capsule-flown-lee`, `capsule-charred-back-shell` |
+| 4 | Soot and scorch are flat grey cut-outs | Request 7 to the render core, resolved within the round (038cf6f): soot is a density (a thin deposit is a brown veil that lets paint, tiles and markings show, a thick one near black; streaks 6 cm x 1.5 m along the flow modulate it by a third). My weights are smooth density fields with no threshold of their own | `aft-sooted`, `engines-sooted`, `capsule-charred-back-shell`, `staging-02` to `staging-05` (flown stages) |
+| 5 | Foam reads as cloth | Texture rebuilt: no ribs; popcorn at three scales whose coarseness drifts (sanded areas beside rough ones), spray lumps of every size, pass overlaps as level lines of finite length; tone in patches along the tank from pale ochre to dark rust, run marks, a few ragged repairs. Close-outs as geometry in older foam: a trowelled band at every flange and a pad at every feedline bracket foot (the white slivers were bright bracket feet) | `closeup-foam`, `stage-m2-space`, `stage-m2-foam-pad`, `game-pad-noon-300m` |
+| 6, 13 | Frost is invisible; markings sit in windows | Measured first: sunlit white paint and frost both sit on the shoulder of the tone curve (barrel luma 175.5 bare, 181.4 frosted in the lab; a luma-ratio assertion of 1.08 that I first added to the spec could not hold and was replaced by one on structure: 93.5 % of the tank view's pixels change by more than ten levels between frosted and shed), so brightness cannot carry it. Frost now has structure: scalloped frost lines, rime rings on the weld lands, bare lanes a metre wide where sheets slid off, thick rime on the bare frames and on the feedlines, a patchy coat on the dark intertank between the tanks (the cue that reads from across the pad), and the stage's white is a flown white (albedo about 0.65) under it. One weight across the skin: the thinning over a marking fades out raggedly over most of a metre. Vapour and falling ice are particles: request 9 to vfx with the vent positions and frost bands the visual files declare | `frost-prelaunch` against `frost-shed`, `frost-line-prelaunch`, `pad-stack-300m`, `game-pad-noon-300m` |
+| 7 | Night views dim and flat | Banks at 3e7 cd (the vehicle is the brightest surface, near white), a second wide spot on the apron from every pole (overlapping pools), 12 site lights, round searchlight lenses in drums instead of white squares, work lights at every corner of every tower level in every LOD (the structure is drawn by its lights), landing lamps with a soft cone (16 / 46 degrees) and a lens below bloom | `site-pad-night`, `site-overview-night`, `game-pad-night`, `lander-lights` |
+| 8 | Stages are plain and showroom clean | A skin material at vehicle scale (`skin-white`, tile 12.8 m: tone drift, dirt runs, touched-up patches, stencil blocks; waviness of the sheet in the normal map) on M-1, the skirts, the fairing, the adapter and the boost cover; forward dome in gores with ring seams, helium bottles on tripods plumbed to the manhole and a lit crown; the staging sequence shows flown hardware (burnt engines carry their soot) | `stage-m1-space`, `stage-m2-space`, `stage-m3-space`, `interstage-interior`, `staging-00` to `staging-10` |
+| 9 | Model railway | Road plan with a purpose (perimeter road with rounded corners that encloses pad and farms, access road from the gate past the support building to the hardstand, farm roads, a spur to the tower), chain-link fence with outriggers and gates at the access road and the crawlerway, road lamp posts, three tracking-camera towers, four parked vehicles, wheel tracks in the stone, fill as crushed dark basalt (it was tan on black lava), ragged field edge that thins into the ground; flame trench burnt by position (floor, wall skins with soot tongues and rust runs from the deluge fittings), blast stain, deluge wash and tyre lanes on the apron, scorch fans on the stone at the trench exits; pipe runs in weathered white on concrete plinths with a cable tray and flanged field joints | `game-site-aerial`, `game-site-gate`, `game-site-fence-pad`, `site-fence-gate`, `site-trench-burnt`, `site-apron`, `site-tank-farm` |
+| 10 | Capsule is sheet metal pressed into bricks | Tiles are flat long trapezoids (0.18 x 0.42 m) in aligned columns up the cone's generators (columns halve where the cone has narrowed), joints as hairlines in roughness and occlusion, tint in broad zones (a third of the old range), tabs of fresh tape, a plug on one tile in four, a handful of long tape wrinkles across several tiles; close-out panels end on tile joints on all four sides; apex cover as a taped lid of the forward bay with gore seams | `stage-capsule-space`, `capsule-windows`, `capsule-hatch`, `game-orbit-capsule` |
+| 11 | Ragged shadow beside the hatch rail | The handle is a solid pull bar on a base plate (no gap under it for the contact march to resolve as noise); request 10 to the core for thin stand-off casters in general | `capsule-hatch` |
+| 14 | Thin members bead into dots | Lightning masts: the lattice only where its braces cover a pixel (1500 / 420 px), solid beyond; engines' LOD 0 only where its fasteners cover pixels (420 px) | `game-pad-noon-300m`, `engines-clean` |
+| 19 | Silver blankets are liquid chrome | Fine crinkle (1 to 2 cm creases) over the laid-flat folds, roughness 0.56 | `lander-deployed`, `stage-ascent-space` |
+| 20 | Charred shield salted with white dots | Pits in two sizes gathered in drifts, dark; a handful of large pale spalls | `capsule-heat-shield-charred`, `game-chutes-capsule-flown` |
+| 21 | Specks on the bell bands, pale boot discs | Engine LOD 0 threshold (above); boots dark and pleated | `engines-clean`, `stage-m1-aft-space` |
+
+Assertions changed in this round, and why (none is a budget or an acceptance line of the brief):
+`looks.test.ts` asked for a frost coat on 98 % of a barrel's vertices with no hole; the critique asks for bare
+lanes, so it now asks for 85 to 99.5 %, and counts an intertank as frosting; the open-component allow list of
+`parts.test.ts` names the flat blanket sheets (`deck`, `closeout`); `site.test.ts` lets a parked vehicle stand
+on its slab (0.05 to 0.36 m over the pad plane); `game.spec.ts` checks the origin gap only for the structures
+that are not built on the survey (those are checked against the survey instead). New: the survey tests of
+`site.test.ts` and `game.spec.ts`, the frost-structure assertion of `screens.spec.ts` (a luma-ratio assertion
+I added first was wrong: see the frost row).
+
+Perf after the round: section 4 (all lines pass in the last run; the CPU line failed once under load).
+
+Also in this round: `resetTemporal()` on both features (frame-exact capture, NOTICE-core-5); neither feature
+creates a pipeline, so there is nothing of theirs for `shaders.warm()`; `SiteFeature.siteIds()` and no spec
+names a site id (the site was renamed to `ka-lae` during the round); request `sim-core-v2-2` against this
+package resolved (a missing survey fails at load).
+
+Not fixed, and why:
+
+- **Windows are black voids** (18): no inner panes or cabin glow; the mesh system has no transparent
+  materials and the cockpit package's glazing replaces the panes in the game (`exteriorGlass: false`).
+- **Beams in the night air** (7): additive volumes need a transparent pass of this package's own or the
+  atmosphere's local-light scattering; not started.
+- **Docking hardware at the capsule's nose** (10): the apex cover is a taped lid now, not a mechanism.
+- **Top of the stack** (17): boost cover and fairing have the stage's skin; panel joints, vents and
+  separation rails on the fairing petals are still not modelled.
+- **Tower weathering and bolt groups** (16), **launch mount finish** (12): unchanged in geometry; with the
+  core's soot as a density the steelwork's grime now reads as a brown stain instead of charcoal.
+- **Lander in the lab** (15): not looked at again (the game's lunar views are right).
+- **Markings under soot**: a marking's soot is a constant over its quad (the shader's streaks are in texture
+  space and a decal's coordinates are atlas coordinates), so a marking on the scorched capsule shows as a
+  slightly darker or lighter label.
+- **Ground cover beside the roads**: the terrain's shrubs and trees do not know the roads (request 8); none
+  stands on the asphalt in today's pictures, some stand at its shoulder.
+- **Vapour and falling ice**: request 9 (vfx).
+- **Far masts** are solid red-and-white posts beyond about 450 m (a cut-out lattice would put the masts on
+  the per-material shadow path, which cost 1.2 ms on the vessel in round 1).
