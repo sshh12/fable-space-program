@@ -296,12 +296,12 @@ export const WORLD_VIEWS: WorldView[] = [
   { name: 'world-reentry-plasma', query: 'scene=reentry', recipe: { lights: true, seat: { yaw: 16, pitch: 40 }, fovDeg: 70 }, checks: { dark: true, litPanes: ['fwd-left', 'fwd-right'] } },
   // On the lunar surface, the sun 17 degrees up on the far side of the capsule and across the view (long
   // shadows on the ground, this window's well in the capsule's own shade), the floods on: the head 30 cm inside
-  // the left side window and above its axis, looking 10 degrees down through it at the ground and the horizon
+  // the left side window, low enough for the horizon to clear the shade's cassette, looking 8 degrees down through it at the ground and the horizon
   // (the capsule upright, head-up along its nose).
   {
     name: 'world-moon-horizon',
     query: 'scene=lunarSurface',
-    recipe: { sun: { ves: [0.35, 0.3, 0.89] }, lights: true, free: { kind: 'interior', eye: { p: [-0.84, 1.2, 0.0] }, look: { p: [-11, -0.6, 0.6] }, up: 'nose' }, fovDeg: 62 },
+    recipe: { sun: { ves: [0.35, 0.3, 0.89] }, lights: true, free: { kind: 'interior', eye: { p: [-0.84, 1.13, 0.0] }, look: { p: [-11, -0.45, 0.6] }, up: 'nose' }, fovDeg: 62 },
     checks: { dark: true, maxBlack: 0.3 },
   },
   // From outside: looking in through a forward window by day (the sun's way in) and on the night side.

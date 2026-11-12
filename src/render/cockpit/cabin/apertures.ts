@@ -198,17 +198,19 @@ function shade(ctx: CabinContext, g: OpeningGeom, o: Opening, extension: number)
   const ext = Math.max(0, Math.min(1, extension));
   const vBar = v0 - 0.012 - ext * (o.height + w.bezelWidth * 0.3);
   ctx.b.box(offsetFrame(f, 0, vBar, 0.009), o.width / 2 + 0.003, 0.006, 0.005, 0.002, ctx.m('aluminium'));
-  // The pull tab: a loop of flat webbing sewn round the bar, hanging a thumb's length below it.
+  // The pull tab: a loop of flat webbing sewn round the bar toward one end (clear of the middle of the
+  // view), hanging a finger's width below it.
   {
     const tab = ctx.m('webbingOrange');
-    const half = 0.011;
-    const drop = 0.03;
+    const half = 0.009;
+    const drop = 0.02;
+    const tabU = o.width * 0.32;
     const loop: Vec3[] = [];
     for (let k = 0; k <= 12; k++) {
       const t = k / 12;
       // Down the front of the bar, round the end of the loop, back up behind.
       const a = Math.PI * t;
-      loop.push(local(f, 0, vBar - 0.006 - drop * Math.sin(a) * (0.6 + 0.4 * Math.sin(a)), 0.0145 + 0.0035 * Math.cos(a)));
+      loop.push(local(f, tabU, vBar - 0.006 - drop * Math.sin(a) * (0.6 + 0.4 * Math.sin(a)), 0.0145 + 0.0035 * Math.cos(a)));
     }
     ctx.b.surface(1, loop.length - 1, (i, j) => {
       const p = loop[j]!;
