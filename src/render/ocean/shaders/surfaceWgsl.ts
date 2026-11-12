@@ -283,7 +283,7 @@ struct VsOut {
   let delta0 = oceanSphereOffset(p);
   let up0 = oceanUpAt(delta0);
   var h = OCEAN_DEEP;
-  if (detail > 0.0) { h = oceanColumnDepthAt(oceanU.refRel.xyz + oceanRot(delta0), oceanRot(up0)); }
+  if (detail > 0.0 && (u32(oceanU.glint.w) & 4096u) == 0u) { h = oceanColumnDepthAt(oceanU.refRel.xyz + oceanRot(delta0), oceanRot(up0)); }
   let amp = oceanAmplitudes(p, h);
   let sp = oceanSurfaceFrom(p, delta0, up0, fw, detail, amp, false);
   let lift = oceanU.fade.w * (1.0 - detail);
@@ -371,6 +371,15 @@ struct FsOut {
   let strayWater = gId == MATERIAL_WATER && !sheet;
   let dOpaque = textureLoad(sceneDepthOpaqueTex, pix, 0);
   let seabedPix = gId == MATERIAL_TERRAIN || gId == MATERIAL_REGOLITH;
+  // Profiling switches (OCEAN_PROFILE_SKIP; 0 in the shipped pass): each bit leaves one term out.
+  let prof = u32(oceanU.glint.w);
+  if ((prof & 2048u) != 0u) {
+    var op: FsOut;
+    op.color = vec4f(0.0, 0.0, 0.0, opacity);
+    op.velocity = velocityFromClip(in.currClip, in.prevClip);
+    return op;
+  }
+  waterGlintScale = select(1.0, 0.0, (prof & 1u) != 0u);
   // Something that floats or stands in the water is behind the surface here.
   let objectPix = !seabedPix && !strayWater && !sheet && dOpaque > 0.0;
   // Water column along the view ray to the opaque surface under the pixel (the refraction path).
@@ -385,7 +394,7 @@ struct FsOut {
   var seaDepth = OCEAN_DEEP;
   // The seabed beside an object in the water (depth, screen uv; x = OCEAN_DEEP: none in view).
   var beside = vec3f(OCEAN_DEEP, 0.0, 0.0);
-  if (!sheet && !strayWater && dOpaque > 0.0) {
+  if (!sheet && !strayWater && dOpaque > 0.0 && (prof & 16u) == 0u) {
     if (detail > 0.0) {
       var guess = column;
       var fallback = column;
@@ -419,6 +428,8 @@ struct FsOut {
   var amp = oceanAmplitudes(in.plane0, seaDepth) * detail;
   amp[2] = oceanTma(2u, seaDepth) * oceanU.misc.z * oceanLayerOn(2u) * detail;
   amp[3] = oceanTma(3u, seaDepth) * oceanU.misc.z * oceanLayerOn(3u) * detail;
+  let layers = select(1.0, 0.0, (prof & 32u) != 0u);
+  amp *= layers;
   var chop = vec2f(0.0);    // slopes of the cascades in Lagrangian coordinates (their own displacement pinches them)
   var extra = vec2f(0.0);   // slopes of the layers that carry no displacement
   var jxx = 1.0;
@@ -470,7 +481,7 @@ struct FsOut {
   // each with half its variance: their sum does not repeat.
   {
     let lw = oceanU.long;
-    let aL = 0.70710678 * detail * oceanTmaOmega(lw.stats.z, seaDepth) * oceanU.misc.z * oceanLayerOn(OCEAN_LONG_LAYER);
+    let aL = 0.70710678 * detail * oceanTmaOmega(lw.stats.z, seaDepth) * oceanU.misc.z * oceanLayerOn(OCEAN_LONG_LAYER) * layers;
     let g = lw.geom.y;
     let lod = log2(max(fpTex * 256.0 * g, 1e-6));
     let keep = 1.0 - smoothstep(OCEAN_LOD_CUT - 1.0, OCEAN_LOD_CUT, lod);
@@ -499,7 +510,7 @@ struct FsOut {
   var vHor = vFix - upF * dot(vFix, upF);
   vHor = vHor / max(length(vHor), 1e-4);
   var sw: OceanSwellSample;
-  if (detail > 0.0) { sw = oceanSwellEvalAlong(deltaF, upF, fpMin, vec4f(vHor, fpMaj), false); }
+  if (detail > 0.0 && (prof & 64u) == 0u) { sw = oceanSwellEvalAlong(deltaF, upF, fpMin, vec4f(vHor, fpMaj), false); }
   let e = oceanU.axisE.xyz;
   let f = oceanU.axisF.xyz;
   let grad = sw.grad * detail + e * slope.x + f * slope.y;
@@ -546,7 +557,7 @@ struct FsOut {
   let kMin = min(min(b.ocean.r, b.ocean.g), b.ocean.b);
   // The seabed contributes only where light can make the round trip through the column: beyond about
   // 6 / (2 kappa_min) metres (about 95 m of clear ocean) it is invisible, and refraction is skipped.
-  let seeBottom = detail > 0.02 && !strayWater && !sheet && dOpaque > 0.0 && column * kMin < 3.0;
+  let seeBottom = detail > 0.02 && !strayWater && !sheet && dOpaque > 0.0 && column * kMin < 3.0 && (prof & 4u) == 0u;
   var conf = 0.0;
   var uvR = uv;
   var hitDepth = 0.0;
@@ -695,7 +706,8 @@ struct FsOut {
   var breaker = 0.0;   // thick, fresh foam (0..1)
   var density = 0.0;   // share of the surface covered around the point
   var mapped = 0.0;    // how far the whitecaps are those of the foam map (the rest: the statistical coverage)
-  if (detail > 0.0) {
+  let foamOn = (prof & 2u) == 0u;
+  if (detail > 0.0 && foamOn) {
     var wc = vec2f(0.0);
     // Finest level first: a finer level overrides the coarser ones by its weight, so once one covers the pixel
     // fully the coarser are not read.
@@ -733,7 +745,7 @@ struct FsOut {
   //    more) breaks where the surface itself draws it, and leaves foam behind (the same test 0.8, 1.8 and 3 s ago);
   //  - the swash: the film of water that runs up the beach is water (the wet sand shows through it), white only at
   //    its running edge, the last centimetres, with a little lace behind.
-  if (seaDepth < oceanU.surf.x && detail > 0.0) {
+  if (seaDepth < oceanU.surf.x && detail > 0.0 && foamOn) {
     let dyn = max(seaDepth + in.height, 0.0);
     let lip = 1.0 - smoothstep(0.0, 0.025, dyn);
     let swash = max(lip, 0.3 * (1.0 - smoothstep(0.0, oceanU.shore.x, dyn)));
@@ -752,7 +764,7 @@ struct FsOut {
     breaker = max(breaker, max(max(b0, front), 0.8 * lip) * detail);
     density = 1.0 - (1.0 - density) * (1.0 - max(max(swash, left), bore) * detail);
   }
-  if ((oceanU.counts.w & 1u) != 0u) {
+  if ((oceanU.counts.w & 1u) != 0u && foamOn) {
     let wuv = (in.planeF - oceanU.wake.xy) * oceanU.wake.w + 0.5;
     let edge = saturate(min(min(wuv.x, wuv.y), min(1.0 - wuv.x, 1.0 - wuv.y)) * 12.0);
     let w = textureSampleLevel(oceanWake, linearClamp, wuv, 0.0).r * edge * detail;
@@ -763,7 +775,7 @@ struct FsOut {
   }
   // The lap at a hull: where the water lies thin over something that floats in it (the eye ray meets the hull
   // within decimetres of the surface), the water works against it and froths: a ragged white ring at the waterline.
-  if (objectPix && detail > 0.0) {
+  if (objectPix && detail > 0.0 && foamOn) {
     let thin = length(positionFromDepth(uv, dOpaque)) - dist;
     let lap = (1.0 - smoothstep(0.05, 0.55, thin)) * detail;
     breaker = max(breaker, 0.8 * (1.0 - smoothstep(0.02, 0.16, thin)) * detail);
@@ -846,7 +858,8 @@ struct FsOut {
   var sunEff = vec3f(0.0);
   // Clouds, as the deferred lighting applies them to the far sheet (request ocean-cs-2): the direct beam is the
   // sun term; what the cloud passes on diffusely is white light from the cloud base, ambient.
-  let cl = cloudLight(posRel, bi, s.up, r, sunDir);
+  var cl = vec2f(1.0);
+  if ((prof & 256u) == 0u) { cl = cloudLight(posRel, bi, s.up, r, sunDir); }
   var cloudBase = vec3f(0.0);
   let vis = sunVisibility(posRel, sunDir);
   if (vis > 0.0) {
@@ -854,10 +867,11 @@ struct FsOut {
     sunE *= atmosphereSunTransmittance(transmittanceLut, u32(bi), r, muS);
     cloudBase = sunE * (max(muS, 0.0) * (cl.y - cl.x));
     sunE *= cl.x;
-    let shadow = sampleSunShadow(posRel, s.n, pix);
+    var shadow = 1.0;
+    if ((prof & 128u) == 0u) { shadow = sampleSunShadow(posRel, s.n, pix); }
     if (shadow > 0.0) {
       s.lightAlpha = 0.6 * frame.sunDir.w;
-      lit += brdfWaterDirect(s, sunDir) * sunE * shadow;
+      if ((prof & 1024u) == 0u) { lit += brdfWaterDirect(s, sunDir) * sunE * shadow; }
       if (seeBottom) { bottomFar += waterBodyDirect(s, sunDir).bottom * sunE * shadow; }
       sunEff = sunE * shadow;
     }
@@ -878,7 +892,7 @@ struct FsOut {
   }
   // Under cloud about a third of the blue sky is still seen, and the cloud base adds its white light.
   amb.skyIrradiance = (skyHorizontal * mix(0.35, 1.0, cl.x) + cloudBase) * (0.5 + 0.5 * dot(s.n, s.up));
-  lit += brdfWaterAmbient(s, amb);
+  if ((prof & 512u) == 0u) { lit += brdfWaterAmbient(s, amb); }
   if (seeBottom) { bottomFar += waterBodyAmbient(s, amb).bottom; }
   var receiver = MAX_BODIES;
   if (s.altitude < 0.5 * b.center.w) { receiver = u32(bi); }
@@ -993,7 +1007,7 @@ struct FsOut {
       hull = vec4f(v.a.xy, v.b.z, v.b.w);
     }
   }
-  if (near > 0.0) {
+  if (near > 0.0 && (prof & 8u) == 0u) {
     let pt = waterPoint(s);
     let alpha = waterAlphaOf(s, pt);
     let mw = waterMirror(s, pt, alpha);

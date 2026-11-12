@@ -17,6 +17,8 @@ test.describe.configure({ timeout: 600_000 });
 
 interface FoamFrame {
   mean: number;
+  /** The coverage as rounds 0 and 1 measured it: above the median of the whole frame (see foamFrame). */
+  meanAboveFrameMedian: number;
   patches: number;
   largePatches: number;
   medianArea: number;
@@ -32,15 +34,44 @@ async function foamFrame(page: Page, shiftPx: number): Promise<FoamFrame> {
     const w = img.width;
     const h = img.height;
     // The HDR target also holds the atmosphere's in-scatter (composited after the water): a smooth background
-    // that the median of the frame (almost all of it foam-free) measures.
+    // that VARIES over the frame. Rounds 0 and 1 subtracted the median of the whole frame; half of a frame
+    // without any foam then lies above it and reads as a coverage of about 0.1 % (the same as the statistical
+    // coverage the foam is calibrated against), and the gradient correlates with itself at any shift. The
+    // background is therefore taken locally: the median of each block of 40 x 40 pixels (foam covers a fraction
+    // of a per cent, so a block's median is foam-free), interpolated between the blocks' centres.
     const g = new Float32Array(w * h);
     for (let p = 0; p < w * h; p++) g[p] = img.data[p * 4 + 1]!;
-    const background = Float32Array.from(g).sort()[(w * h) >> 1]!;
+    const frameMedian = Float32Array.from(g).sort()[(w * h) >> 1]!;
+    const B = 40;
+    const bw = Math.ceil(w / B);
+    const bh = Math.ceil(h / B);
+    const med = new Float32Array(bw * bh);
+    for (let by = 0; by < bh; by++) {
+      for (let bx = 0; bx < bw; bx++) {
+        const vals: number[] = [];
+        for (let y = by * B; y < Math.min(h, (by + 1) * B); y += 2) for (let x = bx * B; x < Math.min(w, (bx + 1) * B); x += 2) vals.push(g[y * w + x]!);
+        vals.sort((a, b) => a - b);
+        med[by * bw + bx] = vals[vals.length >> 1] ?? frameMedian;
+      }
+    }
+    const backgroundAt = (x: number, y: number): number => {
+      const fx = Math.min(Math.max((x + 0.5) / B - 0.5, 0), bw - 1);
+      const fy = Math.min(Math.max((y + 0.5) / B - 0.5, 0), bh - 1);
+      const x0 = Math.floor(fx);
+      const y0 = Math.floor(fy);
+      const x1 = Math.min(x0 + 1, bw - 1);
+      const y1 = Math.min(y0 + 1, bh - 1);
+      const tx = fx - x0;
+      const ty = fy - y0;
+      return (med[y0 * bw + x0]! * (1 - tx) + med[y0 * bw + x1]! * tx) * (1 - ty) + (med[y1 * bw + x0]! * (1 - tx) + med[y1 * bw + x1]! * tx) * ty;
+    };
     const cov = new Float32Array(w * h);
     let sum = 0;
+    let sumFrame = 0;
     for (let p = 0; p < w * h; p++) {
-      cov[p] = Math.max(0, (g[p]! - background) / (2000 * exposure));
+      cov[p] = Math.max(0, (g[p]! - backgroundAt(p % w, (p / w) | 0)) / (2000 * exposure));
       sum += cov[p]!;
+      sumFrame += Math.max(0, (g[p]! - frameMedian) / (2000 * exposure));
     }
     // Connected patches (4-neighbourhood) of pixels at least a quarter covered; a pixel is 0.24 m at 150 m.
     const lab = window.__ocean!;
@@ -95,7 +126,7 @@ async function foamFrame(page: Page, shiftPx: number): Promise<FoamFrame> {
       }
       return varSum > 0 ? c / n / (varSum / (w * h)) : 0;
     };
-    return { mean, patches: areas.length, largePatches: areas.filter((v) => v >= 1).length, medianArea, largest: areas[areas.length - 1] ?? 0, shiftCorrelation: Math.max(corr(shift, 0), corr(0, shift)), metresPerPixel } as FoamFrame & { metresPerPixel: number };
+    return { mean, meanAboveFrameMedian: sumFrame / (w * h), patches: areas.length, largePatches: areas.filter((v) => v >= 1).length, medianArea, largest: areas[areas.length - 1] ?? 0, shiftCorrelation: Math.max(corr(shift, 0), corr(0, shift)), metresPerPixel } as FoamFrame & { metresPerPixel: number };
   }, shiftPx);
 }
 
@@ -135,13 +166,30 @@ test('whitecaps: calibrated to the statistical coverage of the far water, in pat
     running.push(await foamFrame(page, shift));
     if (i === 4) await saveScreenshot(page, 'ocean', 'foam-running-debug');
   }
+  // Calibration sweep (reported, not asserted): the coverage of the frozen places at other breaking thresholds,
+  // so that the data's foamSigma can be set from one run.
+  const sweep: string[] = [];
+  for (const sigma of [2.7, 2.55, 2.4, 2.25]) {
+    await page.evaluate((v) => window.__ocean!.ocean!.debug.setFoamSigma(v), sigma);
+    const frames: FoamFrame[] = [];
+    for (let i = 0; i < 9; i++) {
+      await place(i);
+      await waitIdle(page, 4);
+      frames.push(await foamFrame(page, shift));
+    }
+    const m = frames.reduce((a, b) => a + b.mean, 0) / frames.length;
+    const n = frames.reduce((a, b) => a + b.largePatches, 0) / frames.length;
+    sweep.push(`foamSigma ${sigma}: coverage ${(m * 100).toFixed(3)} % (ratio ${(m / statistical).toFixed(2)}), ${n.toFixed(1)} patches of 1 m2 or more per frame`);
+  }
+  await page.evaluate(() => window.__ocean!.ocean!.debug.setFoamSigma(null));
+  console.log(`calibration sweep, frozen places:\n  ${sweep.join('\n  ')}`);
   await page.evaluate(() => window.__ocean!.ocean!.debug.setDebugView('none'));
   await page.evaluate(() => window.__lab!.renderer.setExposureOverride(null));
   await waitIdle(page, 40);
   await saveScreenshot(page, 'ocean', 'foam-coverage-150m');
 
   const mean = (xs: FoamFrame[]): number => xs.reduce((a, b) => a + b.mean, 0) / xs.length;
-  const line = (xs: FoamFrame[]): string => xs.map((s) => `${(s.mean * 100).toFixed(3)} % (${s.largePatches} patches of 1 m2 or more, half the area in patches of ${s.medianArea.toFixed(1)} m2 or more, largest ${s.largest.toFixed(0)} m2, correlation at ${shift} px ${s.shiftCorrelation.toFixed(3)})`).join('\n  ');
+  const line = (xs: FoamFrame[]): string => xs.map((s) => `${(s.mean * 100).toFixed(3)} % [above the frame's median ${(s.meanAboveFrameMedian * 100).toFixed(3)} %] (${s.largePatches} patches of 1 m2 or more, half the area in patches of ${s.medianArea.toFixed(1)} m2 or more, largest ${s.largest.toFixed(0)} m2, correlation at ${shift} px ${s.shiftCorrelation.toFixed(3)})`).join('\n  ');
   console.log(`statistical (far water) ${(statistical * 100).toFixed(3)} %`);
   console.log(`frozen, per place:\n  ${line(frozen)}\n  mean ${(mean(frozen) * 100).toFixed(3)} %, ratio ${(mean(frozen) / statistical).toFixed(2)}`);
   console.log(`running 12 s:\n  ${line(running)}\n  mean ${(mean(running) * 100).toFixed(3)} %, ratio ${(mean(running) / statistical).toFixed(2)}`);

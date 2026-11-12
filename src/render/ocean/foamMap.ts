@@ -259,9 +259,9 @@ export class OceanFoamMap {
    * Prepare this frame's update. `refX` / `refY`: chart coordinates of the reference point (float64);
    * `chart`: identity of the chart they are in (a new chart starts a new history); `footprint`: the sharpest
    * pixel footprint on the sea this frame (m); `dt`: sim seconds since the previous frame. Returns what the
-   * surface pass needs to sample each level.
+   * surface pass needs to sample each level. `sigma`: the breaking threshold in force (the data's foamSigma).
    */
-  prepare(refX: number, refY: number, chart: object, footprint: number, dt: number): FoamLevelFrame[] {
+  prepare(refX: number, refY: number, chart: object, footprint: number, dt: number, sigma: number): FoamLevelFrame[] {
     if (chart !== this.chartKey) {
       this.chartKey = chart;
       this.reset();
@@ -269,7 +269,7 @@ export class OceanFoamMap {
     const t = this.tunables;
     const f = new Float32Array(this.data);
     const i = new Int32Array(this.data);
-    f.set([Math.exp(-t.foamDecay * dt), Math.exp(-t.foamResidualDecay * dt), t.foamSigma, t.foamRampSigma], 0);
+    f.set([Math.exp(-t.foamDecay * dt), Math.exp(-t.foamResidualDecay * dt), sigma, t.foamRampSigma], 0);
     f.set([FOAM_WEIGHTS.long, FOAM_WEIGHTS.c0, FOAM_WEIGHTS.c1, FOAM_WEIGHTS.fine], 4);
     f.set([this.lowLod, t.foamHoldDrop, t.foamOldDrop, t.foamOldDensity], 8);
     f.set([1 / this.sigma[0]!, 1 / this.sigma[1]!, 1 / this.sigma[2]!, 0], 12);

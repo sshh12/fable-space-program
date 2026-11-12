@@ -389,6 +389,8 @@ const WATER_GLINT_RATE = 14.0;
 
 var<private> waterAnchor: vec4f = vec4f(0.0);
 var<private> waterFarWeight: f32 = 1.0;
+// Factor on the weight of the drawn glitter (1; a forward pass's profiling switch sets 0).
+var<private> waterGlintScale: f32 = 1.0;
 
 fn waterBodyParam(s: Surface, k: u32) -> vec4f { return WATER_BODY[u32(max(s.bodyIndex, 0)) * ${BODY_ROWS}u + k]; }
 fn waterWind(s: Surface) -> f32 { return frame.bodies[max(s.bodyIndex, 0)].ocean.a; }
@@ -407,6 +409,7 @@ struct WaterPoint {
   glintN: vec2f,    // facets per cell at the two levels
   glintT: f32,      // blend from the finer level to the coarser
   glintW: f32,      // weight of the drawn factor (0 = the smooth lobe: the pixel resolves the facets)
+  nk: vec3f,        // the normal the facet COUNT is taken about (see waterPoint)
 }
 var<private> waterPt: WaterPoint;
 
@@ -422,6 +425,7 @@ fn waterPoint(s: Surface) -> WaterPoint {
   pt.glintN = vec2f(1.0);
   pt.glintT = 0.0;
   pt.glintW = 0.0;
+  pt.nk = s.n;
   if (s.bodyIndex >= 0) {
     let bi = u32(s.bodyIndex);
     let b = frame.bodies[bi];
@@ -468,6 +472,7 @@ fn waterPoint(s: Surface) -> WaterPoint {
     // only, a wave that crosses the view survives to the horizon while its neighbours along the view are gone, and
     // the sea is combed into lines that fan out from the camera; a sea of real heights shows the opposite.)
     let fpe = sqrt(0.5 * (fpMinor * fpMinor + fpMajor * fpMajor));
+    var tilt = vec3f(0.0);
     if (waterFarWeight > 0.0 && fpe < 110.0) {
       var g = vec2f(0.0);
       var variance = 0.0;
@@ -493,9 +498,18 @@ fn waterPoint(s: Surface) -> WaterPoint {
         }
       }
       let fw = waterFarWeight;
-      pt.n = normalize(pt.n - (along * g.x + across * g.y) * fw);
+      tilt = (along * g.x + across * g.y) * fw;
+      pt.n = normalize(pt.n - tilt);
       pt.resolved = clamp(pt.resolved + variance * fw * fw / waterCoxMunk(s), 0.0, 1.0);
     }
+
+    // The normal the mean number of lit facets is taken about. Where the surface is the flat sea (the far sheet, the
+    // near field from where its waves have faded) it is the sphere's own up, tilted by the far waves: the SAME
+    // vector in the deferred and the forward pass, whose own normals differ in the fourth digit (the G-buffer's
+    // normal is quantised). The sparkle statistics amplify a difference of their mean; the lobe itself, taken about
+    // the shading normal, does not. Where the near field draws waves (waterAnchor.w = wave detail) it is the shading
+    // normal: the sparkles sit on the wave faces that mirror the sun.
+    pt.nk = normalize(mix(normalize(s.up - tilt), pt.n, waterAnchor.w));
 
     // Glitter cells: two levels of sea-anchored cells about as wide as the pixel is on the sea (half of it to all
     // of it for the finer level). At grazing angles a cell is up to three times wider than the pixel and many times
@@ -510,7 +524,7 @@ fn waterPoint(s: Surface) -> WaterPoint {
     // carries all but the capillary remainder of them (close to the eye) the lobe on that normal is the glint
     // itself, a filled highlight on each ripple; from where the unresolved slopes are a few times that remainder,
     // they are facets inside the pixel, and the lobe is their expectation.
-    pt.glintW = smoothstep(1.6, 4.0, waterCoxMunk(s) * pt.field * (1.0 - pt.resolved) / gp.y);
+    pt.glintW = smoothstep(1.6, 4.0, waterCoxMunk(s) * pt.field * (1.0 - pt.resolved) / gp.y) * waterGlintScale;
     if (pt.glintW > 0.0) {
       let tk = frame.time.x * WATER_GLINT_RATE;
       for (var k = 0u; k < 2u; k++) {
@@ -548,38 +562,18 @@ fn waterAlphaOf(s: Surface, pt: WaterPoint) -> f32 {
 }
 fn waterAlpha(s: Surface) -> f32 { return waterAlphaOf(s, waterPoint(s)); }
 
-/// Standard normal deviate for a uniform random number (Tukey's lambda distribution: within 1 % out to 3 sigma).
-fn waterNormalOf(u: f32) -> f32 { return 5.0633 * (pow(u, 0.135) - pow(1.0 - u, 0.135)); }
-
 /// The glitter factor of one cell that holds on average 'mean' facets mirroring the source, for the cell's uniform
-/// random number u: a Poisson number of lit facets over its mean (expectation 1). Few facets: most cells show the
-/// dark water and a few a sparkle of one facet's radiance; many: a grain, then a sheen. A single facet counts for at
-/// most 32 times the lobe (five stops over it): rarer, brighter ones are drawn as more, fainter ones, so far out on
-/// the flanks of the path the sparkles fade with the lobe instead of standing alone as stray stars.
+/// random number u: (1 + 2 / k) u^(2 / k), expectation 1, variance 4 / (k (k + 4)) (a Poisson count's 1 / k up to
+/// about k = 1). Few facets: most cells show the dark water (the share above half the peak is 0.35 k) and a few a
+/// sparkle of up to 1 + 2 / k times the lobe; many: a grain, then a sheen. Its logarithm is smooth in k: two
+/// shadings of one point whose inputs differ in the fourth digit (the forward and the deferred pass at the
+/// hand-over) differ in the fourth digit. (A drawn COUNT of facets, tried in round 2, turns such a difference into a
+/// whole facet in the pixels that sit on a step of the count: 3-7 % at the hand-over.) k below 1/16 is drawn as
+/// 1/16: a sparkle is at most 33 times the lobe, so far out on the flanks the sparkles fade with the lobe instead
+/// of standing alone as stray stars.
 fn waterGlintCell(u: f32, mean: f32) -> f32 {
-  let k = max(mean, 0.03125);
-  var draw = 1.0;
-  // From three facets on a normal deviate about the mean does; between two and three the two are blended.
-  let wide = smoothstep(2.0, 3.0, k);
-  if (wide < 1.0) {
-    // The inverse of the Poisson distribution's cumulative sum, each of its steps a short ramp (three tenths of
-    // the smaller of the two probabilities it separates, to each side) instead of a jump: the count stays k on
-    // average and is CONTINUOUS in k, so two shadings of one point whose inputs differ in the fourth digit (the
-    // forward and the deferred pass at the hand-over) do not differ by a whole facet in a pixel that sits on a step.
-    var p = exp(-k);
-    var c = p;
-    var n = 0.0;
-    for (var i = 0; i < 12; i++) {
-      let pn = p * k / f32(i + 1);
-      let h = 0.3 * min(p, pn);
-      if (u <= c - h) { break; }
-      n += saturate((u - (c - h)) / max(2.0 * h, 1e-12));
-      p = pn;
-      c += p;
-    }
-    draw = n / k;
-  }
-  if (wide > 0.0) { draw = mix(draw, max(1.0 + waterNormalOf(u) * inverseSqrt(k), 0.0), wide); }
+  let k = max(mean, 0.0625);
+  let draw = (1.0 + 2.0 / k) * pow(u, 2.0 / k);
   // The glints of a real sea are not equal: beside the few bright ones a footprint holds many faint ones, a sheen
   // whose share grows with their number (a dense path is bright between its sparkles, not holed).
   return mix(draw, 1.0, k / (k + 6.0));
@@ -783,7 +777,9 @@ fn brdfWaterDirect(s: Surface, l: vec3f) -> vec3f {
       // Probability that one facet mirrors the source into the eye: the facet normals that do fill the solid angle
       // of the source / (4 l.h) around h. Sources without a stated size (planetshine, lamps) count as a lunar disc.
       let rl = max(s.lightAlpha / 0.6, 0.0046);
-      spec *= waterGlint(pt, dFacet * NoH * PI * rl * rl / (4.0 * max(LoH, 0.05)));
+      let nhk2 = max(sq(saturate(dot(pt.nk, h))), 1e-6);
+      let dCount = exp(-(1.0 - nhk2) / (nhk2 * sig2)) / (PI * sig2 * nhk2 * nhk2);
+      spec *= waterGlint(pt, dCount * sqrt(nhk2) * PI * rl * rl / (4.0 * max(LoH, 0.05)));
     }
   }
   let body = waterBodyDirect(s, l).total;

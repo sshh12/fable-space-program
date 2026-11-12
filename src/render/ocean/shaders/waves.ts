@@ -54,7 +54,7 @@ struct OceanUniforms {
   fade: vec4f,          // x = fadeStart, y = fadeEnd, z = radius of complete wave detail, w = lift of the flat band surface (m)
   wind: vec4f,          // x = U10 (m/s), y = Cox-Munk mean square slope, z = slope variance below the finest cascade, w = choppiness (already in the textures)
   time: vec4f,          // x = tau = frac(t / T), y = tau of the previous frame, z = T (s), w = dt (s)
-  glint: vec4f,         // x = reactive-mask value inside the sun's glitter path, y = slope variance left to the lobe below every wave layer, z = factor on the wave detail from the camera's height (1 low .. 0 high), w = 0
+  glint: vec4f,         // x = reactive-mask value inside the sun's glitter path, y = slope variance left to the lobe below every wave layer, z = factor on the wave detail from the camera's height (1 low .. 0 high), w = profiling: terms of the near pass switched off (bits; 0 normally)
   shore: vec4f,         // x = shore foam depth (m), y = refraction distortion, z = chromatic offset, w = statistical whitecap coverage
   counts: vec4u,        // x = swell components, y = vessels, z = ripples, w = flags (bit 0 = wake texture valid, bits 8..11 = debug view, bits 16..20 = wave layers updated this frame)
   wake: vec4f,          // xy = plane offset of the wake texture centre from the reference point, z = extent (m), w = 1 / extent

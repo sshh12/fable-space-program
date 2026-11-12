@@ -50,6 +50,8 @@ export interface OceanFrameData {
   detailRadius: number;
   /** Factor on the wave detail from the camera's height (1 low, 0 from where the far-wave bank alone is drawn). */
   detailScale: number;
+  /** Profiling: terms of the near pass switched off (bits, OCEAN_PROFILE_SKIP; 0 = the normal pass). */
+  profileSkip: number;
   bandLift: number;
   windSpeed: number;
   coxMunk: number;
@@ -124,7 +126,7 @@ export function packOceanUniforms(d: OceanFrameData, f: Float32Array, u: Uint32A
   v4(d.fadeStart, d.fadeEnd, d.detailRadius, d.bandLift);
   v4(d.windSpeed, d.coxMunk, d.subVariance, d.choppiness);
   v4(d.tau, d.tauPrev, d.repeatPeriod, d.dt);
-  v4(d.glintReactive, d.unresolvedFloor, d.detailScale, 0);
+  v4(d.glintReactive, d.unresolvedFloor, d.detailScale, d.profileSkip);
   v4(d.shoreFoamDepth, d.refractionDistortion, d.chromaticOffset, d.whitecaps);
   u[o] = d.swell.count;
   u[o + 1] = Math.min(d.vessels.length, MAX_VESSELS);

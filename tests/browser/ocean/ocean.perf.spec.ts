@@ -97,6 +97,64 @@ async function openCalibrated(page: Page, url: string): Promise<void> {
 const fmt = (r: Row & { windows: string }): string =>
   `ocean ${r.oceanP99.toFixed(3)} p99 / ${r.oceanP50.toFixed(3)} p50 ms (FFT ${r.fftP99.toFixed(3)}, wake ${r.wakeP99.toFixed(3)}, reactive ${r.reactiveP99.toFixed(3)}, water pass ${r.waterP99.toFixed(3)} p99 / ${r.waterP50.toFixed(3)} p50), core.lighting ${r.lightingP99.toFixed(3)} / ${r.lightingP50.toFixed(3)}, ${r.patches} patches, frame p99 ${r.frameP99.toFixed(2)} ms, ballast ${r.ballast.toFixed(2)} ms; windows ocean/water/fft p99: ${r.windows}`;
 
+/**
+ * Where the near pass's time goes: the water pass's median with one term switched off at a time
+ * (OceanDebug.setProfileSkip), at the splashdown and above the coast. A measurement, no line of its own: it
+ * says which term to cut when the budget test below fails. One window of 240 frames per switch.
+ */
+test('profile of the near pass: the cost of each term at the splashdown and above the coast', async ({ page, pageLog }) => {
+  test.setTimeout(45 * 60_000);
+  const TERMS: [string, number][] = [
+    ['none (the pass as shipped)', 0],
+    ['glitter cells', 1],
+    ['foam (map, lace, relief, surf, wake, lap)', 2],
+    ['refraction, bed and caustics', 4],
+    ['vessel image', 8],
+    ['seabed depth (march and plane)', 16],
+    ['wave layers (cascades, capillaries, long waves)', 32],
+    ['swell in the fragment', 64],
+    ['sun shadow lookup', 128],
+    ['cloud lookup', 256],
+    ['ambient term (sky reflection, body)', 512],
+    ['direct sun term', 1024],
+    ['seabed depth in the vertex stage', 4096],
+    ['sun shadow + cloud + ambient + direct sun', 128 + 256 + 512 + 1024],
+    ['everything after the G-buffer reads', 2048],
+  ];
+  await withGpuLock(async () => {
+    await openCalibrated(page, '/labs/ocean/?preset=splash&perf=features&scale=1&governor=off');
+    const scene = async (name: string): Promise<void> => {
+      const rows: string[] = [];
+      let base = 0;
+      for (const [label, mask] of TERMS) {
+        const p50 = await page.evaluate(async (m) => {
+          window.__ocean!.ocean!.debug.setProfileSkip(m);
+          await window.__test!.waitFrames(30);
+          window.__test!.resetPerf();
+          await window.__test!.waitFrames(240);
+          const ps = window.__lab!.renderer.passStats();
+          const separate = ['ocean.fft', 'ocean.foam', 'ocean.wake', 'ocean.reactive', 'ocean.fieldBake'];
+          return Object.entries(ps)
+            .filter(([n]) => n.startsWith('ocean.') && !separate.includes(n))
+            .reduce((a, [, v]) => a + v.p50, 0);
+        }, mask);
+        if (mask === 0) base = p50;
+        rows.push(`  ${label}: ${p50.toFixed(3)} ms${mask === 0 ? '' : ` (the term: ${(base - p50).toFixed(3)})`}`);
+      }
+      await page.evaluate(() => window.__ocean!.ocean!.debug.setProfileSkip(0));
+      console.log(`near pass p50 with one term off, ${name}:\n${rows.join('\n')}`);
+    };
+    await scene('splashdown');
+    await page.evaluate(() => {
+      window.__ocean!.applyPreset('shore');
+      window.__ocean!.setCamera({ north: 120, alt: 60, heading: 70, pitch: -8 });
+    });
+    await page.evaluate(() => window.__test!.waitFrames(60));
+    await scene('coast 60 m');
+    await expectNoErrors(page, pageLog);
+  });
+});
+
 test('ocean GPU budget at 1440p: splashdown, pad-like coast, ascent at 10 km, LEO; the far-water share of lighting', async ({ page, pageLog }) => {
   test.setTimeout(45 * 60_000);
   await withGpuLock(async () => {

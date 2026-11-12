@@ -42,6 +42,26 @@ import { OceanVessels, type VesselFrame } from './vessels';
 export const OCEAN_FEATURE_ID = 'ocean';
 /** Debug views of the near-field surface: one shading term each (lab diagnostics). */
 export const OCEAN_DEBUG_VIEWS = { none: 0, skyReflection: 1, body: 2, sunSpecular: 3, foam: 4, normal: 5, roughness: 6, foamMap: 7, refraction: 8, surf: 9 } as const;
+/**
+ * Profiling of the near pass (debug.setProfileSkip): each bit switches one term of the forward water pass off, so
+ * a perf run can measure what the term costs (tests/browser/ocean/ocean.perf.spec.ts, "profile"). 0 = the pass
+ * as shipped; the picture with a bit set is wrong by that term.
+ */
+export const OCEAN_PROFILE_SKIP = {
+  glitter: 1,
+  foam: 2,
+  refraction: 4,
+  vesselImage: 8,
+  seabedDepth: 16,
+  waveLayers: 32,
+  swell: 64,
+  sunShadow: 128,
+  cloudLight: 256,
+  ambient: 512,
+  directSun: 1024,
+  everything: 2048,
+  vertexSeabed: 4096,
+} as const;
 /** Seed of the foam lace texture (one texture for every body). */
 const LACE_SEED = 7;
 const MAX_PATCHES = 4096;
@@ -82,6 +102,10 @@ export interface OceanDebug {
   setRefractionScale(scale: number): void;
   /** Scale the values written to the TAA reactive mask (1 = the data, 0 = none). Debug hook for the stability check. */
   setReactiveScale(scale: number): void;
+  /** Switch terms of the near pass off (a sum of OCEAN_PROFILE_SKIP values; 0 = the pass as shipped). For perf runs. */
+  setProfileSkip(mask: number): void;
+  /** Threshold of the whitecaps' breaking criterion (sigmas) instead of the data's foamSigma; null = the data. For the calibration sweep of foam.spec. */
+  setFoamSigma(sigma: number | null): void;
   /** Switch the direct specular of brdf_water (sun glint) off to isolate it in tests; true restores it. */
   setDirectSpecular(on: boolean): void;
 
@@ -143,6 +167,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let debugView = 0;
   let refractionScale = 1;
   let reactiveScale = 1;
+  let profileSkip = 0;
+  let foamSigmaOverride: number | null = null;
   let directSpecular = true;
   let lastFrame: FrameContext | null = null;
   let depthReadLayout: GPUBindGroupLayout;
@@ -275,6 +301,12 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     },
     setReactiveScale(scale) {
       reactiveScale = scale;
+    },
+    setProfileSkip(mask) {
+      profileSkip = mask;
+    },
+    setFoamSigma(sigma) {
+      foamSigmaOverride = sigma;
     },
     setDirectSpecular(on) {
       directSpecular = on;
@@ -749,7 +781,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         });
       }
       // The foam map follows the camera's nadir; a level no pixel resolves is not updated.
-      const foamLevels = waves ? ensureFoam(body).prepare(ref.x, ref.y, chart, nadirFootprint, dt) : [];
+      const foamLevels = waves ? ensureFoam(body).prepare(ref.x, ref.y, chart, nadirFootprint, dt, foamSigmaOverride ?? t.foamSigma) : [];
       // Field texture: covers fadeEnd plus a margin around the reference; re-centred when the reference has
       // moved a quarter of the margin (every few km of flight), or the chart or the body changed.
       const margin = 0.25 * t.fadeEnd;
@@ -781,6 +813,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
         fadeEnd: t.fadeEnd,
         detailRadius: t.detailFadeFraction * t.fadeStart,
         detailScale,
+        profileSkip,
         // The flat band surface sits this much above the sheet: covers the chord sag of the coarsest cells and
         // depth rounding, so the coplanar surfaces never z-fight under 'greater-equal'.
         bandLift: 0.05 + (t.fadeEnd / 48) ** 2 / (8 * t.seaRadius),
