@@ -5,17 +5,16 @@
 import type { TimedStageAction } from '@/core/contracts/defs';
 import type { ChuteEnvelope, FidelityTier, PartSnapshot, Readouts, StageInfo, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
-import { hashU32 } from '@/core/math/hash';
 import { quat } from '@/core/math/quat';
 import { G0 } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { rcsTranslationActive } from '../control/allocation';
 import { partSkinTemperature } from '../dynamics/thermal';
 import { cloneModuleState } from './assemble';
+import { stateHash } from './codec';
 import { computeMassProps, isGroundFixed, partDryMass } from './massProps';
 import { anyEngineBurning, ispAt } from './modules/engine';
 import { anyChuteDeployed, chuteEnvelope } from './modules/parachute';
-import { actionParts } from './split';
 import { anyPending, helmCraft, legsDeployed, nextLiveStage } from './staging';
 import { structureOf } from './structure';
 import { G_DOSE_LIMIT, type EngineDef, type Vessel } from './types';
@@ -666,62 +665,10 @@ export function needsIntegration(vessel: Vessel, env: VesselEnvironment): boolea
 
 // --------------------------------------------------------------------------------------- state hash
 
-const f64 = new Float64Array(1);
-const u32 = new Uint32Array(f64.buffer);
-
-class Hasher {
-  a = 0x811c9dc5;
-  b = 0x9e3779b9;
-  num(x: number): void {
-    f64[0] = x;
-    this.a = hashU32((this.a ^ u32[0]!) >>> 0);
-    this.a = hashU32((this.a ^ u32[1]!) >>> 0);
-    this.b = hashU32((Math.imul(this.b, 31) + u32[0]!) >>> 0);
-    this.b = hashU32((Math.imul(this.b, 31) + u32[1]!) >>> 0);
-  }
-  str(s: string): void {
-    this.num(s.length);
-    for (let i = 0; i < s.length; i++) this.num(s.charCodeAt(i));
-  }
-  any(x: unknown): void {
-    if (typeof x === 'number') this.num(x);
-    else if (typeof x === 'boolean') this.num(x ? 1 : 0);
-    else if (typeof x === 'string') this.str(x);
-    else if (x === null || x === undefined) this.num(-1);
-    else if (Array.isArray(x)) for (const e of x) this.any(e);
-    else if (typeof x === 'object') for (const k of Object.keys(x as object).sort()) this.any((x as Record<string, unknown>)[k]);
-  }
-  hex(): string {
-    return (this.a >>> 0).toString(16).padStart(8, '0') + (this.b >>> 0).toString(16).padStart(8, '0');
-  }
-}
-
-/** Stable hash (16 hex digits) of the complete dynamic state of a vessel. */
+/**
+ * Stable hash (16 hex digits) of the complete dynamic state of a vessel: the hash of its codec body
+ * (./codec.ts), so whatever the codec carries is hashed and nothing else is.
+ */
 export function vesselStateHash(vessel: Vessel): string {
-  const h = new Hasher();
-  h.str(vessel.id);
-  h.any([vessel.r, vessel.v, vessel.q, vessel.w]);
-  // The base craft's stage state first (a vessel of one craft has no other); the rest of the craft model after the parts.
-  const base = vessel.crafts[0]!;
-  h.any([base.nextStage, base.stageLockout, vessel.hold, vessel.surface, vessel.gLoad, vessel.gDose, vessel.crewAlive, vessel.rcsEnabled, vessel.lightsOn, vessel.throttle]);
-  h.any([vessel.sas.enabled, vessel.sas.mode, vessel.sas.hold, vessel.sas.integral, vessel.sas.hasTarget, vessel.sas.hasTarget ? vessel.sas.target : null]);
-  h.any(vessel.anchor);
-  for (const pa of base.pending) h.any([pa.timeLeft, pa.stageIndex, pa.action.kind, actionParts(pa.action)]);
-  for (const p of vessel.parts) {
-    h.str(p.instanceId);
-    h.any([p.pos, p.rot, p.resources, p.temps, p.stress, p.panel]);
-    for (const m of p.modules) h.any(m);
-    for (const r of p.rt) h.any(r);
-  }
-  // A vessel of several craft (or with a link): every craft record, the links, the helm and each part's craft.
-  if (vessel.crafts.length > 1 || vessel.links.length > 0) {
-    for (const c of vessel.crafts) {
-      h.any([c.craftId, c.vehicleId, c.ownerId, c.name, c.joinedTick, c.nextStage, c.stageLockout, c.sinceStaging, c.policy.lendAttitude, c.policy.lendEngines, c.policy.lendPropellant, c.policy.helm]);
-      for (const pa of c.pending) h.any([pa.timeLeft, pa.stageIndex, pa.action.kind, actionParts(pa.action)]);
-    }
-    h.any(vessel.links.map((l) => [l.a, l.b, l.roll]));
-    h.any([vessel.helm.accountId, vessel.helm.craft, vessel.helm.controlPart]);
-    h.any(vessel.parts.map((p) => p.craft));
-  }
-  return h.hex();
+  return stateHash(vessel);
 }

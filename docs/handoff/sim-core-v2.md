@@ -28,6 +28,9 @@ This file is a running log first; the sections below it are filled as each step 
 - 02:10 step 3 complete: the craft model. The mission state hash did not change (`b850b94ea2dcc1a5`), the
   trajectory guard and the six fixtures are bit-identical.
 
+- 03:00 step 4 complete: the state is whole and versioned; golden re-baseline 2 of this package:
+  `7da3ffe86c85228d` (reproduced on a second run; guard and fixtures bit-identical before and after).
+
 ## Step 1: the tick grid (MIGRATION_V2 3.1)
 
 ### What changed
@@ -340,3 +343,103 @@ an assembly.
   did not go with have it closed at once.
 - The id of the identity-keeping piece of a single craft is kept even when its root part was destroyed
   (v1 behaviour; no other piece can claim that id).
+
+## Step 4: state is whole and versioned (MIGRATION_V2 3.4)
+
+### State that left the structure cache
+
+`Vessel.carried: { probes: ProbeState[]; buoyWet: boolean[]; wake: number[] } | null` (`types.ts`): per contact
+probe the touching flag, the wet flag and the friction anchor in the body-fixed frame; per buoyancy sphere
+whether it is under water; per thermal entry the wake factor. The lists are in the order of the structure
+(`probes`: the structural probes, then the feet of each leg set). `Structure` holds no state of its own any
+more: each `Probe` points at its `ProbeState` (`pr.s`), `st.carried` is the vessel's object.
+`invalidateStructure(vessel)` (every change of the part set: split, weld, dock, crew loss) marks the cache
+stale and starts the carried state afresh, exactly where v1 lost it with the cache; a copy (`cloneVessel`)
+and the codec carry it, and a rebuilt structure ties itself to a carried state of its own lengths.
+
+### The codec (`src/sim/vessel/codec.ts`)
+
+```ts
+encodeVessel(vessel, { defsHash: string; refs?: VehicleRefSource; version?: number }): Uint8Array
+decodeVessel(bytes, { resolver: DefResolver; migrations?: MigrationRegistry }): { vessel: Vessel; report: DecodeReport }
+stateHash(vessel, refs?: VehicleRefSource): string            // hash of the codec BODY; vesselStateHash(vessel) is this
+readHeader(bytes): { version: number; defsHash: string; bodyAt: number }
+libraryResolver(defs): DefResolver & VehicleRefSource           // library vehicles by reference, any other design embedded
+partFingerprint(def): string;  vehicleHash(vehicle): string;  contentHash(x): string;  hashBytes(bytes): string
+interface DefResolver { vehicle(ref: { kind: 'library'; id; hash }): VehicleDef | null; part(defId): PartDef | null }
+type VehicleRef = { kind: 'library'; id: string; hash: string } | { kind: 'embedded'; design: VehicleDef }
+interface DecodeReport { version; defsHash; unknownBlocks: number[]; migrated: {...}[]; vehicleChanged: {...}[] }
+class VesselDecodeError extends Error { problem: 'format' | 'version' | 'vehicle' | 'part' | 'fingerprint' | 'block' }
+CODEC_VERSION = 2;  CODEC_VERSIONS_READ = [1, 2]
+```
+
+- **Layout**: magic `FSPV`, u16 version, the `defsHash` string; then tagged, length-prefixed blocks
+  (STRINGS, DEFS, CRAFTS, VESSEL, PARTS, CARRIED) and an end tag. Every part is a length-prefixed record
+  whose resource block and module blocks are length-prefixed in turn; a module block is the module's state
+  and run-time record in a self-describing plain-data form (keys by string reference).
+- **Exact**: vectors and attitudes as raw float64; scalars in a tagged shortest-exact form (+0, -0, NaN,
+  +Infinity, -Infinity, small integers, float32-exact values, raw float64). Tested with 22 awkward values in
+  every encoding.
+- **Definitions through the resolver, never by indexing a library**: a craft's vehicle is a library id plus
+  the content hash of that `VehicleDef`, or the embedded design; a part's definition is its id plus its
+  FINGERPRINT (dry mass, resources, modules, number of thermal surfaces).
+- **Version 1** wrote the carried probe states as one flag byte per probe, **version 2** writes three bit
+  sets; both are read.
+- **The state hash is the hash of the body**: it does not depend on `defsHash`, so a change of an unrelated
+  definition does not move the golden hash; it does depend on the fingerprints of the parts in use and on
+  the content hash of each craft's vehicle. **For `fleet-data`: a change of `meridian-lunar.json` or of the
+  modules, resources or mass of one of its parts moves the mission's golden hash** (MIGRATION_V2 keeps that
+  vehicle byte-identical through wave 4).
+
+### The migration registry (`src/sim/vessel/migrations/index.ts`)
+
+`MigrationRegistry(list)` with `path(defId, from, to)`; `PartMigration { defId, from, to, describe,
+migrate(saved: SavedPart, def: PartDef): SavedPart }` (pure; `SavedPart` is the part's resources, module
+states and surface temperatures as plain data, independent of the current definition); the helpers
+`fitResources` (amounts clamped to the new capacities, a new tank empty, a retired one dropped),
+`insertModule`, `dropModule`, `fitSurfaces`. Decode runs the chain from the written fingerprint to the
+current one, then checks every block against the definition, recomputes the mass properties and starts
+the carried state afresh. A fingerprint with no way to the current one is refused naming the part.
+`MIGRATIONS` (the released ones) is empty: no definition has changed since the first blob.
+**Rule for every later package that edits a part definition's modules, resources or mass: add the entry;
+the corpus test fails until it exists.**
+
+### The corpus (`tests/unit/sim-vessel/codec-corpus/`)
+
+Twelve blobs: the six scenes of `tests/unit/sim-vessel/codecScenes.ts`, each written by codec version 1 and
+by version 2, with `corpus.json` (file, scene, version, library hash, bytes, parts, the state hash of the
+vessel that was written). `codec.test.ts` decodes every one and compares the hash. `record.ts` adds
+missing entries and never rewrites one.
+
+### The cheap copy (`src/sim/vessel/capture.ts`)
+
+`captureVessel(vessel): VesselCapture`, `restoreVessel(vessel, capture)`: while the vessel has the part set
+of the capture the state is written back into its own objects and the structure cache is kept; after a
+structural change since the capture the vessel takes the captured part set. The capture is not consumed.
+
+### Acceptance (measured; `tests/unit/sim-vessel/codec.test.ts`, 16 tests)
+
+| Scene | Parts | Bytes (v2) | Bytes (v1) | State hash equal at load | Re-encoding identical | Bit-identical after 6,000 steps |
+|---|---|---|---|---|---|---|
+| lander 60 steps into a touchdown on an 8 deg slope | 9 | 2,948 | 3,018 | yes | yes | yes |
+| lander 150 steps into the touchdown | 9 | 2,950 | 3,020 | yes | yes | yes |
+| capsule at peak heating (SAS, thrusters, ablating) | 2 | 1,688 | 1,699 | yes | yes | yes |
+| stack mid-staging (decoupling and ignition queued, separation motors burning) | 38 | 8,219 | 8,548 | yes | yes | yes (through the separation) |
+| coasting ascent stage and capsule, tumbling | 5 | 2,205 | 2,242 | yes | yes | yes |
+| the 38-part stack in ascent, nine engines burning | 38 | **8,197** (target under 9,000) | 8,526 | yes | yes | yes |
+
+(Bytes with a 12-character library hash in the header; decode takes 0.2-0.6 ms.)
+
+| Criterion | Result |
+|---|---|
+| A fixture written by codec version N-1 decodes | the six version-1 blobs of the corpus decode to the recorded state hashes; the version-1 lander mid-touchdown flies on for 6,000 steps exactly as the vessel it was written from, friction anchors included |
+| A fixture written under a changed PartDef decodes through the registry | a tank resized (amount clamped from above 1,000 kg to 1,000) and a module added (a second light, neutral): both migrations reported, mass recomputed (more than 100 kg lighter), the vessel flies on; without the entries the decode is refused naming the part and both fingerprints; a chain of two migrations runs in order; a gap is a refusal |
+| An unknown block is reported, not mis-read | a block of tag 99 appended: `report.unknownBlocks = [99]`, the state hash equal; a module block that does not fit its definition is an error naming the part and the module |
+| A design that is not in the library round-trips through the embedded kind | a ferry whose vehicle the reader's library does not have: decoded from the design inside the blob, state hash equal; the same vessel under a library that has the design is more than 500 bytes smaller |
+| Golden re-baseline 2 | `7da3ffe86c85228d`, 596,092 steps (before: `b850b94ea2dcc1a5`); reproduced on a second run; the trajectory guard and the six fixtures bit-identical before and after |
+
+Also tested: an assembly (two craft, owners, a policy with a list, links, the helm on the second craft)
+round-trips; a version this build does not read, missing magic bytes and truncated data are refused by
+name; an unknown part or vehicle is refused by name; a vehicle whose content changed is reported; the
+capture put back gives the following flight again bit for bit with the structure cache kept, and brings
+dropped parts back when taken before a staging.

@@ -9,6 +9,30 @@ export { cloneVessel, cloneCraft, createCraft, defaultControlPart, linkRoll, Ves
 export { assemblyId, craftRootInstanceId, eventPartId, findCraftPart, findPartByKey, isAssemblyId, partKey, partKeyOf, seededCraftIds, type CraftIdSource } from './ids';
 export { addLink, applyImpulseAt, combinedMomentum, dockBase, dockFace, dockMerge, momentumOf, snapPose, undock, type Momentum } from './dock';
 export { mergeVessels, separateVessel } from './split';
+export {
+  canonicalJson,
+  CODEC_VERSION,
+  CODEC_VERSIONS_READ,
+  contentHash,
+  decodeVessel,
+  encodeVessel,
+  hashBytes,
+  libraryResolver,
+  partFingerprint,
+  readHeader,
+  REFS_BY_CONTENT,
+  stateHash,
+  vehicleHash,
+  VesselDecodeError,
+  type DecodeOptions,
+  type DecodeReport,
+  type DefResolver,
+  type EncodeOptions,
+  type VehicleRef,
+  type VehicleRefSource,
+} from './codec';
+export { dropModule, fitResources, fitSurfaces, insertModule, MigrationRegistry, MIGRATIONS, type PartMigration, type SavedModule, type SavedPart } from './migrations';
+export { captureVessel, restoreVessel, type VesselCapture } from './capture';
 export { computeMassProps, vesselMass, partMass } from './massProps';
 export { structureOf, rebuildStructure, invalidateStructure, vesselBaseY, panelAzimuth, legFootLocal } from './structure';
 export type { Structure } from './structure';
