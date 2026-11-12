@@ -1240,3 +1240,58 @@ under both forward windows). Unit tests: two new in `tests/unit/flight-ui/camera
 Open after this part, beside section 11's list: `core-5` and `core-6` with their owners; the cycle-seat
 key is not in the app until `core-6`; in the app no feature is restarted at a capture until `core-5`.
 Runs of this part: batch 10 (21:44, wait 42 minutes), batch 11 (22:03, 42), batch 12 (22:13, 20).
+
+## 13. Shared-code maintainer, 2026-11-12 continued (22:20 on): the lead's two items, three more requests, and where it stands
+
+On the coordinator's message of 22:20: finish what is in flight, answer small requests, start nothing large.
+
+| Item | Result | One line |
+|---|---|---|
+| `leo-day` exact in `tests/browser/integration/exact.spec.ts` (the lead) | done `9f72235`, run 22:44 | With core-4 done by the clouds, the lab forwarding `resetTemporal` and `renderExact` asking before the restart, the low-orbit page's three captures are identical to the bit |
+| the 261 pixels on the vessel (the lead) | narrowed, not cured: request `core-7` (sky-lighting) | It needs the sky, the atmosphere and the cockpit together and is the first capture of a page against any later one; not the vehicle's, the vfx's, the ocean's or the terrain's | See below |
+| `ocean-9` (blocking) | resolved `c74f012`, run 22:47 | `sampleSunShadowHard(posRelCam, n)` in the chunk `shadows`: one comparison tap, additive; drawn on two frames through `shadowdebug` flag 16: the filtered lookup's shadows with a hard edge, no acne |
+| `terrain-render-10` | read, NOT started (note in the request) | Three frame-total rows in the budget spec at the terrain's three waived views; not small, and the budget table is not mine to run. Until it is done the lead's condition for the terrain's waivers is asserted nowhere |
+| `ocean-10` | read, NOT started (note in the request) | A decision about the display curve's white (+4.03 EV over mid-grey against a camera's +3) or a glare term: the lead's call; the note says what each option touches |
+
+**The pixels on the vessel.** Run 22:13 (out/core-support/batch12.log): the first capture of the first
+page differed from the two later ones, which agreed with each other, in 261 single pixels on the vessel's
+bright metal and in its glare, by up to 7 levels (overlay looked at). Run 22:44 (batch13.log): the page
+three times identical; five fresh pages without one package each (sky, vfx, cockpit, ocean, atmosphere)
+identical; the page without the TERRAIN differed again, 550 pixels on the vessel by up to 15 levels, 124
+of them the same pixels. So it is not the terrain's, it needs the first capture to come early (the
+terrain's streaming otherwise holds the capture back), and it is the first capture of a page against any
+later one: an input that is still arriving when everything reports idle, not a sequence that is not
+restarted. Run 23:35 (batch15.log) took one more
+package away from the page without the terrain: without the sky, the cockpit or the atmosphere the two
+captures are identical; without the vfx or the ocean they differ (637 and 496 pixels); the full page was
+identical again. The sky's probe had completed 12 or 13 cycles at the first capture of the differing pages
+and 26 or 27 at the later one. The vessel's ambient light and reflections come from that probe and the
+probe reads the atmosphere's tables, so it is the likely carrier; the cockpit's part I cannot explain.
+Filed as `core-7` to sky-lighting, with the table. Until it is cured: a reference image of a checkpoint
+with the vehicle in view is safe when it is NOT the first capture of its page (capture twice, keep the
+second), and the full page with the terrain passed in two runs of three.
+
+The spec keeps: the later capture against the fresh load, the sky probe's state per capture in the
+attempts' line, and a soft expectation that the three captures are identical to the bit (beside the
+manifest's floor, which 261 pixels pass).
+
+**A minute of a broken tree, mine.** At about 22:24 UTC a patch script of mine wrote a line break into a
+string literal of `src/render/core/renderer.ts`; my typecheck found it and it was repaired within about a
+minute, before the commit (`c74f012`). A page loaded in that minute failed to load. The ocean's run that
+started at 22:24:41 may have been hit in its first tests; told in `ocean-9`. Cause: an escaped `\n` in a
+shell heredoc reached Python as a line break. Scripts that write string literals go through the Write
+tool, as the brief says; this one did not.
+
+**The shared budgets table (ARCHITECTURE 29.1), the core's line.** Core fixed 3.0 ms: AO + contact 0.6,
+lighting 1.0, TAA 0.55, bloom 0.3, tonemap/exposure 0.2, copies + depth pyramid 0.35. Last measured in the
+core's own perf scene at 1440p under load (out/core-support/batch9.log, 20:45, with every default of this
+day except the soot's hue and the later changes, none of which adds a pass): 0.120, 0.200, 0.113, 0.051,
+0.048, 0.063, total 0.596; G-buffer 0.182 + shadows 0.426 = 0.608 of 2.0 at 1.7 M triangles. I did not run
+the table itself (`budget.perf.spec.ts`, the lead's run) today, so the per-checkpoint sums with every
+package are as of the lead's last run, and the table has no rows yet for the terrain's three waived views
+(`terrain-render-10`).
+
+**Open, with their owners**: `core-7` (sky-lighting: above), `core-2` (terrain), `core-3` (sky: the flare of a hidden sun), `core-5` (app
+shell: `timedFeature` forwards `resetTemporal`; taken), `core-6` (flight-ui: the action
+`cockpitSeat:next`; the lead: its wiring), `terrain-render-10` and `ocean-10` (above), and section 11's
+list (the contact shadow's half-resolution edge; frost's sparkle).

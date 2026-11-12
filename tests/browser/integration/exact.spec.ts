@@ -26,10 +26,14 @@ const FRAMES = 64;
  * ones, which agreed, in 261 single pixels on the vessel's bright metal and in its glare, by up to 7 levels.
  * In the next run (22:44) this page was identical three times, and so were five fresh pages without one
  * package each; the page WITHOUT THE TERRAIN differed again (550 pixels, 124 of them the same ones, by up
- * to 15 levels): without the terrain's streaming to wait for, the first capture comes earlier. So it is not
- * the terrain's, and the look of it is an input still arriving at the first capture, which no `isIdle`
- * reports, not a sequence that is not restarted. The test asks for bit-identical captures (softly, beside
- * the manifest's floor) and logs the sky probe's state at each capture.
+ * to 15 levels): without the terrain's streaming to wait for, the first capture comes earlier. A third run
+ * (23:35) took one more package away from that page: without the sky, the cockpit or the atmosphere the
+ * two captures are identical; without the vfx or the ocean they differ (637 and 496 pixels). So it is not
+ * the terrain's, the vfx's or the ocean's; it needs the sky, the atmosphere and the cockpit together; and
+ * it is the first capture of a page against any later one (the sky's probe had completed 12 or 13 cycles at
+ * the first, 26 or 27 at the later), not a sequence that is not restarted. Request core-7 (sky-lighting).
+ * The test asks for bit-identical captures (softly, beside the manifest's floor) and logs the sky probe's
+ * state at each capture.
  */
 const PAGES: Record<string, { url: string; exact: boolean }> = {
   'leo-day': { url: '/labs/integration/?scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1', exact: true },
@@ -114,23 +118,5 @@ for (const [name, { url, exact }] of Object.entries(PAGES)) {
     }
     // And to the bit (soft: the diff pictures and the attempts' lines above say which capture stands apart).
     expect.soft(Math.max(samePage.maxAbs, freshLoad.maxAbs, laterAgainstFresh.maxAbs), 'the three captures are identical to the bit').toBe(0);
-  });
-}
-/**
- * Diagnosis (2026-11-12, to be taken out again): whose input it is. The page without the terrain (where the
- * first capture differs from a later one) and without one more package at a time; the pair that is identical
- * names the package, and if none is, it is the vehicle's or the core's own.
- */
-for (const without of ['terrain', 'terrain,sky', 'terrain,vfx', 'terrain,cockpit', 'terrain,ocean', 'terrain,atmosphere']) {
-  test(`diagnosis: leo-day without ${without}, the first capture of the page against one after another history`, async ({ page }) => {
-    await openPage(page, `${PAGES['leo-day']!.url}&without=${without}`, { timeoutMs: 240_000 });
-    const a = await capture(page);
-    await page.evaluate(() => window.__test!.setDeterministic(false));
-    await page.evaluate(() => window.__test!.waitFrames(91));
-    await page.evaluate(() => window.__test!.setDeterministic(true));
-    const b = await capture(page);
-    const d = imageDifference(a.png, b.png);
-    if (d.maxAbs > 0) fs.writeFileSync(path.join(repoRoot, 'out', 'screens', 'integration', `exact-leo-day-without-${without.replace(',', '-')}.diff.png`), d.diff);
-    console.log(`  leo-day without ${without}: about ${Math.round(d.differingFraction * 1280 * 720)} pixels differ, max ${d.maxAbs}; probe at the first capture ${JSON.stringify(a.attempts[a.attempts.length - 1]!.probe)}, at the later one ${JSON.stringify(b.attempts[b.attempts.length - 1]!.probe)}`);
   });
 }
