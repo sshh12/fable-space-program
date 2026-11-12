@@ -119,15 +119,21 @@ test('a fireball by day does not darken the sky around it (within 5 %)', async (
   const rows: { t: number; value: number }[] = [];
   for (const t of [0.9, 1.03, 1.2, 1.6, 2.5, 4.5]) {
     await page.evaluate((x) => window.__vfx!.runTo(x), t);
-    // (The first picture is the reference: the meter is given time to settle on the scene before the
-    // explosion, as in the splash test above. After 60 frames it was still on its way from the page's first
-    // frame, and the step measured was that, not the fireball.)
+    // (The first picture is given time to settle on the scene before the explosion, as in the splash test.)
     await waitIdle(page, t === 0.9 ? 240 : 60);
     rows.push({ t, value: (await patch(page, sky)).value });
   }
   console.log(`explosion by day: sky (pre-exposed) ${rows.map((r) => `${r.t} s: ${r.value.toFixed(4)}`).join(', ')}`);
+  // The fireball does not darken the sky: no frame of it is more than 5 % under the frame before it ...
   const before = rows[0]!.value;
-  for (const r of rows) expect(Math.abs(r.value / before - 1), `sky at ${r.t} s`).toBeLessThan(0.05);
+  for (const r of rows) expect(r.value / before, `sky at ${r.t} s against the frame before the explosion`).toBeGreaterThan(0.95);
+  // ... and from the flash (1.2 million cd/m^2) to the dark smoke the sky keeps one value within 5 %: the
+  // reference is the last frame, the same scene with the fire out. (The frame BEFORE the explosion is not that
+  // scene: it holds the sunlit vehicle, which the explosion removes, and with it the evidence of sunlit
+  // surfaces that bounds a daylight exposure from below, request vfx-7. In this lab, with its dark ground,
+  // the meter opens by a quarter of a stop when the vehicle is gone, fire or no fire.)
+  const after = rows[rows.length - 1]!.value;
+  for (const r of rows.slice(1)) expect(Math.abs(r.value / after - 1), `sky at ${r.t} s against the frame after the fire`).toBeLessThan(0.05);
   await expectNoErrors(page, pageLog);
 });
 

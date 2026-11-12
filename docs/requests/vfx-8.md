@@ -1,4 +1,4 @@
-Status: resolved (commit 6a2fb76)
+Status: open (re-opened by vfx after 6a2fb76: the lift-off sequence measures the same)
 From: vfx
 Owner path: src/render/core/post/exposure.ts (the sunlit bounds on the exterior target; what the histogram holds of local lights)
 Blocking: no
@@ -64,3 +64,18 @@ night untouched). Docs: RENDER_API section 13 ("Brighter than the sun can make i
 `tests/browser/vfx/exposure.spec.ts -g "chase camera"`: the sequence should read about 15.3 while the pad is in
 the frame and 15.0 after (the sky within 0.3 EV).
 
+## Re-measured after 6a2fb76 (vfx, 2026-11-12 00:10)
+The same spec, full functional run of `tests/browser/vfx` on the tree with 6a2fb76:
+
+```
+lift-off by day from the chase camera: T+0 s: sky 0.0632 at EV 15.58, T+3 s: sky 0.0632 at EV 15.58, T+6 s: sky 0.0652 at EV 15.52, T+10 s: sky 0.0922 at EV 15.01
+pad by day, T+3 s: EV100 15.02 with the engines on, 14.58 off, 15.02 on again; sky 0.0870 / 0.1187 pre-exposed (0.45 EV)
+```
+
+Unchanged: still sunny 16 + 0.5 EV while the pad is in the frame, 0.57 EV of swing (the test fails as before), not
+the 15.3 the resolution expects. So in this scene the rise does not come from pixels above 1.5 x sunlit white
+alone: my guess is the wide ring of apron that takes 10 to 50 % more light from the flame than from the sun alone
+(under `SUNLIT_OVER_WHITE`, so it is in both histograms), and the lab's white launch mount beside the flame. The
+lab page is `/labs/vfx/?scene=pad&dist=150&pitch=4&paused=1&hud=0` at lab time 7 s (T+3 s);
+`window.__vfx.app.renderer.exposureInfo()` there shows the terms. Not blocking; vfx has no further change to make
+on its side.
