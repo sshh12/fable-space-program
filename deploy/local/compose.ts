@@ -85,7 +85,7 @@ export async function startDockerPostgres(
   if (up.status !== 0) throw new Error('docker compose up postgres failed');
   const readyMs = performance.now() - t0;
   const { default: pg } = await import('pg');
-  const { clusterFacts } = await import('../roles/hello');
+  const { clusterFacts, productionLocale } = await import('../roles/hello');
   const c = new pg.Client({ connectionString: 'postgres://postgres:stack-local@127.0.0.1:47220/fsp' });
   await c.connect();
   const facts = await clusterFacts(c);
@@ -94,9 +94,9 @@ export async function startDockerPostgres(
     docker(['compose', '-f', COMPOSE_FILE, '-p', project, 'stop', 'postgres'], 120_000);
     if (started) stopDaemon(say);
   };
-  if (facts.serverEncoding !== 'UTF8' || facts.localeProvider !== 'builtin') {
+  if (!productionLocale(facts)) {
     await stop();
-    throw new Error(`the Postgres container of ${project} is ${facts.serverEncoding} with the ${facts.localeProvider} locale provider; refusing it (run with --fresh)`);
+    throw new Error(`the Postgres container of ${project} is ${facts.serverEncoding} with the ${facts.localeProvider} locale provider and locale ${facts.locale ?? 'unknown'}; refusing it (run with --fresh)`);
   }
   say(`postgres (container ${project}) ${facts.serverVersionNum} ${facts.serverEncoding}/${facts.localeProvider} ready in ${readyMs.toFixed(0)} ms`);
   return { readyMs, facts, stop };

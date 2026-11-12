@@ -9,7 +9,8 @@
  *        set, read through createPackTileSource in four modes and compared byte for byte with the fs source:
  *        whole packs on disk; the bucket (presigned ranges, the stand-in); the mirror in `ranges` mode; the
  *        mirror in `slices` mode at the deployed 256 KiB. The mirrors are the stack's shell proxying the bucket
- *        stand-in. --min-sets=N fails the sweep when fewer tile sets are packed.
+ *        stand-in. --min-sets=N fails the sweep when fewer tile sets are packed; --modes=whole,bucket,ranges,slices
+ *        picks modes (default all four).
  * trace  the recorded first session's tile requests, replayed in their order and timing windows (requests
  *        issued within 50 ms of each other are concurrent) through the pack source, against per-file fetching:
  *        requests and bytes on the bucket path, and bytes transferred in the mirror's slice mode
@@ -91,12 +92,16 @@ async function sweep(): Promise<number> {
   const base = await stackList();
   const bucket = base.mirrors.find((m) => m.id === 'bucket')!;
   const mirrorBase = state.urls.mirror;
-  const modes: [string, PackTileSource][] = [
+  const all: [string, PackTileSource][] = [
     ['whole packs on disk', createPackTileSource({ packListUrl: LOCAL_PACK_LIST_URL, fetch: createLocalPackFetch(PACKS) })],
     ['bucket ranges (presigned)', sourceWith({ ...base, mirrors: [bucket] })],
     ['mirror ranges', sourceWith({ ...base, mirrors: [{ id: 'mirror', mode: 'ranges', base: mirrorBase }] })],
     ['mirror slices 256 KiB (deployed)', sourceWith({ ...base, mirrors: [{ id: 'mirror', mode: 'slices', base: mirrorBase, sliceBytes: MEASURED_SLICE_BYTES }] })],
   ];
+  // --modes=whole,bucket,ranges,slices (default all): the first word of each mode's name.
+  const pick = opt('modes')?.split(',');
+  const modes = all.filter(([name]) => !pick || pick.some((p) => name.startsWith(p === 'whole' ? 'whole' : p === 'bucket' ? 'bucket' : p === 'ranges' ? 'mirror ranges' : 'mirror slices')));
+  console.log(`modes: ${modes.map(([n]) => n).join('; ')}`);
   const fsSrc = createFsTileSource(TILES);
   let mismatches = 0;
   const report: Record<string, unknown> = {};

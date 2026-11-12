@@ -14,7 +14,9 @@
  *              a committed row survives that kill
  *   refuse     a data directory created with other cluster settings (the package's default) is refused
  *   shapes     --shape=split and --shape=launch start every process on its own port
- *   offline    the stack starts with the Docker daemon stopped (no Docker process is involved)
+ *   offline    the stack starts with the Docker daemon stopped (no Docker process is involved), and while it runs
+ *              no process of the stack holds a TCP connection to anything but the loopback interface (the network
+ *              is not used: Get-NetTCPConnection of the launcher, the roles, Postgres and their children)
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
@@ -62,6 +64,34 @@ async function waitUp(name: string, sinceMs: number, timeoutMs = 90_000): Promis
   }
   throw new Error(`stack ${name} did not come up`);
 }
+/**
+ * Runs `fn` on a fresh connection, again on a connection reset or refusal for up to 15 s: a stack that has just
+ * written its state can still be restarting Postgres for a changed setting (the kill-row race, ECONNRESET).
+ */
+async function withDb<T>(url: string, fn: (c: pg.Client) => Promise<T>): Promise<T> {
+  const t0 = Date.now();
+  for (;;) {
+    const c = new pg.Client({ connectionString: url });
+    try {
+      await c.connect();
+      return await fn(c);
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? '';
+      if (Date.now() - t0 > 15_000 || !/ECONNRESET|ECONNREFUSED|57P03|57P01|08006/.test(`${code} ${(e as Error).message}`)) throw e;
+      await sleep(500);
+    } finally {
+      await c.end().catch(() => undefined);
+    }
+  }
+}
+
+/** Remote addresses of the TCP connections the given processes (and their children) hold, loopback excluded. */
+function remoteConnections(pids: number[]): string[] {
+  const ps = `$roots = @(${pids.join(',')}); $all = New-Object System.Collections.Generic.HashSet[int]; foreach ($r in $roots) { [void]$all.Add($r) }; do { $n = $all.Count; Get-CimInstance Win32_Process | Where-Object { $all.Contains([int]$_.ParentProcessId) } | ForEach-Object { [void]$all.Add([int]$_.ProcessId) } } while ($all.Count -ne $n); Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $all.Contains([int]$_.OwningProcess) -and $_.State -ne 'Listen' -and $_.RemoteAddress -notmatch '^(127\\.|::1$|0\\.0\\.0\\.0$|::$)' } | ForEach-Object { "$($_.OwningProcess) $($_.RemoteAddress):$($_.RemotePort)" }`;
+  const r = spawnSync('powershell', ['-NoProfile', '-Command', ps], { encoding: 'utf8' });
+  return r.stdout.split(/\r?\n/).filter(Boolean);
+}
+
 const HOLD = (s: number): string[] => ['node', '-e', `"setTimeout(()=>{},${s * 1000})"`];
 const alive = (pid: number): boolean => {
   try {
@@ -112,12 +142,11 @@ async function main(): Promise<void> {
     const t0 = Date.now();
     const a = stack('fsp-pd-selftest-a', [], HOLD(300));
     const s = await waitUp('fsp-pd-selftest-a', t0 - 1000);
-    const c = new pg.Client({ connectionString: s.postgres.url });
-    await c.connect();
     const mark = `selftest-${t0}`;
-    await c.query('create table if not exists selftest_marks (mark text primary key)');
-    await c.query('insert into selftest_marks values ($1)', [mark]);
-    await c.end();
+    await withDb(s.postgres.url, async (c) => {
+      await c.query('create table if not exists selftest_marks (mark text primary key)');
+      await c.query('insert into selftest_marks values ($1) on conflict do nothing', [mark]);
+    });
     const pids = [s.launcherPid, ...s.processes.map((p) => p.pid)];
     spawnSync('taskkill', ['/PID', String(s.launcherPid), '/F'], { stdio: 'ignore' }); // the launcher alone, as a crash would
     await a.done;
@@ -133,18 +162,12 @@ async function main(): Promise<void> {
     const t1 = Date.now();
     const check = stack('fsp-pd-selftest-a', [], ['node', '-e', '"0"']);
     const s2 = await waitUp('fsp-pd-selftest-a', t1 - 1000);
-    const c2 = new pg.Client({ connectionString: s2.postgres.url });
-    await c2.connect();
-    const found = (await c2.query('select 1 from selftest_marks where mark = $1', [mark])).rowCount;
-    await c2.end();
+    const found = await withDb(s2.postgres.url, async (c2) => (await c2.query('select 1 from selftest_marks where mark = $1', [mark])).rowCount);
     await check.done;
     const t2 = Date.now();
     const other = stack('fsp-pd-selftest-b', [], ['node', '-e', '"0"']);
     const s3 = await waitUp('fsp-pd-selftest-b', t2 - 1000);
-    const c3 = new pg.Client({ connectionString: s3.postgres.url });
-    await c3.connect();
-    const inB = (await c3.query(`select to_regclass('selftest_marks') as t`)).rows[0] as { t: string | null };
-    await c3.end();
+    const inB = await withDb(s3.postgres.url, async (c3) => (await c3.query(`select to_regclass('selftest_marks') as t`)).rows[0] as { t: string | null });
     await other.done;
     report('kill-row', found === 1, `the row committed before the launcher was killed is ${found === 1 ? 'there' : 'MISSING'} after down and a new start`);
     report('names-state', inB.t === null, `stack fsp-pd-selftest-b ${inB.t === null ? 'has no' : 'HAS the'} table of fsp-pd-selftest-a`);
@@ -181,7 +204,22 @@ async function main(): Promise<void> {
   if (want('offline')) {
     const dockerUp = spawnSync('docker', ['info'], { encoding: 'utf8', timeout: 15_000 }).status === 0;
     const procs = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-Process -Name "com.docker.backend","Docker Desktop","vmmemWSL" -ErrorAction SilentlyContinue | Measure-Object | Select-Object -ExpandProperty Count'], { encoding: 'utf8' }).stdout.trim();
-    report('offline', !dockerUp, `Docker daemon ${dockerUp ? 'RUNNING' : 'not running'} (${procs} Docker or WSL VM processes) while every stack above ran`);
+    // The network: a stack up and serving (a request through the shell, the mirror and the pack list), then
+    // every TCP connection its processes hold is sampled; none may leave the loopback interface.
+    const t0 = Date.now();
+    const x = stack('fsp-pd-selftest-a', [], HOLD(40));
+    const s = await waitUp('fsp-pd-selftest-a', t0 - 1000);
+    const pids = [s.launcherPid, ...s.processes.map((p) => p.pid), ...(s.postgres.postmasterPid ? [s.postgres.postmasterPid] : [])];
+    const remote: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      await fetch(`${s.urls.shell}/endpoints.json`).then((r) => r.arrayBuffer()).catch(() => undefined);
+      await fetch(s.urls.packList).then((r) => r.arrayBuffer()).catch(() => undefined);
+      remote.push(...remoteConnections(pids));
+      await sleep(2000);
+    }
+    await x.done;
+    const uniq = [...new Set(remote)];
+    report('offline', !dockerUp && uniq.length === 0, `Docker daemon ${dockerUp ? 'RUNNING' : 'not running'} (${procs} Docker or WSL VM processes); TCP connections off the loopback interface held by the stack's ${pids.length} processes (and children) in 5 samples: ${uniq.length === 0 ? 'none' : uniq.join(', ')}`);
   }
 
   for (const n of ['fsp-pd-selftest-a', 'fsp-pd-selftest-b']) fs.rmSync(path.join(REPO, 'data', 'stack', n), { recursive: true, force: true });

@@ -42,7 +42,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { clusterFacts, type ClusterFacts } from '../roles/hello';
+import { clusterFacts, productionLocale, type ClusterFacts } from '../roles/hello';
 import { MEASURED_SLICE_BYTES } from '../packs/packList';
 import { startBucketStandIn, type StandIn } from './bucketStandIn';
 
@@ -364,8 +364,8 @@ async function startPostgres(dir: string, fresh: boolean, logFile: string): Prom
   let facts: ClusterFacts;
   try {
     facts = await clusterFacts(admin);
-    if (facts.serverEncoding !== 'UTF8' || facts.localeProvider !== 'builtin') {
-      throw new Error(`the cluster in ${dir} is ${facts.serverEncoding} with the ${facts.localeProvider} locale provider; production's is UTF8 with the built-in C.UTF-8 locale. Refusing to start on it: delete it or run with --fresh`);
+    if (!productionLocale(facts)) {
+      throw new Error(`the cluster in ${dir} is ${facts.serverEncoding} with the ${facts.localeProvider} locale provider and locale ${facts.locale ?? 'unknown'}; production's is UTF8 with the built-in C.UTF-8 locale. Refusing to start on it: delete it or run with --fresh`);
     }
     // Idempotent, so an initialisation that was interrupted is completed by the next start.
     if ((await admin.query('select 1 from pg_database where datname = $1', [PG_DB])).rowCount === 0) await admin.query(`CREATE DATABASE ${PG_DB}`);
@@ -749,7 +749,7 @@ async function down(): Promise<number> {
   const clientRoot = path.join(STACK_ROOT, 'client');
   if (fs.existsSync(clientRoot)) {
     for (const f of fs.readdirSync(clientRoot)) {
-      const m = /.use-(d+)$/.exec(f);
+      const m = /\.use-(\d+)$/.exec(f);
       if (m && !alive(Number(m[1]))) fs.rmSync(path.join(clientRoot, f), { force: true });
     }
   }

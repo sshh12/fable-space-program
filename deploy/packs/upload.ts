@@ -75,10 +75,19 @@ export async function verifySets(client: S3Client, b: BucketConfig, doc: PackSet
 }
 
 /** CORS for ranged GET from a cross-origin-isolated page: any origin, GET and HEAD, the Range header. */
+/**
+ * Who may read the packs bucket from a page: the deployed shell's origin (the client) and the local stack's
+ * page (port 47200: the browser specs against the deployed stage run inside the stack, whose page is their
+ * origin). Nothing else: the presigned URLs work from any program, but no other site's page can read the bytes.
+ * Railway's bucket (Tigris) takes no wildcard in an origin (measured: http://127.0.0.1:* is not honoured), so
+ * the origins are exact. PACKS_CORS_ORIGINS (comma-separated) replaces the list, for a new shell domain.
+ */
+export const PACKS_CORS_ORIGINS = ['https://shell-production-b6007648.up.railway.app', 'http://127.0.0.1:47200', 'http://localhost:47200'];
+
 export const PACKS_CORS = {
   CORSRules: [
     {
-      AllowedOrigins: ['*'],
+      AllowedOrigins: process.env.PACKS_CORS_ORIGINS ? process.env.PACKS_CORS_ORIGINS.split(',').map((x) => x.trim()) : PACKS_CORS_ORIGINS,
       AllowedMethods: ['GET', 'HEAD'],
       AllowedHeaders: ['Range'],
       ExposeHeaders: ['Content-Range', 'Content-Length', 'ETag'],

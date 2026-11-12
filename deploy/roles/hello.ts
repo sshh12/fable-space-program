@@ -43,6 +43,11 @@ export async function clusterFacts(c: pg.Client | pg.PoolClient): Promise<Cluste
   return { serverVersionNum: Number(row.v), serverEncoding: row.enc, localeProvider: prov, locale: row.loc };
 }
 
+/** Production's cluster: UTF8, the built-in locale provider and the C.UTF-8 locale (all three checked). */
+export function productionLocale(f: ClusterFacts): boolean {
+  return f.serverEncoding === 'UTF8' && f.localeProvider === 'builtin' && f.locale === 'C.UTF-8';
+}
+
 const helloRole: RoleModule = {
   kind: 'service',
   async start(ctx: RoleContext): Promise<RoleHandle> {

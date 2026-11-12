@@ -14,7 +14,7 @@ import { decide, dumpKey, intervalHours, parseDumpKey, retention, type DumpObjec
 import { gunzipSync } from 'node:zlib';
 import { bucketFromEnv, s3For } from '../../../deploy/packs/bucket';
 import { EgressMeter, shellBudgetsFromEnv } from '../../../deploy/roles/egress';
-import helloRole from '../../../deploy/roles/hello';
+import helloRole, { productionLocale } from '../../../deploy/roles/hello';
 import { admitPublic, HEALTHCHECK_HOST, PUBLIC_RESERVE_BYTES } from '../../../deploy/roles/http';
 import { createLogger } from '../../../deploy/roles/log';
 import { parseRoles } from '../../../deploy/roles/manifest';
@@ -107,6 +107,17 @@ describe('the egress meter', () => {
     expect(shellBudgetsFromEnv({ EGRESS_PUBLIC_BYTES_PER_DAY: '7', MIRROR_MAX_STREAMS_PER_ADDRESS: '3' })).toMatchObject({ budgets: { public: 7 }, streams: { mirror: { perAddress: 3 } } });
     expect(shellBudgetsFromEnv({ EGRESS_MIRROR_BYTES_PER_DAY: '5' }).budgets.mirror).toBe(5);
     expect(() => shellBudgetsFromEnv({ EGRESS_BOOT_BYTES_PER_DAY: 'lots' })).toThrow(/non-negative/);
+  });
+});
+
+describe("the local cluster's refusal", () => {
+  it('accepts only UTF8 with the built-in provider AND the C.UTF-8 locale (a built-in C cluster is refused)', () => {
+    const f = { serverVersionNum: 180006, serverEncoding: 'UTF8', localeProvider: 'builtin', locale: 'C.UTF-8' };
+    expect(productionLocale(f)).toBe(true);
+    expect(productionLocale({ ...f, locale: 'C' })).toBe(false);
+    expect(productionLocale({ ...f, localeProvider: 'libc' })).toBe(false);
+    expect(productionLocale({ ...f, serverEncoding: 'SQL_ASCII' })).toBe(false);
+    expect(productionLocale({ ...f, locale: null })).toBe(false);
   });
 });
 
