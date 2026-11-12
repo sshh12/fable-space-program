@@ -80,6 +80,15 @@ describe('canopy model', () => {
     }
     expect(sMin).toBeCloseTo(style.slotFraction / style.rings, 6);
     expect(sMax).toBe(1);
+    // The slots are widest round the vent and close towards the skirt (a sixth of the crown's there): a full
+    // canopy is closed cloth, not rows of bricks with dark joints. Slot of a ring = where its first vertices
+    // start, in ring widths.
+    const slots: number[] = [];
+    const vertsPerRing = style.gores * (PANEL_COLS + 1) * (PANEL_ROWS + 1) * 3;
+    for (let ring = 0; ring < style.rings; ring++) slots.push(mesh.vertices[ring * vertsPerRing]! * style.rings - ring);
+    expect(slots[0]!).toBeCloseTo(style.slotFraction, 6);
+    for (let ring = 1; ring < style.rings; ring++) expect(slots[ring]!).toBeLessThanOrEqual(slots[ring - 1]! + 1e-6);
+    expect(slots[style.rings - 1]!).toBeCloseTo(style.slotFraction / 6, 6);
     // Three canopies stand apart, more when they are open; one canopy hangs straight.
     expect(clusterAngle(style, 1, 13, 52)).toBe(0);
     const reefed = clusterAngle(style, 3, 13 * Math.sqrt(0.08), 52);
