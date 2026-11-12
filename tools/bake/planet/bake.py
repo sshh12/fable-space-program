@@ -174,7 +174,19 @@ def write_credits() -> Path:
     return rt.STAGED_CREDITS
 
 
+def release(body: config.Body) -> None:
+    """Drop this process' memory maps of the body's prepared sources (Windows refuses to delete mapped files)."""
+    import gc
+    for cache in (albedo._RASTER, heights._RASTER):
+        for k in [k for k in cache if k[0] == body.id]:
+            del cache[k]
+    albedo._GAIN.pop(body.id, None)
+    albedo._LOWF.pop(body.id, None)
+    gc.collect()
+
+
 def clean(body: config.Body) -> None:
+    release(body)
     n = fetch.delete_downloads(body)
     w = rt.work_dir(body.id)
     m = rt.dir_size(w) if w.exists() else 0
