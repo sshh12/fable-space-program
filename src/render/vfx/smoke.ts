@@ -188,7 +188,14 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   let dSteam2 = p.xz - (su.source.xz - reachT);
   let gSteam = 0.5 * (exp(-dot(dSteam, dSteam) / (Rw * Rw)) + exp(-dot(dSteam2, dSteam2) / (Rw * Rw))) * exp(-p.y / (1.6 * H)) / (PI * Rw * Rw * 1.6 * H);
   // The jet itself is clear, fast gas: nothing condenses in it and what strays into it is torn apart.
-  let core = jetAt(p).core;
+  let jet = jetAt(p);
+  let core = jet.core;
+  // ... and the hot, dry gas it draws in round itself dries out what rises beside it: the flow about the foot
+  // of the jet rolled the exhaust of the first seconds up into a ring that stood round the vehicle as an arch
+  // of cloud. Above the deck, within a few jet radii of the column, steam is gone in under a second.
+  let beside = jet.column * (1.0 - smoothstep(2.0 * jet.radius, 6.0 * jet.radius, jet.dist)) * smoothstep(8.0, 20.0, p.y);
+  s.r *= exp(-1.2 * beside * dt);
+  s.g *= exp(-1.8 * beside * dt);
   s.r += su.rate.x * dt * gSmoke * (1.0 - core);
   s.g += su.rate.y * dt * gSteam * (1.0 - core);
   s.b = max(s.b, saturate((su.rate.x * gSmoke + 0.6 * su.rate.y * gSteam) * 40.0));
@@ -366,6 +373,11 @@ struct MarchOut {
   let scroll = vec3f(-su.flow2.z * time, -3.0 * time, -su.flow2.w * time);
   // Size of a ray of this pass at one metre (two half-resolution pixels).
   let pixel = 4.0 * frame.cameraUp.w * vfx.half.w;
+  // An eye inside the cloud: every ray ends in the first metres of gas, and lit alike they are one flat fill.
+  // The light scattered about inside a cloud comes from where the cloud is thinnest, above and towards the
+  // sun: the gas is brighter that way and darker towards the ground.
+  let eyeIn = saturate(textureSampleLevel(lightTex, linearClamp, smokeToUvw(vec3f(ro.x, max(ro.y, 0.5), ro.z)), 0.0).b / 0.02) * step(abs(ro.x), su.grid.y) * step(abs(ro.z), su.grid.y) * step(ro.y, su.grid.z);
+  let fromLight = mix(1.0, 0.8 + 0.4 * dot(rd, normalize(su.sunSite.xyz * 0.8 + vec3f(0.0, 0.7, 0.0))), eyeIn);
 
   var Lf = vec3f(0.0); var Tf = 1.0;     // smoke in front of the emitters
   var Lb = vec3f(0.0); var Tb = 1.0;     // smoke behind them
@@ -446,7 +458,7 @@ struct MarchOut {
       let relief = clamp(1.0 - 7.0 * (towards.g - ng) * hard, 0.2, 1.7) * mix(1.0, 0.5 + 0.75 * smoothstep(0.15, 0.7, cavity), hard);
       // (Sunlit steam is the brightest diffuse thing in a launch photograph: as bright as a white surface in
       // the sun, with a floor of light scattered about inside it, so that its shaded folds are grey, not brown.)
-      let sun = sunE * ((0.7 + 0.3 * phase) * 3.6 * lt.r * relief + (0.7 * lt.a + 0.45 * wide) * (0.5 + 0.5 * relief)) * (1.0 / (4.0 * PI));
+      let sun = sunE * ((0.7 + 0.3 * phase) * 3.6 * lt.r * relief + (0.7 * lt.a + 0.45 * wide) * (0.5 + 0.5 * relief) * fromLight) * (1.0 / (4.0 * PI));
       // Plume: the jet is a line of light; gas next to it glows from the light that has been scattered about
       // inside the cloud as well as from what reaches it directly.
       let toL = plumeLightPoint(p) - p;
@@ -457,7 +469,7 @@ struct MarchOut {
       // An eye inside the cloud at night sees where the flame is, not one flat fill.)
       let towardsFlame = saturate(dot(rd, toL) * inverseSqrt(max(dot(toL, toL), 1e-4)));
       let plume = su.lightColor.rgb * ((lt.g + 0.25 * pow(lt.g, 0.55)) * (0.7 + 0.9 * towardsFlame * towardsFlame) / (dl2 * PI));
-      let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) / PI);
+      let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) * fromLight / PI);
       // Gas fresh from the plume still glows, faintly and smoothly (what lights the cloud at the jet is the jet).
       let h2 = cell.b * cell.b;
       let glow = su.glow.rgb * (0.3 * h2 * h2 * h2);
