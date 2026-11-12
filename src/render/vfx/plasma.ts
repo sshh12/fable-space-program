@@ -26,6 +26,11 @@ export const MAX_PLASMA = 4;
 const INST_FLOATS = 36;
 /** Seconds one cycle of the flow maps of the shock layer takes. */
 const FLOW_CYCLE = 0.4;
+/**
+ * Emission of the base flow behind the back shell (the recirculating gas inside the sheath) per shoulder
+ * radius of path, relative to the luminance of the shock layer, at plasmaIntensity 1 (it goes with its square).
+ */
+const BASE_GLOW = 0.02;
 
 export interface ReentryProxy {
   /** Centre of the shoulder plane (where the windward cap meets the afterbody) and the unit axis from the cap towards the lee end, vessel frame. */
@@ -159,9 +164,12 @@ export function plasmaWindowRadiance(data: VfxData['reentry'], heatFlux: number,
   const across = 0.9 * 0.3 * Math.sqrt(Math.PI) * wS * Math.exp(-1) * (0.3 + 2.4 * 0.05 * 0.05);
   const gain = 1 - 0.764 * (1 - data.wakeGain);
   const fade = 0.75 * Math.exp(-0.5) + 0.25 * Math.exp(-1 / (data.wakeLengthRadii * (0.3 + 0.7 * k)));
+  // ... and half a radius of the base flow between the hull and the skirt (BASE_GLOW k^2 per radius, e^(-1/1.2)
+  // of it one radius behind the shoulder, its streamers at their mean of 0.95).
+  const base = BASE_GLOW * k * k * 0.5 * Math.exp(-1 / 1.2) * 0.95;
   const c = plasmaColor(data, speed);
   const cl = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-  return { luminance: plasmaLuminance(data, heatFlux, k) * cl * across * gain * fade, color: [c[0] / cl, c[1] / cl, c[2] / cl] };
+  return { luminance: plasmaLuminance(data, heatFlux, k) * cl * (across * gain * fade + base), color: [c[0] / cl, c[1] / cl, c[2] / cl] };
 }
 
 /** Smooth value noise in [-1, 1] for the flicker. */
@@ -366,6 +374,12 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
       let gSkirt = mix(1.0, wakeGain, smoothstep(-0.3 * Rb, 1.6 * Rb, xw));
       let gCore = mix(1.0, wakeGain, smoothstep(-0.3 * Rb, 1.0 * Rb, xw));
       j += tint * ((0.9 * skirt * gSkirt + core * gCore) * lines * along * (0.3 / Rb));
+      // The base flow: the gas that turns in behind the back shell, inside the converging sheath. It is far
+      // cooler than the layer, but there is a body length of it: at peak heating the back shell is seen through
+      // a streaming glow from every side, and from straight behind the capsule is not a black disc in a ring
+      // of fire. (plasmaWindowRadiance counts it: BASE_GLOW.)
+      let baseGas = (1.0 - smoothstep(0.7 * Rw, 1.05 * Rw, rw)) * smoothstep(-0.35 * Rb, 0.25 * Rb, xw) * exp(-xs / (1.2 * Rb));
+      j += tint * (${BASE_GLOW} * k * k * baseGas * (0.5 + 0.5 * lines) / Rb);
     }
     // Only what touches the lens is left out (one in the cabin has the hull between it and the gas).
     let c = j * (I.color.w * dt * max(smoothstep(0.3 * Rb, 2.0 * Rb, t), inBody));
