@@ -685,7 +685,7 @@ are folded into the finding that carries them. Lab pictures are under `out/scree
 | Solid motors: soft cream cone, grainy fans (P9, A15) | The column ended over the whole mixing layer. | 2: denoise pass. 3: dense smoke ends within a third of the layer, on the outline of its eddies. | `engine-solids/sl-les.png`, `vac-les.png` | Partly: the outline is firmer; the smoke is still lit evenly along its length. |
 | Canopies: quilt, dull, clusters touch; cut-away sausages and rain (P10, P11, A11, A12) | See 9.1; a cut canopy shut into a tube in 0.45 s, keeled over and fell at 11 m/s with its lines as rods. | 2: wider cluster spacing, curved slack lines. 3: see 9.1; a cut canopy stays half open, sinks at 6.5 m/s rocking, and on the water spreads and lies flat while its lines sink; slack lines are smooth shallow curves. | `chutes/mains-full-backlit.png`, `mains-reef1-backlit.png`, `splash/cut-away-1s.png`, `cut-away-6s.png` | Full canopies at the bar. Reefed ones are still ribbed bulbs; a drifting canopy with its hanging lines still reads as a jellyfish for the seconds it is in the air. No contact between canopies. |
 | Canopy shadows on the sea near black (P18, A16) | The lab's sea is a Lambert sheet. | Nothing in vfx. | `splash/before.png` | Not a vfx matter in the lab; on the real ocean not checked. |
-| Lunar dust painted on the ground, razor horizon, dashes in the sky (P12, A13, A19) | A sheet that thinned as 1 / r and ended 160 m out: nothing along a level line of sight. | 3: thins as r^-0.7, reaches 320 m, translucent from above (depth 1.4 at the foot): the horizon is veiled below about 10 m, the ground and the lander's shadow show through; grains slower, lower, fainter. | `lunar/5m-day-close.png`, `10m-day.png`, `30m-day.png` | Better; on the lab's flat pale ground it is a haze with faint streaks. Not seen on the real terrain from close up. |
+| Lunar dust painted on the ground, razor horizon, dashes in the sky (P12, A13, A19) | A sheet that thinned as 1 / r and ended 160 m out: nothing along a level line of sight. | 3: thins as r^-0.7, reaches 320 m, translucent from above (depth 1.4 at the foot): the horizon is veiled below about 10 m, the ground and the lander's shadow show through; grains slower, lower, fainter. | `lunar/5m-day-close.png`, `10m-day.png`, `30m-day.png` | Better; on the lab's flat pale ground it is a haze with faint streaks. In the integration lab (real lander and terrain, 8 m hover, a low sun ahead of the camera: `dev/i4-lunar-hover.png`) the sheet and the sun's glare washed the frame out; the sheet's forward scattering was halved after that picture and not looked at again there. |
 | Trails: ruler line at night, stick in haze (P14, A10) | One glow term. | 2: hot head and faint train, colour by age, narrower. | `reentry/trail-50km-night.png` | Fixed for the reentry trail (a clipped head on a line that thins and reddens). The ascent trail in synthetic haze was not touched. |
 | RCS barely shows (P15, A14) | A faint near field. | 2: thruster light with a radius. 3: brighter, longer core (`plume.rcs.core`). | `rcs/all-sun-12m.png`, `all-shadow-12m.png` | Visible flashes at the ports in sun and shadow; soft glows rather than cones. |
 | Exposure follows the pad cloud; deterministic and live differ (A3); splash step 0.415 EV (P19) | The meter. | Requests vfx-7 and vfx-8 (9.4). | `exposure.spec.ts` | See 9.3. |
@@ -695,10 +695,11 @@ are folded into the finding that carries them. Lab pictures are under `out/scree
 ### 9.3 Measured
 
 Final full run of the round (`tests/browser/vfx`, functional and perf projects in one gate slot, 51 tests, 15.0
-min, 2026-11-12 00:06; one GPU slot on the machine, so nothing else used the GPU): 47 passed, 4 failed. The two
-functional failures and what became of them are below; the perf table follows. All pictures under
+min, 2026-11-12 00:06; one GPU slot on the machine, so nothing else used the GPU): 47 passed, 4 failed (two
+exposure tests, two perf scenarios). What became of each is below: after the short run with the final code the
+suite stands at one failure, the first window of the vacuum burn (0.616 ms against 0.6). All pictures under
 `out/screens/vfx/` are from this run (the sheets of the solid motors, the lunar scenes, staging, the close-ups
-and the vacuum ignition from the short run after it, PERF_RUN).
+and the vacuum ignition from the short run after it, with the final code: 15 tests, 14 passed, 00:34).
 
 | What | Result | Spec |
 |---|---|---|
@@ -713,30 +714,36 @@ and the vacuum ignition from the short run after it, PERF_RUN).
 | Exposure by day, pad camera, engines on / off | EV 15.02 / 14.58, sky 0.45 EV (asserted under 0.5) | `exposure.spec.ts` |
 | Exposure through the splash | sky within 2.8 % from just before the impact to +2.5 s (2.156 before, 2.216 / 2.198 / 2.157 / 2.173 / 2.187 after): the step at the impact that failed in round 1 (0.415 EV) is gone since vfx-7 | `exposure.spec.ts` |
 | Night pad, T+10 s | EV 13.52; ground 1,143 / 286 / 103 cd/m^2 at 100 / 200 / 300 m, shown at 0.081 / 0.020 / 0.007 of white (asserted above 300 / 100 / 40 and 0.006: the 300 m figure has little room, the price of exposing for the cloud) | `exposure.spec.ts` |
-| **Exposure by day through the lift-off, chase camera (new test): FAILS** | EV 15.58, 15.58, 15.52 at T+0, 3, 6 s and 15.01 at T+10 s: 0.57 EV (asserted under 0.5). Request vfx-8, re-opened: the core's change `6a2fb76` did not move it. Left failing, not loosened | `exposure.spec.ts` |
-| Fireball by day (failed in the full run; the test was then corrected) | sky 0.1464 before, 0.1774 / 0.1772 / 0.1764 / 0.1767 / 0.1775 from the flash to the smoke: the fireball frames agree within 0.6 %; the frame BEFORE is 0.28 EV darker because it holds the sunlit vehicle, which is the evidence the lower daylight bound of vfx-7 needs, and the explosion removes it. The test now compares the fire with the same scene after it (5 %) and asserts that no frame is darker than the one before (FIREBALL_RERUN) | `exposure.spec.ts` |
+| Exposure by day through the lift-off, chase camera (new test) | Full run: EV 15.58, 15.58, 15.52 at T+0, 3, 6 s and 15.01 at T+10 s, 0.57 EV: failed (asserted under 0.5). Request vfx-8; the core's first change (`6a2fb76`) did not move it, its second (`81d7b95`, the highlight term under the sun) did: short run EV 15.40, 15.51, 15.45, 15.01, sky 0.0716 / 0.0662 / 0.0685 / 0.0922 = 0.48 EV between the extremes: passes, with no room | `exposure.spec.ts` |
+| Fireball by day (failed in the full run; the test was then corrected) | sky 0.1464 before, 0.1774 / 0.1772 / 0.1764 / 0.1767 / 0.1775 from the flash to the smoke: the fireball frames agree within 0.6 %; the frame BEFORE is 0.28 EV darker because it holds the sunlit vehicle, which is the evidence the lower daylight bound of vfx-7 needs, and the explosion removes it. The test now compares the fire with the same scene after it (5 %) and asserts that no frame is darker than the one before; passed in the short run | `exposure.spec.ts` |
 
 **GPU time at 1440p internal** (`vfx.perf.spec.ts`, attribution mode, governor off, ballast 7 ms; the machine's
 one GPU slot, nothing else on the GPU: the first measurement of this package without other agents' jobs):
 
 | Scenario | Budget (ms) | Mean | p99 of the four windows | Steady passes of the last window (mean) |
 |---|---|---|---|---|
-| Lift-off, pad camera (nine plumes, pad smoke, ice, trail) | 1.3 | 0.522 | 0.734, 0.764, 0.791, 0.782 | smoke.march 0.21, volumes 0.17, smoke.sim 0.07, transparent 0.05, combine 0.03, denoise 0.01 |
-| Lift-off, chase camera at 150 m | 1.3 | 0.781 | 0.980, 0.946, 1.119, 1.207 | smoke.march 0.42, volumes 0.37, smoke.sim 0.07, transparent 0.05, combine 0.03, denoise 0.01 |
-| Lift-off, inside the cloud | 1.3 | 0.706 | 0.921, 1.098, 1.166, 0.916 | volumes 0.35, smoke.sim 0.08, smoke.march 0.08, transparent 0.05, combine 0.03 |
-| Ascent | 1.0 | 0.195 | 0.406, 0.206, 0.209, 0.410 | volumes 0.15, transparent 0.04, denoise 0.01 |
-| Vacuum burn (six engines, ullage motors) | 0.6 | 0.371 | **0.613**, **0.715**, 0.507, 0.279 | volumes 0.22, transparent 0.04, denoise 0.01 |
-| Lunar descent with dust | 0.9 | 0.468 | 0.662, 0.769, 0.670, **0.911** | volumes 0.36, particles.sim 0.07 (p99 0.50), transparent 0.04 |
-| Reentry | 1.2 | 0.464 | 0.755, 0.751, 0.785, 0.654 | volumes 0.35, particles.sim 0.06, transparent 0.04 |
-| Chutes and splash | 0.9 | 0.142 | 0.379, 0.385, 0.384, 0.328 | transparent 0.04, volumes 0.04, gbuffer 0.01 |
+| Lift-off, pad camera (nine plumes, pad smoke, ice, trail) | 1.3 | 0.538 | 0.826, 0.771, 0.754, 0.899 | smoke.march 0.21, volumes 0.17, smoke.sim 0.10, transparent 0.05, combine 0.03, denoise 0.01 |
+| Lift-off, chase camera at 150 m | 1.3 | 0.792 | 0.886, 0.992, 1.044, 1.268 | smoke.march 0.42, volumes 0.37, smoke.sim 0.09, transparent 0.05, combine 0.03, denoise 0.01 |
+| Lift-off, inside the cloud | 1.3 | 0.701 | 0.861, 1.062, 1.138, 0.966 | volumes 0.34, smoke.march 0.08, smoke.sim 0.07, transparent 0.05, combine 0.03 |
+| Ascent | 1.0 | 0.196 | 0.412, 0.404, 0.425, 0.208 | volumes 0.15, transparent 0.04, denoise 0.01 |
+| Vacuum burn (six engines, ullage motors) | 0.6 | 0.367 | **0.616**, 0.522, 0.268, 0.268 | volumes 0.22, transparent 0.04, denoise 0.01 |
+| Lunar descent with dust | 0.9 | 0.450 | 0.649, 0.759, 0.746, 0.749 | volumes 0.34, particles.sim 0.07 (p99 0.36), transparent 0.04 |
+| Reentry | 1.2 | 0.466 | 0.752, 0.746, 0.750, 0.746 | volumes 0.35, particles.sim 0.07, transparent 0.04 |
+| Chutes and splash | 0.9 | 0.140 | 0.359, 0.490, 0.440, 0.105 | transparent 0.04, volumes 0.04, gbuffer 0.01 |
 
-Bold = over the budget. Six of eight scenarios hold their line in every window (in rounds 0 and 1 none did
-in every run: other agents' GPU jobs ran beside them). Two do not in this run:
+Bold = over the budget (the table is the short run with the final code; the full run before it read the same
+within 0.1 ms except as said below). **Seven of eight scenarios hold their line in every window**; in rounds
+0 and 1 none did in every run, with other agents' GPU jobs beside them. Still over:
 
-- **Vacuum burn**: the two windows in which the ullage motors still burn read 0.613 and 0.715 ms against 0.6
-  (0.57 and 0.47 in round 1); steady, with the six engines alone, 0.28. PERF_VACUUM
-- **Lunar descent**: one window at 0.911 against 0.9; its steady passes sum to 0.48 and the window holds a
-  spike of 0.50 ms on the particle simulation (mean 0.07). PERF_LUNAR
+- **Vacuum burn**: the first window, in which the ullage motors still burn, reads 0.616 ms against 0.6 (0.57
+  in round 1). In the full run the first two windows read 0.613 and 0.715: smoky jets in vacuum were bounded
+  by the boundary of a column that nothing holds (a box three times as wide as the fan); bounding them by the
+  fan (`plumeModel.ts`) brought the second window to 0.52 and the steady burn from 0.28 to 0.27, not the
+  first under the line. What is left is four small motors each marched over a fan 400 exit radii long;
+  shortening that reach (`FAR_REACH_RE`) changes every vacuum picture and was not done without looking.
+- The chase lift-off has the least room (worst window 1.27 of 1.3; mean 0.79).
+- Lunar descent read 0.911 in one window of the full run (a 0.50 ms spike on the particle simulation over
+  steady passes of 0.48); with the sheet at 12 stretches (was 14) the short run reads 0.76 at most.
 
 ### 9.4 Requests
 
@@ -744,8 +751,11 @@ in every run: other agents' GPU jobs ran beside them). Two do not in this run:
   reentry light since `1665ac9`.
 - `vfx-7` (a lower bound on the daylight exposure): resolved by core-support (`3e95313`).
 - `vfx-8` (new in this round; by day the plume-lit pad held the meter on the upper sunlit bound through a
-  lift-off, 0.57 EV between T+6 s and T+10 s from the chase camera): resolved by core-support (`6a2fb76`:
-  what is brighter than the sun can light anything moves a daylight exposure by a quarter of a stop at most).
+  lift-off, 0.57 EV between T+6 s and T+10 s from the chase camera): answered by core-support twice.
+  `6a2fb76` (what is brighter than the sun can light anything moves a daylight exposure by a quarter of a stop
+  at most) left the sequence where it was; I re-opened the request with the re-measurement; `81d7b95` (the
+  highlight term under the sun) brings it to 0.48 EV and the new test passes, without room. The request file
+  was still marked open when this was written.
 - `cockpit-9` (the plasma from a camera inside the vessel): resolved in round 1 (`c3568bf`), unchanged.
 - `cockpit-13` / `NOTICE-core-1` (publish the window radiance): done. `PlasmaRenderer` publishes
   `'vfx.plasmaWindow'` (16-byte uniform: rgb = colour of the gas x `plasmaWindowRadiance(...)` of the active
@@ -781,9 +791,10 @@ in every run: other agents' GPU jobs ran beside them). Two do not in this run:
   (artifact 22), **the ascent trail in synthetic haze** (artifact 10), **the horizon "seam"** of a faint
   plume over ground and sky (photo 6): not worked on.
 - **Not looked at in the game**: everything after the first stage separation (the pilot needs 45 minutes for
-  the mission; the pictures of this round are lift-off to staging). Reentry, canopies and the lunar hover were
-  looked at in the integration lab with the FakeSim; splash, cut-away canopies on the real ocean and the dust
-  sheet on real lunar terrain from close up were not.
+  the mission; the pictures of this round are lift-off to staging: `dev/a4-*.png`). Reentry, canopies and the
+  lunar hover were looked at in the integration lab with the FakeSim (`dev/i4-reentry.png`, `i4-chutes.png`,
+  `i4-lunar-hover.png`: the last one is not good, see the dust row of 9.2); the splash and the cut-away
+  canopies on the real ocean were not.
 
 ### 9.6 What changed in code, data and specs (for the next owner)
 
