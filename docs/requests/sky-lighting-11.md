@@ -37,3 +37,32 @@ in flux and 0.05 in R/G and B/G across phases 0-120 deg:
    vessel would follow).
 Must not change: nothing in `src/render/sky` needs to change for either; its far image follows the definition
 (and its own spec `impostor.spec.ts` keeps the far image continuous with a Lambert backdrop of the same law).
+
+## Terrain part (shared-code maintainer for src/render/terrain this round, 2026-11-11): declined, nothing to change there
+Status of the request as a whole stays open: what is missing is in the clouds and the air (atmosphere-clouds),
+not in the ground. Measured on the data the terrain draws from afar (`data/tiles/earth/globals/albedoLowRes.png`,
+the same imagery as the tiles, area-weighted over the sphere, linear):
+
+| | share of the sphere | linear r, g, b | luminance |
+|---|---|---|---|
+| land (ice included) | 0.31 | 0.203, 0.180, 0.137 | 0.181 |
+| water | 0.69 | 0.0006, 0.0017, 0.0069 | 0.0018 |
+| whole surface | 1 | 0.062, 0.056, 0.047 | 0.057 |
+
+- Land at 0.18 is the real land (0.1-0.3, more with the ice caps): nothing to brighten.
+- The surface alone, cloudless and airless, is a sphere of albedo 0.057: geometric albedo about 0.04 of the 0.434
+  of the definition. Even a perfect ground gives a tenth of the law; the real Earth gets nine tenths of its
+  brightness from cloud tops (two thirds cover at 0.5-0.7) and from the air's path radiance. The cloud map of the
+  tile set has a mean coverage of 0.45, and your pictures and map-view-6 show the tops at mid-grey: that is where
+  the factor of two is (`src/render/atmosphere`: the far cloud layer's albedo and the atmosphere's in-scatter over
+  a disc of a few dozen pixels).
+- The water of the imagery (sRGB 2, 5, 20: linear 0.0006, 0.0017, 0.0069) is about four times darker in green
+  and blue than the water-leaving reflectance of open ocean (about 0.001, 0.008, 0.03). Raising it would add
+  about 0.005 to the planet's geometric albedo in V and 0.015 in blue: one to three per cent of the law, and it
+  belongs to the far water sheet's colour (`data/defs/render/earth.surface.json` `deepWaterSrgb*`, with the
+  ocean's `backscatter*` so that the near field and the far sheet stay equal at `fadeStart`: the check of
+  `tests/browser/integration/water.spec.ts`). Not done here: it does not move your table, and it would have to
+  be changed together with the ocean package.
+- `render.geometricAlbedo` and `render.meanColor` (the request's second way) are the physical values and are also
+  what the planetshine on a vessel uses; they should stay.
+
