@@ -123,6 +123,12 @@ describe('launch complex structures', () => {
           expect(e.yMin, `${s.model} LOD${lod}`).toBeGreaterThan(60);
           continue;
         }
+        if (s.model === 'pad.vehicle') {
+          // A parked vehicle stands on the slab or the stone pad under it, which lie 0.1 to 0.3 m over the pad plane.
+          expect(e.yMin, `${s.model} LOD${lod}`).toBeGreaterThan(0.05);
+          expect(e.yMin, `${s.model} LOD${lod} floats`).toBeLessThan(0.36);
+          continue;
+        }
         // The lowest point is at or just below the surface (foundations, the flame trench), never above it.
         expect(e.yMin, `${s.model} LOD${lod} floats`).toBeLessThanOrEqual(0.02);
         expect(e.yMin, `${s.model} LOD${lod} buried`).toBeGreaterThan(-30);

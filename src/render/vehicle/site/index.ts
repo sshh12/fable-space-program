@@ -1,4 +1,5 @@
 /** Registers every launch-complex structure generator. */
+import { padCameraTower, padVehicle } from './dressing';
 import { padBuilding, padTankFarm, padWaterTower } from './farm';
 import { padFence } from './fence';
 import { padGroundworks } from './ground';
@@ -20,6 +21,8 @@ registerSiteGenerator('pad.tankFarm', padTankFarm);
 registerSiteGenerator('pad.building', padBuilding);
 registerSiteGenerator('pad.groundworks', padGroundworks);
 registerSiteGenerator('pad.fence', padFence);
+registerSiteGenerator('pad.vehicle', padVehicle);
+registerSiteGenerator('pad.cameraTower', padCameraTower);
 
 export { generateStructure, registerSiteGenerator, siteGeneratorIds } from './types';
 export type { SiteGenContext, SiteGenerator, SiteState, SiteVisual, StructureParams } from './types';

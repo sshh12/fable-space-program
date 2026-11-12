@@ -19,6 +19,7 @@
  *   tracks               "x,z>x,z>...;..."                  wheel tracks worn into the stone (two ruts each)
  *   berms                "x,z,radius,a0Deg,a1Deg,height;..." earth berms: arcs about (x, z), angles from +X toward -Z
  *   poles                "x,z,headingDeg;..."               road lamp posts (the arm points along the heading)
+ *   scorch               "x,z,headingDeg,length;..."        blast staining of the stone: a fan from (x, z) along the heading
  *
  * Models: 'ground' (stone field, pads, roads, tracks: cast no shadow, with their grime shown), 'berms',
  * 'poles' and 'pole-lamps' (lit at night).
@@ -360,12 +361,24 @@ export const padGroundworks: SiteGenerator = ({ params, ground }) => {
     .map((t) => parsePath(t, 'pad.groundworks track'));
   const berms = parseList(strParam(params, 'berms', '')).map((e) => ({ x: e.n[0]!, z: e.n[1]!, r: e.n[2]!, a0: e.n[3]! * DEG, a1: e.n[4]! * DEG, h: e.n[5] ?? 3 }));
   const poles = parseList(strParam(params, 'poles', '')).map((e) => ({ x: e.n[0]!, z: e.n[1]!, heading: (e.n[2] ?? 0) * DEG }));
+  const fans = parseList(strParam(params, 'scorch', '')).map((e) => ({ x: e.n[0]!, z: e.n[1]!, dx: Math.sin((e.n[2] ?? 0) * DEG), dz: -Math.cos((e.n[2] ?? 0) * DEG), len: e.n[3] ?? 50 }));
+  /** Blast staining where a flame trench empties onto the stone: a fan that widens and fades along the flow, in streaks. */
+  const blast = (x: number, z: number): number => {
+    let w = 0;
+    for (const f of fans) {
+      const along = (x - f.x) * f.dx + (z - f.z) * f.dz;
+      if (along <= -4) continue;
+      const across = (x - f.x) * f.dz - (z - f.z) * f.dx;
+      w = Math.max(w, Math.exp(-Math.max(0, along) / f.len) * Math.exp(-((across / (7 + 0.4 * Math.max(0, along))) ** 2)) * (0.5 + 0.5 * noise2(across / 2.1, along / 15, 59)));
+    }
+    return 0.8 * w;
+  };
 
   /**
    * Tone of the stone: dust and damp in patches tens of metres across, and toward its edge the fill thins
    * into the ground it was spread on (the edge of a graded field is not a line).
    */
-  const grime = (x: number, z: number, edge = 0): number => Math.max(0, Math.min(0.78, 0.42 * noise2(x / 31, z / 31, 51) + 0.2 * noise2(x / 9, z / 9, 53) - 0.12 + 0.55 * Math.max(0, edge - 0.55) * (0.6 + 0.8 * noise2(x / 5, z / 5, 57))));
+  const grime = (x: number, z: number, edge = 0): number => Math.max(0, Math.min(0.85, 0.42 * noise2(x / 31, z / 31, 51) + 0.2 * noise2(x / 9, z / 9, 53) - 0.12 + 0.55 * Math.max(0, edge - 0.55) * (0.6 + 0.8 * noise2(x / 5, z / 5, 57)) + blast(x, z)));
 
   const groundModel = buildModel('pad.groundworks', (b) => {
     const step = b.pick(3.5, 7, 26);

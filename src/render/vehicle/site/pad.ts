@@ -270,8 +270,11 @@ export const padApron: SiteGenerator = ({ params, defs }) => {
   const grime = (x: number, z: number): number => {
     const patches = 0.62 * noise2(x / 17, z / 17, 3) + 0.26 * noise2(x / 5.3, z / 5.3, 5);
     const d = Math.abs(x) - gap;
-    const blast = 0.55 * Math.exp(-Math.max(0, d) / 9) * Math.exp(-((z / 34) ** 2)) * (0.55 + 0.45 * noise2(x / 3.1, z / 9, 9));
-    return Math.min(0.85, Math.max(0, patches - 0.26) + blast);
+    // Blast staining beside the trench, heaviest by the mount, in streaks that run away from the trench; and
+    // rust-brown wash from the deluge water toward the drains at the slab's edge.
+    const blast = 0.8 * Math.exp(-Math.max(0, d) / 13) * Math.exp(-((z / 40) ** 2)) * (0.45 + 0.55 * noise2(x / 9, z / 2.6, 9));
+    const wash = 0.22 * Math.max(0, noise2(x / 23, z / 4.2, 11) - 0.45) * Math.min(1, Math.max(0, d) / 12);
+    return Math.min(0.9, Math.max(0, patches - 0.24) + blast + wash);
   };
   const body = buildModel('pad.apron', (b) => {
     b.mat('concrete').masks(0, 1, 0, 0);
@@ -304,10 +307,13 @@ export const padFlameTrench: SiteGenerator = ({ params }) => {
   const dh = numParam(params, 'deflectorHeight', 5.4);
   const dr = numParam(params, 'deflectorRun', 11);
   const body = buildModel('pad.flameTrench', (b) => {
-    // Floor and walls: the walls step down toward the exits.
+    // Floor and walls: the walls step down toward the exits. The floor is burnt by every launch: black
+    // where the deflector turns the jets along it, fading to the brick's own colour toward the exits, in
+    // streaks along the flow.
+    const burn = (x: number, z: number): number => Math.min(1, (0.25 + 0.75 * Math.exp(-Math.max(0, Math.abs(z) - dr) / 30)) * (0.55 + 0.45 * noise2(x / 1.7, z / 14, 13)));
     b.mat('refractory').masks(0, 0.9, 1, 0);
-    box(b, 2 * hw, 0.6, 2 * hl, [0, 0.05, 0], 'floor');
-    b.mat('concrete-wall').masks(0, 1, 0.9, 0);
+    groundSlab(b, -hw, hw, -hl, hl, 0.35, -0.25, b.pick(2, 4, 13), burn, 'floor');
+    b.mat('concrete-wall').masks(0, 1, 0.12, 0);
     const side: [number, number][] = [
       [-hl, -0.3],
       [hl, -0.3],
@@ -317,6 +323,37 @@ export const padFlameTrench: SiteGenerator = ({ params }) => {
       [-hl, 1.3],
     ];
     for (const sx of [-1, 1]) extrudeZY(b, side, sx > 0 ? hw : -hw - wt, sx > 0 ? hw + wt : -hw, 'wall');
+    // The walls' inner faces as the flame has left them: a gridded skin a centimetre off the concrete that
+    // carries the soot (thick low down and by the deflector, licking up in tongues) and the rust that has
+    // run down from every deluge fitting on the wall top.
+    const wallTop = (z: number): number => (Math.abs(z) <= 26 ? wh : 1.3 + ((wh - 1.3) * (hl - Math.abs(z))) / (hl - 26));
+    const stepZ = b.pick(2, 4, 13);
+    const rows = b.pick(6, 3, 1);
+    for (const sx of [-1, 1]) {
+      b.begin(false, 'wall-skin');
+      const grid: number[][] = [];
+      for (let k = 0; k <= Math.round((2 * hl) / stepZ); k++) {
+        const z = -hl + k * stepZ * ((2 * hl) / (Math.round((2 * hl) / stepZ) * stepZ));
+        const col: number[] = [];
+        for (let j = 0; j <= rows; j++) {
+          const y = 0.35 + ((wallTop(z) - 0.35) * j) / rows;
+          const v = b.v(sx * (hw - 0.012), y, z, -sx, 0, 0, 0, 0, 1, z, y, sx);
+          const up = j / rows;
+          const tongue = 0.5 + 0.5 * noise2(z / 2.3, sx * 3.7, 15);
+          const soot = Math.exp(-Math.max(0, Math.abs(z) - dr) / 34) * Math.max(0, 1 - up / (0.45 + 0.6 * tongue));
+          const rust = 0.35 * Math.max(0, noise2(z / 0.9, sx * 1.3, 17) - 0.55) * (1 - 0.6 * up);
+          b.setMask(v, 0, 1, Math.min(1, 0.12 + 0.9 * soot + rust), 0);
+          col.push(v);
+        }
+        grid.push(col);
+      }
+      for (let k = 0; k + 1 < grid.length; k++) {
+        for (let j = 0; j < rows; j++) {
+          if (sx > 0) b.quad(grid[k]![j]!, grid[k + 1]![j]!, grid[k + 1]![j + 1]!, grid[k]![j + 1]!);
+          else b.quad(grid[k]![j]!, grid[k]![j + 1]!, grid[k + 1]![j + 1]!, grid[k + 1]![j]!);
+        }
+      }
+    }
     // Flame deflector: a double wedge with concave flanks across the whole trench.
     b.mat('refractory').masks(0, 1, 1, 0);
     const n = b.pick(8, 4, 2);
@@ -330,7 +367,7 @@ export const padFlameTrench: SiteGenerator = ({ params }) => {
     extrudeZY(b, poly.reverse(), -hw + 0.02, hw - 0.02, 'deflector');
     if (b.lod === 2) return;
     // Deluge headers on the wall tops with spray nozzles into the trench.
-    b.mat('paint-red').masks(0.2, 1, 0.8, 0);
+    b.mat('paint-red').masks(0.2, 1, 0.35, 0);
     for (const sx of [-1, 1]) {
       const x = sx * (hw + wt * 0.5);
       pipe(b, [[x, wh + 0.45, -24], [x, wh + 0.45, 24]], 0.32, 0.5, { segs: b.pick(14, 8, 6), tag: 'deluge-header' });
@@ -343,10 +380,11 @@ export const padFlameTrench: SiteGenerator = ({ params }) => {
         }
       }
     }
-    b.mat('paint-yellow').masks(0.2, 1, 0.8, 0);
+    b.mat('paint-yellow').masks(0.2, 1, 0.4, 0);
     for (const sx of [-1, 1]) handrail(b, [[sx * (hw + wt - 0.15), wh, -25.5], [sx * (hw + wt - 0.15), wh, 25.5]]);
   });
-  return { models: { body }, pose: staticSite };
+  // (The trench shows its burns in full: they are vertex weights of the floor, the wall skins and the deflector.)
+  return { models: { body }, pose: (_state, emit) => emit('body', null, null, { grime: 1 }) };
 };
 
 // -------------------------------------------------------------------------------------- launch mount
