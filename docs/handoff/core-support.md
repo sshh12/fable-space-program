@@ -618,16 +618,16 @@ Ownership in this round: `src/render/core`, `src/camera`, `src/audio`, `labs/int
 `labs/render-core` and their tests, `data/defs/audio`, `docs/RENDER_API.md`. `src/render/terrain` went to a
 terrain-render fixer during the round (nothing of mine was uncommitted there; what I had measured and prepared
 is request `core-2`). `src/core/contracts`, `tools/dev` and `src/app` are the lead's. One GPU slot for eight
-agents and more: the waits for it were 16, 10, 7 and 58 minutes, and the fifth run was queued behind eight
-tickets when this was written, so browser work went into five runs.
+agents and more: the waits for it were 16, 10, 7, 58, 91 and 103 minutes, so browser work went into six runs.
 
 ### Requests
 
 | Request | Blocking | Result | One line |
 |---|---|---|---|
-| `lead-3` | yes | core half done `038cf6f`, `06c9167` (what is verified: below and the journal) | `window.__test.renderExact` on every lab page: restart of every temporal sequence, exposure metered from nothing and held, exactly N frames in one task, hold |
-| `app-integration-11` part 1 | no | core half done `038cf6f` | `shaders.warm`: the pipelines of tracked items created ahead on worker threads; the core's own thirteen use it; the terrain's seven are request `core-2` |
-| `app-integration-13` (audio share) | no | done `666a52c` | Engine voices are built ahead for the clusters that can still fire: the frame of an ignition makes no audio nodes |
+| `lead-3` | yes | core half done `038cf6f`, `06c9167`, `85c5c2c`; open for the clouds (`core-4`) and the app's hook | `window.__test.renderExact` on every lab page: restart of every temporal sequence, exposure metered from nothing and held, exactly N frames in one task, hold. The translunar page is identical to the bit; the low-orbit page is captured idle and equally exposed, and its clouds differ between captures |
+| `app-integration-11` part 1 | no | core half done `038cf6f`, written up `7d37ed2`; open for the packages | `shaders.warm`: the pipelines of tracked items created ahead on worker threads; the core's own thirteen use it; the terrain's seven are request `core-2`. The pad load with and without it: within the runs' own spread |
+| `app-integration-13` (audio share) | no | done `666a52c`, answered `dd83611` | Engine voices are built ahead for the clusters that can still fire: the frame of an ignition makes no audio nodes |
+| `vfx-10` | no | part 1 resolved `db9f895` (run and picture looked at); part 2 passed on as `core-3` | The integration lab's `lunarSurface` scene has a morning sun by default (12 degrees up over the landing target) |
 | `cockpit-16` | yes | resolved `038cf6f`, `06c9167` (picture looked at) | A bright outside in the windows keys the cabin 2.25 EV lower and is shown at its own exposure (a gain on the pixels beyond 8 m, sky included) |
 | `vehicle-pad-7` | yes | resolved `038cf6f`, `06c9167` (pictures looked at) | Soot is a density (the requester's shader text): a veil when thin, near black when thick |
 | `atmosphere-clouds-10` | no | resolved for part 1 `038cf6f`; part 2 (metering the sky in exterior views) not built | The meter's sun inside an atmosphere is the sun through the camera's air, less what clear air under a high sun takes |
@@ -635,7 +635,10 @@ tickets when this was written, so browser work went into five runs.
 | `vehicle-pad-10` | no | open, not started | Contact-shadow march of thin stand-off fittings |
 | `ocean-7`, `vehicle-pad-8` | no | not mine any more | `src/render/terrain`: the terrain-render fixer |
 
-Filed: `core-2` (terrain-render: pipelines ahead, `resetTemporal`, the main-thread profile), `NOTICE-core-5`.
+Filed: `core-2` (terrain-render: pipelines ahead, `resetTemporal`, the main-thread profile; with an addition on
+what a capture's step in the frame index does to the terrain), `core-3` (sky-lighting: the lens flare of a
+sun the terrain hides, part 2 of `vfx-10`), `core-4` (atmosphere-clouds, blocking: the clouds in a
+frame-exact capture), `NOTICE-core-5`.
 
 ### What the load is made of (measured before anything was changed)
 
@@ -684,22 +687,62 @@ each, unique per run): created synchronously 886 ms until the GPU process is thr
 0.3 ms); ahead 184 ms; the synchronous creations that `get()` then makes leave it 0.6 ms (3.1 ms with
 `layout: 'auto'`).
 
+Measured on the pad load (the game at its default start, 2560 x 1440, a fresh browser per column, back to
+back, 12:53 to 12:59; `warm=0` is the tree without the core's creation ahead; seconds):
+
+| | `warm=0` | default | `warm=0` again | default again |
+|---|---|---|---|---|
+| cold load: view revealed | 51.1 | 48.4 | 38.4 | 34.7 |
+| reload: view revealed | 39.1 | 44.7 | 38.3 | 34.4 |
+| cold: "shader modules compiled" row ends | 38.7 | 36.1 | 27.9 | 25.0 |
+| cold: frame 0, main thread | 6.1 | 5.7 | 4.4 | 3.6 |
+
+Three of the four pairs are 2.7 to 3.9 s shorter with the core's pipelines ahead, one is 5.5 s longer, and
+the two `warm=0` columns differ from each other by 12.7 s. The core's half alone does not shorten the load
+by an amount these runs can tell from their own spread: thirteen of roughly eighty pipelines are ahead, the
+queue in the GPU process is the packages' pipelines and it is as long as before. The 28.7 s of 09:36 is not
+a "before" for this table (the tree gained the fixers' shaders and the machine was busier). Frame 0 stays
+3.6 to 6.1 s; which hook carries it varies from run to run (once the site's and the ocean's with 1.6 s
+each instead of the terrain's uploads): it is whoever makes the call that waits for the GPU process.
+
 ### Frame-exact capture (request lead-3)
 
 `window.__test.renderExact(frames)` on every `createLabApp` page; in the core
 `CoreRenderer.renderExact(frames, renderFrame)`, `holding`, `exactInfo()`. RENDER_API section 13 ("Frame-exact
 capture") has the order and the rule for features. In short:
 
-1. restart: `frame.frameIndex` to the next multiple of 4096 (it stays monotonic: caches are stamped with it;
-   phases of powers of two start at 0; continuity tests fail once), the frame uniforms' frame count from 0,
-   `frame.realTime` 0, TAA jitter and history, the shadow cascades' captures and stagger, the emitter hints,
-   then every feature's `resetTemporal?()` (`TemporalFeature`, exported by the core);
+1. restart, with ONE step of `frame.frameIndex` (2 to 65 frames, to 16 short of a multiple of 64; it stays
+   monotonic: caches are stamped with it; continuity tests fail once, which is how a feature without a
+   `resetTemporal` drops its history), the frame uniforms' frame count from 0, `frame.realTime` 0, TAA jitter
+   and history, the shadow cascades' captures and stagger, the emitter hints, then every feature's
+   `resetTemporal?()` (`TemporalFeature`, exported by the core);
 2. exposure: metered from nothing over 16 frames, each waiting for the histogram of the one before and taking
-   its target at once, then held (an override stays);
-3. restart again, exactly `frames` frames in ONE task (nothing that arrives is taken in between), the last
-   one held: `render` draws nothing until the next `renderExact` or `setDeterministic(false)`. A capture that
-   was not idle before or after its frames is not held (the page must render on for the work to finish) and
-   reports `idle: false`; `exactInfo()` names who was busy.
+   its target at once, then held (an override stays). If a feature is busy after them (the step set it to
+   work), the other 48 frames of the block are rendered and the metering is repeated, without a step,
+   `EXACT_SETTLE_ROUNDS` = 8 times at most (`exactInfo().rounds`, `.busyLeadIn`);
+3. restart again without a step (the first frame's index is a multiple of 64), exactly `frames` frames in
+   ONE task (nothing that arrives is taken in between), the last one held: `render` draws nothing until the
+   next `renderExact` or `setDeterministic(false)`. A capture that was not idle before or after its frames
+   is not held (the page must render on for the work to finish) and reports `idle: false`; `exactInfo()`
+   names who was busy.
+
+How it came to this. The first version stepped the frame index twice per capture (before the metering and
+before the frames), to a multiple of 4096. The low-orbit page was then never idle through a capture (the
+terrain busy before and after the frames at every attempt). I put that down to the size of the step (the
+terrain retries given-up tiles after 900 frames), made it 64 and said so in a commit message as the likely
+cause; run 5 showed the same failure, five attempts of five. What a step does to the terrain is in its
+code: a tile that was not covered "in the frame before" fades in again, every tile at once. So there is one
+step now, the frames after it are consecutive, and the lead-in repeats until nobody is busy. With that the
+low-orbit page is captured at the first attempt (three meterings: the terrain is at work for 80 to 144
+frames after the step; the first 21 are the fade, the rest I did not identify: request `core-2`).
+
+What run 6 then showed: the three low-orbit captures are idle and have the same EV100 to the last digit,
+and the pictures differ along the clouds (mean 0.15 to 0.31 levels, 15 to 19 % of the pixels; the lead's
+proof: three loads identical, the fourth not). The clouds take their march sequence and the phase of their
+shadow rounds from the absolute frame index (a golden-ratio rotation; rounds of 48 or 96 frames), and the
+first frame of a capture has a different multiple of 64 each time. That is request `core-4` (blocking);
+`CoreApi.sequenceIndex()` gives a feature the frames since the sequences last started for such sequences.
+The translunar page and the core's lab are identical to the bit.
 
 Why the exposure is metered that way: the histogram is read back asynchronously, so which frame's histogram a
 frame meters with is a matter of timing; in the lead-in each frame waits for the read-back of the one before,
@@ -746,6 +789,15 @@ on the pad has six (23 MB). The offline render of 12 s took 0.99 s with six stan
 A voice whose cluster fell silent is disposed after its drain as before and built again a frame later (that
 frame costs the millisecond, away from any event).
 
+A voice built ahead has the same level and onset as one built on demand, and on the airborne path not the
+same samples (residual 2e-5 to 1.6e-2 of the path's level for the vehicle). The cause is the delay line's
+age: the measurements fit, to three digits, a `DelayNode` read at a single-precision position with linear
+interpolation, so a constant fractional delay is rounded to 1/16 or 1/8 of a sample depending on where the
+write position of a 20 s line stands. Two lines of the same delay, one half a second older: residual
+6.05e-2 at a delay of 14117.29 frames (the rounding predicts 6.03e-2), 0 at 14117.6448 frames (which rounds
+alike on both grids); table in request `app-integration-13`. Two voices built on demand at different
+moments differ the same way; nothing a listener hears (an eighth of a sample at most).
+
 ### Smaller changes
 
 - `vehicle-pad-7`: the mesh G-buffer shader's soot is a density, continuous in the weight (the requester's
@@ -775,7 +827,8 @@ All additive except where a migration is given in NOTICE-core-5 and RENDER_API s
 | Where | What |
 |---|---|
 | `CoreShaderLibrary` | `warm(items)`, `warmed()`, `warming()`; `pendingCompilations()` and `compilations()` count pipelines being created ahead |
-| `CoreRenderer` | `warm()`, `renderExact(frames, renderFrame)`, `holding`, `exactInfo()`; `exposureInfo()` gained `farGain`, `farLevel`, `farWeight`; `RendererOptions.pipelineWarm`; `SEQUENCE_ALIGN`, `EXACT_METER_FRAMES` |
+| `CoreRenderer` | `warm()`, `renderExact(frames, renderFrame)`, `holding`, `exactInfo()` (`ExactInfo`: `busyBefore`, `busyAfter`, `rounds`, `busyLeadIn`); `exposureInfo()` gained `farGain`, `farLevel`, `farWeight`; `RendererOptions.pipelineWarm`; `SEQUENCE_ALIGN`, `EXACT_METER_FRAMES`, `EXACT_SETTLE_ROUNDS` |
+| `CoreApi` | `sequenceIndex()`: the frames since the temporal sequences last started (the frame index until the first capture) |
 | `@/render/core` | `TemporalFeature` (`resetTemporal?()`); `MeshSystem.pipelines()` |
 | frame uniforms | `time.z` / `counts.z` are the frames since the temporal sequences last started (the frame index until a `renderExact`) |
 | `exposure.ts` | `MeterInput.histogramSky`, `MeterResult.farLevel / farWeight`, `interiorFarGain`, `INTERIOR_OUTSIDE_*`, `INTERIOR_FAR_STOPS`, `SKY_METER_MAX`, `sunThroughAir`, `SUN_AIR_CLEAR` |
@@ -783,6 +836,7 @@ All additive except where a migration is given in NOTICE-core-5 and RENDER_API s
 | mesh G-buffer shader | soot as a density (`layerStreaks`) |
 | audio | `ModelOutput.standby`, `EngineStandby`, `EnginesConfig.standbyVoices` (data: `data/defs/audio/engines.json`), `AudioGraphStats.standbyVoices` |
 | `window.__test` | `renderExact` on every `createLabApp` page |
+| integration lab | `scene=lunarSurface` (FakeSim) pins the sun 12 degrees up at azimuth 110 over the landing target when no `&sun=` is given |
 
 ### Tests added or changed
 
@@ -795,9 +849,10 @@ All additive except where a migration is given in NOTICE-core-5 and RENDER_API s
 - `tests/browser/render-core/exact.spec.ts` (the same picture, to the bit, after another history and on a
   fresh load; the hold; refusal without deterministic mode), `warm.spec.ts` (items built, pipelines draw, the
   synchronous creation after it is a cache hit), `mesh.spec.ts` (soot as a density).
-- `tests/browser/integration/exact.spec.ts` (the lead's two proof pages with every package: who is busy after
-  a restart, where two captures differ), `exposure.spec.ts` (the seat view with the Earth in the windows; the
-  pad from the seat).
+- `tests/browser/integration/exact.spec.ts` (the lead's two proof pages with every package: how many
+  meterings a capture took, who was busy, where two captures differ; the picture is asserted for the
+  translunar page only until `core-4` is resolved: flag `exact` per page), `exposure.spec.ts` (the seat view
+  with the Earth in the windows; the pad from the seat; the lunar surface scene's default sun).
 - `tests/browser/audio/audio-offline.spec.ts` (voices built ahead against voices built on demand: gain, shift,
   residual and level per window), `audio-live.spec.ts` (the ignition makes no voice).
 
@@ -806,22 +861,31 @@ All additive except where a migration is given in NOTICE-core-5 and RENDER_API s
 1. `lead-3`, the app half: `src/app/testHooks.ts` needs
    `renderExact: (n) => renderer.renderExact(n, () => <the app's frame at the fixed step>)` and the frame loop
    must skip its frame while `renderer.holding`. Not mine.
-2. Features and the frame-exact capture: none has a `resetTemporal` yet. translunar-earth is identical without
-   one; what the low-orbit page needs is in the run recorded in the journal. The terrain's part is in `core-2`.
+2. Features and the frame-exact capture. The clouds: request `core-4`, blocking for every reference image
+   with marched clouds in view; a `leo-day` reference recorded before it is unreliable even if three loads
+   agree. The terrain: `core-2` (three meterings per capture instead of one; not a fault of the picture).
+   The vehicle has `resetTemporal` (vessel and site); ocean, vfx, sky and cockpit have none, and nothing of
+   theirs differed on the two proof pages, which show no near sea surface, no plume and no cabin: other
+   checkpoints are unproven. When `core-4` is resolved, `leo-day` in `tests/browser/integration/exact.spec.ts`
+   goes to `exact: true`.
 3. `app-integration-11` part 1, the other half: every feature package adopts `shaders.warm` (NOTICE-core-5,
    RENDER_API 17.8), the terrain by `core-2`; and `await renderer.warm()` before the app's frame loop starts
    is a decision for whoever owns `src/app`: with every pipeline created ahead it costs nothing and frame 0
    compiles nothing; with most of them still synchronous it would hold the first frame (and with it the
    terrain's view streaming) until the GPU process's queue has drained.
 4. The load itself grew during the round with the fixers' new shaders and a busier machine: 28.7 s at 09:36,
-   49 s at 11:10 (the six-pipeline control of `warm.spec.ts` took 886 ms at 10:00 and 1,610 ms at 11:16).
-   Numbers of different hours are not comparable; the A/B of `warm=0` against the default, back to back, is
-   in the journal.
-5. `cockpit-10` (re-opened) and `vehicle-pad-10` are open and not started; each request file carries my notes
-   on where to begin. `atmosphere-clouds-10` part 2 (the sky in the exterior meter) is not built.
-6. The engine voice built ahead is not sample-identical to one built on demand on the airborne path (a
-   residual of 2e-5 to 1.6e-2 of the path's level for the vehicle, the structure-borne path identical): the
-   cause is not established. The offline test bounds what "the same sound" means (level, onset, residual).
+   49 s at 11:10, 35 to 51 s at 12:55 (the six-pipeline control of `warm.spec.ts` took 886 ms at 10:00 and
+   1,610 ms at 11:16). Numbers of different hours are not comparable; back to back, the core's creation ahead
+   makes no difference these runs can tell from their spread (table above). The load gets shorter when the
+   packages' pipelines are created ahead and when the terrain streams during the compiles, not before.
+5. `cockpit-10` (re-opened) and `vehicle-pad-10` are open and not started: each is a shader change that
+   needs two or three picture rounds on the one GPU slot, whose waits were 58 to 103 minutes in the second
+   half of this round. Each request file carries my notes on where to begin (the note in `vehicle-pad-10`
+   was corrected: the contact march already reads the full-resolution depth, its result is what is half
+   resolution). `atmosphere-clouds-10` part 2 (the sky in the exterior meter) is not built.
+6. Not run in the browser: `CoreApi.sequenceIndex()` (one line) and the last simplification of
+   `tests/browser/integration/exact.spec.ts` (the `exact` flag per page); both typechecked. Everything else
+   of `85c5c2c` ran at 14:58.
 7. Still open from section 9: the Moon's 126 always-resident tiles, the coast-under-sea parents in the tile
    data, the cross-feature suite and the budget table (not run by this package).
 
@@ -855,4 +919,22 @@ All additive except where a migration is given in NOTICE-core-5 and RENDER_API s
   `06c9167`, `6e04b86` (resolutions of `cockpit-16`, `vehicle-pad-7`, `atmosphere-clouds-10` part 1).
 - 11:22. Run 5 queued behind eight tickets: the pad load with `warm=0` and with the default back to back
   (twice), the low-orbit capture with the step of 64, the corrected tests, the audio suites, and a probe of
-  the delay line's age. Its results belong here; see the end of this section.
+  the delay line's age.
+- 11:58. `vfx-10` arrived: the lab's lunar surface scene gets a morning sun by default (`db9f895`); the flare
+  of a hidden sun is the sky package's (`core-3`).
+- 12:53-13:02. Run 5 after 91 minutes: the load A/B (within the spread); translunar identical; the low-orbit
+  page not idle in five attempts again, so the step's size was not the cause; the seat exposure, the soot,
+  the audio suites (12 offline, 5 live) pass; the delay probe: 0 for a 20 s line, 6.5e-3 for a 1 s line.
+- 13:05-13:20. Read the terrain's selection: a step in the frame index fades every tile in again. The capture
+  rebuilt: one step, the lead-in repeated until nobody is busy. `app-integration-11` part 1 written up
+  (`7d37ed2`); my note in `vehicle-pad-10` corrected (`c682366`). The delay probe given a delay whose
+  fraction rounds differently on the two single-precision grids.
+- 13:15-14:58. Waited 103 minutes for the slot. Closing polls: empty throughout.
+- 14:58-15:06. Run 6: the core's lab and the translunar page identical with one metering; the low-orbit page
+  idle at the first attempt (three meterings) and equally exposed, its clouds different between captures;
+  the lead's proof: translunar passes, leo-day three loads identical and the fourth not; the lunar surface
+  scene sunlit (12.1 degrees, EV100 11.95, picture looked at); the delay probe: 6.05e-2 where the rounding
+  predicts 6.03e-2.
+- 15:06-15:25. `CoreApi.sequenceIndex()`; `core-4` to atmosphere-clouds (blocking); the addition to `core-2`;
+  the resolutions of `lead-3` (core half) and `app-integration-13` (audio share); commits `85c5c2c`,
+  `dd83611`. The two temporary probe specs deleted.
