@@ -6,9 +6,10 @@
  *   npx tsx tools/dev/record-mission-baseline.ts --exact <record.json>
  *       EXACT against the baseline: every milestone equal; prints where a difference starts. Exit 1 on one.
  *   npx tsx tools/dev/record-mission-baseline.ts --envelope <record.json> --controls <controls.json>
- *       ENVELOPE against the baseline: per milestone the event mission time and da/a within twice the
- *       largest difference among the control flights of the controls file; prints the table. Exit 1 when a
- *       milestone is outside. `--reference <record.json>` compares against another record than the baseline.
+ *       ENVELOPE against the baseline: per milestone the same body and situation, and the event mission
+ *       time, da/a, e and i within twice the largest difference among the control flights of the controls
+ *       file; prints the table. Exit 1 when a milestone is outside. `--reference <record.json>` compares
+ *       against another record than the baseline. What this does and does not catch: mission-baseline.ts.
  *
  * Flights (each flies the tree's `lunar-direct` once, about a minute; through the gate):
  *   node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/dev/record-mission-baseline.ts --check

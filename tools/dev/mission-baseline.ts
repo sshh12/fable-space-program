@@ -16,12 +16,40 @@
  *             milestone's event time, capture time and state are EQUAL. (The golden hash asserts the same
  *             thing for the end state; this comparison says at which milestone a difference starts.)
  *   ENVELOPE  for a step that legitimately moves time (the tick grid; later the session switch): per
- *             milestone, the flight's difference from the reference in EVENT MISSION TIME and in da/a must
- *             lie within TWICE the largest such difference among a recorded set of CONTROL flights: flights
- *             of the reference code whose only change is a shifted start. The controls measure how far
- *             the same code moves when only time moves; a flight outside twice that is a different
- *             simulation. The mission's own gates (tests/mission/full-mission.test.ts) must pass as well:
- *             the envelope says "the same flight", the gates say "a good flight".
+ *             milestone, the flight is about the SAME BODY in the SAME SITUATION as the reference, and its
+ *             difference from the reference in EVENT MISSION TIME, in da/a, in e and in i lies within
+ *             TWICE the largest such difference among a recorded set of CONTROL flights: flights of the
+ *             reference code whose only change is a shifted start. The controls measure how far the same
+ *             code moves when only time moves; a flight outside twice that is a different simulation. The
+ *             mission's own gates (tests/mission/full-mission.test.ts) must pass as well: the envelope
+ *             says "the same flight", the gates say "a good flight".
+ *
+ * What each check can and cannot catch (the independent review of sim-core-v2, 2026-11-12, measured on the
+ * four control flights of tests/mission/controls-v1.json). None of them proves unchanged behaviour over the
+ * whole flight:
+ *
+ *   EXACT                everything, from the first bit that differs; but only for a step that starts at
+ *                        the bit-identical instant, which no flight on the tick grid does against v1.
+ *   Same-start equality  (tests/mission/reference-v1-aligned.json: the v1 clock at the tick-aligned start;
+ *                        asserted by the mission test) catches a relative change of about 1e-8 in the
+ *                        INTEGRATED ASCENT, and nothing after EARTH_ORBIT: from the first rails landing
+ *                        the two flights stand on different instants and diverge like any two starts.
+ *   ENVELOPE             catches about 5e-5 in da/a from the first staging to orbit (STAGE_SEP_1 to
+ *                        EARTH_ORBIT: the controls spread by 5e-5 there and the allowed difference is twice
+ *                        that; e is held to the same order). Before the first staging the floors apply
+ *                        (one control tick; 1e-12 in da/a, e and i). After TLI it is ONLY A SANITY BOUND:
+ *                        the allowed difference is 0.3-1.6 % in a and 150-1,300 s in event time (i up to
+ *                        0.2 rad at the lunar lift-off), so a change to the coast, the lunar phases or the
+ *                        entry that is smaller than that passes. A flight that ends up about another body
+ *                        or in another situation at a milestone fails wherever it happens.
+ *   Rails equivalence    in the unit suite (a rails advance against the integration of the same code) is
+ *                        SELF-CONSISTENCY: it holds for whatever the code does. The comparison of the rails
+ *                        with the v1 code was made once, for the tick-grid step, and is not a test.
+ *   The mission's gates  say that the flight is good (landing accuracy, entry corridor, splashdown zone),
+ *                        not that it is the same flight.
+ *
+ * So a change to the coast or to anything after TLI is guarded by the mission's gates and by the unit
+ * suites of the code concerned, not by a mission record.
  *
  * In both comparisons: angles are compared as wrapped absolute differences (never relative: a longitude of
  * node of 0.008 rad is as good as one of 3 rad), the true anomaly is never compared (it is the position
@@ -101,12 +129,13 @@ export const COMPARE_DOC: MissionRecord['compare'] = {
   exact:
     'EXACT, for a step that must not change behaviour and starts at the bit-identical instant: every milestone has the same id, event time (ut), capture time, body, situation, state (r, v, mass), readouts and data, compared for equality. The first milestone that differs is where the change begins.',
   envelope:
-    'ENVELOPE, for a step that legitimately moves time (the tick grid, the session switch): per milestone, |event mission time - reference| and |a - a_ref| / |a_ref| must each be within twice the largest such difference among the control flights (the reference code with shifted starts only; recorded by the owner of the step in a controls file), with floors of one control tick (1/30 s) and 1e-12. The mission gates must pass as well.',
+    'ENVELOPE, for a step that legitimately moves time (the tick grid, the session switch): per milestone, the flight is about the same body in the same situation as the reference, and |event mission time - reference|, |a - a_ref| / |a_ref|, |e - e_ref| and |i - i_ref| must each be within twice the largest such difference among the control flights (the reference code with shifted starts only; recorded by the owner of the step in a controls file), with floors of one control tick (1/30 s) for the time and 1e-12 for the others. The mission gates must pass as well.',
   notes: [
     'The scripted pilot decides at 30 Hz, so a flight is a chaotic function of its start instant: a 2 ms shift of the unmodified v1 code moves EARTH_ORBIT by 4.8e-5 in da/a and the lunar touchdown by 47 s. A fixed tolerance cannot tell a moved clock from a changed simulation; the control flights can.',
     'Angles are compared as wrapped absolute differences. The true anomaly (nu) is never compared.',
     'captureOffset is the time after the event at which the state was taken (the first control tick that sees the milestone): 0 for events that coincide with a control tick, up to 1/30 s otherwise. Under thrust or drag the state at the capture is not the state at the event.',
     'Event mission time is ut - startUt of the same record.',
+    'What the envelope catches: about 5e-5 in da/a from the first staging to orbit; after TLI it is a sanity bound only (0.3-1.6 % in a, 150-1,300 s). Same-start equality (reference-v1-aligned.json) catches about 1e-8 in the integrated ascent and nothing after EARTH_ORBIT.',
   ],
 };
 
@@ -207,9 +236,11 @@ export function describeExact(reference: MissionRecord, candidate: MissionRecord
 
 // ---------------------------------------------------------------------------------------------- ENVELOPE
 
-/** Floors of the envelope: one control tick of event time, and float noise in da/a. */
+/** Floors of the envelope: one control tick of event time, and float noise in da/a, in e and in i (rad). */
 export const ENVELOPE_TIME_FLOOR = 1 / 30;
 export const ENVELOPE_DA_FLOOR = 1e-12;
+export const ENVELOPE_DE_FLOOR = 1e-12;
+export const ENVELOPE_DI_FLOOR = 1e-12;
 /** The flight may differ by this many times the largest difference among the controls. */
 export const ENVELOPE_FACTOR = 2;
 
@@ -221,24 +252,31 @@ export interface MilestoneDifference {
   dTime: number;
   /** (a - a_ref) / |a_ref| (signed). */
   dA: number;
-  /** Information: differences of e, and of i, lan, argPe as wrapped absolute differences (rad). `nu` is never compared. */
+  /** e - e_ref (signed), and |i - i_ref| as a wrapped absolute difference, rad. Both are judged by the envelope. */
   dE: number;
   dI: number;
+  /** Information: lan and argPe as wrapped absolute differences (rad). `nu` is never compared. */
   dLan: number;
   dArgPe: number;
   /** Information: differences of altitude (m) and of orbital speed (m/s) at the two captures. */
   dAltitude: number;
   dSpeed: number;
-  /** The two states are about different bodies or in different situations (the elements are then not comparable). */
+  /**
+   * The milestone was not reached, or the two states are about different bodies or in different situations
+   * (the elements are then not comparable). The envelope fails on any of them.
+   */
   mismatch: string | null;
 }
+
+/** `mismatch` of a milestone that the other flight did not reach. */
+export const NOT_REACHED = 'the milestone was not reached';
 
 /** Per-milestone differences of `other` from `reference` (milestones are matched by id). */
 export function milestoneDifferences(reference: MissionRecord, other: MissionRecord): MilestoneDifference[] {
   return reference.milestones.map((a) => {
     const b = other.milestones.find((m) => m.id === a.id);
     if (!b) {
-      return { id: a.id, captureOffset: [a.captureOffset, Number.NaN], dTime: Number.NaN, dA: Number.NaN, dE: Number.NaN, dI: Number.NaN, dLan: Number.NaN, dArgPe: Number.NaN, dAltitude: Number.NaN, dSpeed: Number.NaN, mismatch: 'the milestone was not reached' };
+      return { id: a.id, captureOffset: [a.captureOffset, Number.NaN], dTime: Number.NaN, dA: Number.NaN, dE: Number.NaN, dI: Number.NaN, dLan: Number.NaN, dArgPe: Number.NaN, dAltitude: Number.NaN, dSpeed: Number.NaN, mismatch: NOT_REACHED };
     }
     return {
       id: a.id,
@@ -257,36 +295,65 @@ export function milestoneDifferences(reference: MissionRecord, other: MissionRec
 }
 
 export interface EnvelopeRow extends MilestoneDifference {
-  /** Largest |dTime| and |dA| among the controls, and the allowed values (factor x largest, at least the floor). */
+  /** Largest |dTime|, |dA|, |dE| and dI among the controls, and the allowed values (factor x largest, at least the floor). */
   controlTime: number;
   controlA: number;
+  controlE: number;
+  controlI: number;
   allowedTime: number;
   allowedA: number;
+  allowedE: number;
+  allowedI: number;
   pass: boolean;
+  /** Every reason the milestone is outside, joined by "; " (null when it passes). */
   why: string | null;
 }
 
 /**
  * ENVELOPE: `candidate` against `reference`, judged by the control flights (records of the reference code
- * with shifted starts). At least two controls are required; a milestone a control did not reach makes the
- * envelope undefined there, which is a failure of the controls file, not of the candidate.
+ * with shifted starts). Per milestone the candidate must be about the reference's body in the reference's
+ * situation, and within the allowed difference in event mission time, da/a, e and i.
+ *
+ * At least two controls are required. A milestone that a control did not reach, or at which a control is
+ * about another body or in another situation than the reference, has no envelope (differences of elements
+ * about two bodies mean nothing): that is a failure of the controls file, not of the candidate, and the row
+ * says so.
  */
 export function compareEnvelope(reference: MissionRecord, candidate: MissionRecord, controls: MissionRecord[]): EnvelopeRow[] {
   if (controls.length < 2) throw new Error(`the envelope needs at least two control flights (got ${controls.length})`);
   const controlDiffs = controls.map((c) => milestoneDifferences(reference, c));
   return milestoneDifferences(reference, candidate).map((d, index) => {
     const column = controlDiffs.map((c) => c[index]!);
-    const broken = column.find((c) => c.mismatch !== null && c.mismatch === 'the milestone was not reached');
-    const controlTime = Math.max(...column.map((c) => Math.abs(c.dTime)));
-    const controlA = Math.max(...column.map((c) => Math.abs(c.dA)));
+    const brokenAt = column.findIndex((c) => c.mismatch !== null);
+    const largest = (of: (c: MilestoneDifference) => number): number => Math.max(...column.map((c) => Math.abs(of(c))));
+    const controlTime = largest((c) => c.dTime);
+    const controlA = largest((c) => c.dA);
+    const controlE = largest((c) => c.dE);
+    const controlI = largest((c) => c.dI);
     const allowedTime = Math.max(ENVELOPE_TIME_FLOOR, ENVELOPE_FACTOR * controlTime);
     const allowedA = Math.max(ENVELOPE_DA_FLOOR, ENVELOPE_FACTOR * controlA);
-    let why: string | null = null;
-    if (broken) why = 'a control flight did not reach this milestone: the controls file is unusable';
-    else if (d.mismatch === 'the milestone was not reached') why = d.mismatch;
-    else if (!(Math.abs(d.dTime) <= allowedTime)) why = `event time differs by ${d.dTime.toFixed(3)} s, allowed ${allowedTime.toFixed(3)} s`;
-    else if (!(Math.abs(d.dA) <= allowedA)) why = `da/a ${d.dA.toExponential(2)}, allowed ${allowedA.toExponential(2)}`;
-    return { ...d, controlTime, controlA, allowedTime, allowedA, pass: why === null, why };
+    const allowedE = Math.max(ENVELOPE_DE_FLOOR, ENVELOPE_FACTOR * controlE);
+    const allowedI = Math.max(ENVELOPE_DI_FLOOR, ENVELOPE_FACTOR * controlI);
+    const reasons: string[] = [];
+    if (brokenAt >= 0) {
+      const c = column[brokenAt]!;
+      reasons.push(
+        c.mismatch === NOT_REACHED
+          ? 'a control flight did not reach this milestone: the controls file is unusable'
+          : `control flight ${brokenAt + 1} is ${c.mismatch} here, so the milestone has no envelope: the controls file is unusable`,
+      );
+    } else if (d.mismatch !== null) {
+      // Not reached, another body or another situation: the element differences below mean nothing.
+      reasons.push(d.mismatch);
+    } else {
+      // `!(x <= allowed)` and not `x > allowed`: a NaN difference is outside.
+      if (!(Math.abs(d.dTime) <= allowedTime)) reasons.push(`event time differs by ${d.dTime.toFixed(3)} s, allowed ${allowedTime.toFixed(3)} s`);
+      if (!(Math.abs(d.dA) <= allowedA)) reasons.push(`da/a ${d.dA.toExponential(2)}, allowed ${allowedA.toExponential(2)}`);
+      if (!(Math.abs(d.dE) <= allowedE)) reasons.push(`de ${d.dE.toExponential(2)}, allowed ${allowedE.toExponential(2)}`);
+      if (!(Math.abs(d.dI) <= allowedI)) reasons.push(`di ${d.dI.toExponential(2)} rad, allowed ${allowedI.toExponential(2)} rad`);
+    }
+    const why = reasons.length > 0 ? reasons.join('; ') : null;
+    return { ...d, controlTime, controlA, controlE, controlI, allowedTime, allowedA, allowedE, allowedI, pass: why === null, why };
   });
 }
 
@@ -294,22 +361,22 @@ const sci = (x: number): string => (Number.isFinite(x) ? x.toExponential(2) : 'n
 
 /** A table of the envelope comparison, one line per milestone. */
 export function describeEnvelope(rows: EnvelopeRow[]): string {
-  const head = 'milestone                capture offset (ref, flight) s   dTime s (allowed)        da/a (allowed)            de        di rad    dlan rad  dargPe rad  result';
+  const head = 'milestone                capture offset (ref, flight) s   dTime s (allowed)        da/a (allowed)            de (allowed)              di rad (allowed)          dlan rad  dargPe rad  result';
   const lines = rows.map((r) =>
     [
       r.id.padEnd(24),
       `${r.captureOffset[0].toFixed(4)}, ${Number.isFinite(r.captureOffset[1]) ? r.captureOffset[1].toFixed(4) : 'n/a'}`.padEnd(32),
       `${Number.isFinite(r.dTime) ? r.dTime.toFixed(3) : 'n/a'} (${r.allowedTime.toFixed(3)})`.padEnd(24),
       `${sci(r.dA)} (${sci(r.allowedA)})`.padEnd(25),
-      sci(r.dE).padEnd(9),
-      sci(r.dI).padEnd(9),
+      `${sci(r.dE)} (${sci(r.allowedE)})`.padEnd(25),
+      `${sci(r.dI)} (${sci(r.allowedI)})`.padEnd(25),
       sci(r.dLan).padEnd(9),
       sci(r.dArgPe).padEnd(11),
-      r.pass ? `ok${r.mismatch ? ` (${r.mismatch})` : ''}` : `OUTSIDE: ${r.why}`,
+      r.pass ? 'ok' : `OUTSIDE: ${r.why}`,
     ].join(' '),
   );
   const failed = rows.filter((r) => !r.pass);
-  return `${head}\n${lines.join('\n')}\nENVELOPE: ${failed.length === 0 ? `all ${rows.length} milestones inside twice the controls' spread` : `${failed.length} of ${rows.length} milestones outside (${failed.map((r) => r.id).join(', ')})`}. The mission gates must pass as well (npm run test:mission).`;
+  return `${head}\n${lines.join('\n')}\nENVELOPE: ${failed.length === 0 ? `all ${rows.length} milestones about the reference's body in its situation and inside twice the controls' spread in event time, da/a, e and i` : `${failed.length} of ${rows.length} milestones outside (${failed.map((r) => r.id).join(', ')})`}. The mission gates must pass as well (npm run test:mission).`;
 }
 
 /** Read a controls file: an array of records, or `{ controls: [...] }`. */
