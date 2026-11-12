@@ -304,9 +304,10 @@ world-chase-window-night.
   (pools of light, darker walls) and since round 3 stand where the cabin sees them, but a switch lever, a
   guard or a hatch rod throws no shadow of its own. Shadow maps for the floods were not built (cost against
   the 0.8 ms line).
-- **Range**: an interior camera cannot hold a sunlit patch or a sunlit landscape and the cabin in one
-  exposure. The core's meter now stops down up to 3 EV for bright areas of a few per cent (cockpit-12, part 1);
-  a sun patch on the console still clips (the direct sun is 6-7 stops over an Earth-lit cabin), and the noon
+- **Range**: an interior camera cannot hold a sunlit landscape and the cabin in one exposure. The core's
+  meter stops down up to 3 EV for bright areas of a few per cent (cockpit-12, part 1): since round 3 (the
+  windows' light at its true level) a sun patch on the console is about four stops over an Earth-lit cabin and
+  keeps its texture; in a cabin lit only by its lamps it still clips. The noon
   sky through a window clips (the sky is not lit geometry, the interior meter cannot weigh it). Leaning to the
   window the Earth is exposed correctly and the frame goes dark, as in a photograph.
 - **Entry**: the panes show the vfx sheath (cockpit-9) as a near-white lavender glow, not yet the streaked
