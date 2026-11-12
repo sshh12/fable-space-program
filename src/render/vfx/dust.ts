@@ -96,7 +96,9 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   let dW = normalize(ray);
   let cosT = dot(dW, frame.sunDir.xyz);
   let g = 0.55;
-  let phase = mix(1.0, (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosT, 1.5), 0.7);
+  // (Against a low sun the sheet is brighter than the ground under it, about twice: more, and a hover seen
+  // towards the sun is a white-out.)
+  let phase = mix(1.0, (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosT, 1.5), 0.45);
   let amb = vfxProbeAmbient(0u);
   let seed = S.look.w;
   let fp = 2.0 * frame.cameraUp.w * vfx.half.w;
