@@ -149,13 +149,29 @@ fn oceanDepthBelow(posRel: vec3f, up: vec3f, guess: f32, fallback: f32) -> f32 {
 }
 
 /// Depth (m, vertical; negative where it lies higher) of the bed's PLANE below the camera-relative point 'p' (ROOT;
-/// 'up' its unit up): the plane through the seabed seen at pixel 'px' with the normal the G-buffer holds for it.
+/// 'up' its unit up): the plane through the seabed seen at pixel 'px' and its neighbours.
 /// What the vertical march falls back on where the vertical leaves the frame, and the depth of a bed at or above
 /// sea level (the film of water that runs up a beach), which a march downwards cannot give.
 fn oceanBedPlaneDepth(px: vec2i, p: vec3f, up: vec3f) -> f32 {
-  let size = vec2f(textureDimensions(sceneDepthOpaqueTex));
+  let dim = vec2i(textureDimensions(sceneDepthOpaqueTex));
+  let size = vec2f(dim);
   let hit = positionFromDepth((vec2f(px) + 0.5) / size, textureLoad(sceneDepthOpaqueTex, px, 0));
-  let n = octDecode(textureLoad(gbufferNormalTex, px, 0).xy);
+  // The plane of the bed's SHAPE, from its neighbours in the depth copy. (The G-buffer's normal carries the ground's
+  // fine relief: a plane tilted by a ripple of the sand misses the bed a few metres on by decimetres, which is the
+  // whole film of a swash. It stands only where the neighbours are across a depth step.)
+  var n = octDecode(textureLoad(gbufferNormalTex, px, 0).xy);
+  let qx = vec2i(select(px.x + 1, px.x - 1, px.x + 1 >= dim.x), px.y);
+  let qy = vec2i(px.x, select(px.y + 1, px.y - 1, px.y + 1 >= dim.y));
+  let dx = textureLoad(sceneDepthOpaqueTex, qx, 0);
+  let dy = textureLoad(sceneDepthOpaqueTex, qy, 0);
+  if (dx > 0.0 && dy > 0.0) {
+    let ea = positionFromDepth((vec2f(qx) + 0.5) / size, dx) - hit;
+    let eb = positionFromDepth((vec2f(qy) + 0.5) / size, dy) - hit;
+    let g = cross(ea, eb);
+    let gl = length(g);
+    if (gl > 1e-12 && max(length(ea), length(eb)) < 0.2 * length(hit)) { n = g / gl; }
+  }
+  if (dot(n, up) < 0.0) { n = -n; }
   return dot(p - hit, n) / max(dot(up, n), 0.2);
 }
 
@@ -708,7 +724,7 @@ struct FsOut {
     breaker = wc.x;
     // What a breaker left stays dense and loses AREA as it ages (it tears and shrinks; it does not thin to dust).
     // (Never quite solid: a breaker is torn water, with holes where the lace is thinnest.)
-    density = min(saturate(wc.x + oceanU.foam.x * smoothstep(0.35, 0.8, wc.y) * (1.0 - wc.x)), 0.86);
+    density = min(saturate(wc.x + oceanU.foam.x * smoothstep(0.3, 0.7, wc.y) * (1.0 - wc.x)), 0.86);
   }
   // Surf, where the water is shallower than the swell can stand in:
   //  - bores run shoreward at sqrt(g h) (lines of equal travel time to the shore, a sharp front with the foam it
@@ -991,13 +1007,21 @@ struct FsOut {
     let oh = ov - upR * dot(ov, upR);
     let rc = 0.62 * hull.z;
     let top = hull.w + 0.9 * hull.z;
+    // The mirrored ray of the smooth surface passes the middle of the hull at this distance: where that is further
+    // than the hull's size and what the seven slopes can turn the ray by, none of them meets it (most of the water
+    // around a vessel).
+    let m0 = reflect(-s.v, nS);
+    let oc = upR * (0.5 * top) - ov;
+    let tc = max(dot(oc, m0), 0.0);
+    var taps = 7;
+    if (length(oc - m0 * tc) > 1.2 * hull.z + 0.5 * top + 3.6 * sigV * tc) { taps = 0; }
     // (The seven slopes are shifted per pixel by up to half their spacing: the outlines of the seven images blur
     // into one another instead of standing as seven edges.)
     let jit = (blueNoise(pix).x - 0.5) * 0.5;
     var sum = vec3f(0.0);
     var sky = vec3f(0.0);
     var skyKnown = false;
-    for (var k = 0; k < 7; k++) {
+    for (var k = 0; k < taps; k++) {
       // (Slopes at -1.5 .. 1.5 standard deviations, weights of the Gaussian, summing to one.)
       let dl = (f32(k) - 3.0) * 0.5 + jit;
       let wk = exp(-0.5 * dl * dl) * 0.2161;

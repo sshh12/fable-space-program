@@ -559,22 +559,27 @@ fn waterNormalOf(u: f32) -> f32 { return 5.0633 * (pow(u, 0.135) - pow(1.0 - u, 
 fn waterGlintCell(u: f32, mean: f32) -> f32 {
   let k = max(mean, 0.03125);
   var draw = 1.0;
-  if (k < 10.0) {
-    // The inverse of the Poisson distribution's cumulative sum.
+  // From three facets on a normal deviate about the mean does; between two and three the two are blended.
+  let wide = smoothstep(2.0, 3.0, k);
+  if (wide < 1.0) {
+    // The inverse of the Poisson distribution's cumulative sum, each of its steps a short ramp (three tenths of
+    // the smaller of the two probabilities it separates, to each side) instead of a jump: the count stays k on
+    // average and is CONTINUOUS in k, so two shadings of one point whose inputs differ in the fourth digit (the
+    // forward and the deferred pass at the hand-over) do not differ by a whole facet in a pixel that sits on a step.
     var p = exp(-k);
     var c = p;
     var n = 0.0;
-    for (var i = 0; i < 40; i++) {
-      if (u <= c) { break; }
-      n += 1.0;
-      p *= k / n;
+    for (var i = 0; i < 12; i++) {
+      let pn = p * k / f32(i + 1);
+      let h = 0.3 * min(p, pn);
+      if (u <= c - h) { break; }
+      n += saturate((u - (c - h)) / max(2.0 * h, 1e-12));
+      p = pn;
       c += p;
     }
-    if (n >= 40.0) { n = k; }
     draw = n / k;
-  } else {
-    draw = max(1.0 + waterNormalOf(u) * inverseSqrt(k), 0.0);
   }
+  if (wide > 0.0) { draw = mix(draw, max(1.0 + waterNormalOf(u) * inverseSqrt(k), 0.0), wide); }
   // The glints of a real sea are not equal: beside the few bright ones a footprint holds many faint ones, a sheen
   // whose share grows with their number (a dense path is bright between its sparkles, not holed).
   return mix(draw, 1.0, k / (k + 6.0));

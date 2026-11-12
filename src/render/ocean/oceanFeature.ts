@@ -668,6 +668,11 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const camAboveSea = pose && t ? v3.len(pose.cameraFixed) - t.seaRadius : Infinity;
       lastCameraHeight = Number.isFinite(camAboveSea) ? camAboveSea : Number.NaN;
       nearField = forcedOff ? { bodyIndex: -1, fadeStart: t?.fadeStart ?? 0, fadeEnd: t?.fadeEnd ?? 0 } : nearFieldValue(bi, body !== null, camAboveSea, t?.fadeStart ?? 0, t?.fadeEnd ?? 0);
+      // From the height where the wave detail is gone (detailAltitudeEnd, below fadeEnd) the near field would be the
+      // flat sea-level surface shaded with brdf_water from the sheet's own inputs: exactly what the deferred pass
+      // makes of the terrain's far sheet. So the near field is published inactive from there, the terrain keeps its
+      // sheet, and this package draws and computes nothing.
+      if (t && nearField.bodyIndex >= 0 && camAboveSea >= t.detailAltitudeEnd) nearField = { bodyIndex: -1, fadeStart: t.fadeStart, fadeEnd: t.fadeEnd };
       device.queue.writeBuffer(nearFieldBuffer, 0, packNearField(nearField, nearFieldData));
 
       if (nearField.bodyIndex < 0 || !pose || !body || !t) {
