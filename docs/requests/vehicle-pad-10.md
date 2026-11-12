@@ -38,7 +38,14 @@ counts as blocked when the depth buffer's surface is in front of the ray by less
 `thickness = 0.6 x marchLen` (18 cm and more). The result is 0 or 1 per half-resolution pixel. Where I would
 start: (3) the thickness: a rail 2 cm thick shadows everything within 18 cm behind it, which is the band
 "wider than the rail"; a thickness of a few centimetres within some metres of the camera (growing with the
-depth's footprint beyond) gives a thin caster a thin shadow; (1) the first steps of pixels nearer than about
-3 m against the full-resolution depth (`scene.depth`), since the half-resolution depth is what smears a
-one-pixel rail over its neighbours; and the upsample in the lighting pass keyed on the full-resolution depth.
-Cost to watch: the `core.ao` line at 1440p (`tests/browser/render-core/core.perf.spec.ts`).
+depth's footprint beyond) gives a thin caster a thin shadow, with steps no longer than the caster is thick
+for those pixels (10 steps over 0.3 m are 3 cm each: a 2 cm rail is missed by some jitters, which is the
+speckle); (1) is half in place: the march itself reads the full-resolution depth (`scene.depthOpaque`, one
+pixel of each 2 x 2 block picked by blue noise), it is the RESULT that is half resolution, one bit per
+pixel, and the lighting pass upsamples it with four depth-weighted taps (`deferred.ts`): a line one pixel
+wide is carried by whichever pixel of the block was picked in that frame. For pixels within a few metres
+the contact term would have to be marched at full resolution (in the lighting pass, or a full-resolution
+contact target for the near field). (Corrected 2026-11-12: this note first said the march read a
+half-resolution depth; it does not.)
+Cost to watch: the `core.ao` line at 1440p (`tests/browser/render-core/core.perf.spec.ts`); an interior
+view has the whole frame within those few metres.
