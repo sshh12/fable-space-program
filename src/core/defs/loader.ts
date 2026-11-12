@@ -8,6 +8,11 @@
  *   audio/**.json  visuals/**.json                                                  sections (DefLibrary.sections)
  * Only files whose name has no extra dot segment are definitions ("earth.json" yes, "earth.atmosphere.json"
  * and "ka-lae-lc1.location.json" no): dotted files are sections pulled in through { "$ref": ... }.
+ * A data table that lives beside the definitions of a directory is declared in TABLE_FILES
+ * ("bodies/radii.json") and is never read as a definition; any other file of a definition directory that is
+ * not a definition is an error that names the file.
+ * A second root can be laid over the first (overlayDefSource): its bodies replace or add to the first's,
+ * and its other files are "$ref" targets, so a staged library loads without a "$ref" leaving a defs root.
  * Every JSON file under the section directories is additionally exposed, with its $refs resolved, in
  * DefLibrary.sections under its path without the extension ("visuals/plumes", "audio/engines", ...).
  * `regions/` (bake manifests) is not loaded: only the Python bake tools read it.
@@ -74,8 +79,47 @@ export async function resolveRefs(value: unknown, file: string, source: DefSourc
   return out;
 }
 
+/**
+ * Data tables beside the definitions of a directory, by path under a defs root (request bodies-ephemeris-1).
+ * A table is not a definition: the loader never reads it, in the first root or in an overlay. The list is
+ * the declaration: a table that is not listed here is taken for a definition and fails loudly.
+ *   bodies/radii.json   mean, equatorial and polar radius of every body (the bodies generator's cross-check)
+ */
+export const TABLE_FILES: readonly string[] = ['bodies/radii.json'];
+
+/** Directories of a second root that overlayDefSource lays over the first by default. */
+export const OVERLAY_DIRS: readonly string[] = ['bodies'];
+
+/**
+ * A defs root with a second root laid over it (MIGRATION_V2 step 3.6; the staged bodies of data/staged over
+ * data/defs until the activation step moves them).
+ *
+ * - Under the directories `dirs` (default: `bodies`) the overlay REPLACES OR ADDS: its files are listed
+ *   with the base's, and a path that both roots have is read from the overlay.
+ * - Every other file of the overlay is a "$ref" target only: it is not listed (so it is never a definition
+ *   or a section), and it is read when the base has no file at that path. A staged body can therefore refer
+ *   to "../terrain/<id>.terrain.json" of its own root and to "../render/<id>.surface.json" of the base alike,
+ *   and no "$ref" leaves a defs root.
+ * - TABLE_FILES are tables in either root.
+ */
+export function overlayDefSource(base: DefSource, overlay: DefSource, dirs: readonly string[] = OVERLAY_DIRS): DefSource {
+  const laidOver = (path: string): boolean => dirs.some((d) => path.startsWith(`${d}/`));
+  let listing: Promise<string[]> | null = null;
+  return {
+    list() {
+      listing ??= Promise.all([base.list(), overlay.list()]).then(([b, o]) => [...new Set([...b, ...o.filter(laidOver)])].sort());
+      return listing;
+    },
+    async read(path) {
+      const [first, second] = laidOver(path) ? [overlay, base] : [base, overlay];
+      const found = await first.read(path);
+      return found !== undefined ? found : second.read(path);
+    },
+  };
+}
+
 const isDefinitionFile = (path: string, dir: string): boolean => {
-  if (!path.startsWith(`${dir}/`)) return false;
+  if (!path.startsWith(`${dir}/`) || TABLE_FILES.includes(path)) return false;
   const name = path.slice(dir.length + 1);
   return !name.includes('/') && name.endsWith('.json') && name.slice(0, -5).indexOf('.') === -1;
 };

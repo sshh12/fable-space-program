@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { TerrainProvider, TileSource } from '@/core/contracts/terrain';
 import { fsDefSource } from '@/core/defs/fsSource';
-import { loadDefs } from '@/core/defs/loader';
+import { loadDefs, overlayDefSource } from '@/core/defs/loader';
 import { createSession, diagnosticsOf, type SessionDiagnostics, type SessionOptions } from '@/session';
 import type { LocalSession } from '@/core/contracts/session';
 import { createTerrainProvider, type TerrainAuthority } from '@/terrain';
@@ -41,6 +41,14 @@ let defsPromise: Promise<DefLibrary> | null = null;
 export function loadLibrary(): Promise<DefLibrary> {
   defsPromise ??= loadDefs(fsDefSource(path.join(repoRoot, 'data', 'defs')));
   return defsPromise;
+}
+
+/**
+ * The library with a second root laid over data/defs (`overlayDefSource`): the bodies of `overlayRoot`
+ * replace or add to the repository's. Default: the staged body library, data/staged.
+ */
+export function loadLibraryOver(overlayRoot = path.join(repoRoot, 'data', 'staged')): Promise<DefLibrary> {
+  return loadDefs(overlayDefSource(fsDefSource(path.join(repoRoot, 'data', 'defs')), fsDefSource(overlayRoot)));
 }
 
 /** Tile sets every terrain body of the library needs; throws naming the first one that is not baked. */

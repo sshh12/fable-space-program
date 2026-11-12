@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { fsDefSource } from './fsSource';
 import type { CapsuleMouldLineDef } from '../contracts/defs';
-import { DefError, getSection, listSections, loadDefs, resolveRefs, type DefSource } from './loader';
+import fs from 'node:fs';
+import path from 'node:path';
+import { DefError, getSection, listSections, loadDefs, overlayDefSource, resolveRefs, TABLE_FILES, type DefSource } from './loader';
 
 function memorySource(files: Record<string, unknown>): DefSource {
   return {
@@ -55,6 +57,89 @@ describe('definition loader', () => {
     const root = { id: 'a', parent: null, mu: 1, radius: 1, orbit: null };
     const child = { id: 'b', parent: 'zzz', mu: 1, radius: 1, orbit: { kind: 'sunLowPrecision' } };
     await expect(loadDefs(memorySource({ 'bodies/a.json': root, 'bodies/b.json': child }))).rejects.toThrow(/unknown parent/);
+  });
+
+  describe('a second root laid over the first', () => {
+    const root = { id: 'a', name: 'A', parent: null, mu: 1, radius: 1, orbit: null, extra: { $ref: '../render/a.surface.json' } };
+    const base = {
+      'bodies/a.json': root,
+      'bodies/b.json': { id: 'b', name: 'B of the base', parent: 'a', mu: 1, radius: 1, orbit: { kind: 'x' } },
+      'render/a.surface.json': { from: 'base' },
+      'sites/s.json': { id: 's', bodyId: 'a', from: 'base' },
+      'visuals/v.json': { from: 'base' },
+    };
+    const staged = {
+      // Replaces b, adds c; c refers to a file of its own root and to a file of the base.
+      'bodies/b.json': { id: 'b', name: 'B staged', parent: 'a', mu: 2, radius: 2, orbit: { kind: 'x' } },
+      'bodies/c.json': { id: 'c', name: 'C', parent: 'b', mu: 1, radius: 1, orbit: { kind: 'x' }, terrain: { $ref: '../terrain/c.terrain.json' }, look: { $ref: '../render/a.surface.json' } },
+      'terrain/c.terrain.json': { from: 'staged' },
+      // Not laid over: a site and a section of the second root are not definitions of the library.
+      'sites/s.json': { id: 's', bodyId: 'a', from: 'staged' },
+      'sites/t.json': { id: 't', bodyId: 'a', from: 'staged' },
+      'visuals/v.json': { from: 'staged' },
+      'visuals/w.json': { from: 'staged' },
+    };
+
+    it('its bodies replace or add; its other files are $ref targets only; nothing else of it is listed', async () => {
+      const source = overlayDefSource(memorySource(base), memorySource(staged));
+      expect(await source.list()).toEqual(['bodies/a.json', 'bodies/b.json', 'bodies/c.json', 'render/a.surface.json', 'sites/s.json', 'visuals/v.json']);
+      const lib = await loadDefs(source);
+      expect(Object.keys(lib.bodies).sort()).toEqual(['a', 'b', 'c']);
+      expect(lib.bodies['b']!.name).toBe('B staged');
+      expect(lib.bodies['b']!.mu).toBe(2);
+      expect(lib.bodies['a']).toMatchObject({ extra: { from: 'base' } });
+      expect(lib.bodies['c']).toMatchObject({ terrain: { from: 'staged' }, look: { from: 'base' } });
+      // The base's site and section are the base's; the second root's are not in the library.
+      expect(Object.keys(lib.sites)).toEqual(['s']);
+      expect(lib.sites['s']).toMatchObject({ from: 'base' });
+      expect(lib.sections).toEqual({ 'visuals/v': { from: 'base' } });
+      // The base alone is unchanged by having been laid under.
+      expect((await loadDefs(memorySource(base))).bodies['b']!.name).toBe('B of the base');
+    });
+
+    it('the directories to lay over are an argument; a $ref still cannot leave the roots', async () => {
+      const lib = await loadDefs(overlayDefSource(memorySource(base), memorySource(staged), ['bodies', 'sites']));
+      expect(Object.keys(lib.sites).sort()).toEqual(['s', 't']);
+      expect(lib.sites['s']).toMatchObject({ from: 'staged' });
+      const escaping = { ...staged, 'bodies/c.json': { ...staged['bodies/c.json'], terrain: { $ref: '../../terrain/c.terrain.json' } } };
+      await expect(loadDefs(overlayDefSource(memorySource(base), memorySource(escaping)))).rejects.toThrow(/escapes the defs root/);
+      const dangling = { ...staged, 'bodies/c.json': { ...staged['bodies/c.json'], terrain: { $ref: '../terrain/nowhere.json' } } };
+      await expect(loadDefs(overlayDefSource(memorySource(base), memorySource(dangling)))).rejects.toThrow(/bodies\/c\.json: \$ref target "terrain\/nowhere\.json" not found/);
+    });
+
+    it('a declared table beside the bodies is not a body, in either root; an undeclared one fails by name', async () => {
+      expect(TABLE_FILES).toContain('bodies/radii.json');
+      const table = { description: 'radii', bodies: [{ id: 'a', meanRadius: 1 }] };
+      const lib = await loadDefs(overlayDefSource(memorySource(base), memorySource({ ...staged, 'bodies/radii.json': table })));
+      expect(Object.keys(lib.bodies).sort()).toEqual(['a', 'b', 'c']);
+      expect(Object.keys((await loadDefs(memorySource({ ...base, 'bodies/radii.json': table }))).bodies).sort()).toEqual(['a', 'b']);
+      // The rule is the declaration, not the content: the same table under another name is taken for a definition.
+      await expect(loadDefs(overlayDefSource(memorySource(base), memorySource({ ...staged, 'bodies/masses.json': table })))).rejects.toThrow(/bodies\/masses\.json: definition must be an object with a string "id"/);
+      // A table is a table whatever it holds: a file at a declared path is never read as a body.
+      const lib2 = await loadDefs(memorySource({ ...base, 'bodies/radii.json': { id: 'radii', parent: null, mu: 1, radius: 1, orbit: null } }));
+      expect(lib2.bodies['radii']).toBeUndefined();
+    });
+
+    it('the staged body library of this repository loads over data/defs', async () => {
+      const stagedRoot = path.resolve(process.cwd(), 'data/staged');
+      const stagedBodies = path.join(stagedRoot, 'bodies');
+      if (!fs.existsSync(stagedBodies)) {
+        console.log('[overlay] data/staged/bodies is not in this tree: the staged library is not loaded');
+        return;
+      }
+      const lib = await loadDefs(overlayDefSource(fsDefSource(), fsDefSource(stagedRoot)));
+      const expected = fs
+        .readdirSync(stagedBodies)
+        .filter((f) => f.endsWith('.json') && f.slice(0, -5).indexOf('.') === -1 && !TABLE_FILES.includes(`bodies/${f}`))
+        .map((f) => f.slice(0, -5));
+      const base = await loadDefs(fsDefSource());
+      expect(Object.keys(lib.bodies).sort()).toEqual([...new Set([...expected, ...Object.keys(base.bodies)])].sort());
+      expect(lib.bodies[lib.rootBodyId]!.parent).toBeNull();
+      // Everything but the bodies is the first root's.
+      expect(Object.keys(lib.sites)).toEqual(Object.keys(base.sites));
+      expect(Object.keys(lib.vehicles)).toEqual(Object.keys(base.vehicles));
+      expect(Object.keys(lib.sections)).toEqual(Object.keys(base.sections));
+    });
   });
 
   it('exposes audio/ and visuals/ files as sections with refs resolved', async () => {
