@@ -97,10 +97,15 @@ export function siteGeneratorIds(): string[] {
   return [...generators.keys()].sort();
 }
 
-export function generateStructure(defs: DefLibrary, site: LaunchSiteDef, model: string, params: StructureParams, placement: StructurePlacement = { offsetEnu: [0, 0, 0], headingDeg: 0 }): SiteVisual {
+/**
+ * Generate a structure where it stands. `ground` is the site's ground in the site frame (default: the
+ * site's survey, level without one); a caller that draws the site on a level stand-in surface passes
+ * `LEVEL_GROUND`.
+ */
+export function generateStructure(defs: DefLibrary, site: LaunchSiteDef, model: string, params: StructureParams, placement: StructurePlacement = { offsetEnu: [0, 0, 0], headingDeg: 0 }, ground: GroundField = siteGround(defs, site)): SiteVisual {
   const g = generators.get(model);
   if (!g) throw new Error(`site "${site.id}": unknown structure model "${model}"`);
-  return g({ params, site, defs, ground: structureGround(siteGround(defs, site), placement.offsetEnu, placement.headingDeg) });
+  return g({ params, site, defs, ground: structureGround(ground, placement.offsetEnu, placement.headingDeg) });
 }
 
 /** Numeric structure parameter with a default. */

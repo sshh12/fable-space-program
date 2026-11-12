@@ -105,7 +105,9 @@ describe('part visuals', () => {
   it('open components are only sheets and bands, never structure', () => {
     const allowed = new Set(['band', 'frame', 'weld', 'corrugation', 'hatband', 'throat-ring', 'lip-ring', 'boot', 'sep-joint', 'clamp-band', 'strap', 'skirt-band', 'case-band', 'nozzle-band', 'core-band', 'foil', 'well', 'sleeve', 'pad-foil', 'capsule-skin', 'capsule-reveal', 'capsule-door', 'pane', 'placard', 'rime',
       // The boost cover is a shell with glazed ports cut through it, like the capsule's skin.
-      'boost-cover', 'port-reveal', 'port-pane']);
+      'boost-cover', 'port-reveal', 'port-pane',
+      // Blanket close-outs laid flat across a base (sheets with planar texture coordinates).
+      'deck', 'closeout']);
     for (const id of Object.keys(defs.parts)) {
       for (const [name, model] of Object.entries(visualOf(id).models)) {
         for (const lod of model.lods) lod.meta.tags.forEach((tag, c) => lod.meta.closed[c] === 0 && expect(allowed.has(tag), `${id}.${name}: open component "${tag}"`).toBe(true));

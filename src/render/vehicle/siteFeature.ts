@@ -23,6 +23,7 @@ import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle } from '@/render/core';
 import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';
 import './site';
+import { LEVEL_GROUND } from './site/survey';
 import { FINE_SHADOW_TEXEL, NEAR_SHADOW_TEXEL, generateStructure, type SiteState, type SiteVisual } from './site/types';
 
 export interface SiteFeatureOptions {
@@ -38,6 +39,12 @@ export interface SiteFeatureOptions {
    * the pad's elevation across the site (`LaunchSiteDef.pad.flatRadius`).
    */
   groundHeight?: (site: LaunchSiteDef, east: number, north: number) => number;
+  /**
+   * Build the earthworks on level ground instead of the site's ground survey (default false): for a caller
+   * that draws the site on a level stand-in surface (the vehicle lab's reference sphere), where the real
+   * relief the survey describes does not exist.
+   */
+  levelGround?: boolean;
   /** Most local lights registered per frame (default 8 of the core's 16). */
   maxLights?: number;
   /** Camera distance beyond which a site is not drawn, m (default 80 km). */
@@ -139,7 +146,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       const key = `${s.model}|${JSON.stringify(s.params ?? {})}|${s.offsetEnu.join(',')}|${s.headingDeg}`;
       let entry = cache.get(key);
       if (!entry) {
-        const visual = generateStructure(defs, site, s.model, s.params ?? {}, s);
+        const visual = generateStructure(defs, site, s.model, s.params ?? {}, s, options.levelGround ? LEVEL_GROUND : undefined);
         const lods: Record<string, ModelHandle[]> = {};
         const lodPixels: Record<string, readonly number[]> = {};
         for (const [name, model] of Object.entries(visual.models)) {

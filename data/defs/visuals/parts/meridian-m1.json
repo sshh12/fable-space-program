@@ -1,10 +1,10 @@
 {
   "generator": "stage.tank",
   "params": {
-    "skin": "paint-white",
-    "skinAlt": "paint-white-b",
+    "skin": "skin-white",
+    "skinAlt": "skin-white-b",
     "aftSkirt": "paint-black",
-    "fwdSkirt": "paint-white",
+    "fwdSkirt": "skin-white",
     "intertank": "paint-black",
     "intertankStyle": "corrugated",
     "intertankCount": 96,

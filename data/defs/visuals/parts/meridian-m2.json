@@ -3,8 +3,8 @@
   "params": {
     "skin": "foam-orange",
     "skinAlt": "foam-orange",
-    "aftSkirt": "paint-white",
-    "fwdSkirt": "paint-white",
+    "aftSkirt": "skin-white",
+    "fwdSkirt": "skin-white-b",
     "intertank": "foam-aged",
     "dome": "foam-orange",
     "ringSpacing": 2.9,

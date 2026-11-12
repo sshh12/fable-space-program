@@ -18,7 +18,7 @@ import { decalSheetOf } from '../decals';
 import { MeshBuilder, add3, dot3, lerp3, norm3, scale3, sub3, xf } from '../geom/builder';
 import { DEG, Profile, TAU, bolt, boltRing, box, extrude, frustum, lathe, patchVertex, rectPoly, rod, zipLoops, boltCircle, type LatheRegion } from '../geom/prims';
 import { materialDef, type MatId } from '../materials';
-import { band, buildModel, hash01, seams, thruster } from './common';
+import { band, buildModel, hash01, seams, thruster, noise2 } from './common';
 import type { PartModel } from './types';
 import { mouldLine, shellRadius, shieldContour } from './mouldline';
 import { Params, staticPose, type PartGenerator, type PartLight, type PoseInput, type PoseSink } from './types';
@@ -169,33 +169,44 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       seam = phi;
     }
   }
-  // Back-shell tiles are laid in courses round the cone: every course holds a whole number of tiles of the
-  // same width, so the tiles do not narrow toward the apex, and each course is offset against its neighbours.
+  // Back-shell tiles are long trapezoids laid in aligned columns up the cone's generators: every course is
+  // one tile long, and the number of tiles round a course halves where the cone has narrowed to about 0.7 of
+  // the width a tile had at the start of its zone, so two columns run into one and the joints stay in line.
+  // (`tileSize` is the width of a tile column in the texture; `tileColumns` the count round the shoulder.)
   const tileSize = P.num('tileSize', 0.18);
-  const courses = Math.max(1, Math.round(((yT - yB) * slope) / tileSize));
+  const tileLength = P.num('tileLength', 0.42);
+  const tileColumns = P.num('tileColumns', 72);
+  const courses = Math.max(1, Math.round(((yT - yB) * slope) / tileLength));
   const tilesIn: number[] = [];
-  const coursePhase: number[] = [];
   for (let c = 0; c < courses; c++) {
     const yMid = yB + ((yT - yB) * (c + 0.5)) / courses;
-    tilesIn.push(Math.max(3, Math.round((TAU * shellRadius(ml, yMid)) / tileSize)));
-    coursePhase.push(Math.floor(hash01(c, 41) * 8) * tileSize + (c % 2) * 0.5 * tileSize + (hash01(c, 43) - 0.5) * 0.3 * tileSize);
+    const halvings = Math.max(0, Math.min(3, Math.round(Math.log2(rB / shellRadius(ml, yMid)))));
+    tilesIn.push(Math.max(3, Math.round(tileColumns / 2 ** halvings)));
   }
   const rcsDef = def.modules.find((m) => m.type === 'rcs');
 
   /**
-   * Scorch weight of the back shell after an entry: a band of soot round the shoulder, heavy on the windward
-   * side, thinning toward the apex in streaks that follow the flow up the cone. A smooth function of azimuth
-   * and height (the centimetre-scale break-up of soot is the mesh shader's).
+   * Soot density of the back shell after an entry, 0..1 at full char (the instance's soot value scales it
+   * with the shield's ablation history). A deposit, not a mask: a veil over the whole shell, heavier to
+   * windward, thick at the shoulder where the flow comes round the shield, carried up the cone in long
+   * streaks, and gathered in the lee of everything that stands in the flow (windows, hatch). A smooth
+   * function of azimuth and height: its edges are as soft as the flow's.
    */
   const scorch = (phi: number, y: number): number => {
     const up = Math.min(1, Math.max(0, 1 - (y - yB) / (yT - yB)));
     const wind = 0.5 + 0.5 * Math.cos(phi - windPhi);
-    const streak = 0.5 + 0.22 * Math.sin(7 * phi + 1.3) + 0.16 * Math.sin(19 * phi + 4.1 + 2.5 * up) + 0.12 * Math.sin(43 * phi + 2.2 - 4 * up);
-    const raw = (0.16 + 0.6 * wind) * (0.3 + 0.7 * Math.pow(up, 1.2)) * (0.45 + 1.1 * streak) + 0.55 * Math.pow(up, 7);
-    // Pushed toward soot or no soot: the streaks are drawn by this function, continuous across the tile
-    // courses (whose texture coordinates are not, so the shader's own break-up may only fray their edges).
-    const t = Math.max(0, Math.min(1, (raw - 0.3) / 0.4));
-    return t * t * (3 - 2 * t);
+    // Streaks along the generators: noise fine in azimuth and stretched along the flow.
+    const streak = 0.6 * noise2(phi * 9 + 0.5 * up, up * 1.5, 211) + 0.4 * noise2(phi * 24, up * 2.2 + 3, 213);
+    let w = (0.2 + 0.3 * wind + Math.pow(up, 2.2) * (0.5 + 0.35 * wind)) * (0.6 + 0.8 * streak) + 0.3 * Math.pow(up, 9);
+    for (const o of openings) {
+      // Wake of an opening's frame: downstream is up the cone.
+      const dy = y - o.C[1];
+      const half = (o.hatch ? ml.hatch.width / 2 : o.hw) + 0.06;
+      if (dy <= 0) continue;
+      const across = Math.abs(((((phi - o.phi) % TAU) + TAU + Math.PI) % TAU) - Math.PI) * shellRadius(ml, y);
+      w += 0.3 * Math.exp(-dy / 0.55) * Math.max(0, 1 - across / half);
+    }
+    return Math.max(0, Math.min(1, w));
   };
 
   /** Azimuth grid shared by the heat shield and the back shell of one LOD (their rims meet vertex for vertex). */
@@ -308,7 +319,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       const key = (c * (M + 1) + j) * (N + 1) + i;
       let v = vid.get(key);
       if (v === undefined) {
-        v = coneVertex(phiOf(i), yOf(j), (i / N) * tilesIn[c]! * tileSize + coursePhase[c]!, (c + (j - c * sub) / sub) * tileSize);
+        v = coneVertex(phiOf(i), yOf(j), (i / N) * tilesIn[c]! * tileSize, (c + (j - c * sub) / sub) * tileLength);
         vid.set(key, v);
       }
       return v;
@@ -347,11 +358,15 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
         }
         const margin = 0.02;
         const rr = shellRadius(ml, o.C[1]);
-        const i0 = Math.floor((pMin - margin / rr - seam) / dphi);
-        const i1 = Math.ceil((pMax + margin / rr - seam) / dphi);
-        // The close-out panel round an opening ends on tile course joints (whole courses, `sub` rows each).
+        // The close-out panel round an opening ends on tile joints on all four sides: whole courses (`sub`
+        // rows each) and whole tile columns of the widest tiles among them.
         const j0 = Math.max(0, Math.floor((((yMin - margin / slope - yB) / (yT - yB)) * M) / sub) * sub);
         const j1 = Math.min(M, Math.ceil((((yMax + margin / slope - yB) / (yT - yB)) * M) / sub) * sub);
+        let fewest = Infinity;
+        for (let c = j0 / sub; c < j1 / sub; c++) fewest = Math.min(fewest, tilesIn[c]!);
+        const col = Math.max(1, Math.round(N / fewest));
+        const i0 = Math.floor(Math.floor((pMin - margin / rr - seam) / dphi) / col) * col;
+        const i1 = Math.ceil(Math.ceil((pMax + margin / rr - seam) / dphi) / col) * col;
         if (i0 < 0 || i1 > N) throw new Error(`${where}: opening "${o.id}" crosses the grid seam`);
         for (let j = j0; j < j1; j++) {
           for (let i = i0; i < i1; i++) {

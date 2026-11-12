@@ -178,29 +178,40 @@ const recipes: Record<string, () => void> = {
     );
   },
 
-  // Spray-on foam insulation, tile 9.6 m: popcorn skin over irregular spray lumps, the machined ribbing of
-  // the spray passes round the tank (a rib every 5 cm, grouped in passes of about 0.45 m), and tone that
-  // drifts over metres: foam darkens with age and sun, in soft patches and in long streaks down the tank
-  // where condensate ran. Nothing in the tile is a distinct object: a close-out patch that repeats every
-  // 9.6 m is seen as a pattern at once, so close-outs, ramps and stains with an outline are geometry and
-  // material bands of the stage, placed where the hardware is.
+  // Spray-on foam insulation, tile 9.6 m. A sprayed skin, not a woven one: popcorn at three scales whose
+  // coarseness drifts over the tank (sanded and trimmed areas beside rough ones), spray lumps of every size,
+  // low ridges where one pass of the gun overlaps the next (passes of finite length, never a ring round the
+  // tank). Its character is in the tone: patches metres across from pale ochre to dark rust as the foam has
+  // aged in the sun, run marks down the tank, and hand-sprayed repairs with an outline, lighter where fresh.
   foam() {
     const S = 2048;
     const T = 9.6;
+    const pop1 = Field.from(S, S, (u, v) => 1 - smooth(0.0, 0.6, worley(u, v, 620, 620, 82).f1));
+    const pop2 = (u: number, v: number): number => {
+      const c = worley(u + 0.004 * fbm(u, v, 60, 60, 2, 80), v + 0.004 * fbm(u, v, 60, 60, 2, 79), 210, 210, 81, 1);
+      return 1 - smooth(0.0, 0.7, c.f1);
+    };
     const lump = (u: number, v: number): number => {
-      const c = worley(u + 0.005 * fbm(u, v, 64, 64, 2, 80), v, 88, 104, 81, 1);
-      return 1 - smooth(0.0, 0.75, c.f1);
+      const c = worley(u + 0.01 * fbm(u, v, 24, 24, 2, 97), v + 0.01 * fbm(u, v, 24, 24, 2, 93), 52, 52, 96, 1);
+      return (1 - smooth(0.0, 0.8, c.f1)) * (0.3 + 1.3 * c.id);
     };
-    // Spray passes: bands about 0.45 m high whose edges wander.
-    const pass = (u: number, v: number): number => {
-      const w = v * 21 + 0.35 * fbm(u, v, 5, 3, 3, 89);
-      const f = w - Math.floor(w);
-      return smooth(0.0, 0.12, f) * (1 - smooth(0.8, 1.0, f));
+    /** How rough the skin is here: 0 = trimmed and sanded, 1 = as sprayed. */
+    const coarse = (u: number, v: number): number => smooth(0.3, 0.7, fbm(u, v, 7, 7, 3, 98));
+    /** Overlap of two spray passes: 1 on the line where a swath about 2 m long and 0.5 m wide meets the next. */
+    const overlap = (u: number, v: number): number => {
+      const c = worley(u + 0.02 * fbm(u, v, 5, 9, 2, 89), v + 0.006 * fbm(u, v, 9, 5, 2, 90), 5, 20, 91, 0.8);
+      return smooth(0.09, 0.0, c.f2 - c.f1);
     };
-    // Ribs left by the trimming tool: 192 per tile (5 cm), wandering a little with the pass.
-    const rib = (u: number, v: number): number => 0.5 + 0.5 * Math.sin(2 * Math.PI * (v * 192 + 0.6 * fbm(u, v, 6, 24, 2, 94)));
-    const pop = Field.from(S, S, (u, v) => 1 - smooth(0.0, 0.55, worley(u, v, 480, 480, 82).f1));
-    const h = Field.from(S, S, (u, v, x, y) => 0.0026 * pop.at(x, y) + 0.005 * fbm(u, v, 80, 80, 3, 83) + 0.008 * lump(u, v) + 0.004 * pass(u, v) + 0.0022 * rib(u, v) + 0.012 * fbm(u, v, 9, 9, 2, 84));
+    /** A hand-sprayed repair or close-out: a soft-edged patch (-1 = aged dark, +1 = fresh pale), few per tile. */
+    const repair = (u: number, v: number): number => {
+      const c = worley(u + 0.05 * (fbm(u, v, 7, 7, 3, 77) - 0.5), v + 0.05 * (fbm(u, v, 7, 7, 3, 78) - 0.5), 4, 5, 92, 0.7);
+      if (c.id > 0.16) return 0;
+      return smooth(0.36, 0.2, c.f1) * (c.id2 < 0.5 ? 1 : -1);
+    };
+    const h = Field.from(S, S, (u, v, x, y) => {
+      const k = coarse(u, v);
+      return 0.0016 * pop1.at(x, y) * (0.4 + k) + 0.0042 * pop2(u, v) * (0.25 + 0.95 * k) + 0.0075 * lump(u, v) * (0.5 + 0.7 * k) + 0.0035 * overlap(u, v) + 0.005 * fbm(u, v, 80, 80, 3, 83) + 0.012 * fbm(u, v, 9, 9, 2, 84) + 0.004 * Math.abs(repair(u, v));
+    });
     save('foam_n', normalMap(h, T, 0.9));
     const ao = cavity(h, 3, 160);
     save(
@@ -208,32 +219,178 @@ const recipes: Record<string, () => void> = {
       orm(S, S, (u, v, x, y) => [ao.at(x, y), clamp(0.9 + 0.1 * fbm(u, v, 120, 120, 2, 85)), 1]),
     );
     // The same foam under a sprayed top coat: the paint fills the popcorn and softens the lumps; what is left
-    // is the ribbing and a shallow waviness.
-    const hFine = Field.from(S, S, (u, v, x, y) => 0.0006 * pop.at(x, y) + 0.0016 * lump(u, v) + 0.0012 * rib(u, v) + 0.002 * pass(u, v) + 0.005 * fbm(u, v, 9, 9, 2, 84));
+    // is a shallow waviness and the pass overlaps.
+    const hFine = Field.from(S, S, (u, v, x, y) => 0.0006 * pop1.at(x, y) + 0.0016 * lump(u, v) + 0.002 * overlap(u, v) + 0.005 * fbm(u, v, 9, 9, 2, 84));
     save('foamfine_n', normalMap(hFine, T, 0.9));
-    const tone = (u: number, v: number): number => {
-      // Age mottling over metres, a slow drift along the tank, the passes, and streaks down the tank (v).
-      const age = fbm(u, v, 3, 3, 4, 86) - 0.5;
-      const drift = fbm(u, v, 1, 2, 2, 87) - 0.5;
-      const streak = fbm(u, v, 40, 2, 3, 95) - 0.5;
-      return 1 + 0.2 * age + 0.1 * drift + 0.1 * streak - 0.03 * (1 - pass(u, v));
+    /** Age of the foam, 0 = fresh pale ochre .. 1 = dark rust: patches of 1 to 5 m, a slow drift, run marks, repairs. */
+    const age = (u: number, v: number): number => {
+      const patch = fbm(u, v, 3, 3, 4, 86) - 0.5;
+      const drift = fbm(u, v, 1, 1, 2, 87) - 0.5;
+      const run = smooth(0.56, 0.8, fbm(u, v, 56, 2, 3, 95)) * smooth(0.35, 0.6, fbm(u, v, 6, 3, 2, 99));
+      return clamp(0.45 + 1.5 * patch + 0.6 * drift + 0.45 * run - 0.28 * repair(u, v));
     };
-    const fresh = rgb(216, 150, 78);
-    const aged = rgb(170, 100, 48);
+    const fresh = rgb(224, 162, 86);
+    const aged = rgb(146, 80, 36);
     save(
       'foam_albedo',
       Image.from(S, S, (u, v, x, y) => {
-        const c = lerp3(fresh, aged, clamp(0.3 + 1.6 * (1 - tone(u, v))));
-        return tint(c, (0.87 + 0.13 * fbm(u, v, 440, 440, 2, 88)) * (0.74 + 0.26 * ao.at(x, y)) * (0.97 + 0.03 * rib(u, v)));
+        const c = lerp3(fresh, aged, age(u, v));
+        return tint(c, (0.88 + 0.12 * fbm(u, v, 440, 440, 2, 88)) * (0.72 + 0.28 * ao.at(x, y)));
       }),
     );
     // Under a white top coat: an off-white that has yellowed unevenly and carries faint grey run marks.
     save(
       'foamwhite_albedo',
       Image.from(S, S, (u, v, x, y) => {
-        const yellow = clamp(0.35 + 1.8 * (1 - tone(u, v)));
-        const c = lerp3(rgb(234, 233, 228), rgb(224, 218, 200), yellow * 0.5);
+        const c = lerp3(rgb(234, 233, 228), rgb(216, 208, 188), age(u, v) * 0.7);
         return tint(c, (0.96 + 0.04 * fbm(u, v, 440, 440, 2, 88)) * (0.9 + 0.1 * ao.at(x, y)));
+      }),
+    );
+  },
+
+  // Painted skin of a stage at the scale of the vehicle, tile 12.8 m (u round the stage, v along it). The coat
+  // is not one colour: tone drifts by a few per cent over metres, dirt has run down it in streaks from
+  // fittings, handling has scuffed it, patches have been touched up with a fresher white, and stencilled
+  // notes stand on it in blocks. The surface is level but not flat: the sheet between frames waves by a
+  // fraction of a millimetre, which is what moves the highlight along a real tank.
+  skin() {
+    const S = 2048;
+    const T = 12.8;
+    /** Touched-up patch: 1 inside a rectangle 0.3 to 0.9 m across (a dozen per tile), with its tone step. */
+    const patch = (u: number, v: number): { k: number; tone: number } => {
+      const gx = 6;
+      const gy = 5;
+      const i = Math.floor(u * gx);
+      const j = Math.floor(v * gy);
+      if (hash(i, j, 601) > 0.3) return { k: 0, tone: 0 };
+      const cx = (i + 0.3 + 0.4 * hash(i, j, 602)) / gx;
+      const cy = (j + 0.3 + 0.4 * hash(i, j, 603)) / gy;
+      const hw = (0.15 + 0.3 * hash(i, j, 604)) / T;
+      const hh = (0.12 + 0.3 * hash(i, j, 605)) / T;
+      const d = Math.max(Math.abs(u - cx) - hw, Math.abs(v - cy) - hh);
+      return { k: smooth(0.0012, -0.0006, d), tone: hash(i, j, 606) - 0.35 };
+    };
+    /** Stencilled note: a block of three to five lines of dashes, each line 6 cm high (reads as lettering from 20 m). */
+    const stencil = (u: number, v: number): number => {
+      const gx = 9;
+      const gy = 11;
+      const i = Math.floor(u * gx);
+      const j = Math.floor(v * gy);
+      if (hash(i, j, 611) > 0.27) return 0;
+      const x = (u * gx - i - 0.15 - 0.3 * hash(i, j, 612)) * (T / gx);
+      const y = (v * gy - j - 0.2 - 0.4 * hash(i, j, 613)) * (T / gy);
+      const lines = 3 + Math.floor(hash(i, j, 614) * 3);
+      const width = 0.25 + 0.3 * hash(i, j, 615);
+      if (x < 0 || x > width || y < 0 || y > lines * 0.05) return 0;
+      const line = Math.floor(y / 0.05);
+      if (y - line * 0.05 > 0.028) return 0;
+      // Letters: runs of ink and gaps along the line, each line of its own length.
+      if (x > width * (0.55 + 0.45 * hash(i * 7 + line, j, 616))) return 0;
+      return hash(Math.floor(x / 0.016) + i * 131, line + j * 17, 617) < 0.68 ? 1 : 0;
+    };
+    /** Dirt that has run down the stage: streaks 3 to 12 cm wide and metres long, gathered in drifts. */
+    const runs = (u: number, v: number): number => smooth(0.56, 0.84, fbm(u + 0.002 * fbm(u, v, 8, 8, 2, 621), v, 150, 3, 3, 622)) * smooth(0.5, 0.72, fbm(u, v, 4, 3, 3, 623));
+    const scuff = (u: number, v: number): number => Math.pow(ridged(u, v, 22, 30, 3, 624), 7) * smooth(0.45, 0.7, fbm(u, v, 9, 9, 2, 625));
+    const h = Field.from(S, S, (u, v) => 0.0005 * fbm(u, v, 14, 10, 3, 631) + 0.00012 * fbm(u, v, 90, 90, 2, 632) + 0.00009 * patch(u, v).k);
+    save('skin_n', normalMap(h, T, 1));
+    save(
+      'skin_albedo',
+      Image.from(S, S, (u, v) => {
+        const p = patch(u, v);
+        let k = 0.9 + 0.07 * (fbm(u, v, 5, 4, 4, 633) - 0.5) + 0.05 * (fbm(u, v, 1, 2, 2, 634) - 0.5);
+        k *= 1 - 0.09 * runs(u, v) - 0.08 * scuff(u, v);
+        k = mix(k, 0.92 + 0.04 * p.tone, p.k * 0.6);
+        // Dirt is warm grey; the coat itself yellows a little where it is oldest.
+        const warm = 0.012 + 0.03 * runs(u, v) + 0.015 * smooth(0.4, 0.8, fbm(u, v, 3, 3, 3, 635)) * (1 - p.k);
+        const c: [number, number, number] = [k, k * (1 - warm * 0.45), k * (1 - warm)];
+        return lerp3(c, rgb(38, 40, 46), stencil(u, v) * 0.82);
+      }),
+    );
+    save(
+      'skin_orm',
+      orm(S, S, (u, v) => {
+        const p = patch(u, v);
+        return [1, clamp(0.78 + 0.1 * fbm(u, v, 9, 9, 3, 636) + 0.2 * runs(u, v) + 0.25 * scuff(u, v) - 0.12 * p.k + 0.15 * stencil(u, v)), 1];
+      }),
+    );
+  },
+
+  // Hand-laid insulation blankets of a base close-out, tile 3.2 m, laid FLAT (planar UVs in metres): panels
+  // with straight cut edges in four courses of unequal height, four or five to a course and none the same
+  // width, their end joints slanted and never in line from course to course; edges overlapped and laced,
+  // tape over some seams; aluminised cloth gone dull with handling, sagging a little between its fixings and
+  // creased at low amplitude. Nothing in it is periodic at less than the tile and nothing points at a centre.
+  basepanel() {
+    const S = 1024;
+    const T = 3.2;
+    const rows = [0, 0.21, 0.5, 0.72, 1];
+    interface Panel {
+      /** Distance to the nearest joint, in tiles; which joint it is (0 = along the course, 1 = an end joint). */
+      e: number;
+      end: boolean;
+      id: number;
+      id2: number;
+      /** Position inside the panel, 0..1 both ways. */
+      fu: number;
+      fv: number;
+    }
+    const panelOf = (u: number, v: number): Panel => {
+      // The courses wave by a few centimetres along their length.
+      const vv = mod(v + 0.006 * Math.sin(2 * Math.PI * u * 2 + 1.3) + 0.004 * Math.sin(2 * Math.PI * u * 5), 1);
+      let r = 0;
+      while (r < 3 && vv >= rows[r + 1]!) r++;
+      const v0 = rows[r]!;
+      const v1 = rows[r + 1]!;
+      const n = 4 + (r % 2);
+      // End joints of this course: irregular spacing, each slanted its own way.
+      const cuts: number[] = [];
+      for (let k = 0; k < n; k++) cuts.push((k + 0.2 + 0.6 * hash(k, r, 651)) / n);
+      const slant = (k: number): number => (hash(k, r, 652) - 0.5) * 0.22;
+      const mid = (v0 + v1) / 2;
+      // Joint positions at this height, in order (the last of the previous tile first, the first of the next last).
+      const jointAt = (k: number): number => (k < 0 ? cuts[n - 1]! - 1 : k >= n ? cuts[0]! + 1 : cuts[k]!) + slant(mod(k, n)) * (vv - mid);
+      let lo = -1;
+      while (lo < n - 1 && jointAt(lo + 1) <= u) lo++;
+      const left = jointAt(lo);
+      const right = jointAt(lo + 1);
+      const best = Math.min(u - left, right - u);
+      lo = mod(lo, n);
+      const ev = Math.min(vv - v0, v1 - vv);
+      return { e: Math.min(best, ev), end: best < ev, id: hash(lo, r, 653), id2: hash(lo, r, 654), fu: clamp((u - left) / Math.max(1e-6, right - left)), fv: (vv - v0) / (v1 - v0) };
+    };
+    const h = Field.from(S, S, (u, v) => {
+      const p = panelOf(u, v);
+      // A panel lies a few millimetres proud of its neighbour where it overlaps it, and sags between its fixings.
+      const lap = (p.id - 0.5) * 0.004 * smooth(0.0, 0.012, p.e);
+      const sag = 0.005 * Math.sin(Math.PI * p.fu) * Math.sin(Math.PI * p.fv) * (0.4 + p.id2);
+      const crease = 0.0014 * Math.pow(ridged(u + p.id, v + p.id2, 8, 8, 2, 644), 2.4);
+      // Lacing studs every 9 cm, 2.5 cm inside the edge.
+      const along = p.end ? p.fv * 7 : p.fu * 9;
+      const stud = smooth(0.0045, 0.002, Math.abs(p.e - 0.008)) * smooth(0.3, 0.1, Math.abs(mod(along, 1) - 0.5));
+      return lap + sag + crease + 0.0016 * stud - 0.003 * smooth(0.004, 0.0, p.e) + 0.0006 * fbm(u, v, 60, 60, 2, 645);
+    });
+    save('basepanel_n', normalMap(h, T, 0.8));
+    const ao = cavity(h, 3, 220);
+    save(
+      'basepanel_albedo',
+      Image.from(S, S, (u, v, x, y) => {
+        const p = panelOf(u, v);
+        // Panel to panel the cloth differs in tone; tape over a third of the seams is brighter.
+        let k = 0.46 + 0.16 * p.id + 0.07 * (fbm(u, v, 12, 12, 3, 646) - 0.5);
+        const tape = p.id2 < 0.34 ? smooth(0.014, 0.011, p.e) : 0;
+        k = mix(k, 0.72, tape * 0.8);
+        k *= (0.75 + 0.25 * ao.at(x, y)) * (1 - 0.4 * smooth(0.003, 0.0, p.e));
+        // Heat and exhaust have browned it unevenly.
+        const brown = 0.3 * smooth(0.35, 0.75, fbm(u, v, 4, 4, 3, 647));
+        return [k, k * (1 - brown * 0.25), k * (1 - brown * 0.55)];
+      }),
+    );
+    save(
+      'basepanel_orm',
+      orm(S, S, (u, v, x, y) => {
+        const p = panelOf(u, v);
+        const tape = p.id2 < 0.34 ? smooth(0.014, 0.011, p.e) : 0;
+        return [clamp(0.5 + 0.5 * ao.at(x, y)), clamp(0.8 + 0.18 * p.id - 0.25 * tape + 0.1 * (fbm(u, v, 40, 40, 2, 648) - 0.5)), clamp(0.45 + 0.3 * tape)];
       }),
     );
   },
@@ -360,9 +517,18 @@ const recipes: Record<string, () => void> = {
       // Lee side: away from the windward (+x) rim.
       return { d, streak: st, lee: clamp(0.5 - 0.5 * q.x) };
     };
+    // Pits of two sizes, gathered in drifts (not sprinkled evenly), and far fewer large spalls.
     const pit = Field.from(S, S, (u, v) => {
-      const c = worley(u, v, 150, 150, 410, 1);
-      return c.id < 0.2 ? smooth(0.42, 0.12, c.f1) * (0.4 + 0.6 * c.id2) : 0;
+      const gather = smooth(0.35, 0.7, fbm(u, v, 9, 9, 3, 418));
+      const m = worley(u, v, 150, 150, 410, 1);
+      const f = worley(u, v, 330, 330, 419, 1);
+      const mid = m.id < 0.04 + 0.2 * gather ? smooth(0.42, 0.12, m.f1) * (0.4 + 0.6 * m.id2) : 0;
+      const fine = f.id < 0.08 + 0.25 * gather ? smooth(0.42, 0.15, f.f1) * (0.3 + 0.5 * f.id2) : 0;
+      return Math.max(mid, fine);
+    });
+    const spall = Field.from(S, S, (u, v) => {
+      const c = worley(u + 0.003 * fbm(u, v, 40, 40, 2, 420), v + 0.003 * fbm(u, v, 40, 40, 2, 421), 30, 30, 422, 1);
+      return c.id < 0.1 ? smooth(0.46, 0.2, c.f1) * (0.5 + 0.5 * c.id2) : 0;
     });
     const craze = Field.from(S, S, (u, v) => {
       const c = worley(u + 0.004 * fbm(u, v, 60, 60, 2, 411), v, 260, 260, 412, 1);
@@ -371,7 +537,7 @@ const recipes: Record<string, () => void> = {
     const hChar = Field.from(S, S, (u, v, x, y) => {
       const q = at(u, v);
       const f = flow(q);
-      return -0.004 * smooth(0.006, 0.0015, q.seam) - 0.0022 * pit.at(x, y) - 0.0007 * craze.at(x, y) + 0.0016 * f.streak * smooth(0.1, 0.6, f.d) + 0.0012 * fbm(u, v, 120, 120, 3, 413);
+      return -0.004 * smooth(0.006, 0.0015, q.seam) - 0.0022 * pit.at(x, y) - 0.003 * spall.at(x, y) - 0.0007 * craze.at(x, y) + 0.0016 * f.streak * smooth(0.1, 0.6, f.d) + 0.0012 * fbm(u, v, 120, 120, 3, 413);
     });
     save('shieldchar_n', normalMap(hChar, 4.7, 1));
     const aoChar = cavity(hChar, 3, 300);
@@ -387,8 +553,9 @@ const recipes: Record<string, () => void> = {
         let c = lerp3(rgb(46, 40, 35), rgb(92, 86, 80), clamp(ash));
         c = lerp3(c, rgb(30, 26, 23), streak * 0.75);
         c = lerp3(c, rgb(118, 108, 96), smooth(0.7, 0.9, f.streak) * smooth(0.25, 0.7, f.d) * 0.45);
-        // Spalled pits show the pale virgin material; seams are burnt out.
-        c = lerp3(c, rgb(156, 138, 112), clamp(pit.at(x, y) * 1.3) * (0.35 + 0.65 * q.id));
+        // Pits are dark holes in the char; only the few large spalls show the pale virgin material. Seams are burnt out.
+        c = lerp3(c, rgb(22, 19, 17), clamp(pit.at(x, y) * 1.2) * 0.75);
+        c = lerp3(c, rgb(150, 132, 106), clamp(spall.at(x, y) * 1.3) * (0.45 + 0.55 * q.id));
         c = lerp3(c, rgb(16, 14, 13), smooth(0.0055, 0.0015, q.seam) * 0.9);
         c = lerp3(c, rgb(24, 21, 19), craze.at(x, y) * 0.35);
         return tint(c, (0.86 + 0.14 * fbm(u, v, 200, 200, 2, 415)) * (0.7 + 0.3 * aoChar.at(x, y)));
@@ -557,7 +724,10 @@ const recipes: Record<string, () => void> = {
     save('mli_n', normalMap(h, T, 1));
     // The aluminised (silver) film is the same blanket laid flatter: at full slope its facets flip between the
     // black sky and the sunlit ground and the panel turns into a black-and-white mosaic from a few metres.
-    save('mlisilver_n', normalMap(h, T, 0.45));
+    // On top of it the fine crinkle of a film that has been handled: creases a centimetre or two apart at low
+    // amplitude, which break the reflection into small glints instead of decimetre-wide mirrors.
+    const hSilver = Field.from(S, S, (u, v, x, y) => 0.45 * h.at(x, y) + 0.0005 * ridged(u, v, 72, 72, 2, 133) + 0.00025 * fbm(u, v, 170, 170, 2, 134));
+    save('mlisilver_n', normalMap(hSilver, T, 1));
     const ao = cavity(h, 6, 90);
     const [lo, hi] = h.range();
     save(
@@ -581,16 +751,20 @@ const recipes: Record<string, () => void> = {
     );
   },
 
-  // Capsule back shell, tile 1.44 m: 8 x 8 thermal tiles in a running bond, each closed out with aluminised
-  // polyimide tape. What shows is the tape: a silver film with a faint thin-film colour that differs from
-  // tile to tile (cyan to a warm rose), drawn tight over each tile so that the tile edges are soft creases,
-  // lapped over its neighbour along one edge, with an occasional wrinkle and a dark vent plug in every
-  // fourth tile. Joints are 1.5 mm wide and filled flush: they live in the normal, occlusion and roughness
-  // maps and change the albedo by less than a tenth, so from a few metres the shell is one silver surface.
+  // Back shell, tile 1.44 m round the cone x 1.68 m along it: tiles closed out with aluminised tape, 8 columns
+  // of 4 tiles, each 0.18 m wide and 0.42 m long, in ALIGNED columns (the geometry runs the columns up the
+  // cone's generators, so the tiles are long trapezoids). The tiles are flat: a joint is a hairline in the
+  // roughness and the occlusion with a tenth of a millimetre of roll-off, not a bevel. The film's tint
+  // drifts in broad zones, hardly from tile to tile. Bright tabs of fresh tape sit on some corners, a dark
+  // fastener plug on one tile in four, and a few long wrinkles of the tape cross several tiles at random.
   shell() {
     const S = 2048;
-    const N = 8;
+    const NU = 8;
+    const NV = 4;
+    const WU = 0.18;
+    const WV = 0.42;
     interface Cell {
+      /** Distance to the nearest joint, m. */
       e: number;
       fu: number;
       fv: number;
@@ -599,30 +773,47 @@ const recipes: Record<string, () => void> = {
       id: number;
     }
     const cellOf = (u: number, v: number): Cell => {
-      const j = Math.floor(v * N);
-      const uu = u * N + (mod(j, 2) === 1 ? 0.5 : 0);
-      const i = Math.floor(uu);
-      const fu = uu - i;
-      const fv = v * N - j;
-      const ii = mod(i, N);
-      return { e: Math.min(fu, 1 - fu, fv, 1 - fv), fu, fv, i: ii, j, id: hash(ii, j, 501) };
+      const i = Math.floor(u * NU);
+      const j = Math.floor(v * NV);
+      const fu = u * NU - i;
+      const fv = v * NV - j;
+      return { e: Math.min(Math.min(fu, 1 - fu) * WU, Math.min(fv, 1 - fv) * WV), fu, fv, i: mod(i, NU), j: mod(j, NV), id: hash(mod(i, NU), mod(j, NV), 501) };
     };
-    /** Vent plug: every fourth tile, at the tile centre, 9 mm across. */
-    const plug = (c: Cell): number => (mod(c.i + 2 * c.j, 4) === 0 ? smooth(0.03, 0.022, Math.hypot(c.fu - 0.5, c.fv - 0.5)) : 0);
-    /** A wrinkle across a third of the tiles: a thin straight ridge at the tile's own angle. */
-    const wrinkle = (c: Cell): number => {
-      if (hash(c.i, c.j, 502) > 0.34) return 0;
-      const a = hash(c.i, c.j, 503) * Math.PI;
-      const d = (c.fu - 0.5) * Math.cos(a) + (c.fv - 0.5) * Math.sin(a) - (hash(c.i, c.j, 504) - 0.5) * 0.4;
-      const along = -(c.fu - 0.5) * Math.sin(a) + (c.fv - 0.5) * Math.cos(a);
-      return smooth(0.022, 0.0, Math.abs(d)) * smooth(0.42, 0.2, Math.abs(along)) * smooth(0.02, 0.1, c.e);
+    /** Fastener plug: one tile in four, 10 mm across, on the tile's centre line near its lower end. */
+    const plug = (c: Cell): number => (mod(c.i * 3 + c.j, 4) === 1 ? smooth(0.0065, 0.004, Math.hypot((c.fu - 0.5) * WU, (c.fv - 0.16) * WV)) : 0);
+    /** Tab of fresh tape over a corner or a joint: a rectangle 2 x 3 cm on four tiles in ten. */
+    const tab = (c: Cell): number => {
+      if (hash(c.i, c.j, 511) > 0.42) return 0;
+      const cu = hash(c.i, c.j, 512) < 0.5 ? 0.0 : 0.5;
+      const du = Math.abs((c.fu - cu) * WU) - 0.012;
+      const dv = Math.abs(c.fv * WV) - 0.016;
+      return smooth(0.0015, 0.0, Math.max(du, dv));
+    };
+    // Long wrinkles of the tape: a handful per texture tile, each a straight crease 0.3 to 0.9 m long, most of
+    // them within 25 degrees of the cone's generator, crossing joints as if they were not there.
+    const wrinkles: { x: number; y: number; dx: number; dy: number; len: number; amp: number }[] = [];
+    for (let n = 0; n < 9; n++) {
+      const a = (hash(n, 1, 521) - 0.5) * (hash(n, 2, 522) < 0.75 ? 0.9 : 3.0) + Math.PI / 2;
+      const len = 0.3 + 0.6 * hash(n, 3, 523);
+      wrinkles.push({ x: 0.2 + 1.0 * hash(n, 4, 524), y: 0.25 + 1.15 * hash(n, 5, 525), dx: Math.cos(a), dy: Math.sin(a), len, amp: 0.5 + 0.5 * hash(n, 6, 526) });
+    }
+    const wrinkle = (u: number, v: number): number => {
+      const x = u * 1.44;
+      const y = v * 1.68;
+      let w = 0;
+      for (const k of wrinkles) {
+        const rx = x - k.x;
+        const ry = y - k.y;
+        const along = rx * k.dx + ry * k.dy;
+        if (Math.abs(along) > k.len / 2) continue;
+        const across = Math.abs(-rx * k.dy + ry * k.dx);
+        w = Math.max(w, k.amp * smooth(0.004, 0.0, across) * smooth(k.len / 2, k.len / 2 - 0.08, Math.abs(along)));
+      }
+      return w;
     };
     const h = Field.from(S, S, (u, v) => {
       const c = cellOf(u, v);
-      // Tape drawn over the tile: flat on top, rolling off into the joint over the last 6 % of the tile.
-      const roll = smooth(0.0, 0.06, c.e);
-      const lap = c.fu < 0.085 ? 0.00012 : 0;
-      return 0.0007 * roll - 0.0005 * smooth(0.0085, 0.003, c.e) + lap + 0.00035 * wrinkle(c) - 0.0006 * plug(c) + 0.00005 * fbm(u, v, 200, 200, 2, 505) + 0.00018 * fbm(u, v, 24, 24, 2, 506) + (c.id - 0.5) * 0.0002;
+      return 0.00008 * smooth(0.0, 0.012, c.e) - 0.00028 * smooth(0.0022, 0.0007, c.e) + 0.0003 * wrinkle(u, v) - 0.0005 * plug(c) + 0.00006 * tab(c) + 0.00003 * fbm(u, v, 200, 200, 2, 505) + 0.00009 * fbm(u, v, 12, 12, 2, 506);
     });
     save('shell_n', normalMap(h, 1.44, 1));
     const ao = cavity(h, 2, 900);
@@ -630,22 +821,23 @@ const recipes: Record<string, () => void> = {
       'shell_albedo',
       Image.from(S, S, (u, v, x, y) => {
         const c = cellOf(u, v);
-        // Thin-film tint: drifts over the shell, and steps a little from tile to tile.
-        const film = clamp(fbm(u, v, 3, 3, 3, 507) + 0.12 * (c.id - 0.5));
-        const base = lerp3(rgb(200, 220, 226), rgb(224, 218, 220), smooth(0.25, 0.8, film));
-        let k = 0.9 + 0.022 * hash(c.i, c.j, 508) + 0.02 * fbm(u, v, 60, 60, 2, 509);
-        k *= 1 - 0.08 * smooth(0.012, 0.003, c.e);
-        k *= 0.96 + 0.04 * ao.at(x, y);
+        // Thin-film tint: broad zones over the shell, a faint step from tile to tile.
+        const film = clamp(fbm(u, v, 2, 2, 3, 507) + 0.04 * (c.id - 0.5));
+        const base = lerp3(rgb(204, 220, 225), rgb(220, 217, 222), smooth(0.3, 0.7, film));
+        let k = 0.9 + 0.012 * hash(c.i, c.j, 508) + 0.015 * fbm(u, v, 60, 60, 2, 509);
+        k *= 1 - 0.07 * smooth(0.0022, 0.0007, c.e);
+        k *= 0.97 + 0.03 * ao.at(x, y);
+        k = mix(k, 0.97, tab(c) * 0.8);
         const col = tint(base, k);
-        return lerp3(col, rgb(52, 50, 48), plug(c) * 0.9);
+        return lerp3(col, rgb(46, 44, 42), plug(c) * 0.9);
       }),
     );
     save(
       'shell_orm',
       orm(S, S, (u, v, x, y) => {
         const c = cellOf(u, v);
-        const joint = smooth(0.012, 0.003, c.e);
-        return [clamp(ao.at(x, y) * (1 - 0.25 * joint)), clamp(0.78 + 0.16 * c.id + 0.2 * joint + 0.25 * plug(c) + 0.06 * (fbm(u, v, 50, 50, 2, 510) - 0.5)), clamp(1 - 0.8 * plug(c) - 0.3 * joint)];
+        const joint = smooth(0.0022, 0.0007, c.e);
+        return [clamp(ao.at(x, y) * (1 - 0.3 * joint)), clamp(0.84 + 0.08 * c.id + 0.16 * joint + 0.2 * plug(c) - 0.3 * tab(c) + 0.05 * (fbm(u, v, 50, 50, 2, 510) - 0.5)), clamp(1 - 0.8 * plug(c) - 0.3 * joint)];
       }),
     );
   },

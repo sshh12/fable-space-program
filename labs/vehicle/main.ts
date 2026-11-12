@@ -162,7 +162,7 @@ async function boot(): Promise<void> {
   const vehicle = createVesselVisualFeature({ exteriorGlass: flag('glass', true) });
   const env = createLabEnvFeature({ kind: envKind });
   // The lab planet has no relief: the pad surface is the reference sphere here.
-  const site = flag('site', placeKind === 'pad') ? createSiteFeature({ padElevation: () => 0 }) : null;
+  const site = flag('site', placeKind === 'pad') ? createSiteFeature({ padElevation: () => 0, levelGround: true }) : null;
 
   const app = await createLabApp({
     canvas,

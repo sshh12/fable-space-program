@@ -15,7 +15,7 @@ import { MeshBuilder, add3, cross3, dot3, len3, lerp3, norm3, polar, scale3, sub
 import { DEG, Profile, TAU, ball, beam, box, frustum, lathe, pipe, radialFrame, ringSolid, rod } from '../geom/prims';
 import type { MatId } from '../materials';
 import { lampCandela } from './capsule';
-import { band, buildModel, curvedPanel, hash01, noise2, thruster } from './common';
+import { band, buildModel, curvedPanel, flatAnnulus, hash01, noise2, thruster } from './common';
 import { Params, type PartGenerator, type PartLight, type PoseInput, type PoseSink } from './types';
 
 /** Quaternion (x, y, z, w) of the frame whose +Y is `dir` and whose +X is as close to `hint` as possible. */
@@ -333,7 +333,10 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
       }
     };
     deck(y1, Math.min(topR - 0.1, coreR - 0.08), true, gold, 0.2);
-    deck(y0, wellR, false, 'blanket-silver', 1);
+    // The underside is a close-out of hand-laid blanket panels, laid flat (it is what a camera under the
+    // lander looks straight at): planar texture coordinates, so nothing fans out from the engine well.
+    b.mat('blanket-base').masks(0, 0.9, 1, 0);
+    flatAnnulus(b, wellR, outline, y0, false, b.pick(96, 48, 16), b.pick(6, 3, 1), 'deck');
 
     // ---- mating rings, base frame, engine well and mount
     const segs = b.pick(96, 48, 16);
@@ -347,7 +350,7 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
         beam(b, polar(wellR, phi, 0.06), polar(R - 0.1, phi, 0.06), 0.09, 0.07, [0, 1, 0], 'base-spoke');
       }
     }
-    b.mat('blanket-silver').masks(0, 0.7, 1, 0);
+    b.mat('blanket-base').masks(0, 0.7, 1, 0);
     const mountY = engineNode ? engineNode.pos[1] : H * 0.65;
     const mountR = engineNode ? engineNode.size / 2 + 0.05 : 0.5;
     // Well wall (faces the engine), thrust cone and the mount pad whose underside is the engine interface.
@@ -511,15 +514,15 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
     b.mat(foilAlt).masks(0, 0.9, 0.2, 0);
     for (let q = 0; q < 4; q++) foil(b, deckSegs / 4, b.pick(8, 4, 1), (s, t) => ({ p: polar((skinR + 0.01) * t + 0.02 * (1 - t), (q / 4 + s / 4) * TAU, y1 + 0.01), n: [0, 1, 0] }), 3, 2, 900 + q, 0.01);
     const wellR = engineNode ? Math.max(0.5, engineNode.size * 0.9) : 0.5;
-    b.mat('blanket-silver').masks(0, 0.9, 1, 0);
-    for (let q = 0; q < 4; q++) foil(b, deckSegs / 4, b.pick(6, 3, 1), (s, t) => ({ p: polar(wellR + (skinR + 0.01 - wellR) * t, (q / 4 + (1 - s) / 4) * TAU, y0 - 0.01), n: [0, -1, 0] }), 3, 1.5, 950 + q, 0.008);
+    b.mat('blanket-base').masks(0, 0.9, 1, 0);
+    flatAnnulus(b, wellR, skinR + 0.01, y0 - 0.01, false, deckSegs, b.pick(6, 3, 1), 'deck');
     b.mat('alu-machined').masks(0.3, 0.85, 0.4, 0);
     ringSolid(b, R - 0.13, R, y1 - 0.02, H, segs, 'top-ring');
     ringSolid(b, R - 0.13, R, 0, y0 + 0.02, segs, 'base-ring');
     if (engineNode) {
       const my = engineNode.pos[1];
       const mr = engineNode.size / 2 + 0.04;
-      b.mat('blanket-silver').masks(0, 0.7, 1, 0);
+      b.mat('blanket-base').masks(0, 0.7, 1, 0);
       const wall = new Profile();
       wall.pts.push({ r: mr + 0.08, y: my + 0.02, hard: false, mat: undefined }, { r: wellR, y: my - 0.3, hard: false, mat: undefined }, { r: wellR, y: y0 - 0.02, hard: false, mat: undefined });
       lathe(b, wall, { segs: deckSegs, closed: false, tag: 'well' });

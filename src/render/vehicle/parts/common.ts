@@ -385,4 +385,38 @@ export function noise2(x: number, y: number, seed = 0): number {
   return a + (c - a) * u + (d - a) * v + (a - c - d + e) * u * v;
 }
 
+/**
+ * Flat annulus (a disc for rIn = 0) at height `y`, facing up or down, with PLANAR texture coordinates (x and
+ * z in metres) and tangents along +X: what is laid on it (blanket panels, plating) lies as on a table and
+ * does not fan out from the axis as it does with the (azimuth, radius) coordinates of a lathed disc.
+ */
+export function flatAnnulus(b: MeshBuilder, rIn: number, rOut: number | ((phi: number) => number), y: number, up: boolean, segs: number, rings: number, tag = 'flat'): void {
+  b.begin(false, tag);
+  const ny = up ? 1 : -1;
+  const vertex = (r: number, phi: number): number => {
+    const x = r * Math.sin(phi);
+    const z = r * Math.cos(phi);
+    return b.v(x, y, z, 0, ny, 0, 1, 0, 0, x, up ? -z : z);
+  };
+  const rows: number[][] = [];
+  const centre = rIn <= 1e-9 ? vertex(0, 0) : -1;
+  for (let j = centre >= 0 ? 1 : 0; j <= rings; j++) {
+    const row: number[] = [];
+    for (let i = 0; i <= segs; i++) {
+      const phi = (i / segs) * TAU;
+      const ro = typeof rOut === 'number' ? rOut : rOut(phi);
+      row.push(vertex(rIn + ((ro - rIn) * j) / rings, phi));
+    }
+    rows.push(row);
+  }
+  // (Radius outward, then azimuth from +Z toward +X, is counter-clockwise seen from above.)
+  if (centre >= 0) for (let i = 0; i < segs; i++) up ? b.tri(centre, rows[0]![i]!, rows[0]![i + 1]!) : b.tri(centre, rows[0]![i + 1]!, rows[0]![i]!);
+  for (let j = 0; j + 1 < rows.length; j++) {
+    for (let i = 0; i < segs; i++) {
+      if (up) b.quad(rows[j]![i]!, rows[j + 1]![i]!, rows[j + 1]![i + 1]!, rows[j]![i + 1]!);
+      else b.quad(rows[j]![i]!, rows[j]![i + 1]!, rows[j + 1]![i + 1]!, rows[j + 1]![i]!);
+    }
+  }
+}
+
 export { around };

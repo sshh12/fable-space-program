@@ -16,7 +16,7 @@ import { decalSheetOf } from '../decals';
 import { MeshBuilder, add3, polar, scale3, xf } from '../geom/builder';
 import { DEG, Profile, TAU, ball, bolt, boltCircle, boltRing, box, frustum, lathe, phisWith, pipe, radialFrame, ringSolid, rod, torus, type LatheRegion, type MaskOut } from '../geom/prims';
 import { isMatId, type MatId } from '../materials';
-import { accessDoor, band, bandRegion, blister, buildModel, decalRegion, noise2, parseList, raceway, regionBounds, regionHeights, seams, stringers, umbilicalPlate, ventPort } from './common';
+import { accessDoor, band, bandRegion, blister, buildModel, decalRegion, flatAnnulus, noise2, parseList, raceway, regionBounds, regionHeights, seams, stringers, umbilicalPlate, ventPort } from './common';
 import { Params, staticPose, type PartGenerator } from './types';
 
 const mat = (id: string, where: string): MatId => {
@@ -361,8 +361,11 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     }
     // ---- base heat shield and engine mounts
     if (baseY > 0) {
-      b.mat('blanket-silver').masks(0, 0.75, 1, 0);
-      lathe(b, Profile.at(0, baseY - 0.025).corner(Ri - 0.004, baseY - 0.025).corner(Ri - 0.004, baseY + 0.025).corner(0, baseY + 0.025), { segs: b.pick(96, 48, 16), tag: 'closeout' });
+      // Base close-out: blanket panels laid flat across the base (planar texture coordinates: seen from aft,
+      // between the engines, nothing converges on the axis).
+      b.mat('blanket-base').masks(0, 0.75, 1, 0);
+      flatAnnulus(b, 0, Ri - 0.004, baseY - 0.025, false, b.pick(96, 48, 16), b.pick(8, 4, 1), 'closeout');
+      flatAnnulus(b, 0, Ri - 0.004, baseY + 0.025, true, b.pick(48, 24, 16), b.pick(2, 1, 1), 'closeout');
       if (b.lod === 0) {
         b.mat('steel-dark').masks(0.1, 0.7, 1, 0);
         for (const rr of [0.33, 0.66]) ringSolid(b, Ri * rr - 0.03, Ri * rr + 0.03, baseY - 0.06, baseY - 0.02, 72, 'rib');

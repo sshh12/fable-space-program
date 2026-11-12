@@ -3,7 +3,7 @@
   "params": {
     "wall": 0.04,
     "flange": 0.1,
-    "skin": "paint-white",
+    "skin": "skin-white-b",
     "inner": "primer",
     "fittings": 6,
     "seat": "visuals/shared/kestrel-mouldline",

@@ -45,6 +45,13 @@ const SPECS = {
   // ---- painted aluminium-lithium, orange-peel clearcoat
   'paint-white': paint([0.8, 0.8, 0.78]),
   'paint-white-b': paint([0.77, 0.775, 0.76], 0.52, 1, 0.2),
+  /**
+   * The painted skin of a stage at vehicle scale (tile 12.8 m): tone drift, run marks, touched-up patches and
+   * stencils in the albedo, the waviness of the sheet in the normal map. A flown white, not a showroom one;
+   * the second is the next ring's batch of paint.
+   */
+  'skin-white': { color: [0.77, 0.77, 0.75], metallic: 0, roughness: 0.52, clearcoat: 0.9, clearcoatRoughness: 0.2, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
+  'skin-white-b': { color: [0.72, 0.725, 0.71], metallic: 0, roughness: 0.58, clearcoat: 0.8, clearcoatRoughness: 0.26, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
   'paint-black': paint([0.022, 0.022, 0.025], 0.42, 0.9, 0.16),
   'paint-navy': paint([0.012, 0.035, 0.11], 0.42, 1, 0.14),
   'paint-red': paint([0.52, 0.035, 0.02], 0.45, 1, 0.16),
@@ -94,7 +101,7 @@ const SPECS = {
   /** The same shield after an entry: charred, pitted, streaked from the stagnation point. */
   'ablator-char': { color: [1, 1, 1], metallic: 0, roughness: 0.92, tile: [1, 1], tex: { a: 'shieldchar_albedo', n: 'shieldchar_n', o: 'shieldchar_orm', e: 'shield_glow' }, emissive: [1, 1, 1] },
   /** Back-shell tiles closed out with aluminised polyimide tape: silver film with a faint thin-film tint. */
-  'shell-tape': { color: [1, 1, 1], metallic: 0.82, roughness: 0.4, tile: [1.44, 1.44], tex: { a: 'shell_albedo', n: 'shell_n', o: 'shell_orm' } },
+  'shell-tape': { color: [1, 1, 1], metallic: 0.82, roughness: 0.42, tile: [1.44, 1.68], tex: { a: 'shell_albedo', n: 'shell_n', o: 'shell_orm' } },
   /** Smooth taped close-out panels of the back shell (window surrounds, forward bay gores, thruster fairings). */
   'shell-panel': { color: [0.83, 0.85, 0.87], metallic: 0.82, roughness: 0.34, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
   /** Reflective tape strips over panel joints. */
@@ -102,13 +109,19 @@ const SPECS = {
   /** Amber polyimide tape (blanket seams of the lander). */
   'tape-kapton': { color: [0.78, 0.47, 0.12], metallic: 0.7, roughness: 0.36, tile: [0.6, 0.6], tex: { n: 'paint_n', o: 'paint_orm' } },
   'mli-gold': { color: [1, 1, 1], metallic: 0.88, roughness: 0.5, anisotropy: -0.4, tile: [1.2, 1.2], tex: { a: 'mligold_albedo', n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
-  'mli-silver': { color: [0.86, 0.87, 0.88], metallic: 0.92, roughness: 0.47, anisotropy: -0.4, tile: [1.2, 1.2], tex: { n: 'mlisilver_n', o: 'mli_orm' }, doubleSided: true },
+  'mli-silver': { color: [0.8, 0.81, 0.82], metallic: 0.92, roughness: 0.56, anisotropy: -0.4, tile: [1.2, 1.2], tex: { n: 'mlisilver_n', o: 'mli_orm' }, doubleSided: true },
   'mli-black': { color: [0.03, 0.03, 0.033], metallic: 0, roughness: 0.46, tile: [1.2, 1.2], tex: { n: 'mli_n', o: 'mli_orm' }, doubleSided: true },
   /** Quilted beta-cloth / acoustic blanket. */
   blanket: { color: [0.74, 0.72, 0.66], metallic: 0, roughness: 0.86, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
   /** Flexible heat-shield boot of an engine: aluminised cloth gone grey with heat and handling. */
-  boot: { color: [0.3, 0.295, 0.28], metallic: 0, roughness: 0.84, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
-  'blanket-silver': { color: [0.7, 0.71, 0.72], metallic: 0.9, roughness: 0.42, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
+  boot: { color: [0.15, 0.145, 0.14], metallic: 0, roughness: 0.88, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },
+  /** Insulated duct wrap (aluminised cloth, quilted). */
+  'blanket-silver': { color: [0.7, 0.71, 0.72], metallic: 0.9, roughness: 0.5, tile: [0.8, 0.8], tex: { n: 'quilt_n', o: 'quilt_orm' } },
+  /**
+   * Base close-out of a stage or a lander: hand-laid blanket panels with laced and taped seams, dull
+   * aluminised cloth (tile 3.2 m, for PLANAR texture coordinates in metres).
+   */
+  'blanket-base': { color: [1, 1, 1], metallic: 0.75, roughness: 0.74, tile: [3.2, 3.2], tex: { a: 'basepanel_albedo', n: 'basepanel_n', o: 'basepanel_orm' } },
   /** Rime on cryogenic lines and hoses: a matte, granular white sleeve (tank skins frost through the mesh shader's frost term). */
   frost: { color: [1, 1, 1], metallic: 0, roughness: 0.88, tile: [4.8, 4.8], tex: { a: 'frost_albedo', n: 'frost_n', o: 'frost_orm' } },
   rubber: { color: [0.02, 0.02, 0.022], metallic: 0, roughness: 0.82, tile: [0.3, 0.3], tex: { n: 'cast_n' } },
