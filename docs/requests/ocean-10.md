@@ -1,7 +1,30 @@
-Status: open (read by the maintainer, not started: a decision about the display curve for the lead; the note says what each option touches)
+Status: open (LEAD DECISION 2026-11-12 below: option 1 in principle, built and judged by A/B as the first render-core item AFTER the presentation sweep; nothing changes before the sweep)
 From: ocean
 Owner path: src/render/core/post/tonemap.ts (the display curve), src/render/core/post/exposure.ts (the meter); render core / the lead
 Blocking: no        (round-2 critique of the ocean, finding 3: "from 3 km to orbit the glint is matte paint, never light: no pixel clips"; the ocean's part is done, see below)
+
+## Lead decision (2026-11-12)
+The ocean's evaluation of the curve settles the direction: sunlit white paper at sunny 16 is shown at 193 of 255
+and display white is not reached below about ten times mid-grey. That is not a camera's rendering (a properly
+exposed daylight photograph, the bar every critic judges against, puts sunlit white at about 235-245 and clips
+highlights two to three times above it), and it is a common cause behind findings in several packages: cloud tops
+"mid-grey (200, 200, 200) instead of white" (map-view-6, sky-lighting-11), frost that does not stand out from
+paint, a glint that is cream, steam "as bright as a white surface" and no brighter.
+
+1. OPTION 1 IS THE DIRECTION: the display curve puts sunlit white (albedo 0.9 at the meter's daylight exposure) at
+   about 0.9 of display-linear white, as `exposure.ts` already assumes, with a shoulder (no hard clip) so that what
+   is two to three times sunlit white reaches white. The meter's bounds under the sun do not move.
+2. OPTION 2 (a glare term with its threshold in luminance per lux of sun) is complementary and comes second, only
+   if the A/B of option 1 still shows lights that read as paint.
+3. WHEN: not before the presentation sweep (its reference images are recorded on the tree as it is, and every
+   suite's level-holding tests would have to be re-run on one GPU slot). It is the FIRST render-core item after the
+   sweep and before the visual rounds resume, so every later round is judged under the new curve.
+4. HOW: the maintainer builds it behind a switch and brings an A/B of at least eight scenes (pad at noon, lift-off
+   flame, cockpit with a sun patch, low orbit with cloud tops, glint from 3 km and from orbit, frosted stage, lunar
+   surface, splashdown under overcast) beside the reference photographs; the lead decides from those pictures with
+   an independent critic's reading; the risk named by the maintainer (the cabin and the pad already live near the
+   top of the curve) is judged there. Then the switch goes, the packages' level-holding tests are re-run and
+   re-stated by their owners in their next round, and the reference images are re-recorded with a lead note.
 
 ## Problem
 A sun glint on the sea never reaches display white from 3 km up, and from orbit its core is a mid-grey. The ocean's
