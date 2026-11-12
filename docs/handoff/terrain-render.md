@@ -705,3 +705,79 @@ stand-in.
 - Artifact lens: about 6. No tiling, no texel staircases on land cover, no stray concrete, no ponds on
   slopes, no gear teeth; left: rounded shapes of the coarser rock meshes, the ghosting of hexagon copies at
   one's feet, notches at the near-field radius, stipple at the terminator from 5,000 km.
+
+## 13. Changes by the shared-code maintainer (2026-11-11, requests app-integration-6, -7, -11)
+
+No terrain fixer was running in this round; the shared-code maintainer answered the requests against
+`src/render/terrain`. What changed, for whoever takes the package next (the running log is
+`docs/handoff/core-support.md`, section 9).
+
+**The view fits the tile pools (app-integration-7).** On the pad at 1440p the selection asked for 1,660 of the
+1,280 tile layers: 380 finished tiles waited for a layer for ever, `isIdle()` never became true, and every frame
+spent 2.6 ms (p50) looking for something to evict, once per waiting tile. Cause: the stack's LOD observer was its
+bounding sphere about the VES origin (101 m of bias about a base 9 m wide), which asked for 628 level-20 tiles.
+
+- `src/camera/listener.ts` `vesselGroundObserver`: a vessel observer is now the point at the vessel's foot with
+  the radius of its footprint as the bias (from the parts' `bounds` cylinders in their attitude). The pad view
+  at 1440p asks for 936 tiles plus 252 pinned (was 1,627 + 252).
+- `streamer.ts`: `demand(frame, window)` = the live demand on each pool (tiles a counted selection pass used in
+  the last frames, plus the pinned ones); one eviction search per frame and kind of layer; a tile that has
+  waited `STALL_GIVE_UP_FRAMES` (240) for a layer is given up, its parent stands in, and it is not asked for
+  again for `STALL_RETRY_FRAMES` (900); no new bakes go out while as many finished tiles as there are workers
+  wait for a layer. `StreamStats` gained `stalled`, `droppedTotal`, `demandTiles`, `demandImages`, `lodScale`.
+- `lod.ts` `fitLodScale`, `feature.ts`: when the demand passes `POOL_HIGH` (0.92) of a pool the level ranges are
+  shrunk by a factor on K (`lodScale`, at least `LOD_SCALE_MIN` 0.4 and never below K's own floor) that brings
+  it to `POOL_TARGET` (0.86); below `POOL_LOW` (0.78) it grows back at 50 % a second. K itself follows as
+  before (0.25 s), so the ranges morph. `isIdle()` also waits for K to arrive. The request-only prefetch passes
+  run only with room to spare (`lodScale` 1 and demand under `POOL_LOW`).
+
+**The ground under a vessel keeps its depth when the camera is far (app-integration-6).** In the map view the
+camera sweeps the turning planet at 1.9 km/s in the body-fixed frame; its warp cap (11.4) capped every tile,
+the vessel's included, the deep tiles went unused for 90 frames and were evicted, and after the blend back the
+camera's speed estimate took one to five seconds to decay.
+
+- `quadtree.ts`: `LodObserverFixed.cap`: one warp cap per observer. A tile is refined under the largest cap of
+  the observers within the range of its children and drawn with the morph floor of the largest cap of those
+  within its own range (`TileNode.cap`; `recordOf` in feature.ts). With one cap for all observers the selection
+  is what it was (and as cheap).
+- `lod.ts` `GroundSpeed`: an observer's ground speed is the slowest frame of the last 0.25 s (at least three
+  frames), followed at once when it falls and by `SPEED_RISE_LEVELS` (8) doublings a second when it rises (the
+  cap falls level by level; the old linear smoothing let it fall six levels in the first frame of a
+  thousandfold warp). A cut, a 0.6 s view blend and a long frame are not flight.
+- `feature.ts` parked view: while `camera.kind === 'map'`, the last settled surface view of a body with a
+  vessel observer (eye, frustum, K) is selected request-only every eighth frame and counted as demand, so its
+  tiles stay resident. Dropped when the vessel has moved `PARK_REACH` (150 m).
+
+**Loading (app-integration-11, terrain part).** `TerrainDebug.residency(bodyId)` (wanted and resident tiles per
+level of the latest selection), `TerrainDebug.setUploadBudget(tiles, ms)`; the next bake goes out when a worker
+reports back (not only once a frame); levels 0..`pinLevel` are requested from `init`; after a cut and at the
+start the selection asks for the tiles under the view three levels at a time (`SelectParams.eager`,
+`EAGER_LEVELS`: children of tiles that are not resident yet, by the bounds they inherit; not counted as
+demand), until a selection wants nothing: a third of the round trips for the same tiles. (The whole chain at
+once asked for twice the pad view's tiles: the inherited bounds are too wide that deep.)
+
+**Measured** (app at 2560 x 1440, `/?capture=0&scale=1&governor=off&mute=1`, chase view on the pad, 300 frames
+at rest; `tests/browser/integration/pad-pools.spec.ts`, numbers in `out/core-support/pad-pools.json`):
+
+| | before | after |
+|---|---|---|
+| tiles waiting for a layer | 380, for ever (`stalledTotal` + 114,000 per 300 frames) | 0 |
+| `isIdle()` | never | yes (the harness's `waitIdle` returns) |
+| live demand / tile layers | about 1,880 / 1,280 | 1,172 / 1,280 at `lodScale` 1 in one run, 1,102 at 0.95 in the next (the view is at the edge of the pool) |
+| terrain hooks, main thread p50 / p99 | 5.27 / 6.74 ms | 1.41 / 2.10 ms |
+| of it: streamer | 2.63 / 3.25 ms | 0.025 / 0.04 ms |
+| of it: selection | 1.13 / 1.84 ms | 0.59 / 0.90 ms |
+| of it: ground cover | 0.96 / 1.41 ms | 0.52 / 0.77 ms |
+| app frame, main thread p50 / p99 | 8.0 / 11.0 ms | 3.4 / 4.8 ms (line: 6) |
+| map round trip: deepest level in the map / first frame back | 11 / 2 | 20 / 20 |
+| tiles streamed again after the return | the view (1.3 s of coarse ground, the coast under the sea) | 0 |
+
+Still over its line: "quadtree + cascades <= 1 ms" (ARCHITECTURE 17) against 1.4 ms p50 of hooks at 1440p on the
+pad (selection 0.59, ground cover 0.52, rocks 0.08, build 0.11, shadow 0.09). Not attempted: a selection that is
+reused while neither the observers nor the tile states change, and the ground cover's per-frame list.
+
+Tests: `tests/unit/terrain-render/pools.test.ts` (12: ground speed, caps per observer incl. crack-freedom, live
+demand, eager requests, the fit), `tests/unit/camera/observers.test.ts` (4), `tests/browser/integration/pad-pools.spec.ts`,
+`tests/browser/terrain/smoke.spec.ts` (residency and counts). The package's functional browser suite on the
+final code: 20 of 20 (integrated views, integrity incl. "no cracks or holes along a descent" and "the mesh at
+the deepest level is the collision surface", pops with and without delayed streaming, smoke, reviewed views).
