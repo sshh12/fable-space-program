@@ -31,7 +31,7 @@ import type { VfxCommon } from './common';
 import { PROBE_PAD } from './common';
 import type { VfxData } from './data';
 import type { PlacedCluster } from './plumes';
-import type { VolumeCombiner } from './volumes';
+import type { EmitterHint, VolumeCombiner } from './volumes';
 
 const U_FLOATS = 96;
 /** Float offsets into SmokeU that are written outside `update`. */
@@ -435,7 +435,7 @@ struct MarchOut {
       let dl2 = max(dot(toL, toL), 25.0);
       // (What is scattered about inside the cloud reaches round its billows, but not through the whole of it:
       // the side of the cloud away from the flame stays dark brown, as in every night-launch photograph.)
-      let plume = su.lightColor.rgb * ((lt.g + 0.35 * pow(lt.g, 0.4)) / (dl2 * PI));
+      let plume = su.lightColor.rgb * ((lt.g + 0.25 * pow(lt.g, 0.55)) / (dl2 * PI));
       let sky = amb * ((0.45 + 0.55 * pow(lt.a, 0.833)) / PI);
       // Gas fresh from the plume still glows, faintly and smoothly (what lights the cloud at the jet is the jet).
       let h2 = cell.b * cell.b;
@@ -633,6 +633,12 @@ export class SmokeSystem implements VolumeCombiner {
   sourceRate = 0;
   /** Share of the grid's cells that is simulated (diagnostics). */
   boxShare = 0;
+  /**
+   * The cloud as the exposure meter should see it while the plume lights it (the feature sends it when the
+   * sun does not light the scene): the part of it within a few tens of metres of the flame, at the luminance
+   * the flame gives it. Null when nothing burns over the pad.
+   */
+  hint: EmitterHint | null = null;
 
   constructor(
     private readonly ctx: RenderContext,
@@ -734,6 +740,7 @@ export class SmokeSystem implements VolumeCombiner {
     const snap = frame.snapshot;
     this.stepped = false;
     this.rect = null;
+    this.hint = null;
 
     // Nearest site to anything that burns, on a body of this frame.
     let best: { site: LaunchSiteDef; origin: Vec3; east: Vec3; north: Vec3; up: Vec3 } | null = null;
@@ -869,6 +876,15 @@ export class SmokeSystem implements VolumeCombiner {
     const cx = foot.x * (weight > 0 ? 1 : 0) + Math.sin(wh) * drift;
     const cz = foot.z * (weight > 0 ? 1 : 0) + Math.cos(wh) * drift;
     u.set([cx, cz, radius, height], 68);
+    if (light && weight > 0 && age > 1) {
+      // A night launch is exposed for the cloud the flame lights (in every photograph of one the cloud is
+      // orange and holds its shape, the flame is burnt out and the ground beyond the pad is nearly black):
+      // the luminance of white steam fifty metres from the flame, over the part of the cloud about the foot.
+      const li = light.intensity;
+      const luminance = (0.9 * (0.2126 * li[0] + 0.7152 * li[1] + 0.0722 * li[2])) / (Math.PI * 50 * 50);
+      const at = v3.add(best.origin, v3.add(v3.add(v3.scale(best.east, foot.x), v3.scale(best.north, foot.z)), v3.scale(best.up, 0.25 * height)));
+      this.hint = { rel: at, a: Math.min(0.5 * radius, 120), b: Math.min(0.3 * height, 60), luminance: luminance * strength, clipStops: 0, cap: Infinity };
+    }
     u.set([top.x, top.y, top.z, jetRadius], 72);
     u.set([dir.x, dir.y, dir.z, weight > 0 ? jetLength : 0], 76);
     u.set([S.jet.speed, S.jet.entrainment, S.jet.spread, weight > 0 ? strength : 0], 80);

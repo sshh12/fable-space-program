@@ -380,6 +380,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         if (h) emissiveHint(frame, h);
       }
       for (const h of plasma.hints) emissiveHint(frame, h);
+      if (smoke.hint) emissiveHint(frame, smoke.hint);
 
       // ---- effect domain, director, particles
       const g = common.globals;
