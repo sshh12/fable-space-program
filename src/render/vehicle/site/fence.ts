@@ -11,7 +11,7 @@
  *   gates       "x,z,width,kind;..."     openings centred at the point of the line nearest (x, z): kind 0 = a
  *                                        pair of swing leaves standing open, 1 = a clear opening between posts
  *
- * The line is cut into runs of about 60 m, each a model of its own, so that every run picks its detail by
+ * The line is cut into runs of about 180 m, each a model of its own, so that every run picks its detail by
  * its own distance: round posts, rail, wires and outriggers close by; square posts beyond; and from afar
  * only the fabric (a faint grey veil, as chain-link is) under a rail a pixel wide. A fence casts no shadow
  * the cascades could resolve.
@@ -26,7 +26,7 @@ import type { GroundField } from './survey';
 import { numParam, strParam, type SiteGenerator } from './types';
 
 const POST_SPACING = 3;
-const RUN_POSTS = 20;
+const RUN_POSTS = 60;
 
 interface Gate {
   x: number;
@@ -127,7 +127,7 @@ export const padFence: SiteGenerator = ({ params, ground }) => {
           }
         }
       },
-      [900, 200],
+      [2700, 600],
     );
   });
   const gateModel = buildModel('pad.fence.gates', (b) => {

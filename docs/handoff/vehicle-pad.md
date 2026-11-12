@@ -15,7 +15,7 @@ Everything is generated in code at start-up from the part and site definitions; 
 | Piece | Where |
 |---|---|
 | Geometry kernel: mesh builder with components and position-based re-masking, lathe / tube / extrude / patch primitives, validation | `src/render/vehicle/geom/{builder,prims,validate}.ts` |
-| Material library (62 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
+| Material library (61 materials) and the texture files they use | `src/render/vehicle/materials.ts`, `public/assets/vehicle/*.png` |
 | Decal sheet (content: names, texts, colours, sizes of every marking; `foil: true` for markings painted on metal film) | `data/defs/visuals/parts/livery.json` (section `visuals/parts/livery`), read by `src/render/vehicle/decals.ts`, baked by `tools/vehicle/bake-decals.ts` into `decals.png` and `decals_orm.png` |
 | 14 part generators, registry | `src/render/vehicle/parts/**` |
 | 25 part visual files (parameters only) | `data/defs/visuals/parts/<partId>.json` |
@@ -99,7 +99,7 @@ LOD. Every LOD of a model is a single-LOD model of the mesh system and the featu
 LOD solid, the finer dithering in or out); in deterministic captures it is immediate. Nothing is left
 half-dithered by where the camera stands (`stats.fading` is 0 at rest; `screens.spec.ts`, LOD dolly test).
 Switch sizes: engines 420 / 30 px (LOD 0 only where its fasteners cover pixels), stages 700 / 110 px, tower
-900 / 260, lightning masts 1500 / 420 (a lattice only where its braces cover a pixel), fence runs 900 / 200,
+900 / 260, lightning masts 1500 / 420 (a lattice only where its braces cover a pixel), fence runs 2700 / 600,
 camera towers 420 / 110, default 220 / 60.
 
 Shadows. Every vessel instance is a moving caster; the camera's copies cast nothing, LOD 1 casts into cascades
