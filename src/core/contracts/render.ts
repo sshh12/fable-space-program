@@ -72,6 +72,23 @@ export const OCEAN_WETNESS_BYTES = 16 + OCEAN_WETNESS_SLOTS * 48;
 /** Byte size of the 'vfx.plasmaWindow' uniform buffer (one vec4f). */
 export const PLASMA_WINDOW_BYTES = 16;
 
+/**
+ * v2: the menu's panel rectangles for the core SCRIM STEP (ARCHITECTURE 18.8): inside each rectangle the
+ * tonemap pass replaces the scene by a blurred, dimmed sample of the bloom pyramid, which is the backdrop
+ * of a DOM panel (CSS `backdrop-filter` over the canvas is banned). Uniform buffer of UI_SCRIM_BYTES:
+ *   vec4f header: x = number of rectangles in use (0..UI_SCRIM_SLOTS), yzw = 0
+ *   UI_SCRIM_SLOTS x 2 vec4f:
+ *     (x0, y0, x1, y1)   the rectangle in device pixels, origin top-left
+ *     (cornerRadius px, blur 0..1 = which level of the bloom pyramid, dim 0..1 = multiplier of the backdrop
+ *      luminance, opacity 0..1 = cross-fade of the scrim over the sharp scene)
+ * Published under the key 'ui.scrimRects' by whoever owns the panels (src/shell); the default is a zero
+ * header. The key joins `SharedResourceMap` at the start of sub-wave 3.2 with the core's default for it
+ * (the core keeps one default per key, so the key cannot be declared before its default exists).
+ */
+export const UI_SCRIM_SLOTS = 8;
+export const UI_SCRIM_BYTES = 16 + UI_SCRIM_SLOTS * 32;
+export const UI_SCRIM_RECTS_KEY = 'ui.scrimRects';
+
 /** Values written to G-buffer RT2.b (times 1/255). */
 export const MATERIAL_ID = {
   standard: 0,
@@ -115,6 +132,18 @@ export interface CameraState {
   minEv100: number | null;
   /** Low ambient fill as a fraction of sun illuminance; non-zero only in map view. */
   fillLight: number;
+  /**
+   * v2: exposure the rig asks the auto-exposure to head for (the menu-to-pad transit drives exposure along
+   * its path): target EV100 and the fastest change allowed, EV per second. Null or absent = meter the scene.
+   * Honoured by the render core from sub-wave 3.2.
+   */
+  exposureHint?: { targetEv100: number; rateEvPerS: number } | null;
+  /**
+   * v2: shift of the optical axis as a fraction of the half-viewport (x right, y up), so a rig can frame its
+   * subject beside a menu panel without rotating the view. Absent = [0, 0]. Honoured by the render core from
+   * sub-wave 3.2.
+   */
+  lensShift?: [number, number];
 }
 
 /** Points that force terrain detail (camera, vessels near the ground, later an EVA astronaut). */
@@ -422,6 +451,46 @@ export interface PerfRecorder {
   counter(name: string, value: number): void;
 }
 
+/** Named quality levels a feature declares for each of its settings (v2). */
+export type QualityLevelName = 'low' | 'medium' | 'high' | 'ultra';
+
+/**
+ * The quality profile (v2; ARCHITECTURE 18.8, 24): replaces the six fixed fields of `QualitySettings` from
+ * wave 4.1 (`capability-settings`). Ultra keeps the v1 look. The governor's budget is 0.66 x 1000 / targetFps.
+ */
+export interface QualityProfile {
+  /** Cap on the internal resolution, megapixels (presets: 0.9, 1.6, 2.4, 3.7). */
+  pixelCap: number;
+  /** Lowest internal resolution scale the governor may go to. */
+  renderScaleMin: number;
+  /** Frame rate the governor holds, Hz. */
+  targetFps: number;
+  /** Level of every declared setting, by setting id (`FeatureQualityDecl.settings[].id`). A setting that is not listed runs at 'ultra'. */
+  levels: Record<string, QualityLevelName>;
+}
+
+/** The settings a render feature declares (v2): what the settings screen lists and the calibration solver chooses between. */
+export interface FeatureQualityDecl {
+  featureId: string;
+  settings: {
+    /** Stable id ('clouds') and the label on the settings screen ('Clouds'). */
+    id: string;
+    label: string;
+    /** The levels this setting has (at least 'ultra'), each with the feature's own parameters. */
+    levels: { name: QualityLevelName; params: Record<string, number> }[];
+    /** 'live' = applied next frame; 'rebuild' = the feature rebuilds resources, under a 1 s fade. */
+    apply: 'live' | 'rebuild';
+    /**
+     * Predicted GPU cost for the solver: ms = constantMs + measuredUltraMs x ratios[level] x
+     * (pixels / referencePixels) ^ exponent.
+     */
+    costModel: { exponent: number; ratios: Partial<Record<QualityLevelName, number>>; constantMs: number };
+    /** Perceptual weight: how much the solver values a level of this setting against the others. */
+    weight: number;
+  }[];
+}
+
+/** @deprecated Becomes `QualityProfile` in wave 4.1 (`capability-settings`); until then the render core reads these six fields. */
 export interface QualitySettings {
   /** Internal resolution scale bounds for dynamic resolution (TAAU). */
   renderScaleMin: number;
@@ -451,6 +520,8 @@ export interface BodyPose {
 
 export interface VesselPose {
   id: string;
+  /** v2: copied from `VesselSnapshot.presentation`: a display-only vessel (the menu's turntable). Absent = false. */
+  presentation?: boolean;
   /** VES origin relative to the camera, ROOT axes, float64; VES -> ROOT orientation; same for the previous frame. */
   originRelCam: Vec3;
   q: Quat;
@@ -616,6 +687,8 @@ export interface RenderFeature {
   readonly id: string;
   /** Sort key within each hook (default 0). */
   readonly order?: number;
+  /** v2: the quality settings this feature offers (read by the core from wave 4.1). Absent = none. */
+  readonly quality?: FeatureQualityDecl;
   /**
    * Optional core resources this feature uses; the core makes only what somebody asks for: the scene colour
    * copies it samples, and the reactive mask of the temporal resolve it draws into ('post.reactive').
@@ -690,6 +763,12 @@ export interface Renderer {
   perfSnapshot(): PerfSnapshot;
   /** Read back the HDR target statistics (tests): max/mean luminance and NaN count. */
   readHdrStats(): Promise<{ maxLuminance: number; meanLuminance: number; nanPixels: number }>;
+  /**
+   * v2: apply a quality profile with no page reload: live settings next frame, a rebuild of the features
+   * that need one under a 1 s fade. Resolves when every rebuild has finished. Optional until wave 4.1
+   * (`capability-settings` implements it and the lead then makes it required).
+   */
+  setQuality?(profile: QualityProfile): Promise<void>;
 }
 
 /** window.__perf */

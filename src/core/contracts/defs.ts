@@ -9,9 +9,14 @@
  *  - A value of the form { "$ref": "relative/path.json", "optional"?: true } is replaced by that file's
  *    content at load (see src/core/defs/loader.ts). This lets one definition be assembled from sections
  *    with different owners (e.g. a body's physical constants vs. its atmosphere look).
+ *
+ * v2 (MIGRATION_V2 section 4, ARCHITECTURE 8.3, 9.2, 9.3, 12). Every v2 addition is an optional field or a
+ * new union member, so every existing file still loads. Fields marked @deprecated are still read and are
+ * removed at the tighten step after sub-wave 3.2.
  */
 import type { SwellComponent } from '../geo/oceanSwell';
 import type { Vec3Tuple } from '../math/vec3';
+import type { PadClass, UniverseRules } from './net';
 
 export type BodyId = string;
 export type PartDefId = string;
@@ -24,8 +29,13 @@ export type ScenarioId = string;
 
 export interface KeplerOrbitDef {
   kind: 'kepler';
-  /** Reference plane of the elements. 'ecliptic' elements are rotated by the J2000 obliquity at load. */
-  frame: 'ecliptic' | 'parentEquator';
+  /**
+   * Reference plane of the elements. 'ecliptic' elements are rotated by the J2000 obliquity at load;
+   * 'parentEquator' is the plane normal to the parent's spin pole. v2: `{ pole }` is an explicit plane given
+   * by its normal in ICRF (right ascension and declination, degrees): the Laplace plane of a satellite, and
+   * the POSITIVE pole for a parent whose IAU spin pole is retrograde.
+   */
+  frame: 'ecliptic' | 'parentEquator' | { pole: { raDeg: number; decDeg: number } };
   a: number;
   e: number;
   iDeg: number;
@@ -33,10 +43,28 @@ export interface KeplerOrbitDef {
   argPeDeg: number;
   meanAnomalyDeg: number;
   epochUt: number;
+  /**
+   * v2: secular rates per Julian century (36525 days), applied as element(ut) = element0 + rate x (ut -
+   * epochUt): semi-major axis (m), eccentricity, and the three angles (degrees). Absent members are 0; an
+   * orbit without `rates` is a frozen ellipse (the Moon keeps its frozen ellipse so the lunar mission's
+   * windows are unchanged).
+   */
+  rates?: { a?: number; e?: number; iDeg?: number; lanDeg?: number; argPeDeg?: number };
+  /**
+   * v2: rate of the mean anomaly, degrees per day (the fitted mean motion of the source table, with the
+   * periapsis rate already taken out). Absent = sqrt(mu_parent / a^3).
+   */
+  meanMotionDegPerDay?: number;
 }
-/** Direction + distance of the root body's star (Astronomical Almanac low-precision Sun). No gravity. */
+/**
+ * Astronomical Almanac low-precision Sun: direction and distance of the star seen from this body. No gravity
+ * by itself. v2: `inverted: true` on a planet whose parent is the star means "this body's heliocentric
+ * position is minus the Almanac Sun vector": Earth keeps the formula, inverted, when the system is rooted at
+ * the Sun, so the lunar mission's lighting and windows are unchanged.
+ */
 export interface SunLowPrecisionOrbitDef {
   kind: 'sunLowPrecision';
+  inverted?: boolean;
 }
 export type OrbitDef = KeplerOrbitDef | SunLowPrecisionOrbitDef;
 
@@ -78,6 +106,12 @@ export interface AtmosphereDef {
   temperature?: number;
   /** Altitude (m) above which the vessel may go on rails; density is faded to zero just below it. */
   simTop: number;
+  /**
+   * v2: on a body without a surface (`BodyDef.surface: 'none'`), the altitude above the reference surface
+   * below which a vessel is destroyed (about the 10 bar level of a giant; may be negative). Unused on a
+   * body with a solid surface.
+   */
+  floorAltitude?: number;
   gamma: number;
   /** Specific gas constant, J/(kg K). */
   gasConstant: number;
@@ -207,6 +241,17 @@ export interface BodyRenderDef {
   ocean: OceanRenderDef | null;
 }
 
+/** One ring of a body (v2; render-only). */
+export interface RingDef {
+  /** Inner and outer radius in the body's equatorial plane, m. */
+  innerRadius: number;
+  outerRadius: number;
+  /** Radial colour and opacity strip (asset id under the body's render assets). */
+  texture: string;
+  /** Scale applied to the optical depth read from the texture. */
+  opticalDepthScale: number;
+}
+
 export interface BodyDef {
   id: BodyId;
   name: string;
@@ -216,17 +261,37 @@ export interface BodyDef {
   mu: number;
   /** Reference (datum) sphere radius, m. */
   radius: number;
-  /** Sphere of influence radius in metres, 'auto' = a (m/M)^(2/5), null for the root body. */
+  /**
+   * Sphere of influence radius in metres, null for the root body. 'auto' = a (m/M)^(2/5) in v1; in v2
+   * (from the body-system change of wave 4) 'auto' = min(Hill radius, max(a (m/M)^(2/5), 2.5 x radius)), so
+   * the smallest moons keep a usable sphere.
+   */
   soiRadius: number | 'auto' | null;
   orbit: OrbitDef | null;
   rotation: RotationDef;
-  /** 'attractor' bodies take part in patched conics; 'lightOnly' bodies only illuminate (the Sun). */
+  /**
+   * 'attractor' bodies take part in patched conics; 'lightOnly' bodies only illuminate. In v2 the star is
+   * the root attractor; 'lightOnly' stays valid and is unused by the shipped library.
+   */
   gravityRole: 'attractor' | 'lightOnly';
+  /**
+   * v2: oblate spheroid (m). One `surfaceRadius(body, dirFixed)` in src/sim/bodies is used by altitude,
+   * atmosphere sampling, warp limits and the bake. Absent = a sphere of `radius`.
+   */
+  shape?: { equatorialRadius: number; polarRadius: number };
+  /** v2: 'none' = a giant with no surface (a vessel below `atmosphere.floorAltitude` is destroyed). Absent = 'solid'. */
+  surface?: 'solid' | 'none';
+  /** v2: rings, inner first (render-only). Absent = none. */
+  rings?: RingDef[];
   emission: StarEmissionDef | null;
   atmosphere: AtmosphereDef | null;
   ocean: OceanDef | null;
   terrain: BodyTerrainDef | null;
-  /** Lowest allowed altitude (m) for each rails warp level (see WARP_LEVELS). */
+  /**
+   * Lowest allowed altitude (m) for each rails warp level (see WARP_LEVELS; RAILS_WARP_LEVEL_COUNT entries on
+   * an attractor). v2: becomes OPTIONAL when the warp table grows to nine rails levels (the lead step before
+   * wave 4, with the body-system change): an absent list then defaults from the radius and the atmosphere top.
+   */
   warpAltitudeLimits: number[];
   /** Navball switches between surface and orbit mode when crossing this altitude, m. */
   navballSwitchAltitude: number;
@@ -240,6 +305,11 @@ export interface SiteLocationDef {
   lonDeg: number;
   /** Pad surface elevation above the reference radius, m; 'terrain' = natural height at the pad centre. */
   padElevation: number | 'terrain';
+  /**
+   * v2: resolved location of each pad of the site, by pad id (written by the site-resolve bake tool, like
+   * the fields above, which stay the site's reference point and are the location of the first pad).
+   */
+  pads?: Record<string, { latDeg: number; lonDeg: number; padElevation: number | 'terrain' }>;
 }
 
 /**
@@ -266,17 +336,56 @@ export interface SitePadShapeDef {
   edgeNoise: { amplitude: number; wavelength: number };
 }
 
+/** A static structure of a pad: procedural model generator id + placement in the pad's east/north/up frame (m). */
+export interface SiteStructureDef {
+  model: string;
+  offsetEnu: Vec3Tuple;
+  headingDeg: number;
+  params?: Record<string, number | string>;
+}
+
+/** One launch pad of a site (v2; ARCHITECTURE 9.3). The pad count is the capacity dial of the launch complex. */
+export interface PadDef {
+  id: string;
+  name: string;
+  /** Metres east / north of the site's reference point (`LaunchSiteDef.location`); the resolved coordinates are in `location.pads`. */
+  offsetEnu: [number, number];
+  /** Compass direction (deg, clockwise from north) that the vessel's ventral side (-Z) faces on this pad. */
+  azimuthDeg: number;
+  /** A pad hosts its class and anything smaller. */
+  class: PadClass;
+  /** Largest lift-off mass (kg) and stack diameter (m) the pad takes. */
+  maxLiftoffMass: number;
+  maxDiameter: number;
+  /** The flatten disc of the pad: flat inside `flatRadius`, blended back to natural terrain by `blendRadius` (m); `shape` refines it as for the single pad. */
+  flatRadius: number;
+  blendRadius: number;
+  shape?: SitePadShapeDef;
+  /** Height of the launch mount above the pad surface, m (v1: `pad.clampHeight`). */
+  mountHeight: number;
+  /** Nothing unheld may be inside this radius at a spawn, and wreckage inside it is removed at safing, m. Absent = the rules' value for the class. */
+  keepOutRadius?: number;
+  structures: SiteStructureDef[];
+}
+
 export interface LaunchSiteDef {
   id: SiteId;
   name: string;
   bodyId: BodyId;
   /** Resolved coordinates (written by the site-resolve bake tool so the pad sits on real, flat, dry terrain). */
   location: SiteLocationDef;
-  /** Compass direction (deg, clockwise from north) that the vessel's ventral side (-Z) faces on the pad. */
+  /**
+   * v2: the pads of the site. Optional until MIGRATION_V2 step 3.6 writes them (the loader then exposes the
+   * deprecated single pad as `pads[0]`); required from the tighten step. Flatten-disc terrain modifiers are
+   * derived from the pads at load.
+   */
+  pads?: PadDef[];
+  /** @deprecated Use `pads[].azimuthDeg`. Compass direction (deg, clockwise from north) that the vessel's ventral side (-Z) faces on the pad. */
   padAzimuthDeg: number;
+  /** @deprecated Use `pads[]` (`flatRadius`, `blendRadius`, `mountHeight`, `shape`). */
   pad: { flatRadius: number; blendRadius: number; clampHeight: number; shape?: SitePadShapeDef };
-  /** Static structures: procedural model generator id + placement in the pad's east/north/up frame (m). */
-  structures: { model: string; offsetEnu: Vec3Tuple; headingDeg: number; params?: Record<string, number | string> }[];
+  /** @deprecated Use `pads[].structures`. Static structures of the single pad. */
+  structures: SiteStructureDef[];
   recoveryZones: { name: string; latDeg: number; lonDeg: number; radiusKm: number }[];
 }
 
@@ -367,7 +476,9 @@ export type StageAction =
   | { kind: 'deployParachute'; parts: string[]; mode: 'drogue' | 'main' }
   | { kind: 'cutParachute'; parts: string[] }
   | { kind: 'deployLegs'; parts: string[] }
-  | { kind: 'enableRcs'; parts: string[] };
+  | { kind: 'enableRcs'; parts: string[] }
+  /** v2: releases the docked joint of the named port part (instance id), so a pre-mated pair can be released from a stage stack. */
+  | { kind: 'undock'; part: string };
 
 export type TimedStageAction = StageAction & { delay?: number };
 
@@ -380,6 +491,16 @@ export type ModuleDef =
       seats: { id: string; pos: Vec3Tuple; lookDir: Vec3Tuple; upDir: Vec3Tuple }[];
       /** Hatch for future EVA: position and outward direction in the part frame. */
       hatch?: { pos: Vec3Tuple; dir: Vec3Tuple };
+      /** v2: command authority with no crew aboard (uncrewed craft). Absent = false. */
+      remote?: boolean;
+      /**
+       * v2: cockpit interior layout id of THIS command part (src/render/cockpit registry); null or absent = no
+       * cabin, the first-person view is the sensor camera. `VehicleDef.cockpit` remains as an authoring
+       * convenience that the assembler copies here; consumers read the command part.
+       */
+      cockpit?: string | null;
+      /** v2: where the sensor camera sits on a command part without a cabin (part frame). Absent = derived from the part's nose. */
+      sensorCamera?: { pos: Vec3Tuple; lookDir: Vec3Tuple; upDir: Vec3Tuple };
     }
   | {
       type: 'engine';
@@ -462,6 +583,36 @@ export type ModuleDef =
   | { type: 'light'; params: Record<string, number> }
   | { type: 'antenna'; params: Record<string, number> };
 
+/**
+ * v2: a docking port (ARCHITECTURE 7.5). The part carries an attach node of kind 'dock'.
+ *
+ * Not yet a member of `ModuleDef`: the assembler creates one module state per `ModuleDef` member
+ * (src/sim/vessel/assemble.ts), so the lead joins this type to `ModuleDef` (and `DockingPortState` to
+ * `ModuleState`, sim.ts) in the lead step before wave 4.1, when the first port parts are written.
+ */
+export type DockingPortModuleDef = {
+  type: 'dockingPort';
+  /** Id of the attach node (kind 'dock') that is the mating face. */
+  node: string;
+  /** Ports mate only with the same type (an adapter part joins two types). */
+  portType: string;
+  gender: 'androgynous' | 'active' | 'passive';
+  /**
+   * Capture envelope, measured between the two port frames when the faces come within `range` (m):
+   * lateral offset (m), misalignment and roll to the nearest step (deg; `rollStepDeg` 0 = any roll),
+   * closing speed band (m/s), lateral speed (m/s), relative rate (deg/s).
+   */
+  capture: { range: number; maxLateral: number; maxAngleDeg: number; maxRollDeg: number; rollStepDeg: number; minClosing: number; maxClosing: number; maxLateralSpeed: number; maxRateDegPerS: number };
+  /** Soft capture: a compliant six-axis constraint (natural frequency Hz, damping ratio), clamped at these loads (N, N m), retracting at `retractRate` m/s, given up after `timeout` s. */
+  soft: { frequencyHz: number; damping: number; maxForce: number; maxTorque: number; retractRate: number; timeout: number };
+  /** Strength of the docked joint, N and N m. */
+  hard: { maxForce: number; maxTorque: number };
+  /** Spring impulse at undock, N s, equal and opposite on the two sides. */
+  undockImpulse: number;
+  /** What may pass through the docked port: crew, the listed resources, at most `maxRate` kg/s. */
+  transfer: { crew: boolean; resources: ResourceId[]; maxRate: number };
+};
+
 export type ModuleType = ModuleDef['type'];
 
 /**
@@ -497,17 +648,50 @@ export interface PartVisualDef {
   reentryShape?: { noseRadius: number; baseRadius: number; length: number };
 }
 
+/** A convex collision piece of a part, in the part frame (v2; ARCHITECTURE 7.4). */
+export type CollisionShapeDef =
+  | { kind: 'cylinder'; radius: number; yMin: number; yMax: number }
+  /** A cone frustum about the Y axis (capsule side wall, engine bell). */
+  | { kind: 'frustum'; r0: number; y0: number; r1: number; y1: number }
+  /** A swept sphere between two points (struts, legs, booms). */
+  | { kind: 'capsule'; a: Vec3Tuple; b: Vec3Tuple; radius: number }
+  | { kind: 'box'; centre: Vec3Tuple; size: Vec3Tuple; rotationDeg?: Vec3Tuple }
+  /** Convex hull of at most 32 points. */
+  | { kind: 'hull'; points: Vec3Tuple[] }
+  /** A hollow ring about the Y axis, expanded into `segments` wedges (interstages, adapters). */
+  | { kind: 'shell'; rInner: number; rOuter: number; yMin: number; yMax: number; segments: number };
+
 export interface PartDef {
   id: PartDefId;
   name: string;
-  category: 'command' | 'tank' | 'engine' | 'structural' | 'decoupler' | 'aero' | 'utility' | 'legs' | 'chute';
+  /** v2 adds 'dock' and 'habitat'. Part, module and resource ids are never removed or renumbered, only deprecated. */
+  category: 'command' | 'tank' | 'engine' | 'structural' | 'decoupler' | 'aero' | 'utility' | 'legs' | 'chute' | 'dock' | 'habitat';
   dryMass: number;
   comOffset: Vec3Tuple;
   inertiaShape: { kind: 'solidCylinder' | 'shellCylinder' | 'cone' | 'sphere' | 'box'; r?: number; h?: number; size?: Vec3Tuple };
   /** Overall envelope used for default probes, culling and LOD: cylinder radius and y-extent in the part frame. */
   bounds: { radius: number; yMin: number; yMax: number };
-  attachNodes: { id: string; pos: Vec3Tuple; dir: Vec3Tuple; size: number }[];
-  resources?: { resource: ResourceId; capacity: number; tankBottomY: number; tankHeight: number }[];
+  /**
+   * Attach nodes. `size` is the interface diameter, m. v2: `kind` (default 'stack'; 'mount' = an engine or
+   * utility mount inside a parent; 'dock' = the mating face of a docking port) and `rollStepDeg` (builder
+   * snapping; 0 or absent = free).
+   */
+  attachNodes: { id: string; pos: Vec3Tuple; dir: Vec3Tuple; size: number; kind?: 'stack' | 'mount' | 'dock'; rollStepDeg?: number }[];
+  /**
+   * v2: radial attachment. `attachable`: this part may sit on another part's skin, touching it at `pos` with
+   * outward direction `dir` (part frame); `accepts`: other parts may sit on this part's skin.
+   */
+  surfaceAttach?: { attachable: boolean; pos: Vec3Tuple; dir: Vec3Tuple; accepts: boolean };
+  /** v2: builder hint only (how many radial copies make sense; whether a mirrored pair does). */
+  symmetry?: { maxRadial: number; mirror: boolean };
+  /** v2: authored collision pieces, only where the `bounds` cylinder is badly wrong. Absent = derived from `bounds` (and from the legs and fairing data) as the clearance query does. */
+  collision?: CollisionShapeDef[];
+  /** v2: propellant may flow through this part between its neighbours. Absent = true; false on decouplers and docking ports. */
+  crossfeed?: boolean;
+  /** v2: normal closing speed (m/s) above which a vessel-to-vessel contact destroys the part. Absent = the lowest `crashTolerance` of its contact points, else 6. */
+  crashTolerance?: number;
+  /** Tanks. v2: `transferable` (absent = true) is false for resources that cannot be pumped (ablator, solid propellant). */
+  resources?: { resource: ResourceId; capacity: number; tankBottomY: number; tankHeight: number; transferable?: boolean }[];
   aero?: AeroElementDef[];
   thermal: { surfaces: ThermalSurfaceDef[] };
   contactPoints?: ContactPointDef[];
@@ -538,12 +722,52 @@ export interface VehiclePartPlacement {
   resources?: Record<ResourceId, number>;
   /** Propellant-flow group (parts between the same decoupler boundaries). */
   stageGroup: string;
+  /** v2: builder metadata only (each instance is still listed with its own pose). */
+  symmetry?: { group: string; index: number; count: number; mode: 'radial' | 'mirror' };
+}
+
+/** A sub-assembly include of a vehicle (v2), flattened into `parts` / `stages` by the loader. */
+export interface VehicleUseDef {
+  /** Id of data/defs/assemblies/<id>.json. */
+  assembly: string;
+  /** Instance ids of its parts become '<prefix>-<id>'. */
+  prefix: string;
+  /** Where the assembly's root part attaches (instance id after prefixing, or null for the vehicle's root). */
+  parent: string | null;
+  parentNode?: string;
+  node?: string;
+  /** Per-part load overrides (off-loaded tanks), kg: prefixed instance id -> resource id -> kg. */
+  resources?: Record<string, Record<ResourceId, number>>;
+}
+
+/**
+ * A launcher or spacecraft sub-assembly (v2; data/defs/assemblies/<id>.json): the same fields as a vehicle.
+ * The loader concatenates the stage stacks in the order of `VehicleDef.uses` (launcher first), prefixes
+ * ids, checks uniqueness and hands the simulation an ordinary flat VehicleDef.
+ */
+export interface AssemblyDef {
+  id: string;
+  name: string;
+  parts: VehiclePartPlacement[];
+  stageGroups: { id: string; label: string }[];
+  stages: { label: string; icon: string; actions: TimedStageAction[] }[];
+  abort: TimedStageAction[];
+  actionGroups: Record<string, StageAction[]>;
 }
 
 export interface VehicleDef {
   id: VehicleId;
   name: string;
+  /**
+   * The flat part graph: the only thing the simulation reads. Two docking ports may be mated in the file
+   * (`node` and `parentNode` both of kind 'dock'): the assembler records that joint as a dock link, so the
+   * craft can undock it in flight.
+   */
   parts: VehiclePartPlacement[];
+  /** v2: sub-assemblies, flattened into `parts`, `stageGroups` and `stages` by the loader. */
+  uses?: VehicleUseDef[];
+  /** v2: what a pad needs to know: the class, the umbilical heights (y in the root part frame, m, with the stack radius there) and the crew arm. */
+  padInterface?: { class: PadClass; umbilicals: { y: number; radius: number }[]; crewArm?: { y: number; reach: number } };
   stageGroups: { id: string; label: string }[];
   /** The stage stack, fired in order by the player (index 0 first). */
   stages: { label: string; icon: string; actions: TimedStageAction[] }[];
@@ -551,11 +775,18 @@ export interface VehicleDef {
   actionGroups: Record<string, StageAction[]>;
   crew: { seat: string; name: string }[];
   cameras: {
-    /** Instance id of the command part and seat id the cockpit camera sits in. */
+    /**
+     * Instance id of the command part and seat id the cockpit camera sits in. v2: an authoring convenience
+     * that the assembler copies onto the command part; it becomes OPTIONAL at the tighten step after
+     * sub-wave 3.2 (uncrewed vehicles have none), so consumers read the viewer's own command part instead.
+     */
     cockpit: { part: string; seat: string };
     chase: { defaultDistance: number; minDistance: number; maxDistance: number };
   };
-  /** Cockpit interior layout id (src/render/cockpit registry); null = vehicle has no cockpit view. */
+  /**
+   * Cockpit interior layout id (src/render/cockpit registry); null = vehicle has no cockpit view. v2: an
+   * authoring convenience copied onto the command part (`command.cockpit`), which is what consumers read.
+   */
   cockpit: string | null;
 }
 
@@ -607,13 +838,20 @@ export interface MilestoneRuleDef {
  * A scenario places a vehicle in the world. Only `start.kind === 'pad'` with `stagesAlreadyFired === 0`
  * is a valid basis for the mission acceptance run; the other start kinds exist for training scenarios,
  * labs and visual QA and are reported in SimSnapshot.scenario so tests can tell them apart.
+ *
+ * v2 (ARCHITECTURE 7.7): a scenario is a SPAWN RECIPE (vehicle, site and pad, start kind, stages already
+ * fired) plus an OPTIONAL list of objectives (`milestones`), attached to one craft and evaluated by the
+ * universe's milestone observer. A local scenario also fixes the local universe's epoch (`startUt`). No
+ * vehicle is tied to a mission.
  */
 export interface ScenarioDef {
   id: ScenarioId;
   name: string;
   vehicle: VehicleId;
   site: SiteId;
-  /** Seconds since J2000.0. */
+  /** v2: id of the pad of `site` the vehicle starts on (`PadDef.id`). Absent = the site's first pad. */
+  pad?: string;
+  /** Seconds since J2000.0. v2: on the tick grid (a whole number of 1/120 s) from MIGRATION_V2 step 3.1. */
   startUt: number;
   start: ScenarioStart;
   /** Number of stage-stack entries considered already fired (their dropped parts are not spawned). */
@@ -644,6 +882,10 @@ export interface DefLibrary {
   resources: Record<ResourceId, ResourceDef>;
   parts: Record<PartDefId, PartDef>;
   vehicles: Record<VehicleId, VehicleDef>;
+  /** v2: sub-assemblies by id (data/defs/assemblies). Optional until the loader fills it (wave 4, with `VehicleDef.uses`); absent = none. */
+  assemblies?: Record<string, AssemblyDef>;
+  /** v2: rules documents by id (data/defs/rules: 'default', 'staging', 'local'). Optional until the loader fills it (MIGRATION_V2 step 3.6); absent = none. */
+  rules?: Record<string, UniverseRules>;
   scenarios: Record<ScenarioId, ScenarioDef>;
   /**
    * Every JSON file under the section directories `audio/` and `visuals/` (with $refs resolved), keyed by
@@ -655,8 +897,18 @@ export interface DefLibrary {
   sections: Record<string, unknown>;
 }
 
-/** Warp table shared by sim, UI and pilot. Indices 0..3 are physics warp; 4.. are rails warp. */
+/**
+ * Warp table shared by sim, UI and pilot. Indices 0..3 are physics warp; 4.. are rails warp.
+ *
+ * v2 (decision 40) adds 1,000,000x and 10,000,000x (nine rails levels). They are NOT in the table yet: the
+ * body system requires one `warpAltitudeLimits` entry per rails level and the shipped bodies list seven, so
+ * the two levels are added by the lead together with the body-system change of wave 4 (optional limits that
+ * default from the radius), never alone. Code must use RAILS_WARP_LEVEL_COUNT and `WARP_LEVELS.length`,
+ * never a literal count.
+ */
 export const WARP_LEVELS = [1, 2, 3, 4, 5, 10, 50, 100, 1000, 10000, 100000] as const;
 export const MAX_PHYSICS_WARP_INDEX = 3;
+/** Number of rails warp levels (entries of an attractor's `warpAltitudeLimits`). */
+export const RAILS_WARP_LEVEL_COUNT = WARP_LEVELS.length - MAX_PHYSICS_WARP_INDEX - 1;
 /** Fixed physics step, seconds. */
 export const PHYSICS_DT = 1 / 120;

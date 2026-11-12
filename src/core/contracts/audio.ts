@@ -8,6 +8,15 @@ import type { SimSnapshot } from './sim';
 
 export type AudioBusName = 'engines' | 'aero' | 'reentry' | 'events' | 'cabin' | 'ui' | 'master';
 
+/**
+ * v2 buses: menu and flight music, and quick-comms (ARCHITECTURE 22).
+ *
+ * Not yet members of `AudioBusName`: `AudioProbe.buses` has one entry per bus and the engine builds it
+ * (src/audio), so the lead joins this type to `AudioBusName` in the lead step before wave 4.1, when
+ * `shell-menu` adds the buses.
+ */
+export type AudioBusNameV2 = 'music' | 'comms';
+
 export interface AudioListener {
   mode: ViewMode;
   /** Branch on this, not on `mode`: 'interior' = cabin mix, 'external' and 'map' = outside listener. */

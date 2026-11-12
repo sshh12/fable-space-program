@@ -194,6 +194,24 @@ export interface TileSource {
   file(tileset: string, relPath: string): Promise<Uint8Array>;
 }
 
+/**
+ * Where tile bytes come from (v2; ARCHITECTURE 10.2, 10.4). Plain data, so a tile worker receives it in its
+ * init message and the same worker code streams from any source. `createTileSource(spec)` in src/terrain
+ * turns it into a `TileSource`.
+ *   fs     a directory of plain tile files (Node only: vitest and tools)
+ *   fetch  plain files over HTTP (the dev server's /tiles)
+ *   pack   content-addressed, range-readable packs from an ordered mirror list (production and the local
+ *          stack). `packListUrl` answers with the pack list: the mirrors in order, their addressing mode and
+ *          slice size, and per tile set the index location; nothing of it is compiled into the client.
+ *          `cache` adds the OPFS cache in front of the network (absent or null = none).
+ * `TilePackIndex` (the index format) is defined by `platform-delivery` in src/terrain/packIndex.ts and
+ * lifted into this file by the lead afterwards.
+ */
+export type TileSourceSpec =
+  | { kind: 'fs'; root: string }
+  | { kind: 'fetch'; baseUrl: string }
+  | { kind: 'pack'; packListUrl: string; cache?: { kind: 'opfs'; maxBytes: number } | null };
+
 export type SurfaceKind = 'land' | 'water';
 
 /** Where the terrain under a point currently stands in terms of loaded detail. */

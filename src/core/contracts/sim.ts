@@ -3,16 +3,35 @@
  * audio, HUD, map view and pilots consume them and answer only with ControlInputs / PlayerCommands.
  *
  * Frames (all right-handed, SI units; see docs/ARCHITECTURE.md section 3):
- *  - ROOT: inertial frame centred on the root body (Earth), +Z = Earth north pole, +X = J2000 equinox.
+ *  - ROOT: the RENDER ROOT. Axes inertial (+Z = Earth north pole of J2000, +X = J2000 equinox); origin near
+ *    the viewer, stated by `SimSnapshot.frame`: the centre of the SOI body of the focus when that body is a
+ *    planet or moon, the focus island's reference-orbit point in the Sun's sphere of influence. It is NOT
+ *    the system's root body (the Sun, `DefLibrary.rootBodyId`). Every field named `...Root` (`rRoot`,
+ *    `vRoot`, `positionRoot`, `posRoot`, `qFixedToRoot`, `spinRoot`, `bodyPosAtEnd`) is expressed in it.
+ *    Presentation uses only differences of ROOT positions and ROOT axes, so it is origin-agnostic; whatever
+ *    holds a ROOT position across frames applies `frame.rebase` once when `frame.epoch` changes
+ *    (src/core/math/frame.ts). Until `frame` is produced (MIGRATION_V2 step 3.5) the origin is the centre
+ *    of the library's root body and never changes.
  *  - BCI(b): centred on body b, axes parallel to ROOT.
  *  - BCBF(b): body-fixed, +Z spin axis, +X prime meridian.
- *  - VES: vessel frame, origin at the root part origin, +Y nose (thrust direction), +X starboard, +Z dorsal.
+ *  - VES: vessel frame, origin at the root part origin of the vessel's base craft, +Y nose (thrust
+ *    direction), +X starboard, +Z dorsal.
+ *  - CTL: the frame of the helm's control part; control inputs and the navball refer to it.
+ *
+ * v2 fields (MIGRATION_V2 section 4). Fields marked "v2, optional until the tighten step" were added
+ * before their producers exist: the session fills them from MIGRATION_V2 step 3.5 on, a hand-built snapshot
+ * (labs, tests) may leave them out, and a consumer treats an absent one as the neutral value its comment
+ * states. The lead makes them required when every producer fills them. Fields marked @deprecated are still
+ * filled and are removed at the tighten step after sub-wave 3.2.
  */
 import type { ConicElements } from '../math/conic';
+import type { FrameRebase } from '../math/frame';
 import type { Quat } from '../math/quat';
 import type { Vec3 } from '../math/vec3';
-import type { ControlInputs, NavballMode, PlayerCommands, SasMode } from './controls';
-import type { DefLibrary, ScenarioDef } from './defs';
+import type { ControlInputs, NavballMode, SasMode } from './controls';
+import type { ScenarioDef } from './defs';
+import type { LendPolicy, Presence, TargetRef, TimeOffer, TimeView } from './net';
+import type { LocalSession, SessionDebug } from './session';
 
 // ------------------------------------------------------------------------------------------------ orbits
 
@@ -29,6 +48,16 @@ export type MarkerKind =
   | 'atmosphereEntry'
   | 'closestApproach'
   | 'maneuverNode';
+
+/**
+ * v2 marker kinds. 'targetApproach': a closest approach to a targeted VESSEL, drawn as a pair (the marker
+ * and the target's position then; `Marker.otherVesselId` and the fields after it).
+ *
+ * Not yet members of `MarkerKind`: the map keeps a table with one entry per kind (src/map/scene.ts), so the
+ * lead joins this type to `MarkerKind` at the start of sub-wave 3.2, when the map's owner adds the entry.
+ * A producer may already emit it typed as `MarkerKind | MarkerKindV2`.
+ */
+export type MarkerKindV2 = 'targetApproach';
 
 export interface Marker {
   kind: MarkerKind;
@@ -51,6 +80,17 @@ export interface Marker {
   latitude?: number;
   longitude?: number;
   nodeId?: string;
+  /**
+   * For targetApproach (v2): the targeted vessel, the body whose BCI frame its position is in (the pair may
+   * straddle a sphere-of-influence boundary) and that position at `ut`; `value` is the separation, m, and
+   * `relSpeed` the relative speed there, m/s. `onForecast` is true when the target's position lies on its
+   * forecast (after its head) and not on committed history.
+   */
+  otherVesselId?: string;
+  otherBodyId?: string;
+  otherR?: Vec3;
+  relSpeed?: number;
+  onForecast?: boolean;
 }
 
 /**
@@ -164,9 +204,43 @@ export type ModuleState =
   | { type: 'light'; on: boolean }
   | { type: 'antenna'; deployed: boolean };
 
+/**
+ * v2: runtime state of a `dockingPort` module (ARCHITECTURE 7.5).
+ *
+ * Not yet a member of `ModuleState`: it joins together with `DockingPortModuleDef` joining `ModuleDef`
+ * (defs.ts), in the lead step before wave 4.1.
+ */
+export type DockingPortState = {
+  type: 'dockingPort';
+  /**
+   * 'disabled' (not armed or shielded), 'ready' (armed and free), 'occupied' (a stacked part or a docked
+   * craft is on the face), 'soft' (soft capture in progress), 'hard' (docked), 'cooldown' (just released).
+   */
+  state: 'disabled' | 'ready' | 'occupied' | 'soft' | 'hard' | 'cooldown';
+  /** Armed by its owner's command; persists offline. */
+  armed: boolean;
+  /** The port it is captured by or docked to: vessel id and part key `craftId/instanceId`; null otherwise. */
+  peer: { vesselId: string; partKey: string } | null;
+  /** 0..1 progress of the soft capture toward the hard dock (0 when not in soft capture). */
+  progress: number;
+};
+
 export interface PartSnapshot {
-  /** Instance id from VehicleDef.parts (unique within the original vehicle; survives staging). */
+  /**
+   * Instance id from VehicleDef.parts: unique within its CRAFT and stable through staging and docking. Outside
+   * a vessel a part is addressed by the part key `craftId/instanceId` (two craft of one vehicle in an
+   * assembly share instance ids).
+   */
   instanceId: string;
+  /** v2, optional until the tighten step: the craft this part belongs to (`VesselSnapshot.crafts[].id`). Absent = the vessel's only craft. */
+  craftId?: string;
+  /**
+   * v2, optional until the tighten step: the propellant-flow group of the part within its craft
+   * (VehiclePartPlacement.stageGroup) and that group's label, so that resource bars and stage displays never
+   * index `defs.vehicles` by a runtime id (a design that is not in the library draws correctly).
+   */
+  stageGroup?: string;
+  stageLabel?: string;
   def: string;
   /** Pose of the part frame in the vessel frame: v_VES = rotate(localRot, v_part) + localPos. */
   localPos: Vec3;
@@ -199,11 +273,67 @@ export interface VesselAeroState {
   plasmaIntensity: number;
 }
 
+/** One craft of a vessel (v2; ARCHITECTURE 7.2). A vessel that never docked has exactly one. */
+export interface CraftSnapshot {
+  /** Universe-unique, never changes, never reused. */
+  id: string;
+  /** Vehicle the craft was built from: for labels and icons only (never index `defs.vehicles` with it for behaviour). */
+  vehicleId: string;
+  name: string;
+  /** Owner's account id and callsign; null = unowned. */
+  ownerId: string | null;
+  ownerCallsign: string | null;
+  /** Instance id of the craft's command part (crew, seats, cockpit interior id, the remote flag live on it); null when it has none (debris). */
+  commandPart: string | null;
+  /** The craft's own stage stack: only its owner fires it, docked or not. */
+  staging: { nextStage: number; stages: StageInfo[]; lockout: boolean };
+  /** Chase-camera distances for this craft, m (from its vehicle's camera data; the rig combines them with the vessel's bounding radius). */
+  chase: { defaultDistance: number; minDistance: number; maxDistance: number };
+  /** What the helm may use of this craft while docked. */
+  policy: LendPolicy;
+}
+
+/** A dock link between two craft of a vessel (v2): the part keys `craftId/instanceId` of the two port parts. */
+export interface DockLinkSnapshot {
+  a: string;
+  b: string;
+  /** Roll of port b about the shared axis relative to port a, rad. */
+  roll: number;
+}
+
 export interface VesselSnapshot {
   id: string;
   name: string;
-  /** Id of the VehicleDef this vessel (or the vessel it separated from) was built from. */
+  /**
+   * Id of the VehicleDef this vessel (or the vessel it separated from) was built from: the BASE craft's, for
+   * labels only. Per-craft data is in `crafts`.
+   */
   vehicleId: string;
+  /** v2, optional until the tighten step: the craft of this vessel, base craft first. Absent = one craft that is the whole vessel. */
+  crafts?: CraftSnapshot[];
+  /** v2, optional until the tighten step: dock links between the craft. Absent or empty = never docked. */
+  links?: DockLinkSnapshot[];
+  /**
+   * v2, optional until the tighten step: who flies the vessel and from where. `accountId` null = the helm is
+   * vacant; `craftId` and `controlPart` (part key) name the craft whose pilot holds it and the part whose
+   * axes are the CTL frame. Absent = the viewer flies it from its root part.
+   */
+  helm?: { accountId: string | null; callsign: string | null; craftId: string; controlPart: string };
+  /** v2, optional until the tighten step: how the vessel exists for the viewer (ARCHITECTURE 5.4). Absent = 'solid'. */
+  presence?: Presence;
+  /** v2, optional until the tighten step: the vessel's time minus the viewer's clock, in ticks (0 when on the viewer's clock). Absent = 0. */
+  timeOffset?: number;
+  /**
+   * v2: true for a presentation-only vessel (the turntable's display vessel in the menu). It has no physics
+   * and no owner; nameplates, the map, audio and LOD observers ignore it. Absent = false.
+   */
+  presentation?: boolean;
+  /**
+   * v2, optional until the tighten step: monotonic counter that changes when the vessel's orbit or its plan
+   * changes (end of a burn, an SOI change, a node edit, a dock): the key of planning results
+   * (`PlanningKey.vesselRevision`). Absent = 0.
+   */
+  revision?: number;
   controllable: boolean;
   tier: FidelityTier;
   situation: VesselSituation;
@@ -277,6 +407,13 @@ export interface NavballMarkers {
   antiTarget: Vec3 | null;
   /** Capsule lift vector during atmospheric flight; null otherwise. */
   liftVector: Vec3 | null;
+  /**
+   * v2, optional until the tighten step: direction of the velocity relative to the target and its opposite
+   * (what prograde and retrograde show in navball mode 'target'); null without a vessel or port target or
+   * when the relative speed is below 1 mm/s. Absent = null.
+   */
+  relativePrograde?: Vec3 | null;
+  relativeRetrograde?: Vec3 | null;
 }
 
 export interface NavballState {
@@ -372,11 +509,16 @@ export interface Readouts {
   rcsFraction: number | null;
   /** Total remaining delta-v (vacuum) over all unfired stages. */
   deltaVTotal: number;
+  /** @deprecated Use `target` (`target.ref` of kind 'body'). Still filled; removed at the tighten step after sub-wave 3.2. */
   targetBodyId: string | null;
   /** Relative inclination to the target's orbit plane, rad; null without target. */
   targetRelativeInclination: number | null;
-  /** Closest approach to the target on the planned (or current) trajectory. */
+  /** @deprecated Use `target.closestApproaches[0]`. Still filled; removed at the tighten step after sub-wave 3.2. */
   targetClosestApproach: { ut: number; distance: number } | null;
+  /** v2, optional until the tighten step: navigation to the selected target (a body, a vessel or a port); null without one. Absent = derive from the deprecated fields. */
+  target?: TargetReadout | null;
+  /** v2, optional until the tighten step: the docking instrument; null unless a port is targeted and an own port is the control point. Absent = null. */
+  docking?: DockingReadout | null;
   /** Launch-window helper while landed on the root body with a target set. */
   launchWindow: { timeToPlaneCrossing: number; launchAzimuthDeg: number } | null;
   nodeBurn: NodeBurnInfo | null;
@@ -390,6 +532,59 @@ export interface Readouts {
    * (or to the sub-point when nothing is predicted). Information only: the player or pilot does the steering.
    */
   landingTarget: LandingTargetReadout | null;
+}
+
+/** Navigation to the selected target (v2; ARCHITECTURE 21). Distances m, speeds m/s. */
+export interface TargetReadout {
+  ref: TargetRef;
+  name: string;
+  /** How the target exists for the viewer and its time offset in ticks (a body is always 'solid', 0). */
+  presence: Presence;
+  timeOffset: number;
+  /**
+   * Range: port to port when both a control port and a target port are selected, else centre of mass to
+   * centre of mass (to the body centre for a body). `rangeRate` negative = closing.
+   */
+  range: number;
+  rangeRate: number;
+  /** Velocity relative to the target in the CTL frame and its magnitude; null for a body target. */
+  relVelocity: Vec3 | null;
+  relSpeed: number | null;
+  /** Relative inclination to the target's orbit plane, rad; null when the two are not about the same body. */
+  relativeInclination: number | null;
+  /** The next closest approaches on the planned (or current) trajectory, in time order, at most three. */
+  closestApproaches: { ut: number; distance: number; relSpeed: number }[];
+  /**
+   * Own position in the target's local-vertical frame (radial out, along track, cross track), m; null for a
+   * body target and beyond the range in which the frame is meaningful.
+   */
+  lvlh: { radial: number; along: number; cross: number } | null;
+  /** The one action that makes an echo reachable (ARCHITECTURE 5.4); null when the target is solid. */
+  offer: TimeOffer | null;
+}
+
+/** The docking instrument (v2; ARCHITECTURE 7.5, 21): the control port against the targeted port. */
+export interface DockingReadout {
+  /** Part keys of the own (control) port and the target port. */
+  ownPort: string;
+  targetPort: string;
+  /** Same port type; the target port is armed. */
+  compatible: boolean;
+  targetArmed: boolean;
+  /** Offsets in the target port's frame, m: along its axis (positive = in front of the face) and the two lateral components. */
+  axial: number;
+  lateral: [number, number];
+  /** Misalignment of the two port axes about the two lateral axes, degrees, and roll to the nearest allowed step, degrees. */
+  angleDeg: [number, number];
+  rollDeg: number;
+  /** Closing speed along the axis (positive = approaching), lateral speed, m/s, and relative rotation rate, deg/s. */
+  closing: number;
+  lateralSpeed: number;
+  rateDegPerS: number;
+  /** One flag per limit of the capture envelope: true = inside it. */
+  within: { lateral: boolean; angle: boolean; roll: boolean; closing: boolean; lateralSpeed: boolean; rate: boolean };
+  /** 'far' (beyond the instrument's range), 'approach', 'soft' (soft capture), 'hard' (docked). The lamps follow server events. */
+  phase: 'far' | 'approach' | 'soft' | 'hard';
 }
 
 export interface LandingTargetReadout {
@@ -465,7 +660,16 @@ export interface MilestoneRecord {
 interface EventBase {
   ut: number;
   vesselId: string;
+  /**
+   * v2: true while the outcome is not yet durable on the server (an outcome between two owners shown inside
+   * the 250 ms a crash may re-run; ARCHITECTURE 15.1, decision 53 d). Absent = false. Never set by a
+   * LocalSession.
+   */
+  provisional?: boolean;
 }
+
+/** Envelope limits of a docking port (v2), named in `captureLost`. */
+export type CaptureLimit = 'lateral' | 'angle' | 'roll' | 'closing' | 'lateralSpeed' | 'rate';
 
 export type SimEvent =
   | (EventBase & { type: 'stageFired'; stageIndex: number; label: string })
@@ -483,19 +687,53 @@ export type SimEvent =
   | (EventBase & { type: 'rcsPulse'; partId: string })
   | (EventBase & { type: 'touchdown'; speed: number; surface: 'land' | 'water'; partId: string })
   | (EventBase & { type: 'splash'; speed: number })
-  | (EventBase & { type: 'partDestroyed'; partId: string; cause: 'impact' | 'overheat' | 'overstress' | 'explosion'; posVes: Vec3 })
+  | (EventBase & { type: 'partDestroyed'; partId: string; cause: 'impact' | 'overheat' | 'overstress' | 'explosion' | 'collision'; posVes: Vec3 })
   | (EventBase & { type: 'explosion'; posRoot: Vec3; energy: number })
   | (EventBase & { type: 'jointBroken'; partId: string })
   | (EventBase & { type: 'crewLost'; cause: string })
   | (EventBase & { type: 'soiChange'; fromBodyId: string; toBodyId: string })
-  | (EventBase & { type: 'vesselRemoved'; reason: 'burnedUp' | 'impact' | 'expired' | 'limit' })
+  | (EventBase & { type: 'vesselRemoved'; reason: 'burnedUp' | 'impact' | 'expired' | 'limit' | 'rolledBack' | 'recovered' | 'lost' | 'pressure' })
   | (EventBase & { type: 'activeVesselChanged'; previousVesselId: string })
   | (EventBase & { type: 'warpChanged'; index: number; factor: number; reason: string | null })
   | (EventBase & { type: 'nodeCompleted'; nodeId: string })
   | (EventBase & { type: 'milestone'; milestone: MilestoneRecord })
-  | (EventBase & { type: 'missionFailed'; reason: string });
+  | (EventBase & { type: 'missionFailed'; reason: string })
+  | SimEventV2;
+
+/**
+ * The events added by v2 (ARCHITECTURE 5, 7.4, 7.5, 9.4), all members of `SimEvent`. `activeVesselChanged`,
+ * `warpChanged`, `milestone` and `missionFailed` above are per session: they describe the viewer's own
+ * seat, clock and objectives. No session emits a v2 event before the code that causes it exists (docking
+ * and contact in wave 5, the directory in wave 4.2).
+ */
+export type SimEventV2 =
+  /** Two ports entered soft capture. `partId` / `otherPartId` are part keys. */
+  | (EventBase & { type: 'dockCapture'; partId: string; otherVesselId: string; otherPartId: string })
+  /** Hard dock: `vesselId` is the merged vessel, `absorbedVesselId` the id that became a tombstone. */
+  | (EventBase & { type: 'docked'; partId: string; otherPartId: string; absorbedVesselId: string })
+  /** A capture did not happen or let go: outside the envelope (`limit`), the port taken first by another craft, clamped too long, or timed out. */
+  | (EventBase & { type: 'captureLost'; partId: string; otherVesselId: string; reason: 'envelope' | 'occupied' | 'clamped' | 'timeout'; limit?: CaptureLimit })
+  /** `vesselId` keeps the helm's craft; `newVesselIds` are the other pieces. */
+  | (EventBase & { type: 'undocked'; partId: string; otherPartId: string; newVesselIds: string[] })
+  /** Contact above crash tolerance between two vessels, with the same numbers for both: relative speed m/s, part keys destroyed on either side. */
+  | (EventBase & { type: 'collision'; otherVesselId: string; relSpeed: number; partsDestroyed: string[] })
+  /** The helm of `vesselId` changed hands (null = vacant). */
+  | (EventBase & { type: 'helmChanged'; accountId: string | null; callsign: string | null; craftId: string })
+  /** Confirmation of a command that returned `pending` (CommandResult.cmdId). */
+  | (EventBase & { type: 'commandResult'; cmdId: number; ok: boolean; appliedTick: number; reason?: string })
+  /** Another clock's island took the reservation of a vessel this island had admitted (U4); `offer` is the action open to this pilot by relation. */
+  | (EventBase & { type: 'claimLost'; otherVesselId: string; offer: TimeOffer | null })
+  /** A close approach the server predicts: time to it, miss distance and relative speed. */
+  | (EventBase & { type: 'proximityWarning'; otherVesselId: string; timeToClosest: number; distance: number; relSpeed: number })
+  /** A pad left the vessel's hold: cleared after lift-off, rolled back, or safed. */
+  | (EventBase & { type: 'padReleased'; siteId: string; padId: string; reason: 'cleared' | 'rolledBack' | 'safed' })
+  /** The viewer's clock changed (rate, kind, membership, a fork); `reason` is the sentence the HUD shows, null for the pilot's own request. */
+  | (EventBase & { type: 'clockChanged'; clockId: string | null; rate: number; reason: string | null })
+  /** U5: the server is pushing this vessel clear of `otherVesselId` ("RANGE: CLEARING"); `active` false = clearance reached. */
+  | (EventBase & { type: 'rangeClearing'; otherVesselId: string; active: boolean });
 
 export type SimEventType = SimEvent['type'];
+export type SimEventV2Type = SimEventV2['type'];
 
 // ---------------------------------------------------------------------------------------------- snapshot
 
@@ -510,6 +748,29 @@ export interface WarpState {
   onRails: boolean;
 }
 
+/** Where the origin of the render root is (ARCHITECTURE section 3). Axes are always parallel to ICRF. */
+export type FrameOrigin =
+  /** The centre of a body (the SOI body of the focus). */
+  | { kind: 'body'; bodyId: string }
+  /** A point on an exact Kepler orbit about `bodyId` (the focus island's reference orbit): its BCI state at `t0`. */
+  | { kind: 'orbit'; bodyId: string; r0: Vec3; v0: Vec3; t0: number };
+
+/**
+ * The render root of a snapshot. `epoch` increases whenever the origin is replaced (focus change, a
+ * sphere-of-influence change of the focus, a new island reference orbit). The snapshot() that first carries
+ * a new epoch also carries `rebase`: the OLD origin's position and velocity in the NEW frame at the
+ * snapshot time, composed over every replacement since the previous snapshot() of the session (so the
+ * epoch may jump by more than one). Like `events`, it is pending until snapshot() drains it: peek() shows
+ * it without clearing it. Anything that holds a ROOT position across frames (camera rigs, the renderer's
+ * previous-frame state, world-anchored effects, the map focus) applies it once, through
+ * src/core/math/frame.ts. Motion vectors need no rebase.
+ */
+export interface SnapshotFrame {
+  epoch: number;
+  origin: FrameOrigin;
+  rebase: FrameRebase | null;
+}
+
 export interface SimSnapshot {
   /**
    * Seconds since J2000.0 that every pose in this snapshot (bodies, vessels, parts) corresponds to.
@@ -521,9 +782,33 @@ export interface SimSnapshot {
   ut: number;
   /** Time of the latest completed physics step or rails advance: the true simulation state time. */
   simUt: number;
-  /** Monotonic count of physics steps + rails advances (lets consumers detect "no change"). */
+  /**
+   * @deprecated Use `revision`. Monotonic count of physics steps + rails advances. Still filled; removed at
+   * the tighten step after sub-wave 3.2 (in v2 "tick" means the universe tick of 1/120 s).
+   */
   tick: number;
+  /**
+   * v2, optional until the tighten step: monotonic counter that changes whenever anything in the snapshot
+   * may have changed (lets consumers detect "no change"). Absent = use `tick`.
+   */
+  revision?: number;
+  /**
+   * v2, optional until the tighten step: the render root this snapshot's ROOT positions are relative to
+   * (ARCHITECTURE section 3). Absent = `{ epoch: 0, origin: { kind: 'body', bodyId: <the library's root
+   * body> }, rebase: null }`.
+   */
+  frame?: SnapshotFrame;
+  /**
+   * v2, optional until the tighten step: the viewer's clock for the time strip (ARCHITECTURE 5.4). `warp`
+   * below stays and is derived from it. Absent = one private clock nobody else is on, described by `warp`.
+   */
+  time?: TimeView;
   warp: WarpState;
+  /**
+   * The scenario the session was created from. v2: a session without a scenario (a lobby) will carry null
+   * here from the tighten step on; `milestones`, `mission` and `cheatCounter` then describe the active
+   * craft's objectives and are empty / not failed / 0 without them.
+   */
   scenario: { id: string; startKind: ScenarioDef['start']['kind']; stagesAlreadyFired: number };
   /** Named surface places of this scenario (landing target, recovery zones, launch site). */
   surfaceTargets: SurfaceTarget[];
@@ -538,6 +823,11 @@ export interface SimSnapshot {
   /** Id of the star that lights the system. */
   starId: string;
   vessels: VesselSnapshot[];
+  /**
+   * The vessel the viewer is seated in. v2: becomes `string | null` at the tighten step (the menu, a spectator
+   * and a pilot between ships have none); the singleton blocks below are then still present with neutral
+   * values (`neutralFlightBlocks()` in src/sim/view). Write consumers so that a missing vessel is handled.
+   */
   activeVesselId: string;
   /** Controls actually applied this step (after SAS, fine-control scaling and clamping). */
   appliedControls: ControlInputs;
@@ -568,70 +858,12 @@ export interface SimSnapshot {
 /** A pilot/controller gets a control tick every this many physics steps (30 Hz of simulation time). */
 export const CONTROL_TICK_STEPS = 4;
 
-/** Debug-only mutators. Every call increments cheatCounter. Never used by mission tests or pilots. */
-export interface SimDebug {
-  setVesselState(vesselId: string, bodyId: string, r: Vec3, v: Vec3): void;
-  setResource(vesselId: string, partInstanceId: string, resource: string, kg: number): void;
-  setUt(ut: number): void;
-}
+/** @deprecated Use `SessionDebug` (session.ts). Alias kept during wave 3. */
+export type SimDebug = SessionDebug;
 
 /**
- * The simulation facade (implemented by src/sim, faked by src/core/fakes for UI development).
- * Deterministic: same scenario + same sequence of calls => bit-identical state, PROVIDED the caller follows
- * the terrain protocol below.
- *
- * Terrain protocol. Terrain tiles load asynchronously, yet every Sim method is synchronous. The sim asks
- * the TerrainProvider for data only from deterministic triggers evaluated at step boundaries (altitude
- * thresholds, the predicted impact point, scenario start) - never from wall-clock time. While such a
- * request is outstanding, terrainPending() returns a promise. A caller that needs reproducible results
- * (the headless runner, mission tests, replays) must `await sim.ready` once and then
- * `await sim.terrainPending()` whenever it is non-null BEFORE the next step()/advanceRails()/advance();
- * the state hash is defined only under that rule. The browser loop does not wait: it keeps rendering and
- * relies on the rule that warp is clamped to 1x below 300 m radar altitude until final data is resident.
+ * @deprecated Use `LocalSession` (session.ts; `FlightSession` for code that also runs on a network session).
+ * v1's simulation facade: the same contract, moved. The alias exists only during wave 3 and is removed at
+ * the tighten step after sub-wave 3.2, with the `createSim` export of src/sim.
  */
-export interface Sim {
-  readonly defs: DefLibrary;
-  readonly scenario: ScenarioDef;
-  /**
-   * Resolves when the start state is usable: terrain under every scenario vessel is resident (collision
-   * surface warmed, pad elevation resolved). Await it before the first step, advance or snapshot.
-   */
-  readonly ready: Promise<void>;
-  /** Null when no terrain request of the sim is outstanding; otherwise a promise that resolves when all are in. */
-  terrainPending(): Promise<void> | null;
-  /**
-   * Browser entry point: advance by a real-time frame delta (s), honouring warp. Real time is accumulated
-   * and consumed in whole PHYSICS_DT steps (the remainder carries over and drives the interpolation in
-   * snapshot()), so the presented motion is uniform at 60, 120, 144 or 240 Hz alike. On rails the advance
-   * is an exact Kepler step of realDt x warp.
-   * `onControlTick`, when given, is invoked before every CONTROL_TICK_STEPS-th physics step and before
-   * each rails advance; inside it a pilot may call peek(), setControls() and commands. This gives a
-   * scripted pilot the same 30 Hz (sim time) cadence in the browser as in the headless loop.
-   */
-  advance(realDt: number, onControlTick?: () => void): void;
-  /** Exactly one PHYSICS_DT step of integrated time (headless harness). */
-  step(): void;
-  /** Rails advance to `targetUt`, clamped to the next event; returns the ut reached (headless harness). */
-  advanceRails(targetUt: number): number;
-  /** True when the next advance must integrate forces (burn, atmosphere, contact...). */
-  readonly needsIntegration: boolean;
-  /** UT of the next event that limits warp (SOI change, atmosphere entry, node lead time...). */
-  readonly nextEventUt: number;
-  setControls(inputs: ControlInputs): void;
-  readonly commands: PlayerCommands;
-  /**
-   * Build a snapshot for presentation and DRAIN the event queue into it. Called exactly once per presented
-   * frame by the app loop; the same object is handed to renderer, audio, HUD and map. Poses are
-   * interpolated to the presentation time (see SimSnapshot.ut).
-   */
-  snapshot(): SimSnapshot;
-  /**
-   * The true state at simUt, never interpolated (ut === simUt), leaving the event queue untouched
-   * (`events` lists what is pending). For pilots, tests and the headless runner.
-   */
-  peek(): SimSnapshot;
-  readonly cheatCounter: number;
-  /** Hash of the complete dynamic state (golden-run determinism check). */
-  stateHash(): string;
-  readonly debug: SimDebug;
-}
+export type Sim = LocalSession;

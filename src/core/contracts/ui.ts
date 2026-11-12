@@ -1,9 +1,12 @@
 /**
  * Player-facing interface contracts: HUD, navball, cockpit displays and the map view.
  */
+import type { AudioBusName } from './audio';
 import type { PlayerCommands, PointerState } from './controls';
 import type { DefLibrary } from './defs';
-import type { CameraState } from './render';
+import type { CensusEntry, CensusKind } from './net';
+import type { CameraState, QualityLevelName, QualityProfile } from './render';
+import type { ClientStores } from './session';
 import type { SimSnapshot } from './sim';
 
 /**
@@ -18,6 +21,15 @@ export interface NavballRenderer {
 
 export type MfdPage = 'flight' | 'orbit' | 'systems' | 'staging' | 'entry' | 'landing';
 
+/**
+ * v2 pages: the target card and the docking instrument (`Readouts.target`, `Readouts.docking`), painted by
+ * the same Canvas-2D painter as the HUD panels.
+ *
+ * Not yet members of `MfdPage`: the painter keeps tables with one entry per page (src/ui/mfd/mfdPainter.ts),
+ * so the lead joins this type to `MfdPage` at the start of sub-wave 3.2, when their owner adds the entries.
+ */
+export type MfdPageV2 = 'target' | 'docking';
+
 /** Draws a cockpit multi-function display page with Canvas 2D. Shares formatters with the HUD. */
 export interface MfdPainter {
   readonly pages: readonly MfdPage[];
@@ -28,8 +40,12 @@ export interface MfdPainter {
 export interface Hud {
   /** Mount into the given container element (positioned over the canvas). */
   mount(container: HTMLElement): void;
-  /** `camera` tells the HUD which view is shown; branch on camera.kind (unknown modes behave as their kind). */
-  update(snapshot: SimSnapshot, camera: CameraState, realDt: number): void;
+  /**
+   * `camera` tells the HUD which view is shown; branch on camera.kind (unknown modes behave as their kind).
+   * v2: `stores` are the client stores the DOM panels read (assembly, roster, prompts, feed, link state);
+   * absent = a session without them (no such panels are shown).
+   */
+  update(snapshot: SimSnapshot, camera: CameraState, realDt: number, stores?: ClientStores): void;
   setVisible(visible: boolean): void;
   /** Transient message line (warp refusals, staging lockout...). */
   notify(message: string): void;
@@ -55,8 +71,11 @@ export interface MapView {
    * `displaySize` is the size of the canvas in CSS pixels: the space of `PointerState` and of
    * `MapElementInfo`. (`FrameContext.displaySize` is in device pixels; the map derives the ratio from the
    * next `drawOverlay` frame.)
+   *
+   * v2: `census` is the census layer for this frame (every object of the subscribed spheres of influence,
+   * with the filter state and the preview time); absent = no census layer (a session without a directory).
    */
-  update(snapshot: SimSnapshot, camera: CameraState, commands: PlayerCommands, pointer: MapPointer, displaySize: [number, number]): MapUpdateResult;
+  update(snapshot: SimSnapshot, camera: CameraState, commands: PlayerCommands, pointer: MapPointer, displaySize: [number, number], census?: MapCensus): MapUpdateResult;
   /** For tests and the pilot HUD: screen positions (CSS px) of interactive elements. */
   describe(): MapElementInfo[];
 }
@@ -78,8 +97,33 @@ export interface MapUpdateResult {
    * further belongs to the camera.
    */
   consumed: boolean;
-  /** Set on the frame the player double-clicks a body or vessel: the app passes it to the map camera rig. */
-  focus?: { bodyId?: string; vesselId?: string };
+  /**
+   * Set on the frame the player double-clicks something: the app passes it to the map camera rig. v2: a
+   * launch site (`siteId`) or a player (`accountId`: their craft) can be focused too.
+   */
+  focus?: { bodyId?: string; vesselId?: string; siteId?: string; accountId?: string };
+  /** v2: set on the frame the player changed the census filter or the preview time in the map's panel; the app stores it and passes it back in `MapCensus`. */
+  filter?: MapFilter;
+  previewTick?: number | null;
+}
+
+/** Which census objects the map draws (v2). */
+export interface MapFilter {
+  /** Kinds shown. */
+  kinds: Record<CensusKind, boolean>;
+  /** Only the pilot's own ships, target, party and docked partners. */
+  relevantOnly: boolean;
+  /** Draw echoes (objects that are not solid for the viewer). */
+  echoes: boolean;
+}
+
+/** The census layer of one frame (v2; ARCHITECTURE 21). */
+export interface MapCensus {
+  /** Objects by vessel id (`ClientStores.census`). */
+  entries: ReadonlyMap<string, CensusEntry>;
+  filter: MapFilter;
+  /** The read-only "view at this time" control: the tick the map shows the census at; null = the viewer's clock. */
+  previewTick: number | null;
 }
 
 /** Handle the app shell uses to forward `mfdCycle:*` button actions to the cockpit feature. */
@@ -90,8 +134,49 @@ export interface CockpitControls {
   cyclePage(display: number): void;
 }
 
+/**
+ * The settings screen's model (v2; ARCHITECTURE 23, 24): what the shell stores per adapter fingerprint and
+ * hands to the renderer, the audio engine and the input layer. Any manual change of a graphics level makes
+ * the preset 'custom' and keeps the predicted cost on screen.
+ */
+export interface SettingsModel {
+  graphics: {
+    preset: QualityLevelName | 'custom';
+    profile: QualityProfile;
+    /** GPU frame time the calibration predicts for `profile`, ms; null before a calibration. */
+    predictedGpuMs: number | null;
+    /** Wall time of the calibration the profile came from, ms since the Unix epoch; null = the adapter-class preset. */
+    calibratedWallMs: number | null;
+  };
+  audio: {
+    master: number;
+    /** Volume per bus, 0..1 (a bus that is not listed is at 1). */
+    buses: Partial<Record<AudioBusName, number>>;
+  };
+  controls: {
+    /**
+     * Fullscreen and keyboard lock are OPT-IN: the game starts windowed and uncaptured, the bindings work
+     * without the lock, and these two say what the player chose on the explicit control.
+     */
+    fullscreen: boolean;
+    keyboardLock: boolean;
+    /** Mouse look sensitivity multiplier, and inverted vertical look. */
+    lookSensitivity: number;
+    invertLook: boolean;
+  };
+  interface: {
+    /** HUD scale multiplier. */
+    hudScale: number;
+    nameplates: boolean;
+    feed: boolean;
+    /** Labels that are hidden for footage ("TEST PILOT", the capture hint). */
+    footageMode: boolean;
+  };
+}
+
 export interface MapElementInfo {
-  kind: 'marker' | 'nodeHandle' | 'node' | 'body' | 'vessel' | 'surfaceTarget';
+  /** v2 adds 'census' (an object of the census layer; `id` is its vessel id) and 'site'. */
+  kind: 'marker' | 'nodeHandle' | 'node' | 'body' | 'vessel' | 'surfaceTarget' | 'census' | 'site';
   id: string;
   x: number;
   y: number;

@@ -40,6 +40,15 @@ export const VACUUM: Readonly<AtmosphereSample> = Object.freeze({ density: 0, pr
 export interface VesselEnvironment {
   ut: number;
   bodyId: string;
+  /**
+   * v2 (ARCHITECTURE section 4): the island's reference-orbit point, as its position and velocity in
+   * BCI(bodyId) at `ut`. When present, the vessel's translational state is the OFFSET from this point and
+   * gravity enters as the difference between the acceleration at the vessel and at the origin, evaluated
+   * without cancellation (Encke's method). Absent = the state is in BCI(bodyId), exactly as in v1. Like
+   * everything here it describes the START of the step. Contact with other vessels does not go through the
+   * environment.
+   */
+  origin?: { r: Vec3; v: Vec3 };
   /** Central body: gravitational parameter and reference radius. */
   mu: number;
   radius: number;
