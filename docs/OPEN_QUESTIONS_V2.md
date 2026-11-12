@@ -265,6 +265,24 @@ exception stated to players), instead of being claimed as reachable.
   `%UserProfile%\.wslconfig` (6 GB, 8 processors, 2 GB of swap, memory reclaim on). It applies to every
   WSL 2 distribution on the machine, Ubuntu included, and takes effect after `wsl --shutdown`, so it is
   done at a moment when nothing runs.
+  **Not done yet (2026-11-11).** The lead step `lead-baseline-v2` tried to write it at a moment when
+  nothing ran (WSL 2.7.3; `Ubuntu` and `docker-desktop` both stopped; no `.wslconfig` existed; no Docker
+  process), and the agent's permission system refused the action as one that interferes with other
+  workloads; the refusal was respected. Nothing in waves 3 and 4 needs Docker (the local stack runs on
+  host processes with an embedded Postgres); the first compose suites are in wave 5. Before then, either
+  the user allows it or does it by hand: create `%UserProfile%\.wslconfig` with
+
+  ```
+  [wsl2]
+  memory=6GB
+  processors=8
+  swap=2GB
+
+  [experimental]
+  autoMemoryReclaim=dropCache
+  ```
+
+  and run `wsl --shutdown`. To undo, delete the file and run `wsl --shutdown` again.
 - **Railway's own usage e-mail** is a switch in the user's Railway account. Nothing depends on it. No
   hard usage limit is set: Railway's limit is per workspace, so reaching it would take the game, its
   buckets and `haulpoint-tms` offline. The month is bounded instead by per-service resource limits

@@ -1,0 +1,95 @@
+import { describe, expect, it } from 'vitest';
+import { PHYSICS_DT, RAILS_WARP_LEVEL_COUNT, WARP_LEVELS, MAX_PHYSICS_WARP_INDEX } from './defs';
+import { DEFAULT_UNIVERSE_RULES, TICKS_PER_SECOND, UNIVERSE_RULE_TIMERS, type UniverseRules } from './net';
+
+const DAY = 86400;
+const YEAR = 365.25 * DAY;
+
+function at(rules: UniverseRules, dotted: string): unknown {
+  const [group, field] = dotted.split('.') as [keyof UniverseRules, string];
+  return (rules[group] as unknown as Record<string, unknown>)[field];
+}
+
+describe('UniverseRules: the default document', () => {
+  it('one tick is one physics step', () => {
+    expect(TICKS_PER_SECOND * PHYSICS_DT).toBe(1);
+    expect(RAILS_WARP_LEVEL_COUNT).toBe(WARP_LEVELS.length - MAX_PHYSICS_WARP_INDEX - 1);
+  });
+
+  it('is a plain JSON document: it survives a round trip unchanged', () => {
+    const copy = JSON.parse(JSON.stringify(DEFAULT_UNIVERSE_RULES)) as UniverseRules;
+    expect(copy).toEqual(DEFAULT_UNIVERSE_RULES);
+    const walk = (v: unknown, where: string): void => {
+      if (typeof v === 'number') expect(Number.isFinite(v), where).toBe(true);
+      else if (v !== null && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, `${where}.${k}`);
+    };
+    walk(DEFAULT_UNIVERSE_RULES, 'rules');
+  });
+
+  it('carries the numbers of ARCHITECTURE 5, 7.4-7.6, 9.4, 15.5 and 26', () => {
+    const r = DEFAULT_UNIVERSE_RULES;
+    // 5: time model
+    expect(r.time.leadCap).toBe(250 * YEAR);
+    expect(r.time.advanceGuardBand).toBe(20 * YEAR);
+    expect(r.time.advanceLimitDefault).toBe(30 * DAY);
+    expect(r.time.advanceLimitStation).toBe(6 * YEAR);
+    expect(r.time.physicsWarpMax).toBe(4);
+    expect([r.time.launchRangeRadius, r.time.launchRangeAltitude]).toEqual([150_000, 100_000]);
+    expect(r.time.targetApproachSteps).toEqual([{ timeBefore: 60, maxRate: 50 }, { timeBefore: 10, maxRate: 1 }]);
+    expect([r.time.readyCheckTime, r.time.proposalInterval, r.time.idleTime, r.time.stopWindow, r.time.roundTripAllowance]).toEqual([15, 30, 120, 0.5, 0.25]);
+    expect([r.time.jumpArrivalClearance, r.time.jumpArrivalLookahead, r.time.jumpAlternativeLead]).toEqual([50, 30, 10]);
+    expect([r.time.encounterLeadTime, r.time.encounterMargin, r.time.departureContactLookahead, r.time.departureNoticeTime]).toEqual([10, 10, 30, 10]);
+    expect([r.time.joinCooldown, r.time.joinCooldownAfterFork, r.time.advanceRetryInterval]).toEqual([60, 1800, 300]);
+    expect([r.time.resumeWindow, r.time.resumeWindowBuildChange]).toEqual([30, 90]);
+    expect([r.time.cohortBucket, r.time.cohortHorizon, r.time.cohortOfferWait]).toEqual([300, 14 * DAY, 60]);
+    expect(r.time.forecastMaxPatches).toBe(16);
+    expect(r.time.lagCap).toBe(0);
+    expect([r.claim.joinDistanceBase, r.claim.joinClosingTime, r.claim.islandPartFactor, r.claim.armedMarginBase, r.claim.armedClosingTime, r.claim.reservationReleaseDelay]).toEqual([1000, 2, 2, 200, 2, 10]);
+    expect([r.claim.materialiseReachTime, r.claim.materialiseClearance, r.claim.clearingTime, r.claim.clearingAccelMax, r.claim.clearingTimeout]).toEqual([30, 5, 15, 0.5, 30]);
+    expect([r.disconnect.pingInterval, r.disconnect.lossTimeout, r.disconnect.soloLatchTime, r.disconnect.sharedRotationLatch, r.disconnect.sharedThrottleLatch, r.disconnect.reconnectGrace]).toEqual([1, 3, 10, 0.25, 2, 120]);
+    // 7.4-7.6
+    expect([r.contact.subSteps, r.contact.solverIterations, r.contact.restitution, r.contact.restitutionMinSpeed, r.contact.friction]).toEqual([4, 8, 0.2, 0.3, 0.5]);
+    expect([r.contact.nascentClearance, r.contact.hypervelocitySpeed, r.contact.hypervelocitySpecificEnergy, r.contact.explosionImpulsePerKg]).toEqual([0.05, 250, 40_000, 150]);
+    expect([r.contact.maxFragmentsPerCollision, r.contact.fragmentMassLimit, r.contact.fragmentLifetime]).toEqual([12, 50, 60]);
+    expect([r.docking.hardDockOffset, r.docking.hardDockAngleDeg, r.docking.hardDockSpeed, r.docking.hardDockDwell]).toEqual([0.003, 0.1, 0.003, 0.5]);
+    expect([r.docking.softCaptureClampTime, r.docking.linkBreakTime, r.docking.helmRequestTimeout]).toEqual([0.5, 0.2, 30]);
+    expect(r.docking.defaultLendPolicy).toEqual({ lendAttitude: true, lendEngines: false, lendPropellant: false, helm: 'crew' });
+    expect([r.docking.maxCraftPerAssembly, r.docking.maxPartsPerAssembly, r.docking.islandVesselBudget]).toEqual([32, 600, 64]);
+    expect([r.terrain.requestRadarAltitude, r.terrain.requestAltitude, r.terrain.requestSpeed]).toEqual([2000, 50_000, 200]);
+    // 9.4
+    expect([r.pads.reservationHold, r.pads.maxStay, r.pads.stayExtension, r.pads.maxStayUpTime, r.pads.disconnectGrace]).toEqual([90, 300, 120, 600, 60]);
+    expect([r.pads.clearAltitude, r.pads.clearDistance, r.pads.safingTime, r.pads.restRecoveryTime, r.pads.rangeSafetyAltitude]).toEqual([1500, 1000, 20, 60, 5000]);
+    expect(r.pads.keepOutRadius).toEqual({ light: 300, medium: 450, heavy: 600 });
+    // 15.5
+    expect([r.expiry.craftRetention, r.expiry.shipSlots, r.expiry.unownedAssemblyRetention, r.expiry.unownedCraftRetention]).toEqual([14 * DAY, 10, 48 * 3600, 48 * 3600]);
+    expect([r.expiry.debrisRetention, r.expiry.debrisPerAccount, r.expiry.unownedPerSoi, r.expiry.wreckRetention]).toEqual([2 * 3600, 24, 5000, 2 * 3600]);
+    expect(r.expiry.lostDistance).toBe(100 * 149_597_870_700);
+    expect([r.expiry.arcRetention, r.expiry.accountRetention, r.expiry.lobbyObjectCap]).toEqual([24 * 3600, 90 * DAY, 50_000]);
+    expect([r.expiry.pressureStart, r.expiry.pressureFloorSingleSession, r.expiry.pressureFloor, r.expiry.sweepInterval, r.expiry.outageExtensionThreshold]).toEqual([0.7, 24 * 3600, 72 * 3600, 60, 3600]);
+    // 26
+    expect([r.limits.inputsPerSecond, r.limits.commandsPerSecond, r.limits.timeMessages, r.limits.timeMessageWindow]).toEqual([60, 20, 6, 10]);
+    expect(r.planning).toEqual({ workerMaxEstimateMs: 50, weakClientCpuScore: null });
+  });
+
+  it('every timer names one of the three bases, and every named timer is a positive number of the document', () => {
+    for (const [key, base] of Object.entries(UNIVERSE_RULE_TIMERS)) {
+      expect(['ticks', 'upTime', 'wall'], key).toContain(base);
+      const value = at(DEFAULT_UNIVERSE_RULES, key);
+      expect(typeof value, key).toBe('number');
+      // The commit lag cap is a timer whose default is zero (real time); every other timer is positive.
+      if (key !== 'time.lagCap') expect(value as number, key).toBeGreaterThan(0);
+    }
+    // Expiry runs on the wall clock and only expiry does (ARCHITECTURE U19).
+    for (const [key, base] of Object.entries(UNIVERSE_RULE_TIMERS)) expect(base === 'wall', key).toBe(key.startsWith('expiry.'));
+    // Pad occupancy and safing, soft capture, port cooldown and the clearing timers are universe ticks.
+    for (const key of ['pads.maxStay', 'pads.safingTime', 'docking.softCaptureClampTime', 'docking.portCooldownTime', 'claim.clearingTime', 'claim.clearingTimeout']) expect(UNIVERSE_RULE_TIMERS[key], key).toBe('ticks');
+    // Reservation holds, ready-checks, helm requests, the reconnect grace and the resume window are up-time.
+    for (const key of ['pads.reservationHold', 'time.readyCheckTime', 'docking.helmRequestTimeout', 'disconnect.reconnectGrace', 'time.resumeWindow']) expect(UNIVERSE_RULE_TIMERS[key], key).toBe('upTime');
+    // A tick-based duration is a whole number of ticks.
+    for (const [key, base] of Object.entries(UNIVERSE_RULE_TIMERS)) {
+      if (base !== 'ticks') continue;
+      const ticks = (at(DEFAULT_UNIVERSE_RULES, key) as number) * TICKS_PER_SECOND;
+      expect(Math.abs(ticks - Math.round(ticks)), key).toBeLessThan(1e-9);
+    }
+  });
+});
