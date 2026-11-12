@@ -1,6 +1,6 @@
 /**
  * The flood lights' shadow maps: one perspective depth map per lamp, seen from the middle of its lens along
- * the lens normal over the whole of its beam (shaders.ts floodBeam: nothing beyond LAMP_HALF_ANGLE), into one
+ * the lens normal over the whole of its beam (shaders.ts floodBeam: beyond LAMP_HALF_ANGLE only the lens's spill), into one
  * layer of a depth array. The casters are the cabin's own parts at full detail without the enclosure (the
  * wall, the floor and the blankets receive, nothing lies behind them), in the capsule part frame, so a map is
  * valid until a control moves: the layers are rendered at start and again, one per frame, after a switch

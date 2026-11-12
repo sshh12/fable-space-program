@@ -180,8 +180,9 @@ apertures, 3 that times the sun map, 4 probe reflection, 5 polygon sources, 6 bo
   one layer a frame, after a lever, a guard, a selector or a hand controller moved. `cabinLight` reads it per
   pixel inside the beam (the point moved a texel and a half off its surface, four bilinear comparisons) in
   place of the vertex's baked visibility of that lamp, which remains the test of whether the lamp reaches the
-  surface at all and the visibility of the lens's spill outside the beam (`floodBeam`: a fifth of the lens's
-  luminance leaves it to every side, the rest in the beam).
+  surface at all and the visibility of the lens's spill outside the beam (`floodBeam`: three tenths of the
+  lens's luminance leave it to every side, the rest in the beam). A lamp that adds under four per cent of what
+  a surface already receives is not looked up (`LAMP_SHADOW_MIN`).
 - **Occlusion bake** (`occlusion.ts`): at init, on the GPU, per vertex of every detail level against that
   level's BVH: ambient occlusion (96 rays within 0.45 m), and per window, per display and **per flood** the
   unblocked share of the form-factor kernel (24 points each); one sample pattern for all vertices (smooth
@@ -693,38 +694,218 @@ night chase) are unchanged.
 
 ## 11. Visual close-out, round 5 (2026-11-12)
 
-Fix round 5 on the round-3 list and round 4's leftovers (section 10.3). **In progress when this was written:
-the state below is committed; the measurements and pictures are pending the machine's one GPU slot.** If this
-section still says "in progress", the next fixer continues from 11.4.
+Fix round 5: what round 4 left (section 10.3), in the order of the lead's list. The machine's one GPU slot was
+shared by seven agents (a turn every hour and a half), so the round had two browser runs: one to measure and
+shoot everything, one to verify the changes made on its results. Each run was the attribution spec, which in
+this round also ran the functional suite and the perf spec as child runs in its slot.
 
-### 11.1 What was built (committed, unit-tested; browser run pending)
+### 11.1 Item 1: where the interior's GPU time went, and what was done
 
-| Item of the round's list | Built | Where |
+Measured first (`tests/browser/cockpit/attribution.perf.spec.ts`, the perf spec's view, 2560 x 1440, 7 ms of
+ballast, 200 frames per row; `CockpitFeature.setAblation`). `cockpit.gbuffer`, ms, BEFORE any cut:
+
+| Sunlit cabin (scene leo) | p50 | p99 |
 |---|---|---|
-| 1 Where the GPU time goes | The full detail level is drawn in chunks of at most 768 triangles of one assembly, culled against the view frustum (from the commander's seat 68,000 of 306,000 triangles are in view: `tests/unit/cockpit/raster.test.ts` prints the table per assembly, with triangle sizes on screen). Cost attribution: `CockpitFeature.setAblation(mask, families)` (`ABLATE`: polygon sources, sun, reflections, detail textures, patterns, bounce, the whole fragment, lamp shadows, the shading draw, decals, screens, frustum culling, the depth pre-pass, display painting) and `tests/browser/cockpit/attribution.perf.spec.ts`, which times the perf spec's view under each switch and with assembly families left out, in the sunlit and the lamp-lit cabin (`out/screens/cockpit/attribution-<scene>.json`) | `feature.ts` (`buildChunks`, `visibleRuns`), `shaders.ts` (`cabin.tint.w`), cockpit lab `&ablate=` `&without=` |
-| 2 Light that behaves | The flood lights' shadow maps: one 1024^2 perspective depth map per lamp from the middle of its lens over its beam, rendered at start and, one layer a frame, after a lever, guard or hand controller moved; read per pixel (four bilinear comparisons) in place of the baked per-vertex visibility, which remains the test of whether a lamp reaches a surface at all and the visibility of the lens's spill outside the beam. The beam has a Lambertian skirt (a fifth of the lens's luminance to every side): the wall beside a fixture stands in its spill | `lampmap.ts`, `shaders.ts` (`lampVisibility`, `floodBeam`), `tests/unit/cockpit/lampmap.test.ts` |
-| 3 Materials | Eight photographic material samples generated with an image model (`tools/cockpit/photo-source.ts`: painted panel, brushed aluminium, seat fabric, beta cloth, webbing, hook-and-loop, rubber, anodised metal; 8 images, 56,192 output image tokens) and baked into the detail layers (`tools/cockpit/bake-textures.ts`: shading divided out, made seamless by four shifted copies each weighted to vanish on its own seam, the shift at the photograph's own period so a weave's yarns meet, repeating blotches attenuated; tone, relief and gloss from the photograph, wear and grime masks procedural). Stencils on ring frames and close-out panels, data plates; the label atlas is 2048 x 4096 | `public/assets/cockpit/detail-*.png`, `cabin/shell.ts` |
-| 4 Remaining majors | Sewn stowage bags and document pouch (one displaced cover cinched under its straps, piping, zip, buckles: `softCover`); lockers with piano hinge, quarter-turn fasteners, pressed beads, rivets, webbing pull, data plate; harness webbing with rounded bends, slack and roll; couch frame node fittings at every tube joint; hatch latches as clevises on pivot pins; the docking hatch's inner face in rings with ribs, gauge and valve (no triangle fan); the tunnel wall in rows; shade guide rails ending in feet, the pull tab a webbing loop; the cue card under a spring clip on a ring; quilt with slow folds, a softer crease and soiling | `cabin/*.ts`, `mesh.ts` (`disc`) |
-| 6 Displays | The pacing rule explicit: `pacing.ts` (`DisplayPacer`), `displays.fastPages` / `displays.slowMinHz` in the layout, `tests/unit/cockpit/pacing.test.ts`, the functional spec's per-display rate assertion; recorded in request app-integration-12 | `pacing.ts`, `displays.ts` |
+| as drawn (154,000 of 310,000 triangles after frustum culling) | 0.650 | 0.914 |
+| every chunk drawn (no frustum culling) | 0.648 | 1.041 |
+| depth pre-pass only | 0.036 | 0.037 |
+| constant fragment (pre-pass, raster, six targets) | 0.166 | 0.171 |
+| without the polygon light sources | **0.339** | 0.356 |
+| without the sun | 0.555 | 0.790 |
+| without the lamps' shadow maps (new in this round) | 0.603 | 0.951 |
+| without label decals | 0.609 | 0.891 |
+| without reflections / detail textures / patterns / bounce | 0.627 / 0.636 / 0.645 / 0.641 | |
+| without sources, sun and reflections | 0.214 | 0.222 |
+| without the console / without blankets and frames | 0.504 / 0.574 | |
+| one shaded draw, no depth pre-pass | 0.887 | 1.144 |
+| displays not painted | 0.651 | 0.906 |
 
-### 11.2 Spent on generation
+(The lamp-lit cabin, scene night: 0.489 as drawn, 0.242 without the polygon sources, 0.429 without the lamps'
+maps. Full tables: `out/screens/cockpit/attribution-leo.json`, `-night.json` of the last run hold the AFTER state.)
 
-OpenAI image model `gpt-image-2`, quality high, 1024 x 1024: 8 images, 7,024 output image tokens each (56,192 in
-all; `data/cache/cockpit/photo/usage.json`). At 40 USD per million image output tokens (the published rate of the
-earlier model; this model's rate was not looked up) that is about 2.3 USD of the package's 50 USD.
+What the measurement says, against round 4's suspicion:
+- **Triangles are not it.** The depth pre-pass over all 310,000 triangles takes 0.037 ms; drawing every chunk or
+  only those in view changes nothing. (The frustum culling stays: it halves the vertex work of the shading draw.)
+- **The polygon light sources were half of the pass** (0.31 of 0.65 ms): every pixel integrated the opening of
+  each of the five windows (a clipped polygon form factor each) and the three screens. Round 4 cut the lamps and
+  skipped dark windows; the windows that do send light in were the cost.
+- The sun was 0.10 ms (the aperture test of every window in every pixel), the lamps' shadow maps 0.05, the label
+  decals 0.04 (each label pixel shaded in full a second time), everything else under 0.03 each.
+- **The tail** (p99 0.25 to 0.39 ms over p50 in every row with the full fragment, none in the short rows, and not
+  from display painting: the row without paints has it) is single frames in which the pass takes about 0.3 ms
+  longer: about one frame in fifty to a hundred, the more often the longer the pass. Not found what they are
+  (not the displays, not the triangle count); shortening the pass is what removes them from the 99th percentile.
 
-### 11.3 Not done, and why
+What was changed:
+1. **The windows' and the screens' light is taken per vertex** (`cabinVertexLight` in the vertex stage: their
+   irradiance on the vertex's plane and where it comes from) and interpolated; the fragment turns it toward its
+   own normal about that direction (the quilt's relief still shades). Their visibility was baked per vertex
+   already, so nothing finer was lost; a window's light on a large face is now a linear ramp between vertices.
+2. **The floods are the only per-pixel sources** (`cabinLampLight`: the far-field formula, the lens polygon only
+   within 45 cm), through their shadow maps.
+3. **The sun is evaluated only where a beam can be**: the vertex stage gives each vertex its distance to the
+   nearest window's beam (`cabinSunReach`, a lower bound) less the longest triangle edge that ends at that vertex
+   (stored at build time in the label-atlas slot a vertex without a label does not use: `MeshBuilder.build`,
+   `EDGE_REACH_MAX`); a pixel inside a beam therefore interpolates to at most 0, whatever the triangle's size,
+   and pixels over 3 cm (the widest penumbra) skip the sun. Unit test: `tests/unit/cockpit/raster.test.ts`
+   (every vertex's stored reach against its triangles' edges; the longest edge of the cabin is 2.69 m, a floor
+   rail's chamfer: a fixed margin would not have held).
+4. **The probe renders three of its six faces a frame** (the two halves in turn; the filter runs every frame).
+5. **The sun map is kept while it is valid**: it is in the part frame, so it is rendered again only when the
+   sun's direction in that frame, the lit windows, the detail level or a control changes. In a vessel that
+   holds its attitude (the perf spec's view) it costs nothing; in one that turns it costs 0.036 ms a frame as
+   before. Stated here because the perf line below is taken in a view where it is free.
+6. **A flood that adds under four per cent of what a surface already receives is not looked up in its shadow
+   map** (`LAMP_SHADOW_MIN`; its baked visibility stays): in a daylit cabin with the floods at their standby
+   level the lookups were 0.06 ms for edges nobody can see; in a lamp-lit cabin every lamp is looked up.
+7. Frustum-culled chunks for the full detail level (`buildChunks`, `visibleRuns`): from a couch four fifths of
+   the cabin lie beside or behind the view.
 
-- **Crew figures**: the brief lists the cabin's hardware and soft goods, not crew; the package has no route to
-  sculpted meshes (everything is built in code, the budget is for textures). Left out, as the round's list allows.
+AFTER (the round's last run): see 11.7.
 
-### 11.4 To continue
+### 11.2 Item 2: light that behaves
 
-1. Run `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/cockpit/attribution.perf.spec.ts --project=perf`
-   (in this round it also runs the functional suite and the perf spec as child runs in the same slot: remove
-   that last test and the hard-coded probe path in it before closing the round). Read
-   `out/screens/cockpit/attribution-leo.json` / `-night.json`: fix what costs most until the interior line holds.
-2. LOOK at `out/screens/cockpit/*.png`, `attribution/*.png` (lamp shadows on / off) and `attribution/probe/*.png`
-   (candidate framings: pad through the hatch window, Earth window from farther back, night chase from farther,
-   the pilot's seat), choose the framings, re-aim `world.ts` / `app.spec.ts`, prune the candidates.
-3. Check request cockpit-10 (core, open: the stipple on the window wells) and re-shoot when it is resolved.
+- **Every flood has a shadow map** (`lampmap.ts`; section 2 "Light"): levers, guards, straps, bags, the cue card,
+  the console and the couches throw shadows and stand in contact shadows on the side away from a lamp; what
+  lies under the couches is dark. Pictures: `out/screens/cockpit/attribution/night-switches-lamp-shadows.png`
+  against `...-baked-visibility.png` (the same view with the maps switched off: every lever with its shadow on
+  the panel, the console's edge on the gap beside it), `attribution/probe/night-look-back.png` (the couch
+  frames' shadows on the wall blankets), `hatch-mechanism.png` (the handholds' shadows), `world-reentry-plasma.png`
+  (the cue card's).
+- **The beam has a skirt**: three tenths of the lens's luminance leave it to every side (same flux), so the wall
+  beside a fixture stands in its spill; outside the lamp's map that spill uses the baked visibility.
+- The kernel of a lamp's map widens (to twice) where its light only grazes a surface.
+- NOT done: the lamps are still six, evenly spread, and the bounce light (the probe's irradiance) is the same
+  everywhere for one normal: from the commander's seat at night the blankets beside the console are still
+  close to one value (`world-night-displays-floods.png`); the shadows show where a lamp's beam falls (close-ups,
+  the look back), less in that view. Window, screen and bounce light are still shadowed per vertex only.
+
+### 11.3 Item 3: materials
+
+- **Photographic detail layers**: eight material samples generated with an image model
+  (`tools/cockpit/photo-source.ts`: painted panel, brushed aluminium, seat fabric, beta cloth, harness webbing,
+  hook-and-loop, rubber, anodised metal) and baked into the eight detail layers
+  (`tools/cockpit/bake-textures.ts`: residual shading divided out; made seamless by four shifted copies, each
+  weighted to vanish on its own seam, the shift at the photograph's own period so a weave's yarns meet;
+  repeating blotches attenuated; tone, relief, cavity and gloss from the photograph; wear and grime masks stay
+  procedural). The panels carry scuffs, chips and smudges, the cloth its weave, the webbing its herringbone.
+  The sources are in `data/cache/cockpit/photo/` (not committed, as every cache); the baked layers are
+  (`public/assets/cockpit/detail-*.png`, 8 MB).
+- **Spent**: OpenAI `gpt-image-2`, quality high, 1024 x 1024: 8 images, 7,024 output image tokens each (56,192;
+  `data/cache/cockpit/photo/usage.json`). At 40 USD per million image output tokens (the published rate of the
+  earlier image model; this model's rate was not looked up) about 2.3 USD of the package's 50 USD.
+- Stencils on ring frames (frame number and station, part number) and close-out panels (access number, part
+  number and torque), data plates on the lockers and the docking hatch; the label atlas is 2048 x 4096.
+- Quilt: slow folds across each bay, a softer crease, a wider range of fill per cell, soiling per bay.
+- **Crew figures: not built.** The brief lists the cabin's hardware and soft goods, not crew, and the package has
+  no route to sculpted meshes (everything is built in code; the budget is for textures). Left out, as the list allows.
+
+### 11.4 Item 4: the remaining majors of the round-3 list
+
+| Item | Done | Picture |
+|---|---|---|
+| Lockers and bags as boxes | Stowage bags and the document pouch are one sewn, displaced cover each (`softCover`: a pillow from its seam at the wall, cinched in the grooves of its straps, rippled beside them, lumpy with its load; piping, zip, cam buckles, footman loops, name tag). Lockers: pressed door with two beads, piano hinge with knuckles, two quarter-turn fasteners, paddle latch, rivets round the rim, webbing pull, label and data plate | `world-reentry-plasma.png` (bag, pouch), `hatch-mechanism.png` (lockers) |
+| The paper-like harness | The webbing's bends are rounded, the band wanders, lifts off the pad in long waves and rolls a little; photographic herringbone weave; guide bars where the shoulder straps come over the back, anchor plates at the hips and the seat | `look-back-couches-hatch.png` |
+| Couch frame node fittings | A turned fitting with its pivot bolt wherever a cross tube meets a side rail (hip, knee, foot, head and hip cross tubes): no tube ends in the air | `look-back-couches-hatch.png` |
+| Hatch door bands, primitive latches | Latches are clevises (base plate, two cheeks, pivot pin, spring coils, bolts) with the hook's arm between the cheeks; the pocket floor in twelve rings. The radial smears on the door's face are STILL there (baked per-vertex visibility of the far windows along thin wedges at the pocket's corners) | `hatch-mechanism.png` |
+| The apex tunnel's triangle fan | `MeshBuilder.disc` meshes a wide disc in rings (the docking hatch's face was one fan of 64 spokes), the tunnel wall in rows; the docking hatch has a ribbed inner face, hub and rim rings, a gauge and a valve, its placard on a plate across two ribs. The lamps' light there is per pixel now | lab `chase-window-night.png` |
+| Shade guide rails | Rails run from under the cassette to a foot block with a screw on the bezel's lower edge; the pull tab is a loop of webbing toward one end of the bar | `world-moon-horizon.png` |
+| Attitude indicator's dome | Round 4's change inspected: smooth sheen, no fragments | `closeup-fdai.png` |
+| Earth window beside a black slab | Shot from farther back (0.35 of the way to the window, 70 degrees): both forward windows with the Earth in them, the cabin low-key and blue in the Earth's light, a lit lamp, the bags | `world-leo-earth-side-window.png` |
+| The default seat view in orbit | From the commander's (port) couch the view is centred on the console's left end by geometry. New acceptance view from the PILOT'S couch, head tipped back: both forward windows with the Earth, three displays, the caution panel, the sun patch. Request cockpit-18 asks for it as the game's default (vehicle data or the rig). In the game the Earth's limb stands in the commander's side window: new app view | `world-leo-pilot-seat.png`, `app-leo-window-left.png` |
+| The night chase view | Closer (0.6 m, 55 degrees): the lit cabin through the window fills more of the frame. The hull stays black (it is unlit; stars, limb and airglow at that exposure are not the cockpit's) | `world-chase-window-night.png` |
+| The pad view | The sky no longer clips (the core's metering, cockpit-16): blue sky, clouds, the escape tower's rigging. No tower: through the one ported forward window there is none to see, and the hatch window (tried) shows the boost cover's port, clipped white | `world-pad-noon-forward-window.png` |
+| Reentry panes | The cabin's entry light follows `'vfx.plasmaWindow'` (it did since round 2; checked against vfx's round-3 levels). The cockpit now reports the sheath in its panes to the exposure meter (request cockpit-19, the core's half resolved within the round: `addEmissiveHint(.., .., true)`), so the panes keep their colour and the cabin falls low-key. Streaks across the panes are the vfx package's (cockpit-19, open) | `world-reentry-plasma.png` |
+
+### 11.5 Items 5 and 6
+
+- **The stipple blocker** (request cockpit-10, the core's): still open (the maintainer's note: read, not started).
+  Checked and noted in the request with this round's pictures; the lunar view was re-aimed only so that the
+  horizon clears the shade's cassette. The grain is on every sunlit window well of the round's pictures.
+- **Displays**: the rule is explicit (`pacing.ts`, section 4 item 10): fast flight-data pages at 15 Hz or better
+  whatever they cost, slow pages within the budget and never under 2 Hz, one paint per frame unless a fast page
+  would fall under its rate. Unit test `tests/unit/cockpit/pacing.test.ts` (nine cases, among them three fast
+  pages at 30 frames a second); the functional spec asserts the rates per display. Measured in the lab (last
+  run): flight 15.2, orbit 5.9, systems 11.2 paints a second, 0.34 ms of main thread per 60 Hz frame (the run
+  before: 15.2 / 8.6 / 14.2 at 0.36: the slow pages take what the flight page's cost leaves).
+
+### 11.6 Requests of this round
+
+- **cockpit-18** (lead / flight-ui, open): the player's default seat view: the pilot's couch, or a rest pitch.
+- **cockpit-19** (vfx + core): the entry sheath through the windows. The core's half resolved in the round
+  (b9347f1) and used by the cockpit; the vfx's half (structure across a window) open.
+- **cockpit-10** (core, open): checked, evidence added.
+- **app-integration-12**: the pacing rule recorded as the cockpit's resolution for round 5.
+
+### 11.7 Measured perf, last run of the round
+
+`cockpit.perf.spec.ts` (scene leo from the commander's seat, 2560 x 1440, 6.99 ms of ballast, RTX 5090, this
+run alone in the gate's GPU slot; CPU jobs of other agents running), the round's last run, final code:
+
+| | p50 | p99 | budget (p99) |
+|---|---|---|---|
+| `cockpit.gbuffer` | 0.405 | 0.643 | |
+| `cockpit.probe` + `probeFilter` | 0.038 + 0.028 | 0.052 + 0.029 | |
+| `cockpit.sunMap` (kept: the sun stands still in the cabin) | 0 | 0 | |
+| `cockpit.ambient`, `shadow`, `lampMap` (cabin at rest) | 0.005, 0.002, 0 | 0.007, 0.002, 0 | |
+| interior total | 0.48 | **0.733** | 0.8 (**met**; round 4: 1.08, this round's first run before the cuts: 1.075) |
+| `cockpit.transparent` (glass) | 0.021 | 0.024 | 0.2 (met) |
+| display uploads, GPU mean per frame | | 0.014 | 0.2 (met) |
+| display paint + upload + mips, CPU mean per frame | | 0.367 (0.70 paints per frame) | 0.4 (met) |
+| cockpit total | | 0.771 | 1.2 (met) |
+
+One run. What stands behind it and what does not:
+- The G-buffer pass went from 0.65 to 0.405 ms (p50). Its 99th percentile still stands 0.24 ms over its median:
+  the single slow frames of 11.1 are still there, and with them the interior's p99 is 0.07 ms under the line,
+  not more. A run in which more of them fall into the window can come out higher.
+- In a vessel that turns, the sun map is rendered every frame again (0.036 ms p50 in this round's first run):
+  the interior's p99 would then be about 0.77.
+- The lamp-lit cabin (attribution spec, scene night, before the last two cuts): G-buffer 0.414 / 0.664.
+- Attribution AFTER cuts 1 to 5 and 7 but before cuts 3 (as rebuilt on the edge bound) and 6
+  (`out/screens/cockpit/attribution-leo.json`): as drawn 0.501; without the polygon sources (now the floods
+  alone) 0.355; without the sun 0.389; without the lamps' maps 0.438; without label decals 0.477; without the
+  console 0.377; constant fragment 0.165; depth pre-pass only 0.036. What is left in the pass: the base (0.17),
+  the sun (0.11 before the edge-bound gate), the floods (0.15 before the gate of cut 6), reflections, textures,
+  decals and screens (0.02 to 0.03 each).
+- The cockpit's main-thread time in `prepare` and `compute` together was 0.72 ms per frame in this run, of
+  which 0.37 the displays; the rest (0.35) is the instruments, the sources, the chunk culling and the uniform
+  upload. No line is set for it; it was 0.56 (0.34 displays) before the chunks.
+
+### 11.8 Last run, what is not fixed, and an honest score
+
+Last run (2026-11-12 09:30 to 09:50, final code): attribution spec 15 / 15 (two scenes, twelve lamp-shadow
+pictures, the batch); in its slot the functional suite `tests/browser/cockpit` 39 / 39 (6 app views, the
+functional spec's 6, 13 lab views, 10 world views, 4 candidate framings) and the perf spec 1 / 1 (every line
+met). Unit: `src/render/cockpit tests/unit/cockpit src/core/defs tools/dev/boundaries.test.ts` all passing (the
+penetration check finds nothing); typecheck of the owned paths clean; `check-secrets`, `check-stubs` clean.
+All pictures in `out/screens/cockpit/` are from that run. (The twelve A / B pictures in
+`out/screens/cockpit/attribution/` and the two attribution tables were taken minutes before the last two cuts
+went in; everything else, the perf line included, is the final code.)
+
+To run the whole of the cockpit in one GPU slot, as this round did:
+`COCKPIT_BATCH=1 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/cockpit/attribution.perf.spec.ts --project=perf`
+(`COCKPIT_ROUND_PROBES=<list.json>` adds candidate framings through `zz-probe.spec.ts`).
+
+**Not fixed, and why**
+- **The stipple on the window wells** (the round-3 blocker): the core's, request cockpit-10 open. Every sunlit
+  well in the pictures has it.
+- **Streaks in the entry panes**: the vfx package's (cockpit-19, open). The panes keep their colour now.
+- **Night from the seat is still even**: the lamps' shadows show where their beams fall; the blankets beside the
+  console are lit by bounce light, which has no position. A second probe, or lamps placed for that view, were
+  not tried.
+- **The hatch door's radial smears** (baked window visibility along thin wedges), **the saw teeth where a bezel
+  casts the sun patch's edge**, **the night chase picture's black hull**: looked at, not cured.
+- **Window, screen and bounce light cast no sharp shadow** (per vertex): only the sun and the lamps do.
+- **Crew figures**: not built (11.3). **Attitude error needles, larger legends, the console bead's jog**: not done.
+- **The game's default seat**: the rig's rest pitch is in (cockpit-18, flight-ui's half); the centre couch as the
+  default is the lead's vehicle data (open).
+- The photographic layers are tone, relief and gloss only (one channel of tone): no colour variation from the
+  photographs (stains stay grey), and the wear and grime masks are still procedural.
+
+**Honest score of this round's pictures** against the photographs: **photo lens about 7, artifact lens about 7**.
+What carries it: the views out of the windows (the pilot's seat with the Earth in both forward windows, the
+Earth-lit cabin from farther back, the side window with the limb in the game, the lunar horizon), lamp shadows
+and contact shadows in every lamp-lit close view, photographic surface detail on panels, cloth and webbing, soft
+goods that are sewn. What holds it under 8: the well stipple in every sunlit window (not the cockpit's), entry
+panes without structure, an even night view from the seat, the door's smears, no crew, hard parts that are still
+chamfered boxes with good texture rather than machined shapes.
