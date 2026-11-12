@@ -1,0 +1,30 @@
+{
+  "source": {
+    "url": "https://ssd.jpl.nasa.gov/astro_par.html",
+    "retrievedAt": "2026-11-12T08:45:00.077Z",
+    "sha256": "168f48b94ae3a65f31c96f081d08e7ca91ecc9e65678fdc57353821b492b313e",
+    "bytes": 22489
+  },
+  "description": "JPL astrodynamic parameters: astronomical unit, J2000 obliquity (IAU 1976, the value of the JPL element tables), heliocentric GM, DE440 planetary-system GMs",
+  "units": {
+    "auM": "m",
+    "obliquityArcsec": "arcsec",
+    "gmSunM3s2": "m^3/s^2",
+    "systemGm": "km^3/s^2"
+  },
+  "auM": 149597870700,
+  "obliquityArcsec": 84381.448,
+  "gmSunM3s2": 132712440041279420000,
+  "systemGm": {
+    "Mercury": 22031.868551,
+    "Venus": 324858.592,
+    "Earth": 398600.435507,
+    "Moon": 4902.800118,
+    "Mars system": 42828.375816,
+    "Jupiter system": 126712764.1,
+    "Saturn system": 37940584.8418,
+    "Uranus system": 5794556.4,
+    "Neptune system": 6836527.10058,
+    "Pluto system": 975.5
+  }
+}

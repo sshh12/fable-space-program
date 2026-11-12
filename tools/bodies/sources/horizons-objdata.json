@@ -1,0 +1,325 @@
+{
+  "description": "JPL Horizons object-data headers (OBJ_DATA): the geometric albedo line of each body",
+  "bodies": {
+    "sun": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='10'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.284Z",
+        "sha256": "0aaea58c039acc9b54c37be7da30d15b06bd2bf512f71094a6c1d1c8afb363a1",
+        "bytes": 1554
+      },
+      "geometricAlbedo": null,
+      "line": null
+    },
+    "mercury": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='199'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.402Z",
+        "sha256": "4db9bfe53ba78b50a808434b7054cc78bc1034ba8deecff22e417be125f5b812",
+        "bytes": 1547
+      },
+      "geometricAlbedo": 0.106,
+      "line": "Geometric Albedo      =     0.106       Surface emissivity    = 0.77+-0.06"
+    },
+    "venus": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='299'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.471Z",
+        "sha256": "1363cdef1b5a3ec90b072ab4932fef42c51c18703334c7335398d564883a48d1",
+        "bytes": 1536
+      },
+      "geometricAlbedo": 0.65,
+      "line": "Geometric Albedo      =     0.65       Potential Love # k2   = ~0.25"
+    },
+    "earth": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='399'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.529Z",
+        "sha256": "f71dc55efb88c85b5e30a298e298649264669fdd5562f3123b84214e91077a6d",
+        "bytes": 2102
+      },
+      "geometricAlbedo": 0.367,
+      "line": "Geometric albedo         = 0.367           Vis. mag. V(1,0)= -3.86"
+    },
+    "mars": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='499'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.586Z",
+        "sha256": "30936b0ee69782ac0bb8018387aac13e481b160966df487d979d0a034274d3e2",
+        "bytes": 1643
+      },
+      "geometricAlbedo": 0.15,
+      "line": "Geometric Albedo      =    0.150"
+    },
+    "jupiter": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='599'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.661Z",
+        "sha256": "706c5a5e14297951269a32f7498f076549d49370f707816f9021caa82b0beacc",
+        "bytes": 1593
+      },
+      "geometricAlbedo": 0.52,
+      "line": "Geometric Albedo      = 0.52              Rocky core mass (Mc/M)= 0.0261"
+    },
+    "saturn": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='699'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.723Z",
+        "sha256": "14a293f7a034279a27589d05bd4e9ade4e32a574070f2b1c6c2b54b5afd21ee0",
+        "bytes": 1571
+      },
+      "geometricAlbedo": 0.47,
+      "line": "Geometric Albedo      = 0.47            Rocky core mass (Mc/M) =  0.1027"
+    },
+    "uranus": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='799'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.783Z",
+        "sha256": "adf88773a95ee3c1802cf54663d25306bf9a0619ed7e7e5d185659b4fa7ae1b6",
+        "bytes": 1557
+      },
+      "geometricAlbedo": 0.51,
+      "line": "Geometric Albedo      = 0.51"
+    },
+    "neptune": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='899'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.836Z",
+        "sha256": "bdc15eac4a72eb61c65bf2c09929535fdd07dfa951bb116aa7ef7baa2df2f18b",
+        "bytes": 1555
+      },
+      "geometricAlbedo": 0.41,
+      "line": "Geometric Albedo      = 0.41            Flattening             =  0.0171"
+    },
+    "moon": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='301'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.891Z",
+        "sha256": "b7f82d98fde5358397a9c4e5ef4de8a1703b42b0fc2fe1f52d20298b5bc3eff0",
+        "bytes": 1670
+      },
+      "geometricAlbedo": 0.12,
+      "line": "Geometric Albedo      = 0.12             Mean solar day        = 29.5306 d"
+    },
+    "phobos": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='401'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:43.948Z",
+        "sha256": "07c84d6e58572dedb3a6bc70ab906729feb5ad3d4fef556135e348ca0348fdef",
+        "bytes": 762
+      },
+      "geometricAlbedo": 0.06,
+      "line": "Mass (10^20 kg )        =  1.08 (10^-4)   Geometric Albedo    =  0.06"
+    },
+    "deimos": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='402'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.008Z",
+        "sha256": "ca04de40b4574406be212058d327eee8a02abc23496edab8b50c3df0646f2578",
+        "bytes": 764
+      },
+      "geometricAlbedo": 0.06,
+      "line": "Mass (10^20 kg )        = 1.80 (10^-5)    Geometric Albedo    =  0.06"
+    },
+    "io": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='501'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.061Z",
+        "sha256": "535a3f99e992efd4c31fe6f0b1503f6fbd42b6d4ee23a2db22ac6e35456855ed",
+        "bytes": 790
+      },
+      "geometricAlbedo": 0.63,
+      "line": "GM (km^3/s^2)          = 5959.9155+- 0.004 Geometric Albedo  = 0.63  +- 0.02"
+    },
+    "europa": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='502'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.118Z",
+        "sha256": "c4589205d21b9e0d71d1599d3e3b37fbee4af4a7a4ab776eb56b22502cc18a71",
+        "bytes": 792
+      },
+      "geometricAlbedo": 0.67,
+      "line": "GM   (km^3/s^2)        = 3202.7121+- 0.0054 Geometric Albedo = 0.67 +/- 0.03"
+    },
+    "ganymede": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='503'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.169Z",
+        "sha256": "f1b4be537f7232cabb584bd5fbf7c74b5bd5c42a9fc75f12ae19ab997f694aa9",
+        "bytes": 792
+      },
+      "geometricAlbedo": 0.43,
+      "line": "GM (km^3/s^2)          = 9887.8328+- 0.0074 Geometric Albedo = 0.43  +- 0.02"
+    },
+    "callisto": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='504'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.230Z",
+        "sha256": "0d250edfdf55ff39c83e7cc03c7894003a844ca90ba1eecfb30ac7def5582fb6",
+        "bytes": 795
+      },
+      "geometricAlbedo": 0.17,
+      "line": "GM (km^3/s^2)         = 7179.2834 +- 0.0097 Geometric Albedo = 0.17  +- 0.02"
+    },
+    "mimas": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='601'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.282Z",
+        "sha256": "7ba7ebcfb0776faebb6a0c136b5ad8d281e982df7aaecec5883f8b7a562d1b43",
+        "bytes": 928
+      },
+      "geometricAlbedo": 0.6,
+      "line": "Mass (10^19 kg)         =   3.75           Geometric Albedo  = 0.6"
+    },
+    "enceladus": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='602'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.331Z",
+        "sha256": "cbfc5bd1da2b3b18c367087e6f0c1db9704e79508aaaeaf13434b59e0d2e98eb",
+        "bytes": 932
+      },
+      "geometricAlbedo": 1.04,
+      "line": "Mass (10^19 kg)         =  10.805          Geometric Albedo =  1.04"
+    },
+    "tethys": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='603'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.381Z",
+        "sha256": "a3be917c6f990417501b68d8ba3815adce096893028ce6dcd736fb93ed78f20d",
+        "bytes": 936
+      },
+      "geometricAlbedo": 0.8,
+      "line": "Mass (10^19 kg)        =  61.76 +- 0.11    Geometric Albedo  =  0.80"
+    },
+    "dione": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='604'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.430Z",
+        "sha256": "5aa01951f85cded046094b91ecbb6b73b03599e2b4c0a584182a253adf3af307",
+        "bytes": 922
+      },
+      "geometricAlbedo": 0.6,
+      "line": "Mass (10^19 kg)         = 109.572          Geometric Albedo =  0.6"
+    },
+    "rhea": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='605'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.479Z",
+        "sha256": "c035623bb65cf35d409b3110045432129800cab489e05c203aca634979f839cd",
+        "bytes": 918
+      },
+      "geometricAlbedo": 0.6,
+      "line": "Mass (10^19 kg)         = 230.9           Geometric Albedo  =  0.6"
+    },
+    "titan": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='606'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.531Z",
+        "sha256": "169e22d87be57c81ccb93c0c72682105be1357e4e2d39be756c27eb03e0e938e",
+        "bytes": 869
+      },
+      "geometricAlbedo": 0.2,
+      "line": "Mass (10^19 kg)        = 13455.3           Geometric Albedo =  0.2"
+    },
+    "iapetus": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='608'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.582Z",
+        "sha256": "fbf4b6914f984255af8e9c2c737bd037a3eca527ec8b987539521b6cdf97dbd5",
+        "bytes": 946
+      },
+      "geometricAlbedo": 0.6,
+      "line": "Mass (10^19 kg)        = 180.59             Geometric Albedo=  0.6"
+    },
+    "miranda": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='705'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.640Z",
+        "sha256": "73f095b72182abc085dda2ef9b6a1152b6fd36c412a41bc3475ce4a4ef5d1495",
+        "bytes": 819
+      },
+      "geometricAlbedo": 0.27,
+      "line": "GM (km^3/s^2)         =  4.3   +- 0.2     Geometric Albedo    =  0.27"
+    },
+    "ariel": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='701'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.691Z",
+        "sha256": "16865ffa874b079a6fcb54840a5dda736d42734338c2426a99c01a5fd3af027f",
+        "bytes": 818
+      },
+      "geometricAlbedo": 0.34,
+      "line": "GM (km^3/s^2)         =   83.43 +- 1.40   Geometric Albedo    =  0.34"
+    },
+    "umbriel": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='702'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.749Z",
+        "sha256": "d9b5c18b287dc1378b27e1c7c3d8773a9b6c69e318c68ab664b863fb8cbc0c49",
+        "bytes": 820
+      },
+      "geometricAlbedo": 0.18,
+      "line": "GM (km^3/s^2)         =  85.40 +- 1.9     Geometric Albedo    =  0.18"
+    },
+    "titania": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='703'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.803Z",
+        "sha256": "74e6bb12efd1dd0250326407f80101a1b626e1a5999f18ef83c62c4076100d6e",
+        "bytes": 818
+      },
+      "geometricAlbedo": 0.27,
+      "line": "GM (km^3/s^2)         = 222.8  +- 4.1     Geometric Albedo    =  0.27"
+    },
+    "oberon": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='704'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.917Z",
+        "sha256": "f677ccebf6437eebe43d4ad3bf232e8eaa80ba3a553ce4acaa31cd82f0eb8903",
+        "bytes": 819
+      },
+      "geometricAlbedo": 0.24,
+      "line": "GM (km^3/s^2)         = 205.34 +- 5.8     Geometric Albedo    =  0.24"
+    },
+    "triton": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='801'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:44.972Z",
+        "sha256": "94aac193c2e0c13beb26903bcb65a50324a86b8cd229266ad04e76daa948407a",
+        "bytes": 860
+      },
+      "geometricAlbedo": 0.7,
+      "line": "GM (km^3/s^2)           = 1428.495 +- 0.62 Geometric Albedo   = 0.7"
+    },
+    "ceres": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='1%3B'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:45.022Z",
+        "sha256": "51be528a3d320a13b9927c9cb1a3c53d0aa28886cf92e148cc60981b64fdf4d7",
+        "bytes": 1322
+      },
+      "geometricAlbedo": 0.09,
+      "line": "ALBEDO= .090            STYP= C"
+    },
+    "pluto": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='999'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:45.082Z",
+        "sha256": "ff04942f2e4d1ad26fddf8ab7e6e896c877d8fd2f5e3da23542f7c8c90e2507e",
+        "bytes": 1399
+      },
+      "geometricAlbedo": null,
+      "line": null
+    },
+    "charon": {
+      "source": {
+        "url": "https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='901'&OBJ_DATA=%27YES%27&MAKE_EPHEM=%27NO%27",
+        "retrievedAt": "2026-11-12T08:48:45.138Z",
+        "sha256": "a8f8ecf504ce2cef45b3970b9309bafb0c224944aab3ea50e15fcede8d2aaea5",
+        "bytes": 1097
+      },
+      "geometricAlbedo": null,
+      "line": "Radius (km, IAU2015)    = 606 +- 0.5    Geometric albedo      ="
+    }
+  }
+}

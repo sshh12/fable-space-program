@@ -1,0 +1,143 @@
+{
+  "source": {
+    "url": "https://ssd.jpl.nasa.gov/planets/phys_par.html",
+    "retrievedAt": "2026-11-12T08:45:00.055Z",
+    "sha256": "e49a487947295c389ba6e5833dd8fb04b63e826d39f70c123881882096e5e68b",
+    "bytes": 58244
+  },
+  "description": "JPL planetary physical parameters (planets and dwarf planets)",
+  "units": {
+    "radii": "km",
+    "massPlanets": "1e24 kg",
+    "massDwarfPlanets": "1e18 kg",
+    "bulkDensity": "g/cm^3",
+    "siderealRotationDays": "d (negative = retrograde)",
+    "siderealOrbitYears": "yr",
+    "equatorialGravity": "m/s^2",
+    "escapeVelocity": "km/s"
+  },
+  "planets": {
+    "Mercury": {
+      "equatorialRadiusKm": 2440.53,
+      "meanRadiusKm": 2439.4,
+      "mass": 0.330103,
+      "bulkDensity": 5.4289,
+      "siderealRotationDays": 58.6462,
+      "siderealOrbitYears": 0.2408467,
+      "v10": -0.6,
+      "geometricAlbedo": 0.106,
+      "equatorialGravity": 3.7,
+      "escapeVelocity": 4.25
+    },
+    "Venus": {
+      "equatorialRadiusKm": 6051.8,
+      "meanRadiusKm": 6051.8,
+      "mass": 4.86731,
+      "bulkDensity": 5.243,
+      "siderealRotationDays": -243.018,
+      "siderealOrbitYears": 0.61519726,
+      "v10": -4.47,
+      "geometricAlbedo": 0.65,
+      "equatorialGravity": 8.87,
+      "escapeVelocity": 10.36
+    },
+    "Earth": {
+      "equatorialRadiusKm": 6378.1366,
+      "meanRadiusKm": 6371.0084,
+      "mass": 5.97217,
+      "bulkDensity": 5.5134,
+      "siderealRotationDays": 0.99726968,
+      "siderealOrbitYears": 1.0000174,
+      "v10": -3.86,
+      "geometricAlbedo": 0.367,
+      "equatorialGravity": 9.8,
+      "escapeVelocity": 11.19
+    },
+    "Mars": {
+      "equatorialRadiusKm": 3396.19,
+      "meanRadiusKm": 3389.5,
+      "mass": 0.641691,
+      "bulkDensity": 3.934,
+      "siderealRotationDays": 1.02595676,
+      "siderealOrbitYears": 1.8808476,
+      "v10": -1.52,
+      "geometricAlbedo": 0.15,
+      "equatorialGravity": 3.71,
+      "escapeVelocity": 5.03
+    },
+    "Jupiter": {
+      "equatorialRadiusKm": 71492,
+      "meanRadiusKm": 69911,
+      "mass": 1898.125,
+      "bulkDensity": 1.3262,
+      "siderealRotationDays": 0.41354,
+      "siderealOrbitYears": 11.862615,
+      "v10": -9.4,
+      "geometricAlbedo": 0.52,
+      "equatorialGravity": 24.79,
+      "escapeVelocity": 60.2
+    },
+    "Saturn": {
+      "equatorialRadiusKm": 60268,
+      "meanRadiusKm": 58232,
+      "mass": 568.317,
+      "bulkDensity": 0.6871,
+      "siderealRotationDays": 0.44401,
+      "siderealOrbitYears": 29.447498,
+      "v10": -8.88,
+      "geometricAlbedo": 0.47,
+      "equatorialGravity": 10.44,
+      "escapeVelocity": 36.09
+    },
+    "Uranus": {
+      "equatorialRadiusKm": 25559,
+      "meanRadiusKm": 25362,
+      "mass": 86.8099,
+      "bulkDensity": 1.27,
+      "siderealRotationDays": -0.71833,
+      "siderealOrbitYears": 84.016846,
+      "v10": -7.19,
+      "geometricAlbedo": 0.51,
+      "equatorialGravity": 8.87,
+      "escapeVelocity": 21.38
+    },
+    "Neptune": {
+      "equatorialRadiusKm": 24764,
+      "meanRadiusKm": 24622,
+      "mass": 102.4092,
+      "bulkDensity": 1.638,
+      "siderealRotationDays": 0.67125,
+      "siderealOrbitYears": 164.79132,
+      "v10": -6.87,
+      "geometricAlbedo": 0.41,
+      "equatorialGravity": 11.15,
+      "escapeVelocity": 23.56
+    }
+  },
+  "dwarfPlanets": {
+    "Ceres": {
+      "equatorialRadiusKm": 482.1,
+      "meanRadiusKm": 469.7,
+      "mass": 938.416,
+      "bulkDensity": 2.162,
+      "siderealRotationDays": 0.37809042,
+      "siderealOrbitYears": 4.61,
+      "v10": 3.34,
+      "geometricAlbedo": 0.09,
+      "equatorialGravity": 0.27,
+      "escapeVelocity": 0.51
+    },
+    "Pluto": {
+      "equatorialRadiusKm": 1188.3,
+      "meanRadiusKm": 1188.3,
+      "mass": 13024.6,
+      "bulkDensity": 1.853,
+      "siderealRotationDays": -6.3872,
+      "siderealOrbitYears": 247.92065,
+      "v10": -1,
+      "geometricAlbedo": 0.3,
+      "equatorialGravity": 0.62,
+      "escapeVelocity": 1.21
+    }
+  }
+}

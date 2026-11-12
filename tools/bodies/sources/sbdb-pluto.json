@@ -1,0 +1,41 @@
+{
+  "source": {
+    "url": "https://ssd-api.jpl.nasa.gov/sbdb.api?sstr=134340&full-prec=true&phys-par=true",
+    "retrievedAt": "2026-11-12T08:45:00.577Z",
+    "sha256": "e46b91660b378e20999b7651f04a16c35df725914fc817fa62c12602a26dae52",
+    "bytes": 2653
+  },
+  "description": "JPL Small-Body Database: heliocentric osculating elements (ecliptic and equinox of J2000) and physical parameters",
+  "object": {
+    "fullname": "134340 Pluto (1930 BM)",
+    "spkid": "20134340"
+  },
+  "epochJdTdb": 2457588.5,
+  "equinox": "J2000",
+  "orbitSource": "JPL",
+  "solutionDate": null,
+  "units": {
+    "a": "au",
+    "angles": "deg",
+    "n": "deg/d"
+  },
+  "elements": {
+    "a": 39.58862938517124,
+    "e": 0.2518378778576892,
+    "iDeg": 17.14771140999114,
+    "nodeDeg": 110.2923840543057,
+    "argPeDeg": 113.7090015158565,
+    "meanAnomalyDeg": 38.68366347318184,
+    "meanMotionDegPerDay": 0.003956838955553025
+  },
+  "phys": {
+    "H": {
+      "value": "-0.55",
+      "ref": "MPO966248"
+    },
+    "rot_per": {
+      "value": "153.2935",
+      "ref": "LCDB (Rev. 2023-October); Warner et al., 2009"
+    }
+  }
+}

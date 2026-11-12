@@ -1,0 +1,528 @@
+{
+  "description": "NASA NSSDC planetary fact sheets: geometric albedos, atmosphere lines (verbatim), Saturn ring table (verbatim rows)",
+  "geometricAlbedo": {
+    "mercury": {
+      "value": 0.142,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/mercuryfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.246Z",
+        "sha256": "170d9f2d2ba7f7ae322c68d473ccb0b35ab94f4b4aca197bf74fe3b7e4e10f3f",
+        "bytes": 10878
+      }
+    },
+    "venus": {
+      "value": 0.689,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/venusfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.324Z",
+        "sha256": "473c61da0bf7188764ec8ae5b12c0fdc9f922bccd9e3f6b47c885fef0723541c",
+        "bytes": 10558
+      }
+    },
+    "mars": {
+      "value": 0.17,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.487Z",
+        "sha256": "366b0ce9b69cbee370be904956748af954468a41b93dc71a796a986519aa8d74",
+        "bytes": 13261
+      }
+    },
+    "jupiter": {
+      "value": 0.538,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/jupiterfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.569Z",
+        "sha256": "9ac7835ae5387261bc02019a641bbfc8450122ffebebffea5678c3de6c54d0cb",
+        "bytes": 11195
+      }
+    },
+    "saturn": {
+      "value": 0.499,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturnfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.648Z",
+        "sha256": "6d09ba010cacef61c8ae1a1ff137b06e5464e99461faf8f32c107419c474d06d",
+        "bytes": 11257
+      }
+    },
+    "uranus": {
+      "value": 0.488,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uranusfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.728Z",
+        "sha256": "02389139f8345a4328fc8f8956012cb72f691c6c7c2854c03c0b2512a063de81",
+        "bytes": 10941
+      }
+    },
+    "neptune": {
+      "value": 0.442,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/neptunefact.html",
+        "retrievedAt": "2026-11-12T08:45:01.808Z",
+        "sha256": "4b9166f959be2b507eea77a9eef56f4e5679b693ba75151072a28bb228f44328",
+        "bytes": 11071
+      }
+    },
+    "pluto": {
+      "value": 0.52,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/plutofact.html",
+        "retrievedAt": "2026-11-12T08:45:01.887Z",
+        "sha256": "cdf13d454e44e0abf141389a1b0554c48b49fc7b46c9e1feea704b91db8e791f",
+        "bytes": 11594
+      }
+    },
+    "phobos": {
+      "value": 0.07,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.487Z",
+        "sha256": "366b0ce9b69cbee370be904956748af954468a41b93dc71a796a986519aa8d74",
+        "bytes": 13261
+      }
+    },
+    "deimos": {
+      "value": 0.08,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.487Z",
+        "sha256": "366b0ce9b69cbee370be904956748af954468a41b93dc71a796a986519aa8d74",
+        "bytes": 13261
+      }
+    },
+    "charon": {
+      "value": 0.42,
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/plutofact.html",
+        "retrievedAt": "2026-11-12T08:45:01.887Z",
+        "sha256": "cdf13d454e44e0abf141389a1b0554c48b49fc7b46c9e1feea704b91db8e791f",
+        "bytes": 11594
+      }
+    },
+    "io": {
+      "value": "0.62",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/joviansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.196Z",
+        "sha256": "e4c85ba5032167dc7bf44cd9896f8c4f745cbddeae95ea20fad0601e7709c9d8",
+        "bytes": 31904
+      }
+    },
+    "europa": {
+      "value": "0.68",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/joviansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.196Z",
+        "sha256": "e4c85ba5032167dc7bf44cd9896f8c4f745cbddeae95ea20fad0601e7709c9d8",
+        "bytes": 31904
+      }
+    },
+    "ganymede": {
+      "value": "0.44",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/joviansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.196Z",
+        "sha256": "e4c85ba5032167dc7bf44cd9896f8c4f745cbddeae95ea20fad0601e7709c9d8",
+        "bytes": 31904
+      }
+    },
+    "callisto": {
+      "value": "0.19",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/joviansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.196Z",
+        "sha256": "e4c85ba5032167dc7bf44cd9896f8c4f745cbddeae95ea20fad0601e7709c9d8",
+        "bytes": 31904
+      }
+    },
+    "mimas": {
+      "value": "0.6",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.340Z",
+        "sha256": "996611cb9afe83a02171ea1302991980f06eafdd5e15e0cf6829a5d5523e098f",
+        "bytes": 33986
+      }
+    },
+    "enceladus": {
+      "value": "1.0",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.340Z",
+        "sha256": "996611cb9afe83a02171ea1302991980f06eafdd5e15e0cf6829a5d5523e098f",
+        "bytes": 33986
+      }
+    },
+    "tethys": {
+      "value": "0.8",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.340Z",
+        "sha256": "996611cb9afe83a02171ea1302991980f06eafdd5e15e0cf6829a5d5523e098f",
+        "bytes": 33986
+      }
+    },
+    "dione": {
+      "value": "0.7",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.340Z",
+        "sha256": "996611cb9afe83a02171ea1302991980f06eafdd5e15e0cf6829a5d5523e098f",
+        "bytes": 33986
+      }
+    },
+    "rhea": {
+      "value": "0.7",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.340Z",
+        "sha256": "996611cb9afe83a02171ea1302991980f06eafdd5e15e0cf6829a5d5523e098f",
+        "bytes": 33986
+      }
+    },
+    "titan": {
+      "value": "0.22",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.340Z",
+        "sha256": "996611cb9afe83a02171ea1302991980f06eafdd5e15e0cf6829a5d5523e098f",
+        "bytes": 33986
+      }
+    },
+    "iapetus": {
+      "value": "0.05 / 0.5",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.340Z",
+        "sha256": "996611cb9afe83a02171ea1302991980f06eafdd5e15e0cf6829a5d5523e098f",
+        "bytes": 33986
+      }
+    },
+    "miranda": {
+      "value": "0.32",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uraniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.419Z",
+        "sha256": "f39381a02a5ae848d6026c8fc51abfa1ad66e7cf59dee54e5c1e15cf791f063e",
+        "bytes": 12282
+      }
+    },
+    "ariel": {
+      "value": "0.39",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uraniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.419Z",
+        "sha256": "f39381a02a5ae848d6026c8fc51abfa1ad66e7cf59dee54e5c1e15cf791f063e",
+        "bytes": 12282
+      }
+    },
+    "umbriel": {
+      "value": "0.21",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uraniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.419Z",
+        "sha256": "f39381a02a5ae848d6026c8fc51abfa1ad66e7cf59dee54e5c1e15cf791f063e",
+        "bytes": 12282
+      }
+    },
+    "titania": {
+      "value": "0.27",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uraniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.419Z",
+        "sha256": "f39381a02a5ae848d6026c8fc51abfa1ad66e7cf59dee54e5c1e15cf791f063e",
+        "bytes": 12282
+      }
+    },
+    "oberon": {
+      "value": "0.23",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uraniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.419Z",
+        "sha256": "f39381a02a5ae848d6026c8fc51abfa1ad66e7cf59dee54e5c1e15cf791f063e",
+        "bytes": 12282
+      }
+    },
+    "triton": {
+      "value": "0.72",
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/neptuniansatfact.html",
+        "retrievedAt": "2026-11-12T08:45:02.501Z",
+        "sha256": "8b657179ac0e93f57f8b38ca43a346e0ff94d0213f55be86dec76be1cbbb237e",
+        "bytes": 7345
+      }
+    }
+  },
+  "atmosphere": {
+    "venusfact": {
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/venusfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.324Z",
+        "sha256": "473c61da0bf7188764ec8ae5b12c0fdc9f922bccd9e3f6b47c885fef0723541c",
+        "bytes": 10558
+      },
+      "lines": [
+        "Surface pressure: 92 bars",
+        "Surface density: ~65. kg/m 3",
+        "Scale height: 15.9 km",
+        "Average temperature: 737 K (464 C)",
+        "Mean molecular weight: 43.45",
+        "Major: 96.5% Carbon Dioxide (CO 2 ), 3.5% Nitrogen (N 2 )"
+      ]
+    },
+    "marsfact": {
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.487Z",
+        "sha256": "366b0ce9b69cbee370be904956748af954468a41b93dc71a796a986519aa8d74",
+        "bytes": 13261
+      },
+      "lines": [
+        "Surface pressure: 6.36 mb at mean radius (variable from 4.0 to 8.7 mb depending on season)",
+        "Surface density: ~0.016 +/- 0.006 kg/m 3",
+        "Scale height: 11.0 km",
+        "Average temperature: ~214 K (-59 C)",
+        "Mean molecular weight: 43.49",
+        "Major : Carbon Dioxide (CO 2 ) - 95.1% ; Nitrogen (N 2 ) - 2.59%"
+      ]
+    },
+    "jupiterfact": {
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/jupiterfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.569Z",
+        "sha256": "9ac7835ae5387261bc02019a641bbfc8450122ffebebffea5678c3de6c54d0cb",
+        "bytes": 11195
+      },
+      "lines": [
+        "Density at 1 bar: 0.16 kg/m 3",
+        "Temperature at 1 bar: 165 K (-108 C)",
+        "Scale height: 27 km",
+        "Mean molecular weight: 2.22",
+        "Major: Molecular hydrogen (H 2 ) - 89.8% (2.0%); Helium (He) - 10.2% (2.0%)"
+      ]
+    },
+    "saturnfact": {
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturnfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.648Z",
+        "sha256": "6d09ba010cacef61c8ae1a1ff137b06e5464e99461faf8f32c107419c474d06d",
+        "bytes": 11257
+      },
+      "lines": [
+        "Density at 1 bar: 0.19 kg/m 3",
+        "Temperature at 1 bar: 134 K (-139 C)",
+        "Scale height: 59.5 km",
+        "Mean molecular weight: 2.07",
+        "Major: Molecular hydrogen (H 2 ) - 96.3% (2.4%); Helium (He) - 3.25% (2.4%)"
+      ]
+    },
+    "uranusfact": {
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uranusfact.html",
+        "retrievedAt": "2026-11-12T08:45:01.728Z",
+        "sha256": "02389139f8345a4328fc8f8956012cb72f691c6c7c2854c03c0b2512a063de81",
+        "bytes": 10941
+      },
+      "lines": [
+        "Density at 1 bar: 0.42 kg/m 3",
+        "Temperature at 1 bar: 76 K (-197 C)",
+        "Scale height: 27.7 km",
+        "Mean molecular weight: 2.64",
+        "Major: Molecular hydrogen (H 2 ) - 82.5% (3.3%); Helium (He) - 15.2% (3.3%)"
+      ]
+    },
+    "neptunefact": {
+      "source": {
+        "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/neptunefact.html",
+        "retrievedAt": "2026-11-12T08:45:01.808Z",
+        "sha256": "4b9166f959be2b507eea77a9eef56f4e5679b693ba75151072a28bb228f44328",
+        "bytes": 11071
+      },
+      "lines": [
+        "Density at 1 bar: 0.45 kg/m 3",
+        "Temperature at 1 bar: 72 K (-201 C)",
+        "Scale height: 19.1 - 20.3 km",
+        "Mean molecular weight: 2.53 - 2.69",
+        "Major: Molecular hydrogen (H 2 ) - 80.0% (3.2%); Helium (He) - 19.0% (3.2%);"
+      ]
+    }
+  },
+  "saturnRings": {
+    "source": {
+      "url": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/satringfact.html",
+      "retrievedAt": "2026-11-12T08:45:02.045Z",
+      "sha256": "95d44c887d4fa6f235ec0ba0cce2352c6c542243c05cf66e20cdf86ceeddd957",
+      "bytes": 5566
+    },
+    "rows": [
+      [
+        "",
+        "Radius (km)",
+        "Radius/ Eq. radius",
+        "Optical Depth",
+        "Albedo",
+        "Thickness (m)",
+        "Surf. Density (g/cm 2 )",
+        "Eccentricity"
+      ],
+      [
+        "Saturn Equator",
+        "60,268",
+        "1.000",
+        ""
+      ],
+      [
+        "D inner edge",
+        "66,900",
+        "1.110",
+        "10 -5",
+        ""
+      ],
+      [
+        "D outer edge",
+        "74,510",
+        "1.236",
+        "10 -5",
+        ""
+      ],
+      [
+        "C inner edge",
+        "74,658",
+        "1.239",
+        "0.05 - 0.35",
+        "0.12 - 0.30",
+        "5",
+        "1.4 - 5",
+        ""
+      ],
+      [
+        "Titan ringlet",
+        "77,871",
+        "1.292",
+        "",
+        "17",
+        "0.00026"
+      ],
+      [
+        "Maxwell gap/ringlet",
+        "87,491",
+        "1.452",
+        "",
+        "17",
+        "0.00034"
+      ],
+      [
+        "C outer edge",
+        "91,975",
+        "1.526",
+        "0.05 - 0.35",
+        "0.2",
+        "5",
+        "2 - 7",
+        ""
+      ],
+      [
+        "B inner edge",
+        "91,975",
+        "1.526",
+        "0.4 - 2.5",
+        "0.4 - 0.6",
+        "5 - 10",
+        "20 - 100",
+        ""
+      ],
+      [
+        "B outer edge",
+        "117,507",
+        "1.950",
+        "0.4 - 2.5",
+        ""
+      ],
+      [
+        "Cassini division",
+        "",
+        "0 - 0.1",
+        "0.2 - 0.4",
+        "20",
+        "18 - 20",
+        ""
+      ],
+      [
+        "A inner edge",
+        "122,340",
+        "2.030",
+        "0.4 - 1.0",
+        "0.4 - 0.6",
+        "10 - 30",
+        "30 - 40",
+        ""
+      ],
+      [
+        "Encke gap",
+        "133,410",
+        "2.214",
+        ""
+      ],
+      [
+        "Keeler gap",
+        "136,487",
+        "2.265",
+        ""
+      ],
+      [
+        "A outer edge",
+        "136,780",
+        "2.270",
+        "0.4 - 1.0",
+        "0.4 - 0.6",
+        "10 - 30",
+        "20 - 30",
+        ""
+      ],
+      [
+        "F ring",
+        "139,826",
+        "2.320",
+        "0.1",
+        "0.6",
+        "",
+        "0.0026"
+      ],
+      [
+        "G inner edge",
+        "166,000",
+        "2.754",
+        "10 -6",
+        "",
+        "10 5",
+        ""
+      ],
+      [
+        "G outer edge",
+        "173,000",
+        "2.874",
+        "10 -6",
+        ""
+      ],
+      [
+        "E inner edge",
+        "180,000",
+        "2.987",
+        "10 -6",
+        "",
+        "10 7",
+        ""
+      ],
+      [
+        "E outer edge",
+        "480,000",
+        "7.964",
+        "10 -6",
+        "",
+        "10 7",
+        ""
+      ]
+    ]
+  }
+}

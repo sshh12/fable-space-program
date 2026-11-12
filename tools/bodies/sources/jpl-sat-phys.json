@@ -1,0 +1,512 @@
+{
+  "source": {
+    "url": "https://ssd.jpl.nasa.gov/sats/phys_par/",
+    "retrievedAt": "2026-11-12T08:45:00.032Z",
+    "sha256": "9a9c004d950923ea368a8c4815d813c9c232c332d1586402a23b15d9581370d1",
+    "bytes": 96641
+  },
+  "description": "JPL planetary satellite physical parameters (GM from the satellite ephemerides, mean radius) and the planet-only GM values of the same ephemerides",
+  "units": {
+    "gm": "km^3/s^2",
+    "meanRadiusKm": "km"
+  },
+  "satellites": [
+    {
+      "planet": "Earth",
+      "name": "Moon",
+      "code": 301,
+      "gm": 4902.8,
+      "gmSigma": 0.001,
+      "gmRef": "DE440",
+      "meanRadiusKm": 1737.4,
+      "meanRadiusSigmaKm": 0.1
+    },
+    {
+      "planet": "Mars",
+      "name": "Phobos",
+      "code": 401,
+      "gm": 0.0007087,
+      "gmSigma": 6e-7,
+      "gmRef": "MAR097",
+      "meanRadiusKm": 11.08,
+      "meanRadiusSigmaKm": 0.04
+    },
+    {
+      "planet": "Mars",
+      "name": "Deimos",
+      "code": 402,
+      "gm": 0.0000962,
+      "gmSigma": 0.0000028,
+      "gmRef": "MAR097",
+      "meanRadiusKm": 6.2,
+      "meanRadiusSigmaKm": 0.24
+    },
+    {
+      "planet": "Jupiter",
+      "name": "Io",
+      "code": 501,
+      "gm": 5959.91547,
+      "gmSigma": 0.00135,
+      "gmRef": "JUP365",
+      "meanRadiusKm": 1821.49,
+      "meanRadiusSigmaKm": 0.5
+    },
+    {
+      "planet": "Jupiter",
+      "name": "Europa",
+      "code": 502,
+      "gm": 3202.7121,
+      "gmSigma": 0.00181,
+      "gmRef": "JUP365",
+      "meanRadiusKm": 1560.8,
+      "meanRadiusSigmaKm": 0.3
+    },
+    {
+      "planet": "Jupiter",
+      "name": "Ganymede",
+      "code": 503,
+      "gm": 9887.83275,
+      "gmSigma": 0.00247,
+      "gmRef": "JUP365",
+      "meanRadiusKm": 2631.2,
+      "meanRadiusSigmaKm": 1.7
+    },
+    {
+      "planet": "Jupiter",
+      "name": "Callisto",
+      "code": 504,
+      "gm": 7179.2834,
+      "gmSigma": 0.00324,
+      "gmRef": "JUP365",
+      "meanRadiusKm": 2410.3,
+      "meanRadiusSigmaKm": 1.5
+    },
+    {
+      "planet": "Jupiter",
+      "name": "Amalthea",
+      "code": 505,
+      "gm": 0.16456,
+      "gmSigma": 0.00867,
+      "gmRef": "JUP365",
+      "meanRadiusKm": 83.5,
+      "meanRadiusSigmaKm": 3
+    },
+    {
+      "planet": "Jupiter",
+      "name": "Thebe",
+      "code": 514,
+      "gm": 0.03015,
+      "gmSigma": 0.0125,
+      "gmRef": "JUP365",
+      "meanRadiusKm": 49.3,
+      "meanRadiusSigmaKm": 4
+    },
+    {
+      "planet": "Jupiter",
+      "name": "Adrastea",
+      "code": 515,
+      "gm": 0.00014,
+      "gmSigma": 0.0002,
+      "gmRef": "JUP365",
+      "meanRadiusKm": 8.2,
+      "meanRadiusSigmaKm": 4
+    },
+    {
+      "planet": "Jupiter",
+      "name": "Metis",
+      "code": 516,
+      "gm": 0.0025,
+      "gmSigma": 0.0016,
+      "gmRef": "JUP365",
+      "meanRadiusKm": 21.5,
+      "meanRadiusSigmaKm": 4
+    },
+    {
+      "planet": "Jupiter",
+      "name": "Himalia",
+      "code": 506,
+      "gm": 0.15155,
+      "gmSigma": 0.05763,
+      "gmRef": "JUP344",
+      "meanRadiusKm": 85,
+      "meanRadiusSigmaKm": 10
+    },
+    {
+      "planet": "Saturn",
+      "name": "Mimas",
+      "code": 601,
+      "gm": 2.50349,
+      "gmSigma": 0.00014,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 198.2,
+      "meanRadiusSigmaKm": 0.4
+    },
+    {
+      "planet": "Saturn",
+      "name": "Enceladus",
+      "code": 602,
+      "gm": 7.21037,
+      "gmSigma": 0.00009,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 252.1,
+      "meanRadiusSigmaKm": 0.2
+    },
+    {
+      "planet": "Saturn",
+      "name": "Tethys",
+      "code": 603,
+      "gm": 41.21353,
+      "gmSigma": 0.00031,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 531.1,
+      "meanRadiusSigmaKm": 0.6
+    },
+    {
+      "planet": "Saturn",
+      "name": "Dione",
+      "code": 604,
+      "gm": 73.11607,
+      "gmSigma": 0.00005,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 561.4,
+      "meanRadiusSigmaKm": 0.4
+    },
+    {
+      "planet": "Saturn",
+      "name": "Rhea",
+      "code": 605,
+      "gm": 153.94175,
+      "gmSigma": 0.00041,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 763.5,
+      "meanRadiusSigmaKm": 0.6
+    },
+    {
+      "planet": "Saturn",
+      "name": "Titan",
+      "code": 606,
+      "gm": 8978.1371,
+      "gmSigma": 0.00025,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 2574.76,
+      "meanRadiusSigmaKm": 0.02
+    },
+    {
+      "planet": "Saturn",
+      "name": "Hyperion",
+      "code": 607,
+      "gm": 0.37049,
+      "gmSigma": 0.00005,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 135,
+      "meanRadiusSigmaKm": 4
+    },
+    {
+      "planet": "Saturn",
+      "name": "Iapetus",
+      "code": 608,
+      "gm": 120.51511,
+      "gmSigma": 0.00242,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 734.3,
+      "meanRadiusSigmaKm": 2.8
+    },
+    {
+      "planet": "Saturn",
+      "name": "Phoebe",
+      "code": 609,
+      "gm": 0.55479,
+      "gmSigma": 0.00108,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 106.5,
+      "meanRadiusSigmaKm": 0.7
+    },
+    {
+      "planet": "Saturn",
+      "name": "Janus",
+      "code": 610,
+      "gm": 0.12662,
+      "gmSigma": 0.00007,
+      "gmRef": "SAT415",
+      "meanRadiusKm": 89.2,
+      "meanRadiusSigmaKm": 0.8
+    },
+    {
+      "planet": "Saturn",
+      "name": "Epimetheus",
+      "code": 611,
+      "gm": 0.03514,
+      "gmSigma": 0.00002,
+      "gmRef": "SAT415",
+      "meanRadiusKm": 58.2,
+      "meanRadiusSigmaKm": 1.2
+    },
+    {
+      "planet": "Saturn",
+      "name": "Helene",
+      "code": 612,
+      "gm": 0.00048,
+      "gmSigma": 0.00002,
+      "gmRef": "SAT441",
+      "meanRadiusKm": 18,
+      "meanRadiusSigmaKm": 0.4
+    },
+    {
+      "planet": "Saturn",
+      "name": "Atlas",
+      "code": 615,
+      "gm": 0.00037,
+      "gmSigma": 0.00001,
+      "gmRef": "SAT415",
+      "meanRadiusKm": 15.1,
+      "meanRadiusSigmaKm": 0.8
+    },
+    {
+      "planet": "Saturn",
+      "name": "Prometheus",
+      "code": 616,
+      "gm": 0.01071,
+      "gmSigma": 0.00001,
+      "gmRef": "SAT415",
+      "meanRadiusKm": 43.1,
+      "meanRadiusSigmaKm": 1.2
+    },
+    {
+      "planet": "Saturn",
+      "name": "Pandora",
+      "code": 617,
+      "gm": 0.00926,
+      "gmSigma": 0.00002,
+      "gmRef": "SAT415",
+      "meanRadiusKm": 40.6,
+      "meanRadiusSigmaKm": 1.5
+    },
+    {
+      "planet": "Saturn",
+      "name": "Pan",
+      "code": 618,
+      "gm": 0.00028,
+      "gmSigma": 0.00014,
+      "gmRef": "SAT415",
+      "meanRadiusKm": 14,
+      "meanRadiusSigmaKm": 1.2
+    },
+    {
+      "planet": "Uranus",
+      "name": "Ariel",
+      "code": 701,
+      "gm": 83.5,
+      "gmSigma": 1.4,
+      "gmRef": "URA111",
+      "meanRadiusKm": 578.9,
+      "meanRadiusSigmaKm": 0.6
+    },
+    {
+      "planet": "Uranus",
+      "name": "Umbriel",
+      "code": 702,
+      "gm": 85.1,
+      "gmSigma": 1.9,
+      "gmRef": "URA111",
+      "meanRadiusKm": 584.7,
+      "meanRadiusSigmaKm": 2.8
+    },
+    {
+      "planet": "Uranus",
+      "name": "Titania",
+      "code": 703,
+      "gm": 226.9,
+      "gmSigma": 4.1,
+      "gmRef": "URA111",
+      "meanRadiusKm": 788.9,
+      "meanRadiusSigmaKm": 1.8
+    },
+    {
+      "planet": "Uranus",
+      "name": "Oberon",
+      "code": 704,
+      "gm": 205.3,
+      "gmSigma": 5.8,
+      "gmRef": "URA111",
+      "meanRadiusKm": 761.4,
+      "meanRadiusSigmaKm": 2.6
+    },
+    {
+      "planet": "Uranus",
+      "name": "Miranda",
+      "code": 705,
+      "gm": 4.3,
+      "gmSigma": 0.2,
+      "gmRef": "URA111",
+      "meanRadiusKm": 235.8,
+      "meanRadiusSigmaKm": 0.7
+    },
+    {
+      "planet": "Neptune",
+      "name": "Triton",
+      "code": 801,
+      "gm": 1428.49546,
+      "gmSigma": 0.61603,
+      "gmRef": "NEP097",
+      "meanRadiusKm": 1352.6,
+      "meanRadiusSigmaKm": 2.4
+    },
+    {
+      "planet": "Neptune",
+      "name": "Nereid",
+      "code": 802,
+      "gm": 0,
+      "gmSigma": 0,
+      "gmRef": "NEP101",
+      "meanRadiusKm": 170,
+      "meanRadiusSigmaKm": 25
+    },
+    {
+      "planet": "Neptune",
+      "name": "Naiad",
+      "code": 803,
+      "gm": 0.00853,
+      "gmSigma": 0.0048,
+      "gmRef": "NEP097",
+      "meanRadiusKm": 29,
+      "meanRadiusSigmaKm": 6
+    },
+    {
+      "planet": "Neptune",
+      "name": "Thalassa",
+      "code": 804,
+      "gm": 0.02359,
+      "gmSigma": 0.00522,
+      "gmRef": "NEP097",
+      "meanRadiusKm": 40,
+      "meanRadiusSigmaKm": 8
+    },
+    {
+      "planet": "Neptune",
+      "name": "Despina",
+      "code": 805,
+      "gm": 0.11673,
+      "gmSigma": 0.25263,
+      "gmRef": "NEP097",
+      "meanRadiusKm": 74,
+      "meanRadiusSigmaKm": 10
+    },
+    {
+      "planet": "Neptune",
+      "name": "Galatea",
+      "code": 806,
+      "gm": 0.1899,
+      "gmSigma": 0.76278,
+      "gmRef": "NEP097",
+      "meanRadiusKm": 79,
+      "meanRadiusSigmaKm": 12
+    },
+    {
+      "planet": "Neptune",
+      "name": "Larissa",
+      "code": 807,
+      "gm": 0.25484,
+      "gmSigma": 3.1223,
+      "gmRef": "NEP097",
+      "meanRadiusKm": 96,
+      "meanRadiusSigmaKm": 7
+    },
+    {
+      "planet": "Neptune",
+      "name": "Proteus",
+      "code": 808,
+      "gm": 2.58342,
+      "gmSigma": 2.4207,
+      "gmRef": "NEP097",
+      "meanRadiusKm": 208,
+      "meanRadiusSigmaKm": 8
+    },
+    {
+      "planet": "Pluto",
+      "name": "Charon",
+      "code": 901,
+      "gm": 106.1,
+      "gmSigma": 0.3,
+      "gmRef": "PLU060",
+      "meanRadiusKm": 606,
+      "meanRadiusSigmaKm": 0.5
+    },
+    {
+      "planet": "Pluto",
+      "name": "Nix",
+      "code": 902,
+      "gm": 0.0015,
+      "gmSigma": 0.0005,
+      "gmRef": "PLU060",
+      "meanRadiusKm": 18,
+      "meanRadiusSigmaKm": 1
+    },
+    {
+      "planet": "Pluto",
+      "name": "Hydra",
+      "code": 903,
+      "gm": 0.002,
+      "gmSigma": 0.0003,
+      "gmRef": "PLU060",
+      "meanRadiusKm": 18.5,
+      "meanRadiusSigmaKm": 1
+    },
+    {
+      "planet": "Pluto",
+      "name": "Kerberos",
+      "code": 904,
+      "gm": null,
+      "gmSigma": null,
+      "gmRef": "PLU060",
+      "meanRadiusKm": 6,
+      "meanRadiusSigmaKm": 1
+    },
+    {
+      "planet": "Pluto",
+      "name": "Styx",
+      "code": 905,
+      "gm": null,
+      "gmSigma": null,
+      "gmRef": "PLU060",
+      "meanRadiusKm": 5.2,
+      "meanRadiusSigmaKm": 1
+    }
+  ],
+  "planetGm": {
+    "Earth": {
+      "gm": 398600.436,
+      "sigma": 0.001,
+      "ref": "DE440"
+    },
+    "Mars": {
+      "gm": 42828.37362,
+      "sigma": 0.0008,
+      "ref": "MAR097"
+    },
+    "Jupiter": {
+      "gm": 126686531.9,
+      "sigma": 0.42,
+      "ref": "JUP365"
+    },
+    "Saturn": {
+      "gm": 37931206.23,
+      "sigma": 0.24,
+      "ref": "SAT441"
+    },
+    "Uranus": {
+      "gm": 5793951.3,
+      "sigma": 4.4,
+      "ref": "URA111"
+    },
+    "Neptune": {
+      "gm": 6835099.97,
+      "sigma": 9.63,
+      "ref": "NEP097"
+    },
+    "Pluto": {
+      "gm": 869.3,
+      "sigma": 0.4,
+      "ref": "PLU060"
+    }
+  }
+}
