@@ -1,6 +1,6 @@
 {
  "v": 1,
- "uploadedAt": "2026-11-12T09:53:52.508Z",
+ "uploadedAt": "2026-11-12T09:54:24.978Z",
  "sets": {
   "moon": {
    "type": "tiles",
@@ -126,6 +126,22 @@
     {
      "hash": "89b9f814026e6070bb1af7c33371a569",
      "bytes": 134517378
+    }
+   ],
+   "contentHash": null
+  },
+  "assets": {
+   "type": "files",
+   "index": "d21819341225752484e8e6e95fa76009",
+   "indexBytes": 17280,
+   "packs": [
+    {
+     "hash": "8db2afd4da5ba833ea4f70d87031be6d",
+     "bytes": 90519011
+    },
+    {
+     "hash": "ec2be8fdcb5d44fc653b84831b6b479d",
+     "bytes": 45077439
     }
    ],
    "contentHash": null
