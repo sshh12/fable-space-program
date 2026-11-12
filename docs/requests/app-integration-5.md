@@ -1,4 +1,4 @@
-Status: open (follow-up below: the displays; the cabin itself was resolved in 27fb5c8)
+Status: resolved (cockpit: 27fb5c8 the cabin, 38da0ee the displays; core: nothing to change, see "Core half")
 From: app-integration-v1
 Owner path: src/render/cockpit (how the interior takes local lights) and src/render/core (deferred local lights; shared-code maintainer)
 Blocking: no
@@ -52,3 +52,26 @@ not: both pages are a flat peach / cream field with the page content faint in it
 where the same displays before ignition are dark with legible pages (`out/screens/app/pad-cockpit.png`). The plume's
 lights (or whatever gives the peach) still reach the display surface or its cover glass. Requested: the same rule for
 the displays' record (and their glass) as for the cabin's.
+
+## Core half (shared-code maintainer, 2026-11-11)
+Nothing changes in `src/render/core`, and nothing needs to:
+
+- The deferred local-light pass lights a pixel by its G-buffer record alone, and that is right for everything
+  outside the cabin (the hull, the pad, the ground under a plume). A cabin pixel is the cockpit's record: since
+  27fb5c8 the interior writes a black, fully rough metal with ambient occlusion 0 and carries its whole light in
+  the emission target, so no light of any feature adds to it, the core's sun and planetshine included.
+- The follow-up (the two display pages washed out peach in the climb) was the one interior surface that still
+  wrote another record: the displays were `MATERIAL_ID.display`, which the core lights as a glossy dielectric
+  with every local light (correct for a display on an exterior panel). The cockpit changed that in 38da0ee
+  (`src/render/cockpit/shaders.ts`, the display fragment: the interior's record, the image and the sun on the
+  panel complete in the emission). The cover glass is drawn by the cockpit's own transparent shader, which does
+  not sample `FrameContext.lights`.
+- A flag or mask on `LocalLight` (the request's second way) would be a contract field plus a mask in the light
+  uniform and in every forward-lit shader that includes `local_lights`; with both interior records inert it would
+  have no pixel left to act on, so it is not added.
+
+To check: `tests/browser/app/app.spec.ts` "a short real flight" (`out/screens/app/climb-cockpit-1km.png`: the
+display pages legible as in `pad-cockpit.png`), or the lab `/labs/integration/?scene=ascent&throttle=1` with
+`window.__integration.sitInCockpit(0, 0)`. If a surface of the cabin still takes the plume's colour there, it
+writes a record of its own: name it here and reopen.
+
