@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 189d1e2)
 From: app-integration-v1
 Owner path: src/render/terrain (tile pool size / LOD selection at 1440p; terrain-render)
 Blocking: no   (the app's perf spec measures without waiting for idle meanwhile; a deterministic screenshot at 1440p cannot be taken)
@@ -57,3 +57,45 @@ ground cover), next to the cockpit's 0.7-1.2 ms in the chase view (request app-i
 The app's loading screen recognised the full pool and let go with the parents drawn (first run); with the pool
 work it waits for `isIdle()` like everywhere else (second run: 31.9 s to the revealed view at 1440p, level 20
 under the vehicle).
+
+## Resolution (shared-code maintainer for src/render/terrain this round)
+The cause was the vessel observer, not the pool: `buildLodObservers` gave every vessel near a surface its bounding
+sphere about the VES origin as `radiusBias`, which is 101 m for the stack on the pad (the origin is the capsule,
+100 m above the base). The level-20 ring around it alone asked for 628 of the 1,280 tile layers; the whole view
+for about 1,880. Four changes, all in the working tree's HEAD:
+
+1. `src/camera/listener.ts` `vesselGroundObserver`: a vessel observer is the point at the vessel's foot (on the
+   vertical through its centre of mass, at the height of its lowest part) with the radius of its footprint as the
+   bias, from the parts' `bounds` cylinders in their attitude: 9.3 m for the stack, 9.4 m for the lander on its
+   legs, the length for a stage lying on its side. The pad view at 1440p now asks for 1,170 tiles with the pinned
+   levels (ratio 0.92 of the pool).
+2. `src/render/terrain/streamer.ts`, `lod.ts`, `feature.ts`: the terrain measures its live demand on each pool
+   (`TileStreamer.demand`) and shrinks the level ranges by a factor on K (`lodScale`, `fitLodScale`) when it
+   passes 0.92 of a pool, to 0.86; it grows back below 0.78. K follows smoothly as before, so the ranges morph:
+   no pops. At 2560 x 1440 on the pad it rests between 1.0 and 0.95 (the view is at the edge of the pool).
+3. A frame looks for an evictable tile once per kind of layer, not once per waiting tile (that search was the
+   2.6 ms p50 / 3.3 ms p99 of streamer time at 1440p), and bakes are held back while finished tiles wait.
+4. The third option of your request as the safety net: a tile that has waited 240 frames for a layer is given
+   up, its parent stands in, it is not asked for again for 900 frames (`StreamStats.droppedTotal`). With 1 and 2
+   it does not happen on the pad (0 in the spec).
+
+Measured (`tests/browser/integration/pad-pools.spec.ts`: the app at 2560 x 1440,
+`/?capture=0&scale=1&governor=off&mute=1`, chase view on the pad, 300 frames at rest; numbers in
+`out/core-support/pad-pools.json`; before = the same probe on the tree as it was at 22:00):
+
+| | before | after |
+|---|---|---|
+| `isIdle()` / `waitIdle` | never | reached (the harness's `waitIdle` returns) |
+| tiles waiting for a layer | 380 for ever, `stalledTotal` + 114,000 per 300 frames | 0 |
+| terrain hooks, main thread p50 / p99 | 5.27 / 6.74 ms | 1.41 / 2.10 ms |
+| streamer of it | 2.63 / 3.25 ms | 0.025 / 0.04 ms |
+| selection / ground cover of it | 1.13 / 0.96 ms (p50) | 0.59 / 0.52 ms (p50) |
+| app frame, main thread p50 / p99 | 8.0 / 11.0 ms | 3.4 / 4.8 ms (line: 6) |
+
+Still over "quadtree + cascades <= 1 ms": 1.4 ms p50 of terrain hooks at 1440p (selection 0.59, ground cover
+0.52, the rest 0.3). The crack-free geomorphing, the VRAM line (pools unchanged, 1.097 GB) and "no pops" are as
+they were: `tests/browser/terrain` (pops, integrity, views) re-run on the final code, and the selection's
+crack test covers observers with different caps (`tests/unit/terrain-render/pools.test.ts`).
+
+New for you: `window.__app.terrainStats().stream` carries `stalled`, `droppedTotal`, `demandTiles`,
+`demandImages`, `lodScale`. The app's own recognition of a full pool can go.
