@@ -67,8 +67,7 @@ export interface ChaseRigOptions {
   frameBody?: boolean;
   /**
    * At a launch pad with a flame trench, look from CHASE_TRENCH_OFFSET off the trench's axis by default
-   * (request vfx-11). Needs `frameBody`. Default while the view is being proved in the game: false, unless
-   * the page's server was started with VITE_CORE_PAD_VIEW=1.
+   * (request vfx-11; default true). Needs `frameBody`. False: from the vessel's starboard side, as before.
    */
   padView?: boolean;
   /**
@@ -120,8 +119,6 @@ export const CHASE_TRENCH_OFFSET = 70 * DEG;
 export const CHASE_TOWER_CLEAR = 50 * DEG;
 /** The pad's default view holds within this distance of the pad, m: on it and through the first minute of a launch. */
 export const CHASE_PAD_RANGE = 12_000;
-/** The default of `ChaseRigOptions.padView` (the env of the page's Vite server; undefined elsewhere). */
-const PAD_VIEW_DEFAULT = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_CORE_PAD_VIEW === '1';
 const MAX_ELEVATION = 89 * DEG;
 
 type RefMode = 'surface' | 'orbit';
@@ -270,7 +267,7 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
   const clearance = opts.clearance ?? 2.5;
   const baseElevation = opts.elevation ?? 12 * DEG;
   const frameBody = opts.frameBody ?? true;
-  const padView = frameBody && (opts.padView ?? PAD_VIEW_DEFAULT);
+  const padView = frameBody && (opts.padView ?? true);
   const distanceRadii = opts.distanceRadii ?? CHASE_DISTANCE_PER_RADIUS;
 
   let initialised = false;
