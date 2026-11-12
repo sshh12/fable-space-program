@@ -48,6 +48,22 @@ the log are the hand-off proper.
   bakes, one body at a time, and deleted after each is verified. 8-bit sources now keep their mips in
   float16 (half the intermediate disk).
 
+- 02:57 (10:57 UTC) the bake slot came free (site-bake's staging job held it 2 h). Batch 1 (23 bodies):
+  17 baked in 12 minutes, Callisto failed (odd grid without mips: regridded now), five refused by the disk
+  floor (24.2 GB free: other packages' data/packs 14 GB and caches). Looked at every sheet: orientation right
+  everywhere (Occator, Pele and Loki, Tros, Galileo Regio, Valhalla, Xanadu, Herschel, Europa's trailing
+  hemisphere); found (a) bright icy bodies clipping at white (Rhea, Ganymede, Tethys): the gain is now
+  capped so at most 0.5 % of a body reaches the 8-bit ceiling; (b) Iapetus' mosaic equalised region by
+  region (Cassini Regio mid-grey): restored from its own low-frequency pattern by percentile rank
+  (`albedo.lowFrequency`), now 6.4 x darker than the bright side, as the real body.
+- 03:10 batch 2 (albedo re-runs, Callisto, Dione): the clean-after could not delete memory-mapped files on
+  Windows (fixed: `release`); stopped by me at the disk floor (24 GB), cleaned in a fresh process (31 GB
+  free). Step fingerprints no longer include the landmark tests.
+- 03:20 batch 3: Triton, Charon, Venus, Pluto, Mercury, Mars with `--split-passes` (height pass, clean,
+  albedo pass, clean; one source at a time; Mercury's 166 m and Mars' 232 m mono maps decimated by 2 into an
+  8-bit copy so their 4.25 GB downloads are deleted at once). Unit tests: 55 of 55 (19 tile sets through the
+  real TerrainProvider, one body at a time).
+
 ## 1. What consumers get
 
 ### Tile sets `data/tiles/<id>/` (served at `/tiles/<id>/`), one per solid body
