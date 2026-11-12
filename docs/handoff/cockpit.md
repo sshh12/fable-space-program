@@ -6,7 +6,7 @@ the physical attitude indicator, the window glass, the cabin light and the crew-
 Owned paths: `src/render/cockpit/**`, `data/defs/visuals/cockpits/**`, `labs/cockpit/**`,
 `tests/browser/cockpit/**`, `tests/unit/cockpit/**`, `tools/cockpit/**`, `public/assets/cockpit/**`, this file.
 
-State: built, reviewed, fixed, reworked in visual rounds 1 to 5 (sections 7 to 11: what the critics and the user
+State: built, reviewed, fixed, reworked in visual rounds 1 to 6 (sections 7 to 12: what the critics and the user
 listed and what was done about each item, what is still open). Sections 1-6 describe the package as it is now.
 
 ## 1. API
@@ -909,3 +909,94 @@ and contact shadows in every lamp-lit close view, photographic surface detail on
 goods that are sewn. What holds it under 8: the well stipple in every sunlit window (not the cockpit's), entry
 panes without structure, an even night view from the seat, the door's smears, no crew, hard parts that are still
 chamfered boxes with good texture rather than machined shapes.
+
+## 12. Visual close-out, round 6 (2026-11-12)
+
+Critic's verdict on round 5 (`docs/qa/wave2/cockpit.r5.combined.json`): photo 6, artifact 6.5, 17 majors, 14
+minors. The lead's order for this round: the view the player has, the sun patch, the new faults, night from
+the seat, the older open items, and three items to track that belong to other packages.
+
+### 12.1 The view the player has: the default eye point is the cockpit's own data
+- First attempt, taken back by the lead: `cameras.cockpit.seat` in the vehicle definition set to `plt`
+  (commit 01c4d2f). That field is inside the simulation's hashed state (mission golden, the codec's corpus of
+  old saves); the lead's records agent reverted it. The cockpit does not write under `data/defs/vehicles`.
+- What stands: `data/defs/visuals/cockpits/kestrel.json` `"camera": { "defaultSeat": "plt" }`, validated
+  against the mould line's seats (`validateLayout`); `cockpitDefaultSeat(defs, cockpitId, fallback)` and
+  `cockpitSeatIds(defs, cockpitId)` in `src/render/cockpit/layout.ts` (exported from the package). The
+  craft's own camera seat is the fallback when a layout names none.
+- Seat source per picture:
+  - `world-*.png` (tests/browser/cockpit/world.ts), `lab/*.png`, `closeup-*.png`, `hatch-mechanism.png`,
+    `look-*.png`, `perf-1440p-leo-seat.png`, `attribution/*.png` (the cockpit lab): **the layout's
+    `camera.defaultSeat`** (the pilot's centre couch), except where a recipe places the eye by an absolute
+    point (`world-moon-horizon`, `hatch-mechanism`).
+  - `app-*.png` (the real app): **the rig's seat**. The rig (src/camera, not the cockpit's) takes the craft's
+    own camera seat, the commander's, until request `cockpit-21` is answered; `app.spec.ts` is aimed for
+    either couch and logs which one each picture was taken from and why.
+- Unit: the centre couch's line of sight through BOTH forward windows and to all three displays
+  (`geometry.test.ts`), the default seat and its fallback.
+- Lab scenes, world recipes and the perf view are aimed for the centre couch at the rig's rest pitch (20 deg).
+
+### 12.2 The sun patch
+- Edge: wide penumbrae were filtered with a 7 x 7 grid whose taps lay up to six texels apart (stacked copies
+  of the edge: the shards). Now: the grid up to a radius of about seven texels, beyond that the open share of
+  16 gathers of 4 texels (64 depths) spread over the penumbra's disc, blended between five and eight texels,
+  the gathers turned per surface point and per frame so the temporal resolve averages them (fixed taps showed
+  as a comb beside a bezel in the first pass of this round). The floor at grazing incidence follows 1 / NoL
+  down to NoL 0.12 (was 0.25).
+- Clipping: `sunShoulder` (shaders.ts): sunlit luminance above 0.7 of the frame's exposed white is laid on a
+  logarithmic shoulder (each stop adds 0.4 ln 2 of the knee); not in the cabin probe (the patch's bounce is its
+  true light). First pass (knee 0.8, gain 0.5), `world-leo-pilot-seat.png`: bezel in the patch 197 (round 5:
+  245), screen 190 with its page readable, no pixel at 250 or more in the patch.
+
+### 12.3 New faults
+- Harness: adjusters, guide bars and anchor plates are placed by `threaded()` on the strap's own top surface
+  (frame from the band's across and along directions, lifted clear of every band sample under the fitting and
+  of the pad beside it). They roll and lift with the band.
+- Penetration check (`penetration.ts`): every sample of a thin overlay (webbing, hook-and-loop, washers), plus
+  the centre and edge mid-points of each of its triangles, is tested against the solid parts of its OWN
+  assembly with a tolerance of 0.8 mm (`overlayTolerance`). It found two more faults, both fixed:
+  the stowage bags' straps dipped up to 6.4 mm into the cloth (the "zigzag" strap edges of the critic's
+  minors): straps, zip and flap now take their vertices from the cover's own mesh rows / columns over the
+  highest vertex under them, and the pack is flat across a strap; the attitude indicator's rate scales and
+  needles lay half under its retaining ring: moved outside the ring. Zero pairs now (`penetration.test.ts`,
+  with a test of the check itself on a band through / under a fitting).
+- Moire: detail layers are read half a level coarser and their relief and three quarters of their tone fade
+  out between a footprint of two and six texels of the finest level (`materialDetail`).
+
+### 12.4 Night from the seat
+- Each lamp's first bounce comes from its own pool: the point where the lens normal meets the cabin (BVH ray
+  at upload, `CABIN.pools`), a Lambertian source of the lamp's flux times the surface's reflectance, added
+  per vertex with the vertex's baked openness (`cabinVertexLight`). The probe's bounce light, which has no
+  position, is lowered by the lamps' share of the first bounce (`cabinAmb[0].x`, written by the ambient pass).
+- The beam's skirt is narrower (0.22 of the peak, was 0.3) and reaches a little behind the lens's plane (the
+  wall the fixture stands on is lit beside it).
+- Honest state: from the seat the night cabin has a gradient (darker corners by the windows) but is still
+  broadly lit; a key one stop lower was not tried.
+
+### 12.5 Older items
+- Hatch door bands: the pocket floor has cells of about a centimetre (24 rings, twice the points round the
+  loop). `hatch-mechanism.png`, `attribution/night-hatch-lamp-shadows.png`: no wedges; a faint mottling stays.
+- Apex starburst: `MeshBuilder.disc` builds rings whose vertex counts follow the circumference and stitches
+  neighbours by angle (near-square cells to the centre). New view `look-up-docking-hatch.png`.
+- Members in mid-air: ring frames end in a riveted fitting where they stop at an opening's surround (the bars
+  the critic took for stringers); the flood's swivel barrel is centred on the housing (it stood out 3 cm to one
+  side as an open tube end); every aluminium post has a collar at the wall.
+- Hatch area: lockers hang on mounting ears bolted to posts. Not done: rails with rollers, gearbox, the dark
+  panel's identity, varied metals.
+- Pad view: floods on (they were); there is no pad structure to frame (launch-site / vehicle data).
+- Crew figures: left out, as the lead allows. Instead: on about a third of the liner's hook-and-loop squares
+  a roll of tape, a pen light or a note pad with a hand-written line (group `stowed`, shell.ts). Cable looms,
+  an albedo-tint channel and stronger edge wear were not done.
+
+### 12.6 Not the cockpit's (tracked)
+- Pebbled grain on sunlit window wells: render core, request `cockpit-10`, open.
+- Flat pink re-entry panes: vfx's half of `cockpit-19`, open (`world-reentry-plasma.png`).
+- The Earth in the windows as a blue card with popcorn clouds: request `cockpit-20` filed (atmosphere-clouds)
+  with `world-leo-pilot-seat.png` and `world-leo-earth-side-window.png`.
+- The rig's default seat and the cycle-seat action: request `cockpit-21` (src/camera, src/input, src/app).
+- `qa-leo`'s attitude points the forward windows at space (`app-leo-seat.png`: black panes); noted in
+  `cockpit-18` for the lead (scenario data).
+
+### 12.7 Performance (1440p, perf spec, GPU kept busy by 7 ms of ballast)
+The perf spec now measures the same lines with the cabin's sun map rendered in every frame
+(`ABLATE.sunMapCache`), as it is while the vessel turns, and asserts both states.
