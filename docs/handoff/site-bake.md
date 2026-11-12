@@ -81,6 +81,83 @@ coarsely), `sources.height.credit` / `landSurvey` / `attribution` (manifest sour
 region's land source), `sources.albedo.deshadeFitMinHeightM` (ground used for the regional de-shading fit; default
 1500 m as at Ka Lae: on Madrakah's desert coast every height is sparsely vegetated).
 
+## 3. Pads
+
+### The rule and how it was applied
+
+`bake.py pads` (`tools/bake/earth/padresolve.py`) takes the site id, the nominal point, the region and the pads
+that stay where they are as arguments and reads no site file. The ground is the BAKED tile set of the region
+(staged or live): heights are the bilinear interpolation of the level-12 vertex grid (the collision surface and
+the rendered surface), water is height below 0 m or water mask at least 50 %, land cover the level-12 classes;
+global level 7 beyond the finest coverage.
+
+Gates per pad (the brief's "flat, dry, clear of the shore", with the numbers of the rule that placed LC-1, from the
+region's `siteResolution`; both regions use LC-1's: 500 m disc, slope < 4 deg, relief <= 12 m, shore >= 600 m,
+height >= 15 m, 80 %, latitude < 20.5 deg):
+
+- FLAT: the least-squares plane through the heights of the 500 m disc (10 m grid) is less than 4 deg steep and no
+  point lies more than 12 m from it.
+- DRY: the centre and at least 80 % of the disc are bare, dry ground: WorldCover "bare / sparse vegetation" or
+  "moss and lichen" (site.py's `ALLOWED_WC`, the test that put LC-1 on lava), stored by the regional land cover as
+  `bareRock`, `sand` or `sparseScrub`. Never water, wetland, trees, crops, grass or built-up.
+- CLEAR OF THE SHORE: no water (sea or inland) within 600 m (10 m grid), natural height at least 15 m; latitude
+  below 20.5 deg.
+- REPORTED, not gated: LC-1's site-selection test, the open-ocean sector (every azimuth 60-130 deg reaches the sea
+  within 6 km, then no land out to 100 km).
+
+Why the ocean sector is not a gate (measured on Ka Lae's tiles, 60 m gridded exploration within 45 km of LC-1):
+every test of LC-1's rule together admits NO pad but LC-1 itself (LC-1 sits exactly at the 80 % bare-ground
+bound); the ocean sector without the land-cover test admits 5. The design's own words for the pad rule are
+"flat, dry, clear of the shore" (brief; fleet-docking 5.1) and the brief's acceptance names the slope and distance
+rules only. "Dry" was first read as "not water or wetland": that run put 15 pads on pasture and tree cover around
+LC-1 (`out/bake/earth/site-bake/quality-ka-lae-overview.png` of 01:22, superseded); LOOKING at it settled the
+reading: dry is LC-1's bare-ground test, and the brief's clause "if no acceptable ground exists near the nominal
+point, move along the coast and say so" applies.
+
+Spacing (ARCHITECTURE 9.3: heavy 2.5 km, medium 1.5 km, light 1 km between pads of a class): each pad owns a disc
+of half its class spacing and no two discs overlap, so pads of two classes are at least the mean of their
+spacings apart (heavy-medium 2.0 km, heavy-light 1.75 km, medium-light 1.25 km). The brief gives same-class
+spacings only; this rule keeps every flatten blend disc apart (section 6).
+
+Placement: the fixed pads first (LC-1 at Ka Lae, as given: `--fixed lc-1:heavy:18.987556:-155.603239:21.62`), then
+heavy, medium, light, each on the passing point of a 30 m grid nearest to the nominal point that keeps the spacing
+to every pad placed before it. A gridded pre-filter (necessary conditions only: height, 30 m shore distance, plane
+slope + 0.5 deg, plane RMS <= the relief limit, bare share - 5 %, latitude, search radius) orders the candidates;
+each is then evaluated exactly. Deterministic: the same tiles and arguments give byte-identical pads (checked: the
+Ka Lae run before and after the resolver was sped up is identical).
+
+## 4. The Madrakah regional bake
+
+`data/defs/regions/earth-madrakah.json`: a disc of 100 km about the nominal point 19.0 N 57.8 E (4 km inside Ras
+Madrakah; the pads lie within 6 km of it), levels 8-12 all at 100 km, feather 5 km, one margin tile, height scales
+as Ka Lae (0.125 m at 8-10, 0.0625 m at 11-12), the existing pipeline unchanged apart from the region options of
+section 2.
+
+| Level | Coverage (face 2) | Tiles | Vertex / texel at the site | sourceCoverage |
+|---|---|---|---|---|
+| 8 | x 43..51, y 176..184 | 81 | 141 m | 15 tiles in 5 rects |
+| 9 | x 87..102, y 353..366 | 224 | 70 m | 43 tiles in 11 rects |
+| 10 | x 175..203, y 707..732 | 754 | 35 m | 147 tiles in 23 rects |
+| 11 | x 352..404, y 1417..1464 | 2,544 | 17.6 m | 538 tiles in 45 rects |
+| 12 | x 706..808, y 2835..2928 | 9,682 | 8.8 m | none (the 30 m source is no finer than level 11's 17.6 m vertices: ARCHITECTURE 10.2, the level-11 procedural detail continues) |
+
+Sources and licences (all credited in the manifest's `sources` and `attribution`):
+
+| Layer | Source | Resolution | Licence |
+|---|---|---|---|
+| height, land and inland water | AWS Terrain Tiles / Mapzen Terrarium z14 (NASA SRTM 1 arc-second in Oman) | about 30 m (z14 pixels 9 m hold it completely) | free with attribution (joerd attribution: SRTM courtesy of the U.S. Geological Survey) |
+| height, sea floor | NOAA ETOPO 2022 15 arc-second, from the WorldCover coastline with a 1:25 slope, ETOPO 1.5 km out | 463 m | public domain |
+| albedo | Sentinel-2 cloudless 2020, 2021, 2023, 2024, 2025 (EOX), per-pixel median, z14 within 10 km of land, z12 offshore | 9 m | CC BY-NC-SA 4.0, swappable (non-commercial: OPEN_QUESTIONS Q11) |
+| watermask, landcover | ESA WorldCover 2021 v200 + the regional height sign | 10 m | CC BY 4.0 |
+
+Bake facts: WorldCover grid 43,200 x 30,700 px (572 opened water components, 1 the ocean; 24 km2 inland water:
+khawrs and sabkhas); 2,204 Terrarium z14 tiles; 12,072 Sentinel-2 tiles per year x 5 years (60,360 requests at 12
+per second, 75 minutes); one ETOPO tile (N30E045) and three WorldCover tiles (N15E054, N18E054, N18E057; N15E057 is
+open sea). Corrections at level 12: tile-edge sea-level pockets filled (88 vertices in 10 tiles); upward needles
+removed (8,403 vertices in 23 tiles, a 22 km strip of corrupt Terrarium values along the south coast at 18.875 N,
+57.1-57.3 E up to 561 m, and a cluster on the shore 7 km north of the nominal point up to 232 m); downward needles
+removed (the trench of corrupt SRTM-boundary rows along 19.0 N, 56.83-57.0 E, up to 111 m deep: section 5).
+
 ## 6. The terrain guard: exactly what changes
 
 **Tile directories added to the Earth set** (all NEW; no directory that existed before holds a new, removed or
