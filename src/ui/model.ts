@@ -812,14 +812,16 @@ export function describeChuteEnvelope(s: SimSnapshot, defs: DefLibrary): ChuteEn
 // ---------------------------------------------------------------------------------------- milestones
 
 /**
- * What a mission milestone is called on screen. The scenario's milestone rules (ScenarioDef.milestones) give
- * each an id and a generic trigger; the words come from the trigger and the names in the definitions (bodies,
- * the vehicle's stages), never from the id: "Moon encounter predicted", "Entered the Moon sphere of influence",
- * "M-1 separation", "Splashdown". A rule the HUD cannot find is announced as "Milestone reached".
+ * What a mission milestone is called on screen: the rule's own title from the scenario data ("TLI complete",
+ * "Entered the Moon's sphere of influence"; MilestoneRuleDef.title), or for a rule without one words from its
+ * generic trigger and the names in the definitions (bodies, the vehicle's stages): "Moon encounter predicted",
+ * "Entered the Moon sphere of influence", "M-1 separation", "Splashdown". Never the id. A rule the HUD cannot
+ * find is announced as "Milestone reached".
  */
 export function milestoneTitle(id: string, s: SimSnapshot, defs: DefLibrary): string {
   const rule = defs.scenarios[s.scenario.id]?.milestones.find((m) => m.id === id);
   if (!rule) return 'Milestone reached';
+  if (rule.title) return rule.title;
   const t = rule.trigger;
   const body = (bodyId: string): string => defs.bodies[bodyId]?.name ?? bodyId;
   switch (t.kind) {

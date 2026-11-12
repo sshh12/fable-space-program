@@ -775,9 +775,21 @@ describe('round-6 mission read-outs', () => {
     expect(n(describeAirData({ ...asc, readouts: { ...asc.readouts, mach: 1.17 } }, defs).mach)).toBe('M 1.17');
   });
 
-  it('words milestones from their trigger and the definitions, never from the id', () => {
+  it('names milestones by their title in the scenario data, never by the id', () => {
     const s = missionSnap('lowOrbit', ['capsule'], (_p, _r, c) => c, { scenario: { id: 'lunar-direct', startKind: 'pad', stagesAlreadyFired: 0 } });
     const t = (id: string): string => n(milestoneTitle(id, s, defs));
+    expect(t('TLI_COMPLETE')).toBe('TLI complete');
+    expect(t('MOON_SOI_ENTER')).toBe("Entered the Moon's sphere of influence");
+    expect(t('EARTH_PERIGEE_TARGETED')).toBe('Entry corridor targeted');
+    for (const m of defs.scenarios['lunar-direct']!.milestones) expect(t(m.id), m.id).toBe(m.title);
+  });
+
+  it('words a milestone without a title from its trigger and the definitions, never from the id', () => {
+    // The same scenario with its titles taken out.
+    const scenario = defs.scenarios['lunar-direct']!;
+    const plain = { ...defs, scenarios: { ...defs.scenarios, 'lunar-direct': { ...scenario, milestones: scenario.milestones.map(({ title: _title, ...m }) => m) } } };
+    const s = missionSnap('lowOrbit', ['capsule'], (_p, _r, c) => c, { scenario: { id: 'lunar-direct', startKind: 'pad', stagesAlreadyFired: 0 } });
+    const t = (id: string): string => n(milestoneTitle(id, s, plain));
     expect(t('LIFTOFF')).toBe('Lift-off');
     expect(t('STAGE_SEP_1')).toBe('M-1 separation');
     expect(t('EARTH_ORBIT')).toBe('Earth orbit reached');
@@ -790,7 +802,7 @@ describe('round-6 mission read-outs', () => {
     expect(t('SPLASHDOWN')).toBe('Splashdown');
     expect(t('NOT_A_RULE')).toBe('Milestone reached');
     // No title-cased ids ("Tli Complete", "Moon Soi Enter") anywhere in the scenario.
-    for (const m of defs.scenarios['lunar-direct']!.milestones) {
+    for (const m of plain.scenarios['lunar-direct']!.milestones) {
       const munged = m.id
         .toLowerCase()
         .split('_')

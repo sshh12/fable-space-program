@@ -384,9 +384,9 @@ form around the 100 km lunar parking orbit; distances m below 10 km, km with two
   speed (mode word + value, click toggles the navball mode) and heading in one window on the bezel's top arc,
   pitch at 9 o'clock and roll at 3 o'clock (`.prw`, two-line, over the bezel's rim); the maneuver readout is a
   glass pane standing on the housing right of the ball (title row "MANEUVER" + the countdown to the burn, then
-  delta-v and burn time). The cluster tops out at about 29 % of the frame height (was 34 %). The g-dose line is
-  always there (dim "0 %" without a dose), so the tubes never move between flight phases (asserted on pad, ascent,
-  low orbit, entry and the high-g entry). The right column is glass like the left: the stage list under a header
+  delta-v and burn time). The cluster tops out at about 29 % of the frame height (was 34 %). The crew's g-dose is
+  a third tape beside the g tube ("THR", "G LOAD", "DOSE"; amber, red from two thirds of the fatal limit), always
+  there (dim "0 %" without a dose), so nothing in the gauges moves between flight phases. The right column is glass like the left: the stage list under a header
   strip ("STAGES" tab, total delta-v, or "2 left" / "all fired" when nothing can burn), resources with a tab title.
   The landing-target panel names its target in the title row ("TARGET Tranquility Base", "RECOVERY South
   Pacific"). The **entry panel shows for an entry, not for an ascent's heating** (`isEntering`: heat flux above
@@ -907,3 +907,91 @@ Own estimate after this round (honest): photo lens about 8, artifact lens about 
 consistent flight state per scene, the HUD over the real renderer, whole numerals at the rim and real bodies on
 the ORB page; what still holds the photo lens back is that most views remain over the lab backdrop and the
 cluster is three housings rather than one.
+
+## Visual close-out, round 6
+
+A takeover after a crash (the previous agent's work in progress was kept: the g-dose as a third tape beside the g
+tube, apsides in metres below 1 km, Mach to one decimal from M 10, the coming-down rule past the apoapsis). Work
+list, in order: (1) the wrong information the whole-mission flight in the real app showed
+(`out/screens/mission/`, 2560 x 1440, and the user's video of it), (2) requests, (3) keyboard capture made opt-in
+(user feedback), (4) the round-5 lists (`docs/qa/wave2/flight-ui.r5.photo.json` 7.8, `flight-ui.r5.artifact.json`
+7.9).
+
+### 1. What the mission flight showed wrong, cause and fix
+
+| Seen in the real app | Cause | Fix (test) |
+|---|---|---|
+| Milestone toasts "Tli Complete", "Moon Soi Enter", "Earth Perigee Targeted" (07, 08) | `hud.ts` title-cased `MilestoneRecord.id` | `milestoneTitle(id, s, defs)` (model.ts) shows the rule's title from the scenario data ("TLI complete", "Entered the Moon's sphere of influence", "Entry corridor targeted": request flight-ui-5, resolved, `MilestoneRuleDef.title`), and words a rule without a title from its TRIGGER and the definitions' names ("Moon encounter predicted", "M-1 separation", "Earth orbit reached", "Down through 122.0 km", "Splashdown"); never from the id. The sim's `soiChange` and the milestone hung on it make one toast (the milestone's), not two as in 08. Unit: "words milestones from their trigger..."; browser: "a milestone is announced by its name, once..." (`milestone-soi-720p.png`) |
+| Resources "Meridian M-2 0 %" while the stage held 95 % (04; 58 % at 03) | A group's line was the resource that runs out first; the M-2 group carries its ullage motors, whose 650 kg of solid propellant burns out in 4 s by design | `ResourceBarView.primary`: a group's line reads what its MAIN engines burn (engines without `fixedBurn`); a group without main engines reads everything but a heat shield's ablator (the capsule reads its RCS supply, not the 58 % ablator of 15/16, which the entry panel shows). The tooltip still lists every resource ("Solid propellant 0 %"). Unit: "reads a stage group by its main supply..." |
+| Chute envelope "RISKY" right after the drogues opened (15; the flight record says the drogues deployed inside their envelope) | The sim is right: `Readouts.chuteEnvelope` is the light of the NEXT chute stage, which after the drogue deploy is the mains (safe below 4.5 km; the drogues opened at 7.4 km, Mach 0.43, 4.9 kPa: safe). The HUD row did not say which chutes it was about | `describeChuteEnvelope`: the row names the chutes ("Drogue deploy" / "Main deploy", from the vehicle's stage actions, the same stage the sim evaluates) and its tooltip spells the envelope out from the parachute data ("Safe below 4 500 m, under 95.0 m/s and under 2.8 kPa dynamic pressure; the canopies fail above 130.0 m/s or above 4.5 kPa"). MFD ENT the same. No sim request needed. Unit and browser (`expectCoherentState`) |
+| Mach in vacuum: M 26.8 at 184 km (05), M 37.8 in the 300 km orbit (07), M 4.0 at the Moon (08), with the air-data strip on the ORBIT panel | The sim's `VACUUM.speedOfSound` is 275 m/s, so its Mach is speed / 275 outside the air; the HUD took `mach > 0.02` as "in air" | Air data only in air (`inAtmosphere`: below the body's simTop): the strip leaves in vacuum, and `describeAirData` reads "—" for Mach and angle of attack outside an atmosphere (HUD and MFD ENT). Request flight-ui-6 (the sim's vacuum Mach also drives the cockpit's buffet and the audio's sound speed). Unit and browser (no "M n" text on the Moon or above 140 km) |
+| Also found: the descent stage's tile "Δv 3 547 m/s · 0.00 m/s²" at the Moon's SOI (08) | `StageInfo.twr` goes stale on rails (the sim refreshes it on integrated steps only); after the coast it still held a gravity of about 1.5 m/s^2 from near the Earth, which the HUD multiplied by the Moon's 0.001 m/s^2 | `stageAcceleration`: in weak gravity the tile's full-throttle acceleration comes from the stage's vacuum delta-v, burn time and engine Isp (a0 = ve (1 - e^(-dv/ve)) / t), independent of gravity. Request flight-ui-8 (refresh on SOI change and on rails). Unit |
+| Also found: "LIFT VECTOR · LIFT UP" under drogues and mains at 38 m/s (15, 16) | The row showed whenever the sim reported a lift vector | Only while the entry heats up (`isEntering`, the hypersonic part). Browser (`expectCoherentState`) |
+| Entry panel during the ascent (app-integration-4) | | Already in d9f9413 (`isEntering`); confirmed by the mission's 03 / 04 (ORBIT panel at 77 and 97 km) and 14 (ENTRY at the interface). Resolved |
+
+### 2. Requests
+
+- app-integration-4 (against hud.ts): resolved (above).
+- flight-ui-3 (as requester): the map-view part was resolved; the app shell's obstacle list still names
+  `.hud .nbchips > div` (`src/app/game.ts` line 52): repeated in flight-ui-7 for the app fixer.
+- flight-ui-4 (as requester, the red streak in the reentry still): resolved by routing; open as `vfx-cs-1` (the
+  ablation sparks of `src/render/vfx/director.ts`). The `real-reentry` still is unchanged until vfx fixes it.
+- Filed: flight-ui-5 (milestone titles in the scenario data; resolved during the round and wired), flight-ui-6 (Mach in vacuum), flight-ui-7 (app
+  wiring of the capture switch, its hide option and the obstacle selectors), flight-ui-8 (stale StageInfo on rails).
+
+### 3. Keyboard capture: opt-in
+
+`src/input` asks for nothing by itself (`captureKeyboard` defaults to false; true is the app's opt-in to ask on the
+first gesture, `?capture=1`). The HUD's amber "Capture keyboard" pill is now one labelled switch, "Keyboard capture"
+with a track and knob and a state word: OFF (neutral), ON (green), NO LOCK (amber: fullscreen, lock refused);
+`role="switch"`, `aria-checked`. A click asks for fullscreen + keyboard lock (`requestKeyboardCapture`), a second
+click leaves (`releaseKeyboardCapture`, new), and Esc leaves at once: Escape is no longer in the lock list
+(`LOCKED_KEY_CODES`), so Chrome's press-and-hold is not needed. Leaving fullscreen by any means releases the lock.
+Every binding works uncaptured (only ControlLeft as an extra throttle-down needs the lock: unchanged). Clean
+footage: `HudOptions.showCaptureControl` / `setCaptureControlVisible`; the "TEST PILOT" line is the app's
+(`statusLine.ts`, `?pilotlabel=0`, the app fixer). Browser: "keyboard capture is opt-in..." and "the capture
+switch asks on a click and leaves on the second..." (and `capturepill=0` hides it).
+
+### 4. The round-5 lists
+
+Most of the r5 items were done in the interrupted agent's commit d9f9413 (section 1, "Round-6 changes", and
+section 3, "Round 6 lab state"); this round checked each in the new pictures and finished the rest.
+
+| r5 item (lens) | State now | Picture |
+|---|---|---|
+| MAJOR: readings that cannot all be true (chutes with the mains pending at 8 m/s; circular translunar and entry orbits; 30 m radar landed; 50 t everywhere; entry-highg reusing the entry's clock and speeds) (both) | Done in d9f9413 (lab `flightState.ts`): mains fired under chutes (1 g, 8 m/s, "all fired"), translunar 380 Mm x 190 km climbing at 1.45 km/s, entry from one integrated ballistic trajectory (Pe below the surface), landed at 4.0 m radar with the gear down, mass from the parts carried, entry-highg 50 s later at 5.16 km/s. Asserted in `expectCoherentState` (radar < 5 m landed, a < 15 m/s sink needs every chute stage fired, a > 50 m/s sink has Pe below the surface, mass falls as the stack stages) | `chutes-*`, `translunar-*`, `lunarSurface-*`, `entry-highg-*`, `mfd-pages-*` |
+| Altimeter speeds in the surface frame under ORBIT SPEED (photo) | Done (d9f9413): in orbit mode the altimeter's components add up to the orbit speed (translunar: +1 449.3 and 384.8 m/s under ORBIT 1 499.5 m/s) | `translunar-720p`, `milestone-soi-720p` |
+| Bottom cluster: five pieces, 34 % of the frame (photo); four looks (artifact) | Done (d9f9413): one gunmetal housing, speed and heading on the bezel arc, pitch / roll windows at 9 / 3, glass maneuver pane; top at about 29 % of the frame. This round: the g-dose as a third tape inside the housing (no line that comes and goes), the gauge columns on the panel's right edge with the captions clear of each other | `real-lunarSurface-4k`, `reentry-720p` |
+| Tubes move when the dose line appears (artifact) | Done: the dose is a fixed third tape (dim 0 % without a dose); spec asserts the dose label inside the gauges panel | `entry-highg-*` |
+| SAS mode buttons the least legible marks (photo) | Done (d9f9413): icons about 18 px at 720p, key digit in the tooltip and key help | `lowOrbit-720p` |
+| Navball labels caught mid-fade (both) | Done (d9f9413): labels fade within about 0.012 R before the lip; no ghost in `attitude-lowOrbit-4k` (cropped and enlarged) | `attitude-lowOrbit-4k` |
+| Wording: raw "none", "cut chute · deploy chute", "Restart scene", spelled key names, Moon chip, stretched STG rows (photo) | Done (d9f9413): "—" / "no gear" / "vertical", "release drogues · deploy mains", "Restart flight", key glyphs, "TARGET Moon", capped STG rows | `stage-lockout`, `mfd-pages-*`, `keyhelp-*` |
+| ORB Earth nearly black (artifact) | Done (d9f9413): display gain from the drawn map's mean, cloud cover, Rayleigh haze | `mfd-pages-native-reentry` |
+| Stills paired with other flight states; red streak; retrograde-hold a copy of chutes (artifact) | Pairing done (d9f9413: each still with the state it was rendered in: lift-off on the mount, the climb from 12 km at full throttle, the hover 12 m over the target, the last 120 m under the mains). The streak is the vfx feature's ablation sparks: flight-ui-4 resolved by routing, `vfx-cs-1` open | `real-*` |
+| Failed state see-through (artifact) | Done (d9f9413): content dimmed with `filter`, plates as opaque as ever | `failed-*` |
+
+Not fixed, plainly:
+- In the app the capture switch's second click does nothing and the switch shows ON only while the lock is granted
+  until the app wires `releaseKeyboardCapture` and the fullscreen flag (request flight-ui-7, open; Esc works already).
+- The real lunar descent still shows the lander's shadow far from its feet and the reentry still the red streak:
+  both are the renderer's (stills of other packages).
+- Most lab views are still over the lab backdrop; the real renderer is shown as stills.
+
+Also this round, from the pictures: the capture switch's state word was below the 10 px floor at 720p (the spec's
+text-floor check caught it; now 0.93 of the pill's size); the gauge captions "THROTTLE G LOAD" ran together and the
+DOSE caption touched the panel's edge (the THROTTLE caption, 51 px under a 16 px tube, set the column width): the
+captions are now "THR", "G LOAD", "DOSE" with the full names in the tooltips; the lab capsule carries the Kestrel's
+drogue and main chutes and the lab judges the chute light as the sim does, so `reentry-*` shows "DROGUE DEPLOY ·
+UNSAFE" at Mach 24.5; a capsule whose only resource is its heat shield (the lab's) has no resource line.
+
+Perf (2026-11-11, through the GPU gate at one slot, other agents' jobs running; 2560 x 1440; method of section 4):
+HUD whole main-thread cost **0.10 ms** per frame all-in (0.089 visible minus hidden; low orbit with a node) and
+**0.13 ms** (0.117; powered ascent), JavaScript inside `update()` 0.057 / 0.061 ms; navball 512 texture **p50
+0.0086 ms, p99 0.0108 ms** (ascent p99 0.0112 ms) with the 7 ms GPU ballast; HUD instrument canvas p99 0.0022 ms.
+Budgets: HUD < 0.5 ms, navball < 0.05 ms p99 (ARCHITECTURE 17.1): met. (A first run the same evening, with heavier
+machine load, read 0.065 / 0.19 ms all-in: the numbers move with the load, not with the HUD.)
+
+Verification: `npm run typecheck:paths -- src/input src/camera src/ui labs/flight-ui tests/browser/flight-ui
+tests/unit/flight-ui` OK; `npx vitest run src/input src/camera src/ui tests/unit/flight-ui
+tools/dev/boundaries.test.ts` all passed; `playwright tests/browser/flight-ui --project=functional --project=perf`
+81 passed (run 2), and the functional project re-run after the last caption change (run 3, below).

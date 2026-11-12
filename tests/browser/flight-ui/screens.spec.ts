@@ -370,12 +370,12 @@ test.describe('flight-ui milestones (720p)', () => {
     await page.waitForFunction(() => document.querySelectorAll('.hud .toast').length > 0);
     await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
     await expect(page.locator('.hud .toast')).toHaveCount(1);
-    await expect(page.locator('.hud .toast')).toHaveText('Entered the Moon sphere of influence');
+    await expect(page.locator('.hud .toast')).toHaveText("Entered the Moon's sphere of influence");
     await saveScreenshot(page, 'flight-ui', 'milestone-soi-720p');
     await expectNoErrors(page, pageLog);
     await openPage(page, '/labs/flight-ui/?scene=lowOrbit&milestone=TLI_COMPLETE');
     await page.waitForFunction(() => document.querySelectorAll('.hud .toast').length > 0);
-    await expect(page.locator('.hud .toast')).toHaveText('Moon encounter predicted');
+    await expect(page.locator('.hud .toast')).toHaveText('TLI complete');
     await expectNoErrors(page, pageLog);
   });
 });

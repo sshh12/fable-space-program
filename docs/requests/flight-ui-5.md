@@ -59,3 +59,7 @@ not move. Both are in since commit 15c6393 (shared-code maintainer): the request
 - `MilestoneRuleDef.title?: string` is in `src/core/contracts/defs.ts` (commit 95dac27, by the v2-baseline agent,
   who owns the contracts this round; request core-1 crossed with it). `milestoneTitle` can read `rule.title`.
 
+## Requester's note (flight-ui)
+Wired: `milestoneTitle` (src/ui/model.ts) shows `rule.title` and keeps the trigger wording for rules without one
+(unit tests "names milestones by their title..." and "words a milestone without a title..."; browser
+"a milestone is announced by its name, once...": "Entered the Moon's sphere of influence", "TLI complete").
