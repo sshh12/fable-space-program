@@ -65,6 +65,8 @@ export interface PackSourceOptions {
   sliceCacheBytes?: number;
   /** Microtask turns a batch waits for siblings before it is sent. Default 3. */
   batchTurns?: number;
+  /** Requests in flight at once, over all mirrors (a burst of thousands of tiles is queued, not opened at once). Default 24. */
+  maxConcurrent?: number;
   /**
    * Wall clock in ms, injected by the caller (src/terrain reads no clock). With it, the pack list is fetched
    * again once it is older than its `refreshAfterS`; without it, only after a 403.
@@ -147,6 +149,21 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
   const maxRange = o.maxRangeBytes ?? 8 * 1024 * 1024;
   const sliceCacheBytes = o.sliceCacheBytes ?? 64 * 1024 * 1024;
   const batchTurns = o.batchTurns ?? 3;
+  const maxConcurrent = o.maxConcurrent ?? 24;
+  let active = 0;
+  const queue: (() => void)[] = [];
+  const acquire = (): Promise<void> => {
+    if (active < maxConcurrent) {
+      active++;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => queue.push(resolve));
+  };
+  const release = (): void => {
+    const next = queue.shift();
+    if (next) next();
+    else active--;
+  };
   let cache: ByteCache | null = null;
   const cacheReady: Promise<void> = Promise.resolve(o.cache ?? null).then((c) => {
     cache = c;
@@ -214,6 +231,14 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
 
   /** One HTTP request for [start, end) of object `hash` from one mirror (ranges mode), or one whole slice (`whole` = its length). */
   const request = async (m: PackListMirror, url: string, hash: string, start: number, end: number, whole: number | null): Promise<Uint8Array> => {
+    await acquire();
+    try {
+      return await requestNow(m, url, hash, start, end, whole);
+    } finally {
+      release();
+    }
+  };
+  const requestNow = async (m: PackListMirror, url: string, hash: string, start: number, end: number, whole: number | null): Promise<Uint8Array> => {
     addTo(stats.requests, m.id, 1);
     let r: Response;
     try {
