@@ -14,7 +14,7 @@
 import type { BodyDef } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import { cameraBasis, coreOf, f16ToF32, MAX_BODIES, readTexturePixels, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
-import { resolveAirglow, type AirglowLayer } from './airglow';
+import { airglowShows, resolveAirglow, type AirglowLayer } from './airglow';
 import { CloudSystem, type CoverageImage } from './clouds';
 import { AERIAL_SIZE, MULTISCATTER_LUT_SIZE, SKY_IRRADIANCE_LUT_SIZE, SKY_VIEW_LUT_SIZE, TRANSMITTANCE_LUT_SIZE } from './math';
 import { atmosphereLayers, FINE_TILE_SIZE, fitsFineTile, scissorOf, selectMarchBodies, type AtmosphereLayer, type MarchSelection } from './select';
@@ -372,7 +372,9 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       u.set('steps', b0 ? b0.steps : 0, b1 ? b1.steps : 0, 32, clouds ? clouds.stepBudget(frame) : 0);
       u.set('halfSize', halfW, halfH, 1 / halfW, 1 / halfH);
       ([b0, b1] as const).forEach((b, slot) => {
-        const glow = b ? airglowOf(bodyDef(frame, b.bodyIndex)) : [];
+        // (Only where the frame's exposure can show it: see airglowShows.)
+        const layersOf = b ? airglowOf(bodyDef(frame, b.bodyIndex)) : [];
+        const glow = b && airglowShows(layersOf, bodyDef(frame, b.bodyIndex).radius, frame.exposure) ? layersOf : [];
         const geo = slot === 0 ? 'airglow0' : 'airglow1';
         u.set(geo, glow[0]?.altitude ?? 0, glow[0]?.sigma ?? 0, glow[1]?.altitude ?? 0, glow[1]?.sigma ?? 0);
         for (let l = 0; l < 2; l++) {

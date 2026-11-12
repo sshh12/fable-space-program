@@ -60,3 +60,28 @@ export function airglowTop(def: AtmosphereRenderDef): number {
   for (const l of resolveAirglow(def).layers) top = Math.max(top, l.altitude + 3 * l.sigma);
   return top;
 }
+
+/**
+ * The brightest the airglow of a body of radius `bodyRadius` (m) can look, cd/m^2: a layer seen edge-on,
+ * along the ray that touches the shell of its peak. (A Gaussian layer of sigma s at radius r, crossed at the
+ * tangent: the integral of exp(-x^4 / (8 r^2 s^2)) dx = 2 Gamma(5/4) (8 r^2 s^2)^(1/4).)
+ */
+export function airglowPeakLuminance(layers: readonly AirglowLayer[], bodyRadius: number): number {
+  let peak = 0;
+  for (const l of layers) {
+    const r = bodyRadius + l.altitude;
+    const path = 1.8128 * (8 * r * r * l.sigma * l.sigma) ** 0.25;
+    peak = Math.max(peak, (0.2126 * l.emission[0] + 0.7152 * l.emission[1] + 0.0722 * l.emission[2]) * path);
+  }
+  return peak;
+}
+
+/**
+ * Whether the airglow can show in a frame of this exposure (`FrameContext.exposure`: pre-exposed value per
+ * cd/m^2): its brightest line of sight reaches a tenth of the first step of an 8-bit display. Under
+ * daylight and through most of twilight it does not, by orders of magnitude, and the march does not
+ * integrate it.
+ */
+export function airglowShows(layers: readonly AirglowLayer[], bodyRadius: number, exposure: number): boolean {
+  return airglowPeakLuminance(layers, bodyRadius) * exposure >= 3e-5;
+}

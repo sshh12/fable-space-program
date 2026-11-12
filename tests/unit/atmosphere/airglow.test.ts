@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AtmosphereRenderDef } from '@/core/contracts/defs';
-import { AIRGLOW_MAX_LAYERS, resolveAirglow } from '@/render/atmosphere/airglow';
+import { AIRGLOW_MAX_LAYERS, airglowPeakLuminance, airglowShows, resolveAirglow } from '@/render/atmosphere/airglow';
 
 const base: AtmosphereRenderDef = {
   topAltitude: 100000,
@@ -38,6 +38,28 @@ describe('airglow layers', () => {
     expect(luminance(l.emission) * sum).toBeCloseTo(8e-5, 9);
     expect(l.emission[1] / l.emission[0]).toBeCloseTo(1 / 0.55, 9);
     expect(l.emission[2] / l.emission[0]).toBeCloseTo(0.25 / 0.55, 9);
+  });
+
+  it('edge-on a layer is tens of times its zenith luminance; it shows at a night exposure and is left out of a daylight frame', () => {
+    const { layers } = resolveAirglow({ ...base, airglow: [{ altitude: 95000, thickness: 9000, zenithLuminance: 8e-5, color: [0.55, 1, 0.25] }] });
+    const radius = 6371000;
+    const peak = airglowPeakLuminance(layers, radius);
+    // Numerical integral along the ray that touches the shell of the peak.
+    const l = layers[0]!;
+    const r = radius + l.altitude;
+    let sum = 0;
+    const ds = 500;
+    for (let x = -1.5e6; x <= 1.5e6; x += ds) sum += Math.exp(-0.5 * ((Math.hypot(r, x) - r) / l.sigma) ** 2) * ds;
+    expect(peak / (luminance(l.emission) * sum)).toBeCloseTo(1, 2);
+    expect(peak / 8e-5).toBeGreaterThan(30);
+    expect(peak / 8e-5).toBeLessThan(70);
+    // Exposure = 1 / (1.2 x 2^EV100) per cd/m^2.
+    const exposure = (ev: number): number => 1 / (1.2 * 2 ** ev);
+    expect(airglowShows(layers, radius, exposure(-5))).toBe(true);
+    expect(airglowShows(layers, radius, exposure(2))).toBe(true);
+    expect(airglowShows(layers, radius, exposure(10))).toBe(false);
+    expect(airglowShows(layers, radius, exposure(14.6))).toBe(false);
+    expect(airglowShows([], radius, exposure(-5))).toBe(false);
   });
 
   it('malformed layers are reported and left out; at most the first two are drawn', () => {
