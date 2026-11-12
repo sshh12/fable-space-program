@@ -42,8 +42,10 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci --no-audit --no-fund --ignore-scripts && npm rebuild esbuild
+      # check-secrets compares with this machine's .env, which CI never has; the pattern scan finds the shape
+      # of a credential (known key formats, high-entropy values under secret-like names) without it.
       - name: Secrets check
-        run: node tools/dev/check-secrets.mjs
+        run: node tools/dev/check-secrets.mjs && node deploy/ci/secret-patterns.mjs
       - name: Stub scan
         run: node tools/dev/check-stubs.mjs
       - name: Typecheck (browser and Node configurations)
