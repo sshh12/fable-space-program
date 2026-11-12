@@ -792,9 +792,9 @@ Work list: `docs/qa/wave2/terrain-render.r1.combined.json` (photo 5.5, artifact 
 looked at first; every screenshot named below was rendered on the code of this section and looked at (crops
 enlarged where it mattered). `integrated-*` (sky, atmosphere, clouds, ocean) are the pictures to judge the
 Earth by; `integrated-game-pad` and `integrated-game-lunar-surface` are the game's own chase views with every
-package loaded. The GPU gate had one slot for about six agents: three browser runs in all (33, 90 and 100
-minutes of waiting), so shapes and textures were judged without a GPU wherever that was possible (below,
-"Tools").
+package loaded. The GPU gate had one slot for about six agents: four browser runs in all (33, 90, 72 and 80 minutes of
+waiting), so shapes and textures were judged without a GPU wherever that was possible (below, "Tools"). The
+last run was on the final code, the pipelines ahead and `resetTemporal` of request core-2 included.
 
 ### What changed in the code (for whoever maintains it next; sections 1 to 7 otherwise stand)
 
@@ -842,8 +842,9 @@ minutes of waiting), so shapes and textures were judged without a GPU wherever t
   (brightness, share of leaf green) stands for its canopy. Outside the regions the body-wide imagery keeps
   `imagerySaturationGlobal` of its saturation.
 - **Class boundaries** are bands: the class lookup is thrown about by noise of 9 m and 3 m with an amplitude
-  of up to 28 m where a pixel resolves those sizes, and averaged over two (coarse rasters: four) points
-  around the fragment where it does not. The ground cover looks the class of a plant up to 22 m from where
+  of up to 28 m where a pixel resolves those sizes; where it does not, the raster's bilinear weights and the
+  mixture colour make the change a gradient, and a coarse raster seen from afar (cells of 60 m and more) is
+  averaged over four more points around the fragment. The ground cover looks the class of a plant up to 22 m from where
   it stands (`EDGE_REACH_M`) and has drifts and bare lanes at 4.3 times its clump size (`DRIFT_MIN/MAX`).
 - **Water**: a lake above sea level needs ground level to a fraction of a degree (slope under 0.006 to
   0.018) AND imagery that shows water (blue at least about red); water colour takes the imagery only where
@@ -883,7 +884,7 @@ minutes of waiting), so shapes and textures were judged without a GPU wherever t
 | major photo: small craters one thing repeated, black discs; quilted ripple | Layers rebuilt in the generator: equilibrium numbers (0.09 of the ground per e-fold of diameter, was 0.03), most craters worn (freshness to the fifth or sixth power; depth 0.025 to 0.2 of the diameter), and under them one and a half times as much ground again in ghost hollows a fiftieth to a thirtieth deep. Textures rebuilt | `moon-300m`, `moon-50m`, `moon-2km`; offline previews `out/terrain/materials/lunar-regolith-*.png` |
 | major photo: nothing sharp between 5 and 50 km above the Moon | Only through the denser aerial layer (textures rebuilt). Orbital detail from crater shapes and bicubic imagery: not done | `moon-edge-50km`, `moon-orbit-100km` |
 | major artifact: lunar self-shadows polygonal, hairlines, bites | The relief march no longer disagrees with the cascade near the terminator of a slope (it gives way there), six taps. The cascade shadow of the tile mesh on itself is unchanged (a march through the tile's height texture in place of the cascade: not done) | `moon-standing-down`, `moon-300m` |
-| major artifact: ink-blot slope under a low sun | The relief march fades at the terrain's terminator; the slope darkens by its cosine and the facet term | `moon-300m` (lower right), `cracks-moon-300` |
+| major artifact: ink-blot slope under a low sun | NOT fixed. Tried: the relief march fades at the terrain's terminator, and the sun-shadow filter is some shadow texels wide on slopes the sun grazes (RT4.a). The stain is unchanged; its cause is not established | `moon-300m` (lower right), `integrated-game-lunar-surface` (bottom) |
 | minor: seabed notches at the near-field radius; stipple at the lunar terminator from 5,000 km; white halo round fresh craters; single black pixels; dark specks on the Kona coast; LEO softness; apron too regular; ruler-straight lunar horizon | Not changed (the halo and the pixels may change with the rebuilt layers; the horizon is the height function's mare) | - |
 | minor: evidence gaps | `integrated-game-pad` and `integrated-game-lunar-surface` added (the game's chase views with every package, sun pinned); perf pictures re-taken in this round's perf run. Not done: frames along the descents of `pops.spec`, a warp picture over land | `integrated-game-*`, `perf-*` |
 
@@ -902,20 +903,93 @@ The Earth's source photographs are unchanged (`data/cache/terrain/photo/`, not i
 | `terrain-render-8` (ocean: a sheet of surf foam over a wide shallow shelf) | withdrawn by the filer: the ocean's round 2 (600b7bc and its working tree) draws lines there |
 | `terrain-render-9` (terrain core: lobes, cracks and pressure ridges on rock classes instead of smooth swell) | open, not blocking |
 | `ocean-7` (against this package: wet sand behind the swash) | resolved: see its resolution (the wet band exists since round 1; wet ground now keeps its true view angle in the sky reflection) |
+| `core-2` (against this package, from the shared-code maintainer) | part 1 done (1d1ef62: the eight pipelines through `shaders.warm`), part 2 done (24c6b8b: `resetTemporal`; the frames it had not identified were the tiles' fade-in restarting level by level, 21 frames per level of the view; `SelectParams.resume`), part 3 in part (the cover's `prepare` at rest; open: its shadow lists per cascade and a selection kept at rest). The device proof of part 2 (`tests/browser/integration/exact.spec.ts`, `rounds: 1`) is the maintainer's to run |
 
 ### Performance
 
-`terrain.perf.spec.ts`, first run on this round's code (run 3, 1440p, `withGpuLock`, other agents' jobs
-queued behind it; the run's console output was lost with a cleaned scratch folder, so only what the failed
-assertions report is known): 6 of 12 passed (LEO, lunar orbit, lunar surface, Moon from 5,000 km, Earth from
-20,000 km, warp). Terrain G-buffer with the ground cover, p99: pad 1.65 ms, kiawe 2.22, stony ground 2.94,
-thickets from 120 m 3.60, 10 km 1.74 (budget 1.5; round 1: 1.09, 1.53, 2.35, 2.93, 1.14). The 60 s lunar
-descent failed on the selection's p99, 1.34 ms against 1 (round 1: 0.59; nothing in the selection changed).
-The half millisecond that every Earth view gained was the averaging of the class lookup over two to four
-more points, which ran for most of a frame at eye height and all of it at 10 km: it now runs only for
-coarse class rasters from afar (b5fd29e). A second run on that code was queued; its numbers are below if it
-finished, and this paragraph is the record if it did not.
+`terrain.perf.spec.ts` on the final code (run 4 of this round, 1440p internal, `withGpuLock`, 7 ms ballast;
+other agents' CPU jobs and bakes running, their GPU jobs queued behind it): 6 of 12 passed. Smallest p99 /
+mean of up to six interleaved rounds, as in section 8.1; **bold** = over its line.
+
+| View | Terrain G-buffer + cover, ms (budget) | Shadows + cover, amortised (budget) | Rocks | Main thread p99 / median, ms (budget 1) | Selection p99 |
+|---|---|---|---|---|---|
+| pad, 1.7 m | 1.31 + 0.35 = **1.66** (1.5) | 0.21 + 0.79 = **0.99** (0.5) | 0.00 | **1.11** / 0.69 (cover 0.27 mean) | 0.46 |
+| stony ground, 1.7 m | 2.91 + 0.10 = **3.01** (1.5) | 0.30 + 1.17 = **1.46** (0.5) | 0.10 (0.3) | **1.22** / 0.81 (cover 0.31) | 0.47 |
+| kiawe, 1.7 m | 1.55 + 0.70 = **2.25** (1.5) | 0.30 + 2.09 = **2.39** (0.5) | 0.01 | **1.28** / 0.79 (cover 0.37) | 0.50 |
+| thickets, 120 m | 2.85 + 0.81 = **3.66** (1.5) | 0.16 + 1.56 = **1.72** (0.5) | 0.00 | **1.05** / 0.66 (cover 0.28) | 0.46 |
+| 10 km | **1.55** (1.5) | 0.07 (0.5) | - | 0.50 / 0.26 | 0.34 |
+| LEO | 0.45 (1.5) | 0.07 (0.4) | - | 0.48 / 0.32 | 0.33 |
+| lunar orbit | 0.57 (1.8) | 0.05 (0.6) | - | 0.46 / 0.32 | 0.32 |
+| lunar surface, 1.7 m | 1.19 (1.8) | 0.27 (0.6) | 0.05 (0.3) | 0.98 / 0.75 | 0.62 |
+| Moon from 5,000 km | 1.10 (1.8) | 0.05 (0.6) | - | 0.42 / 0.25 | 0.26 |
+| Earth from 20,000 km | 0.25 (1.5) | 0.04 (0.4) | - | 0.53 / 0.29 | 0.37 |
+
+- 60 s lunar descent: 3,600 frames, 0 over 33 ms (largest 18.6 ms); pools 1,046 MiB; deepest level 18;
+  **failed** on three lines: selection p99 1.01 ms (limit 1; 0.59 in round 1, the selection is unchanged),
+  upload time p99 2.23 ms (limit 2) and its largest 11.97 ms (limit 6).
+- Warp at 5x, 10x and 50x: passed (0 frames over 33 ms, largest 20.3 / 19.9 / 18.0 ms, queue at most 4 / 5 / 3).
+- **What this round cost, plainly.** Every Earth view's terrain G-buffer is 0.2 to 0.7 ms dearer than in round
+  1 (pad 0.92 -> 1.31, stony ground 2.27 -> 2.91, thickets 2.12 -> 2.85, 10 km 1.14 -> 1.55, LEO 0.24 -> 0.45),
+  and the lunar surface 0.84 -> 1.19 (still inside its 1.8). The first perf run of the round (run 3: pad
+  1.65, kiawe 2.22, stony ground 2.94, thickets 3.60, 10 km 1.74 for G-buffer + cover; its other numbers
+  were lost with a cleaned scratch folder) included the averaging of the class lookup over two to four more
+  points for most of every frame; that is limited to coarse rasters seen from afar now (b5fd29e) and took
+  0.2 ms off the 10 km view, little off the ground views. What is left was not attributed (no GPU slot for an
+  A/B): the candidates are the two noise lookups of the class bands near the eye, the four-point average on
+  the coarse tiles towards the horizon (the 10 km and LEO views), the loop over all materials for the far
+  mixture, the relief march with its tap count from a uniform (a loop the compiler can no longer unroll; six
+  taps on the Moon), and the larger relief of the rebuilt lava and sand layers (more pixels where a second
+  plane or a second material is sampled). `TERRAIN_QUERY` cannot switch these off one by one; an A/B needs a
+  build of each.
+- **Ground cover**: its G-buffer is 0.35 to 0.81 ms (round 1: 0.18 to 0.81) and its shadows 0.79 to 2.09 ms
+  (0.31 to 1.13): a tree near the eye is 9,600 triangles of sprays with a coverage test instead of 3,200 of
+  solids, in the G-buffer and in every cascade that takes its finest or middle level. Not done: a cheaper
+  shadow level for crowns (the coarsest level with raised coverage), casting crowns only into the cascades
+  near the eye, and the cover's shadow lists kept per cascade (request core-2, part 3).
+- **Main thread**: the ground cover's share fell from 0.6 to 0.9 ms to 0.27 to 0.37 ms (its `prepare` costs
+  the uniform only while the view rests; what remains is the shadow lists per cascade), the whole hook time
+  from p99 1.9 to 2.4 ms (medians 1.4 to 1.7) to 1.05 to 1.28 ms (medians 0.66 to 0.81): still over the 1 ms
+  line on the four ground views of the Earth, inside it on the Moon and everywhere above the ground.
+- The assertions are unchanged. The lines of the Earth's ground views are not met, and their GPU lines are
+  further from their budgets than after round 1; the lead's re-measure on a quiet machine (PACKAGE_RULES 16)
+  is the reference, but load alone does not explain them.
+
+Functional suite on the final code (run 4): **20 of 21**. Passed: the integrated views and the two game
+views, `integrity` (no holes on both descents, the hole marker, image decode exact, collision surface, the
+near-field hand-over, no jitter), `pops` on all six paths (0 block spikes; worst ratio 0.99 Earth, 1.71 Moon,
+1.04 approach), `smoke`, `views`. **Failed: the control experiment of the pop detector** ("the detector sees
+pops: a descent with geomorphing and fade-ins switched off", lunar descent): it found 3 block spikes in 3
+frames with the worst block at 3.33 times its local median, and asserts at least 4 frames (and more than 3.2
+times). On the rebuilt lunar ground a frame changes more from one to the next (whole-frame median 3.18
+levels, was 2.61), so a pop stands out less: one of the frames of round 1 no longer counts as a spike. The
+detector still tells the two apart (3.33 without morphing against 1.71 with it; the threshold is 2.5), with
+less margin than before. In run 2, on the old lunar textures, the same test passed with 5 frames and 4.03.
+The assertion was not changed: it is a calibration to decide on (a control path over smoother ground, or
+three frames), not a number to lower in passing.
+Unit tests: 59 of 60 (`src/render/terrain`, `tests/unit/terrain-render`): one of the fourteen selection
+cases ("covers the sphere without cracks: narrow field of view") ran 37 s against its 30 s limit while two
+bakes and other agents' suites held the cores; it passed twice earlier in the round (the whole file in 22 to
+27 s) and the code it runs is unchanged. `boundaries.test.ts` 93 of 93; scoped typecheck clean; stub and
+secret scans clean.
 
 ### Honest scores (own judgement of this round's screenshots)
 
-Written before the last run's pictures were looked at; see the end of this section for the final judgement.
+- Photo lens: about 7. What reads as a photograph now: kiawe and scrub from 3 m to 7 km (`integrated-kiawe-eye`,
+  `integrated-stony-ground`, `integrated-kiawe-120m`), the lava field in tone and sheen against the sky
+  (`integrated-stony-ground`, `integrated-off-apron-eye`), the island from 20 to 150 km in one treatment,
+  the coast (`integrated-200m`), the lunar blocks and the cloddy, cratered soil around them (`moon-standing`,
+  `moon-standing-down`, `moon-50m`). Against it: lava at grazing angles is still a print on smooth swells
+  (the height function has no lobes or cracks: request terrain-render-9), grass on lava from 1 km still has
+  the shapes of its land-cover patches, the pebbly ground near the pad is a shaded print, lunar rock shadows
+  near the eye are as soft as the cascades' texels, the mare's horizon is a ruler, and nothing between 5 and
+  50 km above the Moon is crisp.
+- Artifact lens: about 6.5. Gone: the torn-paper crowns and stick trunks, the line across the island, the
+  ponds, the ochre and turquoise rim, the white sheet (the ocean's), the pale loaves, the eggshell cracks,
+  most black-disc craters. Left: **the ink-blot slope in `moon-300m`** (lower right) and two like it at the
+  bottom of `integrated-game-lunar-surface`: neither the faded relief march nor the wider shadow filter on
+  grazing slopes removed it, and its cause is still not established (the next thing to try: the same view
+  with the terrain's cascade casting off, and with the facet term off); straight edges in the self-shadow
+  of some small craters; the stipple of the leaf coverage test when a crown is enlarged four times; the
+  minors listed above as unchanged.
+- No blocker in this package's own judgement. The performance lines of the Earth's ground views are the
+  part of the brief this round moved away from (above).

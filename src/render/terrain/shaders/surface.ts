@@ -1079,8 +1079,8 @@ ${DETAIL_WGSL}
   // falls on one side or the other). Where it does not, the bilinear weights of the raster and the mixture
   // of all materials under the pixel (terrainDetail) make the change a gradient one class texel wide; only
   // a coarse raster seen from afar (cells of 60 m and more, a few pixels each) is averaged over four more
-  // points, or the corners of its cells show. (Averaging at every distance cost 0.5 ms of the G-buffer on
-  // the ground and at 10 km, measured: most of a frame at eye height is beyond what resolves the patches.)
+  // points, or the corners of its cells show. (Averaging at every distance was tried: it cost 0.2 ms of the
+  // G-buffer at 10 km, measured, and gave nothing there that the mixture does not give.)
   let band = min(2.5 * classTexel, 28.0);
   let patches = select(0.0, smoothstep(1.5, 3.0, 9.0 / footLong), mat.p7.x > 0.0);
   if (patches > 0.0) {
