@@ -162,9 +162,7 @@ fn foam(@builtin(global_invocation_id) id: vec3u) {
       let age = FOAM_TRAIL_STEP * f32(k);
       let was = saturate((foamCriterion(p + fm.trail.xy * age, lv.z, id.z) - thr) / fm.rates.w);
       breaker = max(breaker, was * exp(-fm.trail.z * age));
-      // (Measured against a running sea: a texel without history that took the whole of such a trail showed
-      // 1.75 times the foam the sea has after twelve seconds; four tenths of it agree.)
-      left = max(left, 0.4 * was * exp(-fm.trail.w * age));
+      left = max(left, was * exp(-fm.trail.w * age));
     }
   }
   textureStore(foamOut, vec2i(id.xy), id.z, vec4f(breaker, left, c, breaking));

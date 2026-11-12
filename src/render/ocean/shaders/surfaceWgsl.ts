@@ -895,13 +895,13 @@ struct FsOut {
     cloudBase = sunE * (max(muS, 0.0) * (cl.y - cl.x));
     sunE *= cl.x;
     // The sun's shadow on the sea: of the shore and what stands on it (looked up over the shelf), of a thing in
-    // the water (the pixel shows it), of a vessel at the water (within twelve of its radii). With a vessel at the
+    // the water (the pixel shows it), of a vessel at the water (within six of its radii). With a vessel at the
     // water and deep water all round, the open sea beyond is in the sun: the lookup's eight taps are saved there
     // (profile: 0.08 ms at the splashdown). With no vessel at the water it is looked up everywhere.
     var shaded = objectPix || (seabedPix && column < 60.0) || oceanU.counts.y == 0u;
     for (var i = 0u; i < min(oceanU.counts.y, OCEAN_MAX_VESSELS); i++) {
       let v = oceanU.vessels[i];
-      if (distance(in.planeF, v.a.xy) < 12.0 * v.b.z) { shaded = true; }
+      if (distance(in.planeF, v.a.xy) < 6.0 * v.b.z) { shaded = true; }
     }
     var shadow = 1.0;
     if (shaded && (prof & 128u) == 0u) { shadow = sampleSunShadow(posRel, s.n, pix); }
@@ -1042,6 +1042,15 @@ struct FsOut {
       near = w;
       hull = vec4f(v.a.xy, v.b.z, v.b.w);
     }
+  }
+  // The eye stands over the origin of the plane, and a ray mirrored at the water runs on over the water away from it:
+  // where that line does not pass the hull (with room for the turn the long waves give it), there is no image, and
+  // none of what follows is worked out (profile: 0.05 ms at the splashdown, most of it for water without an image).
+  if (near > 0.0) {
+    let outward = in.planeF / max(length(in.planeF), 1e-3);
+    let toHull = hull.xy - in.planeF;
+    let ahead = dot(toHull, outward);
+    if (ahead < -0.7 * hull.z || length(toHull - outward * ahead) > 0.75 * hull.z + 0.2 * max(ahead, 0.0)) { near = 0.0; }
   }
   if (near > 0.0 && (prof & 8u) == 0u) {
     let pt = waterPoint(s);
