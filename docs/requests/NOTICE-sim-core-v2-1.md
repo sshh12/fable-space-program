@@ -49,5 +49,7 @@ Three things a reader of a site should know from now on:
 Verified on the working tree after the rename: the unit suites of the simulation, the definitions, the
 terrain (with the terrain guard), the vehicle, cockpit, vfx and map packages; the mission suite (36 of 36,
 state hash unchanged, trajectory guard bit-identical). The vehicle game spec's site test ("the terrain
-under every structure of a site is at the height the structure stands at"): see docs/handoff/sim-core-v2.md,
-step 6, for whether the one run through the GPU gate was possible.
+under every structure of a site is at the height the structure stands at") was NOT run by this package: its
+one run waited 18 minutes for the single GPU slot and was withdrawn. Checked headless instead: site `ka-lae`
+finds its survey section (`visuals/sites/ka-lae`, surveyed, 34 structures) and `tests/unit/vehicle` passes;
+request sim-core-v2-2 has since been resolved by vehicle-pad (37d3ad2: a missing survey fails at load).
