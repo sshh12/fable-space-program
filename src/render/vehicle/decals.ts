@@ -7,9 +7,14 @@
  * files refer to a marking by its name; nothing in this package names one. Adding or changing a marking is
  * an edit of that section followed by a re-bake of the atlas.
  *
- * The mesh system has no alpha-tested materials, so a decal is not a transparent overlay: the cells of a
- * surface that carry a marking are assigned to the 'decal' material and mapped to an atlas rectangle
- * whose background is the paint of the surface around it.
+ * Two ways of putting a marking on a surface:
+ *  - 'decal' / 'decal-foil' / 'decal-ground': the cells of the surface that carry the marking are assigned to
+ *    the decal material and mapped to its atlas rectangle, background and all (a plate, a sign, a marking on
+ *    a surface of one flat colour);
+ *  - 'decal-cut': a patch a hair above the surface drawn from the cut-out copy of the atlas
+ *    (decals_cut.png, tools/vehicle/decal-coverage.ts), in which a marking whose background is one of the
+ *    sheet's `skinColors` keeps only its ink. The skin under it shows between the letters, with its own
+ *    weathering, soot and frost: lettering on a weathered skin is paint, not a sticker.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import { getSection } from '@/core/defs/loader';
@@ -44,6 +49,11 @@ export interface DecalSheetDef {
   size: number;
   /** Texels between two decals (bleed for the mip chain). */
   padding: number;
+  /**
+   * Background colours ('#rrggbb') that stand for the surface a marking is painted on: in the cut-out atlas
+   * such a background is keyed out. Any other background is a plate's own colour and is kept.
+   */
+  skinColors?: string[];
   decals: DecalSpec[];
 }
 

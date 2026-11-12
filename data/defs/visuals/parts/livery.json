@@ -1,6 +1,7 @@
 {
   "size": 2048,
   "padding": 12,
+  "skinColors": ["#e7e7e4", "#b7c6ca"],
   "decals": [
     { "name": "wordmark", "w": 2000, "h": 280, "style": "word", "text": "MERIDIAN", "fg": "#1c345d", "bg": "#e7e7e4" },
     { "name": "wordmark-dark", "w": 1000, "h": 140, "style": "word", "text": "MERIDIAN", "fg": "#e7e7e4", "bg": "#292929" },

@@ -289,46 +289,53 @@ function wheelTrack(b: MeshBuilder, ground: GroundField, path: [number, number][
   }
 }
 
-/** Earth berm on the ground: an arc about (cx, cz) of radius `r` from a0 to a1, `h` high, tapering at both ends. */
+/**
+ * Earth berm on the ground: an arc about (cx, cz) of radius `r` from a0 to a1, `h` high. A pushed-up bank,
+ * not a prism: a rounded cross-section (a cosine bell from toe to toe), a crest that wanders, a surface that
+ * is lumpy at the scale of a bulldozer blade, and ends that run out to nothing in height and in width on a
+ * rounded plan.
+ */
 function berm(b: MeshBuilder, ground: GroundField, cx: number, cz: number, r: number, a0: number, a1: number, h: number): void {
   b.begin(false, 'berm');
-  const n = Math.max(4, Math.round((Math.abs(a1 - a0) * r) / b.pick(4, 8, 20)));
-  const base = h * 2.1;
-  const crest = h * 0.45;
+  const n = Math.max(6, Math.round((Math.abs(a1 - a0) * r) / b.pick(2, 4, 12)));
+  const across = b.pick(10, 6, 4);
+  const base = h * 2.3;
   const rows: number[][] = [];
   for (let i = 0; i <= n; i++) {
     const t = i / n;
     const th = a0 + (a1 - a0) * t;
-    // Height tapers over the first and last tenth; the crest wanders a little.
-    const k = Math.min(1, t / 0.1, (1 - t) / 0.1) * (0.9 + 0.2 * noise2(t * 7, r * 0.1, 41));
-    const hh = h * Math.max(0.04, k);
+    // Height and width run out over the first and last 15 per cent, on a rounded end.
+    const e = Math.min(1, t / 0.15, (1 - t) / 0.15);
+    const k = Math.sqrt(Math.max(0, 1 - (1 - e) * (1 - e))) * (0.88 + 0.24 * noise2(t * 7, r * 0.1, 41));
+    const half = base * Math.max(0.12, k);
     const c = Math.cos(th);
     const s = Math.sin(th);
     const under = ground.hi(cx + r * c, cz - r * s);
     const row: number[] = [];
-    for (const [dr, up, nr] of [
-      [-base, Number.NaN, -0.45],
-      [-crest, hh, -0.3],
-      [crest, hh, 0.3],
-      [base, Number.NaN, 0.45],
-    ] as [number, number, number][]) {
-      const rr = r + dr * (0.6 + 0.4 * Math.max(0.2, k));
-      const x = cx + rr * c;
-      const z = cz - rr * s;
-      const y = Number.isNaN(up) ? ground.lo(x, z) - FOOT_COVER : under + up;
-      const l = Math.hypot(nr, 1);
-      const v = b.v(x, y, z, (c * nr) / l, 1 / l, (-s * nr) / l, -s, 0, -c, th * r, dr);
-      b.setMask(v, 0, Number.isNaN(up) ? 0.7 : 1, 0.15 + 0.35 * noise2(x / 6, z / 6, 43), 0);
+    for (let j = 0; j <= across; j++) {
+      const u = j / across;
+      const dr = (2 * u - 1) * half;
+      const x = cx + (r + dr) * c;
+      const z = cz - (r + dr) * s;
+      const bell = 0.5 * (1 - Math.cos(2 * Math.PI * u));
+      const toe = j === 0 || j === across;
+      const lump = 0.22 * (noise2(x / 2.6, z / 2.6, 45) - 0.5) + 0.1 * (noise2(x / 0.9, z / 0.9, 47) - 0.5);
+      const y = toe ? ground.lo(x, z) - FOOT_COVER : under + h * k * bell + lump * bell;
+      // Normal from the bell's slope across the bank (radial plane).
+      const slope = toe ? (j === 0 ? 0.5 : -0.5) : (h * k * Math.PI * Math.sin(2 * Math.PI * u)) / (2 * half);
+      const l = Math.hypot(slope, 1);
+      const v = b.v(x, y, z, (-c * slope) / l, 1 / l, (s * slope) / l, -s, 0, -c, th * r, dr);
+      b.setMask(v, 0, toe ? 0.7 : 0.75 + 0.25 * bell, 0.15 + 0.35 * noise2(x / 6, z / 6, 43), 0);
       row.push(v);
     }
     rows.push(row);
   }
   const ccw = a1 > a0;
   for (let i = 0; i < n; i++) {
-    for (let c = 0; c < 3; c++) {
-      // Radius grows with c; theta from +X toward -Z is counter-clockwise from above.
-      if (ccw) b.quad(rows[i]![c]!, rows[i]![c + 1]!, rows[i + 1]![c + 1]!, rows[i + 1]![c]!);
-      else b.quad(rows[i]![c]!, rows[i + 1]![c]!, rows[i + 1]![c + 1]!, rows[i]![c + 1]!);
+    for (let j = 0; j < across; j++) {
+      // Radius grows with j; theta from +X toward -Z is counter-clockwise from above.
+      if (ccw) b.quad(rows[i]![j]!, rows[i]![j + 1]!, rows[i + 1]![j + 1]!, rows[i + 1]![j]!);
+      else b.quad(rows[i]![j]!, rows[i + 1]![j]!, rows[i + 1]![j + 1]!, rows[i]![j + 1]!);
     }
   }
 }

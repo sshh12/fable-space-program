@@ -514,12 +514,13 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
           pipe(b, [[-half + 2.4 + k * 0.08, top + 0.05, half - 3.0], [-half + 2.4 + k * 0.08, top + 0.05, half - 2.4 + k * 0.1], [(seatR + 1.6) * Math.sin(phi), top + 0.05, (seatR + 1.6) * Math.cos(phi)]], 0.02, 0.2, { segs: 6, tag: 'hydraulic-line' });
         }
       }
-      // ---- sound-suppression water: a ring main round the opening, fed by two risers up the south-east
+      // ---- sound-suppression water: a galvanised ring main round the opening (scaled and rust-stained by the water
+      // and the blast: its grime weight shows as a brown stain), fed by two risers up the south-east
       // pier, with six rainbirds: flanged goose-neck pipes that end in flattened fan nozzles over the opening
       // (Painted pipe: grey epoxy over the whole water system, the fan nozzles in oxide red.)
       // (Grime weights of pipes and fittings stay under the threshold at which the mesh shader starts to
       // draw soot in streaks: streaks across a pipe read as stripes.)
-      b.mat('paint-grey').masks(0.2, 1, 0.08, 0);
+      b.mat('galvanised').masks(0.25, 1, 0.42, 0);
       torus(b, ringR, 0.17, top + 0.2, nSeg, b.pick(10, 6, 4), 'deluge-main');
       for (const dz of [0, 0.75]) pipe(b, [[half - 0.9, -0.2, half - 2.9 - dz], [half - 0.9, top + 0.2, half - 2.9 - dz], [ringR * 0.72, top + 0.2, ringR * 0.72 - dz * 0.4]], 0.2, 0.7, { segs: b.pick(12, 8, 5), tag: 'deluge-riser' });
       for (let k = 0; k < 6; k++) {
@@ -528,7 +529,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
         const p: Vec3Tuple = [ringR * out[0], top, ringR * out[2]];
         const neck: Vec3Tuple = [p[0] - out[0] * 1.15, top + 2.25, p[2] - out[2] * 1.15];
         const tip: Vec3Tuple = [p[0] - out[0] * 1.75, top + 2.05, p[2] - out[2] * 1.75];
-        b.mat('paint-grey').masks(0.2, 1, 0.08, 0);
+        b.mat('galvanised').masks(0.25, 1, 0.42, 0);
         pipe(b, [[p[0], top + 0.2, p[2]], [p[0], top + 1.75, p[2]], neck, tip], 0.22, 0.55, { segs: b.pick(14, 8, 5), tag: 'rainbird' });
         // Flanges at the base and under the bend, saddle on the ring main, brace back to the deck.
         b.at(xf.translate(p[0], top + 0.42, p[2]), () => ringSolid(b, 0.2, 0.34, -0.04, 0.04, b.pick(16, 10, 6), 'rainbird-flange'));
@@ -540,7 +541,7 @@ export const padLaunchMount: SiteGenerator = ({ params, site }) => {
           b.at(xf.translate(p[0], top + 1.435, p[2]), () => boltCircle(b, 0.27, 0, 10, 0.015, 0.012));
         }
         // Fan nozzle: the pipe is flattened into a wide slot that throws a sheet of water across the opening.
-        b.mat('paint-red').masks(0.3, 1, 0.1, 0);
+        b.mat('paint-red').masks(0.35, 1, 0.5, 0);
         const d: Vec3Tuple = [tip[0] - neck[0], tip[1] - neck[1], tip[2] - neck[2]];
         const l = Math.hypot(d[0], d[1], d[2]);
         const along = (t: number): Vec3Tuple => [tip[0] + (d[0] / l) * t, tip[1] + (d[1] / l) * t, tip[2] + (d[2] / l) * t];

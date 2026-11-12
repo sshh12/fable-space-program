@@ -51,6 +51,12 @@ const SPECS = {
    * the second is the next ring's batch of paint.
    */
   'skin-white': { color: [0.71, 0.71, 0.69], metallic: 0, roughness: 0.52, clearcoat: 0.9, clearcoatRoughness: 0.2, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
+  /**
+   * Light grey paint of the cryogenic tank barrels (the grey of a working launcher, not a show white): under
+   * it frost is what it is on real hardware, the brightest thing on the stage.
+   */
+  'skin-grey': { color: [0.4, 0.41, 0.42], metallic: 0, roughness: 0.55, clearcoat: 0.7, clearcoatRoughness: 0.28, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
+  'skin-grey-b': { color: [0.36, 0.37, 0.385], metallic: 0, roughness: 0.6, clearcoat: 0.6, clearcoatRoughness: 0.32, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
   'skin-white-b': { color: [0.66, 0.665, 0.65], metallic: 0, roughness: 0.58, clearcoat: 0.8, clearcoatRoughness: 0.26, tile: [12.8, 12.8], tex: { a: 'skin_albedo', n: 'skin_n', o: 'skin_orm' } },
   'paint-black': paint([0.022, 0.022, 0.025], 0.42, 0.9, 0.16),
   'paint-navy': paint([0.012, 0.035, 0.11], 0.42, 1, 0.14),
@@ -127,7 +133,12 @@ const SPECS = {
   rubber: { color: [0.02, 0.02, 0.022], metallic: 0, roughness: 0.82, tile: [0.3, 0.3], tex: { n: 'cast_n' } },
   /** Carbon-phenolic solid-motor nozzles and throat inserts. */
   phenolic: { color: [0.035, 0.03, 0.028], metallic: 0, roughness: 0.7, tile: [0.3, 0.3], tex: { n: 'cast_n', o: 'cast_orm' } },
-  glass: { color: [0.012, 0.014, 0.018], metallic: 0, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.03 },
+  /**
+   * Window pane seen from outside: a dark mirror. Opaque (the mesh system has no transparent materials), with
+   * a tinted reflection of a fifth to a quarter of what faces it, so the pane shows the planet, the sky or
+   * the sun's glint, and is black only when it faces empty space.
+   */
+  glass: { color: [0.2, 0.22, 0.26], metallic: 1, roughness: 0.03 },
   /** Lamp lens: luminance set per instance through emissiveScale (0 = off). */
   lamp: { color: [0.75, 0.76, 0.78], metallic: 0, roughness: 0.25, emissive: [1, 0.97, 0.9] },
   /** Red obstruction light on masts. */
@@ -140,10 +151,10 @@ const SPECS = {
   gravel: { color: [1, 1, 1], metallic: 0, roughness: 0.95, tile: [3, 3], tex: { a: 'gravel_albedo', n: 'gravel_n', o: 'gravel_orm' }, shading: 'terrain' },
   /**
    * Compacted crushed-stone fill of earthworks (the graded area round the hardstand, road shoulders and
-   * embankments, berms): the aggregate of the place, crushed dark basalt, half the size of the crawlerway's
+   * embankments, berms): the aggregate of the place, crushed dark basalt, a third of the size of the crawlerway's
    * river rock and without its warm tint, so that fill reads as worked ground of the lava field it lies on.
    */
-  'gravel-fill': { color: [0.4, 0.425, 0.48], metallic: 0, roughness: 0.96, tile: [1.6, 1.6], tex: { a: 'gravel_albedo', n: 'gravel_n', o: 'gravel_orm' }, shading: 'terrain' },
+  'gravel-fill': { color: [0.4, 0.425, 0.48], metallic: 0, roughness: 0.96, tile: [1.0, 1.0], tex: { a: 'gravel_albedo', n: 'gravel_n', o: 'gravel_orm' }, shading: 'terrain' },
   asphalt: { color: [1, 1, 1], metallic: 0, roughness: 0.9, tile: [6, 6], tex: { a: 'asphalt_albedo', n: 'asphalt_n', o: 'asphalt_orm' }, shading: 'terrain' },
   /** Painted steel deck plate of the launch mount and platforms. */
   'deck-plate': { color: [1, 1, 1], metallic: 0, roughness: 0.78, tile: [7.2, 7.2], tex: { a: 'deck_albedo', n: 'deck_n', o: 'deck_orm' } },
@@ -151,6 +162,8 @@ const SPECS = {
   decal: { color: [1, 1, 1], metallic: 0, roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.14, tile: [0, 0], tex: { a: 'decals' } },
   /** Markings painted on metal film (a taped back shell): the atlas's ORM map says where the film is bare. */
   'decal-foil': { color: [1, 1, 1], metallic: 0.82, roughness: 0.4, tile: [0, 0], tex: { a: 'decals', o: 'decals_orm' } },
+  /** Lettering painted straight onto a skin: only the ink of the cut-out atlas is drawn (see ./decals.ts). */
+  'decal-cut': { color: [1, 1, 1], metallic: 0, roughness: 0.5, tile: [0, 0], tex: { a: 'decals_cut' }, alphaCutoff: 0.5 },
   /** Markings painted on concrete (same atlas, matte, lit like the ground around them). */
   'decal-ground': { color: [1, 1, 1], metallic: 0, roughness: 0.88, tile: [0, 0], tex: { a: 'decals' }, shading: 'terrain' },
 } satisfies Record<string, Spec>;

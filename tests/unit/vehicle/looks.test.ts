@@ -154,8 +154,9 @@ describe('soot, frost and damage', () => {
       // one model whatever its frost, and no item is ever emitted with partial (dithered) coverage.
       for (const frost of [0, 0.4, 1]) {
         const items = posed(v, def.id, launchModules(def.id), { frost });
-        expect(items.map((x) => x.model)).toEqual(['body']);
-        expect(items[0]!.opts?.fade).toBeUndefined();
+        // (The body, and the cut-out lettering painted on it: no rime shell, nothing dithered.)
+        expect(items.map((x) => x.model).filter((m) => m !== 'markings')).toEqual(['body']);
+        for (const item of items) expect(item.opts?.fade).toBeUndefined();
       }
       const amount = Number(def.visual.params['frost'] ?? 1);
       if (!(amount > 0)) continue;

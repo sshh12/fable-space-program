@@ -420,11 +420,11 @@ export const landerDescent: PartGenerator = ({ def, params }) => {
     const m = def.modules[lightIndex];
     if (!m || m.type !== 'light' || input.anim.lamp <= 0) return [];
     const cd = (lampCandela(m.params) / lampAz.length) * input.anim.lamp;
-    // A lamp looks down and a little outward: a spot at its lens whose cone takes in the touchdown area and
-    // the legs on its side, never the hull above it.
+    // A lamp looks down and a little outward: a spot at its lens whose cone takes in the ground under and
+    // ahead of the engine and the legs on its side, never the hull above it.
     return lampAz.map((phi) => {
       const p = lampAt(phi);
-      const dir = norm3(polar(Math.sin(25 * DEG), phi, -Math.cos(25 * DEG)));
+      const dir = norm3(polar(Math.sin(9 * DEG), phi, -Math.cos(9 * DEG)));
       // (The cone's edge is soft: full strength inside 16 degrees, nothing beyond 46, so the pool has no ruled rim
       // and the legs' shadows fall well inside it.)
       return { pos: [p[0], p[1] - 0.1, p[2]] as Vec3Tuple, dir, cone: [16 * DEG, 46 * DEG] as [number, number], radius: 0.09, castShadow: true, intensity: [cd, cd * 0.97, cd * 0.9] as Vec3Tuple, range: 40 };
@@ -620,7 +620,7 @@ export const landerAscent: PartGenerator = ({ def, params }) => {
 };
 
 /** Luminance of a lamp's lens seen from outside its beam, as a share of the lamp material's (the filament's). */
-const LENS_OFF_AXIS = 0.004;
+const LENS_OFF_AXIS = 0.0006;
 
 // ---------------------------------------------------------------------------------------------- legs
 

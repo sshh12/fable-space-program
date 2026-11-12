@@ -1,8 +1,8 @@
 {
   "generator": "stage.tank",
   "params": {
-    "skin": "skin-white",
-    "skinAlt": "skin-white-b",
+    "skin": "skin-grey",
+    "skinAlt": "skin-grey-b",
     "aftSkirt": "paint-black",
     "fwdSkirt": "skin-white",
     "intertank": "paint-black",

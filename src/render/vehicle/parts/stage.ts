@@ -14,10 +14,10 @@
 import type { Vec3Tuple } from '@/core/math';
 import { decalSheetOf } from '../decals';
 import { MeshBuilder, add3, polar, scale3, xf } from '../geom/builder';
-import { DEG, Profile, TAU, ball, bolt, boltCircle, boltRing, box, frustum, lathe, phisWith, pipe, radialFrame, ringSolid, rod, torus, type LatheRegion, type MaskOut } from '../geom/prims';
+import { DEG, Profile, TAU, ball, bolt, boltCircle, boltRing, box, frustum, lathe, phisWith, pipe, radialFrame, ringSolid, rod, torus, uniformPhis, type LatheRegion, type MaskOut } from '../geom/prims';
 import { isMatId, type MatId } from '../materials';
 import { accessDoor, band, bandRegion, blister, buildModel, decalRegion, flatAnnulus, noise2, parseList, raceway, regionBounds, regionHeights, seams, stringers, umbilicalPlate, ventPort } from './common';
-import { Params, staticPose, type PartGenerator } from './types';
+import { Params, staticPose, type PartGenerator, type PartModel } from './types';
 
 const mat = (id: string, where: string): MatId => {
   if (!isMatId(id)) throw new Error(`${where}: unknown material "${id}"`);
@@ -77,7 +77,7 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
   }
   const decalRegions: LatheRegion[] = [];
   for (const e of parseList(P.str('decals', ''))) decalRegions.push(decalRegion(sheet, e.name, R, e.n[0]!, e.n[1]!, e.n[2]!, e.flags.includes('rot'), ['skin0', 'skin1']));
-  regionsFull.push(...decalRegions);
+  // (Markings are not cells of the skin: they are cut-out patches over it, in a model of their own, below.)
   /** Is a marking painted at this azimuth somewhere between two heights? (Stringers leave its panel smooth.) */
   const markedAt = (phi: number, y0: number, y1: number): boolean =>
     decalRegions.some((r) => {
@@ -123,17 +123,6 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     const shed = Math.max(0, Math.min(1, (lane - 0.57) / 0.1)) * Math.max(0, Math.min(1, (top - (1 - low)) / 0.15 + 1));
     const coat = 0.78 + 0.22 * low + 0.2 * land + 0.3 * (noise2((phi * R) / 0.6, y / 5.5, 61) - 0.5);
     return Math.max(0.12, Math.min(1, coat * (1 - 0.85 * shed)));
-  };
-  /** Distance (m) from a point of the skin to the nearest marking; 0 on one. */
-  const markDistance = (phi: number, y: number): number => {
-    let best = Infinity;
-    for (const r of decalRegions) {
-      const d = ((((phi - (r.phi0 + r.phi1) / 2) % TAU) + TAU + Math.PI) % TAU) - Math.PI;
-      const dx = Math.max(0, Math.abs(d) - (r.phi1 - r.phi0) / 2) * R;
-      const dy = Math.max(0, r.y0 - y, y - r.y1);
-      best = Math.min(best, Math.hypot(dx, dy));
-    }
-    return best;
   };
   /** How high the soot of the base flow reaches at an azimuth: highest on the lee side. */
   const sootReach = (phi: number): number => sootTop * (0.7 + 0.75 * (0.5 + 0.5 * Math.cos(phi - sootLee)));
@@ -219,11 +208,8 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
       mask: (y: number, _phi: number, r: number, m: MaskOut) => {
         // The mask callback sees every ring; only the outer skin frosts and soots.
         const outer = r > R - 1e-4;
-        // Frost forms on the metal whatever is painted on it. Over a marking the coat is drawn a little thinner
-        // (a veil that keeps the letters readable: request vehicle-pad-6), and that thinning fades out over most
-        // of a metre round the marking, raggedly, so that no marking sits in a window of its own shape.
-        const feather = Math.min(1, markDistance(_phi, y) / (0.5 + 0.5 * noise2((_phi * R) / 0.4, y / 0.9, 69)));
-        m.frost = outer ? frostAt(y, _phi) * frostFilm(y, _phi) * (0.45 + 0.55 * feather * feather * (3 - 2 * feather)) : 0;
+        // Frost forms on the metal whatever is painted on it: one coat across the skin, markings or not.
+        m.frost = outer ? frostAt(y, _phi) * frostFilm(y, _phi) : 0;
         m.soot = outer ? sootAt(y, _phi) : y < aftTop + 1 ? 0.6 : 0;
         // Inside: the skirts are dim; the forward dome is lit at its crown and dark in the gutter at the wall.
         const crown = y > fwdBottom - 0.5 && r < Ri - 1e-4 ? 0.5 + 0.45 * (1 - (r / Ri) ** 2) : 0.7;
@@ -240,7 +226,7 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     for (const g of gaps) {
       if (b.lod === 2) continue;
       // (Rime on dark structure is what shows a loaded vehicle from afar: the intertank carries a patchy coat.)
-      const rime = frostW * 0.52;
+      const rime = frostW * 0.85;
       if (interStyle === 'corrugated' && b.lod === 0) {
         b.mat(interMat).masks(0, 1, 0.15, rime);
         const amp = 0.014;
@@ -562,5 +548,39 @@ export const stageTank: PartGenerator = ({ def, params, defs }) => {
     },
     [700, 110],
   );
-  return { models: { body }, pose: staticPose };
+  // Markings are painted on the skin: patches a hair above it of which only the ink is drawn, so the skin
+  // under and between the letters weathers, soots and frosts as everywhere else. The ink itself takes the
+  // base flow's soot and, under frost, a veil (the letters fade evenly instead of being cut by the coat's
+  // cells). A model of their own: a cut-out casts through the slower per-material shadow path, and paint
+  // casts no shadow.
+  const models: Record<string, PartModel> = { body };
+  if (decalRegions.length === 0) return { models, pose: staticPose };
+  const markings = buildModel(`${def.id}.markings`, (b) => {
+    b.mat('decal-cut').masks(0, 1, 0, 0);
+    for (const r of decalRegions) {
+      const n = Math.max(2, Math.round(((r.phi1 - r.phi0) * R) / b.pick(0.25, 0.5, 1.5)));
+      const rows = Math.max(1, Math.round((r.y1 - r.y0) / b.pick(1, 2, 8)));
+      const p = Profile.at(R + 0.004, r.y0).mark('m0');
+      for (let j = 1; j <= rows; j++) p.to(R + 0.004, r.y0 + ((r.y1 - r.y0) * j) / rows);
+      p.mark('m1');
+      lathe(b, p, {
+        phis: uniformPhis(n, r.phi0, r.phi1),
+        regions: [{ ...r, mat: 'decal-cut', span: ['m0', 'm1'] }],
+        closed: false,
+        tag: 'placard',
+        mask: (y: number, phi: number, _r: number, m: MaskOut) => {
+          m.soot = sootAt(y, phi);
+          m.frost = Math.min(0.33, frostAt(y, phi) * frostFilm(y, phi));
+        },
+      });
+    }
+  });
+  models['markings'] = markings;
+  return {
+    models,
+    pose: (_input, emit) => {
+      emit('body', null, null);
+      emit('markings', null, null, { castShadow: false });
+    },
+  };
 };

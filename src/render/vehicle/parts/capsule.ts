@@ -195,9 +195,13 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
   const scorch = (phi: number, y: number): number => {
     const up = Math.min(1, Math.max(0, 1 - (y - yB) / (yT - yB)));
     const wind = 0.5 + 0.5 * Math.cos(phi - windPhi);
-    // Streaks along the generators: noise fine in azimuth and stretched along the flow.
-    const streak = 0.6 * noise2(phi * 9 + 0.5 * up, up * 1.5, 211) + 0.4 * noise2(phi * 24, up * 2.2 + 3, 213);
-    let w = (0.2 + 0.3 * wind + Math.pow(up, 2.2) * (0.5 + 0.35 * wind)) * (0.6 + 0.8 * streak) + 0.3 * Math.pow(up, 9);
+    // Streaks along the generators at three widths (decimetres down to a few centimetres), none of them
+    // running the whole cone: each fades in and out along the flow. And a mottle where deposits have flaked.
+    const streak = 0.45 * noise2(phi * 9 + 0.5 * up, up * 1.5, 211) + 0.3 * noise2(phi * 24, up * 2.6 + 3, 213) + 0.25 * noise2(phi * 70, up * 6 + 7, 215);
+    const mottle = noise2(phi * 14 + 3, up * 9, 217);
+    // A returned capsule is dark: char and soot over the whole shell, near black at the shoulder and to
+    // windward, dark brown in the lee, never the bright film.
+    let w = (0.58 + 0.32 * wind + Math.pow(up, 2.2) * (0.6 + 0.4 * wind)) * (0.55 + 0.9 * streak) * (0.82 + 0.36 * mottle) + 0.35 * Math.pow(up, 8);
     for (const o of openings) {
       // Wake of an opening's frame: downstream is up the cone.
       const dy = y - o.C[1];
@@ -595,7 +599,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     const width = height * sheet.aspect(name);
     const [u0, v0, u1, v1] = sheet.uv(name);
     const nu = Math.max(2, Math.round(width / 0.09));
-    b.mat(sheet.foil(name) ? 'decal-foil' : 'decal').masks(0, 1, 0, 0);
+    b.mat('decal-cut').masks(0, 1, 0, 0);
     b.begin(false, 'placard');
     const rows: number[][] = [];
     for (let j = 0; j <= 2; j++) {
@@ -678,8 +682,16 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
       for (const sa of [-1, 1]) {
         const p0 = projectToShell(ml, hatch, sa * (hatch.hw + 0.16), -0.3, 0.045);
         const p1 = projectToShell(ml, hatch, sa * (hatch.hw + 0.16), 0.3, 0.045);
-        rod(b, p0, p1, 0.012, 8, 'handrail');
-        for (const p of [p0, p1]) rod(b, add3(p, scale3(hatch.N, -0.05)), p, 0.01, 8, 'handrail');
+        // A solid rail: a grip on a web that runs down to the skin along its whole length. (A rod on
+        // stand-offs leaves a gap under it that neither the shadow cascades nor the screen-space contact
+        // shadow resolve; its shadow was a ragged band: request vehicle-pad-10.)
+        const q0 = add3(p0, scale3(hatch.N, -0.047));
+        const q1 = add3(p1, scale3(hatch.N, -0.047));
+        const len = Math.hypot(q1[0] - q0[0], q1[1] - q0[1], q1[2] - q0[2]);
+        b.at(xf.along(q0, q1, hatch.N), () => {
+          box(b, 0.05, len, 0.012, [0.025, len / 2, 0], 'handrail');
+          box(b, 0.026, len, 0.034, [0.052, len / 2, 0], 'handrail');
+        });
       }
       b.mat('steel-brushed');
       const uphi = 90 * DEG + 0.35;
@@ -723,12 +735,12 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
         boltRing(b, rTun, yTop - 0.075, 32, 0.005, 0.003);
       }
     }
-    // ---- markings
-    for (const e of P.str('placards', '').split(';')) {
-      const m = /^(\w[\w-]*)@(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)$/.exec(e.trim());
-      if (m) placard(b, m[1]!, Number(m[2]), Number(m[3]), Number(m[4]));
-    }
   };
+  /** Markings of the back shell: name, azimuth (deg), height, size. */
+  const placards = P.str('placards', '')
+    .split(';')
+    .map((e) => /^(\w[\w-]*)@(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)$/.exec(e.trim()))
+    .filter((m): m is RegExpExecArray => m !== null);
 
   const lampPos = ((): { p: Vec3Tuple; n: Vec3Tuple } => {
     const hatch = openings.find((o) => o.hatch)!;
@@ -771,6 +783,11 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
   const glass = buildFrom(`${def.id}.glass`, glassLods.map((g) => g.build()));
   // The heat shield is a model of its own: it is drawn at the temperature of the ablating surface, which the
   // structure behind it never reaches.
+  // Markings are lettering on the film: cut-out patches (only the ink is drawn, the tiles show between the
+  // letters and carry the scorch right through a marking), in a model of their own that casts no shadow.
+  const markings = buildModel(`${def.id}.markings`, (b) => {
+    for (const m of placards) placard(b, m[1]!, Number(m[2]), Number(m[3]), Number(m[4]));
+  });
   const shieldModel = buildModel(`${def.id}.shield`, (b) => shield(b, shieldMat));
   const shieldCharModel = buildModel(`${def.id}.shieldChar`, (b) => shield(b, charMat));
   const lamp = buildModel(`${def.id}.lamp`, (b) => {
@@ -799,6 +816,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     else emit('shield', null, null, { cold: true, emissive: glow, soot: char / CHAR_SWAP * 0.35 });
     emit('glass', null, null, { castShadow: false, cold: true });
     emit('lamp', null, null, { emissive: input.anim.lamp, castShadow: false, cold: true });
+    if (placards.length > 0) emit('markings', null, null, { castShadow: false, cold: true });
   };
   const lights = (input: PoseInput): PartLight[] => {
     const out: PartLight[] = [];
@@ -820,7 +838,7 @@ export const capsuleMouldline: PartGenerator = ({ def, params, defs }) => {
     }
     return out;
   };
-  return { models: { body, shield: shieldModel, shieldChar: shieldCharModel, glass, lamp }, pose, lights };
+  return { models: { body, shield: shieldModel, shieldChar: shieldCharModel, glass, lamp, ...(placards.length > 0 ? { markings } : {}) }, pose, lights };
 };
 
 /** Char depth 0..1 of an ablative shield from the fraction of its ablator that is left (the first 30 % char it fully). */
