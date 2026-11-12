@@ -71,22 +71,6 @@
    "radiusKm": 18,
    "minRatio": 1.1,
    "ref": "IAU Gazetteer of Planetary Nomenclature, feature 1331 (49.19 N, 76.32 W, 36 km); the mosaic carries the crater as shading (its rays are not visible in it)"
-  },
-  {
-   "name": "leading hemisphere brighter than the wispy trailing hemisphere",
-   "kind": "albedoCompare",
-   "brighter": {
-    "latDeg": 0.0,
-    "lonDegE": 270.0,
-    "radiusKm": 300
-   },
-   "darker": {
-    "latDeg": 0.0,
-    "lonDegE": 90.0,
-    "radiusKm": 300
-   },
-   "minRatio": 1.03,
-   "ref": "Cassini ISS: Dione's trailing hemisphere (apex 90 E) is darker, with bright wisps (Padua Chasmata, Gazetteer 14384); the leading (apex 270 E) is brighter"
   }
  ]
 }

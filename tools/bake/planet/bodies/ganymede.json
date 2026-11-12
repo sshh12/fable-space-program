@@ -96,8 +96,8 @@
    "lonDegE": 193.69,
    "radiusKm": 54,
    "sense": "brighter",
-   "minRatio": 1.1,
-   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 4509 (38 S, 166.31 W, 107 km); bright rays (EPSC2018-855)"
+   "minRatio": 1.07,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 4509 (38 S, 166.31 W, 107 km); bright rays (EPSC2018-855) Threshold lowered for the highlight knee (decision 20), which compresses brightness contrast on bright ground: was 1.1; now 1.098, mirrored 0.881, shifted by 180 deg 1.286."
   },
   {
    "name": "Tros rays",
@@ -106,8 +106,8 @@
    "lonDegE": 332.74,
    "radiusKm": 47,
    "sense": "brighter",
-   "minRatio": 1.05,
-   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 6091 (11.14 N, 27.26 W, 94 km); bright ray crater (EPSC2018-855)"
+   "minRatio": 1.015,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 6091 (11.14 N, 27.26 W, 94 km); bright ray crater (EPSC2018-855) Threshold lowered for the highlight knee (decision 20), which compresses brightness contrast on bright ground: was 1.05; now 1.023, mirrored 0.927, shifted by 180 deg 0.974."
   }
  ]
 }

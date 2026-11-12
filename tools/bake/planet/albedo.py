@@ -7,14 +7,16 @@ by the freshness of the crater population (procedural.ts). Coarser levels: 2 x 2
 tiles in LINEAR colour (a box pyramid, no re-sampling of the source and no re-decoding of lossy tiles),
 computed depth-first per subtree so nothing global is ever held in memory.
 
-Calibration: one gain so that the area-weighted mean luminance of the map (or of a calibration disc) is the
-configured albedo (`calibration.meanAlbedo`, normally the body's geometric albedo, as the Moon's bake did:
-its mean linear albedo 0.13 against a geometric albedo of 0.12).
+Calibration: one gain and a soft highlight knee (see `calibration`) so that the area-weighted mean luminance
+of the finest level (or of a calibration disc) is the configured albedo (`calibration.meanAlbedo`, normally
+the body's geometric albedo) with at most 0.4 % of the surface at the 8-bit ceiling; a procedural body's
+mean is held at its albedo after the fresh craters' brightening.
 """
 from __future__ import annotations
 
 import hashlib
 import io
+import json
 import time
 
 import numpy as np
@@ -28,7 +30,7 @@ WEBP_QUALITY = 92
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SUBTREE_LEVEL = 2
 _RASTER: dict = {}
-_GAIN: dict = {}
+
 
 
 def _raster(body: config.Body, key: str) -> source.Raster:
@@ -82,69 +84,76 @@ def _to_linear_colour(body: config.Body, v: np.ndarray) -> np.ndarray:
     return srgb_decode(np.clip(v * _dn_scale(r), 0.0, 1.0))
 
 
-def gain(body: config.Body) -> float:
-    """Calibration gain (computed once per process from the coarse mips, deterministic)."""
-    if body.id in _GAIN:
-        return _GAIN[body.id]
-    al = body.albedo
-    cal = al["calibration"]
-    if al["procedural"] is not None:
-        g = 1.0
-    else:
-        r = _raster(body, al["source"])
-        rc = _raster(body, al["colourSource"]) if al["colourSource"] else None
-        if rc is not None and al.get("colourMode") == "detail":
-            # the colour map sets the albedo; the mono map only adds detail with a mean ratio of 1
-            def col_fn(a):
-                return _to_linear_colour(body, a) @ LUMA
-            mean = float(rc.coarse_mean(col_fn, cal["region"]))
-            r = rc
-        elif rc is not None:
-            # chroma has unit luminance: the luminance source alone sets the mean
-            def lum_fn(a):
-                return _to_linear(body, al["source"], a)
-            mean = float(r.coarse_mean(lum_fn, cal["region"]))
-        else:
-            def lum_fn(a):
-                lin = _to_linear(body, al["source"], a)
-                return lin @ LUMA if lin.ndim == 3 else lin
-            mean = float(r.coarse_mean(lum_fn, cal["region"]))
-        if not mean > 0:
-            raise ValueError(f"{body.id}: albedo source mean is {mean}")
-        g = cal["meanAlbedo"] / mean
-        # never push more than half a per cent of the surface into the 8-bit ceiling: a bright icy body whose
-        # mosaic has a narrow range would otherwise lose its detail (it keeps a lower mean instead). The peak is
-        # measured at the finest level's own sampling (a coarse mip averages the brightest spots away)
-        p995 = fine_peak(body, lambda d, fp: pre_gain_linear(body, d, fp))
-        if p995 > 0 and g * p995 > CLIP_LIMIT:
-            g = CLIP_LIMIT / p995
-    _GAIN[body.id] = g
-    return g
+# ---- calibration: one gain and a soft highlight knee per body -------------------------------------------
+#
+# The tiles are what the near-field renderer shades with, so their mean must be the body's albedo, and a
+# surface cannot reflect more than it receives, so highlights are compressed toward 1.0 instead of clipped:
+#
+#     y = x                                          for x <= k
+#     y = k + (1 - k) t / (1 + t),  t = (x - k) / (1 - k)   for x > k
+#
+# applied to the brightest channel of g * (the map's linear colour), the other channels scaled with it (hue
+# kept). (A local variant, the shoulder on the map's large-scale tone and the detail as a ratio on top, kept
+# more detail on bright ground but could hold only a third of the bright moons' albedo within the ceiling:
+# bright detail on bright ground has nowhere to go under 1.0.) The knee is continuous with slope 1 at its start k and approaches 1.0 without reaching it (a
+# rational shoulder: its slow approach leaves room for a mosaic's bright tail; an exponential shoulder could
+# not hold Enceladus' or Tethys' mean without putting a tenth of the surface at the ceiling). The gain
+# g makes the area mean luminance equal the configured albedo (over the calibration disc where one is set);
+# k is the highest of KNEE_STARTS at which at most CEILING_SHARE of the surface reaches CEILING_LIN (4 DN under
+# the 8-bit ceiling of 254 DN, the margin lossy WebP needs): a narrow-ranged bright mosaic keeps its contrast up
+# to k and a compressed but readable detail above it.
+KNEE_FORM = ("y = x for x <= k; y = k + (1 - k) t / (1 + t) with t = (x - k) / (1 - k) above, on the brightest "
+             "channel of gain x the map's linear colour (the other channels scaled with it)")
+KNEE_STARTS = tuple(round(0.85 - 0.05 * i, 2) for i in range(15))       # 0.85 .. 0.15
+CEILING_DN = 254
+CEILING_MARGIN_DN = 4                    # lossy WebP lifts near-white texels by a few DN: calibrate below them
+CEILING_LIN = float(srgb_decode(np.array((CEILING_DN - CEILING_MARGIN_DN - 0.5) / 255.0)))
+CEILING_SHARE = 0.004                    # of the surface at or above CEILING_LIN; verify allows 0.5 % at 254 DN
+CAL_SAMPLES = 200_000
+CAL_VERSION = 5
+_CAL: dict = {}
 
 
-PEAK_SAMPLES = 200_000
-_LF_CAP: dict = {}
+def knee(x: np.ndarray, k: float) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float64)
+    t = (np.maximum(x, k) - k) / (1.0 - k)
+    return np.where(x <= k, x, k + (1.0 - k) * t / (1.0 + t))
 
 
-def fine_peak(body: config.Body, fn) -> float:
-    """99.5th percentile of the brightest channel of fn(dirs, footprint) over PEAK_SAMPLES directions spread
-    uniformly over the sphere (a Fibonacci lattice: equal areas), at the finest albedo level's footprint."""
-    n = PEAK_SAMPLES
+def apply_knee(rgb: np.ndarray, k: float) -> np.ndarray:
+    m = rgb.max(axis=-1)
+    return rgb * (knee(m, k) / np.maximum(m, 1e-12))[..., None]
+
+
+def knee_ceiling_input(k: float) -> float:
+    """The input x at which the knee's output reaches the 8-bit ceiling."""
+    q = (CEILING_LIN - k) / (1.0 - k)
+    return k + (1.0 - k) * q / (1.0 - q)
+
+
+def _fibonacci(n: int) -> np.ndarray:
     k = np.arange(n) + 0.5
     z = 1.0 - 2.0 * k / n
     th = np.pi * (3.0 - np.sqrt(5.0)) * k
     r = np.sqrt(1.0 - z * z)
-    d = np.stack([r * np.cos(th), r * np.sin(th), z], axis=-1)
-    fp = footprint_m(d, int(body.albedo["maxLevel"]), body.radius, cells=cube.IMAGE_TILE_SIZE)
-    out = np.empty(n)
-    for s0 in range(0, n, 20_000):
-        rgb = fn(d[s0:s0 + 20_000], fp[s0:s0 + 20_000])
-        out[s0:s0 + 20_000] = rgb.max(axis=-1)
-    return float(np.percentile(out, 99.5))
+    return np.stack([r * np.cos(th), r * np.sin(th), z], axis=-1)
+
+
+def _cap(lat_deg: float, lon_deg: float, radius_m: float, body_r: float, n: int) -> np.ndarray:
+    """Directions spread uniformly by area over a spherical cap."""
+    c = cube.lat_lon_to_dir(np.radians(lat_deg), np.radians(lon_deg))
+    e1 = np.cross([0.0, 0.0, 1.0], c)
+    e1 = e1 / np.linalg.norm(e1) if np.linalg.norm(e1) > 1e-9 else np.array([1.0, 0.0, 0.0])
+    e2 = np.cross(c, e1)
+    k = np.arange(n) + 0.5
+    ang = np.arccos(1.0 - (1.0 - np.cos(radius_m / body_r)) * k / n)
+    th = k * np.pi * (3.0 - np.sqrt(5.0))
+    d = np.cos(ang)[:, None] * c + np.sin(ang)[:, None] * (np.cos(th)[:, None] * e1 + np.sin(th)[:, None] * e2)
+    return d / np.linalg.norm(d, axis=1, keepdims=True)
 
 
 def pre_gain_linear(body: config.Body, d: np.ndarray, fp: np.ndarray) -> np.ndarray:
-    """Linear RGB of a mapped body at directions d before the calibration gain (or the low-frequency factor)."""
+    """Linear RGB of a mapped body at directions d before the calibration (and the low-frequency factor)."""
     al = body.albedo
     v = _raster(body, al["source"]).sample(d, fp)
     if not al["colourSource"]:
@@ -162,15 +171,130 @@ def pre_gain_linear(body: config.Body, d: np.ndarray, fp: np.ndarray) -> np.ndar
     return linear_colour(body, v, col)
 
 
-def lf_cap(body: config.Body) -> float:
-    """The low-frequency path's clip cap: the same at-most-0.5 %-clipped rule as the gain."""
-    if body.id not in _LF_CAP:
-        p = fine_peak(body, lambda d, fp: pre_gain_linear(body, d, fp) * low_frequency_factor(body, d)[..., None])
-        _LF_CAP[body.id] = min(1.0, CLIP_LIMIT / p) if p > 0 else 1.0
-    return _LF_CAP[body.id]
+def base_linear(body: config.Body, d: np.ndarray, fp: np.ndarray) -> np.ndarray:
+    """Linear RGB of a mapped body before the calibration: the map's own colour, times the low-frequency
+    factor where one is configured (Iapetus)."""
+    lin = pre_gain_linear(body, d, fp)
+    if body.albedo.get("lowFrequency"):
+        lin = lin * low_frequency_factor(body, d)[..., None]
+    return lin
 
 
-CLIP_LIMIT = 0.97
+def _samples(body: config.Body, d: np.ndarray) -> tuple:
+    """(brightest channel, luminance / brightest channel) of the base colour at directions d, sampled at the
+    finest albedo level's footprint."""
+    fp = footprint_m(d, int(body.albedo["maxLevel"]), body.radius, cells=cube.IMAGE_TILE_SIZE)
+    m = np.empty(len(d))
+    r = np.empty(len(d))
+    for s0 in range(0, len(d), 20_000):
+        rgb = base_linear(body, d[s0:s0 + 20_000], fp[s0:s0 + 20_000])
+        mx = rgb.max(axis=-1)
+        m[s0:s0 + 20_000] = mx
+        r[s0:s0 + 20_000] = (rgb @ LUMA) / np.maximum(mx, 1e-12)
+    return m, r
+
+
+def _solve_gain(m: np.ndarray, r: np.ndarray, k: float, target: float) -> float:
+    """Gain whose kneed mean luminance is the target (bisection in log gain; the mean rises with the gain)."""
+    lo, hi = -12.0, 12.0
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        if float(np.mean(r * knee(np.exp(mid) * m, k))) < target:
+            lo = mid
+        else:
+            hi = mid
+    return float(np.exp(0.5 * (lo + hi)))
+
+
+def _procedural_mean_fresh(body: config.Body) -> float:
+    """Solid-angle-weighted mean freshness of the finest albedo level (the procedural step's fields)."""
+    A = int(body.albedo["maxLevel"])
+    n = 2 ** A
+    k = (np.arange(256) + 0.5) / 256.0
+    tot = wsum = 0.0
+    for f in range(6):
+        for x in range(n):
+            for y in range(n):
+                fresh = np.fromfile(rt.work_dir(body.id) / "proc" / "a" / f"{f}_{x}_{y}.f32", dtype="<f4").reshape(256, 256)
+                u = -1.0 + 2.0 * (x + k) / n
+                v = -1.0 + 2.0 * (y + k) / n
+                wgt = (1.0 + u[None, :] ** 2 + v[:, None] ** 2) ** -1.5
+                tot += float((wgt * fresh).sum())
+                wsum += float(wgt.sum())
+    return tot / wsum
+
+
+def _cal_path(body: config.Body):
+    return rt.work_dir(body.id) / "albedo-calibration.json"
+
+
+def _cal_key(body: config.Body) -> str:
+    al = body.albedo
+    keys = [k for k in (al["source"], al["colourSource"]) if k]
+    h = hashlib.sha256(json.dumps({"albedo": al, "radii": body.raw["radii"], "v": CAL_VERSION,
+                                   "src": {k: source.source_fingerprint(body, k) for k in keys}},
+                                  sort_keys=True).encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+def calibration(body: config.Body, recompute: bool = False) -> dict:
+    """The body's gain and knee start (see the block comment). Computed once by the bake's parent process and
+    written to work/albedo-calibration.json, which the tile workers read."""
+    if body.id in _CAL and not recompute:
+        return _CAL[body.id]
+    key = _cal_key(body)
+    p = _cal_path(body)
+    if not recompute and p.is_file():
+        c = rt.read_json(p)
+        if c.get("key") == key:
+            _CAL[body.id] = c
+            return c
+    al = body.albedo
+    target = float(al["calibration"]["meanAlbedo"])
+    if al["procedural"] is not None:
+        mf = _procedural_mean_fresh(body)
+        c = {"key": key, "gain": 1.0 / (1.0 + al["procedural"]["freshBrightening"] * mf), "kneeStart": None,
+             "meanFreshness": mf, "target": target, "achievedSampled": target, "ceilingShareSampled": 0.0}
+    else:
+        mg, rg = _samples(body, _fibonacci(CAL_SAMPLES))
+        reg = al["calibration"]["region"]
+        if reg:
+            mr, rr = _samples(body, _cap(reg["latDeg"], reg["lonDegE"], reg["radiusKm"] * 1000.0, body.radius, 60_000))
+        else:
+            mr, rr = mg, rg
+        # the highest mean any knee start can hold within the ceiling rule: per start, the largest gain that
+        # keeps CEILING_SHARE of the surface under CEILING_LIN, and the mean it gives
+        q = float(np.quantile(mg, 1.0 - CEILING_SHARE))
+        best = max(((float(np.mean(rr * knee(knee_ceiling_input(k) / q * mr, k))), k) for k in KNEE_STARTS))
+        chosen = None
+        for k in KNEE_STARTS:
+            g = _solve_gain(mr, rr, k, target)
+            share = float(np.mean(g * mg >= knee_ceiling_input(k)))
+            if share <= CEILING_SHARE:
+                chosen = (g, k, share)
+                break
+        if chosen is None:
+            # the target is out of reach of an 8-bit albedo with this map's range: hold the ceiling rule at the
+            # highest reachable mean (verify's mean check then fails until the config states a reachable target)
+            k = best[1]
+            g = knee_ceiling_input(k) / q
+            chosen = (g, k, float(np.mean(g * mg >= knee_ceiling_input(k))))
+            rt.log(f"{body.id}: albedo target {target} is out of reach within the ceiling rule; the highest "
+                   f"reachable mean is {best[0]:.4f} (knee from {k}); baking that")
+        g, k, share = chosen
+        c = {"key": key, "gain": g, "kneeStart": k, "target": target,
+             "achievedSampled": float(np.mean(rr * knee(g * mr, k))), "ceilingShareSampled": share,
+             "kneedShareSampled": float(np.mean(g * mg > k)), "region": reg,
+             "maxReachableMean": best[0], "maxReachableKnee": best[1]}
+    rt.write_json(p, c)
+    _CAL[body.id] = c
+    return c
+
+
+def gain(body: config.Body) -> float:
+    return calibration(body)["gain"]
+
+
 _LOWF: dict = {}
 
 
@@ -219,17 +343,16 @@ def finest_linear(body: config.Body, face: int, x: int, y: int) -> np.ndarray:
     """Linear RGB (256, 256, 3) of one finest-level tile."""
     A = int(body.albedo["maxLevel"])
     al = body.albedo
+    cal = calibration(body)
     if al["procedural"] is not None:
         p = rt.work_dir(body.id) / "proc" / "a" / f"{face}_{x}_{y}.f32"
         fresh = np.fromfile(p, dtype="<f4").reshape(256, 256).astype(np.float64)
         rgb = procedural_colour(body)[None, None, :] * (1.0 + al["procedural"]["freshBrightening"] * fresh)[..., None]
-        return np.clip(rgb, 0.0, 1.0)
+        # the fresh craters brighten; the mean stays the configured albedo
+        return np.clip(rgb * cal["gain"], 0.0, 1.0)
     d = cube.image_tile_dirs(face, A, x, y)
     fp = footprint_m(d, A, body.radius, cells=cube.IMAGE_TILE_SIZE)
-    lin = pre_gain_linear(body, d, fp)
-    if al.get("lowFrequency"):
-        return np.clip(lin * (low_frequency_factor(body, d) * lf_cap(body))[..., None], 0.0, 1.0)
-    return np.clip(lin * gain(body), 0.0, 1.0)
+    return np.clip(apply_knee(base_linear(body, d, fp) * cal["gain"], cal["kneeStart"]), 0.0, 1.0)
 
 
 def encode(lin: np.ndarray) -> bytes:
@@ -277,8 +400,10 @@ def bake(body: config.Body) -> dict:
     A = int(body.albedo["maxLevel"])
     U = min(SUBTREE_LEVEL, A)
     t0 = time.time()
-    g = gain(body)
-    rt.log(f"{body.id}: albedo calibration gain {g:.5f}")
+    cal = calibration(body, recompute=True)
+    g = cal["gain"]
+    rt.log(f"{body.id}: albedo calibration gain {g:.5f}, knee from {cal['kneeStart']}, sampled mean "
+           f"{cal['achievedSampled']:.4f} (target {cal['target']}), at the ceiling {cal['ceilingShareSampled']:.3%}")
     units = [(body.id, f, U, x, y) for f in range(6) for y in range(2 ** U) for x in range(2 ** U)]
     roots: dict = {}
     n = 0
@@ -301,7 +426,9 @@ def bake(body: config.Body) -> dict:
                     n += 1
                     nb += _write(body, f, level, x, y, lin)
         level_tiles = nxt
-    return {"tiles": n, "bytes": nb, "seconds": time.time() - t0, "gain": g}
+    return {"tiles": n, "bytes": nb, "seconds": time.time() - t0, "gain": g, "kneeStart": cal["kneeStart"],
+            "achievedSampled": cal["achievedSampled"], "ceilingShareSampled": cal["ceilingShareSampled"],
+            "maxReachableMean": cal.get("maxReachableMean")}
 
 
 def build_hash(body_id: str, layer_name: str, ext: str, max_level: int) -> str:
@@ -318,9 +445,14 @@ def build_hash(body_id: str, layer_name: str, ext: str, max_level: int) -> str:
 
 def layer(body: config.Body, stats: dict, sources: list[str]) -> dict:
     return {"encoding": "webp", "ext": "webp", "globalMaxLevel": int(body.albedo["maxLevel"]), "coverage": {},
-            "sources": sources, "calibration": {"meanAlbedo": body.albedo["calibration"]["meanAlbedo"],
-                                                "gain": round(stats["gain"], 6), "clipLimit": CLIP_LIMIT,
-                                                "lowFrequency": body.albedo.get("lowFrequency")}}
+            "sources": sources, "calibration": {
+                "meanAlbedo": body.albedo["calibration"]["meanAlbedo"], "region": body.albedo["calibration"]["region"],
+                "gain": round(stats["gain"], 6),
+                "knee": None if stats.get("kneeStart") is None else {"start": stats["kneeStart"], "form": KNEE_FORM},
+                "achievedMeanSampled": round(stats.get("achievedSampled", 0.0), 5),
+                "ceilingShareSampled": round(stats.get("ceilingShareSampled", 0.0), 5),
+                "maxReachableMean": stats.get("maxReachableMean"),
+                "lowFrequency": body.albedo.get("lowFrequency")}}
 
 
 def lowres(body: config.Body, w: int = 1024, h: int = 512) -> np.ndarray:

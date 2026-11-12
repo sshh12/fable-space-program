@@ -30,7 +30,7 @@ from common import layout  # noqa: E402
 from planet import albedo, config, fetch, giants, heights, procedural, rt, source  # noqa: E402
 
 # Bump when the output of a step changes for the same config.
-CODE_VERSION = {"prepare": 1, "procedural": 1, "height": 1, "albedo": 3, "manifest": 3}
+CODE_VERSION = {"prepare": 1, "procedural": 1, "height": 1, "albedo": 5, "manifest": 5}
 SOLID_STEPS = ("fetch", "prepare", "procedural", "height", "albedo", "manifest")
 
 
@@ -283,7 +283,7 @@ def write_credits() -> Path:
     if unused:
         raise ValueError(f"credits.json has entries no body uses: {unused}")
     doc = {"formatVersion": 1, "generatedBy": "tools/bake/planet/bake.py --credits",
-           "note": "Every source of the simple bodies' tile sets and the giants' global maps (planet-bake). Merged into data/defs/visuals/credits.json at activation; rendered by the Credits screen.",
+           "note": "Every source of the simple bodies' tile sets and the giants' global maps (planet-bake). Merged into data/defs/visuals/credits.json at activation; rendered by the Credits screen. Licence classes: public domain, CC BY 4.0, and a provider statement of no access or use constraints (credited; the Phobos DEM).",
            "entries": entries}
     rt.write_json(rt.STAGED_CREDITS, doc)
     return rt.STAGED_CREDITS
@@ -295,9 +295,8 @@ def release(body: config.Body) -> None:
     for cache in (albedo._RASTER, heights._RASTER):
         for k in [k for k in cache if k[0] == body.id]:
             del cache[k]
-    albedo._GAIN.pop(body.id, None)
+    albedo._CAL.pop(body.id, None)
     albedo._LOWF.pop(body.id, None)
-    albedo._LF_CAP.pop(body.id, None)
     gc.collect()
 
 

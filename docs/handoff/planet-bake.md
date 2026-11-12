@@ -106,8 +106,24 @@ the log are the hand-off proper.
   mirror self-test. Mars and Mercury heights were accepted, not re-baked (decision 21: their DEMs, streamed
   and hashed, hold no pixel of the nodata value now stated); Mars' MDIM valid 0.9976, colour 1.0000.
   Verify 814 checks, 2 failed (only the staged-section cross-check of request planet-bake-1); vitest 119 of
-  119 with the terrain guard. Consequence to note: the strict clip cap makes the bright moons darker than
-  their geometric albedo (section 6). Disk 30.7 GB free at the end.
+  119 with the terrain guard. The strict clip cap made the bright moons darker than their albedo (fixed in
+  the next entry).
+
+- 17:00-20:00 UTC: the lead's decisions on the review report. (1) Mean = albedo with a soft highlight knee
+  (decision 20): every body's level-0 mean is now its configured albedo within 0.4 % (Tethys -1.4 %: it
+  holds 0.789 of 0.80), at most 0.011 % of any body at 254 DN or above; Enceladus' target is 0.77, the most
+  its high-pass mosaic holds under the ceiling (Bond albedo 0.81). Two shapes were tried and dropped: an
+  exponential shoulder (could not hold Enceladus or Tethys) and a local variant (kept more bright-ground
+  detail but held a third of the bright moons' albedo). The first knee bake let lossy WebP lift near-white
+  texels over 254 DN (Dione 3.9 %), so the calibration now keeps 4 DN of margin. verify.py checks the mean
+  against the target (2 %) and the share at the ceiling; four landmark thresholds lowered and Rhea's Inktomi
+  test turned into a texture test (bright-on-bright contrast is compressed by the knee), Dione's
+  hemispheric test removed. All 25 albedo layers re-baked through the gate; looked at Enceladus, Europa,
+  Tethys, Dione, Iapetus (two tones kept) and Pluto at true albedo (`tools/bake/planet/looks.py`). (2) The
+  Phobos DEM's licence class (no access or use constraints, credited) is accepted and stated in
+  credits.json. Verify 838 checks, 2 failed (the staged-section cross-check of request planet-bake-1);
+  vitest 120 passed, 1 skipped (Dione's self-test is left to verify.py: its one landmark is too small for
+  the low-res map), the terrain guard's 7 included. Disk 37.2 GB free.
 
 ## 1. What consumers get
 
@@ -121,7 +137,7 @@ Standard layout and `TileManifest` (`src/core/contracts/terrain.ts`), written th
 | Frame | the body-fixed frame of the IAU rotation model (pck00011): +Z north pole, +X prime meridian, east longitude, planetocentric latitude. Every source is re-registered to it (west-positive maps mirrored, planetographic latitudes converted, point/cell registration honoured) and the landmark tests prove it |
 | `radius` | the body's MEAN radius (= `BodyDef.radius`, the datum sphere) |
 | `height` | `frt1-height`, global levels `0..maxLevel` (no sparse levels), `heightScales` 0.5 m. Height = reference surface - mean radius + DEM: the reference is the triaxial ellipsoid of the config's radii, or for a DEM given against a sphere that sphere (Mercury 2,439.4 km, Venus 6,051.0, Ceres 470.0, Pluto 1,188.3, Charon 606.0, Phobos 11.1, Enceladus 251.5); Mars' MOLA heights are on the areoid and are added to the IAU ellipsoid (the brief's rule; the areoid's +-2 km undulation is not modelled). So physics and rendering see the body's shape (Phobos' 8.2-14.0 km radii, Iapetus' 20 km flattening, Mars' 20 km) as an ordinary heightfield. Additive field `elevation: {min, max}` (finest level, m above `radius`) and `build` (content hash) |
-| `albedo` | `webp` 256 x 256 opaque RGB, global levels `0..maxLevel`; sRGB base colour, calibrated so the area-weighted mean luminance (linear) equals the configured albedo (NSSDC geometric albedo, solar-system.md 2.5; Iapetus on its bright hemisphere). Additive `calibration` and `build` |
+| `albedo` | `webp` 256 x 256 opaque RGB, global levels `0..maxLevel`; sRGB base colour, calibrated so the area-weighted mean luminance (linear) equals the configured albedo (NSSDC geometric albedo, solar-system.md 2.5, where the map can hold it; Iapetus on its bright hemisphere), highlights through a soft knee toward 1.0 (decision 20). Additive `calibration` (gain, knee start and form, sampled mean and ceiling share, highest reachable mean) and `build` |
 | `globals.albedoLowRes` | `globals/albedo-lowres.png`, 1024 x 512 equirect (row 0 north, column 0 at 180 W), as the Moon's |
 | `residentHeightLevel` | min(3, height maxLevel) |
 | `body` (additive) | `name`, `radii {mean, a, b, c}`, `reference`, the resolved `amplification` definition (model, seed, params) the run-time model must use, `bakeConfig` |
@@ -145,10 +161,10 @@ the chromaticity (request bodies-ephemeris-5).
 `{ formatVersion: 1, generatedBy, note, entries: [{ id, title, author, url, licence, licenceUrl,
 attribution, bodies: [names] }] }`, one entry per source of every config (the source list is
 `tools/bake/planet/credits.json`). `attribution` is the line for the Credits screen. Every licence is public
-domain (NASA/USGS/PDS) or CC BY 4.0 (Hubble OPAL, credited as modified), except the Phobos DEM: a DLR/ESA
-Mars Express product distributed by USGS whose metadata states no access or use constraints (credited to
-ESA/DLR/FU Berlin; the lead may prefer to confirm it, see section 8). No map whose author forbids
-redistribution is used.
+domain (NASA/USGS/PDS) or CC BY 4.0 (Hubble OPAL, credited as modified), or the third licence class the
+lead accepted: a provider statement of no access or use constraints, credited (the Phobos DEM, a DLR/ESA
+Mars Express product distributed by USGS: "Access_Constraints None, Use_Constraints None"; credited to
+ESA/DLR/FU Berlin, Willner et al. 2010). No map whose author forbids redistribution is used.
 
 ### Amplification models
 
@@ -178,6 +194,8 @@ data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/bake.py --credits 
 node tools/dev/heavy.mjs --class=cpu -- data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/verify.py --all
 data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/sheets.py --all            # out/bake/planet/<id>.png
 data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/views.py --all             # out/bake/planet/views/<id>.png: +-180, 0, poles
+data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/looks.py <id>:<lat>:<lon>:<capDeg> ...   # true-albedo global + close view
+node tools/dev/heavy.mjs --class=bake --label=planet -- data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/reach.py <id> --clean   # highest reachable mean albedo
 data\cache\earth\venv\Scripts\python.exe -I tools/bake/planet/bake.py <id> --clean       # delete downloads + intermediates
 node tools/dev/heavy.mjs --class=cpu -- npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts
 ```
@@ -229,10 +247,11 @@ config change only (levels, sources, landmarks).
    Catmull-Rom + longitude taps), as the Moon's global levels; coarser levels: the existing full-weighting
    pyramid. Albedo: the finest level area-filtered from the source, coarser levels 2 x 2 means in linear
    light (no re-sampling of the source, no re-decoding of lossy tiles).
-7. **Albedo calibration.** Every 8-bit mosaic is read as a display (sRGB) image; one gain per body sets the
-   area-weighted mean luminance to the NSSDC geometric albedo (as the Moon: mean 0.13 against 0.12);
-   Enceladus capped at 0.9 (geometric albedo 1.0) so its detail survives 8-bit sRGB; Iapetus calibrated on
-   its bright hemisphere (0.5). Mono maps take an approximate tint per body (in the config).
+7. **Albedo calibration.** Every 8-bit mosaic is read as a display (sRGB) image; one gain and a soft
+   highlight knee per body set the area-weighted mean luminance to the configured albedo, the NSSDC
+   geometric albedo (as the Moon: mean 0.13 against 0.12) unless the map cannot hold it within the ceiling
+   rule (decision 20); Iapetus calibrated on its bright hemisphere (0.5). Mono maps take a tint per body
+   (in the config).
 8. **No de-shading.** Most mosaics carry their imaging geometry's shading (Viking, MDIS, Galileo, Cassini;
    the Enceladus map is high-pass filtered, i.e. mostly shading). The Moon's albedo was de-shaded; here the
    placeholder-quality allowance of the expansion applies. On DEM bodies the renderer's normal-map shading
@@ -283,10 +302,22 @@ config change only (levels, sources, landmarks).
 19. **Triton's colour map is white-balanced** to its disc-integrated B-V 0.70 (HST, Pascu et al.) with the
     rule of decision 10 (`albedo.tint` on a 3-band map is a per-channel white balance): factors 1.115, 1,
     1.353 on the Voyager composite, whose violet/green/orange filters made it green.
-20. **Clip cap measured where it bites**: the gain cap (decision 7) now takes the 99.5th percentile of the
-    brightest channel at the finest level's own footprint (200,000 equal-area directions), not on a coarse
-    mip that had averaged the bright spots away, and the `lowFrequency` path (Iapetus) is capped too.
-    verify.py measures the clipped fraction (any channel >= 254 DN, solid-angle weighted, finest level).
+20. **Mean = albedo, highlights through a soft knee** (the lead's decision on the review: the tiles are what
+    the near-field renderer shades with). Per body one gain g and a knee start k: the finest level is
+    y = knee(g x) on the brightest channel of the map's linear colour x (the other channels scaled with it,
+    hue kept), with knee(x) = x for x <= k and k + (1 - k) t / (1 + t), t = (x - k) / (1 - k), above: a
+    rational shoulder, continuous with slope 1 at k, approaching 1.0 and never reaching it (a surface cannot
+    reflect more than it receives; an exponential shoulder could not hold Enceladus' or Tethys' mean without
+    a tenth of the surface at the ceiling). g makes the area mean luminance (200,000 equal-area directions at
+    the finest footprint; Iapetus over its calibration disc) equal the configured albedo; k is the highest
+    of 0.85, 0.80, ... 0.15 at which at most 0.4 % of the surface comes within 4 DN of the 8-bit ceiling
+    (lossy WebP lifts near-white texels by a few DN; verify allows 0.5 % at 254 DN). A procedural body's
+    albedo is divided by its mean fresh-crater brightening so its mean is its albedo. Where no knee can hold
+    the configured albedo within the ceiling rule (Enceladus, Tethys: maps whose shading spans a factor of 4
+    and more), the config states the highest reachable mean instead (`tools/bake/planet/reach.py`). The
+    manifest's `layers.albedo.calibration` records gain, knee (start and form), the sampled mean and ceiling
+    share and the highest reachable mean. verify.py checks the level-0 mean against the target (2 %) and the
+    share at the ceiling (0.5 %, finest level).
 21. **Step fingerprints chain**: a step's fingerprint folds in the fingerprints of the steps it reads
     (procedural -> height, albedo -> manifest), so a re-bake of the height or albedo always re-writes the
     manifest (review 9); states written before the change are accepted only where the step's code is
@@ -299,17 +330,48 @@ config change only (levels, sources, landmarks).
 | Criterion | Result |
 |---|---|
 | Terrain guard green before and after; no earth/moon file changed | Before: 4 of 4 (00:41, as recorded then). After the last bake of this package (12:58 UTC): heights bit-exact; the directory summary lists only site-bake's Madrakah additions to the earth set (the earth manifest and earth/albedo/2/10/175-185), which that package declares and the lead re-records, no moon change and nothing of this tool's. After the first full set of bakes: 6 of 6 (`tests/unit/terrain-core/terrain-guard.test.ts`, re-recorded by the coordinator on stored directions in between, cde7b30): heights at the fixed points bit-exact, file counts and names of every earth/moon directory unchanged. The tool cannot write them (`rt.FORBIDDEN_TILESETS`; configs named earth/moon are rejected). |
-| Landmark tests per baked body catch a flipped or shifted map | 50 landmark tests over the 18 map bodies + Mimas' Herschel, all pass, and every body's set FAILS on its map mirrored east-west and on its map shifted by 180 deg (38 self-test checks; verify.py, and in vitest `landmarks.test.ts`: heights through the TerrainProvider, albedo on the low-res global map). New after the review: Maat Mons 9.0 km (mirrored 0.5, shifted -0.1), Burney 2.1 km deep, Dorothy 3.5 km, Argo Chasma -4.6 km, Stickney 1.1 km, Enceladus' Dunyazad and Zumurrud, its long axis +4.9 km and a 0.86 km basin. Examples: Olympus Mons DEM part 20,014 m at the Gazetteer centre (brief: about 21 km; the summit is 1.3 deg south), Arsia Mons 17,711 m (MEGDR 17,755), Badwater/Hellas -8,189 m (MOLA -8,206), Rachmaninoff -5,287 m (lowest point of Mercury -5.38 km), Maxwell Montes 10,676 m, Occator's Cerealia Facula 2.0 x its ring, Pele/Loki (Loki 1.8 x darker), Tros, Galileo Regio, Valhalla, Xanadu 17 x Belet, Iapetus 6.4 x, Sputnik Planitia 17 x Belton Regio and 1.7 km deep, Herschel 9.3 km deep. Procedural bodies (Deimos, Miranda, Ariel, Umbriel, Titania, Oberon) have no map to flip and no landmark. Also per body: no seam along the +-180 and 0 meridians in the albedo (66 checks; Mars was 0.49 there, Venus about 0.35, now 0.99 and 1.00) and in every DEM (Phobos' stitch found and removed), at most 0.5 % at the 8-bit ceiling (25 checks; Iapetus was 3.7 %). |
+| Landmark tests per baked body catch a flipped or shifted map | 43 landmark tests over the 18 map bodies + Mimas' Herschel, all pass, and every body's set FAILS on its map mirrored east-west and on its map shifted by 180 deg (38 self-test checks; verify.py, and in vitest `landmarks.test.ts`: heights through the TerrainProvider, albedo on the low-res global map). New after the review: Maat Mons 9.0 km (mirrored 0.5, shifted -0.1), Burney 2.1 km deep, Dorothy 3.5 km, Argo Chasma -4.6 km, Stickney 1.1 km, Enceladus' Dunyazad and Zumurrud, its long axis +4.9 km and a 0.86 km basin. Examples: Olympus Mons DEM part 20,014 m at the Gazetteer centre (brief: about 21 km; the summit is 1.3 deg south), Arsia Mons 17,711 m (MEGDR 17,755), Badwater/Hellas -8,189 m (MOLA -8,206), Rachmaninoff -5,287 m (lowest point of Mercury -5.38 km), Maxwell Montes 10,676 m, Occator's Cerealia Facula 2.0 x its ring, Pele/Loki (Loki 1.8 x darker), Tros, Galileo Regio, Valhalla, Xanadu 17 x Belet, Iapetus 6.4 x, Sputnik Planitia 17 x Belton Regio and 1.7 km deep, Herschel 9.3 km deep. Procedural bodies (Deimos, Miranda, Ariel, Umbriel, Titania, Oberon) have no map to flip and no landmark. Also per body: no seam along the +-180 and 0 meridians in the albedo (66 checks; Mars was 0.49 there, Venus about 0.35, now 0.99 and 1.00) and in every DEM (Phobos' stitch found and removed), at most 0.5 % at the 8-bit ceiling (25 checks; Iapetus was 3.7 %). |
 | Manifests promise only tiles that exist; no zero-length tile | verify.py: for every body and layer, promised = on disk exactly (no missing, no extra, no empty, no stray or `.partial` file); every height tile decodes to finite heights and shares its in-face edges with its neighbours to one quantisation step; every albedo tile is a 256 x 256 opaque RGB WebP |
 | Every tile set loads through the TerrainProvider, lazily, one body at a time | `tests/unit/planet-bake/tilesets.test.ts`: for each of the 25 bodies a provider for that body alone, collision and band-limited heights at 24 points finite and inside the recorded range, residency complete after `ensureLoaded`, only that body's tiles cached; with `PLANET_BAKE_REQUIRE=1` a configured body that is not baked fails. all pass (counts in the self-verify row) |
 | data/ under 22 GB with raw downloads deleted; >= 25 GB free; sizes per body | Baked data (rule 13d: tiles, sky, staged, defs) 17.05 GB after the review re-bakes (16.65 before), of which the 25 new tile sets 2.76 GB (147,612 tiles); the review's lowest disk point was 26.2 GB free (decimal GB, while Mars' colour map was prepared; other packages' data moved it between 24 and 34 GB), 30.7 GB at the end; every raw download and intermediate deleted (`data/cache/planets` holds only the resume state files). Disk 32.4 GB free at the end. The floor was breached twice for minutes during the bakes (24.2 GB in batch 1 when other packages' data/packs (14 GB) and caches grew under it; 24 GB in batch 3 while Mars' MOLA copy was written): each time the batch stopped or the step finished and its clean-up restored it; since then a bake fetches and prepares one source at a time and big bodies bake in two passes |
 | Bakes through the gate, at most 6 worker processes | Every bake ran as `node tools/dev/heavy.mjs --class=bake -- ...` (three batches plus the Mars albedo re-run), pools of 6 below-normal workers (`moon/rt.pool`); downloads, verification, sheets and the giants' maps (single processes) under `--class=cpu` |
-| Self-verify | After the review: `python -I tools/bake/planet/verify.py --all`: 814 checks, 2 failed, both the cross-check of bodies-ephemeris' staged terrain sections against the new Phobos and Enceladus DEM ranges (request planet-bake-1; nothing to fix on this side) (161 s; `out/bake/planet/verify.txt`); `npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts` (with `PLANET_BAKE_REQUIRE=1`): 119 of 119, the terrain guard's 7 included. Before the review: 666 of 666, 77 of 77 |
+| Self-verify | After the lead's knee decision: `python -I tools/bake/planet/verify.py --all`: 838 checks, 2 failed, both the cross-check of bodies-ephemeris' staged terrain sections against the new Phobos and Enceladus DEM ranges (request planet-bake-1; nothing to fix on this side); every body's level-0 mean within 2 % of its albedo and at most 0.5 % at the ceiling (`out/bake/planet/verify.txt`). `npx vitest run tests/unit/planet-bake src/terrain/amplification tests/unit/terrain-core/terrain-guard.test.ts` (with `PLANET_BAKE_REQUIRE=1`): 120 passed, 1 skipped, the terrain guard's 7 included. Before the review: 666 of 666, 77 of 77 |
 
 Also checked (verify.py): radii of every config = `data/staged/bodies/radii.json` (mean, a, b, c, to 0.5 m);
 every staged terrain section of bodies-ephemeris names the tile set and carries exactly the resolved
 amplification (model, seed, every parameter) and an elevation range containing the baked one; credits list
 every source with a public-domain or CC BY licence.
+
+Albedo calibration per body (verify.py; Iapetus' mean is over its calibration disc, the others over the whole
+body; the share at the ceiling is solid-angle weighted at the finest level):
+
+| Body | Level-0 mean | Target | Off by | At 254 DN or above | Knee from | Gain |
+|---|---|---|---|---|---|---|
+| Ariel | 0.3905 | 0.39 | +0.1% | 0.000% | (procedural) | 0.953 |
+| Callisto | 0.1902 | 0.19 | +0.1% | 0.002% | 0.75 | 3.922 |
+| Ceres | 0.0899 | 0.09 | -0.2% | 0.000% | 0.85 | 0.365 |
+| Charon | 0.3503 | 0.35 | +0.1% | 0.000% | 0.75 | 1.511 |
+| Deimos | 0.0702 | 0.07 | +0.3% | 0.000% | (procedural) | 0.977 |
+| Dione | 0.7008 | 0.7 | +0.1% | 0.000% | 0.5 | 5.419 |
+| Enceladus | 0.7709 | 0.77 | +0.1% | 0.003% | 0.25 | 11.696 |
+| Europa | 0.6815 | 0.68 | +0.2% | 0.001% | 0.7 | 2.758 |
+| Ganymede | 0.4405 | 0.44 | +0.1% | 0.011% | 0.7 | 6.377 |
+| Iapetus | 0.5022 | 0.5 | +0.4% | 0.000% | 0.7 | 1.129 |
+| Io | 0.6210 | 0.62 | +0.2% | 0.001% | 0.6 | 4.086 |
+| Mars | 0.1702 | 0.17 | +0.1% | 0.000% | 0.8 | 1.684 |
+| Mercury | 0.1423 | 0.142 | +0.2% | 0.000% | 0.85 | 0.941 |
+| Mimas | 0.6005 | 0.6 | +0.1% | 0.000% | (procedural) | 0.954 |
+| Miranda | 0.3208 | 0.32 | +0.2% | 0.000% | (procedural) | 0.952 |
+| Oberon | 0.2304 | 0.23 | +0.2% | 0.000% | (procedural) | 0.954 |
+| Phobos | 0.0701 | 0.07 | +0.1% | 0.000% | 0.85 | 0.252 |
+| Pluto | 0.5203 | 0.52 | +0.1% | 0.002% | 0.4 | 5.927 |
+| Rhea | 0.7008 | 0.7 | +0.1% | 0.000% | 0.65 | 5.158 |
+| Tethys | 0.7889 | 0.8 | -1.4% | 0.000% | 0.15 | 18.858 |
+| Titan | 0.2004 | 0.2 | +0.2% | 0.000% | 0.85 | 0.824 |
+| Titania | 0.2712 | 0.27 | +0.4% | 0.000% | (procedural) | 0.956 |
+| Triton | 0.7612 | 0.76 | +0.2% | 0.001% | 0.65 | 3.537 |
+| Umbriel | 0.2103 | 0.21 | +0.2% | 0.000% | (procedural) | 0.950 |
+| Venus | 0.1503 | 0.15 | +0.2% | 0.000% | 0.85 | 0.635 |
 
 ## 5. Bodies, sources, sizes
 
@@ -371,17 +433,17 @@ Disk peak of a pass about 5.3 GB in the first bake (Mercury's 4.25 GB download p
   approximate one (config) for the others; Triton's Voyager colour is
   greenish as composited; Neptune's OPAL map is strongly cyan as composited (planet-render may regrade);
   Venus' surface is the Magellan RADAR backscatter as luminance (the visible surface is under the clouds).
-- **Bright bodies are darker than their geometric albedo** (decision 20: at most 0.5 % at the 8-bit
-  ceiling, measured at the finest level, now holds). Level-0 mean linear luminance against the configured
-  albedo: Enceladus 0.256 / 0.90, Pluto 0.143 / 0.52, Tethys 0.274 / 0.80, Dione 0.267 / 0.70, Iapetus
-  0.188 / 0.50, Rhea 0.343 / 0.70, Ganymede 0.224 / 0.44, Io 0.325 / 0.62, Triton 0.423 / 0.76, Europa 0.399
-  / 0.68, Charon 0.231 / 0.35, Callisto 0.134 / 0.19, Mars 0.145 / 0.17; the dark bodies reach their target
-  (Mercury, Venus, Ceres, Phobos, Titan within 6 %). The first bake's coarse cap had them 20-40 % brighter
-  and 1-4 % clipped. The far disc is unaffected (bodies-ephemeris takes the chromaticity from
-  albedo-means.json and scales it to the geometric albedo). A soft highlight knee instead of the linear cap
-  (full gain, highlights compressed toward 1, the cap only where more than 0.5 % would still reach 254 DN)
-  would recover part of the mean; it is a small change in `albedo.gain`/`finest_linear` and a re-bake of the
-  13 capped bodies (about 30 min of bake slot); left for the lead to choose.
+- **Bright terrain is compressed, by design** (decision 20): every body's level-0 mean is its albedo, so on
+  the bright moons most of the surface sits in the knee's shoulder, where brightness contrast is squeezed
+  (detail reads, but weaker than in the source: Sputnik Planitia's cells are faint; bright rays on bright
+  ground lose most of their contrast, so four landmark thresholds were lowered and Rhea's Inktomi test reads
+  texture instead; Dione's leading/trailing brightness difference did not survive and its test was
+  removed). Enceladus is calibrated to 0.77 and Tethys holds 0.788 of its 0.80: the highest means their
+  shading-dominated mosaics can hold with at most 0.5 % at the 8-bit ceiling (`reach.py`); the far disc
+  takes the geometric albedo, so a small brightness step remains at the hand-over for Enceladus. A local
+  variant (shoulder on the large-scale tone, detail as a ratio on top) kept more bright-ground detail but
+  held only about a third of the bright moons' albedo under the ceiling (Enceladus 0.27, Pluto 0.15), so
+  the global knee was kept.
 - **Mercury and Mars albedo** are read at 332 m and 464 m (decimated by 2, disk floor), so their finest
   level's texels near cube corners (206 m and 143 m) are upsampled; at face centres (468 m, 325 m) they are not.
 - **Jupiter's** map longitude origin is as NASA published PIA07782 (System III not confirmed by the source);
@@ -451,10 +513,10 @@ reproducible with the commands of section 2); the packer (platform-delivery) pic
 - **Request planet-bake-1** (to bodies-ephemeris, open): regenerate the staged body files from the new
   manifests (Phobos and Enceladus elevation ranges; verify's cross-check of the staged sections fails for
   those two until then), mean colours and credits.
-- **Licence of the Phobos DEM (for the lead)**: DLR/ESA's HRSC product, distributed by USGS/PDS; its
-  metadata states "Access_Constraints: None, Use_Constraints: None". It is credited (ESA/DLR/FU Berlin,
-  Willner et al. 2010) and accepted by the tool's licence check as a third class beside public domain and
-  CC BY. If only those two are wanted, remove the `dem` source from `phobos.json` (back to the ellipsoid).
+- **Licence of the Phobos DEM: accepted by the lead.** A provider statement of no access or use
+  constraints, credited, is a third licence class beside public domain and CC BY (DLR/ESA's HRSC product,
+  distributed by USGS/PDS; its metadata: "Access_Constraints None, Use_Constraints None"). credits.json and
+  the staged credits' note say so; the tool's licence checks accept exactly these three classes.
 - **Venus cloud tops** (decision 2) and **Uranian moons' Voyager images** (partial coverage; the design
   chose procedural) are left as they are by design.
 
@@ -473,7 +535,10 @@ generic model, complementary weights), `giants.py` (equirect re-orientation, poi
 planetographic latitude, zonal fill; ring strip from an occultation table), `bake.py` (driver, step
 fingerprints chained through the steps and the prepared sources, `--split-passes`, `--clean-after`,
 `--accept-height`, `--credits`), `verify.py` (also the mirror/shift landmark self-test, meridian seams in
-albedo and height, the clip fraction, giant seams), `sheets.py`, `views.py` (close views of the +-180 and 0
-meridians and the poles).
+albedo and height, the level-0 mean against the albedo, the ceiling share, giant seams), `sheets.py`,
+`views.py` (close views of the +-180 and 0 meridians and the poles), `looks.py` (true-albedo looks),
+`reach.py` (the highest mean a map can hold under the ceiling rule). The albedo calibration (gain, knee) is
+computed once per bake by the parent process (`albedo.calibration`, written to
+`work/albedo-calibration.json` for the tile workers).
 Adding a body: a config (sources with url/bytes/md5, conventions, levels, landmarks with Gazetteer refs),
 `--record-checksums` on the first run, then `verify.py <id>` and `sheets.py <id>`, and LOOK at the sheet.

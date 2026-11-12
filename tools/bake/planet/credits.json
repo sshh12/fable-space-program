@@ -267,7 +267,7 @@
   "title": "Phobos HRSC global DEM, 2 ppd (Willner et al. 2010)",
   "author": "ESA/DLR/FU Berlin (Mars Express HRSC), DLR Institute of Planetary Research (K. Willner); NASA/JPL Viking Orbiter; USGS Astrogeology Science Center (distribution)",
   "url": "https://planetarymaps.usgs.gov/mosaic/Phobos_ME_HRSC_DEM_Global_2ppd.tif",
-  "licence": "No access or use constraints (product metadata: Access_Constraints None, Use_Constraints None)",
+  "licence": "No access or use constraints (provider statement in the product metadata: Access_Constraints None, Use_Constraints None), credited: a third licence class beside public domain and CC BY",
   "licenceUrl": "https://planetarymaps.usgs.gov/mosaic/Phobos_ME_HRSC_DEM_Global_2ppd.tif.xml",
   "attribution": "Phobos shape: ESA/DLR/FU Berlin (Mars Express HRSC) and NASA/JPL Viking, DLR (Willner et al. 2010); USGS Astrogeology"
  },

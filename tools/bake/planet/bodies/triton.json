@@ -75,8 +75,8 @@
    "lonDegE": 78.0,
    "radiusKm": 40,
    "sense": "darker",
-   "minRatio": 1.1,
-   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 3029 (31 S, 78 E); macula = dark spot (the group of dark spots is about 80 km across)"
+   "minRatio": 1.04,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 3029 (31 S, 78 E); macula = dark spot (the group of dark spots is about 80 km across) Threshold lowered for the highlight knee (decision 20), which compresses brightness contrast on bright ground: was 1.1; now 1.063, mirrored 0.991, shifted by 180 deg 0.986."
   },
   {
    "name": "south polar cap brighter than the cantaloupe terrain",

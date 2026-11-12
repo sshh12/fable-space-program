@@ -6,7 +6,8 @@ Per solid body: the manifest (contract fields, radius and levels from the config
 attribution); the tile files against the manifest's promises (every promised tile present, none extra, none
 empty, no `.partial` left over); every height tile decodes to finite heights and shares its in-face edges with
 its neighbours to one quantisation step; every albedo tile is a 256 x 256 opaque image; the landmark tests of
-the config, and the same landmarks on the map mirrored east-west and shifted by 180 deg, which must fail; no
+the config, and the same landmarks on the map mirrored east-west and shifted by 180 deg, which must fail; the
+level-0 mean albedo within 2 % of the configured one (over the calibration disc where one is set); no
 seam along the +-180 and 0 meridians in the albedo (luminance on the meridian against beside it) or in a DEM
 height (curvature across it against meridians beside it); at most 0.5 % of the surface at the 8-bit ceiling;
 the radii and the amplification section against the staged files of bodies-ephemeris when those exist. Per
@@ -139,6 +140,27 @@ def height_seams(body: config.Body, hr, level: int):
             if r > worst[0]:
                 worst = (r, control)
         yield lon0, worst[0], worst[1]
+
+
+MEAN_TOLERANCE = 0.02
+
+
+def level0_mean_luminance(body: config.Body) -> tuple[float, str]:
+    """Mean linear luminance of the level-0 albedo: solid-angle weighted over the six tiles, or, for a body
+    calibrated on a disc (`albedo.calibration.region`), over that disc (4,000 equal-area points)."""
+    reg = body.albedo["calibration"]["region"]
+    if reg:
+        ar = AlbedoReader(body.id)
+        d = cap_points(reg["latDeg"], reg["lonDegE"], reg["radiusKm"] * 1000.0, body.radius, n=4000)
+        return float(ar.luminance(d, 0).mean()), f"the {reg['radiusKm']} km calibration disc at {reg['latDeg']} N {reg['lonDegE']} E"
+    acc = wsum = 0.0
+    for f in range(6):
+        img = srgb_decode(np.asarray(Image.open(layout.tile_file(body.id, "albedo", f, 0, 0, 0, "webp")).convert("RGB"),
+                                     dtype=np.float64) / 255.0)
+        w = np.max(np.abs(cube.image_tile_dirs(f, 0, 0, 0)), axis=-1) ** 3
+        acc += float((w * (img @ LUMA)).sum())
+        wsum += float(w.sum())
+    return acc / wsum, "the whole body"
 
 
 class Report:
@@ -366,6 +388,11 @@ def verify_solid(body: config.Body, rep: Report, quick: bool) -> dict:
         for lon0, ratio, control in height_seams(body, hr, int(hl["globalMaxLevel"])):
             rep.check(bid, f"height: no seam along the {lon0:.0f} deg meridian", ratio <= 3.0,
                       f"curvature across it / at eight meridians 2-5 deg beside it = {ratio:.2f} (<= 3; control {control:.1f} m)", value=ratio)
+    mean, where = level0_mean_luminance(body)
+    target = float(body.albedo["calibration"]["meanAlbedo"])
+    rep.check(bid, f"albedo: level-0 mean = the configured albedo within {MEAN_TOLERANCE:.0%}",
+              abs(mean / target - 1.0) <= MEAN_TOLERANCE, f"{mean:.4f} against {target} over {where} ({mean / target - 1.0:+.1%})",
+              value=mean, target=target)
     cf = clip_fraction(bid, int(al["globalMaxLevel"]))
     rep.check(bid, f"albedo: at most {CLIP_MAX_FRACTION:.1%} of the surface at the 8-bit ceiling (any channel >= {CLIP_DN} DN, finest level)",
               cf <= CLIP_MAX_FRACTION, f"{cf:.3%} (solid-angle weighted)", value=cf)

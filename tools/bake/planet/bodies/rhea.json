@@ -71,14 +71,13 @@
  },
  "landmarks": [
   {
-   "name": "Inktomi rays",
-   "kind": "albedoContrast",
+   "name": "Inktomi crater and rays (texture)",
+   "kind": "albedoTexture",
    "latDeg": -14.1,
    "lonDegE": 247.9,
-   "radiusKm": 24,
-   "sense": "brighter",
-   "minRatio": 1.05,
-   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 14671 (14.1 S, 112.1 W, 47 km); bright, youngest feature"
+   "radiusKm": 23.5,
+   "minRatio": 1.5,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 14671 (14.1 S, 112.1 W, 47 km); bright, youngest feature. Under the highlight knee (decision 20) its brightness against the bright surroundings is compressed to 1.004 at 47 km, so the test reads the crater's texture instead: luminance std disc / ring 2.28, mirrored 1.06, shifted by 180 deg 0.90."
   },
   {
    "name": "leading hemisphere brighter than the wispy trailing hemisphere",

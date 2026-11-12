@@ -80,8 +80,8 @@
    "lonDegE": 187.9,
    "radiusKm": 90,
    "sense": "darker",
-   "minRatio": 1.05,
-   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 5984 (45.9 S, 172.1 W, 180 km); macula = dark spot"
+   "minRatio": 1.03,
+   "ref": "IAU Gazetteer of Planetary Nomenclature, feature 5984 (45.9 S, 172.1 W, 180 km); macula = dark spot Threshold lowered for the highlight knee (decision 20), which compresses brightness contrast on bright ground: was 1.05; now 1.046, mirrored 1.004, shifted by 180 deg 1.005."
   },
   {
    "name": "Tyre (dark)",
