@@ -636,34 +636,103 @@ windows during entry.
 
 ## 9. Visual close-out, round 2
 
-(INTERIM while the round is being finished: this section is rewritten with the final pictures and numbers at
-the end of the round. Until then the commit messages of `git log -- src/render/vfx` since `1665ac9` are the
-record.)
+Work list of the round: what the mission flown in the game showed (`out/screens/mission/`), then the two
+round-1 lists (`docs/qa/wave2/vfx.r1.photo.json`, 4.5 / 10 with 3 blockers; `vfx.r1.artifact.json`, 5 / 10
+with 2 blockers), then the requests. A second owner began it (`1665ac9`: plume lights with a source radius,
+shock cells seen near the nozzle only, reentry layer concentrated at the stagnation point with a narrowing
+wake, particle streaks behind the particle, a denoise pass over the half-resolution image, fireball with a
+smooth temperature field, foam as lace, curved slack lines, dust sheet) and was cut off by a machine crash;
+its uncommitted tuning is `b8edf91`. A third owner finished the round: this section. Where it disagrees with
+sections 0 to 8, it is right.
 
-The round began with a second owner's working state (`1665ac9`, then uncommitted tuning, committed as found
-in `b8edf91`) and was finished by a third after a machine crash. Work list: what the mission flown in the
-game showed, then the round-1 lists `docs/qa/wave2/vfx.r1.photo.json` and `vfx.r1.artifact.json`.
+### 9.1 What the game showed (work item 1)
 
-What the game showed, and its causes (pictures: `out/screens/vfx/dev/a2-*.png`, taken by the new
-`tests/browser/vfx/appshots.spec.ts`: the real game flown by the test pilot, HUD off):
+New tool: `tests/browser/vfx/appshots.spec.ts` flies the real game with the test pilot (`/?pilot=1&hud=0`)
+and takes pictures at conditions over `window.__app.brief()` (a JSON list of steps in `VFX_APP_SHOTS`; the
+header of the spec has an example). Pictures `out/screens/vfx/dev/a4-*.png`; integration lab
+`out/screens/vfx/dev/i4-*.png`.
 
-- **No flame at lift-off.** Two causes. The flame measured 0.2 to 0.3 million cd/m^2: under the tone curve a
-  cream column of the same value as the sunlit steam behind it. And in the milestone picture the HUD's speed
-  read-out covers the nozzles. The booster flame is now 2.8 million cd/m^2 in the data (`afterburn.luminance`;
-  1.8 to 2.5 million measured 12 m below the nozzles), with a white heart, an edge, and Mach discs of the same
-  brightness; it starts three exit radii below the nozzles. `liftoff.spec.ts` asserts 240,000 cd/m^2 (three
-  stops over a sunlit white surface). The flame no longer fades with altitude as fast (square root of the
-  pressure down to 9 kPa, gone at 1.5 kPa).
-- **White streaks across the frame at stage separation, a line ahead of the reentering capsule.** One bug: a
-  particle's streak is its motion relative to the eye during the shutter, and the motion of the effect domain
-  past the eye was divided by the REAL frame time. Under the pilot's 4 x physics warp every particle riding
-  with a vehicle at 2.4 km/s was drawn as a hairline of the largest length; with the clock stopped (every
-  stopped lab picture) the same happened to particles at reentry speed. The domain's velocity relative to the
-  eye is now measured over simulated time and held while the clock stands still (`VfxGlobals.domVel`).
-- **Hard white rectangles (ice, chips).** They were flat-topped capsules a few pixels across. Flakes are now
-  soft irregular specks with a Gaussian profile, tumbling (seen flat, then edge-on), and smaller
-  (`particles.ice.size` 1.2 to 18 cm).
-- **Blotchy canopies.** Alternate gores were pleated in and out by 4 to 6 % of the radius even when full,
-  each gore bulged 5 %, every ring left 7 % of its width open (dark joints: a wall of bricks) and the tapes
-  were 40 % grey lines. Full canopies are smooth domes now: 2 % scallops, pleats only while slack, slots only
-  round the vent, faint tapes.
+| Finding | Cause | What was done | Picture |
+|---|---|---|---|
+| No flame at the nozzles at lift-off, only smoke | The flame measured 0.2 to 0.3 million cd/m^2 12 m below the nozzles: at a daylight exposure it sat on the shoulder of the tone curve, a cream column of the same value as the sunlit steam behind it, with no glare. (In the milestone picture the HUD's speed read-out also covers the nozzles.) | `afterburn.luminance` 0.9 -> 2.8 million cd/m^2, Mach discs to match (`diamonds.gain` 14 -> 32), a flame with an edge (it ended over 70 % of its radius: a glow) that starts 3 exit radii below the nozzles so that the first disc shows in the translucent core. Measured 1.8 to 2.5 million cd/m^2 at 12 m, 1.3 to 1.9 million at 30 m (`liftoff.spec.ts`, which now asserts 240,000: three stops over a sunlit white surface). The flame also fades more slowly with altitude (square root of the pressure down to 9 kPa; nothing left at 1.5 kPa, where the old law left an orange bulb with a hard end at 30 km once the flame was bright). | `a4-liftoff-t3.png`, `a4-liftoff-t6.png`, `a4-liftoff-t10.png`; lab `liftoff-chase/t6-day.png`, `plumes-close/booster-45m.png` |
+| White streaks across the frame at the first stage separation | A particle's streak is its path relative to the eye during the shutter. The motion of the effect domain past the eye was divided by the REAL frame time: under the pilot's 4 x physics warp every particle that rides with a vehicle at 2.4 km/s was drawn with three times the vehicle's speed, a hairline of the largest length. With the clock stopped (every stopped lab picture) the term vanished and a particle at reentry speed was a line ahead of the capsule: the "hairline" of round 1 (photo 13) and, very likely, the red streak of request flight-ui-4. | The domain's velocity relative to the eye is measured over SIMULATED time and held while the clock stands still (`VfxGlobals.domVel`, `feature.ts`). | `a4-sep-0.png` .. `a4-sep-2.png`; lab `reentry/plasma-1.0-night.png` |
+| Separation particles are hard-edged white rectangles | Ice and chips were flat-topped capsules a few pixels across, up to a metre in size. | Flakes: a soft irregular outline with a Gaussian profile, tumbling (seen flat, then edge-on), 1.2 to 18 cm (`particles.ice.size`); sparks are tapered streaks; spray is finer and streaked. | `staging/3.6s-coast.png`, `a4-sep-1.png` |
+| An orange ball of glow at the separation (seen in the game in this round) | The start-up puff of the hydrolox upper-stage engines: orange, 40 exit radii across. | Pale blue-white, 24 radii, a third as bright (`plume.hydrolox-vacuum.ignition`). | `a4-sep-0.png`, `vacuum-ignition/ignition-0.05s.png` |
+| The canopies look blotchy | Alternate gores were pleated in and out by 4 to 6 % of the radius even when full, each gore bulged by 5 %, every ring left 7 % of its width open (dark joints: a wall of bricks) and the tapes were lines of 40 % grey. | Full canopies are smooth domes: scallops of 2 %, pleats only while slack (and shallower), slots only round the vent (`buildCanopyMesh`), faint tapes. | `chutes/mains-full-frontlit.png`, `chutes/mains-reef2-backlit.png`, `i4-chutes.png` |
+
+### 9.2 The round-1 lists, by cause
+
+P = `vfx.r1.photo.json`, A = `vfx.r1.artifact.json` (finding numbers in file order); "open" items of round 0
+are folded into the finding that carries them. Lab pictures are under `out/screens/vfx/<sheet>/`.
+
+| Finding | Cause | What was done (second owner = 2, third = 3) | Picture | State |
+|---|---|---|---|---|
+| Reentry: lens, hose, ellipse, eclipse ring, dark back shell (P1, A2 blockers; A21) | A thin shell at the standoff; a wake as bright as the head; at night the meter was told of a 1,500 cd/m^2 emitter (the flame cap), so a 900,000 cd/m^2 layer was 600 times over and its glare filled a quarter of the frame; nothing glowed behind the back shell. | 2: layer concentrated at the stagnation point with a Gaussian fall beyond the standoff, hot shoulder skirt, a wake that narrows, cools (white, gas colour, orange, dull red) and carries streamers at three scales, lights with a radius. 3: the layer sets the night exposure (hint without the flame cap, three stops over white): a compact clipped head, a coloured layer round it, a lit capsule; the base flow behind the back shell glows at peak heating (`BASE_GLOW`, with the square of the intensity), so that from behind the capsule is seen through a streaming glow, not as a black disc in a ring. | `reentry/plasma-1.0-night.png`, `plasma-0.3-day.png`, `reentry-views/behind-1.0.png`, `front-1.0.png`, `side-close-1.0.png`; in the integration lab `dev/i4-reentry.png` | Much better; not at the bar from the front (a clipped white ellipse with little structure) and from behind (a soft bright rim round a mauve disc). |
+| A hairline ahead of the capsule (P13) | The particle streak bug of 9.1 (ablation sparks in a stopped frame). | 3: fixed at its cause. | `reentry/plasma-0.3-night.png` | Fixed. |
+| Splash: bowl in a snow globe, foam disc (P2 blocker, A8) | Round drops of a few sizes, evenly spread; a symmetric crown; a disc of foam. | 2: foam as lace with a wandering outline, drop sizes weighted to the fine end. 3: finer still (4 mm to 9 cm), fewer large ones, drawn as streaks along their flight. | `splash/close-0.4s.png`, `close-1s.png`, `impact-5s.png` | Better: a ragged white burst with spray. The crown is still a soft mass at half resolution, there are no ring waves (ocean package; not requested). Not at the bar. |
+| Explosion: glitter, rods, square secondary, sepia night (P3 blocker, A9, P16, A22) | A product of noise octaves at a high power; trails that glowed for a tenth of a second (a rod twenty metres long per fragment); later bursts drawn over the first ball at their own noise scale. | 2: smooth temperature field, fire inside soot from the start, fragments with varied drag and thin trails. 3: the fragment glow lasts 0.03 s (a bright head on a line of smoke), no secondary bursts (`explosion.secondaries` 0: one fireball that evolves reads better than balls in a ball), sparks as tapered streaks. | `explosion/day-0.2s.png`, `day-0.6s.png`, `close-0.6s.png`, `day-3.5s.png`, `night-0.2s.png` | Fire, fire in smoke, dark billowing cloud: good. The pale smoke lines of the fragments are straight for the first half second; the dark bar on one trail (A22) was not found. |
+| Night lift-off: cream cloud, dark hull, no glare (P4) | The meter exposed for the lit ground (EV 12.6): the cloud next to the flame was several times over white and lost its colour; the far side of the cloud kept a third of the light by "multiple scattering". | 2: lights with a source radius (vfx-5): the hull is lit at T+0 to T+3. 3: a night launch is exposed for the cloud (hint at the luminance of steam 50 m from the flame: EV 13.5 at T+10 s from the pad camera), the far side of the cloud is darker, the flame is three times brighter and blooms. | `liftoff/t3-night.png`, `t10-night.png`, `liftoff-chase/t3-night.png`, `t6-night.png` | Orange cloud with a dark far side, burnt-out flame, lit hull and mount, dark ground beyond the pad: as the night photographs. No glow in the air round the flame beyond the bloom. |
+| Booster flame does not clip, no glare, parallel column (P5, A7) | See 9.1. | 3: see 9.1. | `plumes-close/booster-45m.png`, `booster-45m-night.png`, `engine-atlas-9m/sl-full.png` | Fixed: 10 % of the engine tile clips; a white heart in an orange skin with a ragged outline. Still smooth at half resolution from 45 m; the discs are small. |
+| Plume cut into detached copies at 10 and 30 km (A1 blocker, P6) | Shock cells drawn at full brightness hundreds of exit radii out, where the jet has ballooned. | 2: the cells are seen within 22 exit radii of the nozzle only. 3: no afterburning above 28 km. | `engine-vela-2v/30km-min.png`, `engine-lyra-d/30km-min.png`, `engine-atlas-9m/10km-full.png` | Fixed. The "seam along the horizon" is the same faint glow over a dark sky and over bright ground: left. |
+| Staging and vacuum ignition read as sprites (P7, A17, A18) | Soft cones, flat capsules for sparks and ice, an orange puff larger than the stage. | 2: isotropic puff. 3: flakes, tapered sparks, pale small hydrolox puff, crisper edge for dense smoke. | `staging/2.56s-separation.png`, `2.9s-retro.png`, `vacuum-ignition/ignition-0.05s.png` | Better; the motor jets are still smooth cones. |
+| Pad cloud: low, soft, cream, ink-blot holes, flat fill inside (P8, A6, A20) | Plume light at 22 cd/N made daylight steam cream; holes show the cloud's own shadow on the ground. | 2: density floor between billows. 3: plume light 12 cd/N (white steam by day), ground shadow 0.6. | `liftoff-chase/t6-day.png`, `liftoff/t10-day.png` | White billowing steam with shaded sides; still soft (quarter resolution), size and the inside view unchanged. |
+| Solid motors: soft cream cone, grainy fans (P9, A15) | The column ended over the whole mixing layer. | 2: denoise pass. 3: dense smoke ends within a third of the layer, on the outline of its eddies. | `engine-solids/sl-les.png`, `vac-les.png` | Partly: the outline is firmer; the smoke is still lit evenly along its length. |
+| Canopies: quilt, dull, clusters touch; cut-away sausages and rain (P10, P11, A11, A12) | See 9.1; a cut canopy shut into a tube in 0.45 s, keeled over and fell at 11 m/s with its lines as rods. | 2: wider cluster spacing, curved slack lines. 3: see 9.1; a cut canopy stays half open, sinks at 6.5 m/s rocking, and on the water spreads and lies flat while its lines sink; slack lines are smooth shallow curves. | `chutes/mains-full-backlit.png`, `mains-reef1-backlit.png`, `splash/cut-away-1s.png`, `cut-away-6s.png` | Full canopies at the bar. Reefed ones are still ribbed bulbs; a drifting canopy with its hanging lines still reads as a jellyfish for the seconds it is in the air. No contact between canopies. |
+| Canopy shadows on the sea near black (P18, A16) | The lab's sea is a Lambert sheet. | Nothing in vfx. | `splash/before.png` | Not a vfx matter in the lab; on the real ocean not checked. |
+| Lunar dust painted on the ground, razor horizon, dashes in the sky (P12, A13, A19) | A sheet that thinned as 1 / r and ended 160 m out: nothing along a level line of sight. | 3: thins as r^-0.7, reaches 320 m, translucent from above (depth 1.4 at the foot): the horizon is veiled below about 10 m, the ground and the lander's shadow show through; grains slower, lower, fainter. | `lunar/5m-day-close.png`, `10m-day.png`, `30m-day.png` | Better; on the lab's flat pale ground it is a haze with faint streaks. Not seen on the real terrain from close up. |
+| Trails: ruler line at night, stick in haze (P14, A10) | One glow term. | 2: hot head and faint train, colour by age, narrower. | `reentry/trail-50km-night.png` | Fixed for the reentry trail (a clipped head on a line that thins and reddens). The ascent trail in synthetic haze was not touched. |
+| RCS barely shows (P15, A14) | A faint near field. | 2: thruster light with a radius. 3: brighter, longer core (`plume.rcs.core`). | `rcs/all-sun-12m.png`, `all-shadow-12m.png` | Visible flashes at the ports in sun and shadow; soft glows rather than cones. |
+| Exposure follows the pad cloud; deterministic and live differ (A3); splash step 0.415 EV (P19) | The meter. | Requests vfx-7 and vfx-8 (9.4). | `exposure.spec.ts` | See 9.3. |
+| Grain of the half-resolution volumes (A4, P17) | One jitter per pixel, no spatial filter. | 2: a depth-aware denoise pass before the composite. | `plumes-close/booster-45m.png` against `booster-45m-live.png` | Much reduced; the translucent core at the nozzles is still mottled. |
+| Surfaces near a flame lit as by a point (A5) | Zero-radius lights. | 2: `LocalLight.radius` on every plume, thruster and reentry light (vfx-5). | `plumes-close/booster-45m-night.png`, `lunar/30m-night.png` | Fixed for the bells and the hull; the lander's legs at night still clip. |
+
+### 9.3 Measured
+
+(Filled in from the final run of the round; until then see the commit messages.)
+
+### 9.4 Requests
+
+- `vfx-5` (source radius on `LocalLight`): resolved by core-support; used by every plume, thruster, ground and
+  reentry light since `1665ac9`.
+- `vfx-7` (a lower bound on the daylight exposure): resolved by core-support (`3e95313`).
+- `vfx-8` (new in this round; by day the plume-lit pad held the meter on the upper sunlit bound through a
+  lift-off, 0.57 EV between T+6 s and T+10 s from the chase camera): resolved by core-support (`6a2fb76`:
+  what is brighter than the sun can light anything moves a daylight exposure by a quarter of a stop at most).
+- `cockpit-9` (the plasma from a camera inside the vessel): resolved in round 1 (`c3568bf`), unchanged.
+- `cockpit-13` / `NOTICE-core-1` (publish the window radiance): done. `PlasmaRenderer` publishes
+  `'vfx.plasmaWindow'` (16-byte uniform: rgb = colour of the gas x `plasmaWindowRadiance(...)` of the active
+  vessel in cd/m^2, a = its plasmaIntensity; zero without a sheath) and writes it in `prepare` when it changes.
+  With the base flow of this round the value is 280 / 1,536 / 6,875 cd/m^2 at plasmaIntensity 0.3 / 0.6 / 1.0
+  (7.6 km/s, the lab's heat flux): the cabin light of the cockpit follows it. Not looked at from the cabin in
+  this round.
+- `vfx-cs-1` (core-support, routing flight-ui-4: single ablation sparks drawn as dull orange lines in the sky
+  far from the capsule): resolved in this round, see the request. Three causes, all removed: the streak of a
+  particle was computed against the real frame time (9.1); a spark against the still air is stopped at once at
+  hypersonic speed and left kilometres behind the capsule (ablation sparks are now sheltered from 97 % of
+  that drag, `EmitterDesc.shelter`, fly at 10 to 60 m/s and live 0.15 to 0.5 s: a few capsule diameters); and
+  a spark's streak is never longer than 40 radii plus half a metre.
+- The other notices of `NOTICE-core-1` and `-2`: the vfx light loop (`vfxLocalLights`, `common.ts`) honours
+  `LocalLight.radius` (its own code, not the core's `localLightSample`; a spot is a point of its axial
+  intensity there, and no vfx light is a spot); `sampleSunShadow` callers need no change; nothing to do for the
+  per-channel aerial transmittance.
+
+### 9.5 Not fixed, and why
+
+- **Reentry from the front and from straight behind** are short of the bar (9.2). A face-on shock layer that
+  is not one clipped ellipse needs structure at a scale the half-resolution march does not hold at 18 m, and
+  from behind the rim of the layer is physically the brightest thing in the frame; I ran out of rounds.
+- **Splash crown and ring waves**: the crown is a soft mass; ring waves and a change of the water at the
+  entry point belong to the ocean package and were not requested (the foam decal and the aerated patch are
+  what the brief asks of this package).
+- **Pad cloud softness, size, the view from inside it**: the march runs at a quarter of the resolution; a
+  sharper cloud is a budget question (the chase lift-off has the least room). Flow and yields were left alone.
+- **Solid-motor smoke** is firmer at its edge but still evenly lit along its length; **reefed mains** are
+  ribbed bulbs; **a drifting canopy** in the air with its lines hanging reads as a jellyfish; no contact
+  between canopies of a cluster.
+- **The lander's plume and legs at night** (photo 12, artifact 19), **the dark bar on a fragment trail**
+  (artifact 22), **the ascent trail in synthetic haze** (artifact 10), **the horizon "seam"** of a faint
+  plume over ground and sky (photo 6): not worked on.
+- **Not looked at in the game**: everything after the first stage separation (the pilot needs 45 minutes for
+  the mission; the pictures of this round are lift-off to staging). Reentry, canopies and the lunar hover were
+  looked at in the integration lab with the FakeSim; splash, cut-away canopies on the real ocean and the dust
+  sheet on real lunar terrain from close up were not.
