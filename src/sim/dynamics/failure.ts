@@ -5,6 +5,7 @@
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import { computeMassProps } from '../vessel/massProps';
+import { eventPartId } from '../vessel/ids';
 import { applyImpulse, separateVessel } from '../vessel/split';
 import { partPoint, structureOf } from '../vessel/structure';
 import { G_DOSE_LIMIT, type StepContext, type Vessel } from '../vessel/types';
@@ -72,7 +73,7 @@ export function destroyParts(vessel: Vessel, indices: readonly number[], cause: 
     if (!p) continue;
     const b = p.def.bounds;
     const centreVes = partPoint(p, [0, (b.yMin + b.yMax) / 2, 0]);
-    ctx.events.push({ type: 'partDestroyed', ut: ctx.ut, vesselId, partId: p.instanceId, cause, posVes: centreVes });
+    ctx.events.push({ type: 'partDestroyed', ut: ctx.ut, vesselId, partId: eventPartId(vessel, p), cause, posVes: centreVes });
     let propellant = 0;
     let capacity = 0;
     const res = p.def.resources ?? [];
@@ -174,7 +175,7 @@ export function checkLoads(vessel: Vessel, dt: number, ctx: StepContext): void {
       const w = parts[worst]!.def.joint;
       if ((a.maxQAlpha ?? Infinity) < (w.maxQAlpha ?? Infinity) || a.maxAccelG < w.maxAccelG) worst = i;
     }
-    const id = parts[worst]!.instanceId;
+    const id = eventPartId(vessel, parts[worst]!);
     parts[worst]!.stress = 0;
     const hadHold = vessel.hold;
     const created = separateVessel(vessel, [worst], [], ctx);
@@ -196,7 +197,7 @@ export function collapseLegs(vessel: Vessel, legs: readonly { probe: { legs: { p
     lg.state.broken[c.probe.leg] = true;
     lg.state.contact[c.probe.leg] = false;
     lg.state.compression[c.probe.leg] = 0;
-    ctx.events.push({ type: 'jointBroken', ut: ctx.ut, vesselId: vessel.id, partId: vessel.parts[lg.part]!.instanceId });
+    ctx.events.push({ type: 'jointBroken', ut: ctx.ut, vesselId: vessel.id, partId: eventPartId(vessel, vessel.parts[lg.part]!) });
   }
 }
 

@@ -16,7 +16,7 @@ import { computeMassProps, isGroundFixed, partDryMass } from './massProps';
 import { anyEngineBurning, ispAt } from './modules/engine';
 import { anyChuteDeployed, chuteEnvelope } from './modules/parachute';
 import { actionParts } from './split';
-import { legsDeployed, nextLiveStage } from './staging';
+import { anyPending, helmCraft, legsDeployed, nextLiveStage } from './staging';
 import { structureOf } from './structure';
 import { G_DOSE_LIMIT, type EngineDef, type Vessel } from './types';
 
@@ -71,7 +71,7 @@ export function toVesselSnapshot(vessel: Vessel, world: WorldSideSnapshotFields)
   return {
     id: vessel.id,
     name: vessel.name,
-    vehicleId: vessel.vehicleId,
+    vehicleId: vessel.crafts[0]!.vehicleId,
     controllable: isControllable(vessel),
     tier: world.tier,
     situation: world.situation,
@@ -112,7 +112,10 @@ export function toVesselSnapshot(vessel: Vessel, world: WorldSideSnapshotFields)
 interface ModelPart {
   alive: boolean;
   parent: number;
+  /** Craft index and instance id: a stage action names parts of its own craft. */
+  craft: number;
   id: string;
+  /** Flow group key: the stage group, qualified by the craft in a vessel of several. */
   group: string;
   dry: number;
   resources: number[];
@@ -123,10 +126,17 @@ interface ModelPart {
 
 interface Model {
   parts: ModelPart[];
+  /** Dock links between model parts (indices). */
+  links: { a: number; b: number }[];
+  /** The craft whose stage stack is being modelled. */
+  craft: number;
 }
 
-function buildModel(vessel: Vessel): Model {
+function buildModel(vessel: Vessel, craft: number): Model {
+  const several = vessel.crafts.length > 1;
   return {
+    craft,
+    links: vessel.links.map((l) => ({ a: l.a, b: l.b })),
     parts: vessel.parts.map((p) => {
       const engines: ModelPart['engines'] = [];
       for (let m = 0; m < p.def.modules.length; m++) {
@@ -139,8 +149,9 @@ function buildModel(vessel: Vessel): Model {
       return {
         alive: true,
         parent: p.parent,
+        craft: p.craft,
         id: p.instanceId,
-        group: p.stageGroup,
+        group: several ? `${p.craft}/${p.stageGroup}` : p.stageGroup,
         dry: isGroundFixed(p) ? 0 : partDryMass(p),
         resources: isGroundFixed(p) ? [] : p.resources.slice(),
         resIds: (p.def.resources ?? []).map((r) => r.resource),
@@ -152,7 +163,7 @@ function buildModel(vessel: Vessel): Model {
 }
 
 function cloneModel(m: Model): Model {
-  return { parts: m.parts.map((p) => ({ ...p, resources: p.resources.slice(), engines: p.engines.map((e) => ({ ...e })) })) };
+  return { craft: m.craft, links: m.links, parts: m.parts.map((p) => ({ ...p, resources: p.resources.slice(), engines: p.engines.map((e) => ({ ...e })) })) };
 }
 
 function modelMass(m: Model): number {
@@ -165,19 +176,63 @@ function modelMass(m: Model): number {
   return s;
 }
 
+/**
+ * Cut the joint between part `index` and its parent: what is no longer connected to the first part of the
+ * model (over tree edges and dock links) leaves it. In a vessel without links that is the subtree of `index`.
+ */
 function removeSubtree(m: Model, index: number): void {
-  const dead = new Set<number>([index]);
-  m.parts[index]!.alive = false;
-  for (let i = index + 1; i < m.parts.length; i++) {
-    if (dead.has(m.parts[i]!.parent)) {
-      dead.add(i);
-      m.parts[i]!.alive = false;
+  if (m.links.length === 0) {
+    const dead = new Set<number>([index]);
+    m.parts[index]!.alive = false;
+    for (let i = index + 1; i < m.parts.length; i++) {
+      if (dead.has(m.parts[i]!.parent)) {
+        dead.add(i);
+        m.parts[i]!.alive = false;
+      }
     }
+    return;
   }
+  m.parts[index]!.parent = -1;
+  keepConnected(m);
 }
 
+/** Release every dock link of part `index`: what is no longer connected to the first part of the model leaves it. */
+function releaseLinks(m: Model, index: number): void {
+  m.links = m.links.filter((l) => l.a !== index && l.b !== index);
+  keepConnected(m);
+}
+
+/** Keep the parts connected to the first live part (the vessel the craft at the helm stays with). */
+function keepConnected(m: Model): void {
+  const n = m.parts.length;
+  const reach = new Array<boolean>(n).fill(false);
+  const first = m.parts.findIndex((p) => p.alive);
+  if (first < 0) return;
+  reach[first] = true;
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let i = 0; i < n; i++) {
+      const p = m.parts[i]!;
+      if (!p.alive || p.parent < 0 || !m.parts[p.parent]!.alive) continue;
+      if (reach[i] !== reach[p.parent]) {
+        reach[i] = reach[p.parent] = true;
+        changed = true;
+      }
+    }
+    for (const l of m.links) {
+      if (!m.parts[l.a]!.alive || !m.parts[l.b]!.alive) continue;
+      if (reach[l.a] !== reach[l.b]) {
+        reach[l.a] = reach[l.b] = true;
+        changed = true;
+      }
+    }
+  }
+  for (let i = 0; i < n; i++) if (!reach[i]) m.parts[i]!.alive = false;
+}
+
+/** Index of the live part `id` of the modelled craft. */
 function modelIndex(m: Model, id: string): number {
-  for (let i = 0; i < m.parts.length; i++) if (m.parts[i]!.alive && m.parts[i]!.id === id) return i;
+  for (let i = 0; i < m.parts.length; i++) if (m.parts[i]!.alive && m.parts[i]!.craft === m.craft && m.parts[i]!.id === id) return i;
   return -1;
 }
 
@@ -209,6 +264,11 @@ function applyToModel(m: Model, actions: readonly TimedStageAction[]): void {
           if (i > 0) removeSubtree(m, i);
         }
         break;
+      case 'undock': {
+        const i = modelIndex(m, a.part);
+        if (i >= 0) releaseLinks(m, i);
+        break;
+      }
       default:
         break;
     }
@@ -359,17 +419,18 @@ function burnModel(m: Model, pressure: number): BurnResult {
  * assumed fired right after its ignition - so the M-2 figure is the one after tower and fairing
  * jettison. For the stage whose engines are running now, the figure uses the mass actually attached.
  */
-export function stagingInfo(vessel: Vessel, env: VesselEnvironment): StageInfo[] {
-  const stages = vessel.vehicle.stages;
+export function stagingInfo(vessel: Vessel, env: VesselEnvironment, craft: number = vessel.helm.craft): StageInfo[] {
+  const record = vessel.crafts[craft]!;
+  const stages = record.vehicle.stages;
   const rl = v3.len(vessel.r);
   const radius = rl > 0 ? rl : env.radius;
   const g = env.mu / (radius * radius);
   const pressure = env.atmosphereAt(radius - env.radius).pressure;
-  const model = buildModel(vessel);
+  const model = buildModel(vessel, craft);
   // Delayed actions already under way (an ignition a second after separation) count as done.
-  applyToModel(model, vessel.pending.map((p) => p.action));
+  applyToModel(model, record.pending.map((p) => p.action));
   // Stages the next press will pass over (nothing left for them to do, e.g. after an abort) show as done.
-  const next = nextLiveStage(vessel);
+  const next = nextLiveStage(vessel, craft);
   const infos: StageInfo[] = stages.map((s, i) => ({
     label: s.label,
     icon: s.icon,
@@ -391,7 +452,7 @@ export function stagingInfo(vessel: Vessel, env: VesselEnvironment): StageInfo[]
   };
   // The fired stage that owns the engines running (or armed) now.
   let owner = -1;
-  for (let i = Math.min(vessel.nextStage, stages.length) - 1; i >= 0 && owner < 0; i--) {
+  for (let i = Math.min(record.nextStage, stages.length) - 1; i >= 0 && owner < 0; i--) {
     for (const a of stages[i]!.actions) {
       if (a.kind !== 'igniteEngines') continue;
       for (const id of a.parts) {
@@ -401,7 +462,7 @@ export function stagingInfo(vessel: Vessel, env: VesselEnvironment): StageInfo[]
     }
   }
   if (owner >= 0) fill(owner, burnModel(model, pressure));
-  for (let s = vessel.nextStage; s < stages.length; s++) {
+  for (let s = record.nextStage; s < stages.length; s++) {
     const ignites = ignitesEngine(model, stages[s]!.actions);
     applyToModel(model, stages[s]!.actions);
     if (!ignites) continue;
@@ -457,16 +518,18 @@ export function reportedMach(vessel: Vessel): number {
 
 /** Envelope light of the next parachute stage that has not fired, for the current flight condition. */
 export function nextChuteEnvelope(vessel: Vessel, env: VesselEnvironment): ChuteEnvelope | null {
-  const stages = vessel.vehicle.stages;
+  const craft = vessel.helm.craft;
+  const record = helmCraft(vessel);
+  const stages = record.vehicle.stages;
   const rl = v3.len(vessel.r);
   const altitude = rl - env.radius;
   const speed = v3.len(vessel.aero.airVelocity);
-  for (let s = vessel.nextStage; s < stages.length; s++) {
+  for (let s = record.nextStage; s < stages.length; s++) {
     let worst: ChuteEnvelope | null = null;
     for (const a of stages[s]!.actions) {
       if (a.kind !== 'deployParachute') continue;
       for (const id of a.parts) {
-        const part = vessel.parts.find((p) => p.instanceId === id);
+        const part = vessel.parts.find((p) => p.craft === craft && p.instanceId === id);
         if (!part) continue;
         for (let m = 0; m < part.def.modules.length; m++) {
           const md = part.def.modules[m]!;
@@ -581,12 +644,12 @@ export const POST_STAGING_TIME = 1.0;
  */
 export function needsIntegration(vessel: Vessel, env: VesselEnvironment): boolean {
   if (vessel.destroyed || vessel.parts.length === 0) return false;
-  if (vessel.pending.length > 0 || vessel.stageLockout > 0) return true;
+  if (anyPending(vessel) || vessel.crafts.some((c) => c.stageLockout > 0)) return true;
   if (anyEngineBurning(vessel)) return true;
   if (vessel.hold === 'ground') return false;
   if (vessel.hold !== null) return false;
   if (rcsTranslationActive(vessel, vessel.appliedControls.translate)) return true;
-  if (vessel.sinceStaging < POST_STAGING_TIME) return true;
+  if (vessel.crafts.some((c) => c.sinceStaging < POST_STAGING_TIME)) return true;
   if (vessel.contact.anyContact || vessel.contact.waterSubmersion > 0 || anyChuteDeployed(vessel)) return true;
   const rl = v3.len(vessel.r);
   if (!(rl > 0)) return false;
@@ -638,10 +701,12 @@ export function vesselStateHash(vessel: Vessel): string {
   const h = new Hasher();
   h.str(vessel.id);
   h.any([vessel.r, vessel.v, vessel.q, vessel.w]);
-  h.any([vessel.nextStage, vessel.stageLockout, vessel.hold, vessel.surface, vessel.gLoad, vessel.gDose, vessel.crewAlive, vessel.rcsEnabled, vessel.lightsOn, vessel.throttle]);
+  // The base craft's stage state first (a vessel of one craft has no other); the rest of the craft model after the parts.
+  const base = vessel.crafts[0]!;
+  h.any([base.nextStage, base.stageLockout, vessel.hold, vessel.surface, vessel.gLoad, vessel.gDose, vessel.crewAlive, vessel.rcsEnabled, vessel.lightsOn, vessel.throttle]);
   h.any([vessel.sas.enabled, vessel.sas.mode, vessel.sas.hold, vessel.sas.integral, vessel.sas.hasTarget, vessel.sas.hasTarget ? vessel.sas.target : null]);
   h.any(vessel.anchor);
-  for (const pa of vessel.pending) h.any([pa.timeLeft, pa.stageIndex, pa.action.kind, actionParts(pa.action)]);
+  for (const pa of base.pending) h.any([pa.timeLeft, pa.stageIndex, pa.action.kind, actionParts(pa.action)]);
   for (const p of vessel.parts) {
     h.str(p.instanceId);
     h.any([p.pos, p.rot, p.resources, p.temps, p.stress, p.panel]);

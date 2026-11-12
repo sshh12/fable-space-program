@@ -75,13 +75,13 @@ describe('ascent', () => {
       maxQAlpha = Math.max(maxQAlpha, v.aero.q * v.aero.aoa);
       maxG = Math.max(maxG, v.gLoad);
       // M-1 burnout: stage.
-      if (burnout < 0 && v.nextStage === 1 && liftoff > 0 && v.thrust < 1e6 && t - liftoff > 100) {
+      if (burnout < 0 && v.crafts[0]!.nextStage === 1 && liftoff > 0 && v.thrust < 1e6 && t - liftoff > 100) {
         burnout = t - liftoff;
         burnoutAlt = altitude;
         burnoutSpeed = v3.len(v.v);
         press();
       }
-      if (v.nextStage === 2 && altitude > 96000) {
+      if (v.crafts[0]!.nextStage === 2 && altitude > 96000) {
         jettisonAlt = altitude;
         maxTemp = vesselReadouts(v, env).maxTempFraction;
         hottest = v.parts

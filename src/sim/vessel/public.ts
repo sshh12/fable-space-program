@@ -5,7 +5,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { PartSnapshot } from '@/core/contracts/sim';
-import { buildVehicle, cloneVessel } from './assemble';
+import { buildVehicle, cloneVessel, type CraftIdentity } from './assemble';
 import { vesselPartSnapshots as partSnapshots } from './facade';
 import { computeMassProps } from './massProps';
 import { applyStageInstant } from './staging';
@@ -22,12 +22,18 @@ export type { Vessel } from './types';
  * engines ignited by those stages are armed (`active`, no thrust until throttle is applied by a
  * simulation), spent solid motors are empty, deployed legs / parachutes are in their end state.
  * The vessel sits at the origin with identity attitude; placing it in the world is the orchestrator's job.
+ *
+ * The vessel is one craft (ARCHITECTURE 7.2). `craft` says who it is: its id from the universe's id source,
+ * its owner, name, the tick it was made at and its lend policy; without it the craft id (and so the vessel
+ * id) is the vehicle id, nobody owns it and it lends by the default policy, which is what a lab's display
+ * vessel needs.
  */
-export function assembleVessel(defs: DefLibrary, vehicleId: string, options: { stagesAlreadyFired?: number } = {}): Vessel {
-  const vessel = buildVehicle(defs, vehicleId);
+export function assembleVessel(defs: DefLibrary, vehicleId: string, options: { stagesAlreadyFired?: number; craft?: CraftIdentity } = {}): Vessel {
+  const vessel = buildVehicle(defs, vehicleId, options.craft);
   const fired = options.stagesAlreadyFired ?? 0;
-  if (!Number.isInteger(fired) || fired < 0 || fired > vessel.vehicle.stages.length) {
-    throw new Error(`assembleVessel: stagesAlreadyFired must be an integer in 0..${vessel.vehicle.stages.length}`);
+  const stages = vessel.crafts[0]!.vehicle.stages.length;
+  if (!Number.isInteger(fired) || fired < 0 || fired > stages) {
+    throw new Error(`assembleVessel: stagesAlreadyFired must be an integer in 0..${stages}`);
   }
   for (let i = 0; i < fired; i++) applyStageInstant(vessel, i);
   computeMassProps(vessel);
@@ -68,7 +74,8 @@ export function setModuleStateForLab(parts: PartSnapshot[], instanceId: string, 
  * Fire stages in order (0, 1, 2, ...) by feeding the returned `vessel` back in.
  */
 export function splitForStage(defs: DefLibrary, vessel: Vessel, stageIndex: number): { vessel: Vessel; spawned: Vessel[] } {
-  if (!defs.vehicles[vessel.vehicleId]) throw new Error(`splitForStage: unknown vehicle "${vessel.vehicleId}"`);
+  const vehicleId = vessel.crafts[vessel.helm.craft]!.vehicleId;
+  if (!defs.vehicles[vehicleId]) throw new Error(`splitForStage: unknown vehicle "${vehicleId}"`);
   const next = cloneVessel(vessel);
   const spawned = applyStageInstant(next, stageIndex);
   computeMassProps(next);

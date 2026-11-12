@@ -25,7 +25,8 @@ import { computeMassProps } from '../vessel/massProps';
 import { updateEngines } from '../vessel/modules/engine';
 import { legsMoving, updateLegs } from '../vessel/modules/legs';
 import { updateParachutes } from '../vessel/modules/parachute';
-import { processPending } from '../vessel/staging';
+import { eventPartId } from '../vessel/ids';
+import { anyPending, processPending } from '../vessel/staging';
 import { structureOf, type Structure } from '../vessel/structure';
 import type { StepContext, StepResult, Vessel } from '../vessel/types';
 import { aeroOut, evalAero, hasLiftingCapsule, refreshAeroCoefficients } from './aero';
@@ -525,7 +526,7 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
         if (c.state.state === 'reefed' || c.state.state === 'full') {
           c.state.state = 'cut';
           c.state.inflation = 0;
-          ctx.events.push({ type: 'chuteCut', ut: env.ut, vesselId: vessel.id, partId: vessel.parts[c.part]!.instanceId });
+          ctx.events.push({ type: 'chuteCut', ut: env.ut, vesselId: vessel.id, partId: eventPartId(vessel, vessel.parts[c.part]!) });
         }
       }
     }
@@ -554,7 +555,7 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
   if (vessel.destroyed || structureChanged) return ctx;
 
   // Sleep: resting on the ground, slow, not rotating relative to it, nothing thrusting or pending.
-  if (contact.anyContact && !floating && vessel.thrust === 0 && vessel.pending.length === 0) {
+  if (contact.anyContact && !floating && vessel.thrust === 0 && !anyPending(vessel)) {
     const wrx = w.x - (n[0]! * sp.x + n[3]! * sp.y + n[6]! * sp.z);
     const wry = w.y - (n[1]! * sp.x + n[4]! * sp.y + n[7]! * sp.z);
     const wrz = w.z - (n[2]! * sp.x + n[5]! * sp.y + n[8]! * sp.z);

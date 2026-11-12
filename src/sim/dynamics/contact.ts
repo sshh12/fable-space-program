@@ -11,6 +11,7 @@ import type { SimEvent } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import type { Quat } from '@/core/math/quat';
 import { LEG_BOTTOM_STIFFNESS, LEG_LATERAL_TOLERANCE_RATIO, LEG_LOCKED, LEG_OVERSTROKE, LEG_REBOUND_DAMPING_FACTOR } from '../vessel/modules/legs';
+import { eventPartId } from '../vessel/ids';
 import type { Probe, Structure } from '../vessel/structure';
 import type { Vessel } from '../vessel/types';
 
@@ -303,7 +304,7 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
       const closing = -vn;
       const lateral = Math.sqrt(tvx * tvx + tvy * tvy + tvz * tvz);
       if (vessel.airborneTime > 0.5 && !out.anyContact && !vessel.contact.anyContact) {
-        events.push({ type: 'touchdown', ut, vesselId: vessel.id, speed: Math.sqrt(vx * vx + vy * vy + vz * vz), surface: 'land', partId: vessel.parts[pr.part]!.instanceId });
+        events.push({ type: 'touchdown', ut, vesselId: vessel.id, speed: Math.sqrt(vx * vx + vy * vy + vz * vz), surface: 'land', partId: eventPartId(vessel, vessel.parts[pr.part]!) });
         vessel.airborneTime = 0;
       }
       if (lg) {

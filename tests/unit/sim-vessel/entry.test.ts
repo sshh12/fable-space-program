@@ -133,13 +133,13 @@ function flyEntry(forceReversalAt: number | null): { v: Vessel; env: FakeEnv; lo
     }
     // --- chutes by hand, as the player would.
     if (t - stagePressedAt > 1) {
-      if (v.nextStage === 8 && altitude < 7500 && nextChuteEnvelope(v, env) === 'safe') {
+      if (v.crafts[0]!.nextStage === 8 && altitude < 7500 && nextChuteEnvelope(v, env) === 'safe') {
         log.rcsAtDrogue = vesselReadouts(v, env).rcsFraction ?? -1;
         log.ablatorAtDrogue = vesselReadouts(v, env).ablatorFraction ?? -1;
         log.drogueTime = t;
         log.events.push(...fireNextStage(v, env).events);
         stagePressedAt = t;
-      } else if (v.nextStage === 9 && altitude < 3200 && v3.len(v.aero.airVelocity) < 90 && nextChuteEnvelope(v, env) === 'safe') {
+      } else if (v.crafts[0]!.nextStage === 9 && altitude < 3200 && v3.len(v.aero.airVelocity) < 90 && nextChuteEnvelope(v, env) === 'safe') {
         log.events.push(...fireNextStage(v, env).events);
         stagePressedAt = t;
       }

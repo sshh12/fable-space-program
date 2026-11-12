@@ -12,7 +12,7 @@ import { DEG } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
 import { EXPLOSION_MAX_DELTA_V } from '@/sim/dynamics/failure';
 import { assembleVessel, fireNextStage, needsIntegration, setRcsEnabled, setSasEnabled, splitForStage, stepVessel, structureOf, type Vessel } from '@/sim/vessel';
-import { createPart, emptyVessel } from '@/sim/vessel/assemble';
+import { createCraft, createPart, emptyVessel } from '@/sim/vessel/assemble';
 import { controls, DT, isFiniteVessel, loadLibrary, makeEnv, MOON_MU, MOON_RADIUS, run, VEHICLE, type FakeEnv } from './helpers';
 
 let defs: DefLibrary;
@@ -25,7 +25,7 @@ const altitude = (v: Vessel, env: FakeEnv): number => v3.len(v.r) - env.radius;
 
 /** One part of `def` as a vessel of its own. */
 function fragment(def: PartDef): Vessel {
-  const v = emptyVessel(`frag-${def.id}`, def.name, defs.vehicles[VEHICLE]!);
+  const v = emptyVessel(`frag-${def.id}`, def.name, createCraft(defs.vehicles[VEHICLE]!, { craftId: `frag-${def.id}` }));
   v.parts.push(createPart(def.id, def, 'debris'));
   return v;
 }

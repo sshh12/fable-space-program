@@ -12,6 +12,7 @@
 import type { SimEvent } from '@/core/contracts/sim';
 import { G0 } from '@/core/math/scalar';
 import type { Vec3 } from '@/core/math/vec3';
+import { eventPartId } from '../vessel/ids';
 import type { Structure } from '../vessel/structure';
 import { GIMBAL_MIN_THRUST_FRACTION, type Vessel } from '../vessel/types';
 
@@ -261,7 +262,7 @@ export function applyActuators(vessel: Vessel, st: Structure, ux: number, uy: nu
         res[tk.res] = res[tk.res]! * (1 - frac);
       }
       if (!r.rt.firing && r.rt.pulseCooldown <= 0) {
-        events.push({ type: 'rcsPulse', ut, vesselId: vessel.id, partId: vessel.parts[r.part]!.instanceId });
+        events.push({ type: 'rcsPulse', ut, vesselId: vessel.id, partId: eventPartId(vessel, vessel.parts[r.part]!) });
         r.rt.pulseCooldown = RCS_PULSE_EVENT_INTERVAL;
       }
     }

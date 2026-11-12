@@ -47,7 +47,7 @@ describe('launch clamps', () => {
     expect(count(low.events, 'clampsReleased')).toBe(0);
     expect(low.spawned).toHaveLength(0);
     expect(v.hold).toBe('clamps');
-    expect(v.nextStage).toBe(0);
+    expect(v.crafts[0]!.nextStage).toBe(0);
     const down = run(v, env, 3, controls({ throttle: 0.5 }));
     expect(count(down.events, 'engineShutdown')).toBe(9);
     expect(v.thrust).toBe(0);
@@ -88,7 +88,7 @@ describe('launch clamps', () => {
     expect(again.ok).toBe(false);
     expect(again.reason).toMatch(/lock/i);
     run(v, env, 0.6, controls());
-    expect(v.stageLockout).toBe(0);
+    expect(v.crafts[0]!.stageLockout).toBe(0);
   });
 });
 
@@ -214,7 +214,7 @@ describe('the ten stages', () => {
       expect(s.events[0]).toMatchObject({ type: 'stageFired', stageIndex: index, label: exp.label });
       const events = [...s.events, ...runAll(s.vessels, s.env, 20, controls({ throttle: s.throttle }))];
       const [main, ...spawned] = s.vessels;
-      expect(main!.nextStage).toBe(index + 1);
+      expect(main!.crafts[0]!.nextStage).toBe(index + 1);
       expect(spawned.map(ids)).toEqual(exp.spawned);
       for (const v of spawned) expect(v.id.startsWith('meridian-lunar~')).toBe(true);
       if (index === 1) expect(spawned[0]!.name).toBe('Meridian M-1');
@@ -262,7 +262,7 @@ describe('momentum at every split', () => {
       v.w = { x: 1 * DEG, y: -0.4 * DEG, z: 0.8 * DEG };
       const before = total([v]);
       const ctx: StepContext = { ut: 0, env, instant: false, events: [], spawned: [] };
-      for (const a of c.actions) executeAction(v, a, c.fired, ctx);
+      for (const a of c.actions) executeAction(v, v.crafts[0]!, a, c.fired, ctx);
       expect(ctx.spawned.length).toBeGreaterThan(0);
       const after = total([v, ...ctx.spawned]);
       expect(Math.abs(after.m - before.m) / before.m).toBeLessThan(1e-12);
@@ -295,7 +295,7 @@ describe('momentum at every split', () => {
     // by cutting through the structural-failure path.
     const ctx: StepContext = { ut: 0, env, instant: false, events: [], spawned: [] };
     v.parts.find((p) => p.instanceId === 'payload-adapter')!.def = { ...v.parts.find((p) => p.instanceId === 'payload-adapter')!.def, modules: [{ type: 'decoupler', impulse: 0, separationPlaneY: 1.2 }] };
-    executeAction(v, { kind: 'decouple', part: 'payload-adapter' }, 4, ctx);
+    executeAction(v, v.crafts[0]!, { kind: 'decouple', part: 'payload-adapter' }, 4, ctx);
     const after = angular([v, ...ctx.spawned]);
     expect(v3.dist(after, before) / v3.len(before)).toBeLessThan(1e-9);
   });

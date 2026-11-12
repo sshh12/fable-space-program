@@ -5,6 +5,7 @@
  */
 import type { SimEvent } from '@/core/contracts/sim';
 import { G0 } from '@/core/math/scalar';
+import { eventPartId } from '../ids';
 import type { EngineRef, Structure } from '../structure';
 import type { EngineDef, Vessel } from '../types';
 
@@ -105,14 +106,14 @@ export function updateEngines(vessel: Vessel, st: Structure, lever: number, pres
       s.ignitionAge = 0;
       s.shutdownAge = -1;
       if (s.ignitionsLeft !== null) s.ignitionsLeft -= 1;
-      events.push({ type: 'engineIgnition', ut, vesselId: vessel.id, partId: vessel.parts[e.part]!.instanceId });
+      events.push({ type: 'engineIgnition', ut, vesselId: vessel.id, partId: eventPartId(vessel, vessel.parts[e.part]!) });
     }
     if (target === 0 && actual < SHUTDOWN_THRESHOLD) {
       actual = 0;
       if (rt.lit) {
         rt.lit = false;
         s.shutdownAge = 0;
-        events.push({ type: 'engineShutdown', ut, vesselId: vessel.id, partId: vessel.parts[e.part]!.instanceId, flameout: s.flameout });
+        events.push({ type: 'engineShutdown', ut, vesselId: vessel.id, partId: eventPartId(vessel, vessel.parts[e.part]!), flameout: s.flameout });
       }
     }
     s.throttleActual = actual;

@@ -106,7 +106,7 @@ describe('public facade (no VesselEnvironment)', () => {
     for (let n = 0; n <= 10; n++) {
       const v = assembleVessel(defs, VEHICLE, { stagesAlreadyFired: n });
       expect(v.parts.length, `after ${n} stages`).toBe(counts[n]);
-      expect(v.nextStage).toBe(n);
+      expect(v.crafts[0]!.nextStage).toBe(n);
       expect(v.parts[0]!.instanceId).toBe('capsule');
       expect(v.hold).toBe(n === 0 ? 'clamps' : null);
     }

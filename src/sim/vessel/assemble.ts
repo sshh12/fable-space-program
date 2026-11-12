@@ -1,14 +1,16 @@
 /**
- * Builds a runtime Vessel from a VehicleDef: resolves attach nodes into part poses, creates module
- * states, and (for scenarios that start mid-mission) applies the stages that are considered already fired.
+ * Builds a runtime Vessel from a VehicleDef: one craft with its part tree, attach nodes resolved into part
+ * poses, module states, the command part's crew and cockpit, and (for scenarios that start mid-mission) the
+ * stages that are considered already fired. Two docking ports mated in the vehicle file become a dock link.
  */
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import type { DefLibrary, ModuleDef, PartDef, VehicleDef, VehiclePartPlacement } from '@/core/contracts/defs';
+import { DEFAULT_UNIVERSE_RULES, type LendPolicy } from '@/core/contracts/net';
 import type { ModuleState } from '@/core/contracts/sim';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { INITIAL_PART_TEMP, type ModuleRt, type PartRuntime, type Vessel } from './types';
+import { INITIAL_PART_TEMP, type CommandRuntime, type CraftRuntime, type ModuleRt, type PartRuntime, type Vessel } from './types';
 
 export class VesselAssemblyError extends Error {
   constructor(vehicleId: string, message: string) {
@@ -115,12 +117,50 @@ function childPoseInParent(vehicleId: string, pl: VehiclePartPlacement, def: Par
   return { pos, rot };
 }
 
-export function emptyVessel(id: string, name: string, vehicle: VehicleDef): Vessel {
+/** Who a new craft is: its id from the universe's id source, its owner and name, when it was made and what it lends. */
+export interface CraftIdentity {
+  /** Default: the vehicle id (a display vessel that is its own universe). */
+  craftId?: string;
+  /** Default: null (nobody). */
+  ownerId?: string | null;
+  /** Default: the vehicle's name. */
+  name?: string;
+  /** Default: 0. */
+  joinedTick?: number;
+  /** Default: the default lend policy of the rules document (`docking.defaultLendPolicy` of DEFAULT_UNIVERSE_RULES). */
+  policy?: LendPolicy;
+}
+
+const clonePolicy = (p: LendPolicy): LendPolicy => ({ lendAttitude: p.lendAttitude, lendEngines: p.lendEngines, lendPropellant: p.lendPropellant, helm: typeof p.helm === 'string' ? p.helm : p.helm.slice() });
+
+export function createCraft(vehicle: VehicleDef, identity: CraftIdentity = {}): CraftRuntime {
+  return {
+    craftId: identity.craftId ?? vehicle.id,
+    vehicleId: vehicle.id,
+    vehicle,
+    ownerId: identity.ownerId ?? null,
+    name: identity.name ?? vehicle.name,
+    joinedTick: identity.joinedTick ?? 0,
+    nextStage: 0,
+    stageLockout: 0,
+    pending: [],
+    sinceStaging: Infinity,
+    policy: clonePolicy(identity.policy ?? DEFAULT_UNIVERSE_RULES.docking.defaultLendPolicy),
+  };
+}
+
+/** A copy of a craft record with its own pending queue and policy (the vehicle definition is shared). */
+export function cloneCraft(c: CraftRuntime): CraftRuntime {
+  return { ...c, pending: c.pending.map((p) => ({ ...p })), policy: clonePolicy(c.policy) };
+}
+
+export function emptyVessel(id: string, name: string, craft: CraftRuntime): Vessel {
   return {
     id,
     name,
-    vehicleId: vehicle.id,
-    vehicle,
+    crafts: [craft],
+    links: [],
+    helm: { accountId: null, craft: 0, controlPart: 0 },
     parts: [],
     r: v3.zero(),
     v: v3.zero(),
@@ -128,10 +168,6 @@ export function emptyVessel(id: string, name: string, vehicle: VehicleDef): Vess
     w: v3.zero(),
     age: 0,
     stepCount: 0,
-    nextStage: 0,
-    stageLockout: 0,
-    pending: [],
-    sinceStaging: Infinity,
     sas: {
       enabled: false,
       mode: 'stability',
@@ -188,6 +224,7 @@ export function createPart(instanceId: string, def: PartDef, stageGroup: string)
   return {
     instanceId,
     def,
+    craft: 0,
     parent: -1,
     stageGroup,
     pos: v3.zero(),
@@ -199,17 +236,50 @@ export function createPart(instanceId: string, def: PartDef, stageGroup: string)
     shielded: false,
     panel: null,
     stress: 0,
+    command: null,
   };
 }
 
-/** The complete vehicle as it stands on the pad (no stage fired). */
-export function buildVehicle(defs: DefLibrary, vehicleId: string): Vessel {
+/** What the vehicle says about the command part `instanceId` whose command module is `md` (module index `module`). */
+function commandRuntime(vehicle: VehicleDef, instanceId: string, md: Extract<ModuleDef, { type: 'command' }>, module: number): CommandRuntime {
+  // `cameras.cockpit` is an authoring convenience that an uncrewed vehicle does not have.
+  const camera = vehicle.cameras.cockpit as VehicleDef['cameras']['cockpit'] | undefined;
+  const here = camera !== undefined && camera.part === instanceId;
+  return {
+    module,
+    crew: vehicle.crew.filter((c) => md.seats.some((s) => s.id === c.seat)).map((c) => ({ seat: c.seat, name: c.name })),
+    cockpit: md.cockpit !== undefined ? md.cockpit : here ? vehicle.cockpit : null,
+    cameraSeat: here ? camera.seat : null,
+    sensorCamera: md.sensorCamera ?? null,
+    remote: md.remote ?? false,
+  };
+}
+
+/**
+ * Roll of port part `b` about the docking axis relative to port part `a`: the angle from the part +X axis of
+ * `a` to that of `b`, both projected onto the plane normal to the axis (unit, VES), measured right-handed about it.
+ */
+export function linkRoll(a: PartRuntime, b: PartRuntime, axis: Vec3): number {
+  const ref = (p: PartRuntime): Vec3 => {
+    let x = v3.reject(quat.rotate(p.rot, { x: 1, y: 0, z: 0 }), axis);
+    // A port whose X axis lies along the docking axis is measured by its Z axis instead.
+    if (v3.len(x) < 1e-6) x = v3.reject(quat.rotate(p.rot, { x: 0, y: 0, z: 1 }), axis);
+    return v3.normalize(x);
+  };
+  const xa = ref(a);
+  const xb = ref(b);
+  return Math.atan2(v3.dot(v3.cross(xa, xb), axis), v3.dot(xa, xb));
+}
+
+/** The complete vehicle as it stands on the pad (no stage fired): one craft, its id the id of the vessel. */
+export function buildVehicle(defs: DefLibrary, vehicleId: string, identity: CraftIdentity = {}): Vessel {
   const vehicle = defs.vehicles[vehicleId];
   if (!vehicle) throw new VesselAssemblyError(vehicleId, 'unknown vehicle');
   const roots = vehicle.parts.filter((p) => p.parent === null);
   if (roots.length !== 1) throw new VesselAssemblyError(vehicleId, `expected exactly one root part (parent null), found ${roots.length}`);
   const groups = new Set(vehicle.stageGroups.map((g) => g.id));
-  const vessel = emptyVessel(vehicle.id, vehicle.name, vehicle);
+  const craft = createCraft(vehicle, identity);
+  const vessel = emptyVessel(craft.craftId, craft.name, craft);
 
   // Order parts so that parents precede children, keeping the file order otherwise.
   const index = new Map<string, number>();
@@ -244,16 +314,24 @@ export function buildVehicle(defs: DefLibrary, vehicleId: string): Vessel {
       const pi = index.get(pl.parent)!;
       const parent = vessel.parts[pi]!;
       const local = childPoseInParent(vehicleId, pl, def, parent.def);
-      part.parent = pi;
       part.rot = snapQuat(quat.mul(parent.rot, local.rot));
       part.pos = v3.add(parent.pos, quat.rotate(parent.rot, local.pos));
+      // Two docking ports mated in the file: the joint is a dock link (the craft can undock it in flight) and
+      // the child is the root of its own tree. Every other joint is a tree edge.
+      const pn = pl.parentNode !== undefined ? findNode(parent.def, pl.parentNode) : undefined;
+      const cn = pl.node !== undefined ? findNode(def, pl.node) : undefined;
+      if (pn && cn && pn.kind === 'dock' && cn.kind === 'dock') {
+        const axis = v3.normalize(quat.rotate(parent.rot, v3.fromTuple(pn.dir)));
+        vessel.links.push({ a: pi, b: vessel.parts.length, roll: linkRoll(parent, part, axis) });
+      } else part.parent = pi;
     }
-    // Crew: every crew entry whose seat exists on this command part.
+    // The command part carries the crew whose seats it has, the cockpit and the cameras the vehicle names for it.
     for (let m = 0; m < def.modules.length; m++) {
       const md = def.modules[m]!;
       const ms = part.modules[m]!;
       if (md.type === 'command' && ms.type === 'command') {
-        ms.crew = vehicle.crew.filter((c) => md.seats.some((s) => s.id === c.seat)).length;
+        part.command = commandRuntime(vehicle, pl.id, md, m);
+        ms.crew = part.command.crew.length;
       }
       if (md.type === 'heatShield' && ms.type === 'heatShield') {
         const k = (def.resources ?? []).findIndex((r) => r.resource === md.ablatorResource);
@@ -267,7 +345,20 @@ export function buildVehicle(defs: DefLibrary, vehicleId: string): Vessel {
     vessel.hold = 'clamps';
     vessel.surface = 'prelaunch';
   }
+  vessel.helm.controlPart = defaultControlPart(vessel, 0);
   return vessel;
+}
+
+/** The part a craft is flown from when nobody chose one: its first command part, else its first part. */
+export function defaultControlPart(vessel: Vessel, craft: number): number {
+  let first = -1;
+  for (let i = 0; i < vessel.parts.length; i++) {
+    const p = vessel.parts[i]!;
+    if (p.craft !== craft) continue;
+    if (p.command !== null) return i;
+    if (first < 0) first = i;
+  }
+  return first < 0 ? 0 : first;
 }
 
 /** Deep copy of the dynamic state (definitions are shared). The structure cache is rebuilt on demand. */
@@ -283,12 +374,15 @@ export function cloneVessel(src: Vessel): Vessel {
       rt: p.rt.map((r) => ({ ...r })),
       temps: p.temps.slice(),
       panel: p.panel ? { ...p.panel } : null,
+      command: p.command ? { ...p.command, crew: p.command.crew.map((c) => ({ ...c })) } : null,
     })),
+    crafts: src.crafts.map(cloneCraft),
+    links: src.links.map((l) => ({ ...l })),
+    helm: { ...src.helm },
     r: v3.clone(src.r),
     v: v3.clone(src.v),
     q: quat.clone(src.q),
     w: v3.clone(src.w),
-    pending: src.pending.map((p) => ({ ...p })),
     sas: {
       ...src.sas,
       holdDir: src.sas.holdDir ? v3.clone(src.sas.holdDir) : null,

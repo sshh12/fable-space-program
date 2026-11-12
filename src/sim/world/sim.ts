@@ -52,10 +52,12 @@ import { predictPatchesWithOrbits, stateOnPatches, type PatchWithOrbit } from '.
 import { lookAheadWarpIndex, maxWarpIndexForAltitude, nextWarpEvent, warpFactor, type WarpEvent } from '../orbit/warp';
 import {
   abort as abortVessel,
+  anyPending,
   assembleVessel,
   chuteEnvelope,
   fireNextStage,
   G_DOSE_LIMIT,
+  helmCraft,
   holdOnGround,
   isControllable,
   needsIntegration as vesselNeedsIntegration,
@@ -69,6 +71,7 @@ import {
   setSasEnabled,
   setSasHoldDirection,
   setSasMode,
+  seededCraftIds,
   stagingInfo,
   stepVessel,
   stepVesselReduced,
@@ -79,6 +82,7 @@ import {
   vesselClearance,
   vesselReadouts,
   vesselStateHash,
+  type CraftIdSource,
   type Vessel,
 } from '../vessel';
 import { anyEngineBurning } from '../vessel/modules/engine';
@@ -148,6 +152,11 @@ const ROTATING_REFUSED = 'Cannot warp while rotating';
 
 export interface CreateSimOptions {
   terrain: TerrainProvider;
+  /**
+   * Where craft ids come from (ARCHITECTURE section 3). Default: the local universe's seeded counter
+   * (`seededCraftIds()`), so a session is reproducible.
+   */
+  ids?: CraftIdSource;
 }
 
 /** What became of a vessel the world removed. */
@@ -264,6 +273,9 @@ class World implements SimWorld, MilestoneHost {
   private readonly surfaceTargets: SurfaceTarget[];
   private readonly milestones: MilestoneEvaluator;
 
+  /** The id of the scenario's craft, issued once by the id source (the start vessel is built twice: before and after its terrain is resident). */
+  private readonly startCraftId: string;
+
   private entries: Entry[] = [];
   private active!: Entry;
   /** Snapshot of the last active vessel when it was destroyed with nothing left to take over. */
@@ -368,6 +380,7 @@ class World implements SimWorld, MilestoneHost {
     this.baseTick = this.clockTick;
     this.ut = utOfTick(this.clockTick);
     this.utBase = this.ut;
+    this.startCraftId = (opts.ids ?? seededCraftIds()).next(scenario.vehicle);
     this.commands = this.makeCommands();
     this.debug = this.makeDebug();
     this.placeStartVessel(false);
@@ -482,7 +495,7 @@ class World implements SimWorld, MilestoneHost {
   /** Build the scenario vessel and place it. `final` = terrain under the start point is resident. */
   private placeStartVessel(final: boolean): void {
     const sc = this.scenario;
-    const vessel = assembleVessel(this.defs, sc.vehicle, { stagesAlreadyFired: sc.stagesAlreadyFired });
+    const vessel = assembleVessel(this.defs, sc.vehicle, { stagesAlreadyFired: sc.stagesAlreadyFired, craft: { craftId: this.startCraftId, joinedTick: this.clockTick } });
     if (sc.resources) applyStartResources(vessel, sc.resources);
     const start = sc.start;
     const ut = sc.startUt;
@@ -1184,8 +1197,8 @@ class World implements SimWorld, MilestoneHost {
         restingOnLand: v.hold === 'asleep' || v.hold === 'ground' || (v.surface === 'landed' && v.contact.anyContact && v.contact.waterSubmersion === 0),
         restingOnWater: v.surface === 'splashed',
         touching,
-        nextStage: v.nextStage,
-        stagePending: (idx: number) => v.pending.some((p) => p.stageIndex === idx),
+        nextStage: helmCraft(v).nextStage,
+        stagePending: (idx: number) => helmCraft(v).pending.some((p) => p.stageIndex === idx),
       };
       if (controlTick || dt === 0) this.ensurePatches();
       this.milestones.observe(frame, this, controlTick || dt === 0);
@@ -1219,7 +1232,7 @@ class World implements SimWorld, MilestoneHost {
       this.syncEntry(e);
       const v = e.vessel;
       const d = e.bodyId === a.bodyId ? v3.dist(v.r, a.vessel.r) : v3.dist(v3.add(bodyRoot(e.bodyId), v.r), aRoot);
-      const busy = v.pending.length > 0 || anyEngineBurning(v);
+      const busy = anyPending(v) || anyEngineBurning(v);
       const inside = d < (e.tier === 'full' ? BUBBLE_EXIT_RADIUS : BUBBLE_RADIUS) || (e.tier === 'full' && busy);
       if (inside) {
         if (e.tier !== 'full') {
@@ -1329,7 +1342,7 @@ class World implements SimWorld, MilestoneHost {
     return {
       id: v.id,
       name: v.name,
-      vehicleId: v.vehicleId,
+      vehicleId: v.crafts[0]!.vehicleId,
       controllable: false,
       tier: 'full',
       situation: 'landed',
@@ -1716,7 +1729,8 @@ class World implements SimWorld, MilestoneHost {
     };
     add(null);
     let owner = -1;
-    const stages = v.vehicle.stages;
+    const craft = helmCraft(v);
+    const stages = craft.vehicle.stages;
     if (thrust === 0) {
       for (let s = nextLiveStage(v); s < stages.length && thrust === 0; s++) {
         for (const act of stages[s]!.actions) if (act.kind === 'igniteEngines') add(act.parts);
@@ -1728,7 +1742,7 @@ class World implements SimWorld, MilestoneHost {
     let available = 0;
     if (owner >= 0) available = info[owner]?.deltaVVac ?? 0;
     else {
-      for (let s = Math.min(v.nextStage, stages.length) - 1; s >= 0; s--) {
+      for (let s = Math.min(craft.nextStage, stages.length) - 1; s >= 0; s--) {
         if ((info[s]?.deltaVVac ?? 0) > 0) {
           available = info[s]!.deltaVVac;
           break;
@@ -2212,7 +2226,7 @@ class World implements SimWorld, MilestoneHost {
       rcsFraction: vr.rcsFraction ?? -1,
       maxTempFraction: vr.maxTempFraction,
       deltaVRemaining: vr.deltaVTotal,
-      stagesFired: v.nextStage,
+      stagesFired: helmCraft(v).nextStage,
       incompleteQueries: this.incompleteQueries,
       terrainWarpClamps: this.terrainWarpClamps,
       vesselCount: this.entries.length,
@@ -2466,7 +2480,7 @@ class World implements SimWorld, MilestoneHost {
       navball = computeNavball({ mode: this.navballMode, q: v.q, r: v.r, v: v.v, qFixedToInertial: env.qFixedToInertial, spin: env.spin, maneuverDv: dv, targetDir, liftVectorVes: v.aero.liftDirVes });
       stages = this.stageInfos().map((s) => ({ ...s, actionKinds: s.actionKinds.slice() }));
       nextStage = nextLiveStage(v);
-      lockout = v.stageLockout > 0;
+      lockout = helmCraft(v).stageLockout > 0;
       if (this.bases.get(a.bodyId)!.hasTerrain) {
         complete = this.policy.isFinalAt(a.bodyId, quat.rotateInv(env.qFixedToInertial, v3.normalize(v.r)));
       }

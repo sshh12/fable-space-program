@@ -3,16 +3,23 @@
  * kind (sim-design section 11). Decoupling convention: a `decouple` / `jettisonLES` action names a part
  * with a `decoupler` module; the joint between that part and its PARENT is cut, so the named part stays
  * with its own subtree (interstages stay on the lower stage because the tree is rooted at the capsule).
+ *
+ * The stage stack, the abort sequence, the lockout and the queue of delayed actions belong to a CRAFT
+ * (ARCHITECTURE 7.2): a press acts on one craft's stack and only on that craft's parts, so two craft of the
+ * same vehicle in one vessel each fire their own stages. Without a craft argument a press acts on the craft
+ * at the helm.
  */
-import type { StageAction, TimedStageAction } from '@/core/contracts/defs';
+import type { DockingPortModuleDef, ModuleDef, StageAction, TimedStageAction } from '@/core/contracts/defs';
 import type { SimEvent } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
+import { undock } from './dock';
+import { eventPartId, findCraftPart } from './ids';
 import { computeMassProps, vesselMass } from './massProps';
 import { actionParts, applyImpulse, jettisonPanels, mergeVessels, separateVessel } from './split';
 import { partPoint, structureOf } from './structure';
-import { STAGE_LOCKOUT, type PartRuntime, type StepContext, type Vessel } from './types';
+import { STAGE_LOCKOUT, type CraftRuntime, type PartRuntime, type StepContext, type Vessel } from './types';
 
 export interface StagingResult {
   ok: boolean;
@@ -22,9 +29,13 @@ export interface StagingResult {
   spawned: Vessel[];
 }
 
-function findPart(vessel: Vessel, id: string): number {
-  for (let i = 0; i < vessel.parts.length; i++) if (vessel.parts[i]!.instanceId === id) return i;
-  return -1;
+/** The craft at the helm: the one whose stage stack a press acts on when none is named. */
+export const helmCraft = (vessel: Vessel): CraftRuntime => vessel.crafts[vessel.helm.craft]!;
+
+/** True while any craft of the vessel has a delayed stage action queued. */
+export function anyPending(vessel: Vessel): boolean {
+  for (const c of vessel.crafts) if (c.pending.length > 0) return true;
+  return false;
 }
 
 function wake(vessel: Vessel): void {
@@ -51,12 +62,13 @@ function decouplePart(vessel: Vessel, index: number, impulse: number, sepY: numb
   const part = vessel.parts[index]!;
   if (part.parent < 0) return [];
   const id = part.instanceId;
+  const craftId = vessel.crafts[part.craft]!.craftId;
   const n = separationAxis(vessel, part, sepY);
   const held = vessel.hold;
   const created = separateVessel(vessel, [index], [], ctx);
   if (created.length === 0) return created;
   const all = [vessel, ...created];
-  const childSide = all.find((v) => v.parts.some((p) => p.instanceId === id))!;
+  const childSide = all.find((v) => v.parts.some((p) => p.instanceId === id && v.crafts[p.craft]!.craftId === craftId))!;
   const parentSide = childSide === vessel ? created[0]! : vessel;
   for (const v of all) fixHold(v, held);
   if (impulse !== 0) {
@@ -117,15 +129,21 @@ function igniteModules(vessel: Vessel, part: PartRuntime, fixedOnly: boolean, ct
   for (const ms of part.modules) {
     if (ms.type === 'les' && !ms.fired && !fixedOnly) {
       ms.fired = true;
-      ctx.events.push({ type: 'lesFired', ut: ctx.ut, vesselId: vessel.id, partId: part.instanceId });
+      ctx.events.push({ type: 'lesFired', ut: ctx.ut, vesselId: vessel.id, partId: eventPartId(vessel, part) });
     }
   }
 }
 
-/** Execute one stage action now. Parts that are no longer on this vessel are skipped. */
-export function executeAction(vessel: Vessel, action: StageAction, stageIndex: number, ctx: StepContext): void {
+/**
+ * Execute one stage action of `craft` now. Parts of that craft that are no longer on this vessel are
+ * skipped; so is the whole action when the craft itself has left the vessel.
+ */
+export function executeAction(vessel: Vessel, craft: CraftRuntime, action: StageAction, stageIndex: number, ctx: StepContext): void {
+  const ci = vessel.crafts.indexOf(craft);
+  if (ci < 0) return;
+  const findPart = (v: Vessel, id: string): number => findCraftPart(v, ci, id);
   wake(vessel);
-  vessel.sinceStaging = 0;
+  craft.sinceStaging = 0;
   switch (action.kind) {
     case 'igniteEngines':
     case 'fireSeparationMotors': {
@@ -158,8 +176,8 @@ export function executeAction(vessel: Vessel, action: StageAction, stageIndex: n
         if (currentThrust(vessel) < action.minThrustToWeight * weight) {
           // Pad abort: shut everything down, keep the clamps closed and re-arm the stage.
           for (const p of vessel.parts) for (const m of p.modules) if (m.type === 'engine') m.active = false;
-          vessel.pending = vessel.pending.filter((pa) => pa.stageIndex !== stageIndex);
-          if (stageIndex >= 0) vessel.nextStage = stageIndex;
+          craft.pending = craft.pending.filter((pa) => pa.stageIndex !== stageIndex);
+          if (stageIndex >= 0) craft.nextStage = stageIndex;
           break;
         }
       }
@@ -179,7 +197,7 @@ export function executeAction(vessel: Vessel, action: StageAction, stageIndex: n
         baseV.hold = 'ground';
         baseV.anchor = null;
         baseV.surface = 'landed';
-        baseV.pending = [];
+        for (const c of baseV.crafts) c.pending = [];
         baseV.sas.enabled = false;
       }
       const stillClamped = vessel.parts.some((p) => p.modules.some((m) => m.type === 'launchClamp' && !m.released));
@@ -214,8 +232,9 @@ export function executeAction(vessel: Vessel, action: StageAction, stageIndex: n
       }
       if (already || part.parent < 0) break;
       const vesselId = vessel.id;
+      const partId = eventPartId(vessel, part);
       const created = decouplePart(vessel, i, impulse, sepY, ctx);
-      ctx.events.push({ type: 'decoupled', ut: ctx.ut, vesselId, partId: action.part, newVesselIds: created.map((v) => v.id) });
+      ctx.events.push({ type: 'decoupled', ut: ctx.ut, vesselId, partId, newVesselIds: created.map((v) => v.id) });
       break;
     }
     case 'jettisonFairing': {
@@ -228,9 +247,10 @@ export function executeAction(vessel: Vessel, action: StageAction, stageIndex: n
         if (md.type === 'fairing' && ms.type === 'fairing' && !ms.jettisoned) {
           ms.jettisoned = true;
           const held = vessel.hold;
+          const partId = eventPartId(vessel, part);
           const created = jettisonPanels(vessel, i, md.panels, md.impulse, ctx);
           fixHold(vessel, held);
-          ctx.events.push({ type: 'fairingJettisoned', ut: ctx.ut, vesselId: vessel.id, partId: action.part, newVesselIds: created.map((v) => v.id) });
+          ctx.events.push({ type: 'fairingJettisoned', ut: ctx.ut, vesselId: vessel.id, partId, newVesselIds: created.map((v) => v.id) });
           break;
         }
       }
@@ -254,7 +274,7 @@ export function executeAction(vessel: Vessel, action: StageAction, stageIndex: n
               ms.inflation = 0;
               ms.deployAge = 0;
             }
-            ctx.events.push({ type: 'chuteDeployed', ut: ctx.ut, vesselId: vessel.id, partId: id, mode: md.mode });
+            ctx.events.push({ type: 'chuteDeployed', ut: ctx.ut, vesselId: vessel.id, partId: eventPartId(vessel, part), mode: md.mode });
           }
         }
       }
@@ -268,7 +288,7 @@ export function executeAction(vessel: Vessel, action: StageAction, stageIndex: n
           if (ms.type === 'parachute' && (ms.state === 'reefed' || ms.state === 'full')) {
             ms.state = 'cut';
             ms.inflation = 0;
-            ctx.events.push({ type: 'chuteCut', ut: ctx.ut, vesselId: vessel.id, partId: id });
+            ctx.events.push({ type: 'chuteCut', ut: ctx.ut, vesselId: vessel.id, partId: eventPartId(vessel, vessel.parts[i]!) });
           }
         }
       }
@@ -306,18 +326,39 @@ export function executeAction(vessel: Vessel, action: StageAction, stageIndex: n
       }
       break;
     }
+    case 'undock': {
+      // Release the docked joint of the named port part: every link it holds (a pre-mated pair has one).
+      const i = findPart(vessel, action.part);
+      if (i < 0) break;
+      const port = vessel.parts[i]!;
+      const impulse = undockImpulseOf(port);
+      for (let guard = 0; guard < 8; guard++) {
+        const at = vessel.parts.indexOf(port);
+        const k = at < 0 ? -1 : vessel.links.findIndex((l) => l.a === at || l.b === at);
+        if (k < 0) break;
+        undock(vessel, k, impulse, ctx);
+      }
+      break;
+    }
   }
 }
 
-function stageHasParts(vessel: Vessel, actions: readonly TimedStageAction[]): boolean {
-  for (const a of actions) for (const id of actionParts(a)) if (findPart(vessel, id) >= 0) return true;
+/** The spring impulse of a docking port part, N s (`DockingPortModuleDef.undockImpulse`); 0 for a part without the module. */
+function undockImpulseOf(part: PartRuntime): number {
+  const modules = part.def.modules as readonly (ModuleDef | DockingPortModuleDef)[];
+  for (const m of modules) if (m.type === 'dockingPort') return m.undockImpulse;
+  return 0;
+}
+
+function stageHasParts(vessel: Vessel, craft: number, actions: readonly TimedStageAction[]): boolean {
+  for (const a of actions) for (const id of actionParts(a)) if (findCraftPart(vessel, craft, id) >= 0) return true;
   return false;
 }
 
-/** Whether executing `action` on this vessel would still change anything. */
-function actionIsLive(vessel: Vessel, action: StageAction): boolean {
+/** Whether executing `action` of craft `craft` on this vessel would still change anything. */
+function actionIsLive(vessel: Vessel, craft: number, action: StageAction): boolean {
   for (const id of actionParts(action)) {
-    const i = findPart(vessel, id);
+    const i = findCraftPart(vessel, craft, id);
     if (i < 0) continue;
     const part = vessel.parts[i]!;
     switch (action.kind) {
@@ -351,23 +392,26 @@ function actionIsLive(vessel: Vessel, action: StageAction): boolean {
       case 'enableRcs':
         if (part.modules.some((m) => m.type === 'rcs' && !m.enabled)) return true;
         break;
+      case 'undock':
+        if (vessel.links.some((l) => l.a === i || l.b === i)) return true;
+        break;
     }
   }
   return false;
 }
 
-function stageIsLive(vessel: Vessel, actions: readonly TimedStageAction[]): boolean {
-  for (const a of actions) if (actionIsLive(vessel, a)) return true;
+function stageIsLive(vessel: Vessel, craft: number, actions: readonly TimedStageAction[]): boolean {
+  for (const a of actions) if (actionIsLive(vessel, craft, a)) return true;
   return false;
 }
 
-function runSequence(vessel: Vessel, actions: readonly TimedStageAction[], stageIndex: number, ctx: StepContext): void {
+function runSequence(vessel: Vessel, craft: CraftRuntime, actions: readonly TimedStageAction[], stageIndex: number, ctx: StepContext): void {
   // Queue the delayed ones first so that a split in an immediate action hands them to the right piece.
   for (const a of actions) {
-    if (!ctx.instant && a.delay !== undefined && a.delay > 0) vessel.pending.push({ action: a, timeLeft: a.delay, stageIndex });
+    if (!ctx.instant && a.delay !== undefined && a.delay > 0) craft.pending.push({ action: a, timeLeft: a.delay, stageIndex });
   }
   for (const a of actions) {
-    if (ctx.instant || a.delay === undefined || a.delay <= 0) executeAction(vessel, a, stageIndex, ctx);
+    if (ctx.instant || a.delay === undefined || a.delay <= 0) executeAction(vessel, craft, a, stageIndex, ctx);
   }
 }
 
@@ -376,51 +420,63 @@ function runSequence(vessel: Vessel, actions: readonly TimedStageAction[], stage
  * whose effects have all happened already (after an abort: the capsule is free and its RCS is on, so
  * "Capsule separation" has nothing left to do), are skipped: the next press is the next useful one.
  */
-export function nextLiveStage(vessel: Vessel): number {
-  const stages = vessel.vehicle.stages;
-  let i = vessel.nextStage;
-  while (i < stages.length && !stageIsLive(vessel, stages[i]!.actions)) i++;
+export function nextLiveStage(vessel: Vessel, craft: number = vessel.helm.craft): number {
+  const record = vessel.crafts[craft]!;
+  const stages = record.vehicle.stages;
+  let i = record.nextStage;
+  while (i < stages.length && !stageIsLive(vessel, craft, stages[i]!.actions)) i++;
   return i;
 }
 
-/** Fire the next entry of the stage stack (the Space bar). */
-export function fireNextStage(vessel: Vessel, env: VesselEnvironment): StagingResult {
+/** Fire the next entry of a craft's stage stack (the Space bar): the craft at the helm unless one is named. */
+export function fireNextStage(vessel: Vessel, env: VesselEnvironment, craft: number = vessel.helm.craft): StagingResult {
   const ctx: StepContext = { ut: env.ut, env, instant: false, events: [], spawned: [] };
-  if (vessel.stageLockout > 0) return { ok: false, reason: 'Staging locked out', events: [], spawned: [] };
-  const stages = vessel.vehicle.stages;
-  const idx = nextLiveStage(vessel);
+  const record = vessel.crafts[craft];
+  if (!record) return { ok: false, reason: 'No such craft', events: [], spawned: [] };
+  if (record.stageLockout > 0) return { ok: false, reason: 'Staging locked out', events: [], spawned: [] };
+  const stages = record.vehicle.stages;
+  const idx = nextLiveStage(vessel, craft);
   if (idx >= stages.length) return { ok: false, reason: 'No stages left', events: [], spawned: [] };
   const stage = stages[idx]!;
-  vessel.nextStage = idx + 1;
-  vessel.stageLockout = STAGE_LOCKOUT;
+  record.nextStage = idx + 1;
+  record.stageLockout = STAGE_LOCKOUT;
   ctx.events.push({ type: 'stageFired', ut: env.ut, vesselId: vessel.id, stageIndex: idx, label: stage.label });
-  runSequence(vessel, stage.actions, idx, ctx);
+  runSequence(vessel, record, stage.actions, idx, ctx);
   return { ok: true, events: ctx.events, spawned: ctx.spawned };
 }
 
-/** Run the vehicle's abort sequence (Backspace). */
-export function abort(vessel: Vessel, env: VesselEnvironment): StagingResult {
-  if (vessel.vehicle.abort.length === 0) return { ok: false, reason: 'No abort sequence', events: [], spawned: [] };
-  if (vessel.stageLockout > 0) return { ok: false, reason: 'Staging locked out', events: [], spawned: [] };
-  if (!stageHasParts(vessel, vessel.vehicle.abort)) return { ok: false, reason: 'Nothing left to abort', events: [], spawned: [] };
+/** Run a craft's abort sequence (Backspace): the craft at the helm unless one is named. */
+export function abort(vessel: Vessel, env: VesselEnvironment, craft: number = vessel.helm.craft): StagingResult {
+  const record = vessel.crafts[craft];
+  if (!record) return { ok: false, reason: 'No such craft', events: [], spawned: [] };
+  if (record.vehicle.abort.length === 0) return { ok: false, reason: 'No abort sequence', events: [], spawned: [] };
+  if (record.stageLockout > 0) return { ok: false, reason: 'Staging locked out', events: [], spawned: [] };
+  if (!stageHasParts(vessel, craft, record.vehicle.abort)) return { ok: false, reason: 'Nothing left to abort', events: [], spawned: [] };
   const ctx: StepContext = { ut: env.ut, env, instant: false, events: [], spawned: [] };
-  vessel.stageLockout = STAGE_LOCKOUT;
-  runSequence(vessel, vessel.vehicle.abort, -1, ctx);
+  record.stageLockout = STAGE_LOCKOUT;
+  runSequence(vessel, record, record.vehicle.abort, -1, ctx);
   return { ok: true, events: ctx.events, spawned: ctx.spawned };
 }
 
-/** Advance the lockout and delayed-action timers by dt and execute what has come due (in queue order). */
+/**
+ * Advance every craft's lockout and delayed-action timers by dt and execute what has come due (craft in
+ * order, each queue in order).
+ */
 export function processPending(vessel: Vessel, dt: number, ctx: StepContext): void {
-  if (vessel.stageLockout > 0) vessel.stageLockout = Math.max(0, vessel.stageLockout - dt);
-  vessel.sinceStaging += dt;
-  if (vessel.pending.length === 0) return;
-  for (const pa of vessel.pending) pa.timeLeft -= dt;
-  // An executed action may split the vessel and re-distribute the queue, so re-scan after each one.
-  for (let guard = 0; guard < 64; guard++) {
-    const k = vessel.pending.findIndex((pa) => pa.timeLeft <= 1e-9);
-    if (k < 0) break;
-    const [pa] = vessel.pending.splice(k, 1);
-    executeAction(vessel, pa!.action, pa!.stageIndex, ctx);
+  // The craft list is taken first: an executed action may split the vessel and move craft out of it.
+  for (const craft of vessel.crafts.slice()) {
+    if (!vessel.crafts.includes(craft)) continue;
+    if (craft.stageLockout > 0) craft.stageLockout = Math.max(0, craft.stageLockout - dt);
+    craft.sinceStaging += dt;
+    if (craft.pending.length === 0) continue;
+    for (const pa of craft.pending) pa.timeLeft -= dt;
+    // An executed action may split the vessel and re-distribute the queue, so re-scan after each one.
+    for (let guard = 0; guard < 64; guard++) {
+      const k = craft.pending.findIndex((pa) => pa.timeLeft <= 1e-9);
+      if (k < 0) break;
+      const [pa] = craft.pending.splice(k, 1);
+      executeAction(vessel, craft, pa!.action, pa!.stageIndex, ctx);
+    }
   }
 }
 
@@ -428,14 +484,15 @@ export function processPending(vessel: Vessel, dt: number, ctx: StepContext): vo
  * Apply stage `stageIndex` structurally: every action at once in its settled end state, no dynamics.
  * Returns the vessels that separate.
  */
-export function applyStageInstant(vessel: Vessel, stageIndex: number): Vessel[] {
-  const stage = vessel.vehicle.stages[stageIndex];
-  if (!stage) throw new Error(`vehicle "${vessel.vehicleId}" has no stage ${stageIndex}`);
+export function applyStageInstant(vessel: Vessel, stageIndex: number, craft: number = vessel.helm.craft): Vessel[] {
+  const record = vessel.crafts[craft]!;
+  const stage = record.vehicle.stages[stageIndex];
+  if (!stage) throw new Error(`vehicle "${record.vehicleId}" has no stage ${stageIndex}`);
   const ctx: StepContext = { ut: 0, env: null, instant: true, events: [], spawned: [] };
-  runSequence(vessel, stage.actions, stageIndex, ctx);
-  vessel.nextStage = Math.max(vessel.nextStage, stageIndex + 1);
-  vessel.sinceStaging = Infinity;
-  for (const v of ctx.spawned) v.sinceStaging = Infinity;
+  runSequence(vessel, record, stage.actions, stageIndex, ctx);
+  record.nextStage = Math.max(record.nextStage, stageIndex + 1);
+  record.sinceStaging = Infinity;
+  for (const v of ctx.spawned) for (const c of v.crafts) c.sinceStaging = Infinity;
   structureOf(vessel);
   return ctx.spawned;
 }

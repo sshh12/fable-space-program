@@ -41,7 +41,7 @@ export interface EngineRef {
   /** Part X and Z axes in VES (gimbal axes). */
   axisX: Vec3;
   axisZ: Vec3;
-  /** Tanks feeding each propellant (same stage group), parallel to def.propellants. */
+  /** Tanks feeding each propellant (same flow group: the craft's stage group), parallel to def.propellants. */
   tanks: TankRef[][];
   mdotMax: number;
   gimbalRange: number;
@@ -301,7 +301,8 @@ function contactPointsOf(def: PartDef): ContactPointDef[] {
 
 function isShieldedBy(parts: PartRuntime[], target: PartRuntime): boolean {
   for (const p of parts) {
-    if (p === target || p.panel) continue;
+    // A fairing names what it shields by instance id or definition id within its own craft.
+    if (p === target || p.panel || p.craft !== target.craft) continue;
     for (let m = 0; m < p.def.modules.length; m++) {
       const md = p.def.modules[m]!;
       const ms = p.modules[m]!;
@@ -313,11 +314,12 @@ function isShieldedBy(parts: PartRuntime[], target: PartRuntime): boolean {
   return false;
 }
 
-function tanksFor(parts: PartRuntime[], group: string, resource: string): TankRef[] {
+/** Tanks of the flow group (craft, stage group) that hold `resource`. Docking never pools propellant. */
+function tanksFor(parts: PartRuntime[], craft: number, group: string, resource: string): TankRef[] {
   const out: TankRef[] = [];
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i]!;
-    if (p.stageGroup !== group || !p.def.resources) continue;
+    if (p.craft !== craft || p.stageGroup !== group || !p.def.resources) continue;
     for (let r = 0; r < p.def.resources.length; r++) {
       if (p.def.resources[r]!.resource === resource) out.push({ part: i, res: r });
     }
@@ -452,7 +454,7 @@ export function rebuildStructure(vessel: Vessel): Structure {
           nozzleDir,
           axisX: quat.rotate(p.rot, { x: 1, y: 0, z: 0 }),
           axisZ: quat.rotate(p.rot, { x: 0, y: 0, z: 1 }),
-          tanks: md.propellants.map((pr) => tanksFor(parts, p.stageGroup, pr.resource)),
+          tanks: md.propellants.map((pr) => tanksFor(parts, p.craft, p.stageGroup, pr.resource)),
           mdotMax: md.thrustVac / (md.ispVac * 9.80665),
           gimbalRange: md.gimbal ? md.gimbal.rangeDeg * DEG : 0,
           gimbalRate: md.gimbal ? md.gimbal.rateDegPerS * DEG : 0,
@@ -468,7 +470,7 @@ export function rebuildStructure(vessel: Vessel): Structure {
           pos.push(pp.x, pp.y, pp.z);
           force.push(-dd.x, -dd.y, -dd.z);
         }
-        s.rcs.push({ part: i, mod: m, def: md, state: ms, rt, pos, force, tanks: tanksFor(parts, p.stageGroup, md.resource), arm: new Array<number>(pos.length).fill(0) });
+        s.rcs.push({ part: i, mod: m, def: md, state: ms, rt, pos, force, tanks: tanksFor(parts, p.craft, p.stageGroup, md.resource), arm: new Array<number>(pos.length).fill(0) });
       } else if (md.type === 'reactionWheel') {
         const t = partDir(p, md.torque);
         s.wheel[0] += Math.abs(t.x);

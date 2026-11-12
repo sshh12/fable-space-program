@@ -4,6 +4,7 @@
  */
 import type { ParachuteEnvelope } from '@/core/contracts/defs';
 import type { ChuteEnvelope, SimEvent } from '@/core/contracts/sim';
+import { eventPartId } from '../ids';
 import type { Structure } from '../structure';
 import type { ParachuteDef, Vessel } from '../types';
 
@@ -59,7 +60,7 @@ export function updateParachutes(vessel: Vessel, st: Structure, altitude: number
     const s = c.state;
     s.envelope = chuteEnvelope(c.def, altitude, mach, speed, q);
     if (s.state !== 'reefed' && s.state !== 'full') continue;
-    const partId = vessel.parts[c.part]!.instanceId;
+    const partId = eventPartId(vessel, vessel.parts[c.part]!);
     if (s.envelope === 'unsafe') {
       s.state = 'failed';
       s.inflation = 0;
