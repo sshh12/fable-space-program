@@ -76,3 +76,14 @@ Planned as its own commit AFTER this package's vessel-model step (MIGRATION_V2 s
 split and the per-craft stage state the rehearsal has to exercise; `docs/handoff/sim-core-v2.md` says whether
 it landed. The cockpit's 16-26 ms in the same frames (request app-integration-12) is the larger share and
 is not the sim's.
+
+### Sim share, at the end of sim-core-v2: the rehearsal did not land
+
+The rehearsal described above is NOT implemented. It needs a second world on the session's terrain
+authority (whose request slots the two would share) and runs inside the load path of every session;
+proving it neutral for the golden hash, the terrain accounting and the mission's zero incomplete terrain
+queries is a piece of work of its own and was not started at the end of the package rather than landed
+unproven. The measurement stands (5.5 ms cold, 0.6-0.7 ms warm for the release step), the proposal stands,
+and the request stays open for the owner of the session after this package (`session-switch` or
+`island-core`). Since the measurement the release path changed (per-craft stage state, the split over tree
+edges and links): whoever implements the rehearsal should measure again first.
