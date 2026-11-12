@@ -76,6 +76,12 @@ it holds 95 %, chute envelope "RISKY" while inside it, Mach shown in vacuum).
      windowed and uncaptured, and offer fullscreen / keyboard lock as an explicit control (and a setting), with the
      key bindings working without it (the bindings already avoid Ctrl/Alt/Meta). Reflect it in the v2 menu and
      settings design.
+   - **Cockpit geometry overlaps.** Parts of the cabin interpenetrate: the console (dash) runs into the side of the
+     craft (the hull wall), besides the seat and harness overlaps the critiques found. Request
+     `docs/requests/cockpit-lead-1.md` (fit to the hull, plus an automated penetration check).
+   - **From the mission video** (`tools/footage/`, video on the user's desktop): the sound drops to near silence
+     during entry from about 66 km and Mach 16 right after the plasma (audio package); "TEST PILOT" and "Capture
+     keyboard" labels should be hideable for footage; the headless 57.5 Hz clock causes slight judder.
 4. v2: `MIGRATION_V2.md` section 2 is now met except for the visual sign-off; start with `lead-baseline-v2`
    (reference images from the signed-off tree), then waves 3-7.
 
