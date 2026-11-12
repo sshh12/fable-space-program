@@ -305,7 +305,7 @@ the mission are gates anyway.
     | Jupiter | 0.46 d | 0.93 d |
     | Saturn to Neptune | about 0.44 d | about 0.88 d |
 
-    Every shift stays within the lead's "about a day", except Venus and Mars, which pass a day after 2045.
+    Every shift stays within the lead's "about a day", except Mars (past a day from about 2033) and Venus (from about 2044).
   - **The fix if wanted.** Rotate the formula's output from the equinox of date to J2000 (precession only).
     That also changes Earth's sub-solar geometry, so `start-time.json` and the lunar mission must be
     re-proven.
