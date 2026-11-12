@@ -158,6 +158,45 @@ removed (8,403 vertices in 23 tiles, a 22 km strip of corrupt Terrarium values a
 57.1-57.3 E up to 561 m, and a cluster on the shore 7 km north of the nominal point up to 232 m); downward needles
 removed (the trench of corrupt SRTM-boundary rows along 19.0 N, 56.83-57.0 E, up to 111 m deep: section 5).
 
+## 5. Ground quality at Madrakah (OPEN_QUESTIONS Q8)
+
+Question: does the 30 m elevation data at Madrakah meet the v1 standard (Ka Lae, 10 m 3DEP) at pad level?
+
+**What the baked tiles hold at pad level** (one pad per class; Ka Lae's for comparison; `bake.py quality`, every
+number on the level-12 collision surface within 2 km of the pad, 10 m grid):
+
+QUALITY_TABLES
+
+- Imagery: the same source and resolution at both sites (Sentinel-2 cloudless, about 9-10 m texels at level 12).
+  Madrakah's imagery shows a dissected desert gravel plain with clear wadi networks, dark ophiolite hills on the
+  headland, sand streaks, the town and the bay; no cloud remnants; natural colours after the colour match.
+- Heights: Ka Lae's 10 m surface carries coherent geology at pad level (lava-flow fronts, channels, small cones
+  that match the imagery). Madrakah's carries the 30 m SRTM signal: hills, escarpments and the larger wadis are
+  there, the small wadis of the imagery are not, and the band finer than about 60 m is dominated by SRTM noise, a
+  pebbly undulation of about 0.3-0.5 m RMS (in a hillshade with relief x3 it is obvious, at x1 under a 45 deg sun
+  it is faint). Measured: RMS curvature at 10 m 0.21-0.30 m (Ka Lae 0.17-0.38 m), curvature ratio 10/30 m
+  0.14-0.18 (Ka Lae 0.17-0.24): similar amplitudes, different character (noise against geology).
+- Defects found and removed: corrupt Terrarium rows along the SRTM tile boundary at 19.0 N (a straight trench up to
+  111 m deep, 56.83-57.0 E, 75 km west of the pads) and corrupt shore values (needles up to 561 m); both removed by
+  the despike pass (section 4). Remaining: Terrarium z14 tile edges carry a kink of 0.1-0.2 m (median second
+  difference 0.27 m at the edge against 0.15 m inside), a faint line every 2.3 km in a low-sun hillshade.
+- Imagery de-shading: section 8 (relief shading near the headland).
+
+Pictures (`out/bake/earth/site-bake/`; each: imagery | hillshade x3 | imagery lit by a 45 deg sun | land cover; red
+= the 500 m disc of the pad rule, yellow = the other pads): `quality-madrakah-overview.png` (every pad, 17 km),
+`quality-madrakah-lc-{1,5,11}-{pad,2km,20km}.png` (600 m at 1 m pixels, 2 km, 20 km), the same for Ka Lae
+(`quality-ka-lae-*`); contact sheets `out/bake/earth/contact/region-earth-madrakah-*` (every level and layer,
+coverage-edge crops, a 3 km and 20 km hillshade about the nominal point).
+
+**Decision the data supports: keep the Madrakah site (Q8 option A).** The ground does not clearly fail the v1
+standard at pad level: the imagery is as detailed as Ka Lae's, the pad discs are flat by construction (flatten
+discs), and the 30 m surface around them is clean of gross artefacts after the despike. What it lacks is real
+relief finer than about 60 m; what it adds is a low-amplitude SRTM noise texture, and planet-render's in-browser
+ground checkpoints (ARCHITECTURE 31.3: pad level at noon and low sun, 300 m up) are the place to judge whether that
+texture shows under the procedural detail. If it does, the data-side remedy is a source swap, not the fall-back:
+Copernicus DEM GLO-30 (TanDEM-X based, lower noise, free with attribution; `regsrc.py` reads Terrarium today) or a
+low-pass of the land source below 60 m wavelength. The fall-back (all 32 pads at Ka Lae) was not resolved.
+
 ## 6. The terrain guard: exactly what changes
 
 **Tile directories added to the Earth set** (all NEW; no directory that existed before holds a new, removed or
@@ -214,6 +253,63 @@ Every step is resumable: finished work units are recorded in `data/cache/earth/s
 configuration; the stage marker says where the region stands. After an interruption, check the stage and the live
 tree for `.partial` or zero-length files before resuming (`layout.write_atomic` never leaves a truncated tile under
 its final name).
+
+## 10. Deviations, known limits, requests
+
+Deviations from the brief (each within the design; say if one is unwelcome):
+
+1. **The open-ocean sector of LC-1's rule is reported per pad, not gated** (section 3): with it no second pad exists
+   near LC-1. Ka Lae's fifteen new pads therefore lie 9-13 km west of LC-1 on the Kahuku lava flows ("move along the
+   coast"), where a launch to the east crosses about 10 km of the South Point peninsula before the sea; at Madrakah
+   one pad (lc-1) has the open sector, the others are 3-6 km inland behind the headland's hills.
+2. **Pads are resolved on the baked tiles**, not on the regional source as LC-1 was: the ground the game uses, and
+   Ka Lae's sources were deleted by its cleanup. LC-1 on the tiles: 21.64 m against its recorded 21.62 m.
+3. **Spacing between classes** is the mean of the class spacings (the brief gives same-class spacings only).
+4. **Region parameters chosen for Madrakah** (data, region file): `landZoom` 14 (holds the 30 m source), near-shore
+   slope 1:25 (a sand shore), `resolutionM` 30 (no level-12 sourceCoverage), `despikeBelow`, de-shading fit on ground
+   above 5 m and slopes above 10 deg.
+5. **`verify.py --region`** is new (the brief's self-verify names it); the full `verify.py` skips staged regions.
+6. The ocean-connectivity step of `regsrc.py` was rewritten for memory (identical output: same labels and the
+   same random draw; peak about 4 GB instead of about 13 GB on Madrakah's 1.3 G-pixel WorldCover grid).
+7. Single-process analysis steps (pad resolution, quality pictures, contact sheets) ran outside the gate at
+   below-normal priority while another package's bake held the one bake slot; every bake and the region
+   verification went through it.
+
+Known limits:
+
+- SRTM noise texture and missing relief below about 60 m at Madrakah (section 5); Terrarium z14 tile-edge kinks of
+  0.1-0.2 m.
+- Baked relief shading near Madrakah's headland is reduced but not removed (section 8).
+- The Ka Lae region's unit records in `data/cache/earth/state` no longer match its configuration since sim-core-v2
+  renamed the site in `earth-ka-lae.json` (a2c6318: the region dict is part of every unit's configuration hash).
+  No tile changed, but `bake.py heights|region` WITHOUT `--region` would now re-bake Ka Lae from re-downloaded
+  sources. Run regional steps with `--region` until the records are re-stamped (as `bake.py despike` does after a
+  repair).
+- Two Ka Lae light pads sit at 661 and 706 m, 7-8 km inland (lc-11, lc-15): nearest passing ground, as the rule
+  orders.
+- `data/cache/earth/backup-height-regional` (282 MB) is core-support's backup from the despike repair; left as found.
+
+Requests filed: `docs/requests/site-bake-1.md` (lead: the mission golden and baseline record the earth manifest's
+contentHash, which the swap changes). Open requests against this package's paths: none found.
+
+## 12. What the next packages must know
+
+- **fleet-data** (wave 4.1, `data/defs/sites/*`): take the pads from `data/staged/sites/{ka-lae,madrakah}.pads.json`:
+  `id`, `class`, `azimuthDeg`, `offsetEnu` into `PadDef`; `latDeg`, `lonDeg`, `padElevation` into
+  `location.pads[id]`; `pads[0]` is the reference point (`location`). Ka Lae's `lc-1` is the existing pad. Flat and
+  blend radii are yours; the spacing keeps blend discs apart up to heavy 900 / medium 600 / light 300 m, and the
+  ground was checked over 500 m discs (keep `flatRadius` <= 500 m). Madrakah needs a site file and recovery zones
+  (the Arabian Sea east and south of the site is open water). Every pad faces 90 deg (LC-1's azimuth).
+- **fleet-models-pads**: Ka Lae's new pads are on dark bare lava like LC-1 (Kahuku flows, beside the Kahuku pali
+  fault scarp); Madrakah's on sand and gravel with dark ophiolite hills to the east and the town of Madrakah 2-4 km
+  south-east of the southern pads. Site dressing per coast accordingly.
+- **planet-render**: the ground checkpoints at one pad per class per site (31.3): Madrakah lc-1 (heavy, 37 m, the
+  only pad with the open sea sector, 1 km from the shore), lc-5 (medium), lc-11 (light); Ka Lae lc-1, lc-5, lc-11.
+  Look for the SRTM noise texture and the faint tile-edge lines (section 5) and the residual relief shading on the
+  headland's hills (section 8). Level 12 at Madrakah has coverage but no sourceCoverage: E stays at 11 there and
+  the level-11 procedural detail continues (by design).
+- **The lead**: re-records the terrain guard's tile summary (section 6), appends the two new places' height groups,
+  and updates the mission golden's earth hash (request site-bake-1).
 
 ## 11. Running log
 
