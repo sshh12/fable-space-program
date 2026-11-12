@@ -350,8 +350,12 @@ export function frameClockOf(timestamps: readonly number[]): FrameClockStats {
 
 /** Period of the clock the perf lines of ARCHITECTURE 29 are written for, ms (60 Hz). */
 export const NOMINAL_FRAME_MS = 1000 / 60;
-/** A harness clock whose mean period is within this of nominal is the monitor's vertical blank; the sleep-paced fallback is 0.7 ms off. */
-export const NOMINAL_CLOCK_TOLERANCE_MS = 0.08;
+/**
+ * A harness clock whose MEDIAN period is within this of nominal is the monitor's vertical blank; the
+ * sleep-paced fallback is 0.5 to 0.7 ms off. The median, not the mean: a frame the bare page drops on a busy
+ * machine adds a whole period to the mean and says nothing about the clock.
+ */
+export const NOMINAL_CLOCK_TOLERANCE_MS = 0.2;
 
 const CLOCK_PAGE = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;color:#234;font:12px monospace}</style></head>
 <body><div id="t"></div><script>
@@ -393,7 +397,7 @@ export async function measureHarnessClock(page: Page, frames = 240, warm = 45): 
 
 /** True when the measured harness clock is the nominal 60 Hz vertical blank. */
 export function isNominalClock(clock: FrameClockStats): boolean {
-  return Math.abs(clock.mean - NOMINAL_FRAME_MS) <= NOMINAL_CLOCK_TOLERANCE_MS;
+  return Math.abs(clock.p50 - NOMINAL_FRAME_MS) <= NOMINAL_CLOCK_TOLERANCE_MS;
 }
 
 /**

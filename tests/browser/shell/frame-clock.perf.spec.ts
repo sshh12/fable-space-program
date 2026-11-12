@@ -17,7 +17,7 @@
  * awake it runs at 60.00 Hz. So the spec measures in two phases:
  *
  *   as found   the display as the run finds it (after minutes without input it is asleep)
- *   awake      after keepDisplayAwake(): the clock must be nominal, 16.667 ms within NOMINAL_CLOCK_TOLERANCE_MS
+ *   awake      after keepDisplayAwake(): the clock must be nominal (median 16.667 ms within NOMINAL_CLOCK_TOLERANCE_MS)
  *
  * and then, awake, the launched variants (1280 x 720 and 2560 x 1440 headless, and headed on the monitor;
  * FRAME_CLOCK_VARIANTS replaces the set for experiments with other flags).
@@ -177,8 +177,8 @@ test.describe('frame clock of the harness', () => {
 
     // Awake, every presenting page of the default configuration is on the nominal clock, with little spread.
     for (const r of results.filter((x) => x.phase === 'awake' && x.variant === 'fixture' && x.mode !== 'raf')) {
-      expect(Math.abs(r.frame.mean - NOMINAL_FRAME_MS), `${r.mode}: mean rAF period, awake (${r.frame.mean.toFixed(3)} ms)`).toBeLessThanOrEqual(NOMINAL_CLOCK_TOLERANCE_MS);
-      expect(r.frame.p99 - r.frame.p50, `${r.mode}: spread of the clock (p99 - p50), ms`).toBeLessThan(1.0);
+      expect(Math.abs(r.frame.p50 - NOMINAL_FRAME_MS), `${r.mode}: median rAF period, awake (${r.frame.p50.toFixed(2)} ms, mean ${r.frame.mean.toFixed(3)} ms)`).toBeLessThanOrEqual(NOMINAL_CLOCK_TOLERANCE_MS);
+      expect(r.frame.p95 - r.frame.p50, `${r.mode}: spread of the clock (p95 - p50), ms`).toBeLessThan(0.5);
     }
     expect(helperClock !== null && isNominalClock(helperClock), 'measureHarnessClock reports the nominal clock when the display is awake').toBe(true);
   });

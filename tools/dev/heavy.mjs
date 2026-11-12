@@ -148,15 +148,70 @@ const label = opts.label ?? cmd.join(' ').slice(0, 120);
 
 fs.mkdirSync(lockDir, { recursive: true });
 const t0 = Date.now();
+
+// Waiting order: first come, first served within a class. Every waiter keeps a ticket file named by its
+// start time and refreshes it on each poll; it tries for a slot only while no OLDER live ticket of its class
+// exists. A ticket whose process is gone, or that was not refreshed for TICKET_STALE_MS (a killed waiter, a
+// reused pid), is removed by whoever sees it. Taking a slot is still decided by the exclusive creation of the
+// slot file alone (tryAcquire), so the order can delay a waiter but can never admit two.
+const TICKET_STALE_MS = 30_000;
+const ticketName = `queue-${cls}-${String(t0).padStart(15, '0')}-${process.pid}.ticket`;
+const ticketFile = path.join(lockDir, ticketName);
+function touchTicket() {
+  try {
+    fs.writeFileSync(ticketFile, label);
+  } catch {
+    /* the order is best effort: without a ticket this waiter simply competes as before */
+  }
+}
+function dropTicket() {
+  try {
+    fs.unlinkSync(ticketFile);
+  } catch {
+    /* already gone */
+  }
+}
+/** Name of an older live ticket of this class, or null when this waiter is first in line. */
+function olderWaiter() {
+  let names;
+  try {
+    names = fs.readdirSync(lockDir);
+  } catch {
+    return null;
+  }
+  const prefix = `queue-${cls}-`;
+  for (const name of names.filter((n) => n.startsWith(prefix) && n.endsWith('.ticket')).sort()) {
+    if (name >= ticketName) break;
+    const file = path.join(lockDir, name);
+    const pid = Number(/-(\d+)\.ticket$/.exec(name)?.[1]);
+    let fresh;
+    try {
+      fresh = Date.now() - fs.statSync(file).mtimeMs < TICKET_STALE_MS;
+    } catch {
+      continue; // removed meanwhile
+    }
+    if (fresh && Number.isInteger(pid) && alive(pid)) return name;
+    try {
+      fs.unlinkSync(file);
+    } catch {
+      /* another waiter removed it */
+    }
+  }
+  return null;
+}
+process.on('exit', dropTicket);
+
 let lock = null;
 let lastNote = 0;
 for (;;) {
   const freeGb = os.freemem() / GB;
   const waitedMin = (Date.now() - t0) / 60_000;
   const memoryOk = freeGb >= MIN_FREE_GB || waitedMin >= MAX_WAIT_MIN;
-  if (memoryOk) {
+  touchTicket();
+  if (memoryOk && olderWaiter() === null) {
     lock = tryAcquire(cls, label);
     if (lock) {
+      dropTicket();
       if (freeGb < MIN_FREE_GB) console.error(`heavy: starting below the memory floor after ${waitedMin.toFixed(0)} min (free ${freeGb.toFixed(1)} GB)`);
       break;
     }
