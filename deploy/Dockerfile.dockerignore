@@ -1,0 +1,17 @@
+# Build context of deploy/Dockerfile (BuildKit reads <Dockerfile>.dockerignore): only what the image is built
+# from. Never the baked data, the packs, the stack's state, node_modules, outputs or .env.
+**
+!package.json
+!package-lock.json
+!index.html
+!vite.config.ts
+!tsconfig.json
+!src/**
+!public/**
+!data/defs/**
+!tools/dev/build-client.mjs
+!tools/dev/stackEndpointsPlugin.ts
+!tools/server/**
+!deploy/**
+**/*.test.ts
+**/.env*
