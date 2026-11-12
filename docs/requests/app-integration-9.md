@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commits cc8e8cb and e4d5188 by flight-ui / src/input; wired in src/app by 1b9f665)
 From: app-integration-v1
 Owner path: src/ui/hud (the keyboard-capture pill of the flight HUD; flight-ui), src/input (inputSystem / keyboardCapture; shared-code maintainer)
 Blocking: no   (the app works around both parts inside src/app meanwhile; see "Workaround")
@@ -49,3 +49,16 @@ extra throttle-down key stays lock-only), `HudImpl.setKeyboardLocked`.
   It is reachable only through `window.__app.toggleKeyboardCapture()` and Esc until the captured pill is clickable.
 - Hiding the pill: `?capturepill=0` appends a style rule `.hud .kbcap, .hud .kbok { display: none !important }` to
   the HUD root. That reaches the HUD's class names; `captureControl: false` replaces it.
+
+## Resolution
+Flight-ui had the same change under way (its request flight-ui-7 against src/app crossed this one). What exists now:
+- HUD: one switch `button.pill.kbcap` (`role="switch"`, `aria-checked`, state word OFF / ON / NO LOCK). A click
+  calls `HudOptions.requestKeyboardCapture` when off and `HudOptions.releaseKeyboardCapture` when on;
+  `HudOptions.showCaptureControl` (default true) and `HudImpl.setCaptureControlVisible(v)` hide it;
+  `setKeyboardLocked(locked, fullscreen)` takes the fullscreen state. `kbok` is gone.
+- Input: `InputSystem.releaseKeyboardCapture()`, `InputSystem.fullscreen`, the lock listener's second argument;
+  `captureKeyboard` defaults to false; Escape is not in the lock list (one press leaves).
+- App (`src/app/game.ts`, commit 1b9f665): both callbacks wired, `showCaptureControl: settings.capturePill`, the
+  fullscreen state passed on; the two workarounds of this request (the app's own `document.exitFullscreen()` and
+  the style rule that hid `.kbcap` / `.kbok`) are removed. `tests/browser/app/app.spec.ts` clicks the switch on
+  and off.

@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 1b9f665)
 From: flight-ui
 Owner path: src/app/game.ts (app fixer; the settings `captureKeyboard` / `capturePill` / `pilotLabel` already in progress in src/app/settings.ts)
 Blocking: no
@@ -38,3 +38,15 @@ roll windows (`.hud .pill` already covers the capture switch).
 Must not change: the bindings, `keyboardLocked` semantics (true only while fullscreen with the lock granted), the
 `?capture=1` opt-in (it keeps asking on the first gesture). The "TEST PILOT" line is the app's own
 (`statusLine.ts`, `?pilotlabel=0` in progress): nothing in flight-ui draws it.
+
+## Resolution
+`src/app/game.ts` (commit 1b9f665, app-integration):
+- `createHud({ ..., requestKeyboardCapture: () => void input.requestKeyboardCapture(), releaseKeyboardCapture: () => input.releaseKeyboardCapture(), showCaptureControl: settings.capturePill })`;
+- `hud.setKeyboardLocked(input.keyboardLocked, input.fullscreen)` and
+  `input.onKeyboardLockChange((locked, fullscreen) => hud.setKeyboardLocked(locked, fullscreen))`;
+- `HUD_OBSTACLE_SELECTOR`: `.hud .nbchips > div` replaced by `.hud .housing, .hud .prw` (the app part of flight-ui-3);
+- settings: `?capture=1` opts in to the request on the first gesture (default off), `?capturepill=0` hides the
+  switch, `?pilotlabel=0` hides the shell's "TEST PILOT" line.
+Verified in `tests/browser/app/app.spec.ts`, "keyboard capture and fullscreen are opt-in": nothing is captured by
+keys or clicks on the scene; a click on `.hud .kbcap` gives fullscreen and the lock (`aria-checked` true), a second
+click leaves both; `?capture=1` asks on the first key; with `capturepill=0` the switch is hidden and `?` stays.
