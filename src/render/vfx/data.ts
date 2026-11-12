@@ -87,7 +87,13 @@ export interface PlumeLookDef {
   ignition: { frontSpeed: number; flash: number; flashColor: Vec3Tuple; flashTime: number; reachRe: Range };
   shutdown: { fadeTime: number };
   /** Local light: luminous intensity per newton of thrust (cd/N) and colour. */
-  light: { efficacy: number; color: Vec3Tuple };
+  /**
+   * The light the plume casts: luminous intensity per newton of thrust (cd/N) where its flame burns with the
+   * air, its colour, and the share of that light that is left in vacuum (`vacuum`, 0..1: a liquid engine's
+   * light at the pad is its afterburning flame, which a vacuum has none of; a solid motor's glowing
+   * particulates shine at any height).
+   */
+  light: { efficacy: number; color: Vec3Tuple; vacuum: number };
   /** What the exhaust leaves behind in air: particulate smoke and condensation, 0..1 each. */
   trail: { smoke: number; contrail: number };
   /** Surface interaction weights: pad smoke source and dust erosion. */
@@ -315,7 +321,7 @@ const LOOK: Schema = {
   noise: { scaleRe: 'p', speed: 'n', amount: 'u' },
   ignition: { frontSpeed: 'p', flash: 'n', flashColor: 'c', flashTime: 'p', reachRe: 'r' },
   shutdown: { fadeTime: 'p' },
-  light: { efficacy: 'n', color: 'c' },
+  light: { efficacy: 'n', color: 'c', vacuum: 'u' },
   trail: { smoke: 'u', contrail: 'u' },
   ground: { smoke: 'u', dust: 'u' },
 };

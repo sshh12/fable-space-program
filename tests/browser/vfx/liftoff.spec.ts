@@ -129,7 +129,8 @@ test('the pad cloud has no level edge along the horizon', async ({ page, pageLog
     { name: 'eye level with the top of the cloud', query: '', file: 'level' },
     { name: 'eye 26 m lower', query: '&pitch=-2', file: 'low' },
   ]) {
-    await openLab(page, `scene=pad&night=1${cam.query}`);
+    // (From the south-south-east, 28 degrees off the trench: the view the edge was found in.)
+    await openLab(page, `scene=pad&night=1&yaw=152${cam.query}`);
     await runAndSettle(page, 14);
     const shot = await saveScreenshot(page, 'vfx/liftoff-probe', `horizon-${cam.file}`);
     const lines = levelLines(shot.buffer);

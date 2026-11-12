@@ -213,7 +213,7 @@ export function sceneFor(name: string, q: URLSearchParams, defs: DefLibrary): Sc
                 sim.setEngines(v, boosterDef, burning ? last : { throttle: 0, shutdownAge: 60 });
               },
             },
-            camera: { target: { x: 0, y: 0, z: num(q, 'tz', 62) }, yawDeg: num(q, 'yaw', 152), pitchDeg: num(q, 'pitch', 1.5), distance: num(q, 'dist', 430), fovDeg: num(q, 'fov', 38) },
+            camera: { target: { x: 0, y: 0, z: num(q, 'tz', 62) }, yawDeg: num(q, 'yaw', 112), pitchDeg: num(q, 'pitch', 1.5), distance: num(q, 'dist', 430), fovDeg: num(q, 'fov', 38) },
           };
         },
       };

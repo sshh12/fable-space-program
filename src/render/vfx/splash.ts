@@ -2,9 +2,10 @@
  * What a splashdown does to the water.
  *
  *  - The crown: a sheet of white water thrown up around the body, leaning outwards, that rises on the
- *    speed of the impact, thins, tears from its rim downwards into ligaments and falls back. A volume in
- *    the half-resolution pass (a thin shell marched around the entry point), lit white by sun and sky. The
- *    droplets that leave its rim and the mist are particles (director.ts).
+ *    speed of the impact, thins, tears from its rim downwards into ligaments and falls back. The sheet is
+ *    drawn at full resolution in the transparent pass (a surface with a thickness, integrated in closed form
+ *    along the view ray); the fine spray it leaves in the air is a volume in the half-resolution pass. The
+ *    droplets that leave its rim are particles (director.ts).
  *  - The foam: a patch of white water at the entry point that spreads as a ring and breaks up over half a
  *    minute. A decal on the water surface in the transparent pass: on whatever water the scene holds there
  *    (the far sheet of the G-buffer or the forward-drawn sea in front of the opaque scene), so it rides the
@@ -120,15 +121,14 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
 }
 `;
 
-const CROWN_WGSL = /* wgsl */ `
-#include "vfx_common"
-#include "vfx_volume"
+/** The crown instance and its frame, shared by the mist volume and the sheet pass. */
+const CROWN_SHARED_WGSL = /* wgsl */ `
 struct Crown {
   centre: vec4f,   // xyz = entry point on the water, domain coordinates, w = radius of the crown's foot now (m)
   shape: vec4f,    // x = height of the rim now (m), y = outward lean (m per m of height), z = thickness of the sheet at its foot (m), w = age (s)
-  look: vec4f,     // x = optical depth across the sheet at its foot, y = break-up 0..1, z = seed, w = march steps
-  bound: vec4f,    // x = radius of the proxy (m), y = its height (m), z = time of flight of the rim (s), w = the height the rim reaches (m)
-  mist: vec4f,     // x = radius of the body that fell in (m), y = optical depth across the body of mist (0 = none), z, w unused
+  look: vec4f,     // x = optical depth across the sheet at its foot, y = break-up 0..1, z = seed, w = march steps of the mist
+  bound: vec4f,    // x = radius of the mist's proxy (m), y = its height (m), z = time of flight of the rim (s), w = the height the rim reaches (m)
+  mist: vec4f,     // x = radius of the body that fell in (m), y = optical depth across the body of mist (0 = none), z = radius of the sheet's proxy (m), w = its height (m)
 }
 struct CrownU { albedo: vec4f }
 @group(2) @binding(0) var<uniform> crownU: CrownU;
@@ -146,6 +146,12 @@ fn crownFrame(C: Crown) -> CrownFrame {
   f.Z = cross(f.X, f.Y);
   return f;
 }
+`;
+
+const CROWN_WGSL = /* wgsl */ `
+#include "vfx_common"
+#include "vfx_volume"
+${CROWN_SHARED_WGSL}
 
 struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) inst: u32 }
 @vertex fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
@@ -199,40 +205,9 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
     let r = length(p.xz);
     let ang = p.xz / max(r, 1e-3);
     let lod = max(t * fp, 0.5 * dt) / foot;
-    // Nothing about the crown is the same all the way round: here the wall stands high and far out and leans
-    // over, there it is low and steep (slow noise in the angle), and its rim is a row of fingers (fast noise).
+    // (The sheet of water itself is drawn sharp, at full resolution, by the sheet pass below: this volume is
+    // the fine spray that the sheet leaves in the air.)
     let slow = vfxNoiseLod(vec3f(ang * 0.42, seed), lod * 0.3);
-    let mid = vfxNoiseLod(vec3f(ang * 0.95, seed * 1.9 + 0.6), lod * 0.6);
-    let fast = vfxNoiseLod(vec3f(ang * 1.9, seed * 2.7 + 0.3), lod);
-    // (Three scales round the rim: where the wall stands, tongues a few to a side, and fingers.)
-    let rim = H * (0.28 + 1.1 * slow.r + 0.55 * (mid.r - 0.5) + 0.8 * (fast.g - 0.5));
-    let leanA = lean * (0.55 + 0.95 * slow.a);
-    let footA = foot * (0.9 + 0.22 * slow.g);
-    let s = p.y / max(rim, 0.05);
-    var sigma = 0.0;
-    var toSun = 0.0;
-    var relief = 1.0;
-    if (s < 1.0 && C.look.x > 0.0) {
-      // The sheet is a wall of water with lumps: thick at its root, thin between the lumps, and it tears from
-      // the rim downwards into ligaments (holes where the noise is low, more of them with time).
-      let lump = vfxNoiseLod(vec3f(ang * 3.1, p.y / foot * 1.3 - age * 0.3 + seed * 5.1), lod * 1.5);
-      let fine = vfxNoiseLod(vec3f(ang * 8.0, p.y / foot * 3.2 - age * 0.7 + seed * 1.3), lod * 4.0);
-      let rs = footA + p.y * leanA * (1.0 + 0.35 * s);
-      let w = thick * (1.0 - 0.6 * s) * (0.45 + 1.3 * lump.r) + 0.03;
-      let across = (r - rs) / w;
-      if (abs(across) < 2.6) {
-        let hold = 0.6 * lump.g + 0.4 * fine.b;
-        let cut = breakup * (0.2 + 1.1 * s) - 0.1;
-        let whole = smoothstep(cut, cut + 0.2, hold) * (1.0 - smoothstep(0.8, 1.0, s));
-        sigma = C.look.x / thick * exp(-across * across) * whole * (0.25 + 1.6 * (1.0 - s) * (1.0 - s) + 0.6 * lump.g);
-        // Water between this point and the sun: the rest of this wall's thickness on its sunward side, and
-        // (with a low sun) the wall across the crown for the side that faces away.
-        let side = dot(ang, sunH);
-        toSun = sigma * w * (1.3 - clamp(across, -1.3, 1.3) * sign(side)) + C.look.x * low * saturate(-side) * (1.0 - s);
-        // The lumps stand out of the wall and shade the water between them: white water is never one flat white.
-        relief = 0.62 + 0.55 * smoothstep(0.2, 0.8, lump.g) + 0.2 * (fine.b - 0.5);
-      }
-    }
     var mist = 0.0;
     if (C.mist.y > 0.0 && p.y < 3.0 * mistH) {
       // A torus of spray around the rim, thin in the middle, lumpy, with no top and no side to it: it thins out
@@ -244,14 +219,14 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
       let hN = mistH * (0.55 + 0.9 * slow.r) * (0.7 + 0.6 * n.a);
       mist = C.mist.y / mistW * ring * exp(-sq(p.y / (1.3 * hN))) * saturate((0.1 + 1.6 * n.g) * (0.5 + 1.0 * n2.b) - 0.15);
     }
-    let total = sigma + mist;
+    let total = mist;
     if (total <= 0.0) { continue; }
     let stepT = exp(-total * dt);
     // White water: sunlight that has come through little of it is bright, the lee of a thick wall is grey; what
     // is scattered about inside keeps a floor under it. Never brighter than a sunlit white surface, except
     // against the sun, where thin spray shines.
-    let lit = (0.3 + 0.7 * exp(-toSun)) * mix(1.0, relief, sigma / max(total, 1e-6));
-    let glare = 1.0 + 1.6 * forward * exp(-1.5 * toSun);
+    let lit = 1.0;
+    let glare = 1.0 + 1.6 * forward;
     let J = crownU.albedo.rgb * (probe.sun.rgb * (lit * glare) + amb) * (1.0 / PI);
     let c = J * (1.0 - stepT);
     let lw = T * luminance(c) + 1e-12;
@@ -263,6 +238,159 @@ struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) ins
   }
   if (T > 0.999) { return volumeNone(); }
   return volumeOut(R.uv, L, T, clamp(tsum / max(wsum, 1e-20), R.t0, R.t1));
+}
+`;
+
+/**
+ * The sheet of the crown, at full resolution in the transparent pass. A wall of water a few decimetres thick
+ * is far thinner than a step of a volume march and, at half resolution behind a denoising filter, comes out as
+ * a blurred bowl (critics of rounds 1 and 2). Here the sheet is a surface with a thickness: along the view ray
+ * the signed distance to its middle is followed in a few steps, and the water crossed in each step is the
+ * closed-form integral of the sheet's bell profile over it (exact for a straight stretch, no jitter, no
+ * filter). The rim, the tears and the ligaments are thresholds on noise at the resolution of the screen.
+ */
+const SHEET_WGSL = /* wgsl */ `
+#include "vfx_common"
+${CROWN_SHARED_WGSL}
+const SHEET_CUBE = array<u32, 36>(0u, 2u, 3u, 0u, 3u, 1u, 4u, 5u, 7u, 4u, 7u, 6u, 0u, 1u, 5u, 0u, 5u, 4u, 2u, 6u, 7u, 2u, 7u, 3u, 0u, 4u, 6u, 0u, 6u, 2u, 1u, 3u, 7u, 1u, 7u, 5u);
+struct VOut { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) inst: u32 }
+@vertex fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
+  let C = crowns[ii];
+  let f = crownFrame(C);
+  let ci = SHEET_CUBE[vi];
+  let l = mix(vec3f(-C.mist.z, -0.3, -C.mist.z), vec3f(C.mist.z, C.mist.w, C.mist.z), vec3f(f32(ci & 1u), f32((ci >> 1u) & 1u), f32((ci >> 2u) & 1u)));
+  var o: VOut;
+  o.pos = frame.viewProj * vec4f(f.origin + f.X * l.x + f.Y * l.y + f.Z * l.z, 1.0);
+  o.inst = ii;
+  return o;
+}
+
+fn sheetErf(x: f32) -> f32 {
+  let a = abs(x);
+  let d = 1.0 + a * (0.278393 + a * (0.230389 + a * (0.000972 + a * 0.078108)));
+  let d2 = d * d;
+  return sign(x) * (1.0 - 1.0 / (d2 * d2));
+}
+struct SheetGeom {
+  g: f32,        // signed distance from the middle of the sheet, measured along the radius (m; > 0 outside)
+  w: f32,        // half thickness of the sheet here (m)
+  ang: vec2f,    // unit direction from the axis
+  slow: vec4f,   // the noise that shapes the wall
+}
+/// Where the wall stands: high, far out and leaning over here, low and steep there (slow noise round the axis).
+fn sheetGeom(C: Crown, p: vec3f, lod: f32) -> SheetGeom {
+  var o: SheetGeom;
+  let r = length(p.xz);
+  o.ang = p.xz / max(r, 1e-3);
+  o.slow = vfxNoiseLod(vec3f(o.ang * 0.42, C.look.z), lod * 0.3);
+  let rim0 = max(C.shape.x, 0.05) * (0.28 + 1.1 * o.slow.r);
+  let s0 = p.y / max(rim0, 0.05);
+  let leanA = C.shape.y * (0.55 + 0.95 * o.slow.a);
+  let footA = C.centre.w * (0.9 + 0.22 * o.slow.g);
+  o.g = r - (footA + p.y * leanA * (1.0 + 0.35 * min(s0, 1.6)));
+  o.w = C.shape.z * (1.0 - 0.6 * saturate(s0)) + 0.03;
+  return o;
+}
+
+@fragment fn fs(in: VOut) -> @location(0) vec4f {
+  let C = crowns[in.inst];
+  if (C.look.x <= 0.0) { discard; }
+  let f = crownFrame(C);
+  let uv = in.pos.xy * frame.renderSize.zw;
+  let ray = viewRay(uv);
+  let rayLen = length(ray);
+  let dW = ray / rayLen;
+  let tScene = viewZFromDepth(textureLoad(sceneDepthTex, vec2i(in.pos.xy), 0)) * rayLen;
+  let ro = -vec3f(dot(f.origin, f.X), dot(f.origin, f.Y), dot(f.origin, f.Z));
+  var rd = vec3f(dot(dW, f.X), dot(dW, f.Y), dot(dW, f.Z));
+  rd = select(rd, vec3f(1e-7), abs(rd) < vec3f(1e-7));
+  let ta = (vec3f(-C.mist.z, 0.0, -C.mist.z) - ro) / rd;
+  let tb = (vec3f(C.mist.z, C.mist.w, C.mist.z) - ro) / rd;
+  let tmn = min(ta, tb);
+  let tmx = max(ta, tb);
+  let t0 = max(max(tmn.x, max(tmn.y, tmn.z)), 0.0);
+  let t1 = min(min(tmx.x, min(tmx.y, tmx.z)), tScene);
+  if (t1 <= t0) { discard; }
+  let foot = C.centre.w;
+  let H = max(C.shape.x, 0.05);
+  let thick = C.shape.z;
+  let age = C.shape.w;
+  let breakup = C.look.y;
+  let seed = C.look.z;
+  let probe = vfxProbes[0];
+  let sunL = vec3f(dot(frame.sunDir.xyz, f.X), dot(frame.sunDir.xyz, f.Y), dot(frame.sunDir.xyz, f.Z));
+  let sunH = sunL.xz / max(length(sunL.xz), 1e-3);
+  let low = saturate(1.0 - 1.4 * sunL.y);
+  let amb = vfxProbeAmbient(0u);
+  // Looking towards the sun through spray: the drops throw its light forward.
+  let forward = pow(saturate(dot(rd, sunL)), 6.0);
+  // Size of a pixel at one metre.
+  let fp = 2.0 * frame.cameraUp.w * frame.renderSize.w;
+  const STEPS = 28.0;
+  let dt = (t1 - t0) / STEPS;
+  let start = t0 + dt * (blueNoise(vec2u(in.pos.xy)).g - 0.5) * 0.5;
+  var prev = sheetGeom(C, ro + rd * start, start * fp / foot);
+  var L = vec3f(0.0);
+  var T = 1.0;
+  for (var i = 1.0; i <= STEPS; i += 1.0) {
+    let t = start + i * dt;
+    let cur = sheetGeom(C, ro + rd * t, t * fp / foot);
+    let w = 0.5 * (prev.w + cur.w);
+    let a = prev.g / w;
+    let b = cur.g / w;
+    // Mean of the bell profile exp(-(g / w)^2) over the step, g taken as linear along it.
+    var mean = exp(-a * a);
+    if (abs(b - a) > 1e-3) { mean = 0.8862269 * (sheetErf(b) - sheetErf(a)) / (b - a); }
+    if (mean > 2e-3) {
+      // Where in the step the sheet is: at the crossing, or at the end that is nearer to it.
+      var k = select(1.0, 0.0, abs(a) < abs(b));
+      if (a * b < 0.0) { k = a / (a - b); }
+      let th = t - dt + k * dt;
+      let p = ro + rd * th;
+      let ang = normalize(mix(prev.ang, cur.ang, k));
+      let slow = mix(prev.slow, cur.slow, k);
+      let lod = max(th * fp, 0.01) / foot;
+      // Three scales round the rim: where the wall stands, tongues a few to a side, and fingers.
+      let mid = vfxNoiseLod(vec3f(ang * 0.95, seed * 1.9 + 0.6), lod * 0.6);
+      let fast = vfxNoiseLod(vec3f(ang * 1.9, seed * 2.7 + 0.3), lod);
+      let rim = H * (0.28 + 1.1 * slow.r + 0.55 * (mid.r - 0.5) + 0.8 * (fast.g - 0.5));
+      let s = p.y / max(rim, 0.05);
+      if (s < 1.0 && p.y >= 0.0) {
+        // The sheet is a wall of water with lumps, drawn out along its flight: thick at its root, thin between
+        // the lumps, torn from the rim downwards into ligaments (holes where the noise is low, more with time).
+        let lump = vfxNoiseLod(vec3f(ang * 3.1, p.y / foot * 1.3 - age * 0.3 + seed * 5.1), lod * 1.5);
+        let fine = vfxNoiseLod(vec3f(ang * 8.0, p.y / foot * 1.4 - age * 0.7 + seed * 1.3), lod * 4.0);
+        let grain = vfxNoiseLod(vec3f(ang * 21.0, p.y / foot * 2.6 - age * 1.3 + seed * 2.9), lod * 10.0);
+        let hold = 0.5 * lump.g + 0.32 * fine.b + 0.18 * grain.g;
+        let cut = breakup * (0.2 + 1.1 * s) - 0.1;
+        let whole = smoothstep(cut, cut + 0.07, hold) * (1.0 - smoothstep(0.85, 1.0, s));
+        let body = (0.25 + 1.6 * (1.0 - s) * (1.0 - s) + 0.6 * lump.g) * (0.45 + 1.3 * lump.r) * (0.75 + 0.5 * grain.r);
+        let sigma = C.look.x / thick * whole * body;
+        let tau = sigma * mean * dt;
+        if (tau > 1e-4) {
+          // Water between this point and the sun: little where the eye sees the face the sun lights, the whole
+          // sheet where it sees the other one, and (with a low sun) the wall across the crown as well.
+          let across = sigma * w * 1.7724539;
+          let side = dot(ang, sunH);
+          let litFace = (a > b) == (side > 0.0);
+          let toSun = across * select(1.0, 0.12, litFace) + C.look.x * low * saturate(-side) * (1.0 - s);
+          // The lumps stand out of the wall and shade the water between them: white water is never one flat white.
+          let relief = 0.6 + 0.55 * smoothstep(0.2, 0.8, lump.g) + 0.4 * (grain.b - 0.5);
+          let lit = (0.42 + 0.58 * exp(-toSun)) * relief;
+          let glare = 1.0 + 1.6 * forward * exp(-1.5 * toSun);
+          let J = crownU.albedo.rgb * (probe.sun.rgb * (lit * glare) + amb) * (1.0 / PI);
+          let al = 1.0 - exp(-tau);
+          L += T * J * al;
+          T *= 1.0 - al;
+          if (T < 0.02) { break; }
+        }
+      }
+    }
+    prev = cur;
+  }
+  if (T > 0.997) { discard; }
+  let c = vfxAtmosphere(uv, length(f.origin), L * frame.exposure.x, 1.0 - T);
+  return vec4f(writeHdr(c.rgb), saturate(c.a));
 }
 `;
 
@@ -290,7 +418,10 @@ export class FoamRenderer {
   private readonly crownBuffer: GPUBuffer;
   private readonly crownGroup: GPUBindGroup;
   private readonly crownPipeline: Tracked<GPURenderPipeline>;
+  private readonly sheetPipeline: Tracked<GPURenderPipeline>;
   private crownDistances: number[] = [];
+  /** Per crown: it has mist in the air (a volume item) this frame. */
+  private crownMist: boolean[] = [];
   private patches: FoamPatch[] = [];
 
   constructor(
@@ -341,6 +472,19 @@ export class FoamRenderer {
     this.crownGroup = device.createBindGroup({ label: 'vfx.crown', layout: crownLayout, entries: [{ binding: 0, resource: { buffer: crownUniform } }, { binding: 1, resource: { buffer: this.crownBuffer } }] });
     this.crownPipeline = createVolumePipeline(ctx, common, 'vfx.crown', CROWN_WGSL, crownLayout);
     this.crownPipeline.get();
+    this.sheetPipeline = common.core.shaders.tracked(() => {
+      const module = ctx.shaders.createModule('vfx.crown.sheet', SHEET_WGSL);
+      return device.createRenderPipeline({
+        label: 'vfx.crown.sheet',
+        layout: device.createPipelineLayout({ label: 'vfx.crown.sheet', bindGroupLayouts: [ctx.frameBindGroupLayout, common.layout, crownLayout] }),
+        vertex: { module, entryPoint: 'vs' },
+        fragment: { module, entryPoint: 'fs', targets: [{ format: RENDER_FORMATS.hdr, blend: { color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' } } }] },
+        // Back faces without a depth test, as the foam: the scene depth is read in the shader.
+        primitive: { topology: 'triangle-list', cullMode: 'front' },
+        depthStencil: { format: RENDER_FORMATS.depth, depthWriteEnabled: false, depthCompare: 'always' },
+      });
+    });
+    this.sheetPipeline.get();
   }
 
   spawn(s: SplashSpawn, effectTime: number): void {
@@ -362,6 +506,7 @@ export class FoamRenderer {
   clear(): void {
     this.patches = [];
     this.crownDistances = [];
+    this.crownMist = [];
   }
 
   /** Age the patches and pack the foam decals and the crowns. */
@@ -370,6 +515,7 @@ export class FoamRenderer {
     const K = S.crown;
     this.patches = this.patches.filter((p) => effectTime - p.start < S.foamTime);
     this.crownDistances = [];
+    this.crownMist = [];
     const originRel = v3.sub(dom.originRoot, frame.camera.positionRoot);
     const gravity = dom.gravity > 0.1 ? dom.gravity : GRAVITY_FALLBACK;
     const lean = Math.tan(((90 - 0.5 * (S.crownAngleDeg[0] + S.crownAngleDeg[1])) * Math.PI) / 180);
@@ -396,11 +542,13 @@ export class FoamRenderer {
       const top = 1.8 * Math.max(height, 0.05);
       const mistHeight = 3 * 0.38 * peak;
       const mistReach = foot + 0.5 * lean * peak + 2.6 * (0.45 * p.bodyRadius + 0.25 * lean * peak);
-      C.set([Math.max(1.12 * foot + 2.0 * lean * top + 4.6 * thick + 0.1, mistReach), Math.max(top, mistHeight) + 0.2, flight, peak], o + 12);
+      const sheetReach = 1.12 * foot + 2.0 * lean * top + 4.6 * thick + 0.1;
+      C.set([Math.max(sheetReach, mistReach), Math.max(top, mistHeight) + 0.2, flight, peak], o + 12);
       // The mist comes up with the sheet and thins out over its life.
       const mist = K.mist * p.strength * Math.min(1, age / (0.25 * flight)) * (1 - life / MIST_LIFE) ** 1.5;
-      C.set([p.bodyRadius, mist, 0, 0], o + 16);
+      C.set([p.bodyRadius, mist, sheetReach, top + 0.1], o + 16);
       this.crownDistances.push(v3.len(v3.add(originRel, quat.rotate(dom.q, p.pos))));
+      this.crownMist.push(mist > 1e-4);
     });
     if (this.patches.length > 0) this.device.queue.writeBuffer(this.buffer, 0, this.data, 0, this.patches.length * INST_FLOATS);
     if (this.crownDistances.length > 0) this.device.queue.writeBuffer(this.crownBuffer, 0, this.crownData, 0, this.crownDistances.length * CROWN_FLOATS);
@@ -415,16 +563,21 @@ export class FoamRenderer {
     return this.crownDistances.length;
   }
 
-  /** Volume-pass items: the crowns. */
+  /** Volume-pass items: the mist of the crowns. */
   items(): VolumeItem[] {
-    return this.crownDistances.map((distance, i) => ({
-      distance,
-      draw: (pass: GPURenderPassEncoder) => {
-        pass.setPipeline(this.crownPipeline.get());
-        pass.setBindGroup(2, this.crownGroup);
-        pass.draw(36, 1, 0, i);
-      },
-    }));
+    const items: VolumeItem[] = [];
+    this.crownDistances.forEach((distance, i) => {
+      if (!this.crownMist[i]) return;
+      items.push({
+        distance,
+        draw: (pass: GPURenderPassEncoder) => {
+          pass.setPipeline(this.crownPipeline.get());
+          pass.setBindGroup(2, this.crownGroup);
+          pass.draw(36, 1, 0, i);
+        },
+      });
+    });
+    return items;
   }
 
   draw(pass: GPURenderPassEncoder): void {
@@ -439,6 +592,12 @@ export class FoamRenderer {
     pass.setBindGroup(2, this.group);
     pass.setBindGroup(3, this.waterGroup);
     pass.draw(36, this.patches.length);
+    // The sheets of the crowns, over the foam they stand in.
+    if (this.crownDistances.length > 0) {
+      pass.setPipeline(this.sheetPipeline.get());
+      pass.setBindGroup(2, this.crownGroup);
+      pass.draw(36, this.crownDistances.length);
+    }
   }
 
   dispose(): void {

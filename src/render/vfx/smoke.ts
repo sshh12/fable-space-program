@@ -120,13 +120,19 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   let rh = d / max(r, 0.5);
   // Wall jet from the foot of the plume: 1 / r decay, thickening with distance, focused along the trench.
   let F = su.rate.w;
-  // (Both ways along the trench: the deflector under the mount is a double wedge.)
-  let lobe = pow(abs(dot(rh, su.trench.xy)), 3.0);
-  let w = (1.0 - F) + F * 2.6 * lobe;
+  // (Both ways along the trench: the deflector under the mount is a double wedge, and the duct collimates
+  // what it turns: two opposed jets, not a ring.)
+  let lobe = pow(abs(dot(rh, su.trench.xy)), 5.0);
+  let w = (1.0 - F) + F * 3.2 * lobe;
   let r0 = su.flow.y;
-  let delta = 5.0 + 0.14 * r;
+  // The jets leave the trench as low, fast sheets along the ground: they thicken, lift off and billow only
+  // when they have left the exits well behind. The space round the vehicle stays clear (the flame under it is
+  // seen from every side, also from a camera that looks along the trench over one of the jets).
+  let exit = su.trench.z * F;
+  let delta = 4.0 + 0.14 * max(r - 0.8 * exit, 0.0);
+  let away = select(1.0, smoothstep(0.9 * exit, 2.4 * exit, r), exit > 1.0);
   let U = su.origin.w * su.flow.x * (r0 / (r + r0)) * w * exp(-p.y / delta);
-  var v = vec3f(rh.x * U, U * 0.14 * (p.y / delta), rh.y * U);
+  var v = vec3f(rh.x * U, U * 0.14 * (p.y / delta) * mix(0.3, 1.0, away), rh.y * U);
   // The free jet above it: straight down inside (stagnating at the pad), and the air around is drawn in.
   let j = jetAt(p);
   let stagnation = saturate(p.y / (1.2 * j.radius));
@@ -136,7 +142,7 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   // Hot gas rises where the jets do not hold it down and once the wall jet has let go of it; the wind takes
   // over where the wall jet has died.
   let held = j.column * (1.0 - smoothstep(1.5 * j.radius, 6.0 * j.radius, j.dist));
-  v.y += su.flow.z * heat * (0.35 + 0.65 * saturate(p.y / 25.0)) * (1.0 - held) * (1.0 - 0.85 * saturate(U / 10.0));
+  v.y += su.flow.z * heat * (0.35 + 0.65 * saturate(p.y / 25.0)) * (1.0 - held) * (1.0 - 0.85 * saturate(U / 10.0)) * mix(0.12, 1.0, away);
   let windShare = (0.3 + 0.7 * saturate(p.y / 120.0)) * (1.0 - saturate(U / 8.0));
   v += vec3f(su.flow2.z, 0.0, su.flow2.w) * windShare;
   // Turbulence: two octaves of divergence-free noise that drift up with the cloud, stronger where the gas is fast.
@@ -147,7 +153,7 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   let q0 = p * 0.0042 + vec3f(0.0, -t * 0.012, 0.0);
   let q1 = p * 0.0137 + vec3f(t * 0.008, -t * 0.03, 0.0);
   let c = 0.5 * (vfxCurl(q0 + h) + vfxCurl(q0 - h)) + 0.275 * (vfxCurl(q1 + h) + vfxCurl(q1 - h));
-  v += c.xzy * (su.flow2.x * (2.0 + 0.07 * min(length(v), 60.0)) * (1.0 - 0.8 * held)) * vec3f(1.0, 0.6 + 0.4 * saturate(p.y / 20.0), 1.0);
+  v += c.xzy * (su.flow2.x * (2.0 + 0.07 * min(length(v), 60.0)) * (1.0 - 0.8 * held)) * vec3f(1.0, (0.6 + 0.4 * saturate(p.y / 20.0)) * mix(0.3, 1.0, away), 1.0);
   return v;
 }
 
@@ -177,9 +183,9 @@ fn smokeVelocity(p: vec3f, heat: f32) -> vec3f {
   let dSmoke = p.xz - (su.source.xz + reachT);
   let dSmoke2 = p.xz - (su.source.xz - reachT);
   let gSmoke = 0.5 * (exp(-dot(dSmoke, dSmoke) / (R * R)) + exp(-dot(dSmoke2, dSmoke2) / (R * R))) * exp(-p.y / H) / (PI * R * R * H);
-  let Rw = 1.5 * R;
-  let dSteam = p.xz - (su.source.xz + 0.8 * reachT);
-  let dSteam2 = p.xz - (su.source.xz - 0.8 * reachT);
+  let Rw = 1.2 * R;
+  let dSteam = p.xz - (su.source.xz + reachT);
+  let dSteam2 = p.xz - (su.source.xz - reachT);
   let gSteam = 0.5 * (exp(-dot(dSteam, dSteam) / (Rw * Rw)) + exp(-dot(dSteam2, dSteam2) / (Rw * Rw))) * exp(-p.y / (1.6 * H)) / (PI * Rw * Rw * 1.6 * H);
   // The jet itself is clear, fast gas: nothing condenses in it and what strays into it is torn apart.
   let core = jetAt(p).core;
@@ -415,7 +421,9 @@ struct MarchOut {
       // or two. Inside the cloud the noise can not open a hole (a gap shows more cloud, never the ground);
       // thin gas at the fringe stays a haze that fades out smoothly.
       let field = cover + (billow - 0.5) * (2.0 * su.smokeAlbedo.w) * (1.0 - 0.45 * cover);
-      hard = smoothstep(0.3, 0.6, field);
+      // (Only gas that is dense on its own: in a thin fringe the billow noise alone would pass the threshold
+      // here and there and leave detached arcs and puffs standing in the air beside the cloud.)
+      hard = smoothstep(0.3, 0.6, field) * smoothstep(0.2, 0.6, cover);
       // (Where the billows dip, dense gas keeps a floor of its density: a gap between billows shows more cloud,
       // grey in its own shade, never a dark hole down to the ground.)
       sigma = raw * (3.0 * hard + (0.6 + 1.2 * smoothstep(0.5, 1.0, cover)) * cover * (1.0 - hard));
@@ -534,6 +542,13 @@ struct CombineOut {
   var bestC = vec4f(E.rgb, E.a);
   var bestM = m;
   var bestDiff = 3.0e38;
+  // The smoke alone (its opacity, the distance of its front) for the outline, see below.
+  var S = 0.0;
+  var bestS = 0.0;
+  var sMin = 1.0;
+  var sMax = 0.0;
+  var dSum = 0.0;
+  var dW = 0.0;
   // Cubic B-spline weights over the 4 x 4 rays around the pixel: no diamonds or blocks of quarter-resolution
   // pixels, and the per-ray jitter of a thin fringe is averaged instead of drawn as a stipple.
   let gx = 1.0 - f.x;
@@ -562,10 +577,39 @@ struct CombineOut {
     C += col * w;
     M += mom * w;
     wsum += w;
-    if (all(o >= vec2i(0)) && all(o <= vec2i(1)) && diff < bestDiff) { bestDiff = diff; bestC = col; bestM = mom; }
+    let sk = 1.0 - fr.a * bk.a;
+    S += sk * w;
+    if (diff < 0.06) {
+      sMin = min(sMin, sk);
+      sMax = max(sMax, sk);
+      dSum += (1.0 - fr.a) * exp2(a.b);
+      dW += 1.0 - fr.a;
+    }
+    if (all(o >= vec2i(0)) && all(o <= vec2i(1)) && diff < bestDiff) { bestDiff = diff; bestC = col; bestM = mom; bestS = sk; }
   }
-  if (wsum < 0.02) { C = bestC; M = bestM; }
-  else { C /= wsum; M /= wsum; }
+  if (wsum < 0.02) { C = bestC; M = bestM; S = bestS; }
+  else { C /= wsum; M /= wsum; S /= wsum; }
+  // The outline. The rays stand four pixels apart: mixed smoothly, the edge of a dense cloud is a ramp eight
+  // pixels wide, out of focus beside the sharp hull and towers in front of it. Where the opacity of the smoke
+  // changes steeply from ray to ray (an edge, not a haze) the ramp is steepened to about three pixels about a
+  // threshold that follows fine noise riding with the cloud at its surface: lumps the march is too coarse for.
+  let edge = smoothstep(0.25, 0.6, sMax - sMin);
+  if (edge > 0.0 && dW > 0.02 && S > 0.004) {
+    let ray = viewRay(in.uv);
+    let dist = dSum / dW;
+    let dWorld = ray / length(ray);
+    let o3 = su.origin.xyz;
+    let ps = -vec3f(dot(o3, su.axisE.xyz), dot(o3, su.axisU.xyz), dot(o3, su.axisN.xyz)) + vec3f(dot(dWorld, su.axisE.xyz), dot(dWorld, su.axisU.xyz), dot(dWorld, su.axisN.xyz)) * dist;
+    let time = su.misc.y;
+    let k = su.steamAlbedo.w * 6.3;
+    let q = (ps + vec3f(-su.flow2.z * time, -3.0 * time, -su.flow2.w * time)) * k;
+    let n = vfxNoiseLod(q, 2.0 * frame.cameraUp.w * vfx.half.w * dist * k);
+    let th = 0.5 + 0.42 * (n.g - 0.5) + 0.2 * (n.b - 0.5);
+    let sharp = smoothstep(th - 0.16, th + 0.16, S);
+    let r = mix(1.0, clamp(sharp / S, 0.0, 1.5), edge);
+    C = vec4f(E.rgb, E.a) + (C - vec4f(E.rgb, E.a)) * r;
+    C = vec4f(max(C.rgb, vec3f(0.0)), C.a);
+  }
   var out: CombineOut;
   out.color = vec4f(writeHdr(C.rgb), saturate(C.a));
   out.moment = vec4f(M, 0.0, 0.0);

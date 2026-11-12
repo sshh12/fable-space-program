@@ -165,8 +165,8 @@ export function plasmaWindowRadiance(data: VfxData['reentry'], heatFlux: number,
   const gain = 1 - 0.764 * (1 - data.wakeGain);
   const fade = 0.75 * Math.exp(-0.5) + 0.25 * Math.exp(-1 / (data.wakeLengthRadii * (0.3 + 0.7 * k)));
   // ... and half a radius of the base flow between the hull and the skirt (BASE_GLOW k^2 per radius, e^(-1/1.2)
-  // of it one radius behind the shoulder, its streamers at their mean of 0.95).
-  const base = BASE_GLOW * k * k * 0.5 * Math.exp(-1 / 1.2) * 0.95;
+  // of it one radius behind the shoulder, its streamers at their mean of 0.99).
+  const base = BASE_GLOW * k * k * 0.5 * Math.exp(-1 / 1.2) * 0.99;
   const c = plasmaColor(data, speed);
   const cl = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
   return { luminance: plasmaLuminance(data, heatFlux, k) * cl * (across * gain * fade + base), color: [c[0] / cl, c[1] / cl, c[2] / cl] };
@@ -318,16 +318,24 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
       let qa = p - v * (ph.x * adv);
       let qb = p - v * (ph.y * adv);
       let lod = max(t * fp, 0.5 * dt) * 1.2 / Rb;
-      let na = vfxNoiseLod((qa - v * (dot(qa, v) * 0.6)) * (1.2 / Rb) + seed, lod);
-      let nb = vfxNoiseLod((qb - v * (dot(qb, v) * 0.6)) * (1.2 / Rb) + seed + vec3f(0.37, 0.71, 0.13), lod);
+      // (Drawn out along the flow, six to one: streaks, not blotches.)
+      let na = vfxNoiseLod((qa - v * (dot(qa, v) * 0.84)) * (1.5 / Rb) + seed, lod);
+      let nb = vfxNoiseLod((qb - v * (dot(qb, v) * 0.84)) * (1.5 / Rb) + seed + vec3f(0.37, 0.71, 0.13), lod);
       let stream = 1.0 - e;
       let tex = max(0.15, 1.0 + (0.6 + 1.0 * stream) * (mix(nb.g, na.g, wa) - 0.5) + (0.45 + 0.9 * stream) * (mix(nb.r, na.r, wa) - 0.5));
-      let face = e * e * e;
-      // (Beyond the shock the air is cold: the glow ends within a couple of standoffs, softly, and what is seen
-      // round it is the bloom of the clipped layer, not a long exponential tail that clips metres out.)
-      let layer = exp(-sq(B.sd / (1.1 * delta))) * (1.13 / delta);
+      // (Brightest at the stagnation point, but the layer wraps the whole windward face: from the side it is a
+      // crescent that hugs the shield from shoulder to shoulder, not a ball in front of its middle.)
+      let face = e * e * (0.3 + 0.7 * e);
+      // The gas glows from the bow shock inwards. In front of the shock the air is cold and dark: the layer has
+      // a clean outer edge the standoff away from the wall, it is brightest right behind that edge and dimmer
+      // towards the cooler wall. (A bell curve about the wall had no edge at all: an airbrushed lobe.)
+      let xs_ = B.sd / (1.6 * delta);
+      let layer = (1.0 - smoothstep(0.78, 1.0, xs_)) * (0.3 + 0.7 * xs_ * xs_) * (1.5 / delta);
       let heat = saturate(e * e * (0.35 + 0.65 * k));
-      j += mix(I.color.rgb, hot, heat) * (face * layer * tex * (0.55 + 0.45 * k));
+      // By temperature: white-hot where the flow stagnates, the colour of the gas over the face, towards orange
+      // where it has expanded round the shoulder.
+      let warm = mix(vec3f(1.0, 0.5, 0.22) * (1.15 * luminance(I.color.rgb)), I.color.rgb, smoothstep(0.25, 0.8, e));
+      j += mix(warm, hot, heat) * (face * layer * tex * (0.55 + 0.45 * k));
       // The hot gas around the head: a faint envelope that reaches a third of a radius out on the windward
       // side (the glare round the head is the bloom's business: a bright envelope would be a halo disc).
       j += I.color.rgb * (0.003 * (0.3 + 0.7 * k) * exp(-B.sd / (0.3 * Rb)) * (0.05 + 0.95 * e * e * e) / (0.3 * Rb));
@@ -362,7 +370,7 @@ fn plasmaBody(I: PlasmaInst, p: vec3f) -> BodyAt {
       let s1 = vfxNoiseLod(vec3f((xw - I.params.x) * 0.05 / Rb, yz.x * 1.6, yz.y * 1.6) + seed * 2.3, foot * 1.6 / Rw);
       let s2 = vfxNoiseLod(vec3f((xw - I.params.x * 1.4) * 0.11 / Rb, yz.x * 4.1, yz.y * 4.1) + seed * 3.7, foot * 4.1 / Rw);
       let s3 = vfxNoiseLod(vec3f((xw - I.params.x * 2.1) * 0.23 / Rb, yz.x * 9.5, yz.y * 9.5) + seed * 5.1, foot * 9.5 / Rw);
-      let lines = (0.15 + 2.4 * s1.r * s1.r) * (0.45 + 1.1 * s2.a) * (0.7 + 0.6 * s3.g);
+      let lines = (0.12 + 2.6 * s1.r * s1.r) * (0.3 + 1.4 * s2.a) * (0.45 + 1.1 * s3.g);
       let cool = xs / (6.0 * Rb);
       var tint = mix(I.color.rgb, vec3f(1.0, 0.38, 0.15) * luminance(I.color.rgb) * 1.25, smoothstep(0.15, 1.0, cool));
       tint = mix(tint, vec3f(1.0, 0.22, 0.07) * luminance(I.color.rgb) * 1.1, smoothstep(1.0, 3.0, cool));
@@ -463,11 +471,12 @@ export class PlasmaRenderer {
       // The sheath is Rw + 3 wS wide at the far end (see the shader).
       // ... and the envelope of hot gas around the head reaches a radius and a half beyond the body.
       const boxRadius = 1.15 * Math.max(extent + 1.5 * proxy.radius, 0.5 * proxy.radius * (1 + (0.02 * boxLength) / proxy.radius) + 3 * (0.12 * proxy.radius + 0.012 * boxLength));
-      // (The shock layer is what a camera exposes for in the dark: it is held three stops over the meter's
-      // white whatever the hour, so that the stagnation region clips and the layer round it keeps its colour
-      // and its streaks. Capped like a flame, at a night exposure it was six hundred times over: one white
-      // ball of glare a quarter of the frame wide.)
-      this.hints.push({ rel: origin, a: extent + standoff, b: extent + standoff, luminance: 0.5 * luminance, clipStops: 1.2, cap: Infinity });
+      // (The shock layer is what a camera exposes for in the dark: seen square on it is held one stop over the
+      // meter's white whatever the hour, so that only the stagnation region and the limb, where the eye looks
+      // along the layer, clip, and the rest keeps its colour and its streaks. Capped like a flame, at a night
+      // exposure it was six hundred times over: one white ball of glare a quarter of the frame wide; at three
+      // stops over, still one airbrushed white lobe.)
+      this.hints.push({ rel: origin, a: extent + standoff, b: extent + standoff, luminance, clipStops: 1, cap: Infinity });
       const o = this.placed.length * INST_FLOATS;
       D.set([origin.x, origin.y, origin.z, boxLength], o);
       D.set([wind.x, wind.y, wind.z, boxRadius], o + 4);

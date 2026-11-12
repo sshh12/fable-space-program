@@ -88,7 +88,7 @@ const GLARE_FRAME_SHARE = 0.08;
 /** Length of the light of a thruster's puff, exit radii. */
 const THRUSTER_LIGHT_RE = 40;
 /** The plume light starts this many exit radii downstream of the nozzles. */
-const LIGHT_START_RE = 6;
+const LIGHT_START_RE = 9;
 /**
  * Lines of light along the luminous length of a plume: [share of the intensity, end of the line as a fraction
  * of the length]. Every line is a tube as wide as the flame there (LocalLight.radius): the hull just above
@@ -97,8 +97,8 @@ const LIGHT_START_RE = 6;
  * them (the rim of the aft end in a night launch, all the way up).
  */
 const LIGHT_SEGMENTS: [number, number][] = [
-  [0.04, 0.1],
-  [0.26, 0.4],
+  [0.025, 0.1],
+  [0.275, 0.4],
   [0.7, 1],
 ];
 /** The flame the ground cuts off: share of its light that still shines (spread flame, lit cloud), height of that light as a fraction of the cut-off length, and its largest height (m). */
@@ -257,12 +257,16 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const L = data.lights;
     for (const pc of placed) {
       const c = pc.cluster;
-      const total = plumeLightIntensity(c.look, c.thrust);
+      const shape = c.merged?.shape ?? c.nozzles[0]!.shape;
+      // What a plume lights its surroundings with is what it emits itself: with air about, the flame that
+      // burns with it; in vacuum only the share the look keeps (a lander's jet is all but invisible on the
+      // Moon, and its legs must not shine like neon tubes in a light that nothing is seen to give off).
+      const air = Math.min(1, 3 * shape.oxygen);
+      const total = plumeLightIntensity(c.look, c.thrust * (c.look.light.vacuum + (1 - c.look.light.vacuum) * air));
       const power = lum(total);
       if (power < L.minIntensity) continue;
       let reMax = 0;
       for (const nz of c.nozzles) reMax = Math.max(reMax, nz.exitRadius);
-      const shape = c.merged?.shape ?? c.nozzles[0]!.shape;
       // Luminous length: the flame where there is air to burn with, the glowing particulates of a solid motor,
       // else the short bright core at the exit.
       const flame = shape.oxygen > 0.01 && c.look.afterburn.luminance > c.look.core.luminance * 0.2 ? 0.85 * shape.afterLength * Math.min(1, 3 * shape.oxygen) : 0;

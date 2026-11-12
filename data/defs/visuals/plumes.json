@@ -14,7 +14,7 @@
       "noise": { "scaleRe": 3.2, "speed": 170, "amount": 0.55 },
       "ignition": { "frontSpeed": 260, "flash": 12, "flashColor": [1, 0.62, 0.3], "flashTime": 0.35, "reachRe": [3, 50] },
       "shutdown": { "fadeTime": 0.45 },
-      "light": { "efficacy": 12, "color": [1, 0.56, 0.24] },
+      "light": { "efficacy": 12, "color": [1, 0.56, 0.24], "vacuum": 0.25 },
       "trail": { "smoke": 0.12, "contrail": 1 },
       "ground": { "smoke": 1, "dust": 1 }
     },
@@ -31,7 +31,7 @@
       "noise": { "scaleRe": 3, "speed": 220, "amount": 0.4 },
       "ignition": { "frontSpeed": 320, "flash": 3.5, "flashColor": [0.85, 0.88, 1], "flashTime": 0.25, "reachRe": [3, 24] },
       "shutdown": { "fadeTime": 0.35 },
-      "light": { "efficacy": 0.5, "color": [0.75, 0.86, 1] },
+      "light": { "efficacy": 0.5, "color": [0.75, 0.86, 1], "vacuum": 1 },
       "trail": { "smoke": 0, "contrail": 1 },
       "ground": { "smoke": 0.6, "dust": 1 }
     },
@@ -48,7 +48,7 @@
       "noise": { "scaleRe": 3, "speed": 150, "amount": 0.45 },
       "ignition": { "frontSpeed": 220, "flash": 140, "flashColor": [1, 0.62, 0.36], "flashTime": 0.2, "reachRe": [3, 30] },
       "shutdown": { "fadeTime": 0.25 },
-      "light": { "efficacy": 1.5, "color": [0.72, 0.78, 1] },
+      "light": { "efficacy": 1.5, "color": [0.72, 0.78, 1], "vacuum": 0.12 },
       "trail": { "smoke": 0.05, "contrail": 1 },
       "ground": { "smoke": 0.5, "dust": 1 }
     },
@@ -65,7 +65,7 @@
       "noise": { "scaleRe": 2.2, "speed": 140, "amount": 0.75 },
       "ignition": { "frontSpeed": 400, "flash": 0.8, "flashColor": [1, 0.85, 0.55], "flashTime": 0.1, "reachRe": [2, 8] },
       "shutdown": { "fadeTime": 0.3 },
-      "light": { "efficacy": 22, "color": [1, 0.8, 0.55] },
+      "light": { "efficacy": 10, "color": [1, 0.8, 0.55], "vacuum": 1 },
       "trail": { "smoke": 1, "contrail": 0.3 },
       "ground": { "smoke": 1, "dust": 1 }
     },
@@ -82,7 +82,7 @@
       "noise": { "scaleRe": 2.5, "speed": 120, "amount": 0.5 },
       "ignition": { "frontSpeed": 500, "flash": 1.2, "flashColor": [1, 0.8, 0.6], "flashTime": 0.05, "reachRe": [2, 6] },
       "shutdown": { "fadeTime": 0.08 },
-      "light": { "efficacy": 140, "color": [1, 0.85, 0.7] },
+      "light": { "efficacy": 20, "color": [1, 0.85, 0.7], "vacuum": 1 },
       "trail": { "smoke": 0, "contrail": 0 },
       "ground": { "smoke": 0, "dust": 0.3 }
     }
@@ -135,7 +135,7 @@
     "jetSpeed": 150,
     "jetRadius": 14,
     "trenchFocus": 0.85,
-    "trenchLength": 70,
+    "trenchLength": 78,
     "buoyancy": 5.5,
     "jet": { "speed": 260, "entrainment": 0.12, "spread": 0.11 },
     "groundShadow": 0.6,
@@ -185,13 +185,13 @@
     "puffSpeed": 60
   },
   "reentry": {
-    "standoff": 0.08,
+    "standoff": 0.045,
     "luminance": 900000,
     "referenceFlux": 3000000,
     "fluxExponent": 1.3,
     "minIntensity": 0.02,
     "wakeLengthRadii": 34,
-    "wakeGain": 0.05,
+    "wakeGain": 0.12,
     "streakSpeed": 160,
     "colorSpeeds": [3500, 7000, 10500],
     "colors": [[1.0, 0.42, 0.14], [1.0, 0.5, 0.62], [0.86, 0.82, 1.0]],
@@ -260,7 +260,7 @@
     "shred": { "time": 1.4, "pieces": 520 }
   },
   "splash": {
-    "crownSpeedFactor": 1.3,
+    "crownSpeedFactor": 1.9,
     "crownAngleDeg": [52, 78],
     "minSpeed": 1.5,
     "foamRadiusFactor": 3.2,

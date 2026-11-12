@@ -165,8 +165,11 @@ fn hash2(a: f32, b: f32) -> f32 { return fract(sin(a * 12.9898 + b * 78.233) * 4
   let T = translucency;
   let forward = 0.75 + 0.9 * pow(saturate(dot(normalize(viewRay(v.clip.xy * frame.renderSize.zw)), frame.sunDir.xyz)), 4.0);
   var g = 0.0;
-  if (outside) { g = T * T * saturate(-NoL); }
-  else { g = T * (saturate(-NoL) * forward + 0.8 * saturate(NoL)); }
+  // (Against the light a canopy glows: thin nylon passes half of the sunlight, and the cavity behind it is
+  // bright with what the sunny side let in. Too little of it, and a canopy between the eye and the sun is a
+  // grey lid.)
+  if (outside) { g = 1.5 * T * T * saturate(-NoL); }
+  else { g = T * (1.35 * saturate(-NoL) * forward + 0.8 * saturate(NoL)); }
   // Light that crossed the cloth takes its colour.
   let tint = albedo * mix(vec3f(1.0), albedo / max(max(albedo.r, max(albedo.g, albedo.b)), 1e-3), 0.6);
   let filled = 0.85 + 0.15 * smoothstep(0.02, 0.5, I.axisX.w);
