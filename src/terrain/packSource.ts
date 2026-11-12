@@ -15,6 +15,8 @@
  * - Failover, per request: the next mirror is tried on 429, any 5xx, a timeout or network error, a 404 for an
  *   object the index promises, any other 4xx, and a body whose length is not the one the index implies; a
  *   403 (an expired signature) first refreshes the pack list ONCE and retries the same mirror, then moves on.
+ *   On a mirror of presigned URLs a network error gets the same single refresh first: the bucket's 403 for an
+ *   expired URL carries no CORS headers, so a page sees it only as a network error.
  *   A mirror that failed is put behind the others for the next PENALTY_READS reads. The status and the body
  *   length are checked against the offset and length known from the index; Content-Range is never read (it
  *   is not a CORS-safelisted response header).
@@ -343,8 +345,11 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
         stats.failures[m.id] ??= {};
         addTo(stats.failures[m.id]!, e.reason, 1);
         tried.push(e.message);
-        if (e.reason === '403' && !refreshed) {
-          // An expired signature: fetch the list once more and retry this mirror with its new URL.
+        // An expired signature: fetch the list once more and retry this mirror with its new URL. A browser
+        // cannot always SEE the 403: Railway's bucket sends its "Request has expired" answer without CORS
+        // headers (measured 2026-11-12), so the page gets a network error. On a mirror of presigned URLs a
+        // network error is therefore treated like a 403 once: one refresh, the same mirror, then the next.
+        if ((e.reason === '403' || (e.reason === 'network' && m.objects !== undefined)) && !refreshed) {
           refreshed = true;
           ({ doc, base, gen } = await refreshAfter(gen));
           j--;

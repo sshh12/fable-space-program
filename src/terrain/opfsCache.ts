@@ -8,7 +8,8 @@
  *
  * Layout: one directory (`fsp-packs` by default) holding one file per entry and `ledger.json` (entry, bytes,
  * last use). The ledger is written after every LEDGER_EVERY puts, after every eviction and on `flush()`; at
- * open, files the ledger does not know (written after its last save) are removed, so nothing is orphaned.
+ * open, entry files the ledger does not know (written after its last save) are adopted as the least recently
+ * used, so nothing is lost or orphaned, and anything else in the directory is removed.
  *
  * Works on the main thread and in workers (createWritable). Node has no OPFS: `openOpfsCache` rejects there,
  * and a `TileSourceSpec` that asks for the OPFS cache is a configuration error, not something to ignore.
@@ -88,9 +89,18 @@ export async function openOpfsCache(o: { maxBytes: number; dirName?: string }): 
   } catch (e) {
     if (!isNotFound(e) && !(e instanceof SyntaxError)) throw e;
   }
-  const stray: string[] = [];
-  for await (const name of dir.keys()) if (name !== LEDGER && !entries.has(name)) stray.push(name);
-  for (const name of stray) await dir.removeEntry(name).catch(() => undefined);
+  // Files the ledger does not know were written after its last save. A file exists only once its writable
+  // was closed (OPFS commits on close), so it is a complete entry: adopt it as the least recently used.
+  for await (const name of dir.keys()) {
+    if (name === LEDGER || entries.has(name)) continue;
+    if (!KEY_RE.test(name)) {
+      await dir.removeEntry(name).catch(() => undefined);
+      continue;
+    }
+    const size = (await (await dir.getFileHandle(name)).getFile()).size;
+    entries.set(name, { bytes: size, used: 0 });
+    total += size;
+  }
 
   const save = async (): Promise<void> => {
     putsSinceSave = 0;

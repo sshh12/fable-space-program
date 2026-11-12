@@ -119,7 +119,8 @@ test('failover: 429 and a 404 for an indexed object move to the mirror; a 403 re
   await faults({ add: [{ target: 'bucket', status: 403, count: 1 }] });
   r = await page.evaluate(([u, t]) => window.__platform!.readMain(u, 'moon', t, null), [list, tiles] as const);
   expect(r.hashes).toEqual(want);
-  expect(r.stats.failures.bucket?.['403']).toBe(1);
+  // Seen as a network error in the page (no CORS on the bucket's 403, as on Railway): one refresh, then the bucket.
+  expect((r.stats.failures.bucket?.['403'] ?? 0) + (r.stats.failures.bucket?.network ?? 0)).toBe(1);
   expect(r.stats.packListLoads).toBe(2);
   expect(r.stats.requests.mirror ?? 0).toBe(0);
   // a 403 that persists after the refresh: the mirror

@@ -18,7 +18,8 @@
  *
  * Objects are found by hash in data/packs/<set>/<hash>.pack|.idx and in data/packs/boot/<hash>.pack. CORS:
  * `Access-Control-Allow-Origin: *`, no exposed headers (nothing may depend on Content-Range), and
- * `Cross-Origin-Resource-Policy: cross-origin`.
+ * `Cross-Origin-Resource-Policy: cross-origin` on every answer except a 403 of the bucket, which, like Railway's
+ * bucket (measured), carries no CORS headers.
  */
 import fs from 'node:fs';
 import http from 'node:http';
@@ -221,13 +222,16 @@ export function startBucketStandIn(o: StandInOptions): Promise<StandIn> {
         if (!check.ok) {
           count(stats.refused, check.reason ?? 'refused');
           log(`stand-in: 403 ${check.reason} ${hash}`);
-          res.writeHead(403, { ...CORS, 'Content-Length': '0' }).end();
+          // Like Railway's bucket: the 403 of a refused signature carries no CORS headers (a page sees a
+          // network error, not the status).
+          res.writeHead(403, { 'Content-Length': '0' }).end();
           return;
         }
       }
       const fault = takeFault('bucket', hash);
       if (fault !== null) {
-        res.writeHead(fault, { ...CORS, 'Content-Length': '0' }).end();
+        // A planted 403 behaves like the bucket's own (no CORS headers); the other statuses carry them.
+        res.writeHead(fault, { ...(fault === 403 ? {} : CORS), 'Content-Length': '0' }).end();
         return;
       }
       const file = find(hash);

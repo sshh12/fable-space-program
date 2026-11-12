@@ -76,7 +76,9 @@ test('failover on the deployed services: an expired bucket URL (403, one refresh
   let url = await page.evaluate((j) => window.__platform!.listUrl(j), expired);
   let r = await page.evaluate(([u, t]) => window.__platform!.readMain(u, 'moon', t, null), [url, TILES.slice(0, 8)] as const);
   expect(r.hashes.every((h) => h !== null)).toBe(true);
-  expect(r.stats.failures.bucket?.['403']).toBeGreaterThanOrEqual(2);
+  // The bucket's 403 for an expired URL has no CORS headers: the page sees a network error, refreshes once.
+  const refused = (r.stats.failures.bucket?.['403'] ?? 0) + (r.stats.failures.bucket?.network ?? 0);
+  expect(refused).toBeGreaterThanOrEqual(2);
   expect(r.stats.packListLoads).toBe(2);
   expect(r.stats.requests.mirror).toBeGreaterThan(0);
   // 404: every bucket URL is validly signed for a key that does not exist.
