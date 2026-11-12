@@ -103,6 +103,11 @@ def main(argv: list[str]) -> int:
                                            "gate results are reported only)")
     ap.add_argument("--accept-min", type=int, help="pads: write the layout when at least this many pads fit and only "
                                                    "light pads are missing (shed from the light end)")
+    ap.add_argument("--own-ground", help="pads: 'lat:lon:radiusM' - the complex's own ground, excepted from every "
+                                         "built-up test (Ka Lae: LC-1's complex, 600 m)")
+    ap.add_argument("--settlement-reach-km", type=float,
+                    help="pads: the corridor's built-up test becomes a settlement test (>= 10 %% built-up in a 300 m "
+                         "window) within this reach; other built-up land in the sector is reported (Ka Lae: 5)")
     ap.add_argument("--replace", action="store_true",
                     help="stage: bake a region that is already live again (REPLACE mode, stage.py)")
     a = ap.parse_args(argv)

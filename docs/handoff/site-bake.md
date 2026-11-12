@@ -1,6 +1,6 @@
 # Hand-off: site-bake (wave 3.1)
 
-Status (after the lead's decisions of 2026-11-12, section 0.10): Madrakah resolved and accepted; **Ka Lae STOPPED again: under the lead's rule only 8 pads fit within 40 km (under the 12 the lead set), the corridor's built-up test is the binding gate (section 0.10)**; verify 24 of 27 + 3 waived by the lead, 0 failed. Before the decisions: follow-up round done (2026-11-12 05:00-10:30 Pacific), one item STOPPED for the lead. Madrakah was baked
+Status (after the lead's decisions of 2026-11-12, section 0.10): Madrakah resolved and accepted; **Ka Lae STOPPED a third time: under the lead's settlement rule 5 pads fit within 15 km and 10 within 25 km (under the 12 the lead set; section 0.11)**; verify 24 of 27 + 3 waived by the lead, 0 failed. Before the decisions: follow-up round done (2026-11-12 05:00-10:30 Pacific), one item STOPPED for the lead. Madrakah was baked
 again (Copernicus GLO-30 instead of SRTM, the lead's near-shore sea floor, false inland water removed, de-shading
 refit) and swapped in by REPLACE (only the region's directories changed: 506 of its 840 plus `manifest.json`;
 section 0.7). Madrakah's 16 pads were re-resolved under the full LC-1 rule with the built-up and corridor gates,
@@ -562,6 +562,59 @@ Recorded as the lead decided them:
   passed silently (request platform-delivery-1, noted there).
 - Verify and tests after these changes: `verify.py --region earth-madrakah` (live) **24 of 27 pass, 3 waived by the lead (relief shading at levels 10 and 12, the level-11 albedo seam at +0.0367 <= 0.037), 0 failed**; `npx vitest run tests/unit/site-bake` 9 of 9 (Madrakah's TerrainProvider re-measurement: heights within 0.31 m of padElevation, steepest disc 1.32 deg).
 
+### 0.11 Lead decision on Ka Lae's corridor (2026-11-12, second) and the result: STOPPED, 10 pads within 25 km
+
+The lead's decision, recorded as the lead's: the corridor's built-up test was written for an empty desert coast; on an
+inhabited island it rejects a field the terrain itself allows. The range at Ka Lae is fiction on real ground:
+scattered farm buildings and roads downrange are accepted; settlements are not. For Ka Lae only (Madrakah's rule
+unchanged; per-site rule fields):
+
+1. **Corridor, built-up part:** a SETTLEMENT is any 300 m x 300 m window in which at least 10 % of the WorldCover
+   cells are built-up (a road crossing it is about 3 %, a farmstead about 3 %; a hamlet passes 10 %). A pad's 60-130
+   deg sector must hold no settlement within 5 km. LC-1's own complex ground (within 600 m of LC-1) is excepted
+   everywhere (the corridor and the any-direction built-up gate). Beyond 5 km, and built-up below the threshold, is
+   reported per pad (nearest settlement in the sector, nearest built-up cell in the sector), not gated. The pads'
+   keep-out part of the corridor, the dry gate (bare, grass or shrub; nothing forbidden inside the outer ring), the
+   slope, spacing and any-direction built-up gates are unchanged.
+2. **Compact:** within 15 km of LC-1 first, up to 16 (4 heavy with LC-1, 6 medium, 6 light; shed from the light
+   end); under 12 there, extend to 25 km, not further; under 12 at 25 km, stop and report.
+3. Look at every placement; then write `ka-lae.pads.json`.
+
+Implemented (`padresolve.py`, `bake.py pads`): `--settlement-reach-km 5` (the settlement test: land cover sampled at
+10 m on the candidate grid's frame, a 10 m cell is in a settlement when its centred 300 m window holds >= 10 %
+built-up, a 30 m grid cell is a settlement cell when any of its nine 10 m cells is; the gate is the sector of the
+grid node, exactly as the pre-filter's FFT; the corridor table adds `nearestSettlementInSector20km`), `--own-ground
+18.987556:-155.603239:600` (excepted from every built-up test); recorded in `rule.corridor.settlement` and
+`rule.ownGround`. Settlements in the 25 km field: 3.8 km2 of 10 m cells.
+
+**Result: under 12 at both radii, so STOPPED (not looked at, no `ka-lae.pads.json`).**
+
+- Within 15 km: **5 pads** (LC-1, 2 heavy, 2 light; `out/bake/earth/site-bake/pads-ka-lae-settle-15km.json`).
+- Within 25 km: **10 pads** (LC-1, 3 heavy, 2 medium, 4 light; 4 medium and 2 light found no place;
+  `pads-ka-lae-settle-25km.json`). Of these: 5 within 10 km, 5 within 15 km, 9 within 20 km, 10 within 25 km.
+
+| Pad | Class | Lat, lon | Elev m | From LC-1 km | Footprint land cover | Outer-ring land cover | Clear azimuths | Nearest settlement in sector | Nearest built-up cell in sector |
+|---|---|---|---|---|---|---|---|---|---|
+| lc-1 (fixed) | heavy | 18.987556, -155.603239 | 21.6 | 0.0 | bareRock 81%, trees 13%, grass 6% | bareRock 54%, trees 31%, grass 8%, water 4%, sand 2%, builtUp 1% | blocked | 0.8 km at 88 | 0.6 km at 72 |
+| lc-2 | heavy | 18.964261, -155.634430 | 77.7 | 4.2 | grass 100% | grass 100% | 60-180 | none | 3.6 km at 80 |
+| lc-3 | heavy | 18.946451, -155.651827 | 83.5 | 6.9 | grass 100% | grass 100% | 56-180 | none | 1.9 km at 110 |
+| lc-4 | heavy | 19.008990, -155.752862 | 81.3 | 15.9 | bareRock 100% | bareRock 100% | 30-180 | 12.1 km at 73 | 7.9 km at 122 |
+| lc-5 | medium | 18.993334, -155.762263 | 45.1 | 16.7 | bareRock 100% | bareRock 100% | 47.5-180 | 13.6 km at 67 | 8.1 km at 109 |
+| lc-6 | medium | 19.038391, -155.760879 | 264.5 | 17.5 | bareRock 100% | bareRock 100% | 13-130 | 12.4 km at 89 | 5.7 km at 60 |
+| lc-7 | light | 19.030902, -155.581073 | 158.0 | 5.4 | grass 100% | grass 100% | 22-180 | none | none |
+| lc-8 | light | 18.930802, -155.654960 | 45.3 | 8.3 | grass 100% | grass 100% | 45-180 | none | 0.7 km at 100 |
+| lc-9 | light | 19.023833, -155.747167 | 195.1 | 15.7 | bareRock 100% | bareRock 100% | 0-179.5 | 11.1 km at 80 | 7.8 km at 60 |
+| lc-10 | light | 19.164688, -155.490512 | 72.1 | 23.0 | grass 100% | grass 100% | 30.5-180 | none | 5.5 km at 80 |
+
+The settlement test no longer binds: within 20 km 78,890 candidate cells pass every pre-filter gate (83,508 before
+the corridor test). What limits the count now is the ground and the row geometry: in the 25 km run the explicit
+evaluations rejected 772 candidates for relief, 264 for slope, 246 for forbidden land cover in the outer ring
+and 100 for built-up land, and every pad must lie outside every other pad's 60-130 deg sector both ways, so the
+pads string north-south across the launch direction; at the island's south tip such a row likely runs into the
+sea, the Kahuku pali and the tree-covered slopes within a few kilometres. The lead's choice: accept 10 pads at Ka
+Lae, a search beyond 25 km (the row continues north-east along the Ka'u coast: round 2's field), or a change to the
+row geometry (for example a corridor sector narrower than 60-130 deg for the pads' keep-out part).
+
 ## 1. What a consumer needs
 
 | Item | Where | Notes |
@@ -1071,3 +1124,5 @@ contentHash, which the swap changes). Open requests against this package's paths
   waivers. Madrakah re-resolved identically with the new fields; verify 24 of 27, 3 waived, 0 failed. Ka Lae under
   the lead's rule: 8 pads within 40 km (funnel: the corridor's built-up test removes almost everything near LC-1):
   stopped, reported. Candidate files deleted; pads test split for CI (request platform-delivery-1).
+- 10:58-11:05. Lead's settlement rule for Ka Lae's corridor (section 0.11): implemented (settlement mask at 10 m,
+  own-ground exception), 15 km 5 pads, 25 km 10 pads: stopped and reported.

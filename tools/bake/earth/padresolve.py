@@ -194,6 +194,36 @@ class Resolver:
         if getattr(self, "dry_any_land", False):
             self.allowed = [v for k, v in CLASS.items() if k not in ("water", "wetland", "builtUp", "unknown")]
         self.ground = Ground(region)
+        # the complex's own ground: (lat, lon, radius m) excepted from every built-up test (Ka Lae: LC-1's complex)
+        self.own = getattr(self, "own_ground", None)
+        # settlement corridor (Ka Lae, the lead): {windowM, minBuiltFraction, reachM}; None = any built-up to 12 km
+        self.settlement = getattr(self, "settlement_rule", None)
+        self._settle = None                      # the settlement mask on the candidate grid (set by grid())
+
+    def built_mask(self, la, lo, lc=None) -> np.ndarray:
+        """WorldCover built-up cells, the complex's own ground excepted."""
+        lc = self.ground.lc(la, lo) if lc is None else lc
+        b = lc == BUILT
+        if self.own is not None:
+            b &= gc_distance_m(self.own[0], self.own[1], la, lo) > self.own[2]
+        return b
+
+    def settlement_in_sector(self, lat: float, lon: float, reach_m: float = 20000.0):
+        """The nearest settlement cell of the grid's mask whose centre bearing lies in the corridor sector, within
+        reach_m (distance m, azimuth deg), or None. The candidate is snapped to its grid node."""
+        st = self._settle
+        e, n = bearing_offset(self.nominal[0], self.nominal[1], lat, lon)
+        r0, c0 = int(round((n + st["span"]) / st["g"])), int(round((e + st["span"]) / st["g"]))
+        off = st["offsets"]
+        m = off["d"] <= reach_m
+        rr, cc = r0 + off["dy"][m], c0 + off["dx"][m]
+        ok = (rr >= 0) & (rr < st["mask"].shape[0]) & (cc >= 0) & (cc < st["mask"].shape[1])
+        hit = np.zeros(rr.size, bool)
+        hit[ok] = st["mask"][rr[ok], cc[ok]]
+        if not hit.any():
+            return None
+        i = int(np.argmax(hit))                  # offsets are sorted by distance
+        return {"distanceM": float(off["d"][m][i]), "azimuthDeg": float(off["az"][m][i])}
 
     def evaluate(self, lat: float, lon: float, full: bool = True) -> dict:
         """The rule at one point. full=False stops after the disc tests (height, slope, relief, dry, latitude) when
@@ -259,13 +289,13 @@ class Resolver:
         k4 = np.arange(-rb, rb + 1e-6, 10.0)
         E4, N4 = np.meshgrid(k4, k4)
         la4, lo4 = destination(lat, lon, E4.ravel(), N4.ravel())
-        built = g.lc(la4, lo4) == BUILT
+        lc4 = g.lc(la4, lo4)
+        built = self.built_mask(la4, lo4, lc4)
         d4 = np.hypot(E4.ravel(), N4.ravel())
         out["builtUpM"] = float(d4[built].min()) if built.any() else None      # None: none within rb
         out["builtUpWindowM"] = rb
         if self.forbid:
-            lc4 = g.lc(la4, lo4)
-            bad = np.isin(lc4, self.forbid)
+            bad = np.isin(lc4, self.forbid) & ~((lc4 == BUILT) & ~built)
             if bad.any():
                 i4 = int(np.argmin(np.where(bad, d4, np.inf)))
                 out["forbiddenM"], out["forbiddenClass"] = float(d4[i4]), CLASS_NAME.get(int(lc4[i4]), str(lc4[i4]))
@@ -274,6 +304,8 @@ class Resolver:
         if (r_ := stop()) is not None:
             return r_
         out["corridorBuiltUp"] = self.corridor_built(lat, lon)
+        if self.settlement is not None and self._settle is not None:     # (a fixed pad is evaluated before the grid)
+            out["corridorSettlement"] = self.settlement_in_sector(lat, lon)
         out["failures"] = self.failures(out)
         out["pass"] = not out["failures"]
         return out
@@ -285,7 +317,7 @@ class Resolver:
         a = np.arange(az[0], az[1] + 1e-6, step_deg)
         S, A = np.meshgrid(s, np.radians(a))
         la, lo = destination(lat, lon, (S * np.sin(A)).ravel(), (S * np.cos(A)).ravel())
-        b = (self.ground.lc(la, lo) == BUILT).reshape(S.shape)
+        b = self.built_mask(la, lo).reshape(S.shape)
         if not b.any():
             return None
         i, j = np.unravel_index(np.argmin(np.where(b, S, np.inf)), S.shape)
@@ -341,14 +373,50 @@ class Resolver:
             f.append("outerRing")
         if self.strict and "oceanRays" in e:
             f += [k for k, ok in self.site_tests(e, c).items() if not ok]
-        if e.get("corridorBuiltUp") is not None:
+        if self.settlement is None and e.get("corridorBuiltUp") is not None:
             f.append("corridorBuiltUp")
+        if self.settlement is not None and e.get("corridorSettlement") is not None and \
+                e["corridorSettlement"]["distanceM"] <= float(self.settlement["reachM"]):
+            f.append("corridorSettlement")
         return f
 
     @staticmethod
     def site_tests(e: dict, c: dict) -> dict:
         """LC-1's site-selection test, reported: the open ocean sector."""
         return {"oceanSector": bool(e["oceanRays"]["ok"])}
+
+    def _settlement_grid(self, span: float, g: float, shape) -> np.ndarray:
+        """Settlement cells of the lead's Ka Lae rule on the candidate grid, and the cells whose corridor sector holds
+        none within reachM. Land cover sampled at 10 m on the same ENU frame; a 10 m cell is in a settlement when the
+        window (windowM square) centred on it holds at least minBuiltFraction built-up cells (own ground excepted); a
+        grid cell is a settlement cell when any of its 3 x 3 10 m cells is."""
+        st = self.settlement
+        k10 = np.arange(-span, span + 1e-6, 10.0)
+        n10 = k10.size
+        built = np.zeros((n10, n10), np.float32)
+        for r0 in range(0, n10, 256):
+            E10, N10 = np.meshgrid(k10, k10[r0:r0 + 256])
+            la, lo = destination(self.nominal[0], self.nominal[1], E10.ravel(), N10.ravel())
+            built[r0:r0 + 256] = self.built_mask(la, lo).reshape(E10.shape)
+        w = int(round(float(st["windowM"]) / 10.0))
+        frac = ndimage.uniform_filter(built, size=w, mode="constant")
+        settle10 = frac >= float(st["minBuiltFraction"]) - 1e-6
+        mask = ndimage.maximum_filter(settle10, size=3, mode="constant")[::3, ::3][:shape[0], :shape[1]]
+        # sector offsets (cells whose centre bearing lies in the corridor sector), sorted by distance, to 20 km
+        rk = int(math.ceil(20000.0 / g))
+        yy, xx = np.mgrid[-rk:rk + 1, -rk:rk + 1]
+        ang = (np.degrees(np.arctan2(xx, yy)) + 360.0) % 360.0
+        d = np.hypot(xx, yy) * g
+        sel = (d > 0) & (d <= 20000.0) & (ang >= CORRIDOR_AZ[0]) & (ang <= CORRIDOR_AZ[1])
+        order = np.argsort(d[sel], kind="stable")
+        self._settle = {"mask": mask, "span": span, "g": g,
+                        "offsets": {"dy": yy[sel][order], "dx": xx[sel][order], "d": d[sel][order], "az": ang[sel][order]}}
+        reach = float(st["reachM"])
+        kern = sel & (d <= reach)
+        hits = signal.fftconvolve(mask.astype(np.float32), kern[::-1, ::-1].astype(np.float32), mode="same")
+        log(f"pads: settlements (>= {st['minBuiltFraction']:.0%} built-up in {st['windowM']:g} m windows): "
+            f"{int(settle10.sum()) * 1e-4:.2f} km2 of 10 m cells")
+        return hits < 0.5
 
     # -- gridded pre-filter (necessary conditions, cheap) ---------------------------------------------------
     def grid(self) -> dict:
@@ -366,8 +434,12 @@ class Resolver:
         water = (H < 0.0) | (WM >= 128)
         shore = ndimage.distance_transform_edt(~water) * g
         sea_d = ndimage.distance_transform_edt(~(H < 0.0)) * g
-        built_d = ndimage.distance_transform_edt(~(LC == BUILT)) * g
-        forbid_d = (ndimage.distance_transform_edt(~np.isin(LC, self.forbid)) * g if self.forbid
+        BLT = LC == BUILT
+        if self.own is not None:
+            BLT &= (gc_distance_m(self.own[0], self.own[1], LA, LO) > self.own[2]).reshape(E.shape)
+        built_d = ndimage.distance_transform_edt(~BLT) * g
+        forbid_d = (ndimage.distance_transform_edt(~(np.isin(LC, self.forbid) & ~((LC == BUILT) & ~BLT))) * g
+                    if self.forbid
                     else np.full(LC.shape, np.inf))
         # built-up land in the launch sector: the built-up cells convolved with the sector seen backwards (a cell
         # whose corridor holds built-up land lies in the opposite sector of that land), on the candidate grid
@@ -377,8 +449,11 @@ class Resolver:
         sector = ((xx ** 2 + yy ** 2) * g * g <= (CORRIDOR_KM * 1000.0) ** 2) & (ang >= CORRIDOR_AZ[0]) & (ang <= CORRIDOR_AZ[1])
         # E/N grids: row index = north offset ascending, column = east ascending: a built-up cell at (r + dy, c + dx)
         # is in the corridor of (r, c) when (dx, dy) is in the sector
-        hits = signal.fftconvolve((LC == BUILT).astype(np.float32), sector[::-1, ::-1].astype(np.float32), mode="same")
-        corridor_clear = hits < 0.5
+        if self.settlement is None:
+            hits = signal.fftconvolve(BLT.astype(np.float32), sector[::-1, ::-1].astype(np.float32), mode="same")
+            corridor_clear = hits < 0.5
+        else:
+            corridor_clear = self._settlement_grid(span, g, E.shape)
         rr = int(math.ceil(r / g))
         ky, kx = np.mgrid[-rr:rr + 1, -rr:rr + 1] * g
         disc = (kx ** 2 + ky ** 2 <= r * r).astype(np.float64)
@@ -545,6 +620,9 @@ def run(region_id: str, args) -> dict:
     Resolver.dry_any_land = bool(getattr(args, "dry_any_land", False))     # a measurement only (out/)
     Resolver.dry_classes = [c.strip() for c in args.dry_classes.split(",")] if getattr(args, "dry_classes", None) else None
     Resolver.forbid_outer = [c.strip() for c in args.forbid_outer.split(",")] if getattr(args, "forbid_outer", None) else None
+    Resolver.own_ground = (tuple(float(v) for v in args.own_ground.split(":")) if getattr(args, "own_ground", None) else None)
+    Resolver.settlement_rule = ({"windowM": 300.0, "minBuiltFraction": 0.10, "reachM": float(args.settlement_reach_km) * 1000.0}
+                                if getattr(args, "settlement_reach_km", None) else None)
     for c in (Resolver.dry_classes or []) + (Resolver.forbid_outer or []):
         if c not in CLASS:
             raise ValueError(f"unknown land-cover class {c!r} (one of {', '.join(CLASS)})")
@@ -639,7 +717,13 @@ def run(region_id: str, args) -> dict:
                             "builtUpM": p["evaluation"].get("builtUpM")}
                            for p in placed if p["fixed"]],
                  "padRadii": PAD_RADII, "builtUpMarginM": BUILT_MARGIN_M,
-                 "corridor": {"azimuthDeg": list(CORRIDOR_AZ), "reachKm": CORRIDOR_KM},
+                 "corridor": {"azimuthDeg": list(CORRIDOR_AZ), "reachKm": CORRIDOR_KM,
+                              **({"builtUp": "reported only (the nearest built-up cell in the sector); gated: no "
+                                             "settlement in the sector within settlement.reachM",
+                                  "settlement": res.settlement} if res.settlement is not None else {})},
+                 "ownGround": (None if res.own is None else
+                               {"latDeg": res.own[0], "lonDeg": res.own[1], "radiusM": res.own[2],
+                                "reason": "the complex's own ground: excepted from every built-up test"}),
                  "excluded": [{"latDeg": x[0], "lonDeg": x[1], "radiusM": x[2], "reason": x[3]} for x in excludes],
                  "classes": classes, "spacing": "pads of classes a and b at least (spacing_a + spacing_b) / 2 apart"},
         "referencePad": ref["id"],
@@ -697,8 +781,20 @@ def corridor_table(res: Resolver, pads: list[dict]) -> list[dict]:
         s = np.arange(25.0, reach + 1.0, 25.0)
         S, A = np.meshgrid(s, np.radians(a))
         la, lo = destination(p["latDeg"], p["lonDeg"], (S * np.sin(A)).ravel(), (S * np.cos(A)).ravel())
-        built = (res.ground.lc(la, lo) == BUILT).reshape(S.shape).any(axis=1)
-        blocked = built.copy()
+        if res.settlement is None:
+            blocked = res.built_mask(la, lo).reshape(S.shape).any(axis=1)
+        else:                                    # settlement cells within reachM along each ray (nearest grid node)
+            sr = float(res.settlement["reachM"])
+            st = res._settle
+            e0, n0 = bearing_offset(res.nominal[0], res.nominal[1], p["latDeg"], p["lonDeg"])
+            dd = np.arange(30.0, sr + 1.0, 30.0)
+            AZ, DD = np.meshgrid(np.radians(a), dd, indexing="ij")
+            r_ = np.rint((n0 + DD * np.cos(AZ) + st["span"]) / st["g"]).astype(int)
+            c_ = np.rint((e0 + DD * np.sin(AZ) + st["span"]) / st["g"]).astype(int)
+            ok = (r_ >= 0) & (r_ < st["mask"].shape[0]) & (c_ >= 0) & (c_ < st["mask"].shape[1])
+            hit = np.zeros(r_.shape, bool)
+            hit[ok] = st["mask"][r_[ok], c_[ok]]
+            blocked = hit.any(axis=1)
         others = [q for q in pads if q["id"] != p["id"]]
         for q in others:
             d = gc_distance_m(p["latDeg"], p["lonDeg"], q["latDeg"], q["lonDeg"])
@@ -724,8 +820,11 @@ def corridor_table(res: Resolver, pads: list[dict]) -> list[dict]:
                 if near_pad is None or d < near_pad["distanceM"]:
                     near_pad = {"id": q["id"], "distanceM": round(d, 0), "bearingDeg": round(b, 1)}
         nb = res.corridor_built(p["latDeg"], p["lonDeg"], reach_m=30000.0, step_deg=0.5, step_m=25.0)
-        out.append({"id": p["id"], "clearAzimuthDeg": clear, "nearestPadInSector": near_pad,
-                    "nearestBuiltUpInSector30km": nb})
+        row = {"id": p["id"], "clearAzimuthDeg": clear, "nearestPadInSector": near_pad,
+               "nearestBuiltUpInSector30km": nb}
+        if res.settlement is not None:
+            row["nearestSettlementInSector20km"] = res.settlement_in_sector(p["latDeg"], p["lonDeg"])
+        out.append(row)
     return out
 
 
