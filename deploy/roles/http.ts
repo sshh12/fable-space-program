@@ -61,3 +61,41 @@ export function json(res: http.ServerResponse, status: number, body: unknown, he
   res.end(b);
   return true;
 }
+
+/** The route of every response no role meters itself (deploy/roles/egress.ts `public`). */
+export const PUBLIC_ROUTE = 'public';
+/** Reserved per public response at admission; settled with the body bytes it actually sent. */
+export const PUBLIC_RESERVE_BYTES = 64 * 1024;
+/** Railway's health checks arrive with this Host (not reachable from the internet): answered past the budget. */
+export const HEALTHCHECK_HOST = 'healthcheck.railway.app';
+
+/**
+ * Admission of a public response (the program entry calls it for every request no role meters itself): a
+ * reservation against the public budget before the handler runs, settled at close with the body bytes the
+ * response wrote. Past the budget it answers 429 with Retry-After (the reset at 00:00 UTC) and returns false,
+ * except to Railway's health check of /healthz, so a deploy can still pass. A response larger than the
+ * reservation is charged in full at close (the overshoot is bounded by one response per request in flight).
+ */
+export function admitPublic(egress: import('./egress').EgressMeter, req: http.IncomingMessage, res: http.ServerResponse, path: string): boolean {
+  const admission = egress.admit(PUBLIC_ROUTE, PUBLIC_RESERVE_BYTES, clientAddress(req));
+  if (!admission) {
+    if (path === '/healthz' && req.headers.host === HEALTHCHECK_HOST) return true;
+    res.writeHead(429, { 'Retry-After': String(egress.secondsToReset()), 'Content-Length': '0', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
+    res.end();
+    return false;
+  }
+  let n = 0;
+  const size = (chunk: unknown): number => (typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk instanceof Uint8Array ? chunk.length : 0);
+  const write = res.write.bind(res) as (...a: unknown[]) => boolean;
+  const end = res.end.bind(res) as (...a: unknown[]) => http.ServerResponse;
+  res.write = ((chunk: unknown, ...rest: unknown[]) => {
+    n += size(chunk);
+    return write(chunk, ...rest);
+  }) as typeof res.write;
+  res.end = ((chunk?: unknown, ...rest: unknown[]) => {
+    if (typeof chunk !== 'function') n += size(chunk);
+    return end(chunk, ...rest);
+  }) as typeof res.end;
+  res.on('close', () => admission.settle(n));
+  return true;
+}

@@ -4,7 +4,7 @@
  * needs `fetch`, `AbortSignal.timeout` and, for the optional cache, the origin-private file system).
  *
  * - The pack list (from `packListUrl`) names the mirrors in order, each mirror's addressing mode (`ranges` of
- *   `/p/<hash>` or fixed aligned `slices` `/p/<hash>/<n>` of `sliceBytes`) and every set's index object. The
+ *   `/p/<hash>` or fixed aligned `slices` `/p/<hash>/<S>/<n>` of S = `sliceBytes`) and every set's index object. The
  *   mode and the slice size come from the list; nothing of either is compiled in.
  * - Index objects are read lazily: the header first, then one section (at most 4096 records of one level and
  *   face) when a tile of it is first asked for.
@@ -17,7 +17,10 @@
  *   403 (an expired signature) first refreshes the pack list ONCE and retries the same mirror, then moves on.
  *   On a mirror of presigned URLs a network error gets the same single refresh first: the bucket's 403 for an
  *   expired URL carries no CORS headers, so a page sees it only as a network error.
- *   A mirror that failed is put behind the others for the next PENALTY_READS reads. The status and the body
+ *   A mirror that failed (a 403 that persists after the refresh included) is put behind the others for the
+ *   next PENALTY_READS reads. A request's time allowance is `timeoutMs` plus its bytes at `minBytesPerSecond`.
+ * - A refreshed list that names another index object for a set (a release) drops what was read of the set:
+ *   its index is read again from the new object. The status and the body
  *   length are checked against the offset and length known from the index; Content-Range is never read (it
  *   is not a CORS-safelisted response header).
  * - The optional cache is keyed by content address (`<hash>.<offset>.<length>`), so a changed URL never
@@ -57,8 +60,13 @@ export interface PackSourceOptions {
   cache?: ByteCache | Promise<ByteCache> | null;
   /** Injected fetch (tests count requests with it); defaults to the global one. */
   fetch?: typeof fetch;
-  /** Per request; a mirror that does not answer in time is failed over. Default 15 s. */
+  /**
+   * Per request, plus the time the request's bytes take at `minBytesPerSecond`: a mirror that does not answer
+   * in time is failed over. Default 15 s.
+   */
   timeoutMs?: number;
+  /** The slowest link a request's time allowance is scaled for. Default 256 KiB/s (an 8 MiB range: 15 + 32 s). */
+  minBytesPerSecond?: number;
   /** Neighbouring wanted ranges closer than this are fetched as one. Default 64 KiB. */
   coalesceGapBytes?: number;
   /** Largest merged range. Default 8 MiB. */
@@ -147,6 +155,8 @@ const addTo = (rec: Record<string, number>, key: string, n: number): void => {
 export function createPackTileSource(o: PackSourceOptions): PackTileSource {
   const doFetch: typeof fetch = o.fetch ?? ((input, init) => fetch(input, init));
   const timeoutMs = o.timeoutMs ?? 15_000;
+  const minRate = o.minBytesPerSecond ?? 256 * 1024;
+  const timeoutFor = (bytes: number): number => timeoutMs + Math.ceil((bytes / minRate) * 1000);
   const gap = o.coalesceGapBytes ?? 64 * 1024;
   const maxRange = o.maxRangeBytes ?? 8 * 1024 * 1024;
   const sliceCacheBytes = o.sliceCacheBytes ?? 64 * 1024 * 1024;
@@ -180,6 +190,8 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
   let listLoadedAt: number | null = null;
   const objectBytes = new Map<string, number>();
   const sets = new Map<string, Promise<SetState>>();
+  /** The index object each loaded set was read from (a refreshed list naming another one drops the set). */
+  const setIndex = new Map<string, string>();
   const penalty = new Map<string, number>();
   let readCounter = 0;
   const boot = { tiles: new Map<string, Uint8Array>(), files: new Map<string, Uint8Array>(), ranges: new Map<string, Uint8Array>() };
@@ -193,6 +205,13 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
       if (!r.ok) throw new Error(`pack list ${o.packListUrl}: HTTP ${r.status}`);
       const doc = validatePackList(await r.json());
       for (const s of Object.values(doc.sets)) objectBytes.set(s.index, s.indexBytes);
+      // A set whose index object changed (a new release) or that the list no longer offers is read again.
+      for (const [name, index] of setIndex) {
+        if (doc.sets[name]?.index !== index) {
+          setIndex.delete(name);
+          sets.delete(name);
+        }
+      }
       listLoadedAt = o.now ? o.now() : null;
       return { doc, base: r.url || o.packListUrl, gen: ++listGeneration };
     })();
@@ -219,7 +238,8 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
   };
 
   const mirrorUrl = (m: PackListMirror, base: string, hash: string, slice: number | null): string => {
-    const raw = m.objects ? m.objects[hash] : `${m.base!}${hash}${slice === null ? '' : `/${slice}`}`;
+    // A slice URL names its size (/p/<hash>/<S>/<n>): the list's sliceBytes is the one source of truth for S.
+    const raw = m.objects ? m.objects[hash] : `${m.base!}${hash}${slice === null ? '' : `/${m.sliceBytes!}/${slice}`}`;
     if (raw === undefined) throw new MirrorError('404', `mirror ${m.id} lists no URL for object ${hash}`);
     return new URL(raw, base).toString();
   };
@@ -244,7 +264,8 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
     addTo(stats.requests, m.id, 1);
     let r: Response;
     try {
-      r = await doFetch(url, whole === null ? { headers: { Range: `bytes=${start}-${end - 1}` }, signal: AbortSignal.timeout(timeoutMs) } : { signal: AbortSignal.timeout(timeoutMs) });
+      const signal = AbortSignal.timeout(timeoutFor(whole ?? end - start));
+      r = await doFetch(url, whole === null ? { headers: { Range: `bytes=${start}-${end - 1}` }, signal } : { signal });
     } catch (e) {
       const name = (e as { name?: string })?.name;
       throw new MirrorError(name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'network', `${m.id}: ${(e as Error).message}`);
@@ -355,7 +376,8 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
           j--;
           continue;
         }
-        if (e.reason !== '403') penalty.set(m.id, read + PENALTY_READS);
+        // Failed (a 403 that persists after the refresh included): behind the others for a while.
+        penalty.set(m.id, read + PENALTY_READS);
       }
     }
     throw new Error(`pack source: object ${hash} [${start}, ${end}) failed on every mirror: ${tried.join('; ')}`);
@@ -453,13 +475,17 @@ export function createPackTileSource(o: PackSourceOptions): PackTileSource {
   };
 
   // ---------------------------------------------------------------------------------------- the sets
-  const loadSet = (set: string): Promise<SetState> => {
+  const loadSet = async (set: string): Promise<SetState> => {
+    // The list in force first: a list past its refreshAfterS is read again here, and a set whose index object
+    // it changed is dropped (loadList), so this read already uses the new index.
+    if (o.now) await getList();
     let p = sets.get(set);
     if (!p) {
       p = (async () => {
         const { doc } = await getList();
         const entry = doc.sets[set];
         if (!entry) throw new Error(`pack source: the pack list offers no set "${set}"`);
+        setIndex.set(set, entry.index);
         const probe = Math.min(INDEX_HEAD_PROBE, entry.indexBytes);
         let head = await readBytes(entry.index, 0, probe);
         const len = indexHeaderLength(head.subarray(0, 8));

@@ -4,10 +4,13 @@
  * measures with (ARCHITECTURE 16.2; hosting-small section 9):
  *
  *   /healthz      passes at once: a role in standby is healthy (the deploy overlap depends on it)
- *   /hello        role, build, process, Railway deployment and replica ids, uptime, draining, database state:
- *                 which process a request reached during a deploy overlap
- *   /packs.json   the pack list (deploy/packs/packList.ts), where the program entry configured the service;
- *                 `api` serves it from wave 5
+ *   /hello        role, build, an opaque per-process instance tag (random at start), uptime, draining,
+ *                 whether the database is connected and its outage count: which process a request reached
+ *                 during a deploy overlap. Public, so nothing of the platform (no deployment or replica id, no
+ *                 pid) and no error text (errors go to the log)
+ *   /packs.json   the pack list (deploy/packs/packList.ts), where the program entry configured the service,
+ *                 gzip-encoded for a client that accepts it; `api` serves it from wave 5
+ *   Every response counts against the public egress budget of the program entry (deploy/main.ts).
  *   database      with DATABASE_URL: one connection, `select 1` every second; a lost connection is logged
  *                 with its time and the reconnection with the outage (the Postgres-restart measurement);
  *                 the cluster's major, encoding and locale provider are logged at every connect
@@ -15,6 +18,8 @@
  *                 deadline the platform announced (RAILWAY_DEPLOYMENT_DRAINING_SECONDS) plus 10 s, so the log
  *                 shows whether and when the platform killed it (the drain measurement)
  */
+import { randomBytes } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import pg from 'pg';
 import { json } from './http';
 import type { RoleContext, RoleHandle, RoleModule } from './types';
@@ -42,6 +47,8 @@ const helloRole: RoleModule = {
   kind: 'service',
   async start(ctx: RoleContext): Promise<RoleHandle> {
     const startedAt = Date.now();
+    const instance = randomBytes(4).toString('hex');
+    let packListBody: { json: string; gz: Buffer } | null = null;
     let draining: { at: number; reason: string } | null = null;
     const db = { connected: false, lostAt: null as number | null, outages: [] as { ms: number; at: string }[], facts: null as ClusterFacts | null, error: null as string | null };
     let client: pg.Client | null = null;
@@ -99,17 +106,29 @@ const helloRole: RoleModule = {
         return json(res, 200, {
           role: ctx.name,
           buildId: ctx.build.buildId,
-          pid: process.pid,
-          deployment: ctx.env.RAILWAY_DEPLOYMENT_ID ?? null,
-          replica: ctx.env.RAILWAY_REPLICA_ID ?? null,
-          uptimeS: (Date.now() - startedAt) / 1000,
-          draining: draining ? { reason: draining.reason, sinceS: (Date.now() - draining.at) / 1000 } : null,
-          db: url ? { connected: db.connected, facts: db.facts, outages: db.outages, error: db.error } : null,
+          instance,
+          uptimeS: Math.round((Date.now() - startedAt) / 100) / 10,
+          draining: draining ? { sinceS: Math.round((Date.now() - draining.at) / 100) / 10 } : null,
+          db: url ? { connected: db.connected, outages: db.outages.length } : null,
         }, { 'Access-Control-Allow-Origin': '*' });
       }
       if (p === '/packs.json' && ctx.services.packList) {
         try {
-          return json(res, 200, await ctx.services.packList.get(), { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache', 'Cross-Origin-Resource-Policy': 'cross-origin' });
+          const text = JSON.stringify(await ctx.services.packList.get());
+          if (packListBody?.json !== text) packListBody = { json: text, gz: gzipSync(text) };
+          const gz = /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''));
+          const body = gz ? packListBody.gz : Buffer.from(text);
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Content-Length': String(body.length),
+            ...(gz ? { 'Content-Encoding': 'gzip' } : {}),
+            Vary: 'Accept-Encoding',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-cache',
+            'Cross-Origin-Resource-Policy': 'cross-origin',
+          });
+          res.end(req.method === 'HEAD' ? undefined : body);
+          return true;
         } catch (e) {
           ctx.log.error('pack-list-failed', { error: (e as Error).message });
           return json(res, 503, { error: 'pack list unavailable' }, { 'Access-Control-Allow-Origin': '*' });

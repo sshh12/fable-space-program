@@ -243,7 +243,7 @@ async function traceLocal(file: string): Promise<number> {
   ];
   for (const v of variants) {
     const list = { v: 1 as const, signedDay: null, refreshAfterS: 86400, mirrors: [v.mode === 'slices' ? { id: 'm', mode: 'slices' as const, base: 'http://local.packs.invalid/p/', sliceBytes: v.slice! } : { id: 'm', mode: 'ranges' as const, base: 'http://local.packs.invalid/p/' }], sets: Object.fromEntries(packedSets(PACKS).map((s) => [s.set, { index: s.index, indexBytes: s.indexBytes }])) };
-    const inner = createLocalPackFetch(PACKS, { sliceBytes: v.slice });
+    const inner = createLocalPackFetch(PACKS);
     const f = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       return url.endsWith('/packs.json') ? new Response(JSON.stringify(list)) : inner(input, init);

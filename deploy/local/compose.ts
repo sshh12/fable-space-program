@@ -125,7 +125,7 @@ export async function runCompose(o: ComposeRun): Promise<number> {
   const dataDir = path.join(REPO, 'data', 'stack', o.name);
   fs.mkdirSync(dataDir, { recursive: true });
   let started = false;
-  const standIn = await startBucketStandIn({ packsDir: path.join(REPO, 'data', 'packs'), bucket: 'packs', accessKeyId: 'stack-local', secretAccessKey: 'stack-local-secret', sliceBytes: MEASURED_SLICE_BYTES, host: '0.0.0.0', port: 47201 });
+  const standIn = await startBucketStandIn({ packsDir: path.join(REPO, 'data', 'packs'), bucket: 'packs', accessKeyId: 'stack-local', secretAccessKey: 'stack-local-secret', host: '0.0.0.0', port: 47201 });
   const env = { ...process.env, COMPOSE_PROJECT_NAME: project };
   try {
     started = await ensureDaemon(o.say);

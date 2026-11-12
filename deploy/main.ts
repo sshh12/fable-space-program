@@ -9,7 +9,8 @@
  * It starts each named role from the role manifest and hands it the shared services: the logger, the egress
  * meter (one per process), the build identity, the process's HTTP router on PORT and, where the packs
  * credential and a pack-sets source are configured, the pack-list service. /healthz answers 200 only when
- * every role of the process is healthy.
+ * every role of the process is healthy. Every response that no role meters on a route of its own counts
+ * against the `public` egress budget (2 GB a day; then 429 until 00:00 UTC).
  *
  * Stopping: SIGTERM (Railway) drains every role until RAILWAY_DEPLOYMENT_DRAINING_SECONDS from the signal,
  * then exits. Windows cannot deliver SIGTERM to another process, so the local stack sends
@@ -24,7 +25,7 @@ import { readBuildIdentity } from './buildInfo';
 import { bucketFromEnv } from './packs/bucket';
 import { createPackListService, mirrorFromEnv, packSetsFromDir, PACK_SETS_FILE, readPackSetsFile, type PackListService } from './packs/packList';
 import { EgressMeter, shellBudgetsFromEnv } from './roles/egress';
-import { json } from './roles/http';
+import { admitPublic, json } from './roles/http';
 import { createLogger } from './roles/log';
 import { parseRoles, ROLE_MANIFEST } from './roles/manifest';
 import type { RoleContext, RoleHandle, RouteHandler } from './roles/types';
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
   log.info('start', { node: process.version, pid: process.pid, buildId: build.buildId, commit: build.commit, roles: roles.map((r) => r.name) });
   const egress = new EgressMeter(shellBudgetsFromEnv(env));
   const handlers: RouteHandler[] = [];
+  const meteredBy: ((path: string) => boolean)[] = [];
   const modules = await Promise.all(roles.map(async (r) => ({ ...r, mod: (await ROLE_MANIFEST[r.role]!.load()).default })));
   const services = modules.some((m) => m.mod.kind === 'service');
   const port = services ? Number(env.PORT ?? 8080) : null;
@@ -64,7 +66,13 @@ async function main(): Promise<void> {
       log: log.child({ role: m.name }),
       egress,
       build,
-      http: { add: (h) => handlers.push(h), port },
+      http: {
+        add: (h, opts) => {
+          handlers.push(h);
+          if (opts?.metered) meteredBy.push(opts.metered);
+        },
+        port,
+      },
       services: { packList },
     };
     handles.push({ name: m.name, h: await m.mod.start(ctx) });
@@ -83,9 +91,12 @@ async function main(): Promise<void> {
   if (port !== null) {
     const server = http.createServer(async (req, res) => {
       try {
-        const p = (req.url ?? '/').split('?')[0];
+        const p = (req.url ?? '/').split('?')[0]!;
+        // Every response no role meters itself counts against the public budget (a hard stop: 429 past it).
+        if (!meteredBy.some((f) => f(p)) && !admitPublic(egress, req, res, p)) return;
         if (p === '/healthz') {
-          const parts = handles.map(({ name, h }) => ({ name, ...h.health() }));
+          // Public: whether each role is healthy, nothing of its detail (errors stay in the log).
+          const parts = handles.map(({ name, h }) => ({ name, ok: h.health().ok }));
           const ok = parts.every((x) => x.ok);
           json(res, ok ? 200 : 503, { ok, buildId: build.buildId, roles: parts });
           return;

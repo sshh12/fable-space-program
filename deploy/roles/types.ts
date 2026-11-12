@@ -13,9 +13,18 @@ import type { PackListService } from '../packs/packList';
 /** A request handler of the process's one HTTP server; returns true when it answered. */
 export type RouteHandler = (req: http.IncomingMessage, res: http.ServerResponse) => boolean | Promise<boolean>;
 
+export interface RouteOptions {
+  /**
+   * The paths whose response bytes the handler meters itself (admission against a route of its own, such as
+   * the mirror's). Every other response of the process is metered by the program entry against the `public`
+   * budget (2 GB a day; then 429).
+   */
+  metered?: (path: string) => boolean;
+}
+
 export interface HttpRouter {
   /** Handlers run in the order roles add them; the first that answers wins. */
-  add(handler: RouteHandler): void;
+  add(handler: RouteHandler, options?: RouteOptions): void;
   /** The port the process listens on (null for a job that serves nothing). */
   port: number | null;
 }

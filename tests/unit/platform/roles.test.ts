@@ -11,14 +11,20 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startBucketStandIn, type StandIn } from '../../../deploy/local/bucketStandIn';
 import { decide, dumpKey, intervalHours, parseDumpKey, retention, type DumpObject } from '../../../deploy/roles/dump';
+import { gunzipSync } from 'node:zlib';
+import { bucketFromEnv, s3For } from '../../../deploy/packs/bucket';
 import { EgressMeter, shellBudgetsFromEnv } from '../../../deploy/roles/egress';
+import helloRole from '../../../deploy/roles/hello';
+import { admitPublic, HEALTHCHECK_HOST, PUBLIC_RESERVE_BYTES } from '../../../deploy/roles/http';
 import { createLogger } from '../../../deploy/roles/log';
 import { parseRoles } from '../../../deploy/roles/manifest';
+import { createMirrorHandler } from '../../../deploy/roles/packs';
 import shellRole, { HASHED_ASSET } from '../../../deploy/roles/shell';
 import type { RoleContext, RouteHandler } from '../../../deploy/roles/types';
 import { encodeBootPack } from '../../../src/terrain/packIndex';
 
 const DAY = 86_400_000;
+const S2 = 2 * 1024 * 1024;
 
 describe('the egress meter', () => {
   it('stops a route at its budget and resets at 00:00 UTC', () => {
@@ -48,10 +54,57 @@ describe('the egress meter', () => {
     expect(m.addressOpen('mirror', 'a')).toBe(true);
   });
 
-  it('the stage-0 budgets of shell are 3, 1 and 8 GB a day and 300 MB per address in 10 minutes, each a setting', () => {
+  it('admission reserves the length first: however many responses are admitted at once, the budget holds', () => {
+    const m = new EgressMeter({ budgets: { mirror: 1000 }, now: () => Date.UTC(2026, 10, 12, 10, 0, 0) });
+    // 100 admissions before any byte is sent (all in flight at once): only what fits is admitted.
+    const admitted = Array.from({ length: 100 }, () => m.admit('mirror', 300, 'a')).filter((x) => x !== null);
+    expect(admitted.length).toBe(3);
+    expect(m.snapshot().routes.mirror!.used).toBe(900);
+    expect(m.lastRefusal).toBe('budget');
+    expect(m.snapshot().routes.mirror!.refused).toBe(97);
+    // An aborted response gives back what it did not send; one that sent more than reserved is charged in full.
+    admitted[0]!.settle(100);
+    expect(m.snapshot().routes.mirror!.used).toBe(700);
+    admitted[0]!.settle(0); // once only
+    expect(m.snapshot().routes.mirror!.used).toBe(700);
+    expect(m.admit('mirror', 300, 'b')).not.toBeNull();
+    admitted[1]!.settle(350);
+    expect(m.snapshot().routes.mirror!.used).toBe(1050);
+    expect(m.admit('mirror', 1, 'c')).toBeNull();
+  });
+
+  it('caps the responses in flight per process and per address; a settled response frees its slot', () => {
+    const m = new EgressMeter({ budgets: {}, streams: { mirror: { total: 3, perAddress: 2 } } });
+    const a1 = m.admit('mirror', 1, 'a');
+    const a2 = m.admit('mirror', 1, 'a');
+    expect(m.admit('mirror', 1, 'a')).toBeNull();
+    expect(m.lastRefusal).toBe('streams');
+    const b1 = m.admit('mirror', 1, 'b');
+    expect(b1).not.toBeNull();
+    expect(m.admit('mirror', 1, 'c')).toBeNull(); // 3 in the process
+    expect(m.inFlight('mirror')).toBe(3);
+    a1!.settle(1);
+    expect(m.admit('mirror', 1, 'c')).not.toBeNull();
+    expect(m.admit('mirror', 1, 'a')).toBeNull(); // b1, a2 and c: the process is full
+    a2!.settle(1);
+    expect(m.admit('mirror', 1, 'a')).not.toBeNull();
+    expect(m.inFlight('mirror')).toBe(3);
+  });
+
+  it('the per-address window is part of the admission', () => {
+    const m = new EgressMeter({ budgets: {}, perAddress: { mirror: { bytes: 300, windowS: 600 } }, now: () => Date.UTC(2026, 10, 12, 10, 0, 0) });
+    expect(m.admit('mirror', 200, 'a')).not.toBeNull();
+    expect(m.admit('mirror', 200, 'a')).toBeNull();
+    expect(m.lastRefusal).toBe('address');
+    expect(m.admit('mirror', 200, 'b')).not.toBeNull();
+  });
+
+  it('the stage-0 budgets: shell 3, 1 and 8 GB a day and 300 MB per address in 10 minutes, public 2 GB, stream caps; each a setting', () => {
     const o = shellBudgetsFromEnv({});
-    expect(o.budgets).toEqual({ client: 3e9, boot: 1e9, mirror: 8e9 });
+    expect(o.budgets).toEqual({ client: 3e9, boot: 1e9, mirror: 8e9, public: 2e9 });
     expect(o.perAddress).toEqual({ mirror: { bytes: 300e6, windowS: 600 } });
+    expect(o.streams).toEqual({ mirror: { total: 128, perAddress: 32 }, boot: { total: 16, perAddress: 2 } });
+    expect(shellBudgetsFromEnv({ EGRESS_PUBLIC_BYTES_PER_DAY: '7', MIRROR_MAX_STREAMS_PER_ADDRESS: '3' })).toMatchObject({ budgets: { public: 7 }, streams: { mirror: { perAddress: 3 } } });
     expect(shellBudgetsFromEnv({ EGRESS_MIRROR_BYTES_PER_DAY: '5' }).budgets.mirror).toBe(5);
     expect(() => shellBudgetsFromEnv({ EGRESS_BOOT_BYTES_PER_DAY: 'lots' })).toThrow(/non-negative/);
   });
@@ -141,10 +194,11 @@ describe('the shell role against the bucket stand-in', () => {
     fs.mkdirSync(path.join(client, 'assets'), { recursive: true });
     fs.writeFileSync(path.join(client, 'index.html'), '<!doctype html><script type="module" src="/assets/main-AbCdEf12.js"></script>');
     fs.writeFileSync(path.join(client, 'assets', 'main-AbCdEf12.js'), 'x'.repeat(1000));
+    fs.writeFileSync(path.join(client, 'assets', 'main-AbCdEf12.js.map'), '{"sources":["private"]}');
     fs.writeFileSync(path.join(client, '.build-complete.json'), '{"hash":"clientbuild0001"}');
     fs.writeFileSync(path.join(tmp, 'boot-manifest.json'), JSON.stringify({ hash: bootHash, bytes: boot.length }));
-    standIn = await startBucketStandIn({ packsDir: packs, bucket: 'packs', accessKeyId: 'k', secretAccessKey: 's', sliceBytes: 2 * 1024 * 1024 });
-    egress = new EgressMeter({ budgets: { client: 3000, boot: boot.length * 2, mirror: 4 * 1024 * 1024 }, perAddress: { mirror: { bytes: 1e12, windowS: 600 } }, now: () => t });
+    standIn = await startBucketStandIn({ packsDir: packs, bucket: 'packs', accessKeyId: 'k', secretAccessKey: 's' });
+    egress = new EgressMeter({ budgets: { client: 3000, boot: boot.length * 2, mirror: 6 * 1024 * 1024 }, perAddress: { mirror: { bytes: 1e12, windowS: 600 } }, now: () => t });
     const handlers: RouteHandler[] = [];
     const ctx: RoleContext = {
       name: 'shell',
@@ -157,7 +211,7 @@ describe('the shell role against the bucket stand-in', () => {
         PACKS_ACCESS_KEY_ID: 'k',
         PACKS_SECRET_ACCESS_KEY: 's',
         PACKS_PATH_STYLE: '1',
-        MIRROR_SLICE_BYTES: String(2 * 1024 * 1024),
+        MIRROR_MODE: 'ranges',
         ENDPOINT_GATE: 'https://gate-a.example,https://gate-b.example',
         ENDPOINT_API: 'https://api.example',
         ENDPOINT_PUB: 'https://pub.example',
@@ -213,7 +267,7 @@ describe('the shell role against the bucket stand-in', () => {
   });
 
   it('a query string on a hashed route gets 404 with no body', async () => {
-    for (const p of [`/assets/main-AbCdEf12.js?v=1`, `/boot/${bootHash}.pack?x`, `/p/${packHash}?a=1`, `/p/${packHash}/0?b`]) {
+    for (const p of [`/assets/main-AbCdEf12.js?v=1`, `/boot/${bootHash}.pack?x`, `/p/${packHash}?a=1`, `/p/${packHash}/${S2}/0?b`]) {
       const r = await fetch(`${base}${p}`);
       expect(r.status, p).toBe(404);
       expect((await r.arrayBuffer()).byteLength, p).toBe(0);
@@ -224,17 +278,23 @@ describe('the shell role against the bucket stand-in', () => {
     const r = await fetch(`${base}/p/${packHash}`, { headers: { Range: 'bytes=100-199' } });
     expect(r.status).toBe(206);
     expect(Buffer.from(await r.arrayBuffer()).equals(pack.subarray(100, 200))).toBe(true);
-    const s = await fetch(`${base}/p/${packHash}/2`);
+    const s = await fetch(`${base}/p/${packHash}/${S2}/2`);
     expect(s.status).toBe(200);
     expect(s.headers.get('cache-control')).toContain('immutable');
     expect(Buffer.from(await s.arrayBuffer()).equals(pack.subarray(4 * 1024 * 1024))).toBe(true);
-    expect((await fetch(`${base}/p/${packHash}/3`)).status).toBe(404);
+    expect((await fetch(`${base}/p/${packHash}/${S2}/3`)).status).toBe(404);
+  });
+
+  it('never serves a source map (the private sources) unless the local stack asks', async () => {
+    const r = await fetch(`${base}/assets/main-AbCdEf12.js.map`);
+    expect(r.status).toBe(404);
+    expect((await r.arrayBuffer()).byteLength).toBe(0);
   });
 
   it('each route stops at its budget: client 503, boot pack a redirect to the bucket, mirror 429; all reset at 00:00 UTC', async () => {
-    // client build: 3000 bytes a day, 1000 per request
+    // client build: 3000 bytes a day, 1000 per request (one was sent by an earlier test)
     let last = 0;
-    for (let i = 0; i < 4; i++) last = (await fetch(`${base}/assets/main-AbCdEf12.js`)).status;
+    for (let i = 0; i < 3; i++) last = (await fetch(`${base}/assets/main-AbCdEf12.js`)).status;
     expect(last).toBe(503);
     const after = await fetch(`${base}/assets/main-AbCdEf12.js`);
     expect(Number(after.headers.get('retry-after'))).toBe(4 * 3600);
@@ -249,20 +309,20 @@ describe('the shell role against the bucket stand-in', () => {
     const viaBucket = await fetch(loc);
     expect(viaBucket.status).toBe(200);
     expect(createHash('sha256').update(new Uint8Array(await viaBucket.arrayBuffer())).digest('hex').slice(0, 32)).toBe(bootHash);
-    // mirror: 4 MiB a day; two 2 MiB slices pass, the third is refused
-    // (bodies are read: the meter counts bytes as they are sent, so an unread body is not spent yet)
+    // mirror: 6 MiB a day, 1 MiB of it sent by the test above; two 2 MiB slices pass, the third is refused
+    // (its length is reserved at admission, before a byte is sent)
     const get = async (p: string): Promise<number> => {
       const r = await fetch(`${base}${p}`);
       await r.arrayBuffer();
       return r.status;
     };
-    expect(await get(`/p/${packHash}/0`)).toBe(200);
-    expect(await get(`/p/${packHash}/1`)).toBe(200);
-    const refused = await fetch(`${base}/p/${packHash}/2`);
+    expect(await get(`/p/${packHash}/${S2}/0`)).toBe(200);
+    expect(await get(`/p/${packHash}/${S2}/1`)).toBe(200);
+    const refused = await fetch(`${base}/p/${packHash}/${S2}/2`);
     expect(refused.status).toBe(429);
     expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0);
     t = Date.UTC(2026, 10, 13, 0, 0, 1);
-    expect((await fetch(`${base}/p/${packHash}/2`)).status).toBe(200);
+    expect((await fetch(`${base}/p/${packHash}/${S2}/2`)).status).toBe(200);
     expect((await fetch(`${base}/assets/main-AbCdEf12.js`)).status).toBe(200);
     expect((await fetch(`${base}/boot/${bootHash}.pack`)).status).toBe(200);
     const snap = egress.snapshot();
@@ -278,7 +338,7 @@ describe('the shell refuses to be healthy without the right boot pack', () => {
     const real = encodeBootPack([]);
     const hash = createHash('sha256').update(real).digest('hex').slice(0, 32);
     fs.writeFileSync(path.join(packs, 'boot', `${hash}.pack`), real);
-    const standIn = await startBucketStandIn({ packsDir: packs, bucket: 'packs', accessKeyId: 'k', secretAccessKey: 's', sliceBytes: 1024 });
+    const standIn = await startBucketStandIn({ packsDir: packs, bucket: 'packs', accessKeyId: 'k', secretAccessKey: 's' });
     const env = { PACKS_BUCKET: 'packs', PACKS_ENDPOINT: standIn.url, PACKS_REGION: 'us-east-1', PACKS_ACCESS_KEY_ID: 'k', PACKS_SECRET_ACCESS_KEY: 's', PACKS_PATH_STYLE: '1' };
     const cases = [
       { name: 'missing pack', manifest: { hash: 'f'.repeat(32), bytes: 10 } },
@@ -303,6 +363,198 @@ describe('the shell refuses to be healthy without the right boot pack', () => {
     } finally {
       await standIn.close();
       fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the mirror handler: hard bounds', () => {
+  let tmp: string;
+  let standIn: StandIn;
+  let packHash: string;
+  let pack: Buffer;
+  const S = 64 * 1024;
+
+  /** A server of one mirror handler with its own meter. */
+  async function mirrorServer(mode: 'slices' | 'ranges', egress: EgressMeter): Promise<{ base: string; close: () => void }> {
+    const bucket = bucketFromEnv('PACKS', { PACKS_BUCKET: 'packs', PACKS_ENDPOINT: standIn.url, PACKS_REGION: 'us-east-1', PACKS_ACCESS_KEY_ID: 'k', PACKS_SECRET_ACCESS_KEY: 's', PACKS_PATH_STYLE: '1' })!;
+    const h = createMirrorHandler({ client: s3For(bucket), bucket, mode, maxRangeBytes: 1024 * 1024, egress, log: createLogger({}, () => undefined) });
+    const server = http.createServer(async (req, res) => {
+      if (!(await h(req, res))) res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, close: () => server.close() };
+  }
+
+  beforeAll(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fsp-mirror-'));
+    fs.mkdirSync(path.join(tmp, 'set'), { recursive: true });
+    pack = Buffer.alloc(80 * S + 77);
+    for (let i = 0; i < pack.length; i++) pack[i] = (i * 13) & 0xff;
+    packHash = createHash('sha256').update(pack).digest('hex').slice(0, 32);
+    fs.writeFileSync(path.join(tmp, 'set', `${packHash}.pack`), pack);
+    standIn = await startBucketStandIn({ packsDir: tmp, bucket: 'packs', accessKeyId: 'k', secretAccessKey: 's' });
+  });
+
+  afterAll(async () => {
+    await standIn?.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('in slices mode an unsliced GET is 404 (with or without a Range), as is a slice size that is not a power of two from 64 KiB to 4 MiB', async () => {
+    const m = await mirrorServer('slices', new EgressMeter({ budgets: {} }));
+    try {
+      expect((await fetch(`${m.base}/p/${packHash}`)).status).toBe(404);
+      expect((await fetch(`${m.base}/p/${packHash}`, { headers: { Range: 'bytes=0-99' } })).status).toBe(404);
+      for (const bad of [100_000, 32 * 1024, 8 * 1024 * 1024]) expect((await fetch(`${m.base}/p/${packHash}/${bad}/0`)).status, String(bad)).toBe(404);
+      const r = await fetch(`${m.base}/p/${packHash}/${S}/80`);
+      expect(r.status).toBe(200);
+      expect(Buffer.from(await r.arrayBuffer()).equals(pack.subarray(80 * S))).toBe(true);
+      expect((await fetch(`${m.base}/p/${packHash}/${S}/81`)).status).toBe(404); // past the end
+    } finally {
+      m.close();
+    }
+  });
+
+  it('in ranges mode only a closed range of at most the largest range is served: open-ended, missing, suffix, multiple and oversized ranges are 416', async () => {
+    const m = await mirrorServer('ranges', new EgressMeter({ budgets: {} }));
+    try {
+      for (const range of [undefined, 'bytes=0-', 'bytes=-500', `bytes=0-${1024 * 1024}`, 'bytes=0-99,200-299']) {
+        const r = await fetch(`${m.base}/p/${packHash}`, range ? { headers: { Range: range } } : {});
+        expect(r.status, String(range)).toBe(416);
+      }
+      const ok = await fetch(`${m.base}/p/${packHash}`, { headers: { Range: `bytes=10-${1024 * 1024 + 9}` } });
+      expect(ok.status).toBe(206);
+      expect(Buffer.from(await ok.arrayBuffer()).equals(pack.subarray(10, 1024 * 1024 + 10))).toBe(true);
+    } finally {
+      m.close();
+    }
+  });
+
+  it('64 slice requests at once against a budget of 10 slices: exactly 10 are served, never a byte past the budget', async () => {
+    const budget = 10 * S + 1000;
+    const egress = new EgressMeter({ budgets: { mirror: budget } });
+    const m = await mirrorServer('slices', egress);
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 64 }, async (_, i) => {
+          const r = await fetch(`${m.base}/p/${packHash}/${S}/${i}`, { headers: { 'X-Forwarded-For': `10.0.0.${i}` } });
+          return { status: r.status, bytes: (await r.arrayBuffer()).byteLength };
+        }),
+      );
+      const served = results.filter((r) => r.status === 200);
+      expect(served.length).toBe(10);
+      expect(results.filter((r) => r.status === 429).length).toBe(54);
+      const sent = served.reduce((a, r) => a + r.bytes, 0);
+      expect(sent).toBe(10 * S);
+      expect(sent).toBeLessThanOrEqual(budget);
+      await new Promise((r) => setTimeout(r, 50)); // settled at close: the meter holds what was sent
+      expect(egress.snapshot().routes.mirror!.used).toBe(10 * S);
+      expect(egress.inFlight('mirror')).toBe(0);
+    } finally {
+      m.close();
+    }
+  });
+
+  it('an address past its window gets 429 with a Retry-After of the window; another address does not', async () => {
+    const egress = new EgressMeter({ budgets: {}, perAddress: { mirror: { bytes: 3 * S, windowS: 600 } } });
+    const m = await mirrorServer('slices', egress);
+    try {
+      const get = async (n: number, a: string): Promise<Response> => {
+        const r = await fetch(`${m.base}/p/${packHash}/${S}/${n}`, { headers: { 'X-Forwarded-For': a } });
+        await r.arrayBuffer();
+        return r;
+      };
+      for (let n = 0; n < 3; n++) expect((await get(n, '192.0.2.1')).status).toBe(200);
+      const refused = await get(3, '192.0.2.1');
+      expect(refused.status).toBe(429);
+      expect(refused.headers.get('retry-after')).toBe('600');
+      expect((await get(3, '192.0.2.2')).status).toBe(200);
+    } finally {
+      m.close();
+    }
+  });
+});
+
+describe('the public budget of the program entry', () => {
+  it('meters every response no role meters itself: 429 past the budget, except to Railway health checks of /healthz', async () => {
+    const egress = new EgressMeter({ budgets: { public: PUBLIC_RESERVE_BYTES + 100 } });
+    const server = http.createServer((req, res) => {
+      const p = (req.url ?? '/').split('?')[0]!;
+      if (!admitPublic(egress, req, res, p)) return;
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('x'.repeat(80));
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as AddressInfo).port;
+    const get = (p: string, host?: string): Promise<{ status: number; retry: string | undefined }> =>
+      new Promise((resolve, reject) => {
+        const req = http.request({ host: '127.0.0.1', port, path: p, headers: host ? { host } : {} }, (res) => {
+          res.resume();
+          res.on('end', () => resolve({ status: res.statusCode!, retry: res.headers['retry-after'] }));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+    try {
+      expect((await get('/hello')).status).toBe(200);
+      expect((await get('/hello')).status).toBe(200);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(egress.snapshot().routes.public!.used).toBe(160);
+      const refused = await get('/packs.json');
+      expect(refused.status).toBe(429);
+      expect(Number(refused.retry)).toBeGreaterThan(0);
+      expect((await get('/healthz')).status).toBe(429);
+      expect((await get('/healthz', HEALTHCHECK_HOST)).status).toBe(200);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe('the hello role', () => {
+  it('/hello says nothing of the platform (no deployment, replica or pid, no error text); /packs.json is gzip for a client that accepts it', async () => {
+    const handlers: RouteHandler[] = [];
+    const list = { v: 1, signedDay: null, refreshAfterS: 86400, mirrors: [{ id: 'm', mode: 'ranges', base: 'https://x.example/p/' }], sets: { s: { index: 'a'.repeat(32), indexBytes: 10 } } };
+    const h = await helloRole.start({
+      name: 'game',
+      env: { RAILWAY_DEPLOYMENT_ID: 'dep-secret', RAILWAY_REPLICA_ID: 'rep-secret' },
+      log: createLogger({}, () => undefined),
+      egress: new EgressMeter({ budgets: {} }),
+      build: { buildId: 'b1', nodeImageDigest: null, bundleHash: null, commit: null },
+      http: { add: (fn) => handlers.push(fn), port: 0 },
+      services: { packList: { get: async () => list as never } },
+    });
+    const server = http.createServer(async (req, res) => {
+      for (const fn of handlers) if (await fn(req, res)) return;
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const raw = (headers: Record<string, string>): Promise<{ enc: string | undefined; body: Buffer }> =>
+      new Promise((resolve, reject) => {
+        http
+          .get(`${base}/packs.json`, { headers }, (res) => {
+            const parts: Buffer[] = [];
+            res.on('data', (c: Buffer) => parts.push(c));
+            res.on('end', () => resolve({ enc: res.headers['content-encoding'], body: Buffer.concat(parts) }));
+          })
+          .on('error', reject);
+      });
+    try {
+      const hello = await (await fetch(`${base}/hello`)).text();
+      const doc = JSON.parse(hello) as Record<string, unknown>;
+      expect(Object.keys(doc).sort()).toEqual(['buildId', 'db', 'draining', 'instance', 'role', 'uptimeS']);
+      expect(doc.instance).toMatch(/^[0-9a-f]{8}$/);
+      expect(hello).not.toMatch(/dep-secret|rep-secret|"pid"|error/);
+      const gz = await raw({ 'Accept-Encoding': 'gzip' });
+      expect(gz.enc).toBe('gzip');
+      expect(JSON.parse(gunzipSync(gz.body).toString())).toEqual(list);
+      const plain = await raw({});
+      expect(plain.enc).toBeUndefined();
+      expect(JSON.parse(plain.body.toString())).toEqual(list);
+    } finally {
+      server.close();
+      await h.drain('test', Date.now());
     }
   });
 });

@@ -7,15 +7,18 @@
  *   /assets/<name>-<hash>.* hashed build assets, immutable; other files of the build revalidate
  *   /boot/<hash>.pack       the boot pack, loaded ONCE at start from the packs bucket (p/<hash>, the hash and
  *                           size of BOOT_MANIFEST), verified by SHA-256, held in memory, immutable
- *   /p/<hash>[/<n>]         the packs mirror (deploy/roles/packs.ts), carried by shell up to stage 2
+ *   /p/<hash>/<S>/<n>       the packs mirror (deploy/roles/packs.ts), carried by shell up to stage 2
  *   /healthz                200 only once the boot pack is loaded and verified; 503 before
  *   /version.json           buildId, client build hash, boot manifest hash (the rollout checks them)
  *   /_whoami                the address headers the origin received (the CDN measurement)
  *
- * Egress budgets per UTC day (settings; ARCHITECTURE 16.2): the client build 3 GB (then 503 with Retry-After
- * for the build's files; the page and the endpoint document keep answering), the boot pack 1 GB (then a 302
- * to the presigned copy in the bucket), the mirror 8 GB (then 429). Every hashed route (/p/, /boot/, hashed
- * assets) answers 404 with no body to a request with a query string.
+ * Egress budgets per UTC day (settings; ARCHITECTURE 16.2), each a hard stop (a response's length is reserved
+ * at admission, deploy/roles/egress.ts): the client build's files 3 GB (then 503 with Retry-After; the page
+ * keeps answering); the boot pack 1 GB and 16 responses at once, 2 per address (then a 302 to the presigned copy
+ * in the bucket); the mirror 8 GB (then 429). The page, the endpoint document, version.json and /_whoami count
+ * against the public budget of the program entry (deploy/main.ts). Every hashed route (/p/, /boot/, hashed assets) answers
+ * 404 with no body to a request with a query string; a source map (*.map) is 404 unless SHELL_SOURCE_MAPS=1
+ * (set by the local stack only: the maps hold the private sources).
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -23,8 +26,7 @@ import type http from 'node:http';
 import path from 'node:path';
 import { getBytes, packKey, presignGet, s3For, bucketFromEnv, type BucketConfig } from '../packs/bucket';
 import { addressHeaders, clientAddress, empty, IMMUTABLE, ISOLATION, json, SHARED_BYTES, splitUrl } from './http';
-import { MEASURED_SLICE_BYTES } from '../packs/packList';
-import { createMirrorHandler } from './packs';
+import { createMirrorHandler, mirrorOptionsFromEnv } from './packs';
 import type { RoleContext, RoleHandle, RoleModule } from './types';
 
 const MIME: Record<string, string> = {
@@ -48,6 +50,9 @@ const MIME: Record<string, string> = {
   '.wgsl': 'text/plain; charset=utf-8',
   '.bin': 'application/octet-stream',
 };
+
+/** The shell's small documents: metered by the program entry against the public budget, not by the shell. */
+const PUBLIC_DOCUMENTS = new Set(['/endpoints.json', '/version.json', '/_whoami']);
 
 /** Vite's hashed output: assets/<name>-<hash>.<ext> directly under assets/. */
 export const HASHED_ASSET = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/;
@@ -143,7 +148,24 @@ const shellRole: RoleModule = {
 
     const version = (): Record<string, unknown> => ({ buildId: ctx.build.buildId, commit: ctx.build.commit, clientBuild, bootPack: boot.hash, bootLoaded: bootBytes !== null });
 
-    const sendStatic = (req: http.IncomingMessage, res: http.ServerResponse, rel: string, cache: string, metered: boolean): boolean => {
+    /**
+     * The paths whose bytes the shell meters itself: the boot pack (boot) and the build's files (client). The
+     * page and the small documents count against the program entry's public budget: the page keeps answering
+     * when the client budget is spent (the CDN still holds the hashed files).
+     */
+    const ownsBytes = (p: string): boolean => {
+      if (PUBLIC_DOCUMENTS.has(p) || p === '/' || p === '/index.html') return false;
+      if (p.startsWith('/boot/') || HASHED_ASSET.test(p)) return true;
+      if (!staticDir) return false;
+      try {
+        const file = path.normalize(path.join(staticDir, decodeURIComponent(p.slice(1))));
+        return file.startsWith(staticDir + path.sep) && fs.statSync(file).isFile();
+      } catch {
+        return false;
+      }
+    };
+
+    const sendStatic = (req: http.IncomingMessage, res: http.ServerResponse, rel: string, cache: string, route: 'client' | null): boolean => {
       if (!staticDir) return false;
       const file = path.normalize(path.join(staticDir, rel));
       if (!file.startsWith(staticDir + path.sep) && file !== staticDir) return empty(res, 404, ISOLATION);
@@ -161,13 +183,23 @@ const shellRole: RoleModule = {
         return true;
       }
       headers['Content-Length'] = String(st.size);
-      res.writeHead(200, headers);
       if (req.method === 'HEAD') {
-        res.end();
+        res.writeHead(200, headers).end();
         return true;
       }
-      if (metered) ctx.egress.record('client', st.size);
-      fs.createReadStream(file).pipe(res);
+      // The file's length is reserved before a byte is sent: the client budget is a hard stop. (The page,
+      // route null, is admitted by the program entry.)
+      const admission = route === null ? null : ctx.egress.admit(route, st.size, clientAddress(req));
+      if (route !== null && !admission) return empty(res, 503, { ...ISOLATION, 'Retry-After': String(ctx.egress.secondsToReset()) });
+      res.writeHead(200, headers);
+      let sent = 0;
+      const stream = fs.createReadStream(file);
+      stream.on('data', (c) => (sent += c.length));
+      res.on('close', () => {
+        if (!stream.destroyed) stream.destroy();
+        admission?.settle(sent);
+      });
+      stream.pipe(res);
       return true;
     };
 
@@ -186,14 +218,6 @@ const shellRole: RoleModule = {
         if (req.method === 'OPTIONS') return empty(res, 204, SHARED_BYTES);
         if (query !== null || bm[1] !== boot.hash) return empty(res, 404, SHARED_BYTES);
         if (bootBytes === null) return empty(res, 503, { ...SHARED_BYTES, 'Retry-After': '5' });
-        if (!ctx.egress.open('boot')) {
-          ctx.egress.refuse('boot');
-          const url = await presignGet(client, bucket, packKey(boot.hash), Date.now());
-          res.writeHead(302, { ...SHARED_BYTES, Location: url, 'Cache-Control': 'no-store', 'Content-Length': '0' });
-          res.end();
-          return true;
-        }
-        ctx.egress.request('boot');
         const headers = { ...SHARED_BYTES, 'Content-Type': 'application/octet-stream', 'Cache-Control': IMMUTABLE, 'Accept-Ranges': 'bytes' };
         const r = /^bytes=(\d+)-(\d*)$/.exec(typeof req.headers.range === 'string' ? req.headers.range : '');
         let body = bootBytes;
@@ -207,28 +231,33 @@ const shellRole: RoleModule = {
           status = 206;
           extra['Content-Range'] = `bytes ${start}-${end - 1}/${bootBytes.length}`;
         }
-        res.writeHead(status, { ...headers, ...extra, 'Content-Length': String(body.length) });
-        if (req.method === 'HEAD') res.end();
-        else {
-          ctx.egress.record('boot', body.length);
-          res.end(body);
+        if (req.method === 'HEAD') {
+          res.writeHead(status, { ...headers, ...extra, 'Content-Length': String(body.length) }).end();
+          return true;
         }
+        // Reserved before it is sent (a hard stop); past the budget or the stream caps, the bucket's presigned copy.
+        const admission = ctx.egress.admit('boot', body.length, clientAddress(req));
+        if (!admission) {
+          const url = await presignGet(client, bucket, packKey(boot.hash), Date.now());
+          res.writeHead(302, { ...SHARED_BYTES, Location: url, 'Cache-Control': 'no-store', 'Content-Length': '0' });
+          res.end();
+          return true;
+        }
+        res.writeHead(status, { ...headers, ...extra, 'Content-Length': String(body.length) });
+        // Counted whole (a response from memory has no partial count); the close frees the stream slot.
+        res.on('close', () => admission.settle(body.length));
+        res.end(body);
         return true;
       }
       if (p.startsWith('/p/')) return false; // the mirror handler, added below
       // Source maps hold the private sources: never served unless the local stack asks for them.
       if (p.endsWith('.map') && env.SHELL_SOURCE_MAPS !== '1') return empty(res, 404, ISOLATION);
-      if (p === '/' || p === '/index.html') return sendStatic(req, res, 'index.html', 'no-cache', false);
+      if (p === '/' || p === '/index.html') return sendStatic(req, res, 'index.html', 'no-cache', null);
       const hashed = HASHED_ASSET.test(p);
       if (hashed && query !== null) return empty(res, 404, ISOLATION);
-      if (!ctx.egress.open('client')) {
-        ctx.egress.refuse('client');
-        return empty(res, 503, { ...ISOLATION, 'Retry-After': String(ctx.egress.secondsToReset()) });
-      }
-      ctx.egress.request('client');
-      return sendStatic(req, res, decodeURIComponent(p.slice(1)), hashed ? IMMUTABLE : 'no-cache', true);
-    });
-    ctx.http.add(createMirrorHandler({ client, bucket, sliceBytes: Number(env.MIRROR_SLICE_BYTES ?? MEASURED_SLICE_BYTES), egress: ctx.egress, log: ctx.log }));
+      return sendStatic(req, res, decodeURIComponent(p.slice(1)), hashed ? IMMUTABLE : 'no-cache', 'client');
+    }, { metered: ownsBytes });
+    ctx.http.add(createMirrorHandler(mirrorOptionsFromEnv(ctx)), { metered: (p) => p.startsWith('/p/') });
     ctx.log.info('shell-ready', { staticDir, clientBuild, bootPack: boot.hash, endpoints: { gate: endpoints.gate.length, api: endpoints.api.length, pub: endpoints.pub.length } });
 
     return {

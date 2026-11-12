@@ -9,7 +9,8 @@
  *                                        stand-in's access key is served as well (the shell's mirror and boot
  *                                        load use the S3 client). Ranged GET (one range) with CORS.
  *   GET|HEAD /m/p/<hash>                 the mirror in `ranges` mode (no signature).
- *   GET|HEAD /m/p/<hash>/<n>             the mirror in `slices` mode: slice n of `sliceBytes`.
+ *   GET|HEAD /m/p/<hash>/<S>/<n>         the mirror in `slices` mode: slice n of S bytes (S from the URL, as on
+ *                                        the real mirror: deploy/roles/packs.ts).
  *   OPTIONS  any of the above            CORS preflight.
  *   POST /_ctl/faults                    switches for the failover tests: {"add": [{"target": "bucket"|"mirror",
  *                                        "status": 403|404|429|500|503, "count": n, "hash"?: "<hash>"}]} answers
@@ -34,7 +35,6 @@ export interface StandInOptions {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
-  sliceBytes: number;
   host?: string;
   port?: number;
   now?: () => number;
@@ -246,7 +246,7 @@ export function startBucketStandIn(o: StandInOptions): Promise<StandIn> {
       sendFile(req, res, 'bucket', file, null);
       return;
     }
-    const mm = /^\/m\/p\/([0-9a-f]{32})(?:\/(\d+))?$/.exec(rawPath);
+    const mm = /^\/m\/p\/([0-9a-f]{32})(?:\/(\d+)\/(\d+))?$/.exec(rawPath);
     if (mm) {
       count(stats.requests, mm[2] === undefined ? 'mirror-range' : 'mirror-slice');
       const hash = mm[1]!;
@@ -264,8 +264,9 @@ export function startBucketStandIn(o: StandInOptions): Promise<StandIn> {
         res.writeHead(404, { ...CORS, 'Content-Length': '0' }).end();
         return;
       }
-      const n = mm[2] === undefined ? null : Number(mm[2]);
-      sendFile(req, res, 'mirror', file, n === null ? null : { start: n * o.sliceBytes, end: (n + 1) * o.sliceBytes });
+      const S = mm[2] === undefined ? null : Number(mm[2]);
+      const n = Number(mm[3]);
+      sendFile(req, res, 'mirror', file, S === null ? null : { start: n * S, end: (n + 1) * S });
       return;
     }
     res.writeHead(404, { ...CORS, 'Content-Length': '0' }).end();
@@ -277,7 +278,7 @@ export function startBucketStandIn(o: StandInOptions): Promise<StandIn> {
     server.listen(o.port ?? 0, o.host ?? '127.0.0.1', () => {
       const port = (server.address() as AddressInfo).port;
       const url = `http://${o.host ?? '127.0.0.1'}:${port}`;
-      log(`stand-in: bucket ${url}/${o.bucket}/p/, mirror ${url}/m/p/ (slices of ${o.sliceBytes})`);
+      log(`stand-in: bucket ${url}/${o.bucket}/p/, mirror ${url}/m/p/ (slices /m/p/<hash>/<S>/<n>)`);
       resolve({
         url,
         port,

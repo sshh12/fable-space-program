@@ -5,7 +5,7 @@
  * `createLocalPackFetch(packsDir)` returns a `fetch`-compatible function that answers
  *   <base>/packs.json   a pack list with one mirror (`ranges`, base <base>/p/) over the packer's current pointers
  *   <base>/p/<hash>     a single byte range of a pack or index object, read from its file
- *   <base>/p/<hash>/<n> slice n of `sliceBytes` (the mirror's slice mode), when a slice size is given
+ *   <base>/p/<hash>/<S>/<n>  slice n of S bytes (the mirror's slice mode; S is in the URL)
  * so `createPackTileSource({ packListUrl: LOCAL_PACK_LIST_URL, fetch })` reads every tile from local packs.
  */
 import fs from 'node:fs';
@@ -27,7 +27,7 @@ export function localPackList(packsDir: string): PackList {
   };
 }
 
-export function createLocalPackFetch(packsDir: string, o: { sliceBytes?: number } = {}): typeof fetch {
+export function createLocalPackFetch(packsDir: string): typeof fetch {
   const find = createObjectFinder(packsDir);
   const fds = new Map<string, number>();
   const read = (file: string, start: number, end: number): Uint8Array<ArrayBuffer> => {
@@ -45,13 +45,13 @@ export function createLocalPackFetch(packsDir: string, o: { sliceBytes?: number 
   const local = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
     if (url.pathname === '/packs.json') return new Response(JSON.stringify(localPackList(packsDir)), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    const m = /^\/p\/([0-9a-f]{32})(?:\/(\d+))?$/.exec(url.pathname);
+    const m = /^\/p\/([0-9a-f]{32})(?:\/(\d+)\/(\d+))?$/.exec(url.pathname);
     const file = m ? find(m[1]!) : null;
     if (!file) return new Response(null, { status: 404 });
     const size = fs.statSync(file).size;
     if (m![2] !== undefined) {
-      const S = o.sliceBytes;
-      const n = Number(m![2]);
+      const S = Number(m![2]);
+      const n = Number(m![3]);
       if (!S || n * S >= size) return new Response(null, { status: 404 });
       return new Response(read(file, n * S, Math.min(size, (n + 1) * S)), { status: 200 });
     }

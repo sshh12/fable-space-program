@@ -69,6 +69,7 @@ services:
       PACK_MIRROR_ORDER: bucket,mirror
       MIRROR_BASE: http://127.0.0.1:47202/p/
       MIRROR_MODE: slices
+      MIRROR_SLICE_BYTES: "262144"
       RAILWAY_DEPLOYMENT_DRAINING_SECONDS: "45"
       <<: *packs
     ports: ["127.0.0.1:47203:8080"]
@@ -91,7 +92,6 @@ services:
       ENDPOINT_GATE: http://127.0.0.1:47203
       ENDPOINT_API: http://127.0.0.1:47203
       ENDPOINT_PUB: http://127.0.0.1:47203
-      MIRROR_SLICE_BYTES: "262144"
       <<: *packs
     ports: ["127.0.0.1:47202:8080"]
     extra_hosts: ["host.docker.internal:host-gateway"]

@@ -91,7 +91,7 @@ beforeAll(async () => {
   tileRoot = await syntheticTileRoot();
   out = fs.mkdtempSync(path.join(os.tmpdir(), 'fsp-packs-'));
   for (const set of SETS) results[set] = await packSet({ dir: path.join(tileRoot, set), set, type: 'tiles', out, ...SMALL });
-  standIn = await startBucketStandIn({ packsDir: out, bucket: 'packs', ...CREDS, sliceBytes: 64 * 1024, now: () => clock });
+  standIn = await startBucketStandIn({ packsDir: out, bucket: 'packs', ...CREDS, now: () => clock });
 }, 120_000);
 
 afterAll(async () => {
@@ -208,7 +208,8 @@ describe('requests', () => {
     const src = createPackTileSource({ packListUrl: `${standIn.url}/packs.json`, fetch: f });
     const tiles = (await promisedTiles(createFsTileSource(tileRoot), 'fixture-moon')).filter((t) => t.key.level <= 2);
     for (const t of tiles) await src.tile('fixture-moon', t.layer, t.key); // one at a time: no batching help
-    const sliceUrls = urls.filter((u) => /\/m\/p\/[0-9a-f]{32}\/\d+$/.test(u));
+    const sliceUrls = urls.filter((u) => /\/m\/p\/[0-9a-f]{32}\/65536\/\d+$/.test(u));
+    expect(sliceUrls.length).toBeGreaterThan(0);
     expect(new Set(sliceUrls).size).toBe(sliceUrls.length);
     const st = src.stats();
     expect(st.bytesReceived.mirror! / st.bytesNeeded).toBeLessThanOrEqual(1.5);
@@ -301,4 +302,128 @@ describe('failover', () => {
     expect(Buffer.from(got!).equals(Buffer.from((await expected())!))).toBe(true);
     expect(src.stats().failures.bucket?.length).toBeGreaterThan(0);
   });
+
+  it('a 403 that persists after the refresh puts the bucket behind the mirror for the next reads', async () => {
+    const { src } = await fresh();
+    standIn.addFaults([{ target: 'bucket', status: 403, count: 2 }]);
+    await src.tile('fixture-moon', tile.layer, tile.key);
+    const bucketAfterFirst = src.stats().requests.bucket ?? 0;
+    const other = { face: 3 as FaceId, level: 1, x: 0, y: 1 };
+    const got = await src.tile('fixture-moon', 'height', other);
+    const want = await createFsTileSource(tileRoot).tile('fixture-moon', 'height', other);
+    expect(Buffer.from(got!).equals(Buffer.from(want!))).toBe(true);
+    // the second read went to the mirror first: no further bucket request
+    expect(src.stats().requests.bucket ?? 0).toBe(bucketAfterFirst);
+    standIn.clearFaults();
+  });
+
+  it("a network error on the bucket's presigned URLs refreshes the list once and retries the bucket (its 403 has no CORS headers)", async () => {
+    const svc = listService(['bucket', 'mirror'], 'slices');
+    let failed = 0;
+    const { fetch: f } = countingFetch(
+      () => svc.get(),
+      async (input, init) => {
+        const url = typeof input === 'string' ? input : (input as Request).url;
+        if (url.includes('/packs/p/') && failed === 0) {
+          failed++;
+          throw new TypeError('fetch failed'); // what a page sees of a 403 without CORS headers
+        }
+        return fetch(input, init);
+      },
+    );
+    const src = createPackTileSource({ packListUrl: `${standIn.url}/packs.json`, fetch: f });
+    const got = await src.tile('fixture-moon', tile.layer, tile.key);
+    expect(Buffer.from(got!).equals(Buffer.from((await expected())!))).toBe(true);
+    const s = src.stats();
+    expect(failed).toBe(1);
+    expect(s.failures.bucket?.network).toBe(1);
+    expect(s.packListLoads).toBe(2);
+    expect(s.requests.mirror ?? 0).toBe(0);
+  });
+
+  it('keeps at most 24 requests in flight however many tiles are asked for at once', async () => {
+    const svc = listService(['mirror'], 'ranges');
+    let inFlight = 0;
+    let peak = 0;
+    const { fetch: f } = countingFetch(
+      () => svc.get(),
+      async (input, init) => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        try {
+          await new Promise((r) => setTimeout(r, 15));
+          return await fetch(input, init);
+        } finally {
+          inFlight--;
+        }
+      },
+    );
+    // No coalescing: every tile is a request of its own.
+    const src = createPackTileSource({ packListUrl: `${standIn.url}/packs.json`, fetch: f, coalesceGapBytes: 0, maxRangeBytes: 1 });
+    const tiles = (await promisedTiles(createFsTileSource(tileRoot), 'fixture-moon')).filter((t) => t.key.level >= 2).slice(0, 200);
+    await src.manifest('fixture-moon');
+    peak = 0;
+    const got = await Promise.all(tiles.map((t) => src.tile('fixture-moon', t.layer, t.key)));
+    expect(got.every((b) => b !== null)).toBe(true);
+    expect(tiles.length).toBeGreaterThan(100);
+    expect(peak).toBeLessThanOrEqual(24);
+    expect(peak).toBeGreaterThanOrEqual(20);
+  });
+
+  it("a request's time allowance grows with its bytes", async () => {
+    const svc = listService(['mirror'], 'ranges');
+    const slow = (ms: number): typeof fetch =>
+      countingFetch(
+        () => svc.get(),
+        async (input, init) => {
+          const url = typeof input === 'string' ? input : (input as Request).url;
+          if (url.includes('/m/p/')) await new Promise((r) => setTimeout(r, ms));
+          return fetch(input, init);
+        },
+      ).fetch;
+    // 40 ms base: a 300 ms answer fails at 1 GB/s (no allowance for bytes) and passes at 100 B/s (a tile of
+    // 40 bytes is then allowed 440 ms).
+    const fast = createPackTileSource({ packListUrl: `${standIn.url}/packs.json`, fetch: slow(300), timeoutMs: 40, minBytesPerSecond: 1e9 });
+    await expect(fast.tile('fixture-moon', tile.layer, tile.key)).rejects.toThrow(/failed on every mirror/);
+    expect(fast.stats().failures.mirror?.timeout).toBeGreaterThan(0);
+    const scaled = createPackTileSource({ packListUrl: `${standIn.url}/packs.json`, fetch: slow(300), timeoutMs: 40, minBytesPerSecond: 100 });
+    const got = await scaled.tile('fixture-moon', tile.layer, tile.key);
+    expect(Buffer.from(got!).equals(Buffer.from((await expected())!))).toBe(true);
+  });
+});
+
+describe('a refreshed pack list', () => {
+  it('naming another index object for a set (a release) makes the source read the set again from it', async () => {
+    const alt = fs.mkdtempSync(path.join(os.tmpdir(), 'fsp-packs-rel-'));
+    try {
+      fs.cpSync(path.join(out, 'fixture-moon'), path.join(alt, 'fixture-moon'), { recursive: true });
+      const before = readCurrent(alt, 'fixture-moon')!;
+      // The "release": the same tiles packed with other bounds, so other packs and another index object.
+      const after = await packSet({ dir: path.join(tileRoot, 'fixture-moon'), set: 'fixture-moon', type: 'tiles', out: alt, minBytes: 300 * 1024, maxBytes: 1024 * 1024, cutModulus: 8, smallSetBytes: 0 });
+      expect(after.index).not.toBe(before.index);
+      let now = Date.UTC(2026, 10, 12, 15, 0, 0);
+      let release = false;
+      const doc = (index: string, indexBytes: number): PackList => ({ v: 1, signedDay: null, refreshAfterS: 60, mirrors: [{ id: 'local', mode: 'ranges', base: 'http://local.packs.invalid/p/' }], sets: { 'fixture-moon': { index, indexBytes } } });
+      const { fetch: f, urls } = countingFetch(async () => (release ? doc(after.index, after.indexBytes) : doc(before.index, before.indexBytes)), createLocalPackFetch(alt));
+      const src = createPackTileSource({ packListUrl: LOCAL_PACK_LIST_URL, fetch: f, now: () => now });
+      const want = await expected();
+      expect(Buffer.from((await src.tile('fixture-moon', tile.layer, tile.key))!).equals(Buffer.from(want!))).toBe(true);
+      expect(urls.some((u) => u.includes(after.index))).toBe(false);
+      release = true;
+      now += 61_000; // the list is older than its refreshAfterS: read again on the next use
+      const other = { face: 2 as FaceId, level: 1, x: 1, y: 1 };
+      const got = await src.tile('fixture-moon', 'height', other);
+      expect(Buffer.from(got!).equals(Buffer.from((await createFsTileSource(tileRoot).tile('fixture-moon', 'height', other))!))).toBe(true);
+      expect(urls.some((u) => u.includes(after.index))).toBe(true);
+      const newPacks = new Set(after.packs.map((p) => p.hash));
+      const oldOnly = new Set(before.packs.map((p) => p.hash).filter((h) => !newPacks.has(h)));
+      const lastPackUrl = urls.filter((u) => /\/p\/[0-9a-f]{32}$/.test(u) && !u.includes(after.index)).at(-1)!;
+      expect(oldOnly.has(lastPackUrl.slice(-32))).toBe(false);
+    } finally {
+      fs.rmSync(alt, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  const tile = { layer: 'height', key: { face: 0 as FaceId, level: 1, x: 1, y: 0 } };
+  const expected = (): Promise<Uint8Array | null> => createFsTileSource(tileRoot).tile('fixture-moon', tile.layer, tile.key);
 });

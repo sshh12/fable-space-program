@@ -159,6 +159,7 @@ function provisionServices() {
     ADMISSION_CAP: '20',
     MIRROR_BASE: `https://${shellDomain}/p/`,
     MIRROR_MODE: 'slices',
+    // The one source of truth of the slice size: the pack list states it and slice URLs carry it (/p/<hash>/<S>/<n>).
     MIRROR_SLICE_BYTES: String(256 * 1024),
     ...bucketVars('PACKS', packs),
   });
@@ -168,7 +169,6 @@ function provisionServices() {
     ENDPOINT_GATE: `https://${gameDomain}`,
     ENDPOINT_API: `https://${gameDomain}`,
     ENDPOINT_PUB: `https://${gameDomain}`,
-    MIRROR_SLICE_BYTES: String(256 * 1024),
     ...bucketVars('PACKS', packs),
   });
   setVars(dumpId, { ROLES: 'dump', DATABASE_URL: '${{postgres.DATABASE_URL}}', DUMP_BUDGET_BYTES_PER_DAY: '1500000000', ...bucketVars('DUMPS', dumps) });
@@ -224,13 +224,25 @@ function opsDelete() {
   console.log(`ops: service ${id} deleted`);
 }
 
+/** The three latest deployments of a service: id, status, created, the COMMIT variable it was built with. */
+function deployStatus(service) {
+  const ids = services();
+  if (!ids[service]) throw new Error(`no service ${service}`);
+  const d = gql(
+    'query($s:String!,$e:String!){ deployments(first:3, input:{serviceId:$s, environmentId:$e}){ edges{ node{ id status createdAt } } } }',
+    { s: ids[service], e: ENVIRONMENT },
+  );
+  for (const e of d.deployments.edges) console.log(JSON.stringify(e.node));
+}
+
 const [cmd, arg] = process.argv.slice(2);
 if (cmd === 'ops') opsJob(arg ?? 'pgsettings');
 else if (cmd === 'ops-delete') opsDelete();
 else if (cmd === 'services') provisionServices();
 else if (cmd === 'deploy') deploy(arg);
+else if (cmd === 'status') deployStatus(arg);
 else if (cmd === 'ids') console.log(JSON.stringify({ project: PROJECT, environment: ENVIRONMENT, services: services() }));
 else {
-  console.error('usage: node deploy/railway/provision.mjs services | deploy <service> | ids | ops <role> | ops-delete');
+  console.error('usage: node deploy/railway/provision.mjs services | deploy <service> | status <service> | ids | ops <role> | ops-delete');
   process.exit(2);
 }

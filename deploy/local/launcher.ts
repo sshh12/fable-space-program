@@ -553,7 +553,7 @@ async function run(opts: Options, command: string[]): Promise<number> {
     writeState(state);
 
     // 2. The bucket and mirror stand-in over data/packs
-    standIn = await startBucketStandIn({ packsDir: path.join(REPO, 'data', 'packs'), ...STAND_IN, sliceBytes: SLICE_BYTES, port: PORTS.bucket, log: (l) => fs.appendFileSync(path.join(logsDir, 'stand-in.log'), `${l}\n`) });
+    standIn = await startBucketStandIn({ packsDir: path.join(REPO, 'data', 'packs'), ...STAND_IN, port: PORTS.bucket, log: (l) => fs.appendFileSync(path.join(logsDir, 'stand-in.log'), `${l}\n`) });
 
     // 3. The server bundle and the roles of the shape
     const bundle = buildServerBundle();
