@@ -397,8 +397,6 @@ export class RockRenderer {
         depthStencil: { format: RENDER_FORMATS.shadow, depthWriteEnabled: true, depthCompare: 'less', depthBias: 2, depthBiasSlopeScale: 1.5 },
       });
     });
-    this.gbuffer.get();
-    this.shadow.get();
 
     for (const info of infos) {
       const faceSize = (Math.PI * info.def.radius) / 2;
@@ -951,6 +949,11 @@ export class RockRenderer {
 
   stats(): { instances: number; chunks: number; triangles: number } {
     return { instances: this.instanceCount, chunks: this.bodies.reduce((a, b) => a + b.chunks.size, 0), triangles: Math.round(this.triangles) };
+  }
+
+  /** The renderer's pipelines, for the feature to have them created ahead (`shaders.warm`). */
+  pipelines(): Tracked<unknown>[] {
+    return [this.gbuffer, this.shadow];
   }
 
   dispose(): void {

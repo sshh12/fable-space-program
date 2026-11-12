@@ -797,9 +797,6 @@ export class CoverRenderer {
         depthStencil: { format: RENDER_FORMATS.shadow, depthWriteEnabled: true, depthCompare: 'less', depthBias: 2, depthBiasSlopeScale: 1.5 },
       });
     });
-    this.gbuffer.get();
-    this.shadow.get();
-    this.leafShadow.get();
 
     const classNames = Object.keys(LANDCOVER_CLASS) as (keyof typeof LANDCOVER_CLASS)[];
     for (const info of infos) {
@@ -854,6 +851,11 @@ export class CoverRenderer {
         rest: null,
       });
     }
+  }
+
+  /** The renderer's pipelines, for the feature to have them created ahead (`shaders.warm`). */
+  pipelines(): Tracked<unknown>[] {
+    return [this.gbuffer, this.shadow, this.leafShadow];
   }
 
   /** Scatter a chunk's instances. Returns false while the land cover under it is still loading. */

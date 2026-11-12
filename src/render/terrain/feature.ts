@@ -922,9 +922,10 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
           depthStencil: { format: RENDER_FORMATS.shadow, depthWriteEnabled: true, depthCompare: 'less', depthBias: 2, depthBiasSlopeScale: 1.5 },
         });
       });
-      gbufferPipeline.get();
-      waterPipeline.get();
-      shadowPipeline.get();
+      // The pipelines are created ahead (RENDER_API section 5, request core-2): on the browser's worker
+      // threads, beside the manifests and the root tiles, not one after the other on the GPU process's main
+      // thread with the tile uploads of the first frame waiting behind them.
+      const ahead = [core.shaders.warm([gbufferPipeline, waterPipeline, shadowPipeline])];
 
       for (const def of candidates) {
         const manifest = await source.manifest(def.terrain!.tileset);
@@ -945,6 +946,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         }
         if (covered.length > 0) cover = new CoverRenderer(ctx, provider, source, noiseView, covered);
       }
+      if (rocks) ahead.push(core.shaders.warm(rocks.pipelines()));
+      if (cover) ahead.push(core.shaders.warm(cover.pipelines()));
 
       // The six root tiles of every body are there before the first frame: there is always something to draw.
       await new Promise<void>((resolve, reject) => {
@@ -957,6 +960,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         };
         poll();
       });
+      await Promise.all(ahead);
       initialised = true;
     },
 
