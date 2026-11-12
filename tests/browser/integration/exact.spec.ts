@@ -19,13 +19,14 @@ test.describe.configure({ timeout: 900_000 });
 
 const FRAMES = 64;
 /**
- * The pages, and whether two captures of one must be the same picture today. The low-orbit page is not yet:
- * its captures are idle and equally exposed, and they differ along the edges of the clouds, whose march
- * sequence follows the absolute frame index (request core-4 to atmosphere-clouds; measured 2026-11-12:
- * mean 0.15 to 0.31 levels, 15 to 19 % of the pixels). Set it to true with that request's resolution.
+ * The pages, and whether two captures of one must be the same picture. The low-orbit page is since
+ * 2026-11-12 (request core-4, done by atmosphere-clouds; the lab forwards `resetTemporal`, request
+ * atmosphere-clouds-12): before, its captures differed along the edges of the clouds in 15 to 19 % of the
+ * pixels. What was left in the first run with it (22:13): 261 pixels on the vessel, by up to 7 levels, between
+ * the first capture of a page and every later one.
  */
 const PAGES: Record<string, { url: string; exact: boolean }> = {
-  'leo-day': { url: '/labs/integration/?scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1', exact: false },
+  'leo-day': { url: '/labs/integration/?scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1', exact: true },
   'translunar-earth': { url: '/labs/integration/?scene=translunar&hud=0&governor=off&deterministic=1&paused=1', exact: true },
 };
 
@@ -84,8 +85,10 @@ for (const [name, { url, exact }] of Object.entries(PAGES)) {
     };
     const samePage = compare(a, b, 'same-page');
     const freshLoad = compare(a, c, 'fresh-load');
+    // Which of the three stands apart, when they are not the same: the later capture of the first page against the fresh load.
+    const laterAgainstFresh = compare(b, c, 'later-vs-fresh');
     const line = (d: { meanAbs: number; p999: number; maxAbs: number; differingFraction: number }): string => `mean ${d.meanAbs.toFixed(5)}, p99.9 ${d.p999}, max ${d.maxAbs}, ${(100 * d.differingFraction).toFixed(3)} % of pixels`;
-    console.log(`  ${name}: same page after another history: ${line(samePage)}; fresh load: ${line(freshLoad)}; EV100 ${a.ev100} / ${b.ev100} / ${c.ev100}`);
+    console.log(`  ${name}: same page after another history: ${line(samePage)}; fresh load: ${line(freshLoad)}; the later capture against the fresh load: ${line(laterAgainstFresh)}; EV100 ${a.ev100} / ${b.ev100} / ${c.ev100}`);
     const all = [a.attempts, b.attempts, c.attempts];
     console.log(`  ${name}: attempts ${JSON.stringify(all)}`);
     record(`f.exact.${name}`, { exact, samePage, freshLoad, ev100: [a.ev100, b.ev100, c.ev100], attempts: all });
@@ -99,5 +102,25 @@ for (const [name, { url, exact }] of Object.entries(PAGES)) {
       expect(d.meanAbs).toBeLessThanOrEqual(0.02);
       expect(d.p999).toBeLessThanOrEqual(1);
     }
+  });
+}
+
+/**
+ * Diagnosis (2026-11-12, to be taken out again): whose sequence it is when the first capture of the
+ * low-orbit page differs from a later one. The page without one package at a time; each test is a new
+ * browser context, as the test above is.
+ */
+for (const without of ['sky', 'vfx', 'cockpit', 'ocean', 'atmosphere', 'terrain']) {
+  test(`diagnosis: leo-day without ${without}, the first capture of the page against one after another history`, async ({ page }) => {
+    await openPage(page, `${PAGES['leo-day']!.url}&without=${without}`, { timeoutMs: 240_000 });
+    const a = await capture(page);
+    await page.evaluate(() => window.__test!.setDeterministic(false));
+    await page.evaluate(() => window.__test!.waitFrames(91));
+    await page.evaluate(() => window.__test!.setDeterministic(true));
+    const b = await capture(page);
+    const d = imageDifference(a.png, b.png);
+    if (d.maxAbs > 0) fs.writeFileSync(path.join(repoRoot, 'out', 'screens', 'integration', `exact-leo-day-without-${without}.diff.png`), d.diff);
+    console.log(`  leo-day without ${without}: ${(100 * d.differingFraction).toFixed(4)} % of the pixels differ (about ${Math.round(d.differingFraction * 1280 * 720)} of 1280 x 720), max ${d.maxAbs}; EV100 ${a.ev100} / ${b.ev100}`);
+    record(`f.exact.leo-day.without.${without}`, { differingFraction: d.differingFraction, maxAbs: d.maxAbs });
   });
 }
