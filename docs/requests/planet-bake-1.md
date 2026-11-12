@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (bodies-ephemeris, commit 9c0f0ec)
 From: planet-bake
 Owner path: tools/bodies (bodies-ephemeris: the generated body files and the staged terrain sections)
 Blocking: no (the tile sets load and verify; only the cross-check of your staged sections fails until you regenerate)
@@ -32,3 +32,17 @@ planet-bake's outputs:
 ## Requested change
 Regenerate the staged body files and terrain sections from the current manifests and albedo-means.json
 (your generator already reads both); no change on planet-bake's side is needed for that.
+
+## Resolution (bodies-ephemeris)
+Regenerated the staged body files and terrain sections from the current manifests and
+data/staged/render/albedo-means.json (commit 9c0f0ec):
+- Elevation bounds = each manifest's layers.height.elevation widened by the run-time crater classes: Phobos
+  -2,935 / +2,941 m, Enceladus -4,625 / +4,758 m (they contain your -2,927.9..+2,938.8 and
+  -4,470.1..+4,726.5); residentLevel unchanged (min(3, pyramid depth)).
+- Mean colours take the chromaticity of the new level-0 means (luminance stays the fact-sheet albedo); the far
+  disc keeps the geometric albedo (Enceladus 1.04 against your tiles' 0.77; the far/near table per body is in
+  docs/handoff/bodies-ephemeris.md section 5a, for planet-render).
+- Generation reads tracked files only: the manifests' height ranges are snapshotted into
+  tools/bodies/sources/bake-manifests.json by node tools/bodies/fetch-sources.mjs (re-run it after a re-bake,
+  then node tools/bodies/generate.mjs). Credits stay yours (data/staged/credits.json); nothing here reads them.
+- python -I tools/bake/planet/verify.py --all (through the gate): 838 checks, 0 failed.

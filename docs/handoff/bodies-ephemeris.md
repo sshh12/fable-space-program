@@ -42,7 +42,7 @@ node tools/bodies/fit-orbits.mjs [id ...]        fits to Horizons over the windo
 node tools/bodies/generate.mjs [--check]         writes / checks byte for byte all 60 generated files; no network
 node tools/bodies/validate.mjs [--quiet]         window residuals, sub-parent longitudes, approvals, outside-window table; exit 1 on a failure
 node tools/bodies/fetch-heldout.mjs              re-fetches the held-out truth sample (tests/unit/bodies/horizons-heldout.json)
-npx vitest run tests/unit/bodies                 140 tests
+npx vitest run tests/unit/bodies                 165 tests (25 need the baked tiles and are skipped explicitly without them)
 ```
 
 ## 2. Conventions solar-system-sim must implement (the reference is `tools/bodies/lib/kepler.mjs`)
@@ -254,7 +254,7 @@ that drifts from reality, Mimas within a decade and Tethys after about 2063.
 | Earth reproduces the v1 Sun direction at 1,000 instants over 2029-2031 | **Met** (< 1e-15 rad). This compares the staged formula with v1's, the same formula by design, so its value is as a regression pin. The physical check is the held-out test: Earth lies 0.41-0.84 deg from Horizons, as section 3 explains |
 | The Moon's orbit block byte-identical to today's | **Met** (the whole file) |
 | No file under `data/defs` changed | **Met for this package** |
-| Self-verify | All pass: `generate --check` (60 files), `validate.mjs` (exit 0), vitest 140/140, boundaries 93/93. `check-stubs` reports 8 findings, none in my paths (`src/render/vehicle/site/ground.ts`, another package's) |
+| Self-verify | All pass: `generate --check` (60 files), `validate.mjs` (exit 0), vitest 165/165 locally (CI: 140 run, the 25 snapshot checks skipped for want of data/tiles), boundaries 93/93; planet-bake's `verify.py --all` 838 of 838 with these staged sections. `check-stubs` reports 8 findings, none in my paths (`src/render/vehicle/site/ground.ts`, another package's) |
 
 ## 5. Data notes
 
@@ -325,14 +325,63 @@ that drifts from reality, Mimas within a decade and Tethys after about 2063.
   bodies (request -3, resolved by the lead).
 - **`surfaceFriction`** 0.7.
 
-**Elevation bounds: from the bake.** All 25 bodies are now baked. Each body's bounds are its manifest's
-`layers.height.elevation` (the range of the finest level's samples above the mean radius) widened by the
-run-time crater classes below the data level. Examples: Titania -7,798 / +1,303 m, Mimas -9,748 / +9,883,
-Mars -18,863 / +26,205, Phobos -1,987 / +1,922.
+**Elevation bounds: from the bake.** Each body's bounds are its baked manifest's `layers.height.elevation`
+(the range of the finest level's samples above the mean radius) widened by the run-time crater classes below
+the data level: Phobos -2,935 / +2,941 m and Enceladus -4,625 / +4,758 m (their new DEMs), Titania -7,798 /
++1,303, Mimas -9,748 / +9,883, Mars -18,863 / +26,205. The manifests are git-ignored, so `fetch-sources.mjs`
+snapshots their height range, radius, resident level and content hash into the tracked
+`tools/bodies/sources/bake-manifests.json`; generation reads tracked files only (CI has no baked data), and
+`staged.test.ts` checks the snapshot against `data/tiles` where the tiles exist (`describe.skipIf` without).
+After a re-bake: `node tools/bodies/fetch-sources.mjs`, then `generate.mjs`.
 
-planet-bake's large procedural craters now follow a complex-crater depth law (request -5). Without a manifest,
-the generator would fall back to bounding what the bake can produce from its inputs: the reference surface,
-the published or int16 DEM range, and the procedural craters (see `provenance.json`).
+## 5a. Far disc against near tiles (for planet-render, which owns the hand-over)
+
+The far disc (impostor, planetshine) keeps the literature geometric albedo p: a body that is a point in the sky
+has its real brightness. The near tiles carry planet-bake's level-0 mean albedo A (`albedo-means.json`,
+luminance). A Lambert-shaded sphere of albedo A has the geometric albedo 2A/3, so at the hand-over the far law
+is p / (2A/3) times brighter at full phase. **1.5 means both are calibrated to the same albedo** (real airless
+surfaces back-scatter, the opposition effect; a Lambert sphere does not). The colour columns are the far and
+near chromaticities (R/G/B over luminance) and their largest channel difference.
+
+| Body | p (far) | A (tiles) | 2A/3 | p / (2A/3) | Far colour | Tile colour | Colour diff |
+|---|---|---|---|---|---|---|---|
+| Mercury | 0.106 | 0.142 | 0.095 | 1.12 | 1.15/0.98/0.73 | 1.06/0.99/0.91 | 0.17 |
+| Venus | 0.65 | 0.150 | 0.100 | **6.49** | 1.00/1.00/0.96 | 1.09/0.99/0.87 | 0.09 |
+| Mars | 0.15 | 0.170 | 0.113 | 1.32 | 1.42/0.93/0.48 | 1.95/0.76/0.61 | **0.52** |
+| Phobos | 0.06 | 0.070 | 0.047 | 1.28 | 0.96/1.01/1.06 | 1.04/0.99/0.95 | 0.11 |
+| Deimos | 0.06 | 0.070 | 0.047 | 1.28 | 1.00/1.00/1.00 | 1.05/0.99/0.94 | 0.06 |
+| Io | 0.63 | 0.621 | 0.414 | 1.52 | 1.37/0.95/0.43 | 1.37/0.95/0.43 | 0.00 |
+| Europa | 0.67 | 0.682 | 0.454 | 1.47 | 1.15/0.98/0.80 | 1.15/0.98/0.80 | 0.00 |
+| Ganymede | 0.43 | 0.440 | 0.294 | 1.46 | 1.07/1.00/0.81 | 1.07/1.00/0.81 | 0.00 |
+| Callisto | 0.17 | 0.190 | 0.127 | 1.34 | 1.14/0.98/0.80 | 1.14/0.98/0.80 | 0.00 |
+| Mimas | 0.6 | 0.601 | 0.400 | 1.50 | 1.00/1.00/1.00 | 1.00/1.00/1.00 | 0.00 |
+| Enceladus | 1.04 | 0.771 | 0.514 | **2.02** | 0.98/1.00/1.03 | 0.98/1.00/1.02 | 0.01 |
+| Tethys | 0.8 | 0.789 | 0.526 | 1.52 | 1.05/0.99/0.92 | 1.01/1.00/0.98 | 0.07 |
+| Dione | 0.6 | 0.701 | 0.467 | 1.28 | 1.07/0.99/0.90 | 1.01/1.00/0.98 | 0.08 |
+| Rhea | 0.6 | 0.701 | 0.467 | 1.28 | 1.07/0.99/0.90 | 1.01/1.00/0.98 | 0.08 |
+| Titan | 0.2 | 0.200 | 0.134 | 1.50 | 1.30/0.96/0.54 | 1.15/0.98/0.75 | 0.20 |
+| Iapetus | 0.6 | 0.332 | 0.222 | **2.71** | 1.04/1.00/0.94 | 1.04/1.00/0.94 | 0.00 |
+| Miranda | 0.27 | 0.321 | 0.214 | 1.26 | 1.00/1.00/1.00 | 1.00/1.00/1.00 | 0.00 |
+| Ariel | 0.34 | 0.391 | 0.260 | 1.31 | 1.02/1.00/0.97 | 1.02/1.00/0.97 | 0.00 |
+| Umbriel | 0.18 | 0.210 | 0.140 | 1.28 | 1.00/1.00/1.00 | 1.00/1.00/1.00 | 0.00 |
+| Titania | 0.27 | 0.271 | 0.181 | 1.49 | 1.03/1.00/0.95 | 1.02/1.00/0.96 | 0.01 |
+| Oberon | 0.24 | 0.230 | 0.154 | 1.56 | 1.02/1.00/0.97 | 1.03/1.00/0.96 | 0.01 |
+| Triton | 0.7 | 0.761 | 0.507 | 1.38 | 1.07/0.99/0.89 | 1.04/1.00/0.93 | 0.04 |
+| Ceres | 0.09 | 0.090 | 0.060 | 1.50 | 1.04/0.99/0.94 | 1.00/1.00/1.00 | 0.06 |
+| Pluto | 0.52 | 0.520 | 0.347 | 1.50 | 1.13/0.98/0.81 | 1.14/0.98/0.80 | 0.02 |
+| Charon | 0.42 | 0.350 | 0.234 | 1.80 | 1.04/0.99/0.94 | 1.04/0.99/0.94 | 0.01 |
+
+Where the hand-over needs a decision:
+- Venus 6.5 and Titan: the far disc is the cloud deck or haze, the tiles are the surface under it; planet-render's
+  cloud and haze shells carry the hand-over, not the tiles.
+- Iapetus 2.7: p 0.6 (JPL) is the bright trailing side; the tiles are the two-tone disc mean 0.33.
+- Enceladus 2.0: the tiles are capped at 0.77 (the most the map holds under the bake's ceiling); p is 1.04.
+- Charon 1.8 and Mercury 1.1: the fact-sheet albedo and the bake's configured albedo differ (0.42 and 0.35;
+  0.106 and 0.142).
+- Colour: the far colour is the tiles' chromaticity for the nine moons coloured from planet-bake (difference 0);
+  for the bodies coloured from B-V the largest differences are Mars (the Viking mosaic is redder than the
+  disc-integrated colour), Titan (haze against surface) and Mercury.
+- The Earth has the same question open as request sky-lighting-11; the Moon is pinned (v1 colour and albedo).
 
 ## 6. Deviations and limits
 
@@ -356,6 +405,7 @@ the published or int16 DEM range, and the procedural craters (see `provenance.js
 | -3 | lead | resolved (`BodyTerrainDef.residentLevel`, commit 00e908b); implemented here |
 | -4 | lead | resolved by decision and implemented (fitted orbits, tolerance table) |
 | -5 | planet-bake | resolved (5b5075f): baked level-0 mean colours with their colour basis; complex-crater depths; applied here (chromaticity, manifest-based bounds) |
+| planet-bake-1 (against my paths) | from planet-bake | resolved here (9c0f0ec): regenerated from the re-baked manifests (Phobos and Enceladus DEMs) and the current albedo means; verify.py --all 838 of 838 |
 
 ## 8. Review (independent rebuild): findings and what was done
 
@@ -385,3 +435,8 @@ the published or int16 DEM range, and the procedural craters (see `provenance.js
 - Request -5 resolved by planet-bake (5b5075f): the colours take the chromaticity of its baked level-0 albedo
   (only Mimas neutral), and the terrain bounds its manifests' height range. `mapcolour.py` removed (its source
   maps are deleted after the bake).
+- Request planet-bake-1: regenerated from the re-baked manifests and albedo means. Generation now reads tracked
+  files only: CI on main was red because staged.test.ts's generator check needed the git-ignored manifests
+  (absent on CI), and Phobos' new DEM then fell into the old DEM-range fallback. Manifest snapshot in
+  tools/bodies/sources/bake-manifests.json, checked against data/tiles with describe.skipIf; far-disc against
+  near-tile table (section 5a); planet-bake's verify.py --all 838 of 838 (9c0f0ec).
