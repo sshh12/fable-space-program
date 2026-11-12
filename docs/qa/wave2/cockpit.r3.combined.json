@@ -1,0 +1,326 @@
+{
+  "package": "cockpit",
+  "round": 3,
+  "lenses": ["photo", "artifact"],
+  "date": "2026-11-12",
+  "commit": "0e184e5",
+  "screenshotsLookedAt": 29,
+  "scores": { "photo": 5.5, "artifact": 6 },
+  "evidence": {
+    "screenshots": "All 21 PNGs in out/screens/cockpit and the 8 cockpit-lab frames in out/screens/cockpit/lab (1600 x 900; perf-1440p-leo-seat.png 2560 x 1440), each read in full, plus 49 enlarged crops (C:\\Users\\Shriv\\AppData\\Local\\Temp\\claude\\27587f90db9339a2\\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\\scratchpad\\cockpit-r3\\crops). No browser test was run.",
+    "freshness": "The last cockpit commit is dated 01:02:03, after the pictures (00:52-00:59), so every file but one is older than the commit date; what matters is the last source edit: src/render/cockpit/shaders.ts at 00:52:56, nothing in src/render/cockpit, labs/cockpit or tests/browser/cockpit after it. 28 of 29 pictures are newer than that edit. perf-1440p-leo-seat.png (00:52:31) is 25 s older; it shows the same view as the current world-leo-sun-patch-console.png and agrees with it, so the GPU slot was not taken for a re-run. world-chase-window-night.png was rewritten at 01:18 by another run.",
+    "references": "out/qa/ref/cockpit-interiors: apollo11-columbia-panel, soyuz-ms20-descent-module, soyuz-ms26-pettit-inflight, orion-a2-glover-reflections, orion-a2-sill-moon, aldrin-lm-interior, apollo7-schirra-inflight, apollo-cm-trainer, dragon-seats; out/qa/ref/reentry-chutes/eft1-plasma-side-window.jpg; numbers from out/qa/ref/INDEX.md.",
+    "measurements": "Luminance values are 8-bit Rec.709 of the PNG. Night cabin: blanket left 122, right 114, low 126 (flat within 10 %). Hatch view: locker 148, wall 145, frame 130, door 118. Lunar ground strip: median (225,224,221), p5-p95 221-227. Lunar well stipple: median 95, standard deviation 52, 31 % of pixels under 40. Reentry panes: (246,237,239), p5-p95 222-247. Pad sky (243,249,254), 23 % at 250 or more; the cloud 245. Sun patch: bezel 254, panel 252, screen 201, panel beside the patch 6. Earth in app-leo-console-left: 255 over the whole lit area. app-leo-seat against app-leo-seat-floods: mean absolute difference 5.5, frame means 124.7 and 125.2."
+  },
+  "userComplaintConsoleIntoHull": "Gone in the pictures. In app-leo-console-left.png, app-leo-console-right.png, app-leo-seat.png, world-night-displays-floods.png and world-ascent-plume-displays.png the face plates end on a dark seal bead that follows the blanket line, the bodies taper back along the wall, and no instrument, lamp or plate cuts into a blanket, a ring frame or a window bezel. No intersecting pair was found in any of the 29 pictures. What is left at the junctions is of another kind (bars and tubes that end in mid-air, a one-step kink in the bead): findings below.",
+  "fixedSinceRound1": [
+    "Caution-and-warning matrix torn by coplanar faces (artifact major): a clean grid with full rectangular lit lamps (world-night-displays-floods.png, world-ascent-plume-displays.png).",
+    "Glowing seam round the hatch door (major, both): the seam is a dark groove (hatch-mechanism.png); nothing glows behind the couches in look-back-couches-hatch.png.",
+    "Harness shards through the pads, blankets through the console edge, star-shaped triangles at seam crossings (majors): not seen in any picture.",
+    "Salt-and-pepper static on cockpit-owned surfaces at the hatch (artifact major): gone.",
+    "Console as hanging slabs without cheeks or back (major, both): closed bodies fitted to the hull.",
+    "Lower switch legends nearly invisible (minor): one weight above and below (closeup-switches.png, world-night-displays-floods.png).",
+    "Placard glowing in a dark cabin (minor): dim (world-moon-horizon.png).",
+    "Look-back view a dark jumble (major photo): three couches read at a glance.",
+    "Cabin nearly black / bimodal brightness: every interior frame is exposed (frame medians 68-133), the app views included.",
+    "Stand-in lab frames in the acceptance folder (minor): moved to out/screens/cockpit/lab."
+  ],
+  "previousItemsStillOpen": [
+    "r1 BLOCKER reentry (both lenses): no longer a blocker, still major. The panes glow and the cabin stands under its floods, but the panes are one flat pale pink-white (246,237,239) without streaks or a hot core (world-reentry-plasma.png).",
+    "r1 BLOCKER lunar view (photo): the cabin now reads and the ground is neutral, but the Moon is a clipped strip without relief (median 224, p5-p95 221-227): photo major. The same picture now carries the round's one blocker: a 1-bit stipple on the well floor (artifact).",
+    "r1 BLOCKER pad view (photo): partly open, major. A cloud and a rigging line show, the sky clips to (243,249,254) with the cloud at the same value, no tower, pebbled grain on the well.",
+    "r1 major: stipple / grain on the window wells (request cockpit-10 is marked resolved; the grain is still in four views and worse in the lunar one).",
+    "r1 major: cabin light without cast shadows (acknowledged in the hand-off): no lever, guard, rod, lamp post, bag or console casts anything; night blankets within 10 % of one value.",
+    "r1 major: empty, clean set (partly open): a cue card, bags and a pouch were added, but every hard surface is still a clean single tone, the soft goods added are boxes, there is no crew.",
+    "r1 major: sun patch (partly open): the page under the patch reads now; the bezel and the panel in the patch still clip to paper white (254, 252) beside a panel at 6, with a bloom halo; teeth remain where a bezel casts the edge.",
+    "r1 major: Earth window beside a black slab (unchanged: 39 % of world-leo-earth-side-window.png at 3 or less).",
+    "r1 major: night chase view (the cabin shows through the window; 81 % of the frame is black, no hull silhouette).",
+    "r1 major: hatch door smears (fainter: stepped bands and radial streaks remain) and latches as black blocks.",
+    "r1 major: attitude indicator (ring fixed; the dome glass still shows torn blocky fragments; no error needles).",
+    "r1 major: couches (pads and buckle hold up; webbing is folded paper with free ends, frame tubes end in the air).",
+    "r1 major/minor: blocky stair-stepped reflections on flat panes (now large in three app views).",
+    "r1 major: blanket rim hairlines (reduced to short dotted sparkle lines: minor).",
+    "r1 minors: brushed cylinder's banded highlight, white dots on the valve flange, blank bezel keys, MFD 3 unreadable from the seat, faults of other packages in the Earth view."
+  ],
+  "findings": [
+    {
+      "lens": "artifact",
+      "severity": "blocker",
+      "view": "out/screens/cockpit/world-moon-horizon.png (well floor x 740-960, y 640-800; upper right well wall x 1230-1290, y 190-260)",
+      "defect": "The shadow edge on the window well's floor is a 1-bit stipple: black dots of 1-2 px at about 50 % density fading over a band 200 px wide, in the middle of the lunar acceptance view (median 95, 31 % of the pixels under 40, standard deviation 52 levels against 18 on the smoothly lit floor beside it). It reads as television static at a glance. The lit floor beside it shows a fine triangular tiling.",
+      "realReference": "out/qa/ref/cockpit-interiors/orion-a2-sill-moon.jpg, orion-a2-wiseman-window.jpg: sill and well are smooth bands with soft, continuous shadow edges; no grain at any exposure.",
+      "likelyCause": "The well faces are the vehicle's exterior geometry lit by the core's sun cascades. Request cockpit-10 (resolved, c417fb0) fades the blue-noise rotation of the 12-tap kernel between 2 and 8 px per texel (SHADOW_SPIN_FULL / SHADOW_SPIN_NONE); this receiver, at a low lunar sun grazing the floor, either sits inside that band or between two cascades whose blend is dithered. A fixed single frame has no TAA history to average it. The triangular tiling is the well's normal or tangent interpolation on coarse triangles.",
+      "fixDirection": "Re-open cockpit-10 with this frame: show cascade index and the spin weight at those pixels; make the fade depend on the penumbra's width in pixels (grazing incidence stretches it far beyond 8 px), and blend cascades by a smooth weight, not by dither, when the camera is interior. Alternative inside the cockpit's remit: let the cockpit's analytic aperture term shade well faces when the camera is inside (the vehicle marks them). Add a test that counts isolated dark pixels on the well floor in this view."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "world-pad-noon-forward-window.png (well floor x 590-880, y 730-880; right window x 1150-1350, y 480-880), world-leo-sun-patch-console.png (x 990-1110, y 20-130), world-ascent-plume-displays.png (x 1150-1290, y 30-130)",
+      "defect": "Wherever the sun reaches a window well its faces carry a pebbled, hammered-glass grain; in the right pad window the dark well wall is speckled over its whole height (standard deviation 68 levels). From the seat every sunlit window looks frosted.",
+      "realReference": "out/qa/ref/cockpit-interiors/aldrin-lm-interior.jpg, apollo7-schirra-inflight.jpg: the cut through the wall is smooth painted or machined metal with a seal bead; a bright window has a clean edge and a soft veil of glare.",
+      "likelyCause": "Same source as the blocker (core cascade filter on the vehicle's well faces at arm's length), plus the well's quilted or dimpled exterior material seen at 30 cm.",
+      "fixDirection": "As above; ask the vehicle package for a plain machined liner material on the well faces (no relief map). Acceptance: the well in world-pad-noon-forward-window.png is a smooth gradient with one clean shadow edge."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "app-leo-console-left.png (pane x 75-235, y 430-650), app-leo-console-right.png (x 350-410, y 15-85), app-leo-seat.png (x 1100-1170, y 0-70), app-lunar-surface-seat.png (x 1100-1140, y 25-75), world-moon-horizon.png (x 730-860, y 180-230)",
+      "defect": "The cabin's reflection in the window panes is built of blocks: dark and bright shapes with stair-stepped edges of 10-15 px per step, like a thumbnail blown up. In the real app, looking left along the console, a quarter of the side window is filled by such a staircase silhouette over the Earth's limb; from the seat a blocky white column stands in the forward window.",
+      "realReference": "out/qa/ref/cockpit-interiors/orion-a2-glover-reflections.jpg: reflections on a pane are sharp, slightly doubled images of the cabin with smooth edges.",
+      "likelyCause": "src/render/cockpit/shaders.ts line 1489, cabinRadianceAlong(): bare glass reads the cabin probe at mip 0; the probe is 128 px per face (data/defs/visuals/cockpits/kestrel.json line 282, transport.probeSize), 0.7 degrees per texel, about 12 screen pixels at this field of view. The probe holds HDR values (clipped windows, sun patch) next to dark ones, so bilinear filtering cannot hide the texel grid after the tone curve.",
+      "fixDirection": "Give windows the treatment displays and floods already have in that function: intersect the reflected ray with the window polygons and return their radiance analytically (sharp, smooth edges). For what remains from the probe, clamp its radiance for glass to a few times the cabin mean and sample it bicubically or from a 512 face rendered for the nearest pane only. Check app-leo-console-left.png at 200 %."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "hatch-mechanism.png (door x 640-1000, y 400-560; x 1040-1250, y 450-600; round the handle base x 480-560, y 440-480), look-back-couches-hatch.png (round the hatch window x 690-760, y 480-560)",
+      "defect": "The light on the flat hatch door still follows the mesh: stepped concentric bands beside the window ring, radial light and dark wedges fanning from it, soft dark fingers round the handle plate. Fainter than in round 1, clear on a second look.",
+      "realReference": "orion-a2-glover-reflections.jpg: flat machined surfaces beside the hatch window are evenly lit, with a crisp contact shadow under each fitting.",
+      "likelyCause": "src/render/cockpit/cabin/apertures.ts lines 246-265: the pocket floor is rings of long radial quads between the door outline and the window hole; window and flood visibility is baked per vertex (transport.maxEdge 35 mm) and interpolated along the spokes.",
+      "fixDirection": "Mesh the door face on the part-aware regular grid the console faces use (8 mm near the ring, handle, valve and guides), or bake its visibility into a small lightmap; mounted parts as overlays with an explicit contact term."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "out/screens/cockpit/lab/chase-window-night.png (x 800-1080, y 180-330)",
+      "defect": "A starburst of about forty radial spokes, alternately light and dark, covers the cabin surface seen behind the couch through the window (the apex end or the tunnel wall): the lamp light is interpolated across a triangle fan. The same surface is what a player sees looking up from the couch.",
+      "realReference": "apollo-cm-trainer.jpg: the tunnel and upper bulkhead are evenly lit painted metal with hard shadows of the fittings on them.",
+      "likelyCause": "src/render/cockpit/cabin/shell.ts (apex tunnel and its end, about line 296): a surface of revolution closed by long thin triangles to a centre, with per-vertex baked flood visibility; the centre vertex's value fans out along every spoke.",
+      "fixDirection": "Close the end with concentric rings of near-square quads (or a grid), or give the apex a lightmap; add the view 'look up the tunnel' to views.spec.ts so the surface is reviewed from inside."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "closeup-switches.png (stringer ends x 560-620, y 40-95 and x 590-630, y 695-760), app-leo-console-left.png (x 1050-1095, y 640-690; x 1085-1100, y 380-410), look-back-couches-hatch.png (tube ends x 204-233, y 342-362 and x 620-670, y 680-725), app-leo-console-left.png (shade rail past the cassette x 400-460, y 360-410)",
+      "defect": "Members that end in the air. The stringers on the wall stop 3-6 cm short of the console with their sawn end faces in view, lying over the blanket's bulge like loose battens. Under the couches several frame tubes end with an open or capped end that touches nothing. The window shade's guide rails run past the cassette bar and stick out above it.",
+      "realReference": "apollo-cm-trainer.jpg, soyuz-ms20-descent-module.jpg: every stringer runs into a frame or under a panel; couch tubes end in a clevis, a welded node or a floor fitting; rails end in a bracket.",
+      "likelyCause": "The penetration check of round 3 shortened parts until nothing intersects (src/render/cockpit/cabin/shell.ts stringer() line 437 is cut back at the console's limit; src/render/cockpit/cabin/couches.ts tubes at lines 203-244 are laid between points without end fittings); nothing checks that a structural member's end meets another part.",
+      "fixDirection": "Run stringers under the console's seal bead (hide the end behind the bead or end them at a ring frame), give every tube end a fitting (clevis and pin, gusset, floor cup) and add the dual of the penetration test: every structural member's end must lie within 2 mm of another part of the structure."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "closeup-fdai.png (dome rim x 1040-1080, y 410-510; x 910-1040, y 660-695), world-leo-sun-patch-console.png (x 820-860, y 410-530), perf-1440p-leo-seat.png (same instrument)",
+      "defect": "The retaining ring is clean now, but the attitude indicator's dome glass still carries torn, hard-edged grey fragments along its right and lower rim; with the sun in the cabin they show from the seat as a ring of stair-stepped flecks.",
+      "realReference": "apollo11-columbia-panel.jpg: the FDAI's dome shows two or three smooth curved highlights that stretch continuously toward the rim.",
+      "likelyCause": "src/render/cockpit/shaders.ts line 1583: the instrument glass reads the 128 px probe with roughness 0.3 and a footprint limit (reflectionFootprint, line 563); near the rim the reflected direction turns faster than the screen derivative reports (the dome's silhouette), and the lit window texels are still several stops over the rest.",
+      "fixDirection": "Fade the dome's reflection to its Fresnel-weighted cabin mean over the last 15 % of its radius, clamp probe radiance for instrument glass, and take the sharp glints from the analytic window, flood and display polygons only."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "closeup-mfd.png (x 1250-1310, y 480-560; spike x 1280-1300, y 155-175), world-leo-sun-patch-console.png (x 1235-1265, y 487-520; detached wedge x 795-830, y 565-590)",
+      "defect": "Where the display bezel casts the edge of the sun patch the boundary is a regular saw of four or five teeth, 10-15 px each, beside an otherwise straight edge; a pointed spike leaves the edge higher up. Visible from the seat as a notch on the right side of the hero patch.",
+      "realReference": "aldrin-lm-interior.jpg, apollo7-schirra-inflight.jpg: shadow edges from parts a few centimetres off the surface are straight and sharp (penumbra = distance x 0.0093).",
+      "likelyCause": "src/render/cockpit/shaders.ts sunMapVisibility() (line 672): at grazing incidence one sun-map texel covers many pixels along the panel; the lower bound of the filter width (texelM x (1.5 + 2.5 sin^2), line 712) is under the projected texel there, so the texel staircase survives.",
+      "fixDirection": "Scale the minimum filter width by 1 / NoL (the texel's footprint on the receiver), or reconstruct the edge from the depth gradient of the blocker; add the 8 / 15 / 30 degree edge test asked for since round 0 and assert a monotonic, plateau-free transition."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "look-back-couches-hatch.png (x 0-85, y 50-75; x 88-104, y 66-80), world-reentry-plasma.png (x 475-530, y 355-372; x 360-440, y 375-405; x 0-60, y 495-525)",
+      "defect": "Short dotted lines of white sparkle still trace a few blanket rims (single pixels at 200 and more on a rim at 150). They will crawl when the head moves.",
+      "realReference": "soyuz-ms20-descent-module.jpg: a liner's edge under a flange is a soft dark fold.",
+      "likelyCause": "The rolled rim rows of the blanket (src/render/cockpit/cabin/shell.ts) catch a window's or lamp's specular in sub-pixel slivers; the per-pixel stitch term adds its dashes on top.",
+      "fixDirection": "Widen roughness by the pixel footprint on the rim rows and fade the stitch term there; keep the rim in the flange's contact shadow."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "hatch-mechanism.png (valve flange x 1150-1265, y 575-680; latch bolts at (1160,378), (1534,601), (1402,782); cylinder x 1415-1600, y 720-850)",
+      "defect": "Fastener heads on black parts clip to pure white dots, and the brushed cylinder's highlight is cut into parallel bars with a green fringe (round-1 minor, unchanged).",
+      "realReference": "orion-a2-glover-reflections.jpg: screw heads are dull grey with a small highlight; a polished cylinder carries one continuous line.",
+      "likelyCause": "Mirror-like fasteners of 2-4 px reflect the clipped hatch window through the probe; the anisotropic brush normal aliases against probe texels.",
+      "fixDirection": "Satin fasteners (roughness 0.35 or more) with footprint-widened roughness; fade the brush normal by pixel footprint and read a blurred probe mip."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "closeup-switches.png (panel x 700-1600, y 100-650; edge x 663-673, y 110-130 and y 335-400)",
+      "defect": "The switch panel's face is clouded by soft dark blotches round every switch and between the rows, like a low-resolution lightmap, and two white drip-shaped highlights sit on the panel's left edge.",
+      "realReference": "apollo11-columbia-panel.jpg: the paint is even; darkening is a crisp contact shadow under each guard and lever.",
+      "likelyCause": "Per-vertex occlusion on the part-aware grid, blurred across cells; the drips are probe texels of a window on the edge chamfer.",
+      "fixDirection": "Replace the baked blotch by an analytic contact shadow per mounted part toward the dominant source; roughen the chamfer."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "app-leo-seat.png (x 780-800, y 250-290), world-ascent-plume-displays.png (x 510-535, y 220-260), app-leo-console-left.png (x 1150-1160, y 240-260)",
+      "defect": "The console's seal bead and plate edge jog sideways by about a centimetre at one height instead of following the wall in one curve.",
+      "realReference": "soyuz-ms20-descent-module.jpg: a panel fitted to a curved wall has one continuous trimmed edge.",
+      "likelyCause": "src/render/cockpit/cabin/console.ts: the face plate is limited row by row by the hull; two rows with different limits meet in a step.",
+      "fixDirection": "Fit the edge as a smooth curve through the row limits (take the minimum, then spline) and sweep the bead along it."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "app-leo-seat.png (x 1010-1090, y 150-190), world-leo-sun-patch-console.png (x 930-1140, y 130-230), world-ascent-plume-displays.png (x 760-1010, y 110-210), world-pad-noon-forward-window.png (x 450-545, y 120-170; x 1070-1110, y 60-140)",
+      "defect": "Between the console's top edge and the window sills sit clusters of small bright polygons with knife-edged, arrow-like ends; from the seat they read as torn paper or debris, not as brackets.",
+      "realReference": "apollo11-columbia-panel.jpg, apollo-cm-trainer.jpg: brackets are folded sheet with radiused corners, two or more fasteners and a visible flange on the structure.",
+      "likelyCause": "The console's brackets and the stringers' end clips are thin boxes cut at an angle, without fasteners or a base flange, lit on one facet by the window.",
+      "fixDirection": "Model brackets as L or Z sections with radiused ends, a base flange and bolt heads; keep them out of the sill's sight line where they carry nothing."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "world-pad-noon-forward-window.png (x 860-900, y 410-440; x 830-900, y 575-625; x 1360-1400, y 755-790), world-reentry-plasma.png (x 985-1020, y 365-385 and y 500-520), app-leo-console-right.png (x 495-535, y 30-75)",
+      "defect": "The flood lamps' reflections on the panes are flat, hard-edged beige parallelograms of one tone, like stickers on the glass.",
+      "realReference": "orion-a2-glover-reflections.jpg: a lamp mirrored in a pane is bright, slightly soft and doubled by the second surface.",
+      "likelyCause": "cabinRadianceAlong() (shaders.ts lines 1491-1510) returns a flood polygon's constant radiance with a hard inside test; times a reflectance of about 8 % it lands as flat beige.",
+      "fixDirection": "Soften the polygon's edge by a few millimetres, give the lens its hot centre and housing rim, and let the second pane's image show a few millimetres apart."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "hatch-mechanism.png (whole frame), app-leo-console-right.png (seat backs, post x 1440-1520, close-out panels), look-back-couches-hatch.png, app-leo-seat.png (stringers, console face)",
+      "defect": "Still a clean procedural set. Painted frames, stringers, close-out panels, lockers, the pallet, the big post and the console body are smooth single tones without brush marks, chips, scuffs, stains, stencils or part numbers; in the hatch view locker, wall, frame and door measure 148, 145, 130 and 118, one pale grey. The console face is a flawless satin sheet with four screws. Nobody is in the couches.",
+      "realReference": "apollo11-columbia-panel.jpg: grey paint worn to metal at edges, hand-written notes, Velcro patches, dense screw rows, engraved nomenclature. soyuz-ms20-descent-module.jpg: scuffed painted frames, stained liners, labels on everything. apollo-cm-trainer.jpg: three people fill the cabin.",
+      "likelyCause": "Acknowledged in the hand-off (9.4): no photographed or generated texture sets (none of the 50 USD spent), detail is the low-contrast procedural bake, no crew figures.",
+      "fixDirection": "Spend the budget on three PBR sets (painted aluminium with edge wear, anodise, moulded plastic) with real mid-frequency breakup, add edge-wear and grime masks from the baked occlusion and curvature, stencilled part numbers and placards on frames and lockers, and two suited figures in the other couches."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "world-night-displays-floods.png (whole frame), app-leo-console-right.png (lamps at x 920-1030, y 300-360; x 1230-1330, y 235-275; x 955-1060, y 690-725), world-reentry-plasma.png (lamp x 640-750, y 245-420; bag above it), closeup-switches.png, hatch-mechanism.png",
+      "defect": "Nothing casts a shadow and the lamps do not pool. At night the blankets measure 122, 114 and 126 at the left, right and bottom of the frame; the console throws nothing on the wall behind it, the lamp on its post nothing on the blanket 10 cm away, the bag, the cue card, the handholds, switch levers, guards, hatch rods and T-bars nothing at all. The lit lenses are clipped white rectangles on a wall that is no brighter beside them than a metre away.",
+      "realReference": "soyuz-ms26-pettit-inflight.jpg: under bright even cabin lights every strap, box, knob and guard still sits in its own soft shadow. apollo-cm-trainer.jpg: hard key light, deep shadows under every strut. apollo11-columbia-panel.jpg: each switch guard has a contact shadow.",
+      "likelyCause": "Flood and window visibility is baked per vertex at about 3.5 cm and mounted parts are non-occluding overlays (hand-off 9.4: shadow maps not built, the interior is over its GPU line); the probe bounce supplies most of the light.",
+      "fixDirection": "Static shadow maps for the two or three floods that dominate each view, rendered once and when a control moves (no per-frame cost), plus analytic capsule or box contact shadows for mounted parts toward the dominant source. Lower the bounce so a wall under a lamp is 3-4 times the far wall."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "app-leo-seat.png (window x 1070-1290, y 0-130), app-leo-console-left.png (x 0-330, y 640-900), app-leo-console-right.png (x 330-520, y 0-110), app-lunar-surface-seat.png (x 1090-1290, y 0-110)",
+      "defect": "From the seat, in the real app, no window shows the world: the Earth and the lunar ground are 255 white with a bloom, without colour, cloud or horizon detail, while the cabin is exposed as an even mid-grey (frame median 133, blankets 167). The view out of the window, the reason for a first-person cockpit, is a white hole in all four app views.",
+      "realReference": "apollo7-schirra-inflight.jpg: the Earth in the window is blue and white with cloud detail (p95 Y 0.62) while the cabin sits at Y 0.03; the window lights the face 8 times the cabin. aldrin-lm-interior.jpg: the lunar window clips, but the cabin is 22 times darker, low key.",
+      "likelyCause": "The interior meter keys the cabin to mid-grey (EV100 5.0 for app-leo-seat, hand-off 9.2), 5 or more stops under the sunlit Earth, and the tone curve has no shoulder that far up; nothing adapts locally.",
+      "fixDirection": "Key a window-lit cabin about two stops lower (Y 0.05-0.1, as in the photographs) and ask the core for a longer highlight shoulder or a local exposure term for interior cameras so that +4 EV keeps hue and cloud structure. Acceptance: in app-leo-console-left.png the Earth is blue and white, the cabin readable."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "world-leo-earth-side-window.png (whole frame; slab x 800-1600)",
+      "defect": "Unchanged since round 1: the Earth fills the left half and the right half is a razor-edged black slab (39 % of the frame at 3 or less) without bezel, rim light, seal or dust; the only sign of glass is a faint lamp ghost at x 840-950, y 640-720. It reads as a satellite picture with a black bar, not as a window.",
+      "realReference": "apollo7-schirra-inflight.jpg: window frame, seal and the surfaces beside it are lit by the Earth in the same exposure. orion-a2-glover-reflections.jpg: the cabin mirrored faintly over the view.",
+      "likelyCause": "The recipe (tests/browser/cockpit/world.spec.ts, windowBelow 0.85) puts the eye almost in the pane and the meter switches fully to the outside; the Earth's light on the bezel and blankets is below black at that exposure (hand-off 9.3: not re-aimed).",
+      "fixDirection": "Shoot from 0.3-0.4 m with the whole window outline in frame and the sun on the frame beside it; let the bezel chamfer and the nearest blanket take the Earth's light visibly; keep a veil and edge dust on the pane at the outside exposure."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "world-moon-horizon.png (ground x 690-1150, y 590-640; window x 650-1300, y 180-800)",
+      "defect": "The Moon is a strip 45 px high of featureless near-white (median 225,224,221; p5-p95 221-227) under a black sky, with one faint crater; the window's own well takes more of the pane than the Moon. Nothing in the frame says lunar surface: no relief, no shadow, no rock, no horizon curvature.",
+      "realReference": "out/qa/ref/moon-surface/aldrin-visor.jpg, mount-hadley.jpg: sunlit regolith at luminance 0.27-0.41 with hard shadows from every clod and a razor horizon. orion-a2-sill-moon.jpg: the Moon grey with real albedo contrast above a soft sill.",
+      "likelyCause": "The view looks level from a landed capsule, so the ground is a thin band; the exposure follows the cabin (the ground covers about 1.5 % of the frame), which puts sunlit regolith on the curve's shoulder. Sun elevation and azimuth are not set for relief.",
+      "fixDirection": "Aim the camera down through the pane so the ground fills half of it, set the sun 10-25 degrees up and to the side for long shadows, and let the meter weigh the window (its opening covers about 30 % of the view). Assert in world.spec.ts a ground median between 110 and 190 with a standard deviation over 12."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "world-reentry-plasma.png (panes x 880-1010, y 215-610 and x 1200-1440, y 300-620)",
+      "defect": "Entry is two frosted pink-white panes in an evenly lit grey cabin: (246,237,239) with p5-p95 222-247, no streak, no hot core, no flicker structure, no glow on the frames and bezels; blocky darker patches with stepped outlines at the panes' upper edge (x 885-940, y 205-225; x 1280-1360, y 330-350). The lab frame (lab/reentry-plasma.png) at least has streaks; the integrated one has none.",
+      "realReference": "out/qa/ref/reentry-chutes/eft1-plasma-side-window.jpg: a pink-magenta to salmon field (mean 120,95,109) crossed by fine bright streaks, with a white-yellow core at one edge and the black of space above the shock.",
+      "likelyCause": "The vfx sheath seen from inside is a uniform emissive volume without streak structure, and the interior exposure puts it 1.5 stops over the cabin where the curve desaturates it; the stepped patches are the probe or a low-resolution vfx buffer seen through the pane.",
+      "fixDirection": "Streak structure and a gradient toward the shoulder of the capsule in the sheath as seen from inside (request to vfx, or the cockpit's glass pass until then), hold the pane within about 1 stop of the cabin's white so it keeps its hue, and let the pink fall off from the windows over the bezels and the nearest blankets."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "world-pad-noon-forward-window.png (window x 600-960, y 100-880)",
+      "defect": "The pad view shows a clipped sky: (243,249,254) with a quarter of it at 250 or more, the one cloud at the same value (245), a hair-thin rigging line, and no tower, service arm or horizon. The lower third of the opening is the pebbled well.",
+      "realReference": "out/qa/ref/sky-ground-clouds/cu-humilis-nsw.jpg: noon sky (38,78,140) to (154,168,180), cloud tops 4-6 times that. out/qa/ref/launch-pad/sls-pad-blue-sky.jpg: white structure at Y 0.63 against blue.",
+      "likelyCause": "Hand-off 9.3: the sky is not lit geometry for the interior meter, so the exposure stays on the dark cabin (frame median 25).",
+      "fixDirection": "Weigh the window's share of the view in the interior meter for sky pixels too (core request), or key this cabin from the window; frame the tower's top or the escape tower in the pane. Done when sky is blue and a structure can be told through the glass."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "world-leo-sun-patch-console.png (patch x 790-1260, y 300-660), closeup-mfd.png",
+      "defect": "The hero sun patch keeps the display page readable now, but the black anodised bezel (254) and the dark panel (252) inside it are paper white with a bloom halo along the right edge, while the same panel beside the patch is 6: dark and light materials are one white inside, one black outside.",
+      "realReference": "apollo7-schirra-inflight.jpg, aldrin-lm-interior.jpg: sunlit surfaces in a cabin are over-exposed but keep texture and the difference between dark and light paint; the shaded cabin beside them stays readable at Y 0.03.",
+      "likelyCause": "The patch stands 4 stops over the cabin (hand-off 9.2) and the tone curve's shoulder ends below that; dark paint at albedo 0.04 in the sun and white cloth in the shade swap places around the clip point.",
+      "fixDirection": "A highlight shoulder that still separates albedo 0.04 from 0.6 at +4 EV (core), bloom threshold above the patch's level; check that the bezel in the patch reads mid-grey and the panel beside it about 20-40."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "look-back-couches-hatch.png (straps x 1130-1420, y 380-600; x 545-760, y 100-300; frames x 100-700, y 280-900), app-leo-console-right.png (seat backs x 1150-1600, y 280-900)",
+      "defect": "The harness is folded paper: untextured cream bands bent in three or four hard creases, with free ends that stop in mid-air over the seat pan and no adjusters, stitching, weave or anchor fittings. Seat backs are flat boards with a pillow in a tube loop; the frame under the couches is a stack of plain bars and tubes; a glossy black slab under the left couch (x 310-650, y 450-740) cannot be identified.",
+      "realReference": "soyuz-ms20-descent-module.jpg: grey and blue webbing lying in soft folds with metal adjusters and stitched ends, moulded seat liners in riveted pans. dragon-seats.jpg: sculpted shells with clear attachment points. apollo-cm-trainer.jpg: readable load path on struts.",
+      "likelyCause": "src/render/cockpit/cabin/couches.ts harness() lines 349-395: a 6 mm polyline lifted by a running maximum over the pads gives planar facets; straps start and end at path points without hardware. Couch backs and frames are boxes and tubes from couchPoints().",
+      "fixDirection": "Smooth the strap's height along its path (spline, small sag), add a weave and two stitch rows, end every strap in an adjuster or an anchor plate, lay loose ends flat with a curl; shape the back as a shell with side bolsters; give frame nodes gussets and fittings."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "hatch-mechanism.png (lockers x 0-420, y 0-600; latches at (455,500), (385,740), (975,290), (1170,380), (1525,600); bars x 870-1010, y 340-410 and x 1090-1290, y 500-610; panel x 1150-1600, y 60-420)",
+      "defect": "The hatch area is built of primitives. Lockers are bare boxes hanging at angles with one black block and an outlined label; latches are black slabs with a white bolt and a pin; the guides are flat grey sticks laid on the door; a large blank dark panel in a frame fills the upper right with white slivers at its corners. Next to the Orion hatch it is a diagram of a mechanism.",
+      "realReference": "orion-a2-glover-reflections.jpg: machined latch hooks, rollers, bellcranks, a gearbox, cable ties, striped placards, dozens of fasteners in bright and anodised metal.",
+      "likelyCause": "src/render/cockpit/cabin/apertures.ts (latches, guides: a few small boxes each) and src/render/cockpit/cabin/fixtures.ts locker() line 396 (a box, a handle block, a label).",
+      "fixDirection": "Model one latch properly (hook, roller, striker, bellcrank, bolts) in bright metal and instance it; turn the guides into rails with brackets; give lockers door seams, latches, hinge lines and a rack; identify or remove the blank panel."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "world-reentry-plasma.png (bag x 555-860, y 0-245; strap slab x 555-655, y 25-120; cue card x 30-470, y 400-830), app-leo-seat.png (cue card x 385-615, y 0-350), app-leo-console-right.png (bag x 950-1080, y 140-250)",
+      "defect": "The stowage added this round is hard-edged: the 'soft bag' is a chamfered box with orange straps that are thick rigid slabs, one of which sticks out past the bag into the air; the flight data file is a box; the cue card is a perfectly flat, zero-thickness sheet hovering over a stringer and the blanket with no curl, clip, lanyard or shadow.",
+      "realReference": "soyuz-ms26-pettit-inflight.jpg, soyuz-ms20-descent-module.jpg: bags bulge and wrinkle under orange webbing with metal buckles; documents sit bent under elastic straps; cards hang on rings and curl.",
+      "likelyCause": "src/render/cockpit/cabin/fixtures.ts stowageBag() (line 300, a padded box and box straps) and the checklist (lines 281-293, a 0.6 mm box on a flat frame).",
+      "fixDirection": "Bags as subdivided pillows with strap dents and wrinkles in the normal map, straps as thin webbing with a cam buckle following the bag; bend the card (one-axis curl, a dog-ear), hang it on a ring or under an elastic band and give it a contact shadow."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "world-chase-window-night.png (whole frame)",
+      "defect": "The night chase picture is 81 % black. The lit cabin shows through the window (a lamp, a couch, a strap), but the capsule has no silhouette, there are no stars, limb or airglow, the second window is cut by the frame edge, and bolt heads on the hull stand as isolated specks (x 630-965, y 250-400).",
+      "realReference": "Crew Dragon filmed from the ISS on the night side: lit windows are the brightest thing in frame, their spill grades off over the well and hull, and the hull stays faintly readable against stars and the airglow limb (out/qa/ref/earth-orbit-clouds/limb-panorama.jpg).",
+      "likelyCause": "Exposure is held by the lit window; the hull gets only the cabin's spill on metallic bolt heads; sky and limb are below black at that exposure; the framing puts the window off-centre against empty space.",
+      "fixDirection": "Frame the whole window with the Earth's night limb behind the hull, give the hull a starlight and earthshine floor so its outline reads, and let the spill light the plate round the well, not only the bolts."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "app-leo-seat.png (switch legends y 672-890), world-night-displays-floods.png (MFD 3 x 1395-1500, y 355-495; SAS lamp x 590-630, y 205-230), world-ascent-plume-displays.png (lit lamps x 1195-1300, y 190-215), closeup-mfd.png (bezel keys y 60-100), closeup-fdai.png",
+      "defect": "Reading the cabin from the seat at 1600 x 900: switch nomenclature is 4-5 px high and cannot be read, MFD 3's page is a texture, lit annunciator lamps wash out their own legends, the six bezel keys carry a dash and no legend, the attitude indicator has no error needles.",
+      "realReference": "apollo11-columbia-panel.jpg: lit MASTER ALARM and ABORT legends stay legible, nomenclature is sized for arm's length, FDAI needles in yellow. Orion and Dragon displays: legend-aligned keys.",
+      "likelyCause": "Legend height in console.ts is true to scale for a wide field of view; lamp emission exceeds the legend's contrast range; key caps have no label quad.",
+      "fixDirection": "Raise legend height by 30-40 %, draw the legend as dark ink over the lit lens at 1-2 times display white, add key legends that match the page tabs, build the three error needles."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "world-chase-window-sun.png (pane x 640-1010, y 340-490), every interior window view (orange block: app-leo-console-left.png x 190-245, y 730-850; world-moon-horizon.png x 965-1090, y 178-208)",
+      "defect": "From outside the pane does not mirror the Earth or the sky, so the opening reads as a hole with a dark box behind it; and in every window view a saturated orange block sits on the frame: the shade's pull tab, modelled as a hard brick.",
+      "realReference": "out/qa/ref/spacecraft-hardware/dragon-demo2-approach.jpg: capsule windows mirror sky and Earth. soyuz-ms26-pettit-inflight.jpg: pull tabs are loops of flat webbing.",
+      "likelyCause": "The glass pass's outside branch (shaders.ts line 1575) reads the environment probe at a strength lost against the sunlit hull; src/render/cockpit/cabin/apertures.ts line 196 builds the tab as a 44 x 12 x 8 mm box of 'webbingOrange'.",
+      "fixDirection": "Check the outside Fresnel term against the hull's exposure (4-8 % of the Earth's radiance should show at this angle, more at grazing); make the tab a thin folded loop of webbing in a duller orange."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "world-leo-earth-side-window.png (cloud x 0-200, y 600-850; sea x 560-960, y 0-330; lakes x 60-400, y 60-300)",
+      "defect": "The world in the window has its own faults: contour terraces inside the large cloud, dark worm lines and a combed texture on the sea, lakes as hard-edged navy cut-outs. Other packages' work, in the cockpit's hero frame.",
+      "realReference": "out/qa/ref/earth-orbit-clouds/cloud-gazing-pacific.jpg, out/qa/ref/earth-orbit-ocean/quirimbas-islands.jpg: ragged fractal cloud edges, a textureless sea, soft shorelines.",
+      "likelyCause": "atmosphere-clouds (shading bands), ocean (current filaments at orbital scale), terrain (water mask edges).",
+      "fixDirection": "Pass this frame to the three owners; re-shoot when their rounds land."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "app-leo-seat.png, app-leo-seat-floods.png, app-lunar-surface-seat.png",
+      "defect": "The player's default seat view is rolled and aimed at the console's left end: 45 % of the frame is blank quilt and a cue card, the window is a sliver at the top edge. Switching the floods on changes nothing one can see in the sunlit cabin (mean absolute difference 5.5 of 255, frame means 124.7 and 125.2).",
+      "realReference": "apollo-cm-trainer.jpg, soyuz-ms20-descent-module.jpg: from a couch the main panel and a window fill the view.",
+      "likelyCause": "The eye point's rest orientation in the layout faces along the commander's couch axis; the meter compensates for the added flood light.",
+      "fixDirection": "Aim the rest view at the centre of the main display with a window in the upper third; let the lights command show in the lit lenses' surroundings (see the shadow and pooling finding)."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "app-leo-seat.png (x 0-720, y 300-900), app-leo-console-left.png, world-night-displays-floods.png",
+      "defect": "The quilted bays are regular pillows with machine-even diamonds, creases as sharp as folded card and no wrinkle, sag, lacing, patch or stain; they fill up to half of every seat view, so the wall reads as new upholstery.",
+      "realReference": "soyuz-ms26-pettit-inflight.jpg: white quilted insulation wrinkled, strapped and laced, with uneven pillows; soyuz-ms20-descent-module.jpg: stained, labelled liners.",
+      "likelyCause": "src/render/cockpit/cabin/quilt.ts: one relief function with one pitch and no low-frequency deformation; the crease is shaded per pixel with a hard profile.",
+      "fixDirection": "Add a low-frequency wrinkle and sag field, vary pillow height per cell, soften the crease profile, lace two bays and break others with plain panels, labels and handling stains."
+    }
+  ]
+}

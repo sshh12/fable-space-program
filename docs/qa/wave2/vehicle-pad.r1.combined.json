@@ -1,0 +1,259 @@
+{
+  "package": "vehicle-pad",
+  "round": 1,
+  "date": "2026-11-12",
+  "commit": "3762197 (last commit under src/render/vehicle, 2026-11-11 15:34:42 -0800)",
+  "screenshotsLookedAt": 132,
+  "scores": {
+    "photo": 5,
+    "artifact": 5
+  },
+  "notes": [
+    "Screenshots made current first. Every picture in out/screens/vehicle was older than the last vehicle commit, so the batched run went through the gate once (node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/vehicle --project=functional, 01:00-01:04 on 2026-11-12): 11 passed, 1 skipped (adhoc), 4 failed. All four failures were tests/browser/vehicle/game.spec.ts ('page failed to initialise'): the integration lab's shaders did not compile (WGSL 'unresolved value undefined' in ocean.surface and core.lighting: waterChartNoise(ch, z, vec2f(undefined), ...)), from another package's uncommitted edit of src/render/ocean/fieldModel.ts and shaders/waterBrdf.ts made at 00:59-01:03. Not a vehicle-pad fault. Once that edit had settled, game.spec.ts alone was run through the gate again (01:23-01:31): 4 passed. Nothing was edited, nothing is left running.",
+    "Result: 95 of the 97 pictures in out/screens/vehicle are from 2026-11-12 01:00-01:31. perf-fill-1440p.png and perf-tower-1440p.png are not written by the functional project and stay from 2026-11-11 15:33-15:34 (within a minute before the last commit).",
+    "The game-* views show the working tree as it stood at 01:24-01:31, including other packages' uncommitted changes (terrain: src/terrain/amplification/registry.ts, tileSource.ts and more are modified in the tree). Finding 1 depends on that state and must be re-checked when the terrain lands.",
+    "Looked at: all 97 pictures in out/screens/vehicle (singly or in 2 x 2 sheets at 800 px per picture, plus 40 enlarged crops), out/screens/mission 00, 01, 03, 05, 06, 09, 10, 16, 17 (2560 x 1440, shot 2026-11-11 15:51-16:36), all 26 pictures in out/screens/app (1280 x 720, 2026-11-11 23:10 to 2026-11-12 00:33), and 22 reference photographs from out/qa/ref (spacecraft-hardware, launch-pad, liftoff-ascent, moon-surface). Coordinates below are in px of the named picture.",
+    "What is truly better than at the first critique: no dithered stipple on engines, interstages or frost; gratings are see-through; brushed steel has a fine grain; mast shadows are continuous bands; catenary wires are continuous lines; the launch mount, clamps, rainbirds and stair tower are modelled hardware; the gold film reads as crumpled film close up; the glowing shield has a gradient and seams; the broken leg reads at a glance; the lander stands on its pads on the real lunar surface; the pad at noon and dusk in the integrated game (game-pad-noon-300m.png, game-pad-dusk.png, out/screens/app/pad-chase.png) is competent at a glance.",
+    "Scores: photo 5 (was 4), artifact 5 (was 4). The distance views in the game reach 6; the close views and every state the hardware goes through (frosted, sooted, scorched, floodlit) pull it back: frost cannot be seen, soot and scorch are flat cut-out masks, the capsule lands spotless, foam reads as cloth, every painted surface is showroom clean."
+  ],
+  "previousItemsStillOpen": [
+    "1 complex does not sit on the ground (blocker; still open in another form): nothing floats and the circular disc is gone, but in the integrated game of this tree the terrain now buries the service roads and part of the stone field (finding 1), and the graded field is a single flat tan sheet with a hard edge on the lava and a twelve-sided ring road (finding 9)",
+    "2 capsule reads as a tiled kiln (blocker; down to major): the kiln is gone, the shell is silver taped tiles in the Orion family; what remains is an embossed brick bond with the same diagonal crease on tile after tile, a white mushroom apex cover and black window voids (findings 10, 18)",
+    "3 lander insulation is static (blocker; down to minor): the gold film is right close up; the silver panels are still a high-contrast chrome ripple at 10-15 m and the blank white radiator and the black slab platform stand out (finding 19)",
+    "4 frost is dithered cut-outs (blocker; down to major): no stipple and no polygon patches, but the coat is now invisible on white paint (2 per cent brighter), each marking sits in a rectangular window of thinner frost, and there is no vapour (findings 6, 13)",
+    "5 launch mount dressed with primitives (blocker; closed as such): rainbirds, clamps, stair tower, deck and service mast are modelled hardware; what is left is a toy-clean finish (finding 12)",
+    "6 dither stipple near LOD switches (major; mostly closed): engines and interstages are solid; black dot rows remain on the tower's thin members in out/screens/mission/00-pad-chase.png and the farthest mast breaks into dots at 300 m (finding 14)",
+    "7 stages are smooth tubes (major; open): from 40 m M-1, M-2 and M-3 are still clean single-tone barrels, the M-2 forward dome is a flat cream disc, the ascent-stage radiator is a blank rectangle; the new foam relief reads as cloth (findings 5, 8)",
+    "8 night lighting (major; partly open): lamps are aimed spots and some cast shadows, but the vehicle exposes at 24-160 of 255, the apron pool at 32 or less, there are no beams, no tower or mast shadows across the apron, lamp heads are flat white rectangles (finding 7)",
+    "9 glowing shield is one flat colour (major; down to minor): gradient, hot shoulder and bright seams are there; it reads as a backlit lampshade and no light reaches the back shell (finding 20)",
+    "10 shield and back shell do not look flown (major; open): the scorch is a flat cut-out with a sawtooth edge in the lab and absent on the capsule at splashdown in the game; the charred shield is evenly salted with white dots (findings 3, 4, 20)",
+    "11 engines from aft (major; down to minor): nickel gas side and ringed extensions are in; the pale discs with a ball at each M-1 engine and the diamond-lattice base blanket remain (findings 2, 21)",
+    "12 soot is polished grey metal (major; partly open): matte now, but one flat grey-brown tone with a hard dashed edge (finding 4)",
+    "13 model railway set (major; partly open): earthworks, sphere plates and sleeves are in; no fence, camera towers, vehicles or clutter, spotless apron and trench, mirror-clean pipe runs (finding 9)",
+    "14 shadows of thin structure (major; mostly closed): mast and lattice shadows hold; a ragged, furry shadow lies beside the capsule's grab rails (finding 11)",
+    "16 markings broken by geometry (major; down to minor): stringers no longer chop the markings; every marking still shows as a rectangle under frost (finding 13)",
+    "19 lander hovers in the lab (major; down to minor, lab only): in the vehicle lab each pad's shadow still lies about a pad diameter away from the pad; on the real lunar surface in the game the shadows start at the pads (finding 15)",
+    "20 windows are black voids (minor; open) (finding 18)",
+    "21 top of the stack is clean primitives (minor; partly open): lighter cork and a motor manifold are in; boost cover, petals and cork dome are still spotless smooth solids (finding 17)",
+    "22 tower and crew arm flat (minor; partly open): gussets and per-member grime are in; the grime reads as charcoal smears, there are no bolt groups, signs are flawless boards (finding 16)"
+  ],
+  "findings": [
+    {
+      "id": 1,
+      "lens": "artifact",
+      "severity": "blocker",
+      "view": "out/screens/vehicle/game-site-tank-farm-low.png (lava over the road and the stone pad, x 240-1280, y 500-720; the one surviving piece of road at x 500-700, y 530-570), game-site-aerial.png (the ring road ends at x 375, y 455 and is missing round the north-west to the crawlerway; ragged field edge x 445-540, y 450-470), game-site-crawlerway-low.png (x 360-1110, y 420-670). Compare the same views before the re-shoot (2026-11-11 14:53-14:54): the road was whole.",
+      "defect": "In the integrated game the terrain now lies on top of the site's ground works. The asphalt spur to the tank farm is swallowed by lava rock: only a 2 m piece with its white edge line shows, the pipe-run supports stand in lava, and half of the stone pad is covered. From the air the twelve-sided ring road stops dead on its north-west third, the west edge of the graded field is torn into ragged tongues, and a lava patch lies across the crawlerway shoulder. It reads as broken at a glance from any low camera west of the pad.",
+      "realReference": "out/qa/ref/launch-pad/crawlerway-39a.jpg, lc39b-aerial-1982.jpg, lc39a-aerial.jpg: roads, hardstand and crawlerway are continuous built surfaces raised on fill above the surrounding ground; vegetation and soil stop at a shoulder, nothing natural lies across a paved surface.",
+      "likelyCause": "The roads are a mesh 0.04 to 0.15 m above the pad plane (src/render/vehicle/site/ground.ts: road() cross-section 0 / 0.05 / 0.11 m, called with y + 0.04; stone field at y, stone pads at y - 0.02) and rely on the terrain being flat and below that everywhere inside 330 m. The terrain package now draws its own site ground plan from the structures' footprint parameters (src/render/terrain/sitePlan.ts, feature.ts buildSitePlan) and adds relief outside it; its plan does not know the roads or the field outline, so its surface rises through them. The package's own check cannot see this: tests/browser/vehicle/game.spec.ts:154-177 samples the terrain only at each structure's origin (reported gap 0.000 m, passes).",
+      "fixDirection": "Give the ground one owner. Either hand the road polylines, pad discs and the field outline to the terrain's site plan (flattening and material) and drop the mesh ground, or keep the mesh and lift all ground works onto real fill: field, pads and roads 0.3 to 0.5 m above grade with shoulders that go a metre below it, and have the terrain flatten and suppress relief inside the union of those footprints plus a margin. Extend the game spec: sample terrain height every 5 m along every road polyline and round the field outline and assert the mesh is above it; add a picture test that the road strip in game-site-tank-farm-low is asphalt along its whole length."
+    },
+    {
+      "id": 2,
+      "lens": "artifact",
+      "severity": "major",
+      "view": "out/screens/app/start-trans-earth.png (x 620-760, y 255-485), out/screens/app/leo-chase.png (x 585-695, y 335-440), out/screens/vehicle/stage-m1-aft-space.png (base between the engines), engines-clean.png, stage-m2-aft-space.png",
+      "defect": "Every base close-out is a printed diamond lattice. On the lander's underside the quilt is wrapped in polar coordinates: the diamonds fan out from the engine well and beat into a spirograph of crossing curves, which is what fills the frame at the start of the trans-Earth scenario. In the low-orbit chase view the player looks straight at the M-3 base for the whole parking orbit: a blue checker disc with moire. On M-1 and M-2 the lattice is perfectly regular between black radial ribs.",
+      "realReference": "out/qa/ref/spacecraft-hardware/j2-on-sivb.jpg, rs25-on-core-stage.jpg, orion-a2-sm-engines.jpg: an aft end is thrust structure, ducts, bottles and hand-laid blankets in irregular panels with laced seams and tape; a base heat shield is flat panels with fasteners and scorch. Nothing shows a regular lattice, and no pattern converges on the centre.",
+      "likelyCause": "Material 'blanket-silver' (src/render/vehicle/materials.ts:107: metallic 0.9, roughness 0.42, quilt_n on a 0.8 m repeat) on lathed discs whose UVs are (azimuth, radius): src/render/vehicle/parts/lander.ts:350, :514-515 and :522, src/render/vehicle/parts/stage.ts:364-365. The texture is an exact lattice (tools/vehicle/bake-textures.ts quilt(): abs(sin(pi(u+v)4)) * abs(sin(pi(u-v)4)), 0.2 m diamonds, 512 px) and the metallic lobe turns each pillow into a highlight that aliases at distance.",
+      "fixDirection": "Give flat discs planar UVs (x, z in metres) so no pattern converges. Replace the lattice on base close-outs by blanket panels as geometry: irregular trapezoid panels 0.5 to 1 m with overlapped, laced edges and tape, the crease texture of the film at low amplitude, roughness 0.6 or more so it does not sparkle. Keep the quilt only for cloth (fairing acoustic blankets) and bake its variance into the roughness mips. Check the two game views named here, not only the lab."
+    },
+    {
+      "id": 3,
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/mission/17-splashdown-chase.png (capsule x 1160-1410, y 590-760)",
+      "defect": "After a lunar-return entry the capsule floats spotless: a clean cream cone with bright tape seams, a polished brass-coloured apex ring and white window surrounds. No scorch band at the shoulder, no streaks, no dulled film. The one place a player sees the flown capsule up close shows a factory-new one.",
+      "realReference": "out/qa/ref/spacecraft-hardware/dragon-demo1-postflight.jpg and out/qa/ref/sea-surface-close/artemis2-floating.jpg: the hull is charred dark metallic grey to olive brown with flow streaks running aft, the tile pattern scarred, white paint only where char flaked off round fittings.",
+      "likelyCause": "The back-shell scorch is the instance soot value, taken in src/render/vehicle/vesselFeature.ts:290 and :311-313 from (1 - ablatorFraction) / 0.3 or from tempSkin / maxTemp, and it lives only in the feature's animation state. If the flown entry consumes little ablator, or the entry's part state is first seen after the heat pulse, the value never reaches the coverage threshold of the shader (layerCoverage needs a weight of about 0.3 before anything shows). The lab view sets ablatorFraction 0.58 by hand, so the lab never exercises what the game delivers.",
+      "fixDirection": "Log ablatorFraction and the capsule's soot value at splashdown in the mission run and fix the mapping to what the simulation really produces: drive the scorch from the integrated heat load or the peak shield temperature (carried in the vessel state so it survives a reload), reaching full weight for a nominal lunar return. Add a mission-level picture check: mean luminance of the back shell at splashdown at most half of the pre-entry value."
+    },
+    {
+      "id": 4,
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/vehicle/aft-sooted.png (tank x 511-775, y 150-400; clean counterpart aft-clean.png), capsule-charred-back-shell.png (x 390-840, y 280-550), engines-sooted.png, out/screens/mission/05-stage-sep-2-chase.png (M-2 aft skirt, x 820-860, y 665-750)",
+      "defect": "Soot and scorch are a cut-out. On the tank it is one neutral dark grey (mean 80, 76, 74; only 12 per cent of the sooted zone lies between that grey and the white) that ends upward in hard-edged vertical dashes like torn paper; on the capsule the scorch edge is a row of sharp stalagmites with pure silver between them and the same flat matte grey below (75, 76, 75), in which the tiles vanish; skirt and clamps turn one even dark tone. Nothing is graded, nothing is black or brown, nothing follows the flow.",
+      "realReference": "dragon-demo1-postflight.jpg: soot is graded from near black at the shoulder through brown to a thin tan veil, in long feathered streaks with the surface relief still visible under it. A flown booster is blackest at the engines and fades over many metres, with clean streaks where frost shielded the paint.",
+      "likelyCause": "src/render/core/mesh/meshSystem.ts:150-157 (layerCoverage) turns the weight into coverage through a smoothstep only 0.36 wide over 3 cm x 25 cm cells, so the layer is on or off; :213-215 then mixes one colour at 0.92 and sets roughness 0.92, which hides the normal map's tiles. On the capsule the weight itself is pushed to 0 or 1 (src/render/vehicle/parts/capsule.ts:190-199: sum of sines in azimuth through smoothstep((raw - 0.3) / 0.4)), which draws the spikes.",
+      "fixDirection": "Make soot a density, not a mask: albedo and roughness follow the weight continuously (thin soot = brown veil at 20-40 per cent, thick = near black), with the noise only modulating it by a third; lengthen the streak cells to 1-3 m along the flow and widen the edge to decimetres. Keep the base normal map at full strength under soot. On the capsule drop the threshold and let the weight fall off smoothly from the shoulder, with streaks from a low-frequency noise advected up the cone and heavier deposits lee of thruster fairings, windows and the hatch. File the shader part as a render-core request with these pictures."
+    },
+    {
+      "id": 5,
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/vehicle/closeup-foam.png (whole frame; x 300-760, y 100-420 enlarged), stage-m2-foam-pad.png, pad-stack-tower-15m.png, out/screens/mission/05-stage-sep-2-chase.png",
+      "defect": "The orange foam reads as cloth. Close up it is courses of knotted cord, one every 5 cm, perfectly level and evenly spaced round the whole tank, like terry towelling or burlap. From 20-40 m it is one even orange with a fine regular hatch. No sprayed lumps, no trimmed and sanded areas, no darker aged patches with an outline, no close-outs round the feedline brackets. Thin white slivers stand on the foam beside the feedline (closeup-foam.png x 472, y 322 and x 462, y 362).",
+      "realReference": "out/qa/ref/launch-pad/sls-artemis2-launchday.jpg and sls-pad-blue-sky.jpg: sprayed foam is an irregular orange-peel skin, tone drifting from pale ochre to dark rust in large soft patches and vertical run marks, with smoother machined bands at flanges and hand-trowelled close-outs of a different colour round every bracket.",
+      "likelyCause": "tools/vehicle/bake-textures.ts foam() (lines 187-229): the rib term is a pure sine at 192 rows per 9.6 m tile with only a slight wander, added to a Worley popcorn of one cell size (480 per tile), so every rib is a row of equal beads; the albedo tint follows the rib as well (0.97 + 0.03 rib). Material 'foam-orange' (src/render/vehicle/materials.ts:79) has no second scale and the stage has no close-out geometry. The white slivers are probably bracket or stand-off faces left in paint-white.",
+      "fixDirection": "Drop the sine ribs or cut them to a tenth and break them into passes of finite length; build the skin from two or three scales of irregular popcorn and spray lumps (5 mm, 3 cm, 15 cm) with non-uniform cell density. Put the character into tone: patches 1-5 m across drifting 25 per cent either way, vertical run marks, lighter fresh repairs. Add close-out geometry in 'foam-aged' at brackets, flanges and the frost lines (ramps and trowelled pads). Find and recolour or remove the white slivers."
+    },
+    {
+      "id": 6,
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/vehicle/frost-prelaunch.png against frost-shed.png (tank x 600-700, y 320-600), frost-line-prelaunch.png against frost-line-shed.png, pad-swing-arm-umbilical.png, out/screens/app/pad-chase.png, out/screens/mission/00-pad-chase.png",
+      "defect": "A loaded cryogenic tank cannot be told from an empty one. The frosted barrel measures (185, 185, 187) against (181, 180, 180) without frost: 2 per cent. No matte white coat, no build-up toward the bottom, no bare streaks, no frost line, no vapour rolling down the skin or off the vents. The only visible effect of frost is that the lettering fades to grey, which reads as sun-bleached paint.",
+      "realReference": "out/qa/ref/launch-pad/sls-artemis2-launchday.jpg, apollo15-saturnv-from-ml.jpg, out/qa/ref/liftoff-ascent/apollo4-liftoff.jpg: frost is a visibly whiter, dead-matte band between sharp frost lines, streaked and patchy, and a fuelled vehicle trails white vapour from its vents and down its flanks; ice sheets fall at lift-off.",
+      "likelyCause": "On paint of albedo 0.8 with a clear coat the frost term only moves the albedo to 0.93-0.97 and the roughness to 0.85 (src/render/core/mesh/meshSystem.ts:216-226); under the frontal sun and bright sky of these views that is a few per cent. The weight is a smooth film (src/render/vehicle/parts/stage.ts frostAt / frostFilm, :196), so there is no structure to see either. Vent fog and falling ice are the effects package's and this package still exposes no anchor points (hand-off section 6).",
+      "fixDirection": "Give frost something a camera can see on white: a slightly blue-white matte coat whose difference is in the shading (no clear-coat highlight, strong retro-reflective sparkle at grazing sun, rime thickness in the normal map as vertical runnels and ring build-up at weld lands and stiffeners), a sharp scalloped frost line, bare vertical streaks where sheets slid off, and thicker rime on the bare-metal bands, feedlines and umbilical plates. Expose vent and frost-line anchor points and file the request so the effects package can hang vapour and falling ice on them. Acceptance: the frosted barrel differs from the bare one by at least 10 per cent in roughness-driven highlight width and is recognisable in out/screens/app/pad-chase.png."
+    },
+    {
+      "id": 7,
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/vehicle/site-pad-night.png, site-overview-night.png, game-pad-night.png, lander-lights.png",
+      "defect": "The floodlit pad is dim and flat. The vehicle exposes at 24 to 160 of 255 along its height (never near white), the apron pool at 32 or less, everything else at 0; the frame median is 0. No beams in the air, no glow round the lamps beyond a small blur, no shadows of tower, masts or vehicle across the apron, the mount lit evenly on every face, lamp banks as flat white rectangles, six work lights on the tower. Under the lander the two landing lamps are large white bloom discs, their light is one ellipse with a ruled edge on the ground beside the vehicle, and no leg shadow is visible in it.",
+      "realReference": "out/qa/ref/liftoff-ascent/artemis1-launch-1.jpg, atlasv-oa6-liftoff.jpg, sts97-smoke-steam-night.jpg: at night the vehicle is the brightest surface in the frame and close to clipping, lit from several sides with hard crossing shadows of the service structure on it; xenon beams stand in the haze; the structure carries hundreds of small lights; the ground is lit in overlapping pools with long mast shadows.",
+      "likelyCause": "Six banks at 1.2e7 cd with 24 / 44 degree cones aimed at the vehicle (hand-off round 1 continued) leave the apron at a third and the exposure, metered on a black frame, a stop under for the vehicle. Only the two brightest spots cast shadows (commit 3762197) and site lights are capped at 8 (src/render/vehicle/siteFeature.ts:223-316). There is no volumetric term for local lights. The lander lamps (src/render/vehicle/parts/lander.ts:392-416) have a hard cone edge and a lens luminance (LAMP_LUMINANCE 6e5, materials.ts:140) that blooms to a disc larger than the housing.",
+      "fixDirection": "Expose for the vehicle: raise the banks or ask the core for a night metering that puts the brightest lit albedo-0.8 surface at 0.8 of display white. Light the apron with separate wide, lower spots from the same poles so the ground shows overlapping pools, and let at least the four spots nearest the camera cast shadows. Add cheap beam cones (additive, depth-faded) from each bank and ask the atmosphere package for true scattering. Add many emissive work lights on tower levels, arms, mount and tank farms (emissive only, no light). For the lander: soften the cone edge (inner / outer 60 per cent apart), cut the lens luminance so the bloom stays inside the bowl, and make sure the leg shadows fall inside the pool."
+    },
+    {
+      "id": 8,
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/vehicle/stage-m1-space.png, stage-m2-space.png, stage-m3-space.png, interstage-interior.png, stage-ascent-space.png, staging-00-stack.png to staging-04, closeup-clearcoat-paint.png, les-boost-cover-profile.png, fairing-petal-outside.png, out/screens/app/climb-chase-150m.png",
+      "defect": "The vehicle is showroom clean and its stages are plain barrels. M-1 is a spotless white tube with one lettering column and two black bands; M-2 one even orange cylinder with a single white line; M-3 a cream drum over a black chrome band. No weld-land sheen bands, stencils, access panels with fasteners, handling marks, streaks under fittings or tone difference between panels at any distance. The M-2 forward dome inside the interstage is a flat cream disc with three thin pipes; the ascent-stage radiator is a blank white rectangle.",
+      "realReference": "out/qa/ref/launch-pad/sls-pad-blue-sky.jpg, falcon9-ax1-pad.jpg, out/qa/ref/spacecraft-hardware/apollo15-csm-simbay.jpg, shuttle-tail-rpm.jpg: flight hardware is mottled and dirty white, never uniform: panel-to-panel tone steps, rows of fasteners, patches, stains, stencils by the hundred, systems tunnels and feedlines standing proud, domes that are visibly domed with bottles, lines and insulation.",
+      "likelyCause": "src/render/vehicle/parts/stage.ts builds each barrel as one lathe in one material with vertex masks of 0.1-0.2 for grime; 'paint-white' (materials.ts:46) has no albedo map, so there is no tone variation at all; protuberances are held to 0.16-0.22 m by the package's 5 per cent bounds criterion (hand-off section 6). The dome and the radiator are single surfaces (stage.ts forward dome, src/render/vehicle/parts/lander.ts ascent stage).",
+      "fixDirection": "Add a paint albedo and roughness layer at vehicle scale (per-panel tone steps of 2-4 per cent, weld-land bands with different sheen every ring, vertical streaks below every fitting, scuffs at handling points), driven by the lathe's panel grid so it does not tile. Add small stencils and fastener rows from the decal sheet along seams and doors. Ask for the 5 per cent bounds rule to be relaxed for systems tunnels and feedlines, and give M-2 and M-1 a full-height tunnel with fairings at both ends. Model the dome as a dome with insulation gores, a sump and bottles on struts; give the radiator tubes, fins or louvres with shadow."
+    },
+    {
+      "id": 9,
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/vehicle/game-site-aerial.png, game-pad-noon-300m.png, game-pad-morning-apron.png, site-apron.png, site-tank-farm.png, out/screens/app/pad-chase-nohud.png",
+      "defect": "The complex still reads as a model laid on the landscape. The graded field is one flat tan sheet with a crisp lobed outline on black lava, with no tyre tracks, drainage, colour drift or blend at the edge. The ring road is a perfect twelve-sided polygon that serves nothing; a spur ends under a floodlight pole. The apron and trench are spotless concrete with no blast scorch or rust runs; the pipe runs are mirror-polished and identical along their length; there is no fence, gate, camera tower, vehicle, cable trench, sign or lamp post anywhere.",
+      "realReference": "out/qa/ref/launch-pad/lc39b-aerial-1982.jpg, lc39a-aerial.jpg, crawlerway-39a.jpg, flame-trench-39b.jpg, lc39b-post-artemis1.jpg, lh2-crosscountry-line.jpg: an octagonal perimeter road with a fence and gates, roads that lead to buildings, mown margins and ditches, stained warm-grey concrete (rust and soot fans from the trench), a trench blackened and streaked, pipe lines dulled and labelled on saddles over gravel and grass, vehicles and equipment standing about.",
+      "likelyCause": "src/render/vehicle/site/ground.ts: one 'gravel-fill' surface with a three-term sine outline (line 197) and grime of at most 0.5 in 9-31 m noise; roads from a regular polyline in data/defs/sites/ka-lae-lc1.structures.json (pad.groundworks 'roads'). Apron and trench weathering weights in src/render/vehicle/site/pad.ts are mild and symmetric; 'steel-brushed' pipe runs carry no weathering. Fence, camera towers and vehicles were not started (hand-off).",
+      "fixDirection": "Blend the field edge into the terrain over 5-15 m (ask the terrain to paint a disturbed-soil margin under it), add wheel tracks, drainage swales and tone drift across the field. Replace the dodecagon by a road plan with a purpose: a perimeter road with fence and gate, spurs that end at buildings or hardstands. Burn the trench, deflector and apron with a directional scorch and rust mask along the exhaust path. Dull and band the pipe runs (insulation jackets, flanges, stencils). Add generators for fence, camera towers, light poles along roads, cable-trench covers and a few parked vehicles."
+    },
+    {
+      "id": 10,
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/vehicle/capsule-windows.png (x 560-900, y 380-600), stage-capsule-space.png, capsule-hatch.png, stage-ascent-space.png, staging-08 to staging-10, game-orbit-capsule.png",
+      "defect": "The hero object is now silver, but it is sheet metal pressed into bricks. Tiles about 0.2 m are laid in a running bond like brickwork, each one pillowed with a wide bevelled edge, and tile after tile carries the same straight diagonal crease. From 10 m the cone is a brick pattern in alternating cyan and rose tints. The apex is a white mushroom cap on a chrome tube with no docking hardware. The smooth close-out panels round the windows end in straight edges that cut the tile courses.",
+      "realReference": "out/qa/ref/spacecraft-hardware/orion-a2-selfie.jpg and orion-a2-inflight.jpg: taped tiles are flat, in aligned rows of long trapezoids that follow the cone, with hairline seams, a row of dark fastener plugs and a smooth metallic sheen with one broad highlight; wrinkles are rare and all different. dragon-demo2-approach.jpg: the nose shows a docking ring, latches and hinge hardware.",
+      "likelyCause": "tools/vehicle/bake-textures.ts shell() (from line 590): 8 x 8 tiles per 1.44 m in a half-offset bond, 'tile edges are soft creases' with a lap, and a wrinkle 'across a third of the tiles: a thin straight ridge at the tile's own angle' whose angles differ too little to tell apart; per-tile tint from cyan to rose. Material 'shell-tape' (src/render/vehicle/materials.ts:93) at roughness 0.4 makes every bevel a highlight. The apex cover and tunnel are a lathe (src/render/vehicle/parts/capsule.ts).",
+      "fixDirection": "Flatten the tiles (bevel a tenth of the present slope, joints as hairlines in roughness and occlusion), lay them in aligned columns that follow the cone's generators with tile length 2-3 times the width, cut the tint range by two thirds, and replace the per-tile wrinkle by a few long tape wrinkles that cross several tiles at random. Model the forward end: docking ring with petals or latches, tunnel hatch, parachute bay seams. Let the close-out panels end on course joints on all four sides."
+    },
+    {
+      "id": 11,
+      "lens": "artifact",
+      "severity": "major",
+      "view": "out/screens/vehicle/capsule-hatch.png (x 400-480, y 270-535 and x 525-565, y 335-415; enlarged crop)",
+      "defect": "Beside each grab rail on the hatch lies a ragged black band with a furry, speckled edge, like a bottle brush, wider than the rail itself. It is neither a clean cast shadow nor a soft contact shadow, and it sits in the middle of the capsule's hero close-up.",
+      "realReference": "In orbital sunlight a rail 3 cm off the skin throws a thin, razor-edged black line of even width (out/qa/ref/spacecraft-hardware/orion-a2-inflight.jpg: every fitting has a hard, clean shadow).",
+      "likelyCause": "The rail stands a few centimetres off the skin, below the texel of the vessel's shadow cascade, so its shadow comes from the screen-space contact march (src/render/core/lighting/ao.ts: 10 jittered steps at half resolution, upsampled in deferred.ts) which resolves a thin caster as noise; the picture is taken live after 72 frames, so the temporal filter does not clean it.",
+      "fixDirection": "Package side: give rails, handles and other stand-off fittings a shadow that the cascade can resolve (cast the capsule's fittings from LOD 0 into the finest cascade when the camera is within 10 m, or thicken the caster proxy to 1.5 texels). Core request: contact march at full resolution for pixels within a few metres, more steps with a blue-noise offset that the temporal filter integrates, and a thickness test so a thin caster gives a thin shadow."
+    },
+    {
+      "id": 12,
+      "lens": "photo",
+      "severity": "minor",
+      "view": "out/screens/vehicle/pad-engine-section.png, pad-hold-down-clamp.png (x 540-1000, y 180-720), game-pad-mount-deck.png, pad-mount-deck.png",
+      "defect": "The launch mount is modelled hardware now, in toy finish. Ring main and goose-necks are smooth, even grey like moulded plastic with no weld seams, scale or water staining; the fan heads are flat salmon-pink blocks; the clamps are clean grey weldments whose yellow arms rest beside the skirt rather than visibly gripping a hard point; the rust on the deck is evenly sprinkled blotches with no relation to drains, the exhaust opening or the water system.",
+      "realReference": "out/qa/ref/launch-pad/lc39b-post-artemis1.jpg, out/qa/ref/liftoff-ascent/sts134-ssme-ignition.jpg: mount steel is scorched, flaking and streaked, heaviest round the opening; water pipes are galvanised or oxide-coated with flange bolts, drips and scale; hold-down hardware is massive, dirty and plainly engaged.",
+      "likelyCause": "src/render/vehicle/site/pad.ts:478-511: rainbirds in 'paint-grey' with masks (0.2, 1, 0.08, 0) and heads in 'paint-red' at 0.1 grime; deck rust comes from the 'deck-plate' texture alone (tools/vehicle/bake-textures.ts deck()), not from position; clamp arm geometry in src/render/vehicle/parts/structures.ts stops at the skirt surface.",
+      "fixDirection": "Weather the mount by position: scorch and scale radially from the opening, rust runs below every flange and along drains, water staining under the fan heads. Use galvanised or oxide primer for the water system with weld beads at the mitres. Give each clamp a visible shoe that wraps a hard-point lug on the skirt."
+    },
+    {
+      "id": 13,
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "out/screens/vehicle/frost-prelaunch.png (roundel x 575-635, y 205-270), frost-line-prelaunch.png (LOX x 728-800, y 160-200; placard x 563-765, y 237-277), game-pad-mount-deck.png (LCH4, x 725-770, y 295-335)",
+      "defect": "Under frost every marking sits in its own rectangle: a block of thinner, streakier frost with straight sides exactly the size of the decal quad, ending in ragged vertical streaks at top and bottom. The livery reads as stickers with frost wiped round them.",
+      "realReference": "Frost forms on the metal regardless of the paint colour: a marking under frost loses contrast evenly with the skin round it and no outline appears.",
+      "likelyCause": "src/render/vehicle/parts/stage.ts:196: the frost weight is frostAt(y) * 0.33 inside markedAt(...) and the full film outside, a step at the decal rectangle; the shader's veil and streak terms (meshSystem.ts:216-226) then differ on both sides of the step.",
+      "fixDirection": "Use one frost weight across the skin and reduce only the albedo mix over dark paint inside the shader (frost over a dark colour is translucent: blend toward white by coverage times 0.5), or feather the weight over 0.3 m round each marking with noise so no straight edge survives."
+    },
+    {
+      "id": 14,
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "out/screens/mission/00-pad-chase.png (tower, x 1480-1700, y 250-620 of 2560 x 1440), out/screens/vehicle/game-pad-noon-300m.png (far mast, x 395-425, y 105-375)",
+      "defect": "In the mission's opening frame at 1440p the thin members inside the tower (rails, stair stringers) are rows of black dots along the diagonals; the later 720p captures (out/screens/app/pad-chase.png) are clean. At 300 m the farthest lightning mast dissolves into a speckled column while the nearer ones are crisp.",
+      "realReference": "out/qa/ref/launch-pad/sls-pad-blue-sky.jpg, lc39b-lightning-tower-aerial.jpg: lattice members thin to continuous hairlines with distance and lose contrast; they never bead.",
+      "likelyCause": "Members under a pixel are rasterised without coverage; the mission capture is a single frame, so the temporal filter has nothing to average. The mast picks its LOD by the whole model's projected size (src/render/vehicle/lod.ts, src/render/vehicle/site/tower.ts), so at 400 m it still draws 60-90 mm members.",
+      "fixDirection": "Clamp member width to about 1.2 px in the far LODs and fade their contrast with true coverage, as was done for the wires; give the masts a far LOD of merged, thicker chords. Capture the pad at 2560 x 1440 in the game spec, still and in a slow orbit, to see what the player sees."
+    },
+    {
+      "id": 15,
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "out/screens/vehicle/lander-foot-pad.png (pad x 500-775, y 375-465; its shadow x 885-1000, y 325-360), lander-ground-contact.png, lander-leg-intact.png (x 760-1180, y 330-600), lander-deployed.png",
+      "defect": "In the vehicle lab each foot pad's shadow is a detached ellipse about a pad diameter away from the pad, joined to nothing, and the pads show no dark contact underneath: the lander still looks as if it hovers a hand above the slab. On the real lunar surface in the game (game-moon-lander-foot-pad.png, game-moon-lander-low-sun.png) the shadows start at the pads.",
+      "realReference": "out/qa/ref/moon-surface/lm-falcon-lrv.jpg: the pad sits in the soil, its shadow begins at its rim and the gap under the dish is black.",
+      "likelyCause": "Lab placement or the lab slab: the slab is drawn lower than the height the lab places the pads at (labs/vehicle/labSim.ts), or the vessel's shadow casters take another leg stroke than the drawn legs in the lab's scene. The hand-off's picture check did not catch it.",
+      "fixDirection": "Measure the lowest drawn pad vertex against the slab in the lab and assert it within 2 cm; compare the caster's leg pose with the drawn one. Low priority: the game is right."
+    },
+    {
+      "id": 16,
+      "lens": "photo",
+      "severity": "minor",
+      "view": "out/screens/vehicle/site-crew-arm-from-tower.png (x 780-1280, y 180-720), site-crew-arm.png, site-crew-arm-white-room.png, pad-stack-tower-15m-up.png",
+      "defect": "Tower weathering is charcoal rubbed along each member: dark smears stretched down the length of the columns and braces, the same on every face, with clean joints. Gusset plates have no bolts. The signs are flawless flat boards; the white room is a clean box with an orange door.",
+      "realReference": "out/qa/ref/launch-pad/falcon9-ax1-pad.jpg, lc39b-post-artemis1.jpg: steelwork rusts at joints, bolt groups and plate edges, streaks run down from them, the vehicle side is scorched; signs fade and streak below their fixings.",
+      "likelyCause": "src/render/vehicle/site/tower.ts:465-468 weather(): grime as vertex weights per member, stretched by the long thin triangles; no joint geometry beyond plates; signs are single quads in the decal material.",
+      "fixDirection": "Drive rust from joints: a mask that peaks at gussets, base plates and bolt rows and runs downward; add bolt groups at LOD 0; scorch the vehicle-facing side by height. Give signs a frame, fixings and streaks."
+    },
+    {
+      "id": 17,
+      "lens": "photo",
+      "severity": "minor",
+      "view": "out/screens/vehicle/les-boost-cover-profile.png, les-boost-cover-hatch.png, les-boost-cover-port.png, fairing-petal-outside.png, les.png",
+      "defect": "The top of the stack is smooth solids: a glossy white cone with one framed port, a sand-coloured dome as smooth as putty with two blue-grey strips, a petal with no edge thickness, rails or fasteners.",
+      "realReference": "A boost cover is a faceted composite shell with panel joints, vent holes, pyrotechnic rails and ablative paint with brush marks; the adapter below it is panelled with hinge and separation hardware (see the panel breaks and fastener rows in orion-a2-inflight.jpg).",
+      "likelyCause": "src/render/vehicle/parts/payload.ts: cover and petals are single lathes in 'paint-white'; the dome is 'cork' with a fine granule map only (materials.ts:84).",
+      "fixDirection": "Panel joints, vents, rails and separation fittings as geometry at LOD 0; matte ablative paint on the cover; cork in troweled sheets with joints."
+    },
+    {
+      "id": 18,
+      "lens": "photo",
+      "severity": "minor",
+      "view": "out/screens/vehicle/capsule-windows.png (x 380-590 and x 690-900, y 230-510), capsule-hatch.png, les-boost-cover-port.png, out/screens/mission/17-splashdown-chase.png",
+      "defect": "Windows are flat black voids: no reflection of Earth or sky, no pane depth, no inner panes, no cabin. At splashdown the surrounds read as white stickers with a dark hole.",
+      "realReference": "out/qa/ref/spacecraft-hardware/dragon-demo2-approach.jpg, orion-a2-inflight.jpg: panes mirror the scene with a sharp highlight, show a reveal and a faint interior.",
+      "likelyCause": "Material 'glass' is opaque with albedo 0.012 (src/render/vehicle/materials.ts:113); no inner pane geometry (hand-off: needs transparency).",
+      "fixDirection": "Reveal plus a dark inner pane 5 cm behind the outer one with a faint emissive cabin glow; make sure the reflection probe gives the pane the planet and the sky."
+    },
+    {
+      "id": 19,
+      "lens": "photo",
+      "severity": "minor",
+      "view": "out/screens/vehicle/game-moon-lander-landed.png (ascent stage, x 545-735, y 135-320), stage-ascent-space.png, lander-deployed.png, lander-deployed-sun-40.png",
+      "defect": "The silver blankets are liquid chrome: neighbouring panels are either flat dark grey or bright rippled mirror, with white-to-black swings inside a panel. The radiator is a blank white rectangle with a grey square; the egress platform is a flat black slab.",
+      "realReference": "out/qa/ref/spacecraft-hardware/lm-challenger-orbit.jpg, lm-spider.jpg: aluminised film is finely crinkled, dull silver-grey with small hard glints, and panels differ gently; radiators and platforms are built-up hardware.",
+      "likelyCause": "'mli-silver' (src/render/vehicle/materials.ts:101: metallic 0.92, roughness 0.47, its own normal map at 0.45 slope) has folds decimetres wide and no fine crinkle; the platform was reduced to a plate for shadow cost (commit 3762197).",
+      "fixDirection": "Add a fine crinkle (1-3 cm) at low amplitude and raise roughness to 0.55 so panels converge to a dull sheen with small glints; detail the radiator; give the platform a frame and cut-out grating at LOD 0 with a solid caster."
+    },
+    {
+      "id": 20,
+      "lens": "photo",
+      "severity": "minor",
+      "view": "out/screens/vehicle/capsule-heat-shield-charred.png, capsule-entry-hot-shield.png, capsule-entry-peak-heating.png",
+      "defect": "The charred shield is evenly salted with equal white dots, like stars; the glowing shield is a backlit paper lampshade (even cream-orange blocks with brighter seams) and none of its light reaches the back shell.",
+      "realReference": "out/qa/ref/reentry-chutes/artemis1-heatshield.jpg, apollo4-charred-heatshield.jpg: spall pits are few, of very different sizes and clustered along streaks; char is crazed, with flow streaks from the stagnation point.",
+      "likelyCause": "tools/vehicle/bake-textures.ts shield(): the pit field (line 363) is one cell size at uniform density and is painted pale at full strength (:391); the glow map multiplies an even block albedo; the three rim lights are weak against the sun.",
+      "fixDirection": "Pits at three sizes with density following the heating, most of them dark; fewer, larger pale spalls. Darken block centres in the glow map and raise the rim lights so the shoulder and first tile course glow."
+    },
+    {
+      "id": 21,
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "out/screens/vehicle/engines-clean.png (x 400-880, y 150-440), stage-m1-aft-space.png (x 420-860, y 130-520)",
+      "defect": "Rows of bright and dark specks run along the ring bands near each bell lip, and each outer M-1 engine sits on a flat pale disc with a dark ball on it.",
+      "realReference": "rs25-on-core-stage.jpg, orion-a2-sm-engines.jpg: stiffener bands are continuous; the boot round an engine is a pleated, shaded fabric collar.",
+      "likelyCause": "Fastener or weld-bead geometry under a pixel on the bands (src/render/vehicle/parts/engine.ts); the boot lathe at engine.ts:352-366 is nearly flat and lighter than the base blanket.",
+      "fixDirection": "Carry band fasteners in the normal map beyond 5 m; pleat and darken the boot, cone it up to the engine."
+    }
+  ],
+  "previousItemsClosed": [
+    "17 open steel grating is an opaque slab: see-through cut-out with real bars near the camera (pad-stack-tower-15m-up.png)",
+    "18 brushed steel banding: fine irregular grain (closeup-brushed-steel.png)",
+    "23 clipping and loose ends: pipe runs end in sleeves, separated pieces clear the stack (site-support-building.png, staging-03 to staging-10)",
+    "24 broken leg hard to tell: reads at a glance (lander-leg-broken.png)",
+    "25 acceptance views cannot show the hardware in play: 16 views in the integrated game (game-*.png)"
+  ]
+}

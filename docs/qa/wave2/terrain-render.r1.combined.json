@@ -1,0 +1,274 @@
+{
+  "package": "terrain-render",
+  "round": "r1",
+  "screenshotsCurrent": "No re-run was needed. Every picture written by the functional project in out/screens/terrain (integrated-*, the reviewed views, cracks-*, pops-*, handover-*, jitter-*, smoke) is from 23:40-23:53 on 2026-11-11, after the last commit to src/render/terrain (1e5bceb, 23:38:03); warp-* are from 00:29-00:30. Older than that commit and not rewritable by the functional project: perf-*.png (15:15-15:22, perf project) and out/screens/mission/*.png (15:51-16:36, the 45 minute browser mission). The game views were therefore also judged from the newer out/screens/core-support/pad-1440p-rest.png, pad-1440p-back-*.png and lunar-surface-1440p-rest.png (00:27-00:28). Whether the functional specs passed in that run could not be read from the tree (no report kept); the hand-off says 20 of 20. Method: each PNG was opened; close-range views were cropped and enlarged 2-5x; sequences and far views were also compared on 2x2 sheets; ratios are Rec.709 luminance of sRGB-decoded pixels, measured with a script in the scratch area.",
+  "screenshotsLookedAt": 113,
+  "referencePhotographsLookedAt": 36,
+  "scores": {
+    "photo": 5.5,
+    "artifact": 5.5
+  },
+  "bestViews": [
+    "out/screens/terrain/moon-60000km.png",
+    "out/screens/terrain/moon-terminator-20000km.png",
+    "out/screens/terrain/pops-moon-approach-end.png",
+    "out/screens/terrain/moon-orbit-100km.png",
+    "out/screens/terrain/integrated-apron-eye.png",
+    "out/screens/terrain/integrated-off-apron-eye.png",
+    "out/screens/core-support/pad-1440p-rest.png",
+    "out/screens/core-support/lunar-surface-1440p-rest.png"
+  ],
+  "worstViews": [
+    "out/screens/terrain/integrated-kiawe-eye.png",
+    "out/screens/terrain/integrated-stony-ground.png",
+    "out/screens/terrain/cracks-earth-60000.png",
+    "out/screens/terrain/earth-edge-50km.png",
+    "out/screens/terrain/earth-10km.png",
+    "out/screens/terrain/moon-300m.png",
+    "out/screens/terrain/moon-standing.png",
+    "out/screens/terrain/pops-earth-descent-end.png"
+  ],
+  "previousItemsGone": [
+    "r0 blocker (both lenses), ground at eye height a flat printed plane: gone as a blocker. integrated-off-apron-eye, integrated-grass-eye and pad-off-apron now show tussocks, clinker, scrub and trees that stand up and cast shadows, on gentle relief; what is left of it is in the findings on lava brightness and on the plants seen close.",
+    "r0 photo 3 / artifact 3, apron a perfect disc: gone (rectangular slabs with bays, joints, stains and a gravel shoulder in pad-30m, integrated-30m, cracks-earth-30/8/2).",
+    "r0 photo 7 / artifact 6, straight-edged parallelogram on the shore: gone in integrated-200m and shoreline-200m.",
+    "r0 photo 12, lunar shadows zero signal: gone (rock shadow 0.08-0.14 of the lit regolith in moon-standing and moon-standing-down; reference 0.15-0.33).",
+    "r0 photo 13, gear-tooth crater shadows from orbit: gone in moon-orbit-100km and moon-edge-50km (the edge is soft now).",
+    "r0 rust-red ground: gone (ground R/B 1.12-1.19 in the integrated pad views, was 2.9; concrete to lava 3.1x in integrated-30m).",
+    "r0 artifact 16, pale blocks in the Everglades, and r0 photo 15 / artifact 17, streaked night lights: not visible any more at the scale inspected (earth-leo-lowland-coast, earth-night-side).",
+    "r0 photo 18, stale perf-shore-rocks.png: deleted."
+  ],
+  "previousItemsStillOpen": [
+    "r0 photo 4 / artifact 4 (major), ponds on the slope near the pad: STILL OPEN. earth-1km.png shows the same four smooth-outlined flat grey patches (sRGB 62-101 grey, lighter than the lava around them) at px 1450-1700 x 700-830; in integrated-1km.png they are flat dark navy patches (21,25,35, standard deviation 2-3) with the same vector outlines.",
+    "r0 photo 5 / artifact 7 (major), broken ground 1 km from the pad: STILL OPEN in another form (lava-coloured now, but wax-smooth hummocks with smeared texture, pitch-black blotches and loaf-shaped boulders in integrated-stony-ground.png).",
+    "r0 photo 2 and 8 (major), natural ground brighter than concrete / no dark basalt at the shore: PARTLY OPEN. The cream land strip is gone, but in integrated-200m.png a shallow inlet is a flat near-white sheet (173,170,163; Y 0.42-0.47, the brightness of the apron) and the shore rock is pale grey (79-116 grey), not near black; the lab view rims the coast with ochre and turquoise.",
+    "r0 photo 6 (major), 200 m to 6 km a watercolour: PARTLY OPEN. Plants with shadows exist now, but the view from 120 m to 10 km is a map of flat-toned patches with vector outlines under evenly sprinkled dots (finding below).",
+    "r0 photo 9 / artifact 8 (major), lunar rocks: STILL OPEN in another form (smooth pale loaves with hairline cracks; lit faces 2.0x the regolith, reference 1.3-1.7x; soft smudged shadows).",
+    "r0 photo 10 / artifact 9 (major), lunar slopes under a low sun: STILL OPEN. The ink-blot slope in moon-300m.png (px 1340-1920 x 560-780) and in cracks-moon-300.png is unchanged in kind; dark mottles and single black pixels remain at standing height.",
+    "r0 photo 11 / artifact 10 and 11 (major), lunar surface looks generated between 50 m and 20 km: PARTLY OPEN. Small craters are still black pits of one look, and a quilted ripple shows at 30-100 m (moon-50m.png, cracks-moon-30.png, moon-edge-5km.png).",
+    "r0 artifact 12 (major), crater shadows not crater-shaped: open at close range (moon-standing-down.png, moon-300m.png, moon-2km.png); fixed from orbit.",
+    "r0 photo 14 (minor), ruler-straight lunar horizon: open.",
+    "r0 artifact 15 (minor), LEO nadir softness; r0 artifact 18 (minor), stipple at the terminator from 5,000 km; r0 artifact 19 (minor), white halo round fresh craters at 50 km; r0 artifact 20 (minor), notches where the seabed meets the sheet (handover-with-nearfield.png): open, unchanged.",
+    "r0 artifact 14 (minor), ghosting where hexagon copies cross-fade at one's feet: the hand-off says unchanged; not measured again in this round.",
+    "r0 photo 16 (minor), lunar imagery strips near the coverage edge: request terrain-render-5 is open; no picture in the reviewed folders shows it, so it was not re-judged.",
+    "r0 artifact 21 (minor), evidence gaps: open in a new form (finding below)."
+  ],
+  "findings": [
+    {
+      "lens": "photo",
+      "severity": "blocker",
+      "view": "out/screens/terrain/integrated-kiawe-eye.png (crowns at px 1180-1920 x 300-560, trunks at 1330-1520 x 520-750); out/screens/terrain/kiawe-eye.png; out/screens/terrain/integrated-stony-ground.png (shrub at px 0-340 x 740-930); out/screens/terrain/perf-kiawe.png (older)",
+      "defect": "Seen from a few metres, the new trees and shrubs are placeholder art at a glance. A kiawe crown is a pile of large flat polygons with sharp triangular corners sticking out of the outline and ragged holes cut into them, like torn sheets of dark paper; no leaf, twig or branch is drawn. The trunk is two or three straight, untextured, near-black tapered sticks in a V that end inside the crown. The shrub beside the camera in the stony view is a heap of pale olive flat-shaded shards. From about 50 m on the same trees read well (lower part of integrated-kiawe-eye.png, integrated-kiawe-120m.png).",
+      "realReference": "out/qa/ref/earth-terrain-aerial/ka-lae-south-point.jpg (wind-bent trees at the same place: a fine, feathery crown of thousands of small leaves on a twisted, branching trunk with bark; light comes through the crown as speckle, not as holes in sheets); out/qa/ref/earth-terrain-aerial/punaluu-black-sand.jpg (backlit fronds, every leaflet separate); out/qa/ref/earth-terrain-aerial/kalapana-lava-field.jpg (ferns and shrubs as fine green texture).",
+      "likelyCause": "src/render/terrain/coverMesh.ts builds a crown from 'puffs', flattened octahedra (OCTA, 8 triangles each) of 0.15-0.28 crown radii, so at 5 m a puff is a metre-sized polygon; the fragment shader in src/render/terrain/cover.ts cuts holes with one noise threshold ('if (lumps < mix(-2.0, -0.07, holes)) { discard; }') and has no leaf texture; wood is a flat colour ('albedo = vec3f(0.085, 0.07, 0.055) * (0.8 + 0.4 * n1.a)') on straight prisms without bark, branching or taper detail.",
+      "fixDirection": "Give the finest level real foliage: many small alpha-tested leaf-cluster cards (a baked or generated leaflet atlas with normal and translucency) on a branch skeleton of three to four orders, cards a tenth of the present puff size within about 30 m, cross-faded to the present puffs beyond. Trunks: bent, forked, with a bark normal map and a root flare, lit by sky and bounce so they are not black. Shrubs: the same leaf cards, never flat-shaded solids. Check at 3 m, 10 m and 30 m against ka-lae-south-point.jpg; keep the present meshes as the far levels."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "out/screens/terrain/cracks-earth-60000.png (boundary across the island roughly from px 60,400 through 470,300 to 830,260 of the 1280 x 720 frame); out/screens/terrain/cracks-earth-20000.png (top 60 px of the frame); out/screens/terrain/earth-edge-50km.png (the Big Island against Maui and Kahoolawe at px 30-770 x 90-270); out/screens/terrain/cracks-earth-150000.png for the state before the switch; out/screens/terrain/integrated-leo-hawaii.png (pale southern tip of the island at px 860-900 x 600-650)",
+      "defect": "Two imagery treatments meet on one island. Where the regional mosaic is used the land is desaturated and material-coloured (mauve-grey lava 105,100,95, khaki grass 131,127,105, crisp class outlines); where the body-wide imagery is used it is saturated and soft (green and orange-brown, 156,143,97 on the northern slopes, R/B 1.6 against 1.1-1.25). At 60 km the line between them runs across the middle of the island, and the same land changes colour as the camera climbs from 60 to 150 km (the whole island is saturated green and brown at 150 km). In the 50 km edge view the neighbouring islands are a different picture style from the island below.",
+      "realReference": "out/qa/ref/earth-terrain-aerial/kilauea-ash-plume.jpg and mauna-loa-iss-2.jpg: one continuous tone scale over the island, dark lava (45,69,88 to 87,94,108) grading into dark green slopes; no change of saturation or sharpness along a line. Neither treatment matches: the regional one is too pale, the body-wide one too saturated.",
+      "likelyCause": "src/render/terrain/shaders/surface.ts, fragment shader: 'let calibrated = select(smoothstep(mat.p6.x, mat.p6.x + 1.0, min(s.imageLevel, lv)), 1.0, mat.p6.x < 0.0);' with imageryCalibrationLevel 7 in data/defs/render/earth.surface.json. Saturation 0.7, the 1.6x luminance bound and the material anchor (anchorFar 0.55) apply only where the image tile and the mesh are at level 8 or deeper, i.e. inside the regional coverage and near the camera; everything else shows the raw body-wide imagery. The switch is by tile level, so it is a line on the ground, and it moves with altitude.",
+      "fixDirection": "Make the two sources agree in their low-pass before either is shown: grade the regional mosaic in the bake (or by a per-tile mean in the shader) so that its mean per 1-2 km equals the body-wide imagery's, and apply one grade (saturation, tone) to both. Let the material anchor come in with the pixel footprint only (finer than about 30 m per pixel), not with the tile level, and keep the low-pass colour of the anchored ground equal to the graded imagery so the anchor adds detail colour without shifting the mean. Assert in views.spec: mean colour of a 2 km patch on both sides of the coverage edge and at 20, 60 and 150 km within 10 %."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/terrain/integrated-30m.png (lava Y 0.130 at px 500-1300 x 800-1000, 0.204 at 1100-1700 x 430-520, 0.257 at 1300-1900 x 300-360; apron 0.433); out/screens/terrain/integrated-off-apron-eye.png (ground 126,119,111, Y 0.20; sky 0.55); out/screens/terrain/integrated-kiawe-120m.png (lava 123,119,116 beside grass 141,134,100); out/screens/terrain/pad-30m.png (lava 0.099 near, 0.228 far); out/screens/terrain/earth-edge-5km.png (141,134,124, Y 0.24); out/screens/terrain/earth-edge-50km.png (150,143,133, Y 0.28, with the sea beside it at about 0.10); out/screens/terrain/earth-10km.png; out/screens/terrain/cracks-earth-300.png and cracks-earth-100.png",
+      "defect": "The lava is pale and gets paler with distance. In one frame it doubles in brightness between 30 m and a few hundred metres and reaches 0.6 of the concrete; against the sky it is 0.33-0.37 where the photographs have 0.15. Its hue is a warm mauve-grey (R/B 1.05-1.17), not the cool blue-grey of basalt. From 100 m to 50 km the south of the island is a pale grey and khaki surface that reads as dry mud, ash or a clay model, and from altitude the lava is 2-3 times brighter than the sea instead of about as dark as it. In the game's pad view the same land is dark (out/screens/core-support/pad-1440p-rest.png, 55,52,47), so the exposure there hides it; much of that frame is in cloud shadow.",
+      "realReference": "out/qa/ref/INDEX.md, earth-terrain-aerial: sunlit pahoehoe (55,62,73), Y 0.085, lava to sky 0.15 (kilauea-lava-field.jpg); old pahoehoe (65,70,78) at 0.76 of the vegetation beside it (kalapana-lava-field.jpg); from the ISS fresh flows Y 0.058 (45,69,88) and old flows 0.11 (87,94,108), i.e. as dark as the sea or up to twice it (mauna-loa-iss-2.jpg); near ground in the Ka'u desert Y 0.08 (kau-desert-jaggar.jpg).",
+      "likelyCause": "Several terms in the fragment shader of src/render/terrain/shaders/surface.ts add up; the split between them was not measured. (1) 'let rel = clamp(pow(max(lumI, 1e-4) / mat.p6.z, mat.p6.w), 0.6, 1.3)' and 'bounded = image * min(1.0, 1.6 * lumM / max(lumI, 1e-4))' let the ground be 1.3-1.6 times its material's albedo, and the imagery's share grows with distance (anchorNear 0.9, anchorFar 0.55 in data/defs/render/earth.surface.json). (2) classWeights in public/assets/terrain/earth-volcanic-coast/set.json mix scrub-soil (anchor 0.125, 0.098, 0.066) half and half into sparseScrub and 0.6 into builtUp, which warms and lifts the lava (pahoehoe anchor 0.057). (3) Near the camera the near and mid layers darken the mean through ambient occlusion and relief shadows (p5 0.03-0.05); those fade with distance and nothing replaces them. (4) Gloss 0.6 on pahoehoe crests adds sheen at grazing angles.",
+      "fixDirection": "Hold the mean: for rock materials clamp the ground to at most about 1.1 times the anchor albedo at every distance ('rel' upper bound 1.0, the imagery bound 1.1x), and carry the darkening of the near layers' occlusion and relief shadows into the far field as a mean factor per material so brightness does not rise as detail fades. Draw sparse scrub as pahoehoe with soil only in pockets, not as a blend. Turn the lava hue cool (R/B about 0.8-0.9 when lit by sun and sky). Targets in the integration lab: lava to sky 0.15-0.20 at eye height, lava to concrete at most 0.25 from 30 m to 1 km with less than 20 % drift across the frame, lava no brighter than 1.5x the open sea from 10 km upwards."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/terrain/integrated-stony-ground.png (crops px 0-480 x 700-960, 1160-1800 x 600-920, 1080-1560 x 470-700); out/screens/terrain/earth-stony-ground.png; out/screens/terrain/perf-stony-ground.png (older)",
+      "defect": "The broken ground is still not lava. The hummocks are wax-smooth swells with the texture smeared into streaks down their faces; between them lie pitch-black blotches with fuzzy edges (Y p5 0.005 against a median of 0.177, about 35x); the boulders are smooth tan loaves, paler than the ground they sit on and without its texture. No ropy lobes, no cracks, no clinker rubble, no glassy sheen on crests.",
+      "realReference": "out/qa/ref/earth-terrain-aerial/kilauea-lava-field.jpg (ropy, billowy lobes, sharp cracks, blue-grey sheen on every crest: about 30 % of the pixels above 2.5x the median); out/qa/ref/earth-terrain-aerial/kalapana-lava-field.jpg (dark slabs with ferns in the cracks); sunlit to shaded ground on Earth is a few times, not 35x, because the sky fills the shadows.",
+      "likelyCause": "The forms are the height function's band-limited amplification (terrain core; ridged amplification was not requested, hand-off section 12). The detail layers are projected along the tile normal, so on faces steeper than the tile normal map resolves they stretch (the triplanar planes come in by 'steep = smoothstep(mat.p0.x, mat.p0.y, tn.slopeMag)', slopeLo 0.35, slopeHi 0.9: too late for 20-30 degree faces of metre size). The black blotches are the relief-shadow march and the cascade shadow multiplied, with little sky fill in the hollows. Rocks take rockMaterial 'aa' with rockAlbedoScale 0.85 and smooth vertex normals (src/render/terrain/rocks.ts, rockMesh.ts), so they are paler and smoother than the ground.",
+      "fixDirection": "Ask terrain-core for ridged or billowed amplification with cracks on rock classes (pressure ridges, tumuli, collapsed crusts of 0.3-2 m). Select triplanar planes from the amplified normal of the pixel (derivative of the position), not from the tile slope, so no face stretches. Limit the product of relief shadow and cascade shadow and let the sky term fill hollows (target shaded to lit 0.15-0.3). Rocks: albedo and near-layer texture of the ground's own material, a fractured angular mesh for clinker, sunk and with rubble around the foot. Re-shoot integrated-stony-ground.png and compare with kilauea-lava-field.jpg side by side."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/terrain/integrated-kiawe-120m.png; out/screens/terrain/kiawe-120m.png; out/screens/terrain/cracks-earth-1000.png, cracks-earth-3000.png, cracks-earth-8000.png; out/screens/terrain/earth-10km.png; out/screens/terrain/integrated-10km.png (land under the clouds, px 480-1700 x 780-1080); out/screens/terrain/earth-edge-5km.png; out/screens/core-support/pad-1440p-rest.png (middle distance)",
+      "defect": "Between 100 m and 10 km the land reads as a map with dots on it. Grass is a flat yellow-khaki fill with a hard, vector-like outline on uniform grey lava, like spilt paint; larger areas are flat-toned blocks, some with straight sides; scrub and trees are dark blobs of one size sprinkled at an even density over lava and grass alike. No track, road, wall, gully or fence line, no gradual thinning of grass into lava, no variation of tone inside a patch.",
+      "realReference": "out/qa/ref/earth-terrain-aerial/hilina-pali.jpg (dry grass thinning into lava through scattered tufts, shrubs in drifts along gullies); out/qa/ref/earth-terrain-aerial/helicopter-ocean-oahu.jpg and hawaii-iss-kelly.jpg (vegetation in clumps and lines of many sizes, crisp but irregular boundaries, tone varying inside every patch); out/qa/ref/launch-pad/lc39a-aerial.jpg and crawlerway-39a.jpg (roads, ditches and mown strips around a pad).",
+      "likelyCause": "The material is chosen per land-cover class and thresholded: 'classBlend(...)' in surface.ts with the warped lookup makes a ragged but binary edge, and each class has one anchor albedo (set.json anchorAlbedo: pasture 0.112, 0.100, 0.041), so a class is one flat colour once the imagery's share is bounded. Cover instances follow the same classes with one 'clump' scale per kind (set.json cover.kinds: clumpM 9, 40, 120) and a narrow radius range (scrub 0.5-1.7 m), so density and size are even. Nothing draws linear features.",
+      "fixDirection": "Make class edges gradients of density, not lines: mix the two materials through noise of several scales over 20-80 m and thin the cover across the edge. Vary tone inside a class by the imagery's own luminance variation above 30 m and by a moisture / age noise. Give cover a wider size distribution and clustering at two scales with bare lanes (gullies from the height function's flow direction). Add the site's roads and a few tracks as terrain materials (site plan) beyond the groundworks. Check integrated-kiawe-120m and cracks-earth-3000 against hilina-pali.jpg."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/terrain/integrated-200m.png (inlet at px 640-820 x 570-680; shore rock at 440-660 x 500-600); out/screens/terrain/shoreline-200m.png (the same inlet and the rim along the whole coast, px 560-900 x 480-700)",
+      "defect": "The waterline is wrong in both labs. In the integrated view a shallow inlet is filled by one flat near-white sheet with a cell pattern and a dark one-pixel outline (173,170,163, Y 0.42-0.47: as bright as the concrete apron), the largest bright shape on the coast. In the terrain lab the same inlet is ochre-brown water, and the whole coast is rimmed by a mustard band and then a turquoise band, as over pale sand. The rock along the water is light grey (79-116 grey) in both; there is no black cliff, no black sand, no dark wet shelf.",
+      "realReference": "out/qa/ref/earth-terrain-aerial/kalapana-coast.jpg (basalt cliffs 38,37,43, Y 0.02: 0.13x the sea; deep blue water right up to the rock, surf as broken white lines against it, a dark pitted tide-pool shelf at the water); out/qa/ref/earth-terrain-aerial/punaluu-black-sand.jpg (black sand 65,67,66: 0.42x the sea, 0.19x the foam). Turquoise shallows belong to sand and reef (helicopter-ocean-oahu.jpg), not to this lava coast.",
+      "likelyCause": "The inlet is a shelf within a few decimetres of sea level over tens of metres. The terrain's shallow-water model (round 1: 'lighter towards the shore', waterAlbedo in src/render/terrain/shaders/surface.ts) takes the bottom colour from the imagery there, which is ochre, and brightens it as over sand. The white sheet is most likely the ocean package's shore foam saturating over that near-zero depth, bounded by the hand-over line between terrain-written water and the ocean's near field; that was not traced in the ocean's code. The pale rock is the lava brightness of the finding above.",
+      "fixDirection": "Terrain: where the land cover at the shore is rock, give shallow water a dark bottom (basalt 0.03-0.05, black sand 0.05), so shallows darken to blue-green instead of turning ochre and turquoise; treat ground within about half a metre of sea level as a wet rock shelf with pools (dark, patchy gloss), not as open water. Check what depth the ocean receives over the shelf and file a request to ocean to bound foam coverage on wide shallow shelves (foam as lines at the break, not a sheet). Target in integrated-200m: nothing on the shore above 0.5x the apron except broken foam lines."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "out/screens/terrain/earth-1km.png (px 1450-1700 x 700-830: four patches, sRGB 62-101 grey); out/screens/terrain/integrated-1km.png (the same places: 21,25,35, standard deviation 2-3)",
+      "defect": "Four flat patches with smooth, vector-like outlines still lie on the lava slope 0.5-1 km from the pad: light grey and textureless in the lab view, flat navy in the integrated view. Water where there is land, in sight during the first seconds of the ascent.",
+      "realReference": "There are no ponds on the Ka Lae lava slope. A real pond from that height (out/qa/ref/launch-pad/lc39a-aerial.jpg) lies level in a hollow, reflects the sky with a gradient and has a vegetated or wet margin.",
+      "likelyCause": "surface.ts: 'let levelGround = 1.0 - smoothstep(0.03, 0.07, tn.slopeMag); let threshold = mix(mix(1.01, 0.5, levelGround), mix(1.01, 0.5, influence), coastal); if (s.mask > threshold) { water = true; ...'. The plain there slopes less than 0.03-0.07 (2-4 degrees), so the slope test passes everything; the mask's inland water is WorldCover's, which classes dark lava as water. The outline is the mask's cubic contour.",
+      "fixDirection": "A slope test cannot tell a pond from a gentle plain. In the bake (request to bake-earth): drop inland water bodies whose surface is not level to within about 0.5 m across the body or that have no closed depression in the height data, and bodies under a few thousand square metres outside known lakes. In the shader until then: require a hollow (the height at the pixel below the tile's low-pass height) and a blue or dark imagery hue, else shade as land. Add the assertion the r0 list asked for: no MATERIAL_WATER pixel above sea level in earth-1km."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "out/screens/terrain/integrated-kiawe-eye.png (rectangle of shadow at about px 1680-1775 x 710-795; polygonal shadow lobes at 1180-1340 x 620-720); out/screens/terrain/kiawe-eye.png",
+      "defect": "Tree shadows on the ground near the camera contain a hard-edged rectangular block and large straight-sided lobes: the shadow of a crown is drawn as a few big polygons, not as dappled shade. The crowns themselves show back faces and holes that open and close as one threshold.",
+      "realReference": "out/qa/ref/earth-terrain-aerial/ka-lae-south-point.jpg and punaluu-black-sand.jpg: the shade under a thin crown is dappled, with soft-edged sun flecks; no straight edge anywhere.",
+      "likelyCause": "src/render/terrain/cover.ts drawShadow: an instance casts from its finest mesh only when it spans 48 cascade texels ('const fine = ... 48 * cascade.texelSize'), from the middle one above 12; in the cascade that covers this ground the crown falls under the limit and casts from a coarse mesh of a few large puffs. The shadow pass also does not apply the leaf-gap discard of the G-buffer pass, so every puff casts as a solid polygon.",
+      "fixDirection": "Choose the casting level by the caster's size in the cascade that the receiving pixel will sample near the eye (lower the 48 and 12 texel limits for the first two cascades), run the same alpha test in the shadow pass (or a stochastic one with a wider filter), and soften cover shadows with a penumbra proportional to crown height. Check the ground under the nearest tree in integrated-kiawe-eye: no straight shadow edge longer than about 0.3 m."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/terrain/pops-earth-descent-end.png and pops-earth-descent-delayed-end.png (lower two thirds of the frame); out/screens/terrain/pad-off-apron.png",
+      "defect": "Standing 300 m west of the pad at 2 m, the ground is a blurred print of cobbles: large flat grey ovals among smaller ones, all out of focus, without relief, contact shadows or any stone that stands up; it runs unbroken to a dark band and the hills. It is the r0 blocker's look on a smaller area (the compacted ground and gravel of the site plan).",
+      "realReference": "out/qa/ref/launch-pad/lh2-sphere-39b.jpg (railway ballast in the foreground: every stone sharp, angular, with its own shadow, about 3.5x darker in the gaps); out/qa/ref/launch-pad/crawlerway-39a.jpg (river-rock lanes with tyre and track marks).",
+      "likelyCause": "The gravel path of the site plan in surface.ts ('albedo = mix(albedo, mat.p8.rgb * mix(vec3f(luminance(gr)), gr, 0.6) * worn, gravel)') takes the gravelMaterial 'black-sand' ratio at the near layer's 2 m tiling, magnified at eye height, and the class there (builtUp: scrub-soil 0.6, black-sand 0.4) has no stones of its own. Ground cover and loose rocks are kept off the site plan's beds. No parallax or displacement (hand-off: not done).",
+      "fixDirection": "A gravel / ballast material of its own with a sharp near layer (stones of 2-8 cm at 0.5 m tiling, cavity darkening, relief shadows at full strength) and loose stones as instances on the beds; wheel ruts and track marks from the site plan. Parallax occlusion for the near layer within 10 m on this material would pay most here. Re-shoot pops-earth-descent-end and judge against lh2-sphere-39b.jpg."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/terrain/moon-standing.png (crops px 600-1460 x 720-960, 0-480 x 560-760, 0-520 x 880-1080); out/screens/terrain/moon-standing-down.png (px 1440-1920 x 540-800); out/screens/terrain/jitter-moon.png; out/screens/terrain/pops-moon-descent-end.png; out/screens/mission/10-lunar-touchdown-chase.png; out/screens/core-support/lunar-surface-1440p-rest.png",
+      "defect": "Lunar rocks are smooth pale loaves with a few hairline cracks drawn on them, like eggshells or dried clay; the largest shows a fan of facets at one end. Their sunlit faces are 2.0x the regolith (Y 0.405 against 0.204). Small stones are flat pale lentils lying on the surface, most without a shadow. No rock is angular, pitted or half buried.",
+      "realReference": "out/qa/ref/moon-surface/block-closeup.jpg (angular block, fracture faces, vesicles and pits, soil banked against it and a moat on one side; sunlit face 1.26x the regolith); out/qa/ref/moon-surface/split-boulder.jpg (sunlit faces 1.7x the regolith, rough at every scale); out/qa/ref/moon-surface/soil-bootprints.jpg (stones of every size, each with a hard black shadow).",
+      "likelyCause": "src/render/terrain/rockMesh.ts builds a rock as a sphere of directions pushed to a polyhedron and smoothed (hand-off: 'smooth vertex normals with 30 % of the facet normal'); the coarser two levels are rounded (hand-off section 12, 'Not fixed'). rockAlbedoScale 1.05 in data/defs/render/moon.surface.json on top of a dust film brightens them; the crack is a thin line in the shader, not geometry. Stones under rockMinRadiusM exist only as bumps in the near layer's normal map, which casts no cascade shadow.",
+      "fixDirection": "Angular meshes: start from fractured convex pieces with planar faces kept sharp (creased normals), then pit and chip them; keep that character in the coarser levels. Albedo 1.3-1.7x the regolith only on fresh faces, dust-coloured tops. Bury a third of each rock and raise a soil fillet in the terrain shader round known instances. Draw stones down to 2-3 cm as instances within 10 m so they cast shadows. Compare moon-standing.png with block-closeup.jpg at the same sun angle."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/terrain/moon-standing.png and moon-standing-upsun.png (crops px 0-700 x 780-1080 and 760-1300 x 600-760); out/screens/terrain/moon-standing-down.png (px 900-1700 x 820-1040); out/screens/core-support/lunar-surface-1440p-rest.png (dark smudges at about px 2400-2500 x 1035-1100 and 1800-1860 x 1135-1180)",
+      "defect": "At eye height under the 11 degree sun the regolith is soft, like damp sand: even grey with gentle bumps, dark fuzzy smudges a metre or two across, clusters of single black pixels, and shadows of rocks with a wide blurred edge and a smudge at the foot. The crisp, clumpy, high-contrast soil of the photographs is missing.",
+      "realReference": "out/qa/ref/moon-surface/soil-bootprints.jpg and aldrin-visor.jpg (low sun: every clod and ridge is a lit facet with a hard black sliver behind it; shadows of rocks and of the astronaut have knife edges); out/qa/ref/moon-surface/bootprint.jpg (wide spread at millimetre scale: p10 0.08, p95 0.51 around a mean of 0.29).",
+      "likelyCause": "Relief below the mesh is normal maps plus the four-tap relief-shadow march (hand-off 95bc853), which gives soft dark patches rather than slivers; the regolith BRDF's facet spread (src/render/terrain/shaders/regolith.ts is named by the hand-off) turns unresolved slopes into grey. Rock shadows come from cascades whose texel is of the order of the rock and are filtered through the one-quad shadow filter written into RT4.a (hand-off section 12, item 13), which widens every edge; on an airless body the penumbra of a 0.5 m rock is under 1 cm per metre of shadow.",
+      "fixDirection": "A sharper near field for airless bodies: a contact-shadow march in screen space along the sun for the first metres of each caster, the filter width scaled to the sun's angular size times the distance to the caster (0.0093 rad), and a near cascade of about 2 cm texels within 15 m. For the soil: more steps in the relief march within 5 m when the sun is under 20 degrees, with a hard compare, and a near layer authored as clods (sharp-edged, clumped) rather than smooth bumps. Remove the fuzzy smudges by taking wavelengths over a quarter of the tile out of the mid layer's height."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/terrain/moon-300m.png; out/screens/terrain/moon-2km.png (crop px 520-1100 x 820-1080); out/screens/terrain/moon-50m.png (crops px 960-1680 x 440-720 and 400-1120 x 760-1040); out/screens/terrain/cracks-moon-1000.png, cracks-moon-300.png, cracks-moon-100.png, cracks-moon-30.png; out/screens/terrain/moon-edge-5km.png",
+      "defect": "From 30 m to 3 km the small craters are one thing repeated: a round pit filled with a black disc, with a thin pale rim, at sizes within about a factor of five, spread evenly, like holes punched in putty. Between them the ground is smooth and out of focus. At 30-100 m a regular quilted ripple (orange-peel dimples at a pitch of some tens of pixels) covers the middle of the frame. The large craters at 2 km are soft funnels with swirled streaks.",
+      "realReference": "out/qa/ref/moon-surface/lro-chaplygin-oblique.jpg, mount-hadley.jpg and lm-falcon-lrv.jpg: craters at every size at once, most of them worn, rimless, shallow bowls whose shadow is a soft-ended crescent on the sunward wall and whose far wall is brighter than the plain; only the few fresh ones are deep and sharp, with blocks and bright ejecta. No regular dimpling.",
+      "likelyCause": "tools/terrain/gen_materials.py: the regenerated lunar layers stamp craters whose depth to diameter ratio is high enough that at 11 degrees of sun nearly every floor is in the relief march's shadow, so worn and fresh craters look alike (black discs); the population per layer still spans about a decade. The ripple is the mid or far layer's base relief seen through the hexagon pattern of 'detailPlane' in surface.ts (each lattice cell a different patch of the layer) under a low sun. The soft large craters are the height data at its resolution.",
+      "fixDirection": "Depth to diameter 0.03-0.1 for most stamped craters and 0.2 only for the freshest tenth, parabolic bowls, so that at 11 degrees most show a crescent and a bright far wall, not a black floor; a cumulative size distribution with slope about -2 to -3 across three decades per layer pair; blocks and a brighter ejecta ring on fresh ones. Take the regular component out of the base relief (no band-limited noise with a dominant wavelength) and check moon-50m for any periodic pattern by its spectrum. Sharpen the ground between craters with the mid layer's fine clods."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "out/screens/terrain/moon-edge-50km.png (fresh crater at px 1750-1850 x 780-880, a blurred white ring); out/screens/terrain/cracks-moon-20000.png; out/screens/terrain/cracks-moon-8000.png; out/screens/terrain/moon-edge-5km.png; out/screens/terrain/moon-orbit-100km.png (mare at px 860-1340 x 380-700)",
+      "defect": "Between about 5 and 50 km above the Moon nothing is sharp: the mare is a smooth, slightly blurred sheet with a few soft dimples, crater rims are blurred double lines, the fresh crater is a white smear, and no crater under a few hundred metres exists until the detail layers come in below about 3 km (compare cracks-moon-8000.png with cracks-moon-3000.png, where pits appear all at once). From the 100 km orbit of the mission the plain looks like moulded plastic.",
+      "realReference": "out/qa/ref/moon-surface/earthrise-a17.jpg and earthrise-a8.jpg (the surface from orbit is crisp to the grain of the film, saturated with craters at every size, with hard shadow edges); out/qa/ref/moon-surface/lro-chaplygin-oblique.jpg (filamentary rays and sharp small craters around a fresh crater).",
+      "likelyCause": "At these heights the pixel is finer than the regional imagery and height data but coarser than the far and aerial detail layers resolve well; 'orbitalDetail' in surface.ts (orbitalWavelengthM 480, five octaves, classOrbital amplitudes) adds noise, not craters; the aerial layer (900 m tiling) carries craters of 8-250 m at low relief ('terrainRelief'). Imagery is magnified with bilinear filtering.",
+      "fixDirection": "Carry a crater population through this band: aerial-layer craters of 30-600 m with shadows from the same relief march, kept to at least 50 km (detailFadeDistanceM is 90 km but the layer's contrast is gone long before), and orbital detail built from crater shapes instead of noise. Magnify imagery with a bicubic filter and add back its lost high frequencies from the detail's luminance. Judge cracks-moon-20000 and moon-orbit-100km against earthrise-a17.jpg."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "out/screens/terrain/moon-standing-down.png (shadow blob at px 520-720 x 660-790: straight sides, a square notch and a hairy fringe on its left); out/screens/terrain/moon-300m.png (crater at px 860-980 x 610-700: black shadow with a net of white hairlines inside and a spiked edge); out/screens/terrain/moon-2km.png (black discs with rectangular bites at about px 990-1030 x 890-940; streaked shadow of the funnel crater at 860-1340 x 140-380)",
+      "defect": "Self-shadows of the lunar ground are not shaped like the ground. A hollow a few metres across casts a polygon with straight edges and a notch, fringed with hair-like streaks; a crater's shadow has white hairlines running through it and a saw edge; pit shadows have rectangular bites; a large crater's shaded wall breaks into streaks.",
+      "realReference": "out/qa/ref/moon-surface/aldrin-visor.jpg and soil-bootprints.jpg (a hollow's shadow is a smooth crescent with one crisp edge); out/qa/ref/moon-surface/lro-chaplygin-oblique.jpg (clean boundaries inside bowls).",
+      "likelyCause": "Three shadow sources overlap without agreeing: the cascade map cast from the tile mesh (64 quads a tile: the straight edges and notches are quads and texels), the one-quad shadow filter in RT4.a (hand-off section 2), and the relief-shadow march of the detail layers (four taps: the hair and the streaks are its undersampling along the sun direction). The white hairlines are lit pixels where the march and the cascade disagree by a texel.",
+      "fixDirection": "One authority per scale: forms the height function carries (hollows, craters of a metre and more) shadowed by a march through the tile's height texture along the sun (8-16 steps, the parent tile beyond), replacing the cascade for terrain on terrain; the detail march only for relief the tile does not hold. Jitter the march start per pixel with blue noise and resolve it temporally to remove streaks. Then re-shoot the three views; no straight edge and no lit line inside a shadow."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "out/screens/terrain/moon-300m.png (px 1340-1920 x 560-780); out/screens/terrain/cracks-moon-300.png (lower right); out/screens/terrain/moon-50m.png (px 1400-1920 x 140-300); out/screens/terrain/moon-edge-5km.png (dark smear at px 300-520 x 440-520)",
+      "defect": "A slope turned from the sun is drawn as an ink blot: a ragged dark stain with feathered streaks along the view direction, mottled inside, the pits on it still drawn with bright rims. It is neither a shadow with an edge nor a shaded slope with a gradient.",
+      "realReference": "out/qa/ref/moon-surface/mount-hadley.jpg and lm-falcon-lrv.jpg: a slope near grazing incidence darkens evenly with a smooth gradient and keeps its texture; where it falls into shadow there is one clean edge.",
+      "likelyCause": "Named by the hand-off (section 12, 'Not fixed': between the cascade's soft shadow and the facet terminator). The tile normal map magnified to this distance puts the slope within a degree or two of grazing, so N.L, the regolith facet spread and the relief march each flip in patches; the streaks are the anisotropic footprint of the detail sampling.",
+      "fixDirection": "Shade slopes within a few degrees of grazing from a filtered normal (the tile normal at one or two mips coarser) blended with the facet model's mean, so the term is smooth in space, and take hard shadow only from the height march of the finding above. Fade the detail layers' own shading to their mean where the macro surface is within 3 degrees of the terminator."
+    },
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "out/screens/terrain/integrated-stony-ground.png (streaks down the hummock faces at px 1160-1800 x 600-920; black blotches at 1080-1560 x 470-700); out/screens/terrain/earth-stony-ground.png",
+      "defect": "On the faces of the hummocks the ground texture is stretched into parallel streaks, and the hollows are filled with pure black blotches with fuzzy outlines (Y p5 0.005): stretched texels and crushed shadows side by side.",
+      "realReference": "out/qa/ref/earth-terrain-aerial/kilauea-lava-field.jpg: texture of the same scale on every face of a lobe; shaded hollows keep detail.",
+      "likelyCause": "As in the photo finding on this view: planar projection of the detail layers by the tile normal while the amplified relief is steeper than it, with triplanar blending tied to 'tn.slopeMag' (slopeLo 0.35, slopeHi 0.9); relief shadow times cascade shadow with the ambient term low in the hollows.",
+      "fixDirection": "Blend the triplanar planes by the per-pixel geometric normal; floor the shadowed ground at the sky and bounce irradiance (shaded to lit at least 0.12 on Earth by day)."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "out/screens/terrain/handover-with-nearfield.png (px 150-310 x 118-150 and 925-950 x 125-137 of the 1280 x 720 frame)",
+      "defect": "Rectangular notches with striped walls where the seabed inside the near field meets the far sheet: unchanged since r0.",
+      "realReference": "Not visible in a real view; matters where the seabed shows through clear shallow water.",
+      "likelyCause": "Seabed tiles of different levels at the near-field radius, the gap covered by skirts (r0 artifact 20).",
+      "fixDirection": "Keep the seabed at one level across the near-field radius or widen the morph window there; check a reef flat at 100-300 m in the integration lab."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "out/screens/terrain/moon-terminator-5000km.png (crater floors near the terminator, px 900-1100 x 240-330); out/screens/terrain/moon-edge-50km.png (px 1750-1850 x 780-880)",
+      "defect": "A regular fine stipple on crater floors at the terminator from 5,000 km, and a blurred white halo round the fresh crater at 50 km: both unchanged in kind since r0.",
+      "realReference": "out/qa/ref/moon-surface/lro-chaplygin-oblique.jpg: ejecta are filamentary rays, not a ring; small craters are randomly spaced.",
+      "likelyCause": "Single-texel craters of the baked normal map at the pixel pitch (r0 artifact 18); 'freshAlbedoBoost' 0.14 times a low-resolution freshness channel (r0 artifact 19).",
+      "fixDirection": "Cubic reconstruction of normals in the terminator band; shape the freshness boost with radial streak noise and tie it to crater size."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "out/screens/terrain/moon-standing-down.png (single black pixels across px 1450-1900 x 800-1000 and inside the large rock's shadow); out/screens/terrain/moon-standing-upsun.png (speckled patches at px 100-600 x 800-1000)",
+      "defect": "Single black pixels and peppered patches on sunlit regolith near the camera.",
+      "realReference": "out/qa/ref/moon-surface/bootprint.jpg: dark specks are the shadows of clods, a few pixels each with a shape, not isolated pixels.",
+      "likelyCause": "The relief march and the facet term flipping per pixel on magnified normal texels (r0 artifact 9, partly fixed).",
+      "fixDirection": "Filter the march result over the pixel footprint (two jittered samples) and clamp the facet term's lower bound by the layer's mip variance."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "out/screens/terrain/earth-edge-50km.png (dark navy specks and a dark teal fringe on the Kona coast at px 300-620 x 760-960); out/screens/terrain/jitter-earth.png (white smeared sheen on the lava in the middle distance)",
+      "defect": "A few dark navy specks and a thin dark rim remain along the coast from 50 km; at eye height towards the sun the gloss on lava crests merges into white smears.",
+      "realReference": "out/qa/ref/earth-terrain-aerial/hawaii-iss-kelly.jpg (a pale surf and reef line at the coast, no dark rim); out/qa/ref/earth-terrain-aerial/kilauea-lava-field.jpg (sheen as separate blue-grey highlights on crests).",
+      "likelyCause": "Residue of the fill rule in surface.ts ('fillness', 'allFill > 0.5 && above < 3.0') on dark coastal texels; the 'gloss' 0.6 of pahoehoe without enough normal variance at grazing angles (Toksvig term) so highlights do not break up.",
+      "fixDirection": "Restrict the fill rule to within one mask texel of the cubic coastline; raise roughness with the footprint for glossy crests and tint the highlight by the sky."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "out/screens/terrain/moon-standing.png, moon-standing-upsun.png, cracks-moon-2.png, out/screens/mission/10-lunar-touchdown-chase.png",
+      "defect": "The lunar horizon is still a ruler-straight line with one low swell; no crater rim, block or rise breaks it, and the far field has no features to give scale.",
+      "realReference": "out/qa/ref/moon-surface/lm-falcon-lrv.jpg and mount-hadley.jpg: a hummocky plain, rims and blocks on the skyline, massifs beyond.",
+      "likelyCause": "The height function's smooth mare at this site (r0 photo 14; not changed).",
+      "fixDirection": "A few subdued craters of 20-300 m with rims in the height function within 2 km of the site (request to terrain-core / bake-moon), and far rocks kept as silhouettes on the skyline."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "out/screens/terrain/integrated-leo-hawaii.png (island at px 780-1140 x 400-680); out/screens/terrain/earth-leo-nadir-day.png, earth-leo-nadir-day-2.png, earth-leo-hawaii.png",
+      "defect": "From low orbit the island is a soft brown and green smear about 300 px wide with a pale tip; nothing on it is sharp (no flow edges, no coast line of surf), and the lab's nadir views are soft below about 3 px with lakes as hard dark ovals.",
+      "realReference": "out/qa/ref/earth-terrain-aerial/kilauea-ash-plume.jpg and mauna-loa-iss-2.jpg: dark flows as long tongues with sharp edges, a dark oval caldera, a crisp coast.",
+      "likelyCause": "The body-wide imagery at its resolution with weak orbital detail (classOrbital amplitudes 0.03-0.12 in set.json), plus the imagery step of the finding above for the pale tip.",
+      "fixDirection": "After the imagery sources agree, sharpen magnified imagery (unsharp mask at 1-3x) and drive orbital detail by the tile normal map and land-cover edges."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "out/screens/terrain/cracks-earth-8.png, cracks-earth-2.png, pad-apron-down.png, integrated-apron-eye.png",
+      "defect": "The slab is believable now but too regular: joints are uniform thin dark lines on a 7.5 m grid, every bay has the same soft mottling, stains are a few brown smudges; no crack, patch, spall, paint line or drain, and the kerb meets the gravel without a visible step. In the game the vehicle-pad groundworks cover most of it.",
+      "realReference": "out/qa/ref/launch-pad/flame-trench-39b.jpg and lc39b-post-artemis1.jpg (rust and soot streaks, patched and scoured slabs, 150,126,109 to 179,172,159).",
+      "likelyCause": "The analytic bay pattern of the apron path in surface.ts ('let bay = mat.p7.z; let cell = floor(slabQ / bay);') with one tone per bay and low-frequency stains.",
+      "fixDirection": "Cracks and patches hashed per bay, wider and dirtier joints at intervals (expansion joints), tyre and crawler marks along the site plan's lanes, a lit and shaded kerb face."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "out/screens/terrain/perf-*.png (ten files, 15:15-15:22); out/screens/terrain/warp-5x-low-orbit.png, warp-10x-low-orbit.png, warp-50x-low-orbit.png; out/screens/mission/00-pad-chase.png, 01-liftoff-chase.png, 09-lunar-orbit-chase.png, 11-lunar-liftoff-chase.png; out/screens/terrain/earth-400000km.png, earth-leo-pacific.png, smoke-low-orbit.png",
+      "defect": "Evidence gaps. The perf pictures are older than the last source commit and show an older look (perf-stony-ground.png differs from earth-stony-ground.png). The warp pictures show sea and glare only, so the warp LOD cap over land cannot be judged. The mission pictures predate this round: 00-pad-chase.png still shows the pad surrounded by sea (land not resident at boot), which the newer out/screens/core-support/pad-1440p-rest.png no longer shows; 09 and 11 show no terrain at all. The far Earth views (400,000 km, LEO over the Pacific) and every lunar view exist only in the terrain lab with its black sky stand-in; there is no integrated lunar view and no sequence of saved frames for a descent, so pop evidence rests on the specs' numbers and on the end frames.",
+      "realReference": "n/a",
+      "likelyCause": "The perf project was not re-run after 1e5bceb; the warp ground track lies over water; integrated.spec.ts covers the pad, 10 km, 40 km and LEO over Hawai'i only.",
+      "fixDirection": "Re-run the perf project on the quiet machine; move the warp screenshot over a continent; add integrated views for the lunar site (standing, 300 m, 100 km) and for the Earth from 400,000 km; let pops.spec save four to six frames along each descent so boundaries can be looked at."
+    }
+  ]
+}

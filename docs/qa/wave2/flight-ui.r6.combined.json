@@ -1,0 +1,159 @@
+{
+  "package": "flight-ui",
+  "round": 6,
+  "screenshotsLookedAt": 99,
+  "scores": {
+    "photo": 7.3,
+    "artifact": 7.6
+  },
+  "previousItemsStillOpen": [
+    "CLOSED (r5 photo MAJOR / r5 artifact 'readings that cannot all be true'). The lab pictures now agree with each other. Under chutes the mains are fired ('all fired') at 8.0 m/s and 1.00 g. The translunar ellipse (380 Mm x 190 km) checks by vis-viva: 1 499.5 m/s at 180 Mm, period 10d 00:44, T-Pe = T-Ap + half a period. The altimeter components add up to the ORBIT speed (1 449.3 / 384.8 -> 1 499.5). The entry has Pe -460.2 km. The entry-highg view is 51 s later, at 42.3 km, M 15.8, 44.6 kPa and 11.36 g, which equals q / 400. Mass falls 28.5 t -> 20.3 t -> 6 120 kg. Three residual lab-only slips are carried in finding 12: real-ascent copies the ascent tile numbers, the maneuver burn time is the FakeSim's dv/10, and milestone-soi still shows an Earth orbit.",
+    "CLOSED: altimeter speeds in the navball frame (translunar, lowOrbit, mission 07: +1 414.4 / 10 755.3 under ORBIT 10 847.9).",
+    "CLOSED: bottom cluster. It is one gunmetal housing, with speed and heading on the bezel arc and pitch and roll at 9 and 3 o'clock. Its top is at y 517 of 720 (28 %). The lander's legs show in real-lunarSurface, and the capsule shows above the speed window in real-chutes.",
+    "CLOSED: g tubes moving. The dose is a fixed third tape, and the THR / G LOAD / DOSE captions are identical in pad, ascent, lowOrbit, reentry and real-pad (cropped). The '100 %' that the ROLL window clipped in the app shots taken before b47da09 reads whole in real-pad and real-ascent.",
+    "CLOSED: SAS buttons. The icons are about 16 px at 720p, and the key digit has moved to the key help.",
+    "CLOSED: navball ghost numerals. In attitude-lowOrbit-4k, cropped, every label is whole or absent.",
+    "CLOSED: failed state see-through. The plates stay opaque, the navball dims dark rather than translucent, and the modal offers 'Revert to launch' / 'Restart flight'.",
+    "CLOSED: the ORB-page Earth is lit with cloud (mfd-pages-native-reentry). The MANEUVER pane and the right column are black glass.",
+    "PARTLY OPEN, minor (r5 wording). '—' / 'vertical' / 'no gear', 'release drogues · deploy mains', the key glyph caps and the capped STG rows are done. stage-lockout still shows a 'TARGET Moon' chip beside 'Pick a target body for its launch window' (finding 10).",
+    "PARTLY OPEN, minor (r5 evidence). real-pad and real-chutes were added, every still is paired with its own flight state, retrograde-hold is a real retrograde hold, and the red streak is gone from real-reentry-4k (no red pixels at x 3000-3840, y 700-1100). About 44 of the 60 pictures are still over the lab backdrop. No lab scene exercises the values that break in the real game (findings 1-5, 12).",
+    "THE FOUR REPORTED FAULTS. (a) Title-cased banners: fixed. milestoneTitle reads the scenario titles in data/defs/scenarios/lunar-direct.json, and milestone-soi-720p shows one toast, 'Entered the Moon's sphere of influence'. (b) 'M-2 0 %': fixed in code (a group reads its main engines' supply). The pictures read 62 % / 34 % / 22 % consistently with the tiles and the SYS page. (c) 'RISKY': the HUD row now names the chutes ('DROGUE DEPLOY · UNSAFE' in entry), but the same light still reads RISKY in lunar orbit and SAFE on the Moon on the MFD ENT page (finding 5, major). (d) Mach in vacuum: fixed. There is no Mach or AoA at the Moon or in orbit on the HUD, and the MFD ENT page shows '—'."
+  ],
+  "findings": [
+    {
+      "lens": "artifact",
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\mission\\14-entry-interface-chase.png, 12-moon-soi-exit-chase.png, 13-earth-perigee-targeted-chase.png, 07-tli-complete-chase.png, 08-moon-soi-enter-chase.png, 04-fairing-jettison-chase.png, 17-splashdown-chase.png (2560x1440, taken before this round, but the CSS involved is unchanged or narrower now)",
+      "defect": "Several readouts leave their windows at values the real mission reaches, and no lab view reaches them.\n- Clock row: 'T+ 7d 20:33:51 PHYSICS ×4' puts the ×4 at x ≈375-403 against a panel edge at ≈379 (mission 14, 15, 16, 17). 'T+ 5d 03:23:57 RAILS ×100' runs to x ≈404 (mission 12, 13), and 'RAILS ×50' does the same in mission 08. The warp factor sits outside the panel for the whole mid-mission and entry.\n- Speed window: 'SURFACE 10 835.5 m/s | HDG 333°' runs to x ≈1530 against a border at ≈1491 (mission 14). 'ORBIT 10 847.9 m/s | HDG 091°' touches it (07). So the window breaks during TLI and the lunar-return entry, the two most watched moments.\n- ORBIT apsis rows: the value runs into its countdown, as in 'APOAPSIS 506.8 MmT− 10d 08:11' (12, 13) and 'PERIAPSIS 185.1 kmT− 11d 19:00' (07).\n- RECOVERY rows: 'ENTRY INTERFACE 2 035 km · 318°' / '3 982 km · 345°' run over the panel's right padding and border (04, 12, 13, 14).",
+      "realReference": "KSP / KSP 2: the MET, the warp indicator and the navball speed readout stay inside their frames at every value (speed up to 5 digits, MET in years and days). The brief asks for AAA quality, and readouts printed over a panel border fail that at a glance.",
+      "likelyCause": "src/ui/hud/hudStyles.ts:\n- .hud .bottom .speed is a fixed width (calc(var(--u) * 29)) with contain: size, so 5-digit speeds overflow.\n- .hud .clock .metrow is flex space-between with contain: size and no shrink or second line for the warp word.\n- .hud .orbit .apsis is a grid 'auto 1fr auto' whose gap 2bd0a88 narrowed from 0.8u to 0.5u, so the value column collapses into the countdown at 10-day values.\n- The target rows are nowrap.\nThe lab scenes (labs/flight-ui/main.ts SETUP) never combine a day-count MET with a warp word, a speed of 10 km/s or more, a 10-day countdown, or a long entry-interface row, so expectTextFloor and the no-overflow checks never see these strings.",
+      "fixDirection": "Size every window for its worst-case string, then test it.\n- Speed: give the window room for '88 888.8 m/s | HDG 888°', or drop the decimal at 10 km/s and above ('10 848 m/s').\n- Clock: put the PHYSICS/RAILS word on the UT line, or abbreviate it, so 'T+ 88d 88:88:88' and '×100 000' both fit.\n- Apsis rows: two lines, value right and countdown under it, or shorten the countdown to 'T− 10d 08h'.\n- Target rows: let the value wrap under the label.\n- Lab: add a 'tli' scene (10.85 km/s, ×4 physics at 2d+, 10-day countdowns) and a 'lunarReturnEntry' scene (11 km/s surface).\n- Spec: extend the overflow assertion so every text node's box lies inside its panel's padding box in those scenes."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\app\\start-trans-earth.png (after this round: next tile '8 Capsule separ…'); C:\\dev\\fable-space-game\\out\\screens\\mission\\03-stage-sep-1-chase.png ('3 Tower + fairin…', 'sep. motors · jettison tower · …'); 11-lunar-liftoff-chase.png, 12-moon-soi-exit-chase.png, 13-earth-perigee-targeted-chase.png ('8 Capsule separ…'); 15-drogue-deploy-chase.png ('release drogues · deploy mai…')",
+      "defect": "The next-stage tile cuts its name and its action line with an ellipsis. This tile is the one that tells the player what Space will do next. In the drogue phase it hides the key word: 'release drogues · deploy mai…'. At M-1 separation it drops 'jettison fairing'. From lunar lift-off to entry it reads 'Capsule separ…' for about four game days. The active tile was given a wrap for long names this round, but the next tile, which matters more for a hand-fired stack, was not.",
+      "realReference": "KSP's stage stack never truncates what the next stage holds: each part in the next stage is shown as an icon and its tooltip names it. The brief says 'a stage stack that the player fires by hand', so the player has to read exactly what fires.",
+      "likelyCause": "src/ui/hud/hudStyles.ts lines 291 and 294: .tile .name and .tile .meta are white-space: nowrap/pre with overflow: hidden and text-overflow: ellipsis. The 'Space' key chip (.hint) takes about a quarter of l1. Only .tile.active .l1 gets flex-wrap (lines 306-307).",
+      "fixDirection": "Never ellipsize the next tile.\n- Let its name wrap to two lines, and move the Space chip to the icon column or under the name.\n- Let the action line wrap, or use shorter words ('sep. motors · tower · fairing'), and never cut a chute's name.\n- Add a spec check over every stage of every vehicle def: the next tile's .name and .meta have scrollWidth <= clientWidth at 720p.\n- Optionally say what the stage lights, e.g. 'M-3 separation → Heron descent stage'."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\app\\pad-chase.png (after this round), app\\climb-chase-4km.png, app\\pilot-climb-chase.png; C:\\dev\\fable-space-game\\out\\screens\\mission\\02-max-q-chase.png; compare mission\\03-stage-sep-1-chase.png and flight-ui\\pad-720p.png",
+      "defect": "In the real game, the stage list's delta-v does not add up to the total above it while in air, and the upper stages are understated about threefold.\n- Pad (app pad-chase): the header reads 'Δv 20 200 m/s total', but the rows read Lunar lift-off 1 001 + M-3 sep 1 028 + M-2 sep 2 302 + M-1 sep 4 211 + Launch 3 267 = 11 809 m/s. The same lift-off stage reads 3 408 m/s in space (mission 05).\n- At 4 km (climb-chase-4km): 19 487 against a sum of 14 427.\n- At 15 km (mission 02): 18 844 against 17 855.\n- At 76.9 km (mission 03) the rows add up exactly (16 552), which shows the rows use the current air pressure and the header uses vacuum.\nNothing labels which basis is used. A player planning the mission on the pad reads a lunar ascent stage worth 1 001 m/s. The lab hides the fault: its pad sums to the total (12 332) because its deltaVNow equals deltaVVac.",
+      "realReference": "KSP's delta-v readouts name their situation (ASL / vacuum / current altitude, chosen in the Δv app). The total and the per-stage figures always use the same basis, and an upper stage is quoted in vacuum.",
+      "likelyCause": "src/ui/model.ts describeStages (lines 548 and 560): every row is formatDeltaV(info.deltaVNow), at the current pressure, while the header is readouts.deltaVTotal, which is vacuum.",
+      "fixDirection": "Show vacuum delta-v for every stage that is not burning (they fire high up), and the current-pressure figure only on the active tile, with its basis shown ('Δv 2 392 m/s now · 2 772 vac').\n- Make the header total the sum of the figures shown, or label it 'VAC'.\n- Give labs/flight-ui/flightState.ts a pad state with deltaVNow != deltaVVac.\n- Add a unit test that the rows sum to the header on the same basis."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\mission\\10-lunar-touchdown-chase.png ('ALTITUDE · DATUM · AUTO −1 902 m', landed); C:\\dev\\fable-space-game\\out\\screens\\cockpit\\app-lunar-surface-seat.png and app\\start-lunar-surface-cockpit.png (after this round: the MFD FLT altitude box '−1902 m'); mission\\11-lunar-liftoff-chase.png ('RADAR 54.0 m'); flight-ui\\pad-720p.png ('SEA LEVEL 75.0 m') against flight-ui\\real-pad-720p.png ('RADAR 18.0 m', same T+ 00:00:00); mission\\17-splashdown-chase.png ('−0.1 m'); flight-ui\\mfd-pages-hover-720p.png (FLT 4.0 m beside LND RADAR ALT 0.0 m)",
+      "defect": "The AUTO altimeter reads the datum or sea-level height whenever the vessel is landed, and radar height otherwise.\n- At Tranquility Base the primary altitude reads '−1 902 m' with the vessel standing on its gear. The number looks as if the lander is underground, and it is the one thing a pilot reads at touchdown.\n- When the lander lifts off, the readout jumps to '54.0 m RADAR'.\n- On the pad it jumps from 75.0 m to 18.0 m at clamp release.\n- At splashdown it shows '−0.1 m'.\nThe lab hides all of this, because its Moon terrain is at the datum (landed reads 4.0 m).",
+      "realReference": "KSP's automatic altimeter shows terrain (radar) altitude near the ground, landed included, so a landed craft reads a few metres. Apollo's landing displays read altitude above the surface. An altimeter should not jump at the moment of lift-off.",
+      "likelyCause": "src/ui/model.ts altitudeSource (line 52): `!isLanded(activeVesselOf(s)) && altitudeRadar < RADAR_ALTITUDE_SWITCH ? 'radar' : 'asl'`. 'Landed' forces ASL, so a site off the datum shows its datum height. formatAltitude prints −0.1 m when the vessel floats slightly below sea level.",
+      "fixDirection": "In AUTO, use the radar height whenever it is below 2 km, landed included, clamped at 0 (or measured from the lowest point), and show LANDED / SPLASHED in the altimeter title. Then touchdown reads about 0-4 m and lift-off continues from it.\n- Clamp to 0 m when landed or splashed.\n- Add a lab scene landed at a non-datum site (Tranquility at −1.9 km) and a spec check that landed means |altitude| < 5 m on the HUD and on the MFD FLT and LND pages."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\mfd-pages-720p.png, mfd-pages-native.png, mfd-pages-4k.png (ENT page, 100 km lunar orbit: 'DROGUE DEPLOY RISKY' in amber); flight-ui\\mfd-pages-hover-720p.png and mfd-pages-hover-4k.png (ENT page, landed on the Moon: 'DROGUE DEPLOY SAFE' in green)",
+      "defect": "The chute light is the readout that was reported as wrong ('RISKY'), and it still lights where chutes cannot work. On the airless Moon the ENT page reads drogue deploy RISKY in orbit and SAFE in green on the surface. A green SAFE for a parachute on the Moon is wrong at a glance. In the same composites, Mach, angle of attack and lift vector correctly read '—'.",
+      "realReference": "Parachute deploy indicators (KSP's chute safety colours, Orion's and Apollo's ELS) only mean anything in an atmosphere. Without air there is no 'safe' deployment. The brief asks for correct information.",
+      "likelyCause": "src/ui/model.ts describeChuteEnvelope (line 787) passes Readouts.chuteEnvelope straight through. The sim's chuteEnvelope (src/sim/vessel/modules/parachute.ts, inside()) tests altitude, Mach, speed and q against the envelope with no air check, so q = 0 and Mach 0 on the Moon pass as 'safe'. The lab copies that rule.",
+      "fixDirection": "Apply the rule this round used for Mach: when !inAtmosphere (no atmosphere, or above simTop), describeChuteEnvelope returns a neutral 'NO AIR' / '—' light. File a sim request so chuteEnvelope is null without air. Add a spec check: on the Moon the ENT page's chute row shows '—'."
+    },
+    {
+      "lens": "photo",
+      "severity": "major",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\app\\climb-chase-150m.png ('610.3 km ahead · 2 219 km left'), app\\climb-chase-2km.png ('1 075 km behind · 2 041 km left'), app\\pilot-climb-chase.png ('2 045 km ahead · 1 068 km right' at 2 061 m), app\\climb-map-3km.png ('1 233 km behind · 1 952 km left'), app\\climb-chase-4km.png ('1 335 km behind · 1 884 km left')",
+      "defect": "In the first minute of every launch, the RECOVERY panel's DOWN-RANGE and CROSS-RANGE swing between 'ahead' and 'behind' and between 'left' and 'right', by up to 3 000 km, from one shot to the next. Over the same shots DISTANCE (2 298 km), BEARING (131°) and IMPACT MISS (2 298 km · 314°) do not move. The ground track they resolve against is the heading of 0.1-9 m/s of horizontal drift during a vertical climb (HDG 270°, 272°, 100°, 276° in the same shots).",
+      "realReference": "Range-safety and recovery displays resolve down-range and cross-range against the planned ground track or launch azimuth, never against noise. In vertical flight they show distance and bearing only, as the HUD already does under chutes ('GROUND TRACK vertical').",
+      "likelyCause": "src/ui/model.ts describeLandingTarget (around line 177): `const tracked = s.readouts.horizontalSpeed >= 0.1`. A threshold of 0.1 m/s takes drift and the Earth's rotation as a track.",
+      "fixDirection": "Resolve along the track only above a real horizontal speed (for example 50 m/s, or a flight-path angle below about 75°), with hysteresis. Below that, show 'GROUND TRACK vertical' as the chutes view does, or resolve against the launch azimuth from the LAUNCH panel (099°). Add a unit test: horizontal speed 2 m/s at pitch 89° gives no down-range or cross-range rows."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\translunar-720p.png, milestone-soi-720p.png, real-lunarSurface-720p.png, lunarSurface-4k.png (right column, tile '5 Heron descent stage'); mission\\08-13 and app\\start-trans-earth.png ('7 Heron ascent stage')",
+      "defect": "With a long burn name, the active tile's ACTIVE tag drops to a line of its own, aligned right. The tile grows a third row with an empty hole on the left, so it is taller than every other tile, and the stack jumps in height when the burning stage changes from 'Meridian M-3' to 'Heron descent stage'.",
+      "realReference": "In KSP 2's staging panel, and in shipped HUD lists generally, a state badge has a fixed place, so tiles keep one height.",
+      "likelyCause": "src/ui/hud/hudStyles.ts lines 306-307: .tile.active .l1 { flex-wrap: wrap } puts .act on its own row when the name does not fit beside it.",
+      "fixDirection": "Give ACTIVE a fixed place that never competes with the name: a green badge on the icon, the green edge alone, or the right end of line 2 after the burn time. Then the name can take the full width of line 1 and the tile keeps two lines."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\mfd-pages-720p.png and mfd-pages-native.png (STG 'STACK · 5 STAGES LEFT · 1 BURNING' with SYS 'THRUST 0.0 kN', throttle 0 %; STG footer 'ΔV REMAINING 3 341 m/s' beside ORB 'ΔV REMAINING 120 m/s'; SYS 'TWR 0.00' beside STG 'ACTIVE TWR 1.98'); mfd-pages-native-reentry.png (SYS 'MASS 6 120 kg' against '28.5 t' in the others); app\\start-trans-earth.png and mission stills (warp limiter: 'Limited to ×10 000: Altitude too low…' against 'Limited to ×4: under acceleration…')",
+      "defect": "The MFD wording contradicts itself within one composite.\n- 'BURNING' is printed while the engine is off.\n- Two different quantities are both called 'ΔV REMAINING': 120 m/s is the maneuver node's, 3 341 m/s is the whole vessel's.\n- 'TWR 0.00' and 'TWR 1.98' appear side by side.\n- The mass unit flips from t to kg between states.\n- The warp-limiter reasons mix sentence case and lower case.",
+      "realReference": "KSP labels its fields 'Δv (stage)', 'Δv (total)' and 'Burn time (node)'. Shipped HUDs keep one unit and one name per quantity.",
+      "likelyCause": "src/ui/mfd/mfdPainter.ts: the STG summary header uses 'BURNING' for the active stage, the footer label is 'ΔV REMAINING' for deltaVTotal, the SYS 'TWR' row is the current thrust over weight, and mass is formatted with an automatic unit. The limiter text is the sim's limitedBy, shown as is (src/ui/model.ts describeWarp).",
+      "fixDirection": "- STG header: 'ACTIVE' (or 'BURNING' only while thrust > 0).\n- STG footer: 'ΔV TOTAL', matching SYS.\n- SYS: 'TWR NOW' (or 'THRUST/WT').\n- Mass: always in t, with one decimal below 10 t.\n- Lower-case the first letter of limitedBy after the colon."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\lowOrbit-720p.png, attitude-lowOrbit-720p.png, map-lowOrbit-720p.png, real-lowOrbit-720p.png (MANEUVER 'T− 9:53'); mission\\07-tli-complete-chase.png and 09-lunar-orbit-chase.png ('burning · / T+ 2:56' on two lines, 'BURN TIME 0:00' with 0.5 m/s left); app\\leo-map-node.png ('ΔV REMAINING 1.0 m/s · BURN TIME 0:00')",
+      "defect": "The MANEUVER pane does not say what its countdown counts to. The MFD shows the same 9:53 as 'BURN START', and the HUD gives no label. During a burn the header wraps 'burning · T+ 2:56' onto two lines. Small burns read 'BURN TIME 0:00' while delta-v remains, which looks like a finished burn.",
+      "realReference": "KSP's maneuver readout reads 'Burn time: 0.3 s' and 'Node in T− 9m 53s' with explicit labels.",
+      "likelyCause": "src/ui/hud/hud.ts line 1306: node.start.set(nbv.started ? `burning · ${nbv.startIn}` : nbv.startIn). describeNodeBurn formats the burn time with formatDuration, which has whole-second resolution.",
+      "fixDirection": "Label the countdown ('START T− 9:53'), and during a burn show 'BURNING' as a status word with the elapsed time on the right, kept on one line. Show burn times under 10 s with one decimal ('0.3 s')."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\stage-lockout.png (LAUNCH panel)",
+      "defect": "With no target set, the LAUNCH panel shows a chip reading 'TARGET Moon' in the header and, under it, 'Pick a target body for its launch window'. The chip reads as the current target, and the text says there is none, so the two contradict each other. This is the r5 Moon-chip item, reworded but not resolved.",
+      "realReference": "KSP / KSP 2 show 'No target' and a separate 'Set target' action. A suggestion is drawn as a button, not as a status chip.",
+      "likelyCause": "src/ui/hud/hud.ts launch panel: the suggested-target button uses the same 'TARGET <name>' chip that shows a set target.",
+      "fixDirection": "With no target, show 'NO TARGET' in the header and make the suggestion an explicit button ('Set Moon as target'). Keep the 'TARGET Moon' chip for when the target is set (pad-720p)."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\translunar-720p.png, translunar-4k.png (ball cropped), milestone-soi-720p.png",
+      "defect": "In the translunar coast the flight-path angle is 75° (+1 449.3 / 384.8 m/s). The prograde marker, the most important one, is not visible anywhere on the ball: at 0.97 R it falls under the lip and the sky-pointer triangle at the top centre. Only the radial-in marker shows, so a player cannot point prograde from the ball.",
+      "realReference": "KSP's navball draws markers out to the very edge of the visible hemisphere, and KSP 2 adds edge chevrons for markers just past it.",
+      "likelyCause": "src/ui/navball/navballRenderer.ts / navballShader.ts: markers are culled or covered when their projection passes the lip radius (about 0.95 R), and the sky pointer is drawn above them.",
+      "fixDirection": "Draw markers above the sky pointer. Clamp a marker that lies just behind the lip to the lip with a small chevron. Add a translunar spec check that the prograde marker is drawn."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\real-ascent-720p.png against ascent-720p.png; lowOrbit-720p.png and mfd-pages-720p.png (burn time); milestone-soi-720p.png; reentry-720p.png, entry-highg-720p.png, failed-720p.png (speed frame); pad-720p.png, warp-refused.png, chutes-720p.png, lunarSurface-720p.png, terrain-pending-720p.png (backdrop)",
+      "defect": "Evidence, not a HUD fault: the lab still stages states the real game would not show, and misses the states that break.\n- real-ascent (T+ 1:19, 100 %, 1.66 g) keeps the ascent scene's tile and resources from 9 s earlier at 86 %: Δv 2 392 m/s, 1:42, 62 %, and +350.0 m/s.\n- The maneuver BURN TIME 0:12 for 120 m/s is the FakeSim's dv/10. The active stage's TWR 0.53 in LEO implies about 25 s, and TWR 1.98 at the Moon about 40 s.\n- milestone-soi shows 'Entered the Moon's sphere of influence' 180 Mm from Earth, with the ORBIT panel still titled Earth.\n- reentry, entry-highg and failed show an ORBIT-frame speed next to Mach 24.5. The real game switches to SURFACE (mission 14).\n- About 44 of 60 pictures sit over the grid sea or grey cylinders.\n- No scene reaches the cases behind findings 1-5: a day-count MET while warping, speeds of 10 km/s or more, a long next-stage name, a landing site off the datum, atmosphere-dependent delta-v, or an airless body on the ENT page.",
+      "realReference": "C:\\dev\\fable-space-game\\out\\screens\\mission\\*.png are what a player sees. The lab should reproduce their states.",
+      "likelyCause": "labs/flight-ui/main.ts SETUP and flightState.ts: real-ascent overrides only altitude, MET, throttle and g. src/core/fakes/fakeSim.ts line 743: burnTime is dvMag / 10. The milestone scene reuses translunar. The navball mode is set to orbit in the entry scenes.",
+      "fixDirection": "- Derive the real-* tile numbers from the burn that has elapsed.\n- Compute the FakeSim node burn time from the active stage's acceleration (stageAcceleration).\n- Stage milestone-soi at the SOI boundary (about 320 Mm from Earth) with the Moon as the reference body.\n- Set surface mode in the entry scenes.\n- Add the scenes named in findings 1-5 (tli, trans-Earth with 'Capsule separation' next, Tranquility landed at −1.9 km, a pad with deltaVNow != deltaVVac, lunar orbit and the surface on the ENT page).\n- Use the real-renderer stills as the default backdrop where one exists."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\flight-ui\\keyhelp-4k.png (row 'Key help', cap at x ≈3405-3475, y ≈1625-1675); mfd-pages-native-reentry.png (ORB page, the red '−460.2 km' Pe label over the Earth disc)",
+      "defect": "The backquote glyph on the 'Key help' cap sits on the cap's top border instead of inside it. On the ORB page, the red Pe label is drawn over the cloud-lit Earth disc with no backing plate, so it has low contrast.",
+      "realReference": "Key caps in shipped key-help sheets centre their glyph's ink box. Map labels in KSP sit on a dark plate.",
+      "likelyCause": "The key-help cap centres the font's em box, not the ink box, and a backtick's ink sits at cap height. mfdPainter draws apsis labels as bare text.",
+      "fixDirection": "Shift raised punctuation (` ' ^) down to the cap centre, or draw the glyph as an SVG. Give the ORB apsis labels a dark translucent plate, or place them outside the disc."
+    },
+    {
+      "lens": "artifact",
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\app\\leo-map-node.png (the map's 'AN 0.0° / T− 34:50' label at x ≈465-530, y ≈515-548, against the speed window)",
+      "defect": "In map view, the map package's ascending-node label sits against the left end of the HUD speed window and nearly touches it.",
+      "realReference": "KSP's map labels avoid its HUD instruments.",
+      "likelyCause": "The obstacle list the app passes to the map labeller (src/app/game.ts line 52) still names '.hud .nbchips > div' and not the speed window or housing. This is request flight-ui-7, open.",
+      "fixDirection": "Export the HUD's obstacle rectangles from the HUD (.hud .bottom .speed, the housing, the maneuver pane) through one API and have the app pass them. The fix belongs to the app owner (flight-ui-7)."
+    },
+    {
+      "lens": "photo",
+      "severity": "minor",
+      "view": "C:\\dev\\fable-space-game\\out\\screens\\app\\pad-chase.png ('0.88 g' on the clamps at T+ 00:00:00) against app\\capture-on.png ('1.00 g', same MET and UT)",
+      "defect": "A vessel standing on the pad reads 0.88 g in one shot and 1.00 g in another taken at the same instant. The G LOAD gauge should read 1.00 g while the vessel is held on the ground.",
+      "realReference": "The proper acceleration of a vehicle at rest on the ground is 1 g.",
+      "likelyCause": "The sim's gLoad at scene start, while the vessel is still settling on the clamps (holdOnGround). The HUD shows what the sim reports.",
+      "fixDirection": "Request the sim owner to report gLoad = |g_local| / g0 while landed or clamped. Optionally, have the HUD show 1.00 g whenever isLanded."
+    }
+  ]
+}
