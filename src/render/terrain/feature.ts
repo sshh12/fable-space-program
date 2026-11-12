@@ -133,6 +133,12 @@ export interface TerrainDebug {
   setCoverOptions(o: Partial<CoverOptions>): void;
   /** Cast sun shadows (terrain, rocks and cover) or not: which shadow in a picture is the terrain's own. */
   setShadowCasting(on: boolean): void;
+  /**
+   * The instance of a kind of ground cover (id of the set's `cover.kinds`) nearest to a point of the ground,
+   * among the chunks built around the camera: its place, footprint radius, height, the height of the ground
+   * at its foot above the reference radius, and its distance from the point (m). Null when none is built.
+   */
+  nearestCover(bodyId: string, kindId: string, latDeg: number, lonDeg: number): { latDeg: number; lonDeg: number; radiusM: number; heightM: number; groundM: number; distanceM: number } | null;
   /** The main-thread height authority. */
   provider(): TerrainAuthority;
   /** READY tiles of a level, nearest to a point first (at most `limit`). */
@@ -1216,6 +1222,16 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       },
       setShadowCasting(on: boolean) {
         castEnabled = on;
+      },
+      nearestCover(bodyId: string, kindId: string, latDeg: number, lonDeg: number) {
+        const b = bodies.find((x) => x.id === bodyId);
+        if (!b || !cover) return null;
+        const dir = latLonToDir(latDeg * DEG, lonDeg * DEG);
+        const point = v3.scale(dir, b.def.radius + provider.heightAt(bodyId, dir));
+        const hit = cover.nearest(bodyId, kindId, point);
+        if (!hit) return null;
+        const r = v3.len(hit.position);
+        return { latDeg: Math.asin(hit.position.z / r) / DEG, lonDeg: Math.atan2(hit.position.y, hit.position.x) / DEG, radiusM: hit.radius, heightM: hit.height, groundM: r - b.def.radius, distanceM: hit.distance };
       },
       provider: () => provider,
       bodies: () => bodies.map((b) => b.id),

@@ -97,6 +97,43 @@ test('the ground around the pad with sky, atmosphere and ocean (integration lab)
   }
 });
 
+/**
+ * A kiawe from where a player standing among the trees sees it: three metres outside its crown at eye
+ * height, the sun behind the camera. The tree is the one nearest to the kiawe-eye view's place (the ground
+ * cover says where it stands), so the picture follows the placement instead of hoping for a tree in frame.
+ */
+test('a kiawe from three metres outside its crown (integration lab)', async ({ page }) => {
+  test.setTimeout(15 * 60_000);
+  if (only && !only.includes('kiawe-close')) return;
+  const at = VIEWS.find((v) => v.name === 'kiawe-eye')!;
+  const url = (lat: number, lon: number, alt: number, heading: number, pitch: number): string =>
+    `/labs/integration/?${new URLSearchParams({ features: 'terrain,sky,atmosphere,ocean', scene: 'pad', paused: '1', body: 'earth', lat: String(lat), lon: String(lon), alt: String(alt), heading: String(heading), pitch: String(pitch), sun: '105,31', sunsite: `earth,${PAD.lat},${PAD.lon}`, ev: String(DAYLIGHT_EV) }).toString()}`;
+  await openPage(page, url(at.lat, at.lon, at.alt, at.heading, at.pitch), { timeoutMs: 180_000 });
+  await assertDiscreteGpu(page);
+  await waitIdle(page, 20, 240_000);
+  const tree = await page.evaluate(
+    ([lat, lon]) => {
+      const handles = (window as unknown as { __integration: { handles: Record<string, unknown> } }).__integration.handles;
+      const terrain = Object.values(handles).find((h) => typeof (h as { debug?: { nearestCover?: unknown } } | null)?.debug?.nearestCover === 'function') as
+        | { debug: { nearestCover(b: string, k: string, lat: number, lon: number): { latDeg: number; lonDeg: number; radiusM: number; heightM: number; groundM: number; distanceM: number } | null } }
+        | undefined;
+      return terrain?.debug.nearestCover('earth', 'kiawe', lat, lon) ?? null;
+    },
+    [at.lat, at.lon] as const,
+  );
+  expect(tree, 'a kiawe near the kiawe-eye view').not.toBeNull();
+  // The camera stands towards the sun from the tree (azimuth 105 degrees) and looks back at it, a little upwards.
+  const stand = tree!.radiusM + 3;
+  const az = (105 * Math.PI) / 180;
+  const lat = tree!.latDeg + ((stand * Math.cos(az)) / 6371000) * (180 / Math.PI);
+  const lon = tree!.lonDeg + ((stand * Math.sin(az)) / (6371000 * Math.cos((tree!.latDeg * Math.PI) / 180))) * (180 / Math.PI);
+  await openPage(page, url(lat, lon, tree!.groundM + 1.7, 285, 8), { timeoutMs: 180_000 });
+  await waitIdle(page, 20, 240_000);
+  const s = await saveScreenshot(page, 'terrain', 'integrated-kiawe-close');
+  console.log(`integrated-kiawe-close: a kiawe of radius ${tree!.radiusM.toFixed(1)} m and height ${tree!.heightM.toFixed(1)} m, ${tree!.distanceM.toFixed(0)} m from the kiawe-eye view; camera ${stand.toFixed(1)} m from its trunk; mean luma ${s.stats.meanLuma.toFixed(1)}`);
+  expect(s.stats.fractionNonBlack).toBeGreaterThan(0.9);
+});
+
 test('the ground under the vessel as the game shows it (integration lab, every package)', async ({ page }) => {
   test.setTimeout(20 * 60_000);
   for (const v of GAME_VIEWS) {

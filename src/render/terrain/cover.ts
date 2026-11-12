@@ -890,6 +890,28 @@ export class CoverRenderer {
     return [this.gbuffer, this.shadow, this.leafShadow];
   }
 
+  /**
+   * The instance of a kind that stands nearest to a point of the ground (body-fixed, m), among the chunks
+   * that are built: where it stands, its footprint radius and its height. For specs that want a camera
+   * beside a plant (TerrainDebug.nearestCover).
+   */
+  nearest(bodyId: string, kindId: string, point: Vec3): { position: Vec3; radius: number; height: number; distance: number } | null {
+    const b = this.bodies.find((x) => x.info.id === bodyId);
+    const tier = b?.tiers.find((t) => t.kind.id === kindId);
+    if (!tier) return null;
+    let best: { position: Vec3; radius: number; height: number; distance: number } | null = null;
+    for (const c of tier.chunks.values()) {
+      if (!c.built) continue;
+      for (let i = 0; i < c.count; i++) {
+        const k = i * RECORD_FLOATS;
+        const position = { x: c.origin.x + c.data[k]!, y: c.origin.y + c.data[k + 1]!, z: c.origin.z + c.data[k + 2]! };
+        const distance = v3.dist(position, point);
+        if (!best || distance < best.distance) best = { position, radius: c.data[k + 3]!, height: c.data[k + 8]!, distance };
+      }
+    }
+    return best;
+  }
+
   /** Switches for measurements (TerrainDebug.setCoverOptions): what each part of the cover costs. Never used by the app. */
   private options: CoverOptions = { kinds: null, shadows: true, leafTest: true, shadowFineTexels: SHADOW_FINE_TEXELS, shadowMiddleTexels: SHADOW_MIDDLE_TEXELS, shadowMinTexels: SHADOW_MIN_TEXELS, finePixels: FINE_PIXELS, middlePixels: MIDDLE_PIXELS };
   /** Scratch of drawShadow: the chunks inside the cascade and their tiers. */
