@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 6a2fb76)
 From: vfx
 Owner path: src/render/core/post/exposure.ts (the sunlit bounds on the exterior target; what the histogram holds of local lights)
 Blocking: no
@@ -42,3 +42,25 @@ Must NOT change: night and twilight (there the ground the flame lights IS what t
 night test of the same spec holds it), cabin views, the lower bound of vfx-7, frames of sunlit cloud or snow.
 Workaround in vfx meanwhile: none that is honest (dimming the plume light by day would make the pad under a
 flame darker than it is); the new test is left failing at 0.57 EV rather than loosened.
+
+## Resolution
+Your second form, in `src/render/core/post/exposure.ts` (`meterExposure`, exterior and map views). While the sun
+lights the scene (the `sunVisibility` gate of the other two bounds), the exterior target is computed twice: from
+the whole histogram as before, and from the histogram without the pixels above `SUNLIT_OVER_WHITE` = 1.5 times the
+luminance of a white Lambert surface square to the sun (sunlit white with its share of sky light stays below
+that). The result is the first, but at most `SUNLIT_SPOT_MAX_EV` = 0.25 EV above the second. Emitter hints
+brighter than that luminance are held the same way, both as pixels of the histogram and in what they add to the
+photometric prior. So the apron under the flame and the flame's own hint move a daylight exposure by a quarter
+of a stop at most, in the frame or out of it; a frame full of sunlit cloud or snow keeps the +0.5 EV of vfx-4
+(nothing in it is over the threshold), and sunlit white is protected exactly as before.
+
+Unchanged: night and twilight below the gate (there the flame-lit ground is what the camera exposes for: unit
+test with the same pixels at `sunVisibility` 0 and 0.04), cabin views, the lower bound of vfx-7.
+
+Tests: `tests/unit/render-core/exposureGovernor.test.ts`, "what is brighter than the sun can light anything moves
+a daylight exposure by a quarter stop at most (request vfx-8)" (3 tests: the pad with and without 4 % of
+flame-lit apron and a flame hint: 0.25 EV at most, where the upper bound alone allowed 0.47; snow keeps +0.5;
+night untouched). Docs: RENDER_API section 13 ("Brighter than the sun can make it") and 18. Re-run your
+`tests/browser/vfx/exposure.spec.ts -g "chase camera"`: the sequence should read about 15.3 while the pad is in
+the frame and 15.0 after (the sky within 0.3 EV).
+
