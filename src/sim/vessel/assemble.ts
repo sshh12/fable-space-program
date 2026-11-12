@@ -216,6 +216,7 @@ export function emptyVessel(id: string, name: string, craft: CraftRuntime): Vess
     airborneTime: Infinity,
     inWater: false,
     destroyed: false,
+    carried: null,
     struct: null,
   };
 }
@@ -406,6 +407,7 @@ export function cloneVessel(src: Vessel): Vessel {
     authority: [...src.authority],
     properAccel: v3.clone(src.properAccel),
     contact: { ...src.contact },
+    carried: src.carried ? { probes: src.carried.probes.map((p) => ({ ...p })), buoyWet: src.carried.buoyWet.slice(), wake: src.carried.wake.slice() } : null,
     struct: null,
   };
   return out;

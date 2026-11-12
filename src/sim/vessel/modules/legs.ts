@@ -31,9 +31,9 @@ export function updateLegs(vessel: Vessel, st: Structure, dt: number): void {
     for (let l = 0; l < ref.probes.length; l++) {
       const pr = ref.probes[l]!;
       if (!locked || s.broken[l]) {
-        if (pr.inContact) {
-          pr.inContact = false;
-          pr.hasAnchor = false;
+        if (pr.s.inContact) {
+          pr.s.inContact = false;
+          pr.s.hasAnchor = false;
         }
         s.contact[l] = false;
         s.compression[l] = 0;

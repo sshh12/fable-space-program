@@ -16,7 +16,7 @@ import { linkRoll } from './assemble';
 import { assemblyId, findPartByKey, partKeyOf } from './ids';
 import { computeMassProps } from './massProps';
 import { separateVessel } from './split';
-import { partDir, partPoint } from './structure';
+import { invalidateStructure, partDir, partPoint } from './structure';
 import type { PartRuntime, StepContext, Vessel } from './types';
 
 /** Linear momentum (BCI axes, kg m/s) and angular momentum about the centre of mass (BCI axes, kg m^2/s) of a vessel, with the position and velocity of its centre of mass. */
@@ -164,7 +164,7 @@ export function dockMerge(base: Vessel, other: Vessel, basePort: number, otherPo
   }
 
   // Momentum: the merged body moves with the common centre of mass and turns with w = I^-1 L.
-  base.struct = null;
+  invalidateStructure(base);
   computeMassProps(base);
   const mp = base.mp;
   const w = applyTensor(mp.inv, quat.rotateInv(base.q, total.angular));
@@ -174,7 +174,7 @@ export function dockMerge(base: Vessel, other: Vessel, basePort: number, otherPo
   other.parts = [];
   other.crafts = [];
   other.links = [];
-  other.struct = null;
+  invalidateStructure(other);
 }
 
 /** Join two port parts of ONE vessel by a second link (a ring closes: A to B to C to A). Nothing moves. */

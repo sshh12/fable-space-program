@@ -132,6 +132,30 @@ export interface PartRuntime {
   command: CommandRuntime | null;
 }
 
+/** Contact state of one probe that outlives a step: touching, under water, and the friction anchor in the body-fixed frame. */
+export interface ProbeState {
+  inContact: boolean;
+  wet: boolean;
+  hasAnchor: boolean;
+  ax: number;
+  ay: number;
+  az: number;
+}
+
+/**
+ * State that lives between steps and belongs to the vessel, not to its structure cache (ARCHITECTURE 7.2,
+ * "State is whole"): the contact flags and friction anchors of the probes, which buoyancy spheres are
+ * under water, and the thermal wake factors. Each list is in the order of the structure it belongs to
+ * (`probes`: the structural probes, then the feet of each leg set; `buoyWet`: the buoyancy spheres;
+ * `wake`: the thermal entries) and has exactly that structure's lengths. A change of the part set starts
+ * it afresh (`invalidateStructure`); a copy and the codec carry it.
+ */
+export interface CarriedState {
+  probes: ProbeState[];
+  buoyWet: boolean[];
+  wake: number[];
+}
+
 export interface PendingAction {
   action: TimedStageAction;
   /** Seconds until it executes. */
@@ -258,7 +282,12 @@ export interface Vessel {
   inWater: boolean;
   /** True once every part is gone (the orchestrator removes the vessel). */
   destroyed: boolean;
-  /** Derived, rebuilt after every structural change (a Structure, see structure.ts; null = stale). */
+  /**
+   * Contact, wetness and wake state between steps, in the order of the structure; null until the first
+   * structure of this part set is built (every probe free, every sphere dry, every surface exposed).
+   */
+  carried: CarriedState | null;
+  /** Derived, rebuilt after every structural change (a Structure, see structure.ts; null = stale). Holds no state of its own. */
   struct: unknown;
 }
 

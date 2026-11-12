@@ -8,6 +8,7 @@ import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import type {
+  CarriedState,
   CommandDef,
   EngineDef,
   EngineState,
@@ -19,6 +20,7 @@ import type {
   ParachuteDef,
   ParachuteState,
   PartRuntime,
+  ProbeState,
   RcsDef,
   RcsState,
   Vessel,
@@ -90,14 +92,10 @@ export interface Probe {
   /** Leg foot: owning legs entry and leg index (null for structural probes). */
   legs: LegsRef | null;
   leg: number;
-  inContact: boolean;
-  wet: boolean;
+  /** Within contact range in the current step. */
   near: boolean;
-  hasAnchor: boolean;
-  /** Friction anchor in the body-fixed frame. */
-  ax: number;
-  ay: number;
-  az: number;
+  /** The probe's state between steps (contact flag, wet flag, friction anchor): an entry of `Vessel.carried.probes`. */
+  s: ProbeState;
   /** Cached terrain normal (BCI) for the current step and whether it is valid. */
   nx: number;
   ny: number;
@@ -179,8 +177,6 @@ export interface ThermalRef {
   cz: number;
   radius: number;
   surfaces: ThermalSurf[];
-  /** Wake factor from upstream parts (1 = exposed, 0.03 = shadowed); refreshed periodically. */
-  wake: number;
   shield: { def: HeatShieldDef; state: HeatShieldState; res: number } | null;
   /** True when the part has a flat surface (a blunt face) in addition to an axisymmetric skin. */
   hasFlat: boolean;
@@ -193,12 +189,17 @@ export interface BuoyRef {
   z: number;
   radius: number;
   volume: number;
-  wet: boolean;
   /** Water surface height above the reference radius under this sphere for the current step, m. */
   waterHeight: number;
 }
 
 export interface Structure {
+  /**
+   * The vessel's state between steps that is ordered like this structure (`Vessel.carried`): probe states,
+   * `buoyWet[i]` for `buoy[i]`, and `wake[i]` for `thermal[i]` (1 = exposed, WAKE_FACTOR = in the wake of an
+   * upstream part; refreshed periodically).
+   */
+  carried: CarriedState;
   engines: EngineRef[];
   rcs: RcsRef[];
   chutes: ChuteRef[];
@@ -367,18 +368,44 @@ function newProbe(part: number, pos: Vec3, radius: number, k: number, c: number,
     crashWater,
     legs: null,
     leg: -1,
-    inContact: false,
-    wet: false,
     near: false,
-    hasAnchor: false,
-    ax: 0,
-    ay: 0,
-    az: 0,
+    s: freeProbe(),
     nx: 0,
     ny: 0,
     nz: 0,
     hasNormal: false,
   };
+}
+
+const freeProbe = (): ProbeState => ({ inContact: false, wet: false, hasAnchor: false, ax: 0, ay: 0, az: 0 });
+
+/**
+ * Mark the structure cache stale after a change of the part set (a split, a weld, a dock, a destroyed
+ * part) and start the state that is ordered like it afresh: the next structure begins with every probe
+ * free, every sphere dry and every surface exposed.
+ */
+export function invalidateStructure(vessel: Vessel): void {
+  vessel.struct = null;
+  vessel.carried = null;
+}
+
+/**
+ * Tie a new structure to the vessel's carried state: kept when it has this structure's lengths (a copy or
+ * a decoded vessel whose cache is being rebuilt), started afresh otherwise.
+ */
+function linkCarried(vessel: Vessel, s: Structure): void {
+  let feet = 0;
+  for (const lg of s.legs) feet += lg.probes.length;
+  let c = vessel.carried;
+  if (c === null || c.probes.length !== s.probes.length + feet || c.buoyWet.length !== s.buoy.length || c.wake.length !== s.thermal.length) {
+    c = { probes: [], buoyWet: s.buoy.map(() => false), wake: s.thermal.map(() => 1) };
+    for (let i = 0; i < s.probes.length + feet; i++) c.probes.push(freeProbe());
+    vessel.carried = c;
+  }
+  let k = 0;
+  for (const pr of s.probes) pr.s = c.probes[k++]!;
+  for (const lg of s.legs) for (const pr of lg.probes) pr.s = c.probes[k++]!;
+  s.carried = c;
 }
 
 export function rebuildStructure(vessel: Vessel): Structure {
@@ -387,6 +414,7 @@ export function rebuildStructure(vessel: Vessel): Structure {
   for (const p of parts) p.shielded = isShieldedBy(parts, p);
 
   const s: Structure = {
+    carried: { probes: [], buoyWet: [], wake: [] },
     engines: [],
     rcs: [],
     chutes: [],
@@ -546,7 +574,7 @@ export function rebuildStructure(vessel: Vessel): Structure {
     for (const bs of p.panel ? [] : (def.buoyancy ?? [])) {
       const pos = partPoint(p, bs.pos);
       const volume = (4 / 3) * Math.PI * bs.radius ** 3;
-      s.buoy.push({ part: i, x: pos.x, y: pos.y, z: pos.z, radius: bs.radius, volume, wet: false, waterHeight: -Infinity });
+      s.buoy.push({ part: i, x: pos.x, y: pos.y, z: pos.z, radius: bs.radius, volume, waterHeight: -Infinity });
       s.buoyVolume += volume;
     }
 
@@ -589,7 +617,7 @@ export function rebuildStructure(vessel: Vessel): Structure {
         shield = { def: md, state: ms, res };
       }
     }
-    s.thermal.push({ part: i, cx: centre.x, cy: centre.y, cz: centre.z, radius: b.radius, surfaces, wake: 1, shield, hasFlat });
+    s.thermal.push({ part: i, cx: centre.x, cy: centre.y, cz: centre.z, radius: b.radius, surfaces, shield, hasFlat });
   }
   if (maxRate > 0) s.maxRate = maxRate;
   if (!Number.isFinite(s.baseY)) {
@@ -694,6 +722,7 @@ export function rebuildStructure(vessel: Vessel): Structure {
   if (s.cdAAverage === 0) s.cdAAverage = Math.PI * s.boundingRadius * s.boundingRadius * 0.3;
   if (!Number.isFinite(s.lumpHeatCap)) s.lumpHeatCap = 6000;
   if (!Number.isFinite(s.lumpMaxTemp)) s.lumpMaxTemp = 800;
+  linkCarried(vessel, s);
   vessel.struct = s;
   return s;
 }

@@ -12,7 +12,7 @@ import { v3 } from '@/core/math/vec3';
 import { cloneCraft, cloneVessel, createPart, defaultControlPart, emptyVessel } from './assemble';
 import { ASSEMBLY_ID_PREFIX, craftRootInstanceId, singleCraftVesselId } from './ids';
 import { computeMassProps, partMass } from './massProps';
-import { panelCentroid, panelRadial } from './structure';
+import { invalidateStructure, panelCentroid, panelRadial } from './structure';
 import type { CraftRuntime, DockLink, PartRuntime, PendingAction, StepContext, Vessel } from './types';
 
 /** The panel kick acts this fraction of the panel height above its centroid (gives the outward hinge spin). */
@@ -82,7 +82,7 @@ function hasCrew(parts: PartRuntime[]): boolean {
 }
 
 function resetTransient(v: Vessel): void {
-  v.struct = null;
+  invalidateStructure(v);
   v.contact = { anyContact: false, maxForce: 0, waterSubmersion: 0 };
   v.groundClearance = Infinity;
   v.restTimer = 0;
@@ -191,7 +191,7 @@ export function separateVessel(vessel: Vessel, cut: readonly number[], removed: 
       if (parts[i]!.parent < 0) continue;
       parts[i]!.parent = -1;
       parts[i]!.stress = 0;
-      vessel.struct = null;
+      invalidateStructure(vessel);
     }
     return [];
   }
@@ -334,7 +334,7 @@ export function mergeVessels(base: Vessel, other: Vessel): void {
     p.craft = 0;
     base.parts.push(p);
   }
-  base.struct = null;
+  invalidateStructure(base);
   computeMassProps(base);
 }
 

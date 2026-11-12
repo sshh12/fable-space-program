@@ -18,7 +18,7 @@ import { undock } from './dock';
 import { eventPartId, findCraftPart } from './ids';
 import { computeMassProps, vesselMass } from './massProps';
 import { actionParts, applyImpulse, jettisonPanels, mergeVessels, separateVessel } from './split';
-import { partPoint, structureOf } from './structure';
+import { invalidateStructure, partPoint, structureOf } from './structure';
 import { STAGE_LOCKOUT, type CraftRuntime, type PartRuntime, type StepContext, type Vessel } from './types';
 
 export interface StagingResult {
@@ -206,7 +206,7 @@ export function executeAction(vessel: Vessel, craft: CraftRuntime, action: Stage
         vessel.anchor = null;
         vessel.surface = 'none';
       }
-      vessel.struct = null;
+      invalidateStructure(vessel);
       computeMassProps(vessel);
       ctx.events.push({ type: 'clampsReleased', ut: ctx.ut, vesselId: vessel.id });
       break;

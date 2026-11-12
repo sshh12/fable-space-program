@@ -2,7 +2,7 @@
  * Vessel dynamics package: everything the world orchestrator (src/sim/world) integrates.
  * Call order and semantics are documented in docs/handoff/sim-vessel.md.
  */
-export type { HoldKind, MassProps, PartRuntime, PendingAction, SasState, StepContext, StepResult, SurfaceState, Vessel, AeroRuntime, CraftRuntime, DockLink, CommandRuntime } from './types';
+export type { HoldKind, MassProps, PartRuntime, PendingAction, SasState, StepContext, StepResult, SurfaceState, Vessel, AeroRuntime, CraftRuntime, DockLink, CommandRuntime, CarriedState, ProbeState } from './types';
 export { G_DOSE_LIMIT, STAGE_LOCKOUT } from './types';
 export { assembleVessel, vesselPartSnapshots, setModuleStateForLab, splitForStage } from './public';
 export { cloneVessel, cloneCraft, createCraft, defaultControlPart, linkRoll, VesselAssemblyError, type CraftIdentity } from './assemble';
@@ -10,7 +10,7 @@ export { assemblyId, craftRootInstanceId, eventPartId, findCraftPart, findPartBy
 export { addLink, applyImpulseAt, combinedMomentum, dockBase, dockFace, dockMerge, momentumOf, snapPose, undock, type Momentum } from './dock';
 export { mergeVessels, separateVessel } from './split';
 export { computeMassProps, vesselMass, partMass } from './massProps';
-export { structureOf, rebuildStructure, vesselBaseY, panelAzimuth, legFootLocal } from './structure';
+export { structureOf, rebuildStructure, invalidateStructure, vesselBaseY, panelAzimuth, legFootLocal } from './structure';
 export type { Structure } from './structure';
 export {
   fireNextStage,

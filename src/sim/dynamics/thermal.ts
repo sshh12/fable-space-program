@@ -61,10 +61,11 @@ export function environmentTemperature(env: VesselEnvironment, rho: number, airT
 
 function refreshWake(st: Structure, vessel: Vessel, hx: number, hy: number, hz: number): void {
   const th = st.thermal;
+  const wake = st.carried.wake;
   const parts = vessel.parts;
   for (let i = 0; i < th.length; i++) {
     const p = th[i]!;
-    p.wake = 1;
+    wake[i] = 1;
     if (parts[p.part]!.shielded) continue;
     for (let j = 0; j < th.length; j++) {
       if (j === i) continue;
@@ -78,7 +79,7 @@ function refreshWake(st: Structure, vessel: Vessel, hx: number, hy: number, hz: 
       if (along <= 0) continue;
       const d2 = dx * dx + dy * dy + dz * dz;
       if (along * along >= WAKE_COS * WAKE_COS * d2) {
-        p.wake = WAKE_FACTOR;
+        wake[i] = WAKE_FACTOR;
         break;
       }
     }
@@ -131,7 +132,7 @@ export function stepThermal(
       if (exposed) {
         const d = s.nx * hx + s.ny * hy + s.nz * hz;
         let e = s.axisym ? 0.15 + 0.85 * (d > 0 ? d : 0) : d > 0 ? d : 0;
-        e *= ref.wake;
+        e *= st.carried.wake[i]!;
         if (s.axisym && flatExposure > 0.5) e *= WAKE_FACTOR;
         if (e > 0) {
           let q = base / Math.sqrt(s.noseRadius);

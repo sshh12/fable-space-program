@@ -7,7 +7,7 @@ import { v3 } from '@/core/math/vec3';
 import { computeMassProps } from '../vessel/massProps';
 import { eventPartId } from '../vessel/ids';
 import { applyImpulse, separateVessel } from '../vessel/split';
-import { partPoint, structureOf } from '../vessel/structure';
+import { invalidateStructure, partPoint, structureOf } from '../vessel/structure';
 import { G_DOSE_LIMIT, type StepContext, type Vessel } from '../vessel/types';
 
 export type DestroyCause = 'impact' | 'overheat' | 'overstress' | 'explosion';
@@ -143,7 +143,7 @@ export function checkLoads(vessel: Vessel, dt: number, ctx: StepContext): void {
     if (vessel.gDose > G_DOSE_LIMIT) {
       vessel.crewAlive = false;
       for (const p of vessel.parts) for (const m of p.modules) if (m.type === 'command') m.crewAlive = false;
-      vessel.struct = null;
+      invalidateStructure(vessel);
       ctx.events.push({ type: 'crewLost', ut: ctx.ut, vesselId: vessel.id, cause: 'G-LOC / fatal deceleration' });
     }
   }

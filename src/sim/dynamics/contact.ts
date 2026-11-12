@@ -191,23 +191,23 @@ function clearNear(st: Structure): void {
   for (let i = 0; i < st.probes.length; i++) {
     const p = st.probes[i]!;
     p.near = false;
-    p.inContact = false;
-    p.hasAnchor = false;
-    p.wet = false;
+    p.s.inContact = false;
+    p.s.hasAnchor = false;
+    p.s.wet = false;
   }
   for (let i = 0; i < st.legs.length; i++) {
     const lg = st.legs[i]!;
     for (let l = 0; l < lg.probes.length; l++) {
       const p = lg.probes[l]!;
       p.near = false;
-      p.inContact = false;
-      p.hasAnchor = false;
-      p.wet = false;
+      p.s.inContact = false;
+      p.s.hasAnchor = false;
+      p.s.wet = false;
       lg.state.contact[l] = false;
       lg.state.compression[l] = 0;
     }
   }
-  for (let i = 0; i < st.buoy.length; i++) st.buoy[i]!.wet = false;
+  for (let i = 0; i < st.buoy.length; i++) st.carried.buoyWet[i] = false;
 }
 
 const nrm = [0, 0, 0];
@@ -257,11 +257,11 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
     // Water entry (crash check only; buoyancy comes from the spheres).
     if (st.waterHere) {
       const wet = pl - env.radius - st.waterHeight < 0;
-      if (wet && !pr.wet) {
+      if (wet && !pr.s.wet) {
         const closing = -(vx * upx + vy * upy + vz * upz);
         if (closing > pr.crashWater) addCrash(pr, out);
       }
-      pr.wet = wet;
+      pr.s.wet = wet;
     }
 
     rotInvQ(qf, upx, upy, upz, tmp);
@@ -271,9 +271,9 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
     const depth = env.radius + env.terrainHeight(dirObj) + pr.radius - pl;
     const lg = pr.legs;
     if (depth <= 0) {
-      if (pr.inContact) {
-        pr.inContact = false;
-        pr.hasAnchor = false;
+      if (pr.s.inContact) {
+        pr.s.inContact = false;
+        pr.s.hasAnchor = false;
         if (lg) {
           lg.state.contact[pr.leg] = false;
           lg.state.compression[pr.leg] = 0;
@@ -299,7 +299,7 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
     const tvy = vy - vn * ny;
     const tvz = vz - vn * nz;
 
-    if (!pr.inContact) {
+    if (!pr.s.inContact) {
       // First contact: the touchdown event, then the crash tolerances.
       const closing = -vn;
       const lateral = Math.sqrt(tvx * tvx + tvy * tvy + tvz * tvz);
@@ -316,7 +316,7 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
         addCrash(pr, out);
         return;
       }
-      pr.inContact = true;
+      pr.s.inContact = true;
     }
 
     // Normal force.
@@ -361,14 +361,14 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
     let ftx = 0;
     let fty = 0;
     let ftz = 0;
-    if (!pr.hasAnchor) {
+    if (!pr.s.hasAnchor) {
       rotInvQ(qf, px, py, pz, anc);
-      pr.ax = anc[0]!;
-      pr.ay = anc[1]!;
-      pr.az = anc[2]!;
-      pr.hasAnchor = true;
+      pr.s.ax = anc[0]!;
+      pr.s.ay = anc[1]!;
+      pr.s.az = anc[2]!;
+      pr.s.hasAnchor = true;
     }
-    rotQ(qf, pr.ax, pr.ay, pr.az, anc);
+    rotQ(qf, pr.s.ax, pr.s.ay, pr.s.az, anc);
     let dx = px - anc[0]!;
     let dy = py - anc[1]!;
     let dz = pz - anc[2]!;
@@ -391,9 +391,9 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
       const dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
       const keep = dl > 0 ? Math.min(1, cap / (kt * dl)) : 0;
       rotInvQ(qf, px - dx * keep, py - dy * keep, pz - dz * keep, anc);
-      pr.ax = anc[0]!;
-      pr.ay = anc[1]!;
-      pr.az = anc[2]!;
+      pr.s.ax = anc[0]!;
+      pr.s.ay = anc[1]!;
+      pr.s.az = anc[2]!;
     }
     const fx = fn * nx + ftx;
     const fy = fn * ny + fty;
@@ -436,7 +436,7 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
       const a = s.radius;
       let h = env.radius + s.waterHeight - pl + a;
       if (h <= 0) {
-        s.wet = false;
+        st.carried.buoyWet[i] = false;
         continue;
       }
       if (h > 2 * a) h = 2 * a;
@@ -450,8 +450,8 @@ export function evalContact(vessel: Vessel, st: Structure, env: VesselEnvironmen
       const vy = b.vy + m[3]! * cxv + m[4]! * cyv + m[5]! * czv - (sp.z * px - sp.x * pz);
       const vz = b.vz + m[6]! * cxv + m[7]! * cyv + m[8]! * czv - (sp.x * py - sp.y * px);
       const speed = Math.sqrt(vx * vx + vy * vy + vz * vz);
-      if (!s.wet) {
-        s.wet = true;
+      if (!st.carried.buoyWet[i]) {
+        st.carried.buoyWet[i] = true;
         if (!vessel.inWater) {
           vessel.inWater = true;
           events.push({ type: 'splash', ut, vesselId: vessel.id, speed });
