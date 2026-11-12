@@ -24,12 +24,26 @@
  * a slot whose holder is dead, which is reclaimed like any other; --status shows the holder. A command
  * inside a stack that needs the GPU or many cores is itself wrapped in --class=gpu or --class=cpu.
  *
+ * Who holds a slot. The slot file records the wrapper's pid AND the pid of the command it started. The
+ * slot is held while EITHER is alive, and after both are gone while anything they started is still alive:
+ * a wrapper that is killed (Windows cannot deliver it a signal first) takes its direct child with it, but
+ * what that child started lives on (measured: `npx tsx script` behind a killed wrapper ran to its end, and
+ * so did a process the command had detached). So before a waiter treats a slot whose two pids are dead as
+ * free, it looks ONCE at the process table for live processes whose parent was one of them (ORPHANS), writes
+ * them into the slot file, and the slot stays held until they and their own children are gone. That query
+ * costs a PowerShell start and runs only in this rare case. It follows parent links, so a process orphaned
+ * twice (its parent killed as well) is not seen: a launcher that must never run twice (the local stack)
+ * therefore takes its own exclusive lock under its state directory as well.
+ * On a signal the wrapper kills the command's whole process tree (on Windows `taskkill /T /F`: killing the
+ * shell alone would leave the command behind). A command that starts with `node` is started without a
+ * shell, so the recorded pid is the command itself; anything else needs the shell (.cmd shims).
+ *
  * A job waits for a free slot of its class AND for free physical memory above HEAVY_MIN_FREE_GB
  * (default 12). After HEAVY_MAX_WAIT_MIN (default 45) of waiting on memory alone it starts anyway and says
  * so. The wrapper passes stdio through and exits with the command's exit code. A slot whose holder died is
  * reclaimed automatically.
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -63,6 +77,61 @@ function alive(pid) {
   }
 }
 
+/**
+ * Live processes whose parent is one of `parents`, as { pid, created (ms since the epoch) }. One look at the
+ * process table (Windows: a CIM query through PowerShell; elsewhere `ps`). Empty when the table cannot be read.
+ */
+function liveChildrenOf(parents) {
+  if (parents.length === 0) return [];
+  try {
+    const rows = [];
+    if (process.platform === 'win32') {
+      const script = 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $(([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds())" }';
+      const res = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true, timeout: 20_000 });
+      for (const line of (res.stdout ?? '').split(/\r?\n/)) {
+        const m = /^(\d+) (\d+) (\d+)/.exec(line.trim());
+        if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), created: Number(m[3]) });
+      }
+    } else {
+      const res = spawnSync('ps', ['-eo', 'pid=,ppid='], { encoding: 'utf8', timeout: 20_000 });
+      for (const line of (res.stdout ?? '').split('\n')) {
+        const m = /^\s*(\d+)\s+(\d+)/.exec(line);
+        if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), created: 0 });
+      }
+    }
+    return rows.filter((r) => parents.includes(r.ppid) && r.pid !== r.ppid && r.pid !== process.pid);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Whether the holder of a slot file still holds it: 'alive' (its wrapper or its command lives), 'orphans'
+ * (both are gone, something they started lives; `orphans` in the slot file lists it) or 'dead'.
+ */
+function holderState(file, h) {
+  if ((typeof h.pid === 'number' && alive(h.pid)) || (typeof h.childPid === 'number' && alive(h.childPid))) return 'alive';
+  const known = Array.isArray(h.orphans) ? h.orphans.filter((p) => typeof p === 'number') : [];
+  if (known.some(alive)) return 'orphans';
+  // Both recorded pids, and every orphan found so far, are gone: look once for what they left behind.
+  const first = h.deadSeen === undefined;
+  const deadSeen = h.deadSeen ?? Date.now();
+  const since = Date.parse(h.since ?? '') || 0;
+  const parents = [h.pid, h.childPid, ...known].filter((p) => typeof p === 'number');
+  // The first look accepts only processes created while the slot was held (a later process that reuses a
+  // dead pid and starts children of its own is not ours); later looks follow the orphans' own children.
+  const found = liveChildrenOf(parents)
+    .filter((r) => !first || r.created === 0 || (r.created >= since - 1000 && r.created <= deadSeen))
+    .map((r) => r.pid);
+  try {
+    const now = readHolder(file);
+    if (now && now.pid === h.pid && now.since === h.since) fs.writeFileSync(file, JSON.stringify({ ...now, deadSeen, orphans: [...new Set([...known, ...found])] }));
+  } catch {
+    /* another waiter is writing the same finding */
+  }
+  return found.length > 0 ? 'orphans' : 'dead';
+}
+
 function readHolder(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -88,7 +157,7 @@ function tryAcquire(cls, label) {
       if (e.code !== 'EEXIST' && e.code !== 'EPERM') throw e;
       const holder = readHolder(file);
       let stale = false;
-      if (holder && typeof holder.pid === 'number') stale = !alive(holder.pid);
+      if (holder && typeof holder.pid === 'number') stale = holderState(file, holder) === 'dead';
       else {
         try {
           stale = Date.now() - fs.statSync(file).mtimeMs > 10_000;
@@ -114,7 +183,14 @@ function status() {
   for (const cls of Object.keys(CAPS)) {
     for (let i = 0; i < CAPS[cls]; i++) {
       const h = readHolder(slotFile(cls, i));
-      if (h && alive(h.pid)) lines.push(`${cls}[${i}] pid ${h.pid} since ${h.since} ${h.label ?? ''}`);
+      const state = h && typeof h.pid === 'number' ? holderState(slotFile(cls, i), h) : 'dead';
+      if (state === 'alive') {
+        const who = alive(h.pid) ? `pid ${h.pid}` : `pid ${h.childPid} (its wrapper ${h.pid} is gone; the command still runs)`;
+        lines.push(`${cls}[${i}] ${who} since ${h.since} ${h.label ?? ''}`);
+      } else if (state === 'orphans') {
+        const left = (readHolder(slotFile(cls, i))?.orphans ?? []).filter(alive);
+        lines.push(`${cls}[${i}] HELD BY ORPHANS pid ${left.join(', ')} (wrapper ${h.pid} and its command are gone; what they started still runs) since ${h.since} ${h.label ?? ''}`);
+      }
       else lines.push(`${cls}[${i}] free`);
     }
   }
@@ -235,18 +311,36 @@ function release() {
   }
 }
 
-const child = spawn(cmd.map(quoteArg).join(' '), {
-  stdio: 'inherit',
-  shell: true,
-  env: { ...process.env, HEAVY_GATE: cls },
-});
+// A `node ...` command is started directly (the recorded pid is the command); anything else through the shell.
+const direct = /^node(\.exe)?$/i.test(cmd[0]);
+const child = direct
+  ? spawn(process.execPath, cmd.slice(1), { stdio: 'inherit', env: { ...process.env, HEAVY_GATE: cls } })
+  : spawn(cmd.map(quoteArg).join(' '), { stdio: 'inherit', shell: true, env: { ...process.env, HEAVY_GATE: cls } });
+
+// Record the command's pid in the slot file: the slot stays held while it lives, even without this wrapper.
+if (typeof child.pid === 'number') {
+  try {
+    const h = readHolder(lock);
+    if (h && h.pid === process.pid) fs.writeFileSync(lock, JSON.stringify({ ...h, childPid: child.pid }));
+  } catch {
+    /* the slot is still held through this wrapper's pid */
+  }
+}
+
+/** Kill the command and everything it started. */
+function killTree() {
+  if (typeof child.pid !== 'number' || child.exitCode !== null) return;
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    else child.kill('SIGTERM');
+  } catch {
+    /* already exited */
+  }
+}
+
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP']) {
   process.on(sig, () => {
-    try {
-      child.kill();
-    } catch {
-      /* already exited */
-    }
+    killTree();
     release();
     process.exit(130);
   });
