@@ -1,156 +1,556 @@
 {
  "version": 1,
  "dir": "data/baselines",
- "viewport": [1280, 720],
- "floor": { "meanAbs": 0.02, "p999": 1 },
+ "viewport": [
+  1280,
+  720
+ ],
+ "floor": {
+  "meanAbs": 0.02,
+  "p999": 1
+ },
  "checkpoints": {
   "pad-noon": {
    "what": "The stack on the pad at local noon, from the ground beside it",
    "page": "/labs/integration/?scene=pad&sun=180,65&sunsite=earth,18.987556,-155.603239&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim pad: the real stack on the launch mount of LC-1, on the real terrain; the sun pinned 65 degrees up in the south",
+   "camera": "the lab's orbit of the active vessel at three bounding radii (yaw 30, pitch 15)",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "pad-sunset": {
    "what": "The same view at sunset (the sun 3 degrees up in the west)",
    "page": "/labs/integration/?scene=pad&sun=270,3&sunsite=earth,18.987556,-155.603239&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim pad; the sun pinned 3 degrees up in the west",
+   "camera": "the lab's orbit of the active vessel at three bounding radii (yaw 30, pitch 15)",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "ascent-cloud-deck": {
    "what": "The ascent through a cloud deck, seen from the pad",
-   "page": null,
+   "page": "/labs/integration/?scene=ascent&start=1500&throttle=1&sun=140,50&sunsite=earth,18.987556,-155.603239&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim ascent over LC-1 at 1,500 m with the engines burning, under the cloud map as the lab's frozen cloud clock places it",
+   "camera": "a ground camera 3 km east of the pad, 60 m above the datum, looking at the vehicle",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.watchVesselFrom",
+     "args": [
+      {
+       "bodyId": "earth",
+       "latDeg": 18.987556,
+       "lonDeg": -155.574706,
+       "alt": 60
+      }
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
    "frames": 64,
    "status": "pending"
   },
   "ascent-10km": {
    "what": "The stack and its plume at 10 km",
    "page": "/labs/integration/?scene=ascent&start=10000&throttle=1&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim ascent at 10 km, engines burning",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "ascent-40km": {
    "what": "The stack and its plume at 40 km",
    "page": "/labs/integration/?scene=ascent&start=40000&throttle=1&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim ascent at 40 km, engines burning",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "leo-day": {
    "what": "Low Earth orbit over the day side, the limb in frame",
    "page": "/labs/integration/?scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim low orbit, the sun as the scene has it",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 60 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "leo-terminator": {
    "what": "Low Earth orbit across the terminator",
-   "page": null,
+   "page": "/labs/integration/?scene=lowOrbit&orbit=120,20,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim low orbit; the sun pinned along the vessel's nose, on the local horizon, so the ground below is on the terminator",
+   "camera": "the lab's orbit of the active vessel: yaw 120, pitch 20, 60 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.setSunInVesselFrame",
+     "args": [
+      {
+       "x": 0,
+       "y": 1,
+       "z": 0
+      }
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
    "frames": 64,
    "status": "pending"
   },
   "leo-night": {
    "what": "Low Earth orbit over the night side, with city lights and stars",
-   "page": null,
+   "page": "/labs/integration/?scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim low orbit; the sun pinned straight below the vessel, behind the Earth",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 60 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.setSunInVesselFrame",
+     "args": [
+      {
+       "x": 0,
+       "y": 0,
+       "z": -1
+      }
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
    "frames": 64,
    "status": "pending"
   },
   "leo-nadir-day": {
    "what": "Low Earth orbit looking straight down at a continent by day",
-   "page": null,
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=30.2&lon=31.3&alt=300000&pitch=-90&sun=150,55&sunsite=earth,30.2,31.3&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the Nile delta, Cairo and the Sinai; the sun pinned 55 degrees up there",
+   "camera": "a surface camera 300 km above 30.2 N 31.3 E, looking straight down",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "leo-nadir-night": {
    "what": "Low Earth orbit looking straight down at a continent by night",
-   "page": null,
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=30.2&lon=31.3&alt=300000&pitch=-90&sun=150,-40&sunsite=earth,30.2,31.3&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the same ground at night (the sun pinned 40 degrees below the horizon there): the lights of the delta and of Cairo",
+   "camera": "a surface camera 300 km above 30.2 N 31.3 E, looking straight down",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "translunar-earth": {
    "what": "Translunar coast, the Earth in frame",
    "page": "/labs/integration/?scene=translunar&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim translunar coast",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "translunar-moon": {
    "what": "Translunar coast, the Moon in frame",
-   "page": null,
+   "page": "/labs/integration/?scene=translunar&fov=12&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim translunar coast; the Moon 60 degrees from full",
+   "camera": "a free camera 40,000 km from the Moon's centre, 60 degrees off the Moon-sun line, looking at it; 12 degrees of field",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.viewBodyAtPhase",
+     "args": [
+      "moon",
+      60,
+      40000000
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
    "frames": 64,
    "status": "pending"
   },
   "lunar-terminator-20000km": {
    "what": "The lunar terminator from 20,000 km",
-   "page": null,
+   "page": "/labs/integration/?scene=lunarOrbit&fov=20&ev=13&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the Moon at half phase",
+   "camera": "a free camera 20,000 km above the surface, 90 degrees off the Moon-sun line, looking at the centre; 20 degrees of field",
+   "exposure": "ev 13 (pinned, as the terrain's terminator specs)",
+   "setup": [
+    {
+     "call": "__integration.viewBodyAtPhase",
+     "args": [
+      "moon",
+      90,
+      21737400
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
    "frames": 64,
    "status": "pending"
   },
   "lunar-terminator-5000km": {
    "what": "The lunar terminator from 5,000 km",
-   "page": null,
+   "page": "/labs/integration/?scene=lunarOrbit&fov=40&ev=13&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the Moon at half phase",
+   "camera": "a free camera 5,000 km above the surface, 90 degrees off the Moon-sun line, looking at the centre; 40 degrees of field",
+   "exposure": "ev 13 (pinned)",
+   "setup": [
+    {
+     "call": "__integration.viewBodyAtPhase",
+     "args": [
+      "moon",
+      90,
+      6737400
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
    "frames": 64,
    "status": "pending"
   },
   "lunar-orbit-low-sun": {
    "what": "Low lunar orbit at low sun",
    "page": "/labs/integration/?scene=lunarOrbit&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim low lunar orbit, the sun as the scene has it",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "lunar-touchdown": {
    "what": "The lander 12 m above the landing target on its descent engine, the sun 15 degrees up",
    "page": "/labs/integration/?scene=lunarSurface&throttle=0.4&hover=12&sun=100,15&sunsite=moon,0.661471,23.435999&orbit=40,12,45&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim lunar surface: the lander hovering 12 m over the landing target on its descent engine",
+   "camera": "the lab's orbit of the active vessel: yaw 40, pitch 12, 45 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "lunar-surface-cockpit": {
    "what": "The lunar surface from the cockpit",
-   "page": null,
+   "page": "/labs/integration/?scene=lunarSurface&sun=100,15&sunsite=moon,0.661471,23.435999&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim lunar surface: the lander standing on its pads at the landing target, the sun 15 degrees up",
+   "camera": "the cockpit seat of the vehicle, aimed at the cabin window through which the ground shows most",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.sitAtWindowBelow"
+    },
+    {
+     "waitIdle": true
+    }
+   ],
    "frames": 64,
    "status": "pending"
   },
   "reentry-peak-heating": {
    "what": "The capsule in the plasma sheath at peak heating",
    "page": "/labs/integration/?scene=reentry&orbit=160,10,30&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim entry at peak heating",
+   "camera": "the lab's orbit of the active vessel: yaw 160, pitch 10, 30 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "parachute-descent": {
    "what": "The capsule under its main canopies at 2,500 m",
    "page": "/labs/integration/?scene=chutes&start=2500&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim descent under the mains at 2,500 m over the recovery zone",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "splashdown": {
    "what": "The capsule at the water under its canopies",
    "page": "/labs/integration/?scene=chutes&start=120&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim descent under the mains, 120 m over the sea",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "frames": 64,
    "status": "pending"
   },
   "shoreline": {
    "what": "A shoreline: land, surf and near ocean in one frame",
-   "page": null,
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=18.987556&lon=-155.603239&alt=350&heading=120&pitch=-18&sun=150,45&sunsite=earth,18.987556,-155.603239&ev=14&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the coast of Ka Lae east-south-east of LC-1; the sun pinned 45 degrees up",
+   "camera": "a surface camera 350 m above the datum over LC-1, heading 120, pitched 18 degrees down",
+   "exposure": "ev 14 (pinned, as the water specs)",
    "frames": 64,
    "status": "pending"
   },
   "ocean-climb-2m": {
    "what": "Open ocean from 2 m (the climb to 400 km must show no ring at any of its four stations)",
-   "page": null,
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=8&lon=-140&alt=2&heading=120&pitch=-20&sun=120,40&sunsite=earth,8,-140&ev=14&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "open Pacific at 8 N 140 W; the sun pinned 40 degrees up",
+   "camera": "a surface camera 2 m above the sea, heading 120, pitched 20 degrees down",
+   "exposure": "ev 14 (pinned, as the water specs)",
    "frames": 64,
    "status": "pending"
   },
   "ocean-climb-200m": {
    "what": "Open ocean from 200 m",
-   "page": null,
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=8&lon=-140&alt=200&heading=120&pitch=-20&sun=120,40&sunsite=earth,8,-140&ev=14&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "open Pacific at 8 N 140 W; the sun pinned 40 degrees up",
+   "camera": "a surface camera 200 m above the sea, heading 120, pitched 20 degrees down",
+   "exposure": "ev 14 (pinned)",
    "frames": 64,
    "status": "pending"
   },
   "ocean-climb-20km": {
    "what": "Open ocean from 20 km",
-   "page": null,
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=8&lon=-140&alt=20000&heading=120&pitch=-20&sun=120,40&sunsite=earth,8,-140&ev=14&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "open Pacific at 8 N 140 W; the sun pinned 40 degrees up",
+   "camera": "a surface camera 20 km above the sea, heading 120, pitched 20 degrees down",
+   "exposure": "ev 14 (pinned)",
    "frames": 64,
    "status": "pending"
   },
   "ocean-climb-400km": {
    "what": "Open ocean from 400 km",
-   "page": null,
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=8&lon=-140&alt=400000&heading=120&pitch=-20&sun=120,40&sunsite=earth,8,-140&ev=14&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "open Pacific at 8 N 140 W; the sun pinned 40 degrees up",
+   "camera": "a surface camera 400 km above the sea, heading 120, pitched 20 degrees down",
+   "exposure": "ev 14 (pinned)",
+   "frames": 64,
+   "status": "pending"
+  },
+  "sweep-hud-leo": {
+   "what": "SWEEP: the flight HUD in the parking orbit: resources, staging, read-outs and the navball over the chase view",
+   "page": "/labs/integration/?sim=real&scenario=qa-leo&flighthud=1&orbit=30,15,80&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at the scenario qa-leo (third stage and lander stack in the parking orbit), frozen from the first frame",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 80 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "pending"
+  },
+  "sweep-map-translunar": {
+   "what": "SWEEP: the map view on the translunar coast: conic patches across the change of sphere of influence, their markers, the bodies, the HUD beside it",
+   "page": "/labs/integration/?sim=real&scenario=qa-translunar&map=1&flighthud=1&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at the scenario qa-translunar, frozen",
+   "camera": "the map camera 1,000,000 km from the Earth's centre, yaw 30, pitch 60, looking at it",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.mapCamera",
+     "args": [
+      "earth",
+      30,
+      60,
+      1000000000
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "pending"
+  },
+  "sweep-cockpit-leo": {
+   "what": "SWEEP: the cockpit in the parking orbit: the cabin from the vehicle's cockpit seat with its three displays painted from the snapshot",
+   "page": "/labs/integration/?sim=real&scenario=qa-leo&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at the scenario qa-leo, frozen",
+   "camera": "the cockpit seat the vehicle names, looking along the seat's own direction",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.sitInCockpit",
+     "args": [
+      0,
+      0
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "pending"
+  },
+  "sweep-separation-debris": {
+   "what": "SWEEP: a separation with debris: the third stage three seconds after it left the lander stack, both in frame, with the HUD's staging after the event",
+   "page": "/labs/integration/?sim=real&scenario=qa-leo&flighthud=1&orbit=60,10,120&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at qa-leo; the next stage (M-3 separation) fired, then exactly 180 frames of 1/60 s stepped with the loop stopped, then frozen again",
+   "camera": "the lab's orbit of the active vessel: yaw 60, pitch 10, 120 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__test.commands.stage"
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 180
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "pending"
+  },
+  "sweep-lunar-orbit": {
+   "what": "SWEEP: lunar orbit with the render frame's origin at the Moon: the lander stack, the Moon below, the HUD's orbit read-outs about the Moon",
+   "page": "/labs/integration/?sim=real&scenario=qa-lunar-orbit&flighthud=1&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at the scenario qa-lunar-orbit (100 km lunar orbit), frozen",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 60 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "pending"
+  },
+  "sweep-rails-warp": {
+   "what": "SWEEP: after a rails warp: the translunar coast 2,000 s further on (120 frames at 1,000x), back at 1x, with the HUD's clock and warp read-out",
+   "page": "/labs/integration/?sim=real&scenario=qa-translunar&flighthud=1&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at qa-translunar; warp level 8 (1,000x) for exactly 120 frames of 1/60 s with the loop stopped, then level 0 for 4 frames, then frozen again",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 60 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__test.commands.setWarpLevel",
+     "args": [
+      8
+     ]
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 120
+    },
+    {
+     "call": "__test.commands.setWarpLevel",
+     "args": [
+      0
+     ]
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 4
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "pending"
+  },
+  "sweep-app-pad": {
+   "what": "SWEEP: the game itself on the pad: the stack with the site's structures in the chase view, the HUD as the app shell mounts it",
+   "page": "/?scenario=lunar-direct&governor=off&mute=1&capturepill=0",
+   "scene": "the app at the mission scenario, on the pad before the first stage; frozen by its setup",
+   "camera": "the app's chase rig at its default distance",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__test.setDeterministic",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__test.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "pending"
+  },
+  "sweep-app-cockpit": {
+   "what": "SWEEP: the game itself on the pad, in the cockpit view: the app's cockpit rig and the displays as the app shell paints them",
+   "page": "/?scenario=lunar-direct&view=cockpit&governor=off&mute=1&capturepill=0",
+   "scene": "the app at the mission scenario, on the pad; frozen by its setup",
+   "camera": "the app's cockpit rig in the vehicle's cockpit seat",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__test.setDeterministic",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__test.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
    "frames": 64,
    "status": "pending"
   }

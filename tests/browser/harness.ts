@@ -11,8 +11,9 @@
  *    the display awake, because Chrome paces frames at about 57.5 Hz while the monitor sleeps (see
  *    keepDisplayAwake). A spec that judges requestAnimationFrame pacing measures the harness clock first
  *    (measureHarnessClock) and judges only on a nominal one (expectNominalClock).
- *  - Reference images (ARCHITECTURE 31.3): compare with compareToBaseline / expectBaseline; only the lead
- *    records (recordBaseline).
+ *  - Reference images (ARCHITECTURE 31.3): open a checkpoint with openCheckpoint and compare with
+ *    compareToBaseline / expectBaseline; only the lead records (recordBaseline). A reference capture is a
+ *    lead-in that is thrown away and two captures that must be identical to the bit (baselineLogic.ts).
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -23,6 +24,10 @@ import { fileURLToPath } from 'node:url';
 import { expect, test as base, type Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 import type { AdapterReport } from '../../src/core/contracts/testApi';
+import { captureFrameExact, describeStep, manifestProblems, type BaselineCheckpoint, type BaselineManifest, type BaselineStep, type BaselineTolerance, type ExactPair } from './baselineLogic';
+
+export { captureFrameExact, exactPairVerdict, manifestProblems, NotFrameExactError } from './baselineLogic';
+export type { BaselineCheckpoint, BaselineManifest, BaselineStep, BaselineTolerance, ExactCapture, ExactPair } from './baselineLogic';
 
 export { expect };
 
@@ -445,43 +450,15 @@ export function expectNominalClock(clock: FrameClockStats, label = 'harness cloc
  * the largest difference between any two of them, and never below the manifest's floor. With a frame-exact
  * capture that difference is what the GPU itself does not repeat, which is nothing or nearly nothing; a
  * checkpoint whose loads differ visibly is not accepted as a reference until the cause is found.
+ *
+ * The first-capture rule (request core-7; baselineLogic.ts): the capture of a load, for a recording and for
+ * a comparison alike, is a lead-in that is thrown away and two more captures that must be identical to the
+ * bit; the second of them is used. A page whose two captures differ is not frame-exact and fails as such.
+ *
+ * A checkpoint is its page plus its setup: steps run on the page's test handles after it has loaded (a
+ * camera of the integration lab, the app's deterministic switches, frames stepped with the loop stopped).
+ * openCheckpoint runs both, so that a recording and every later comparison stand at the same view.
  */
-export interface BaselineTolerance {
-  meanAbs: number;
-  p999: number;
-}
-
-export interface BaselineCheckpoint {
-  /** What the checkpoint shows (ARCHITECTURE 31.3). */
-  what: string;
-  /** Path and query of the page it is captured from, deterministic parameters included; null until the lead frames it. */
-  page: string | null;
-  /** Frames presented after the page is idle before the capture. */
-  frames: number;
-  status: 'pending' | 'recorded';
-  /** Recorded checkpoints only. */
-  file?: string;
-  sha256?: string;
-  width?: number;
-  height?: number;
-  tolerance?: BaselineTolerance;
-  /** Largest difference between any two of the recording's loads, which the tolerance was derived from, and how many loads there were. */
-  selfDifference?: BaselineTolerance;
-  loads?: number;
-  recorded?: { at: string; commit: string; chrome: string; adapter: string; tiles: Record<string, string>; note: string };
-}
-
-export interface BaselineManifest {
-  version: 1;
-  /** Directory of the PNG files, relative to the repository root. */
-  dir: string;
-  /** Capture size in CSS pixels at device scale factor 1. */
-  viewport: [number, number];
-  /** Smallest tolerance a checkpoint may have (two identical recordings would otherwise allow nothing). */
-  floor: BaselineTolerance;
-  checkpoints: Record<string, BaselineCheckpoint>;
-}
-
 export interface ImageDifference {
   meanAbs: number;
   p999: number;
@@ -503,6 +480,8 @@ export interface BaselineComparison extends ImageDifference {
   /** Written when the comparison fails: the capture and a difference image (differences amplified 8x), for looking at. */
   actualFile: string | null;
   diffFile: string | null;
+  /** How the discarded lead-in capture differed from the capture that was compared (request core-7); null when the caller supplied the capture. */
+  leadIn: ExactPair | null;
 }
 
 export interface BaselineStore {
@@ -517,6 +496,52 @@ export function readBaselineManifest(store: BaselineStore = {}): BaselineManifes
   const m = JSON.parse(fs.readFileSync(file, 'utf8')) as BaselineManifest;
   if (m.version !== 1) throw new Error(`${file}: unknown baseline manifest version ${String(m.version)}`);
   return m;
+}
+
+/** Run a checkpoint's setup steps on the page (see BaselineStep). A call that returns false or null fails the setup. */
+export async function runBaselineSteps(page: Page, steps: readonly BaselineStep[], timeoutMs = 180_000): Promise<void> {
+  for (const step of steps) {
+    if ('waitIdle' in step) {
+      await page.waitForFunction(() => window.__test !== undefined && window.__test.isIdle(), undefined, { timeout: timeoutMs });
+    } else if ('waitFrames' in step) {
+      await page.evaluate((n) => window.__test!.waitFrames(n), step.waitFrames);
+    } else {
+      const outcome = await page.evaluate(
+        async ({ path: dotted, args, repeat }) => {
+          const parts = dotted.split('.');
+          let owner: unknown = window;
+          for (const part of parts.slice(0, -1)) {
+            owner = (owner as Record<string, unknown> | null | undefined)?.[part];
+            if (owner === null || owner === undefined) return `${part} is not on this page`;
+          }
+          const fn = (owner as Record<string, unknown>)[parts[parts.length - 1]!];
+          if (typeof fn !== 'function') return `${dotted} is not a function on this page`;
+          let result: unknown;
+          for (let i = 0; i < repeat; i++) result = await (fn as (...a: unknown[]) => unknown).apply(owner, args);
+          return result === false || result === null ? `it returned ${String(result)}: the page could not do what the step asks` : null;
+        },
+        { path: step.call, args: step.args ?? [], repeat: step.repeat ?? 1 },
+      );
+      if (outcome !== null) throw new Error(`checkpoint setup step ${describeStep(step)} failed: ${outcome}`);
+    }
+  }
+}
+
+/**
+ * Open a checkpoint as its reference image was (or will be) recorded: its page at the manifest's viewport,
+ * on the discrete GPU, then its setup steps. Follow with expectBaseline(page, name).
+ */
+export async function openCheckpoint(page: Page, name: string, opts: BaselineStore & { timeoutMs?: number } = {}): Promise<BaselineCheckpoint> {
+  const m = readBaselineManifest(opts);
+  const entry = baselineEntry(m, name);
+  if (entry.page === null) throw new Error(`checkpoint "${name}" is not framed: it has no page`);
+  const [width, height] = m.viewport;
+  const size = page.viewportSize();
+  if (!size || size.width !== width || size.height !== height) throw new Error(`checkpoint "${name}" is captured at ${width} x ${height} (the manifest's viewport); the page is ${size ? `${size.width} x ${size.height}` : 'of no fixed size'}: test.use({ viewport, deviceScaleFactor: 1 })`);
+  await openPage(page, entry.page, { timeoutMs: opts.timeoutMs ?? 180_000 });
+  await assertDiscreteGpu(page);
+  await runBaselineSteps(page, entry.setup ?? [], opts.timeoutMs ?? 180_000);
+  return entry;
 }
 
 const sha256 = (buf: Buffer): string => createHash('sha256').update(buf).digest('hex');
@@ -596,6 +621,15 @@ export async function captureDeterministic(page: Page, frames = 64, timeoutMs = 
 }
 
 /**
+ * The capture of a reference image under the first-capture rule: a lead-in frame-exact capture that is
+ * thrown away, then two more that must be identical to the bit (NotFrameExactError otherwise); the second
+ * is the capture. `what` names the checkpoint in the failure.
+ */
+export async function captureReference(page: Page, frames = 64, what = 'the page', timeoutMs = 180_000): Promise<{ image: Buffer; leadIn: ExactPair }> {
+  return captureFrameExact(() => captureDeterministic(page, frames, timeoutMs), what);
+}
+
+/**
  * A screenshot of a settled page for looking at, NOT a reference image: waits for idle, lets `frames` frames
  * pass and takes the picture. Which frame it shows differs from load to load.
  */
@@ -623,7 +657,9 @@ function baselineEntry(m: BaselineManifest, name: string): BaselineCheckpoint {
  * Compare the page, as it is now, with the recorded reference image of checkpoint `name`. The caller has
  * opened the checkpoint's page (`readBaselineManifest().checkpoints[name].page`) at the manifest's viewport.
  * Reports the mean absolute difference and the 99.9th percentile against the checkpoint's tolerance; it does
- * not assert (expectBaseline does). `capture` compares a PNG the caller already took instead of the page.
+ * not assert (expectBaseline does). The page is captured under the first-capture rule (a lead-in, then two
+ * captures that must be identical: a page that is not frame-exact throws NotFrameExactError and is not
+ * compared). `capture` compares a PNG the caller already took instead of the page.
  */
 export async function compareToBaseline(page: Page, name: string, opts: BaselineStore & { capture?: Buffer } = {}): Promise<BaselineComparison> {
   const m = readBaselineManifest(opts);
@@ -633,7 +669,8 @@ export async function compareToBaseline(page: Page, name: string, opts: Baseline
   if (!fs.existsSync(file)) throw new Error(`reference image ${path.relative(repoRoot, file)} is missing (data/baselines is not in git: it is restored from the lead's recording, never re-recorded by a package)`);
   const reference = fs.readFileSync(file);
   if (sha256(reference) !== entry.sha256) throw new Error(`reference image ${path.relative(repoRoot, file)} is not the recorded one (sha256 ${sha256(reference).slice(0, 16)}, manifest ${entry.sha256.slice(0, 16)})`);
-  const actual = opts.capture ?? (await captureDeterministic(page, entry.frames));
+  const taken = opts.capture ? null : await captureReference(page, entry.frames, `checkpoint "${name}"`);
+  const actual = opts.capture ?? taken!.image;
   const d = imageDifference(reference, actual);
   const pass = d.meanAbs <= entry.tolerance.meanAbs && d.p999 <= entry.tolerance.p999;
   const now = tileSnapshot();
@@ -656,7 +693,7 @@ export async function compareToBaseline(page: Page, name: string, opts: Baseline
     fs.writeFileSync(actualFile, actual);
     fs.writeFileSync(diffFile, d.diff);
   }
-  return { name, meanAbs: d.meanAbs, p999: d.p999, maxAbs: d.maxAbs, differingFraction: d.differingFraction, width: d.width, height: d.height, tolerance: entry.tolerance, pass, dataChanged, environmentChanged, actualFile, diffFile };
+  return { name, meanAbs: d.meanAbs, p999: d.p999, maxAbs: d.maxAbs, differingFraction: d.differingFraction, width: d.width, height: d.height, tolerance: entry.tolerance, pass, dataChanged, environmentChanged, actualFile, diffFile, leadIn: taken?.leadIn ?? null };
 }
 
 /** One line for logs and failure messages. */
@@ -666,6 +703,7 @@ export function describeComparison(c: BaselineComparison): string {
     `max ${c.maxAbs}, ${(c.differingFraction * 100).toFixed(3)} % of pixels differ` +
     (c.dataChanged.length > 0 ? `; SITE DATA CHANGED since the recording: ${c.dataChanged.join(', ')}` : '') +
     (c.environmentChanged.length > 0 ? `; ENVIRONMENT CHANGED since the recording: ${c.environmentChanged.join(', ')}` : '') +
+    (c.leadIn && !c.leadIn.identical ? `; the discarded lead-in capture differed in ${c.leadIn.differingPixels} pixels (request core-7)` : '') +
     (c.actualFile ? `; see ${path.relative(repoRoot, c.actualFile)} and ${path.relative(repoRoot, c.diffFile!)}` : '')
   );
 }
@@ -683,27 +721,34 @@ export const BASELINE_LOADS = 3;
 /**
  * Record the reference image of checkpoint `name` (THE LEAD'S ACT: `note` is the signed note that goes into
  * the manifest; a package never calls this). `open` navigates the page to the checkpoint in deterministic
- * mode; it is called once per load, `loads` times (at least three), each a fresh navigation. The first
- * capture becomes the reference; the tolerance is three times the largest difference between any two of the
- * captures, at least the manifest's floor.
+ * mode (openCheckpoint); it is called once per load, `loads` times (at least three), each a fresh
+ * navigation. Each load is captured under the first-capture rule: a lead-in that is thrown away and two
+ * captures that must be identical to the bit; a load that is not frame-exact throws NotFrameExactError and
+ * NOTHING is recorded. The first load's capture becomes the reference; the tolerance is three times the
+ * largest difference between any two of the loads' captures, at least the manifest's floor.
  */
 export async function recordBaseline(
   page: Page,
   name: string,
   open: (page: Page) => Promise<void>,
   opts: BaselineStore & { note: string; loads?: number },
-): Promise<{ entry: BaselineCheckpoint; selfDifference: ImageDifference; loads: number }> {
+): Promise<{ entry: BaselineCheckpoint; selfDifference: ImageDifference; loads: number; leadInDifferingPixels: number[] }> {
   if (!opts.note || opts.note.trim().length < 8) throw new Error('recordBaseline needs the lead-signed note (who, when, why)');
   const loads = opts.loads ?? BASELINE_LOADS;
   if (loads < BASELINE_LOADS) throw new Error(`a reference image is recorded from at least ${BASELINE_LOADS} loads (asked for ${loads})`);
   const manifestFile = opts.manifestFile ?? BASELINE_MANIFEST_FILE;
   const m = readBaselineManifest(opts);
   const entry = baselineEntry(m, name);
+  const problems = manifestProblems({ ...m, checkpoints: { [name]: { ...entry, status: 'pending' } } });
+  if (problems.length > 0) throw new Error(`checkpoint "${name}" cannot be recorded as the manifest frames it: ${problems.join('; ')}`);
   const captures: Buffer[] = [];
+  const leadInDifferingPixels: number[] = [];
   for (let k = 0; k < loads; k++) {
     if (k > 0) await page.goto('about:blank');
     await open(page);
-    captures.push(await captureDeterministic(page, entry.frames));
+    const taken = await captureReference(page, entry.frames, `checkpoint "${name}" (load ${k + 1} of ${loads})`);
+    captures.push(taken.image);
+    leadInDifferingPixels.push(taken.leadIn.differingPixels);
   }
   const first = captures[0]!;
   // The largest difference between any two loads, statistic by statistic.
@@ -741,9 +786,10 @@ export async function recordBaseline(
       adapter: env.adapter,
       tiles: tileSnapshot(),
       note: opts.note.trim(),
+      leadInDifferingPixels,
     },
   };
   m.checkpoints[name] = recorded;
   fs.writeFileSync(manifestFile, `${JSON.stringify(m, null, 1)}\n`);
-  return { entry: recorded, selfDifference: self, loads };
+  return { entry: recorded, selfDifference: self, loads, leadInDifferingPixels };
 }

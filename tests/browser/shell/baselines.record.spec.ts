@@ -1,27 +1,35 @@
 /**
  * Reference images of ARCHITECTURE 31.3: recording (the lead's act) and the self-check of what is recorded.
  *
- * RECORD (the lead, on the visually signed-off tree, immediately before sub-wave 3.2):
+ * WHEN (lead decision of 2026-11-12): the references are recorded on the tree AS IT STANDS before sub-wave
+ * 3.2, not on a visually signed-off tree. Their job is to be the regression gate of the presentation sweep,
+ * a refactor that must not move a pixel. The visual close-out goes on after the sweep; every change that is
+ * meant to move pixels (the display curve of request ocean-10, a visual fix) re-records the checkpoints it
+ * touches with a lead note, as ARCHITECTURE 31.3 allows.
+ *
+ * RECORD, every checkpoint in ONE gate run:
  *
  *   BASELINE_RECORD="<who, when, why>" node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional
  *
- * records every checkpoint of tests/browser/baselines.manifest.json that has a page (BASELINE_ONLY=a,b
+ * records every checkpoint of tests/browser/baselines.manifest.json that is not recorded yet (BASELINE_ONLY=a,b
  * limits it to the named ones; a checkpoint that is already recorded is re-recorded only when it is named
- * there): three fresh loads captured frame-exactly (window.__test.renderExact), the first capture into
- * data/baselines/<name>.png, the tolerance three times the largest difference between any two of them (at
- * least the manifest's floor), the note into the manifest. A checkpoint whose loads differ visibly is not a
- * reference yet: find what varies first. The lead then
- * LOOKS at every PNG, commits the manifest and keeps a copy of data/baselines outside the working tree.
- * A checkpoint whose `page` is null is framed first (the lab parameters are in labs/integration/main.ts).
+ * there). Per checkpoint: three fresh loads, each opened with openCheckpoint (its page, then its setup
+ * steps) and captured under the FIRST-CAPTURE RULE (request core-7): a lead-in frame-exact capture that is
+ * thrown away, then two that must be identical to the bit; the second is the load's capture. A checkpoint
+ * that is not frame-exact FAILS as such, with the number of differing pixels, and nothing is recorded for
+ * it. The first load's capture goes into data/baselines/<name>.png, the tolerance is three times the largest
+ * difference between any two loads (at least the manifest's floor), the note goes into the manifest. The
+ * lead then LOOKS at every PNG (a baseline of a broken picture is worthless), commits the manifest and
+ * keeps a copy of data/baselines outside the working tree.
  *
  * SELF-CHECK (without BASELINE_RECORD; part of the functional project): every recorded checkpoint is
- * captured once more, from a fresh load, and must compare clean against its own reference. Skipped while
+ * opened once more, from a fresh load, and must compare clean against its own reference. Skipped while
  * nothing is recorded or data/baselines is not on this machine.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertDiscreteGpu, describeComparison, expectBaseline, openPage, readBaselineManifest, recordBaseline, test } from '../harness';
+import { describeComparison, expectBaseline, openCheckpoint, readBaselineManifest, recordBaseline, test } from '../harness';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const manifest = readBaselineManifest();
@@ -38,16 +46,15 @@ test.describe('reference images: record', () => {
     if (!wanted) continue;
     test(`record ${name}`, async ({ page }) => {
       test.setTimeout(15 * 60_000);
-      test.skip(c.page === null, `${name} has no page yet: frame it in the manifest first (${c.what})`);
-      const { entry, selfDifference, loads } = await recordBaseline(
+      const { entry, selfDifference, loads, leadInDifferingPixels } = await recordBaseline(
         page,
         name,
         async (p) => {
-          await openPage(p, c.page!, { timeoutMs: 180_000 });
-          await assertDiscreteGpu(p);
+          await openCheckpoint(p, name);
         },
         { note },
       );
+      console.log(`[baseline] ${name}: the discarded lead-in capture of each load differed from the capture used in ${leadInDifferingPixels.join(', ')} pixels (request core-7)`);
       console.log(`[baseline] ${name}: recorded ${entry.file} (${entry.width} x ${entry.height}, sha256 ${entry.sha256!.slice(0, 16)}); ${loads} loads differ by at most mean ${selfDifference.meanAbs.toFixed(5)}, p99.9 ${selfDifference.p999}; tolerance mean ${entry.tolerance!.meanAbs.toFixed(5)}, p99.9 ${entry.tolerance!.p999}`);
     });
   }
@@ -61,9 +68,8 @@ test.describe('reference images: every recorded checkpoint compares clean agains
     test.skip(recorded.length === 0, 'no checkpoint is recorded yet (the lead records the set before sub-wave 3.2)');
     test.skip(!present, `${manifest.dir} is not on this machine`);
     test.setTimeout(recorded.length * 5 * 60_000);
-    for (const [name, c] of recorded) {
-      await openPage(page, c.page!, { timeoutMs: 180_000 });
-      await assertDiscreteGpu(page);
+    for (const [name] of recorded) {
+      await openCheckpoint(page, name);
       const result = await expectBaseline(page, name);
       console.log(`[baseline] ${describeComparison(result)}`);
       await page.goto('about:blank');

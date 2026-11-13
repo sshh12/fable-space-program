@@ -13,22 +13,23 @@
  *
  *   BASELINE_TOOLING_PROOF=1 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baseline-tooling.spec.ts --project=functional
  *
- * Recording the real set into data/baselines is the lead's act, done on the visually signed-off tree with
- * tests/browser/shell/baselines.record.spec.ts.
+ * Recording the real set into data/baselines is the lead's act (tests/browser/shell/baselines.record.spec.ts,
+ * which says when). The first-capture rule, the setup steps and the manifest's validation need no browser
+ * and are unit-tested by tools/dev/baseline-logic.test.ts.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import {
-  assertDiscreteGpu,
-  captureDeterministic,
+  captureReference,
   compareToBaseline,
   describeComparison,
   expect,
   expectBaseline,
   imageDifference,
-  openPage,
+  manifestProblems,
+  openCheckpoint,
   readBaselineManifest,
   recordBaseline,
   test,
@@ -37,6 +38,10 @@ import {
 } from '../harness';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+// A checkpoint is opened at the manifest's viewport (openCheckpoint refuses any other size).
+const [viewportWidth, viewportHeight] = readBaselineManifest().viewport;
+test.use({ viewport: { width: viewportWidth, height: viewportHeight }, deviceScaleFactor: 1 });
 
 /** A width x height opaque image painted by `rgb(x, y)`. */
 function image(width: number, height: number, rgb: (x: number, y: number) => [number, number, number]): Buffer {
@@ -107,7 +112,7 @@ test.describe('reference images: the difference measure', () => {
       name: 'leo-day', meanAbs: 0.5, p999: 9, maxAbs: 40, differingFraction: 0.2, width: W, height: H, tolerance: { meanAbs: 0.02, p999: 1 }, pass: false,
       dataChanged: ['moon d250015b4e1a23f8 -> 597c5d666b132450'],
       environmentChanged: ['chrome 157.0.8103.78 -> 158.0.8200.10', 'adapter nvidia RTX 5090 -> nvidia RTX 5090 (driver 620.10)'],
-      actualFile: null, diffFile: null,
+      actualFile: null, diffFile: null, leadIn: null,
     };
     const text = describeComparison(c);
     expect(text).toContain('SITE DATA CHANGED since the recording: moon d250015b4e1a23f8 -> 597c5d666b132450');
@@ -127,10 +132,10 @@ test.describe('reference images: the difference measure', () => {
       'translunar-earth', 'translunar-moon', 'lunar-terminator-20000km', 'lunar-terminator-5000km', 'lunar-orbit-low-sun', 'lunar-touchdown', 'lunar-surface-cockpit',
       'reentry-peak-heating', 'parachute-descent', 'splashdown', 'shoreline', 'ocean-climb-2m', 'ocean-climb-200m', 'ocean-climb-20km', 'ocean-climb-400km',
     ]) expect(names).toContain(expected);
+    // Every checkpoint is framed and can be captured frame-exactly (the rules are in baselineLogic.ts).
+    expect(manifestProblems(m)).toEqual([]);
     for (const [name, c] of Object.entries(m.checkpoints)) {
-      expect(c.what.length, name).toBeGreaterThan(10);
-      expect(c.frames, name).toBeGreaterThanOrEqual(16);
-      if (c.page !== null) expect(c.page, name).toMatch(/deterministic=1/);
+      expect(c.page, name).not.toBeNull();
       if (c.status === 'recorded') {
         expect(c.sha256, name).toMatch(/^[0-9a-f]{64}$/);
         expect(c.tolerance!.meanAbs, name).toBeGreaterThanOrEqual(m.floor.meanAbs);
@@ -161,7 +166,7 @@ test.describe('reference images: record from three loads, compare one more captu
     for (const n of names) {
       const c = tracked.checkpoints[n];
       if (!c || c.page === null) throw new Error(`proof checkpoint ${n} has no page in the tracked manifest`);
-      proof.checkpoints[n] = { what: c.what, page: c.page, frames: c.frames, status: 'pending' };
+      proof.checkpoints[n] = { what: c.what, page: c.page, frames: c.frames, status: 'pending', ...(c.setup ? { setup: c.setup } : {}) };
     }
     fs.writeFileSync(manifestFile, `${JSON.stringify(proof, null, 1)}\n`);
   });
@@ -170,10 +175,8 @@ test.describe('reference images: record from three loads, compare one more captu
     test(`${name}`, async ({ page }) => {
       test.setTimeout(15 * 60_000);
       const store = { manifestFile };
-      const pageUrl = readBaselineManifest(store).checkpoints[name]!.page!;
       const open = async (p: typeof page): Promise<void> => {
-        await openPage(p, pageUrl, { timeoutMs: 180_000 });
-        await assertDiscreteGpu(p);
+        await openCheckpoint(p, name, store);
       };
 
       // Record from three fresh loads; the tolerance comes from the largest difference between any two.
@@ -186,7 +189,7 @@ test.describe('reference images: record from three loads, compare one more captu
       // A third capture, from a third fresh load, compares clean.
       await page.goto('about:blank');
       await open(page);
-      const third = await captureDeterministic(page, entry.frames);
+      const third = (await captureReference(page, entry.frames, name)).image;
       const clean = await expectBaseline(page, name, { ...store, capture: third });
       console.log(`[baseline proof] third capture: ${describeComparison(clean)}`);
 
