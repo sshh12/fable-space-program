@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (commit 8c0f2cb)
 From: the lead (the recording of the reference images before sub-wave 3.2, 2026-11-12; docs/handoff/lead-baseline-v2.md section 22)
 Owner path: src/app/** (the app shell, app-integration)
 Blocking: no (the app's pad checkpoint is recorded, with a wide tolerance); it decides how sharp the app's own reference images are
@@ -48,3 +48,37 @@ What must not change: the app without those parameters.
 with the page's query extended by the two parameters prints "identical" for load 1 against loads 2 and 3.
 The lead then re-records `sweep-app-pad` (and `sweep-app-cockpit`, once request lead-5 is done) with the
 setup steps replaced by the query, and their tolerance falls to the floor.
+
+## Resolution (app-integration, commit 8c0f2cb)
+`?deterministic=1&paused=1` is honoured from the app's first frame (`src/app/settings.ts`, `src/app/game.ts`):
+
+1. `paused=1`: the simulation is paused from the first frame as the pause key does (the status line reads
+   PAUSED) and never leaves the scenario's first instant, under the loading screen and after it.
+   `deterministic=1`: every frame, the ones under the loading screen too, is a fixed 1/60 s step and the
+   renderer is in deterministic mode from its first frame.
+2. With both, the camera stands in its final pose from the first frame: in every frame the view manager gets
+   further rig steps of 1/60 s with neutral input until a step changes nothing, compared exactly
+   (`src/app/cameraRest.ts`; 4000 steps at most). The chase rig's approach and swing, a view blend and the
+   couch's head sway (the 9 and 6 pixels of the cockpit view) are over within the frame they begin in. The
+   loading screen waits for it, and `window.__test.isIdle()` is false while the camera has not come to rest.
+   `window.__app.cameraRest()` reports `{ frozen, atRest, steps }`.
+
+Without the two parameters nothing changes; a test that calls `setPaused(false)` or `setDeterministic(false)`
+on a frozen page gets the game as always from then on.
+
+Acceptance, 2026-11-12 19:10 (`BASELINE_EXACT_PROBE=sweep-app-pad,sweep-app-cockpit BASELINE_EXACT_LOADS=3
+BASELINE_EXACT_CAPTURES=3 BASELINE_EXACT_QUERY="&deterministic=1&paused=1"`, the probe of this request): for
+both checkpoints every pair of captures of every load prints "identical", and load 1 against loads 2 and 3
+prints "identical". The manifest's setup steps still ran in that probe (the two calls change nothing on a page
+opened with the switch). To record:
+
+- `sweep-app-pad`: page `/?scenario=lunar-direct&governor=off&mute=1&capturepill=0&deterministic=1&paused=1`,
+  setup `[{ "waitIdle": true }]`;
+- `sweep-app-cockpit`: page `/?scenario=lunar-direct&view=cockpit&governor=off&mute=1&capturepill=0&deterministic=1&paused=1`,
+  setup `[{ "waitIdle": true }]`.
+
+The manifest and `data/baselines` are untouched. The picture is the scenario's first instant (T+00:00:00, plane
+crossing T- 9:59, PAUSED), not the moment a test happened to pause at. The cockpit's and the ocean's own
+sequences (requests lead-5, lead-7) did not show in these captures on the tree of 19:10. The app's own guard is
+the test "frozen start" in `tests/browser/app/app.spec.ts` (two loads of the pad, the cockpit's first capture
+against its second).

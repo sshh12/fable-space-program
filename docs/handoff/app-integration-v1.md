@@ -44,13 +44,17 @@ in this round. See "Loading", "Measured" and "Requests filed".
 | `pilot.ts` | `createPilotDriver(defs, sim): PilotDriver` (`engaged`, `pilot`, `start()`, `stop()`, `onControlTick`, `afterFrame()`): the mission pilot of `src/pilot` in `Sim.advance`'s control ticks |
 | `statusLine.ts` | the shell's own line, centred under the HUD's top column: PAUSED (amber), and "TEST PILOT · <phase>" while the pilot flies (not with `?pilotlabel=0`); hidden with the HUD |
 | `timing.ts` | main-thread time of the frame function, of its stages (input, map, controls, sim, views, hud, audio, render) and of every render feature's hooks (rolling 300 frames; `core` = the render stage minus the hooks); the 12 slowest frames since the last reset with their whole breakdown (`slowest()`); a trace of consecutive frames (`startTrace` / `takeTrace`) |
+| `cameraRest.ts` | `runToRest(first, step, key, maxSteps)`: something that moves by itself run until a step changes nothing; the camera rigs at a frozen start |
+| `frameIntervals.ts` | `judgeIntervals(intervals, period): IntervalVerdict`: the frame-interval line of ARCHITECTURE 29 (restated 2026-11-12) on the display's frame intervals of a phase or checkpoint: median within 1 % of the period, dropped frames (over 1.5 periods) at most 0.5 %, no frame of 33 ms or more; `failures` says in words what is missed |
 | `testHooks.ts` | `installGameTestHooks(testApi, game)`: `window.__test` (TestApi) and `window.__app` (`AppDebug`, `AppBrief`) |
 
 Query parameters (all optional): `scenario=<id>`, `pilot=1` (the test pilot starts when the loading screen has
 gone), `view=chase|cockpit|map`, `capture=1` (ask for fullscreen + keyboard lock on the first key press or click;
 the default is windowed and uncaptured), `pilotlabel=0` (no "TEST PILOT" line) and `capturepill=0` (no capture
 control in the HUD) for clean footage, `perf=features` (render-core attribution mode), `scale=<0.25..1>` (pinned
-render scale), `governor=off`, `hud=0`, `mute=1`. None of them touches physics; the scenario is recorded in
+render scale), `governor=off`, `hud=0`, `mute=1`, and `deterministic=1` / `paused=1` (fixed 1/60 s frame steps
+with the renderer's deterministic mode, and the simulation paused, both from the first frame: together the
+frozen start for reference captures, below under "Frame-exact capture"). None of them touches physics; the scenario is recorded in
 `SimSnapshot.scenario` (only a pad start with nothing fired and `cheatCounter` 0 is a mission proof).
 
 ### Boot
@@ -197,6 +201,35 @@ game frame and no simulation time in 40 display frames); two captures of 64 fram
 difference 0 of 255; one metering, nobody busy before, after or in the lead-in). The spec asserts it; if it ever
 fails it prints the difference per cell of a 4 x 4 grid and saves it as `out/screens/app/exact-pad-difference.png`.
 
+**The frozen start (request lead-6): `?deterministic=1&paused=1`**, the lab pages' two parameters. Without them
+the app is frozen by a test some time after the reveal, a different time on every load, and its picture differs
+from load to load (the checkpoint `sweep-app-pad`: about 100,000 of 921,600 pixels by up to 31 levels). With
+both:
+- the simulation is paused from the first frame, as the pause key does (the status line reads PAUSED): it never
+  leaves the scenario's first instant, under the loading screen and after it;
+- every frame, the ones under the loading screen too, is a fixed 1/60 s step, and the renderer is in
+  deterministic mode from its first frame;
+- the camera stands in its final pose from the first frame: in every frame the view manager is given further
+  rig steps of 1/60 s with neutral input until a step changes nothing (`runToRest`, compared exactly; 4000 steps
+  at most), so the chase rig's approach and swing, a view blend and the couch's head sway are over within the
+  frame they begin in. The loading screen waits for it ("camera"), and `window.__test.isIdle()` is false while
+  the camera has not come to rest. `window.__app.cameraRest()` says `{ frozen, atRest, steps }`.
+The page stays frozen until a test leaves it (`setPaused(false)` or `setDeterministic(false)`); from then on it
+is the game as always. Without the two parameters nothing changes: the camera's settling and the idle rule apply
+only to a page opened with both.
+
+Proof (2026-11-12 19:10, the lead's probe `tests/browser/shell/baseline-exact-probe.spec.ts` with
+`BASELINE_EXACT_PROBE=sweep-app-pad,sweep-app-cockpit BASELINE_EXACT_LOADS=3 BASELINE_EXACT_CAPTURES=3
+BASELINE_EXACT_QUERY="&deterministic=1&paused=1"`): both checkpoints, three captures in each of three loads,
+"identical" for every pair of captures and for load 1 against loads 2 and 3: 0 differing pixels. The manifest's
+setup steps (`__test.setDeterministic(true)`, `__test.setPaused(true)`, wait for idle) still ran; with the
+switch the two calls change nothing. The checkpoint the records agent should record:
+page `/?scenario=lunar-direct&governor=off&mute=1&capturepill=0&deterministic=1&paused=1` (the cockpit one with
+`&view=cockpit`), setup `[{ "waitIdle": true }]`. The app spec's test "frozen start" asserts the same on the pad
+(two loads) and in the cockpit (the first capture against the second), that the simulation time stands, and
+that the page runs on when a test unfreezes it. The cockpit's and the ocean's own sequences (requests lead-5,
+lead-7) did not show in these captures.
+
 ### Render features (registration order)
 
 | Package | Factory call | Notes |
@@ -244,7 +277,9 @@ reset with stages, features, hooks and a note of throttle / thrust / warp / alti
 `bodiesInFrame()` (bodies whose disc reaches into the presented frame, with their place in it), `seat()` (the
 cockpit rig's seat), `groundSamples(distances, bearings)` (points of the ground on rings around the vessel: land
 or water by the height authority, height above the sea, and where each falls in the frame), `warmMs()`,
-`exactInfo()` (the core's record of the last frame-exact capture),
+`exactInfo()` (the core's record of the last frame-exact capture), `cameraRest()` (the camera at a frozen start),
+`rafIntervals()` (the display's frame intervals since the last reset: the requestAnimationFrame time stamps'
+differences, for the frame-interval line),
 `setPictureStops(stops)` / `pictureStop()` / `resumeFromPictureStop()` / `pictureStopsFired()`,
 `exposure()`, `viewMode()`, `viewBlending()`, `hudVisible()`, `keyboardLocked()`,
 `toggleKeyboardCapture()`, `heldCodes()`, `paused()`, `frames()`, `lever()`, `simStats()`, `inFlight()`,
@@ -331,6 +366,26 @@ cockpit displays' paint split.
 | ` | key-help sheet generated from the binding table |
 
 ## Measured
+
+### 2026-11-12 19:10-19:52: the frozen start and the restated frame-interval line in a browser
+
+Three runs through the gate, commit `8c0f2cb`:
+- the lead's exact probe on both app checkpoints with `&deterministic=1&paused=1` (4.0 min): three captures in
+  each of three loads, 0 differing pixels everywhere ("Frame-exact capture", the frozen start);
+- the whole app suite (functional + perf, 13 tests, 15.7 min): functional 10 of 10, with the new "frozen start"
+  test (the pad on two loads: 0 of 255 between them; the cockpit's first capture equal to its second; the
+  simulation time standing; the page running on once unfrozen); perf 2 of 3: the 1440p climb's main thread read
+  6.31 ms p99 (line 6), with every stage 15 to 40 % above the afternoon's run, the simulation stage included
+  (0.80 to 1.14 ms), which this change does not touch;
+- the perf spec again, alone (4.3 min): 3 of 3, the 1440p climb at 5.41 ms p99 (the afternoon's number to the
+  hundredth), the pad at 5.13. The 6.31 was the machine, not the code.
+
+The frame-interval line (ARCHITECTURE 29 as restated; `judgeIntervals` on the requestAnimationFrame time
+stamps the app records; harness clock 60.00 Hz, period 16.667-16.668 ms) holds at every checkpoint in both runs:
+seven checkpoints of 720 frames each (pad and climb at 1440p and at 720p, lunar-orbit coast, burn and after the
+burn), median 16.665 or 16.670 ms (0.01-0.02 % off the period), no dropped frame, no frame of 33 ms or more,
+the longest interval 16.8 to 17.5 ms. The same windows by the render core's frame-to-frame times (taken where
+the frame is drawn): p99 17.1 to 17.7 ms, max 17.6 to 20.0 ms.
 
 ### 2026-11-12 14:49: phase 2, first half: the phase-1 boot path and test facilities in a browser (quiet machine)
 
@@ -689,10 +744,21 @@ of 33 ms or more):
   (the last 600 m over the Moon) the terrain's hooks 10.8; `touchdown (cockpit)` terrain 5.0, core 3.4, cockpit
   1.6; `pitchProgramme` terrain 2.8, simulation 1.9. Nothing of the app's own. 95 of 711 windows are over the
   line (the record lists them by phase).
-- rAF: p99 over 17.5 ms in 17 phases (worst 21.6, ignition; the median phase 17.18); p95 at or over 16.7 ms in
-  all 80 (16.84 to 17.70, median 16.98, with a median p50 of 16.66): on a 60 Hz clock the frame deltas scatter
-  about 16.67 ms, so the 18.2 line "p95 < 16.7 ms" is missed by a tenth to three tenths of a millisecond in
-  every phase, whatever the load. Not loosened; it wants the lead's reading.
+- Frame intervals, against the line as the lead restated it on 2026-11-12 (ARCHITECTURE 29: per phase, against
+  the measured harness clock, the median interval within 1 % of the period, dropped frames - an interval over
+  1.5 periods - at most 0.5 % of the phase's frames, no frame of 33 ms or more), judged offline from the
+  flight's full record without a new flight (`frameIntervalLine` in the record): **it holds in 77 of the 80
+  phases.** The median holds in all 80 (the windows' medians lie between 16.54 and 16.75 ms against a period of
+  16.668 ms: 0.77 % off at most). Dropped frames: 9 to 17 in 161,004 frames, in seven phases; six of them are
+  far inside the line (0.01 to 0.13 % of the phase's frames), and `ignition` fails it: one interval of 28.4 ms
+  in a phase of 182 frames is 0.55 %, 0.05 of a percentage point over (a phase under 200 frames fails on any
+  dropped frame). `prelaunch` (one frame of 33.7 ms) and `moonArrival` (one of 452.5 ms) fail on "no frame of
+  33 ms or more". Basis and limit: the flight recorded per window the render core's frame-to-frame statistics
+  (p50, p99, max), not the intervals, and the core takes its time where the frame is drawn; the counts above
+  are bounded from those (in every window with an interval over 1.5 periods the p99 lies under it). From the
+  next flight on the spec records the requestAnimationFrame time stamps' intervals per window and judges them
+  (`src/app/frameIntervals.ts`). Under the old rows the same record read: p99 over 17.5 ms in 17 phases and
+  p95 at or over 16.7 ms in all 80.
 - Frames of 33 ms or more: 2 in 161,004 frames (2 on 2026-11-11): one on the pad in the second of the two slow
   GPU windows (33.7 ms), one of 452 ms on the main thread in `moonArrival` at warp x10. The second has no
   breakdown: the spec read the window's slowest frames after resetting them (corrected).
@@ -1050,7 +1116,8 @@ visual gap of the flight. Both cockpit pictures are nearly black.
 | `app-integration-13` | sim-world-pilot, vfx, audio | open | one-off costs in the ignition and lift-off frames: sim 5.9-6.4 ms (10-23 ms under load on 2026-11-12), first plume frame 1.5-2.8 ms, audio 1.5-1.9 ms |
 | `app-integration-14` | flight-ui (src/input/bindings.ts) | resolved (`b90ade9`; wired in `732962c`) | a key for the chase rig's `resetView()`: a presentation action `ui:resetCamera` on `Home` |
 
-Also answered in `732962c`: `core-5` (the feature wrapper carries every member of the contract), the app's line
+Also answered: `lead-6` in `8c0f2cb` (the frozen start `?deterministic=1&paused=1`; both app checkpoints
+identical over three captures and three loads). In `732962c`: `core-5` (the feature wrapper carries every member of the contract), the app's line
 of `core-6` (the V key and the seat's name), the app's half of `lead-3` (`window.__test.renderExact`) and of
 `app-integration-11` part 1 (`await renderer.warm()`).
 Earlier: `map-view-5` (the app shell part; its labs/integration part was then resolved by core-support),
@@ -1063,8 +1130,8 @@ switch), both in `83c80f1`.
 
 - The browser mission flies and passes every gate (2026-11-11 and 2026-11-12). Missed in the flight of
   2026-11-12: main-thread p99 in 6 of 80 phases (lift-off, the first kilometres, the last 600 m over the Moon:
-  the terrain's hooks), rAF p99 in 17 phases and the 18.2 line "p95 < 16.7 ms" in all of them (a 60 Hz clock
-  cannot meet it). See "Browser mission".
+  the terrain's hooks), and the frame-interval line as restated on 2026-11-12 in 3 of 80 (`ignition`: one
+  dropped frame in 182; `prelaunch` and `moonArrival`: one frame of 33 ms or more each). See "Browser mission".
 - What the flight's pictures show wrong is listed picture by picture under "Browser mission": no dust or plume
   at the lunar landing and lift-off, drawn-looking ribbons in the sea's glint at max Q, a box-shaped dark patch
   on the water at the capsule after the splash, the plasma burning the picture out at peak g, flat grey cockpit
@@ -1083,7 +1150,11 @@ switch), both in `83c80f1`.
 - The `qa-leo` scenario starts heads-up (`data/defs/scenarios/qa-leo.json`, not the app's): left as it is; the
   low-orbit test rolls the stack heads-down through the keys before its cockpit pictures.
 - Corrected after the flight of 2026-11-12 and not run in a browser since: `bodiesInFrame()` below a body's
-  reference radius, and the mission spec's read-out of a window's slowest frames.
+  reference radius, the mission spec's read-out of a window's slowest frames, and the mission spec's
+  frame-interval line on the app's recorded intervals (the app perf spec runs the same code and holds it).
+- The frozen start runs the camera to rest with neutral input: in a page opened with it a view switch has no
+  blend, and a rig that never comes to rest (none does today on the pad or in the cockpit) would keep the page
+  busy. It is for captures, not for play.
 - `isIdle()` at 1440p on the pad: true since the pool work for app-integration-7 (`189d1e2`; idle in the second
   run of the night, never idle in the first).
 - Not exercised in a browser spec: abort, RCS / gear / lights / fine-control keys, vessel cycling, a node drag in
