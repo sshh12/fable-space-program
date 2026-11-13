@@ -169,7 +169,7 @@ first. A stop is exact to the frame (at 4x physics warp a frame is 67 ms of flig
 simulation, and the pilot acts in the simulation's control ticks, which stand still with it: a flight with
 stops is the same flight.
 
-The mission spec sets 37 stops: every milestone (the cockpit as well at EARTH_ORBIT and LUNAR_TOUCHDOWN), and
+The mission spec sets 36 stops (17 milestones and 19 added moments; all 36 fired in the flight of 2026-11-12): every milestone (the cockpit as well at EARTH_ORBIT and LUNAR_TOUCHDOWN), and
 - staging: 0.5 s and 2 s after STAGE_SEP_1, FAIRING_JETTISON and STAGE_SEP_2;
 - lunar descent: 30 m, 10 m and 3 m of radar altitude at the Moon, the first `'touchdown'` on land of the active
   vessel and one second after it;
@@ -616,6 +616,146 @@ Added 2026-11-12 14:49 (phase 2, first half; all looked at):
 
 ## Browser mission (ARCHITECTURE 18.2)
 
+### Flight of 2026-11-12 (16:13-16:59): the re-flight with picture stops
+
+**Result: the flight passes every gate; the spec fails softly on frame-time lines and on seven "no body in the
+frame" checks that were the spec's own error.** One flight, commit `2a9bb7d` (the tree with the ocean's third
+round, the vfx foam decal off, the terrain's pad work and the cockpit's default seat), alone in the GPU slot with
+the gate's CPU and bake slots free at the start. 45.6 minutes from `ready` to splashdown (44.9 on 2026-11-11; the
+simulation stood at picture stops for 32 s in all). All seventeen milestones in order, `cheatCounter` 0 at every
+milestone and at the end, pad start, crew alive, `terrain.incompleteQueries` 0, `window.__test.errors` empty, the
+console with the known `powerPreference` warning only. 36 of 36 picture stops reached (17 milestones and 19
+added moments), 40 pictures. Record: `docs/qa/mission/browser-mission-2026-11-12.json` (gates, the 80 phase rows,
+the pictures with their numbers and readings, the windows over the lines, the comparison with 2026-11-11); the
+full record with all 711 windows is `out/mission/browser-mission.json`.
+
+Gates:
+
+| Milestone | Measured | Gate |
+|---|---|---|
+| LIFTOFF | surface speed 0.017 m/s, inertial 439.3 m/s | < 0.1 m/s; 439 +/- 2 m/s |
+| MAX_Q | 28.35 kPa at 11.0 km | 20-40 kPa |
+| STAGE_SEP_1 | 77.1 km, 2067 m/s, 1 debris vessel(s) | leaves debris |
+| FAIRING_JETTISON | 96.0 km, 5 debris vessels | above 80 km, leaves debris |
+| STAGE_SEP_2 | 183.8 km, 7819 m/s, 1 debris vessel(s) | leaves debris |
+| EARTH_ORBIT | 181.0 km x 257.2 km, incl. 20.89 deg | Pe >= 160 km, Ap <= 400 km |
+| TLI_COMPLETE | Moon encounter predicted 67.6 h ahead | patches contain a Moon encounter |
+| MOON_SOI_ENTER | 0.000 s from the predicted time | +/- 2 s |
+| LUNAR_ORBIT | 102.4 km x 113.7 km, e 0.0031 | e < 0.05, Pe > 60 km |
+| LUNAR_TOUCHDOWN | 0.82 m from the target; data level 12 resident of 12 available (deepest 12); 1.00 m/s down, 0.016 m/s across, tilt 0.36 deg (1.43 at the record), 4 of 4 legs intact; 911 s on the surface | <= 1,500 m; deepest level; < 2.5 m/s; < 1.0 m/s; < 12 deg; legs intact; > 600 s landed |
+| LUNAR_LIFTOFF | after 916 s on the surface; "Heron descent stage" still landed at the end | descent stage stays behind as landed debris |
+| MOON_SOI_EXIT | 0.000 s from the predicted time | reached, +/- 2 s |
+| EARTH_PERIGEE_TARGETED | vacuum perigee 38.1 km | 30-60 km |
+| ENTRY_INTERFACE | 122.0 km, 11.010 km/s; peak 5.87 g, g-dose 0.00, ablator left 58.0 %, capsule RCS left at drogues 93.0 % | 122 km, 10.9-11.1 km/s; < 10 g; dose < 5; ablator > 25 %; RCS > 20 % |
+| DROGUE_DEPLOY | 7445 m, Mach 0.43, 4.91 kPa | inside the envelope |
+| MAIN_DEPLOY | 3175 m, 49.6 m/s, 1.10 kPa | inside the envelope |
+| SPLASHDOWN | 15.33 deg, -141.59 deg on water, 1161.4 km from the centre of "Central Pacific" (radius 2000.0 km); 7.82 m/s; upright at 10.3 deg after 30 s | water, inside a recovery zone; <= 9.5 m/s; crew alive; upright after 30 s |
+| budgets | 7.87 days from lift-off to splashdown; 45.6 minutes of real time from ready to splashdown | < 14 days |
+
+Against 2026-11-11: the same flight within the pilot's scatter (lunar orbit 102.4 x 113.7 km against 103.0 x
+114.7; touchdown 0.82 m from the target against 1.94 m; vacuum perigee 38.1 km against 48.5, inside 30-60;
+splashdown about 13 km from the earlier point, 7.82 m/s both times; peak 5.87 g against 5.93).
+
+Frame time (2560 x 1440, render scale 1, governor off; a phase's number is the median over its windows of the
+window's p99; harness clock 59.99 Hz before and 60.00 Hz after, so the rAF lines are judged). By segment of the
+flight, with the worst phase of each; "then" is 2026-11-11 (GPU p99 / main-thread p99 of the worst phase / frames
+of 33 ms or more):
+
+| Segment | min | frames | GPU p99, worst phase (line 11 ms) | worst single window | main thread p99, worst phase (line 6 ms) | phases over 6 ms | rAF p99, worst phase | frames >= 33 ms | then |
+|---|---|---|---|---|---|---|---|---|---|
+| pad | 0.6 | 2071 | 6.45 (prelaunch) | 39.50 | 4.83 (prelaunch) | none | 17.13 | 1 | 6.92 / 6.39 / 0 |
+| ignition and lift-off | 0.2 | 515 | 7.00 (ignition) | 7.00 | 12.49 (vertical) | ignition 7.36; vertical 12.49 | 21.62 | 0 | 8.37 / 17.69 / 1 |
+| ascent | 2.6 | 8673 | 3.94 (pitchProgramme) | 6.32 | 8.07 (pitchProgramme) | pitchProgramme 8.07; m1Separation 6.79 | 19.57 | 0 | 4.42 / 10.05 / 0 |
+| parking orbit | 2.8 | 9541 | 2.79 (parkingCoast) | 3.03 | 3.62 (parkingCoast) | none | 17.12 | 0 | 3.67 / 6.58 / 0 |
+| parking orbit, cockpit | 0.0 | 240 | 2.50 (parkingCoast (cockpit)) | 2.50 | 4.10 (parkingCoast (cockpit)) | none | 17.10 | 0 | 2.53 / 4.16 / 0 |
+| translunar injection | 4.8 | 17070 | 3.05 (tli:tail) | 3.14 | 4.83 (tli:plan) | none | 18.14 | 0 | 4.52 / 6.69 / 0 |
+| coast to the Moon | 5.2 | 18510 | 3.37 (mcc2:align) | 3.99 | 3.70 (mcc1:tail) | none | 21.47 | 1 | 3.21 / 4.56 / 0 |
+| lunar orbit | 7.9 | 28472 | 2.96 (loi:coast) | 4.10 | 5.69 (loi:trim) | none | 19.04 | 0 | 2.96 / 18.85 / 1 |
+| powered descent | 4.0 | 13592 | 2.94 (terminal) | 3.52 | 12.27 (terminal) | terminal 12.27 | 17.44 | 0 | 4.31 / 13.56 / 0 |
+| lunar surface | 0.5 | 1620 | 3.17 (surface) | 3.26 | 3.85 (surface) | none | 16.95 | 0 | 4.72 / 4.35 / 0 |
+| lunar surface, cockpit | 0.0 | 241 | 2.12 (touchdown (cockpit)) | 2.12 | 9.82 (touchdown (cockpit)) | touchdown (cockpit) 9.82 | 17.17 | 0 | 4.41 / 4.81 / 0 |
+| lunar ascent | 3.5 | 12601 | 3.61 (lunarLiftoff) | 3.95 | 4.95 (lunarAscent) | none | 17.60 | 0 | 3.27 / 10.31 / 0 |
+| return to the Earth | 8.0 | 28806 | 4.35 (tec1:tail) | 11.42 | 5.26 (entryPrep) | none | 17.45 | 0 | 2.80 / 6.80 / 0 |
+| entry | 3.2 | 11372 | 2.74 (entry) | 3.44 | 4.90 (entry) | none | 17.37 | 0 | 1.74 / 8.24 / 0 |
+| chutes | 0.6 | 1950 | 4.16 (chutes) | 4.60 | 4.75 (chutes) | none | 17.20 | 0 | 1.96 / 7.75 / 0 |
+| splashdown | 1.7 | 5730 | 5.25 (splashdown) | 6.18 | 5.02 (splashdown) | none | 17.23 | 0 | 2.26 / 3.95 / 0 |
+
+- GPU: no phase over 11 ms (worst 7.00, ignition). Three of 711 windows over it: two on the pad 12 s apart at
+  warp 1 (p99 37.7 and 39.5 ms with a median of 5.6: every feature's GPU time 4.7 times its usual in a few
+  frames, so the GPU as a whole was slow for those frames; the app perf spec's pad windows of the same
+  afternoon have none; cause not found) and one in `tei:burn` (11.4).
+- Main thread: 6 of 80 phases over 6 ms (24 on 2026-11-11): ignition 7.36, vertical 12.49, pitchProgramme 8.07, m1Separation 6.79, terminal 12.27, touchdown (cockpit) 9.82. What they are made of (p99 per stage and
+  feature): `vertical` render 10.9 with the terrain's hooks 5.4 and the core 2.5, simulation 2.1; `terminal`
+  (the last 600 m over the Moon) the terrain's hooks 10.8; `touchdown (cockpit)` terrain 5.0, core 3.4, cockpit
+  1.6; `pitchProgramme` terrain 2.8, simulation 1.9. Nothing of the app's own. 95 of 711 windows are over the
+  line (the record lists them by phase).
+- rAF: p99 over 17.5 ms in 17 phases (worst 21.6, ignition; the median phase 17.18); p95 at or over 16.7 ms in
+  all 80 (16.84 to 17.70, median 16.98, with a median p50 of 16.66): on a 60 Hz clock the frame deltas scatter
+  about 16.67 ms, so the 18.2 line "p95 < 16.7 ms" is missed by a tenth to three tenths of a millisecond in
+  every phase, whatever the load. Not loosened; it wants the lead's reading.
+- Frames of 33 ms or more: 2 in 161,004 frames (2 on 2026-11-11): one on the pad in the second of the two slow
+  GPU windows (33.7 ms), one of 452 ms on the main thread in `moonArrival` at warp x10. The second has no
+  breakdown: the spec read the window's slowest frames after resetting them (corrected).
+
+The spec's own errors, found in this flight and corrected afterwards (not re-flown):
+- "The Earth or the Moon in the frame" failed for the seven chase pictures on and just above the lunar surface:
+  the landing site lies 1.9 km below the Moon's reference radius, the camera was inside the reference sphere and
+  `bodiesInFrame()` skipped the body. It now takes the body as filling the half space below
+  (`bodyAngularRadius` in `src/app/framing.ts`, unit-tested).
+- The slowest frames of each window were read after the reset (above).
+
+Pictures (`out/screens/mission/`, 2560 x 1440, all 40 looked at: each as a 1280 x 720 reduction, and in crops at
+full resolution where something looked wrong):
+
+- `00-pad-chase.png`: The stack at the umbilical tower from above, the pad's apron, lava plain, the coast and the sea with the sun's glitter, cumulus; launch panel (plane crossing T- 2:21), warp x50 while the pilot waits for the window.
+- `01-liftoff-chase.png`: The frame of lift-off (T+0, 19.1 m): the launch cloud rolling out left and right of the pad, the stack still beside the tower, toast "Lift-off". **Wrong or to judge:** No flame is visible in this frame: the base of the vehicle is behind the pad's structure and the HUD's navball.
+- `02-max-q-chase.png`: 14.9 km, Mach 1.67: the stack from behind and below, the plume at the lower edge behind the navball, cloud field and sea far below. **Wrong or to judge:** In the sun's glint on the sea (lower right) a pair of pale meandering ribbons and several fans of dark parallel arcs: drawn-looking lines, not water (checked in a crop at full resolution).
+- `03-stage-sep-1-chase.png`: 77.1 km: the first stage just free, a white flash at the gap, the second stage and spacecraft ahead; the Earth's limb with a thin blue line of air, cloud field.
+- `03-stage-sep-1-plus-0.5s-chase.png`: Half a second later: the first stage a few metres behind, the second stage's engine glowing.
+- `03-stage-sep-1-plus-2s-chase.png`: Two seconds later: the first stage a length and a half behind and below, the second stage's plume a pale cone.
+- `04-fairing-jettison-chase.png`: 96.0 km: a small glow at the nose (the tower's motors), the second stage burning, the spent first stage a speck at the lower left.
+- `04-fairing-jettison-plus-0.5s-chase.png`: The four fairing petals opening around the spacecraft, the tower leaving ahead on its motor's flame.
+- `04-fairing-jettison-plus-2s-chase.png`: The four petals tumbling away on all sides, lander and capsule exposed on top of the second stage.
+- `05-stage-sep-2-chase.png`: 183.8 km, in orbit: the second stage's tank just apart from the third stage and spacecraft, no plume, cloud field below, stars above the limb.
+- `05-stage-sep-2-plus-0.5s-chase.png`: The second stage half a metre apart.
+- `05-stage-sep-2-plus-2s-chase.png`: The second stage two metres apart, the third stage's engine visible in the open ring.
+- `06-earth-orbit-chase.png`: The same instant as the stage separation (0.1 s later), toasts "M-2 separation" and "Earth orbit".
+- `06-earth-orbit-cockpit.png`: The pilot's couch: panel, caution lights and the three displays legible (flight, orbit, systems), the cabin evenly lit. **Wrong or to judge:** Both forward windows are a flat light grey with faint scratches. The Sun stands in the windows (frame position -0.08, 0.27): no sun disc, no bloom, no Earth or sky can be made out. (The stack flies heads-up here; the heads-down picture with the Earth in the windows is the app spec's leo-cockpit.png.)
+- `07-tli-complete-chase.png`: 299.9 km at cut-off: the third stage and spacecraft, two RCS jets at the tail, cloud field and limb below, toast "TLI complete", burn panel with 0.6 m/s remaining.
+- `08-moon-soi-enter-chase.png`: 64.4 Mm from the Moon: the lander stack sunlit from the side against black; a small gibbous Earth (blue and white at full resolution) at the lower left. **Wrong or to judge:** The Moon, 64 Mm ahead, is not in the frame.
+- `09-lunar-orbit-chase.png`: 104.7 km over the Moon: the stack from behind (the descent engine's bell and truss), RCS puffs, the grey surface below with a sharp limb, toast "Lunar orbit". **Wrong or to judge:** To judge: from this height the surface is smooth, with few craters to be seen.
+- `10-lunar-touchdown-descent-30m-chase.png`: 30 m, 4.4 m/s down: the lander with its gear down over the mare, its shadow far to the left, black sky, sharp horizon. **Wrong or to judge:** No engine plume and no dust (throttle 21 %). The small craters farther off read as flat dark ovals.
+- `10-lunar-touchdown-descent-10m-chase.png`: 10 m, 1.5 m/s down: the shadow nearer. **Wrong or to judge:** No dust at 10 m (throttle 15 %), no plume.
+- `10-lunar-touchdown-descent-3m-chase.png`: 3 m, 1.0 m/s down: the shadow reaches the lander's feet. **Wrong or to judge:** No dust, no plume (throttle 12 %).
+- `10-lunar-touchdown-contact-chase.png`: The first footpad on the ground (panel "LANDED"), throttle still 12 %. **Wrong or to judge:** No dust at the contact.
+- `10-lunar-touchdown-contact-plus-1s-chase.png`: One second later: engine off, the lander at rest on its four legs.
+- `10-lunar-touchdown-chase.png`: At rest 0.8 m from the target in Mare Tranquillitatis: long shadow to the left, a small crater with rocks in the foreground, toast "Lunar touchdown".
+- `10-lunar-touchdown-cockpit.png`: The cabin on the Moon, lit; displays legible (the orbit page reads "Moon - landed - no orbit"). **Wrong or to judge:** The forward windows are plain black: they look at the sky; the Earth is in the frame's lower part, behind the panel.
+- `11-lunar-liftoff-chase.png`: 50 m up at 13 m/s: the ascent stage and capsule, framed closer (the vessel is smaller now), the mare below, darker than in the landing pictures (EV100 14.2 against 12.8). **Wrong or to judge:** No plume under the ascent engine at 100 % throttle, no dust; the descent stage left behind is not in the frame.
+- `12-moon-soi-exit-chase.png`: 359.7 Mm from the Earth: the ascent stage and capsule sunlit, the Moon a small full disc at the lower left.
+- `13-earth-perigee-targeted-chase.png`: The stage from its shadowed side, RCS jets with a wide grey haze around them, a small gibbous Earth at the lower left, the capsule's nose catching the light at the lower right; toast "Entry corridor targeted". **Wrong or to judge:** To judge: the haze of the RCS jets is as wide as the vehicle.
+- `14-entry-interface-chase.png`: 122.0 km, 10.8 km/s, at night: the capsule alone, dark, faintly lit from one side, heat shield forward; entry panel (14 kW/m^2). **Wrong or to judge:** The Earth below is black (night side): nothing but the capsule in the frame.
+- `14-entry-interface-peak-heating-chase.png`: 60.0 km, 2.47 MW/m^2, 4.8 g: a white to pale pink sheath wrapped round the heat shield with a long pale wake, the capsule dark inside it. **Wrong or to judge:** To judge: the glow is nearly white (little colour), and the capsule's flank carries a pattern of light streaks. The recovery panel reads "Central Atlantic, 13.92 Mm" in this frame and "Central Pacific" before and after.
+- `14-entry-interface-peak-heating-cockpit.png`: The couch during the peak: the cabin dim, displays legible (4.78 g, 60.0 km), caution lights SAS, RCS, COMM BLK and LIFT UP lit. **Wrong or to judge:** Both windows are a flat light grey: no structure, no flicker, no colour of the plasma, and the cabin walls are not tinted by it.
+- `14-entry-interface-peak-g-chase.png`: 54.6 km, 5.58 g, 901 kW/m^2: a white-pink glow as wide as the frame. **Wrong or to judge:** The capsule is burnt out to white inside the glow, its detail gone: the exposure stands at EV100 7.7 here (16.5 at the peak of the heating 44 s earlier).
+- `15-drogue-deploy-chase.png`: 7.4 km, 132 m/s, low sun: the capsule tan in the warm light, one riser running up out of the frame, pink cumulus and a grey sea in haze below. **Wrong or to judge:** The drogues are above the frame: only the riser shows. A pale vertical streak hangs below the capsule.
+- `15-drogue-deploy-plus-3s-chase.png`: Three seconds later, 99 m/s: two risers running up. **Wrong or to judge:** The canopies are above the frame.
+- `16-main-deploy-chase.png`: 3.2 km, 50 m/s: the capsule under one riser, cumulus in sunset colours, the sea a flat purple-grey. **Wrong or to judge:** The mains are above the frame.
+- `16-main-deploy-plus-8s-chase.png`: Eight seconds later, 18 m/s: three risers. **Wrong or to judge:** The canopies are above the frame: no picture of this flight shows an open chute.
+- `17-splashdown-splash-plus-0.2s-chase.png`: The capsule in the water, a crown of white spray with flying drops around it, a ring of foam, dark blue swell, warm clouds at the horizon. **Wrong or to judge:** A box-shaped darker patch on the water in front of the capsule, with straight vertical edges.
+- `17-splashdown-splash-plus-1s-chase.png`: The crown at its largest, a sheet of spray, the foam patch spreading; the capsule hidden in the spray. **Wrong or to judge:** Patches of turquoise speckles on the water at the lower left; some spray drops are drawn as long straight lines.
+- `17-splashdown-splash-plus-3s-chase.png`: The capsule afloat, dark brown, upright; a wide patch of foam with dark holes over the swell, tinted pink by the low sun; a main canopy (orange and white gores) coming down at the left with its risers taut. **Wrong or to judge:** To judge: the foam patch fills the lower half of the frame. The canopy stands on the water like a flat fan.
+- `17-splashdown-splash-plus-10s-chase.png`: The foam thinner and broken up (the patch has aged), the capsule upright, panel "SPLASHED", the sea very dark under the low sun. **Wrong or to judge:** The box-shaped darker patch in front of the capsule again; the canopy still stands as a fan at the left edge.
+- `17-splashdown-chase.png`: 34 s after the splash: the capsule riding upright in what is left of the foam, toast "Splashdown". **Wrong or to judge:** The box-shaped darker patch in front of the capsule (edges about a capsule's width apart, from the waterline down); the fan-shaped canopy.
+
+What the pictures cannot show, for whoever judges them: no picture of the flight has an open chute in it (the
+chase view's default framing keeps the capsule in the middle and the canopies above the frame: the spec would
+have to zoom out through the camera's own controls at those stops, and it asserts the default framing today);
+the Earth-orbit cockpit picture is heads-up with the Sun in the windows (the mission spec does not roll the
+stack; the app spec's `leo-cockpit.png` is the heads-down one).
+
+### Flight of 2026-11-11
+
 **Result (2026-11-11): the flight passes, the spec fails on frame-time budgets and two image-statistics checks.**
 The test pilot flew lunar-direct inside the page in real Chrome on the RTX 5090, from the pad to splashdown in
 real time. It took 44.9 minutes from `ready` to splashdown (`browser-loop.test.ts` predicts 44.9). All seventeen
@@ -921,10 +1061,14 @@ switch), both in `83c80f1`.
 
 ## Known limits
 
-- The browser mission flies and passes every gate. Its frame-time budgets are missed: rAF (harness clock,
-  `app-integration-8`) and main thread (renderer hooks, `app-integration-7` and the burn-time spikes). See "Browser mission".
-- From TLI to the entry the chase pictures show neither the Earth nor the Moon; both cockpit pictures are nearly
-  black (for the visual close-out).
+- The browser mission flies and passes every gate (2026-11-11 and 2026-11-12). Missed in the flight of
+  2026-11-12: main-thread p99 in 6 of 80 phases (lift-off, the first kilometres, the last 600 m over the Moon:
+  the terrain's hooks), rAF p99 in 17 phases and the 18.2 line "p95 < 16.7 ms" in all of them (a 60 Hz clock
+  cannot meet it). See "Browser mission".
+- What the flight's pictures show wrong is listed picture by picture under "Browser mission": no dust or plume
+  at the lunar landing and lift-off, drawn-looking ribbons in the sea's glint at max Q, a box-shaped dark patch
+  on the water at the capsule after the splash, the plasma burning the picture out at peak g, flat grey cockpit
+  windows with the Sun or the plasma in them, and no open chute in any frame.
 - The main-thread CPU line is missed in three measured situations at 1440p (pad 6.7, first kilometre 6.5, engine
   burns 7.1 ms p99) and in the lift-off frame (30 ms); every part of it is attributed and requested (-7, -12,
   -13). Nothing in `src/app` contributes more than 0.15 ms.
@@ -933,15 +1077,13 @@ switch), both in `83c80f1`.
 - The chase view's default framing changed in `src/camera` while this round ran (request -10, NOTICE-core-4): the
   app needs no wiring for it and none was done; the mission's deep-space pictures have not been re-shot with it
   (`start-trans-earth.png` of the night's third run predates it).
-- Phase 1 of the re-flight ran in a browser on 2026-11-12 14:49 ("Measured"), except the mission spec: its
-  whole picture flow is unrun (17 milestone stops and 20 added ones, the cockpit pictures at stops, the `'splash'`
-  and `'touchdown'` events of the active vessel as triggers, the 1 MW/m^2 floor of the heating peak and the 3 g
-  floor of the load peak; if a stop is never reached the spec says which, softly). The mission spec does not yet
-  roll heads-down for its Earth-orbit cockpit pictures; the low-orbit test's key sequence (T, hold E to 168
-  degrees, wait for the rate to go) is what it would use.
+- The mission spec's picture flow ran in the flight of 2026-11-12: all 36 stops fired (the `'splash'` and
+  `'touchdown'` events, the heating peak past 1 MW/m^2, the load peak past 3 g). It does not roll heads-down for
+  its Earth-orbit cockpit picture and does not zoom out for the chutes.
 - The `qa-leo` scenario starts heads-up (`data/defs/scenarios/qa-leo.json`, not the app's): left as it is; the
   low-orbit test rolls the stack heads-down through the keys before its cockpit pictures.
-- The browser mission has not been re-flown since 2026-11-11.
+- Corrected after the flight of 2026-11-12 and not run in a browser since: `bodiesInFrame()` below a body's
+  reference radius, and the mission spec's read-out of a window's slowest frames.
 - `isIdle()` at 1440p on the pad: true since the pool work for app-integration-7 (`189d1e2`; idle in the second
   run of the night, never idle in the first).
 - Not exercised in a browser spec: abort, RCS / gear / lights / fine-control keys, vessel cycling, a node drag in

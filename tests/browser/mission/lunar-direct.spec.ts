@@ -195,6 +195,9 @@ const closeWindow = (page: Page, phase: string): Promise<PerfWindow> =>
     const p = window.__test!.perf()!;
     const c = window.__app!.cpu();
     const b = window.__app!.brief();
+    // Before the reset: it clears the list (in the flight of 2026-11-12 the list was read after it and was empty
+    // in every window, so the one frame of 452 ms in `moonArrival` has no breakdown).
+    const slowest = window.__app!.cpuSlowest().slice(0, 2);
     window.__test!.resetPerf();
     return {
       phase: ph,
@@ -208,7 +211,7 @@ const closeWindow = (page: Page, phase: string): Promise<PerfWindow> =>
       stages: Object.fromEntries(Object.entries(c.stages).map(([k, v]) => [k, v.p99])),
       features: Object.fromEntries(Object.entries(p.features).map(([k, v]) => [k, v.gpuMs])),
       featuresCpu: Object.fromEntries(Object.entries(c.features).map(([k, v]) => [k, v.p99])),
-      slowest: window.__app!.cpuSlowest().slice(0, 2),
+      slowest,
       qualityScale: p.qualityScale,
       renderScale: p.renderScale,
     };

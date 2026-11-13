@@ -8,7 +8,7 @@ import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import type { TestApiController } from '@/core/testing/testApi';
 import { coreOf, type ExposureInfo } from '@/render/core';
-import { discInFrame, projectToFrame } from './framing';
+import { bodyAngularRadius, discInFrame, projectToFrame } from './framing';
 import type { PictureStop, PictureStopHit } from './pictureStops';
 import type { Game } from './game';
 import type { LoadingReport } from './loading';
@@ -278,8 +278,7 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
         // View space: x right, y up, the eye looks down -z.
         const d = quat.rotateInv(cam.qViewToRoot, v3.sub(b.rRoot, cam.positionRoot));
         const distance = Math.hypot(d.x, d.y, d.z);
-        if (distance <= def.radius) continue;
-        const angularRadius = Math.asin(def.radius / distance);
+        const angularRadius = bodyAngularRadius(def.radius, distance);
         const f = discInFrame(d, angularRadius, tanX, tanY);
         if (f.inFrame) out.push({ id: b.id, star: b.id === s.starId, angularRadius, x: f.x, y: f.y, heightShare: f.heightShare });
       }

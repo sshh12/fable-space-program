@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { discInFrame, projectToFrame } from './framing';
+import { bodyAngularRadius, discInFrame, projectToFrame } from './framing';
 
 const DEG = Math.PI / 180;
 /** The game's chase view: 55 degrees vertical, 16:9. */
@@ -51,5 +51,24 @@ describe('discInFrame', () => {
 
   it('gives the disc as a share of the vertical half-angle', () => {
     expect(discInFrame({ x: 0, y: 0, z: -1 }, 27.5 * DEG, tanX, tanY).heightShare).toBeCloseTo(1, 12);
+  });
+});
+
+describe('bodyAngularRadius', () => {
+  it('is asin(R / d) above the reference sphere', () => {
+    expect(bodyAngularRadius(1737.4e3, 2 * 1737.4e3)).toBeCloseTo(Math.PI / 6, 12);
+  });
+  it('is just under 90 degrees at and below the reference radius, so that the ground below is in the frame', () => {
+    const R = 1737.4e3;
+    for (const d of [R, R - 1900, R - 1900 + 12]) {
+      const a = bodyAngularRadius(R, d);
+      expect(a).toBeGreaterThan(1.56);
+      expect(a).toBeLessThan(Math.PI / 2);
+      // A camera 12 m above a site 1.9 km below the datum, looking at the horizon: the body's centre straight down.
+      const tan = Math.tan((50 * Math.PI) / 360);
+      expect(discInFrame({ x: 0, y: -d, z: 0 }, a, tan * (16 / 9), tan).inFrame).toBe(true);
+      // Looking straight up, the body is behind the eye: not in the frame.
+      expect(discInFrame({ x: 0, y: 0, z: d }, a, tan * (16 / 9), tan).inFrame).toBe(false);
+    }
   });
 });

@@ -35,6 +35,17 @@ const GRID = 9;
  *    image plane while its limb crosses the picture) is tested by the angle from its centre to a grid of
  *    directions across the frame: in the frame when any of them lies inside the disc.
  */
+/**
+ * Angular radius of a body's reference sphere seen from `distance` from its centre, radians. At or below the
+ * reference radius the eye is still above the ground (a site below the datum: the landing site in Mare
+ * Tranquillitatis lies 1.9 km under the Moon's), and the body fills the half space below the horizon: just
+ * under 90 degrees. Found in the flight of 2026-11-12: every picture on the lunar surface had "no body in frame".
+ */
+export function bodyAngularRadius(radius: number, distance: number): number {
+  if (!(distance > 0)) return Math.asin(0.999999);
+  return Math.asin(Math.min(radius / distance, 0.999999));
+}
+
 export function discInFrame(d: { x: number; y: number; z: number }, angularRadius: number, tanX: number, tanY: number): DiscInFrame {
   const len = Math.hypot(d.x, d.y, d.z);
   const heightShare = angularRadius / Math.atan(tanY);

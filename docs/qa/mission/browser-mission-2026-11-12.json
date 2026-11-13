@@ -1,0 +1,5676 @@
+{
+ "about": "Browser mission of 2026-11-12 (local date; 16:13-16:59 PST): tests/browser/mission/lunar-direct.spec.ts at commit 2a9bb7d, one flight, pad to splashdown, flown by the test pilot in the page through the controls; 36 picture stops, 40 pictures in out/screens/mission/. The windows and the phase log of the full record (out/mission/browser-mission.json) are left out here; `windowsOverTheLines` and `comparison` are computed from them and from browser-mission-2026-11-11.json.",
+ "when": "2026-11-13T00:58:23.483Z",
+ "realMinutes": 45.6349,
+ "heldAtPictureStopsMinutes": 0.5275333333333333,
+ "clock": {
+  "start": {
+   "count": 239,
+   "mean": 16.668200836820084,
+   "p50": 16.699999999999818,
+   "p95": 16.800000000000182,
+   "p99": 16.800000000000182,
+   "max": 16.800000000000182,
+   "hz": 59.994477495795365
+  },
+  "end": {
+   "count": 239,
+   "mean": 16.667782426778242,
+   "p50": 16.699999999999818,
+   "p95": 16.799999999999272,
+   "p99": 16.800000000000182,
+   "max": 16.800000000000182,
+   "hz": 59.99598353248319
+  }
+ },
+ "gates": [
+  {
+   "milestone": "LIFTOFF",
+   "measured": "surface speed 0.017 m/s, inertial 439.3 m/s",
+   "gate": "< 0.1 m/s; 439 +/- 2 m/s"
+  },
+  {
+   "milestone": "MAX_Q",
+   "measured": "28.35 kPa at 11.0 km",
+   "gate": "20-40 kPa"
+  },
+  {
+   "milestone": "STAGE_SEP_1",
+   "measured": "77.1 km, 2067 m/s, 1 debris vessel(s)",
+   "gate": "leaves debris"
+  },
+  {
+   "milestone": "FAIRING_JETTISON",
+   "measured": "96.0 km, 5 debris vessels",
+   "gate": "above 80 km, leaves debris"
+  },
+  {
+   "milestone": "STAGE_SEP_2",
+   "measured": "183.8 km, 7819 m/s, 1 debris vessel(s)",
+   "gate": "leaves debris"
+  },
+  {
+   "milestone": "EARTH_ORBIT",
+   "measured": "181.0 km x 257.2 km, incl. 20.89 deg",
+   "gate": "Pe >= 160 km, Ap <= 400 km"
+  },
+  {
+   "milestone": "TLI_COMPLETE",
+   "measured": "Moon encounter predicted 67.6 h ahead",
+   "gate": "patches contain a Moon encounter"
+  },
+  {
+   "milestone": "MOON_SOI_ENTER",
+   "measured": "0.000 s from the predicted time",
+   "gate": "+/- 2 s"
+  },
+  {
+   "milestone": "LUNAR_ORBIT",
+   "measured": "102.4 km x 113.7 km, e 0.0031",
+   "gate": "e < 0.05, Pe > 60 km"
+  },
+  {
+   "milestone": "LUNAR_TOUCHDOWN",
+   "measured": "0.82 m from the target; data level 12 resident of 12 available (deepest 12); 1.00 m/s down, 0.016 m/s across, tilt 0.36 deg (1.43 at the record), 4 of 4 legs intact; 911 s on the surface",
+   "gate": "<= 1,500 m; deepest level; < 2.5 m/s; < 1.0 m/s; < 12 deg; legs intact; > 600 s landed"
+  },
+  {
+   "milestone": "LUNAR_LIFTOFF",
+   "measured": "after 916 s on the surface; \"Heron descent stage\" still landed at the end",
+   "gate": "descent stage stays behind as landed debris"
+  },
+  {
+   "milestone": "MOON_SOI_EXIT",
+   "measured": "0.000 s from the predicted time",
+   "gate": "reached, +/- 2 s"
+  },
+  {
+   "milestone": "EARTH_PERIGEE_TARGETED",
+   "measured": "vacuum perigee 38.1 km",
+   "gate": "30-60 km"
+  },
+  {
+   "milestone": "ENTRY_INTERFACE",
+   "measured": "122.0 km, 11.010 km/s; peak 5.87 g, g-dose 0.00, ablator left 58.0 %, capsule RCS left at drogues 93.0 %",
+   "gate": "122 km, 10.9-11.1 km/s; < 10 g; dose < 5; ablator > 25 %; RCS > 20 %"
+  },
+  {
+   "milestone": "DROGUE_DEPLOY",
+   "measured": "7445 m, Mach 0.43, 4.91 kPa",
+   "gate": "inside the envelope"
+  },
+  {
+   "milestone": "MAIN_DEPLOY",
+   "measured": "3175 m, 49.6 m/s, 1.10 kPa",
+   "gate": "inside the envelope"
+  },
+  {
+   "milestone": "SPLASHDOWN",
+   "measured": "15.33 deg, -141.59 deg on water, 1161.4 km from the centre of \"Central Pacific\" (radius 2000.0 km); 7.82 m/s; upright at 10.3 deg after 30 s",
+   "gate": "water, inside a recovery zone; <= 9.5 m/s; crew alive; upright after 30 s"
+  },
+  {
+   "milestone": "budgets",
+   "measured": "7.87 days from lift-off to splashdown; 45.6 minutes of real time from ready to splashdown",
+   "gate": "< 14 days"
+  }
+ ],
+ "milestones": [
+  {
+   "id": "LIFTOFF",
+   "ut": 938241418.8666667,
+   "data": {
+    "ut": 938241418.8666667,
+    "met": 0.008333325386047363,
+    "altitude": 77.34898489620537,
+    "radarAltitude": 19.100069292001425,
+    "latitudeDeg": 18.987555999996744,
+    "longitudeDeg": -155.60323899736946,
+    "speedOrbital": 439.3078565753177,
+    "speedSurface": 0.01663016484798151,
+    "verticalSpeed": 0.016629938020952396,
+    "horizontalSpeed": 0.00008685787676621541,
+    "mass": 2735363.2599505344,
+    "gLoad": 1.017386044866672,
+    "peakG": 1.017386044866672,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 1,
+    "maxTempFraction": 0.41428568558003587,
+    "deltaVRemaining": 20173.5472493514,
+    "stagesFired": 1,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 2,
+    "surfaceGravity": 9.820250487063928,
+    "propellantKg:les": 1260.148235,
+    "propellantFraction:les": 1,
+    "propellantKg:les-jettison": 152.957432,
+    "propellantFraction:les-jettison": 1,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 36000,
+    "propellantFraction:descent": 1,
+    "propellantKg:m3": 85000,
+    "propellantFraction:m3": 1,
+    "propellantKg:m2": 634652.618376,
+    "propellantFraction:m2": 1,
+    "propellantKg:m1": 1739590.6898675722,
+    "propellantFraction:m1": 0.9881729562355756
+   }
+  },
+  {
+   "id": "MAX_Q",
+   "ut": 938241498.75,
+   "data": {
+    "ut": 938241498.75,
+    "met": 79.8916666507721,
+    "altitude": 14866.714367681183,
+    "radarAltitude": 14830.35308693504,
+    "latitudeDeg": 18.980945303131442,
+    "longitudeDeg": -155.56383008176752,
+    "speedOrbital": 795.19182963036,
+    "speedSurface": 492.2245492286814,
+    "verticalSpeed": 437.27685632655295,
+    "horizontalSpeed": 225.99548177905183,
+    "mass": 1862141.1939601358,
+    "gLoad": 2.000397638100963,
+    "peakG": 2.000397638100963,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 1,
+    "maxTempFraction": 0.4116249110707415,
+    "deltaVRemaining": 18853.626438525996,
+    "stagesFired": 1,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 2,
+    "surfaceGravity": 9.820250487063928,
+    "propellantKg:les": 1260.148235,
+    "propellantFraction:les": 1,
+    "propellantKg:les-jettison": 152.957432,
+    "propellantFraction:les-jettison": 1,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 36000,
+    "propellantFraction:descent": 1,
+    "propellantKg:m3": 85000,
+    "propellantFraction:m3": 1,
+    "propellantKg:m2": 634652.618376,
+    "propellantFraction:m2": 1,
+    "propellantKg:m1": 866361.1372055719,
+    "propellantFraction:m1": 0.492135679448375,
+    "peakDynamicPressure": 28350.237431959642,
+    "peakDynamicPressureAltitude": 11020.049837476574,
+    "peakDynamicPressureUt": 938241489.1416667
+   }
+  },
+  {
+   "id": "STAGE_SEP_1",
+   "ut": 938241580.8,
+   "data": {
+    "ut": 938241580.8,
+    "met": 161.94166660308838,
+    "altitude": 77084.26865765732,
+    "radarAltitude": 77071.78467981794,
+    "latitudeDeg": 18.87132340709131,
+    "longitudeDeg": -154.88642109090816,
+    "speedOrbital": 2462.8031651080655,
+    "speedSurface": 2066.573352920212,
+    "verticalSpeed": 977.5474179162757,
+    "horizontalSpeed": 1820.7488757994909,
+    "mass": 845810.5679899987,
+    "gLoad": 0.04299418494290441,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 1,
+    "maxTempFraction": 0.47853618196688624,
+    "deltaVRemaining": 16552.02411452889,
+    "stagesFired": 2,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 3,
+    "surfaceGravity": 9.820250487063928,
+    "propellantKg:les": 1260.148235,
+    "propellantFraction:les": 1,
+    "propellantKg:les-jettison": 152.957432,
+    "propellantFraction:les-jettison": 1,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 36000,
+    "propellantFraction:descent": 1,
+    "propellantKg:m3": 85000,
+    "propellantFraction:m3": 1,
+    "propellantKg:m2": 634361.6961420941,
+    "propellantFraction:m2": 0.9995416039806937,
+    "stageIndex": 1,
+    "vesselsSeparated": 1
+   }
+  },
+  {
+   "id": "FAIRING_JETTISON",
+   "ut": 938241601.275,
+   "data": {
+    "ut": 938241601.275,
+    "met": 182.41666662693024,
+    "altitude": 96019.22026261967,
+    "radarAltitude": 96010.23905117824,
+    "latitudeDeg": 18.811116517596822,
+    "longitudeDeg": -154.53085930153236,
+    "speedOrbital": 2544.3571575618735,
+    "speedSurface": 2135.8206072336347,
+    "verticalSpeed": 867.3258825690136,
+    "horizontalSpeed": 1951.7877650271644,
+    "mass": 805684.8552537013,
+    "gLoad": 0.8253869253336921,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 1,
+    "maxTempFraction": 0.48342145933884173,
+    "deltaVRemaining": 16558.74924582173,
+    "stagesFired": 3,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 8,
+    "surfaceGravity": 9.820250487063928,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 36000,
+    "propellantFraction:descent": 1,
+    "propellantKg:m3": 85000,
+    "propellantFraction:m3": 1,
+    "propellantKg:m2": 604224.8703956085,
+    "propellantFraction:m2": 0.9520560585438811,
+    "stageIndex": 2,
+    "vesselsSeparated": 5
+   }
+  },
+  {
+   "id": "STAGE_SEP_2",
+   "ut": 938241998.4666667,
+   "data": {
+    "ut": 938241998.4666667,
+    "met": 579.6083333492279,
+    "altitude": 183780.84382192697,
+    "radarAltitude": 183777.57858811846,
+    "latitudeDeg": 15.45734339047878,
+    "longitudeDeg": -140.09107879717396,
+    "speedOrbital": 7818.986114832337,
+    "speedSurface": 7373.2995029195245,
+    "verticalSpeed": 17.09842497930765,
+    "horizontalSpeed": 7373.279677566593,
+    "mass": 154098.94803483944,
+    "gLoad": 0.0002991870545012829,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.998746726322005,
+    "maxTempFraction": 0.4061779852260379,
+    "deltaVRemaining": 10509.689571622486,
+    "stagesFired": 4,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 8,
+    "surfaceGravity": 9.820250487063928,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 36000,
+    "propellantFraction:descent": 1,
+    "propellantKg:m3": 85000,
+    "propellantFraction:m3": 1,
+    "stageIndex": 3,
+    "vesselsSeparated": 1
+   }
+  },
+  {
+   "id": "EARTH_ORBIT",
+   "ut": 938241998.4666667,
+   "data": {
+    "ut": 938241998.4666667,
+    "met": 579.6083333492279,
+    "altitude": 183780.84382192697,
+    "radarAltitude": 183777.57858811846,
+    "latitudeDeg": 15.45734339047878,
+    "longitudeDeg": -140.09107879717396,
+    "speedOrbital": 7818.986114832337,
+    "speedSurface": 7373.2995029195245,
+    "verticalSpeed": 17.09842497930765,
+    "horizontalSpeed": 7373.279677566593,
+    "mass": 154098.94803483944,
+    "gLoad": 0.0002991870545012829,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.998746726322005,
+    "maxTempFraction": 0.4061779852260379,
+    "deltaVRemaining": 10509.689571622486,
+    "stagesFired": 4,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 8,
+    "surfaceGravity": 9.820250487063928,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 36000,
+    "propellantFraction:descent": 1,
+    "propellantKg:m3": 85000,
+    "propellantFraction:m3": 1,
+    "periapsisAltitude": 180953.92308583204,
+    "apoapsisAltitude": 257243.91703845654,
+    "eccentricity": 0.005788228285949774,
+    "inclinationDeg": 20.891819351331577,
+    "period": 5324.132816012262
+   }
+  },
+  {
+   "id": "TLI_COMPLETE",
+   "ut": 938252058.6666666,
+   "data": {
+    "ut": 938252058.6666666,
+    "met": 10639.808333277702,
+    "altitude": 299840.6017240714,
+    "radarAltitude": 299834.13194858254,
+    "latitudeDeg": 20.79233173667215,
+    "longitudeDeg": 140.16218295949432,
+    "speedOrbital": 10847.924417627828,
+    "speedSurface": 10397.512781273495,
+    "verticalSpeed": 1412.6408808982585,
+    "horizontalSpeed": 10301.102745743328,
+    "mass": 75707.37667078194,
+    "gLoad": 0.019334688855780022,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.9598370107190641,
+    "maxTempFraction": 0.3869811971422303,
+    "deltaVRemaining": 7361.44786458014,
+    "stagesFired": 4,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 3,
+    "surfaceGravity": 9.820250487063928,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 36000,
+    "propellantFraction:descent": 1,
+    "propellantKg:m3": 6641.108152636132,
+    "propellantFraction:m3": 0.07813068414866038,
+    "predictedSoiUt": 938495492.2954348,
+    "predictedPeriapsisAltitude": 12269740.398533693
+   }
+  },
+  {
+   "id": "MOON_SOI_ENTER",
+   "ut": 938468841.1457597,
+   "data": {
+    "ut": 938468841.15,
+    "met": 227422.29166662693,
+    "altitude": 64362595.44369563,
+    "radarAltitude": 64364409.00778666,
+    "latitudeDeg": -5.28409602416949,
+    "longitudeDeg": -41.14508265494222,
+    "speedOrbital": 1069.6709300276843,
+    "speedSurface": 1095.2722090590628,
+    "verticalSpeed": -1067.3583253095476,
+    "horizontalSpeed": 245.69781710368864,
+    "mass": 56739.76037584702,
+    "gLoad": 0.001430030953459246,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.9595785769559042,
+    "maxTempFraction": 0.3790199636580335,
+    "deltaVRemaining": 6956.788649203527,
+    "stagesFired": 5,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 4,
+    "surfaceGravity": 1.624904429556309,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 35964.013229673474,
+    "propellantFraction:descent": 0.9990003674909298,
+    "soiUt": 938468841.1457597,
+    "predictedSoiUt": 938468841.1457597,
+    "soiTimeError": 0
+   }
+  },
+  {
+   "id": "LUNAR_ORBIT",
+   "ut": 938524794.8,
+   "data": {
+    "ut": 938524794.8,
+    "met": 283375.9416666031,
+    "altitude": 104664.39408096136,
+    "radarAltitude": 104272.10507939612,
+    "latitudeDeg": 2.584730052464425,
+    "longitudeDeg": 171.5018387504478,
+    "speedOrbital": 1633.275330641756,
+    "speedSurface": 1638.1609178814813,
+    "verticalSpeed": 3.997601486777455,
+    "horizontalSpeed": 1638.1560402039393,
+    "mass": 44163.13523857592,
+    "gLoad": 0.016504368016437582,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.8942764068020616,
+    "maxTempFraction": 0.3749162376679359,
+    "deltaVRemaining": 6081.798912791938,
+    "stagesFired": 5,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 4,
+    "surfaceGravity": 1.624904429556309,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 23426.561436748027,
+    "propellantFraction:descent": 0.6507378176874452,
+    "periapsisAltitude": 102405.34858041699,
+    "apoapsisAltitude": 113695.86738982354,
+    "eccentricity": 0.003059014085924231,
+    "inclinationDeg": 156.97913993229824,
+    "period": 7112.459052331257
+   }
+  },
+  {
+   "id": "LUNAR_TOUCHDOWN",
+   "ut": 938534910.5583333,
+   "data": {
+    "ut": 938534910.5583333,
+    "met": 293491.6999999285,
+    "altitude": -1902.3473566053435,
+    "radarAltitude": 0,
+    "latitudeDeg": 0.661454845878723,
+    "longitudeDeg": 23.436020984809584,
+    "speedOrbital": 4.625368551831064,
+    "speedSurface": 8.881784197001252e-16,
+    "verticalSpeed": 0,
+    "horizontalSpeed": 8.468654265732405e-16,
+    "mass": 25685.497381178087,
+    "gLoad": 0.1660569265683639,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.7749450010486189,
+    "maxTempFraction": 0.36374775158940176,
+    "deltaVRemaining": 4185.970849500815,
+    "stagesFired": 6,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 3,
+    "surfaceGravity": 1.624904429556309,
+    "propellantKg:ascent": 10800,
+    "propellantFraction:ascent": 1,
+    "propellantKg:descent": 5020.530380548916,
+    "propellantFraction:descent": 0.13945917723746987,
+    "touchdownVerticalSpeed": 0.9998407783813056,
+    "touchdownHorizontalSpeed": 0.016440874700476976,
+    "touchdownTiltDeg": 0.3613888575694969,
+    "tiltDeg": 1.4300586277757517,
+    "legs": 4,
+    "legsBroken": 0,
+    "legsIntact": 1,
+    "distanceToLandingTarget": 0.8196327141907558,
+    "residentLevel": 12,
+    "availableLevel": 12,
+    "effectiveLevel": 12,
+    "terrainComplete": 1,
+    "surfaceWater": 0,
+    "recoveryZoneDistance": -1,
+    "recoveryZoneRadius": -1,
+    "insideRecoveryZone": 0,
+    "crewAlive": 1,
+    "settledFor": 5
+   }
+  },
+  {
+   "id": "LUNAR_LIFTOFF",
+   "ut": 938535821.5583333,
+   "data": {
+    "ut": 938535821.5583333,
+    "met": 294402.6999999285,
+    "altitude": -1855.2280924001243,
+    "radarAltitude": 50.017095766062084,
+    "latitudeDeg": 0.6614038221798593,
+    "longitudeDeg": 23.43612726915681,
+    "speedOrbital": 14.123385216271666,
+    "speedSurface": 13.018992250476472,
+    "verticalSpeed": 12.972989721101262,
+    "horizontalSpeed": 1.0934792701132285,
+    "mass": 17148.039976988435,
+    "gLoad": 0.3567606427360751,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.9236799514782673,
+    "maxTempFraction": 0.3619057301253777,
+    "deltaVRemaining": 3393.56434739006,
+    "stagesFired": 7,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 4,
+    "surfaceGravity": 1.624904429556309,
+    "propellantKg:ascent": 10678.424374395297,
+    "propellantFraction:ascent": 0.9887429976291943,
+    "surfaceStay": 916,
+    "vesselsLeftOnSurface": 1
+   }
+  },
+  {
+   "id": "MOON_SOI_EXIT",
+   "ut": 938685886.0855696,
+   "data": {
+    "ut": 938685886.0916667,
+    "met": 444467.2333333492,
+    "altitude": 359700327.49147385,
+    "radarAltitude": 359699915.353169,
+    "latitudeDeg": -19.263156375333768,
+    "longitudeDeg": -62.68397523746655,
+    "speedOrbital": 802.700759902637,
+    "speedSurface": 25139.526165523373,
+    "verticalSpeed": -778.7148064324701,
+    "horizontalSpeed": 25127.462647017845,
+    "mass": 7590.308257741514,
+    "gLoad": 0.0011366271852405788,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.8992045034020779,
+    "maxTempFraction": 0.36227740261426417,
+    "deltaVRemaining": 561.5160620154656,
+    "stagesFired": 7,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 4,
+    "surfaceGravity": 9.820250487063928,
+    "propellantKg:ascent": 1130.6262844254497,
+    "propellantFraction:ascent": 0.10468761892828238,
+    "soiUt": 938685886.0855696,
+    "predictedSoiUt": 938685886.0855696,
+    "soiTimeError": 0
+   }
+  },
+  {
+   "id": "EARTH_PERIGEE_TARGETED",
+   "ut": 938686429.6,
+   "data": {
+    "ut": 938686429.6,
+    "met": 445010.7416666746,
+    "altitude": 359276665.2451237,
+    "radarAltitude": 359273764.4597324,
+    "latitudeDeg": -19.24777969171254,
+    "longitudeDeg": -64.94820606425505,
+    "speedOrbital": 804.0800950959721,
+    "speedSurface": 25107.131781243235,
+    "verticalSpeed": -780.2570273416297,
+    "horizontalSpeed": 25095.004786849477,
+    "mass": 7572.106820110009,
+    "gLoad": 0.020865156221684986,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.8883859582063292,
+    "maxTempFraction": 0.36230831439122346,
+    "deltaVRemaining": 555.4897293629799,
+    "stagesFired": 7,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 4,
+    "surfaceGravity": 9.820250487063928,
+    "propellantKg:ascent": 1116.7499889945857,
+    "propellantFraction:ascent": 0.10340277675875793,
+    "predictedPeriapsisAltitude": 38080.946040449664,
+    "entryUt": 938920221.768472,
+    "entrySpeed": 10995.698489414322,
+    "entryFlightPathAngleDeg": -7.142056164732752,
+    "entryLatitudeDeg": 39.55617650783374,
+    "entryLongitudeDeg": -153.41923827188117
+   }
+  },
+  {
+   "id": "ENTRY_INTERFACE",
+   "ut": 938920266.0166667,
+   "data": {
+    "ut": 938920266.0166667,
+    "met": 678847.1583333015,
+    "altitude": 121991.50969941355,
+    "radarAltitude": 121988.99803217525,
+    "latitudeDeg": 37.90363729997316,
+    "longitudeDeg": -152.45087453865816,
+    "speedOrbital": 11010.07844842435,
+    "speedSurface": 10834.637570311888,
+    "verticalSpeed": -1192.350884513885,
+    "horizontalSpeed": 10768.828657203758,
+    "mass": 4999.214343928136,
+    "gLoad": 0.00037482796801004945,
+    "peakG": 3.8172150934488536,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 1,
+    "rcsFraction": 0.9947622928542432,
+    "maxTempFraction": 0.23731936221659633,
+    "deltaVRemaining": 0,
+    "stagesFired": 8,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 5,
+    "surfaceGravity": 9.820250487063928,
+    "crossingAltitude": 122000
+   }
+  },
+  {
+   "id": "DROGUE_DEPLOY",
+   "ut": 938920871.1666666,
+   "data": {
+    "ut": 938920871.1666666,
+    "met": 679452.3083332777,
+    "altitude": 7445.117333725095,
+    "radarAltitude": 7444.468182051607,
+    "latitudeDeg": 15.328772865523113,
+    "longitudeDeg": -141.592963005762,
+    "speedOrbital": 478.7900387092389,
+    "speedSurface": 132.33721305773403,
+    "verticalSpeed": -128.49576527078256,
+    "horizontalSpeed": 31.654008709230514,
+    "mass": 4866.619871045423,
+    "gLoad": 1.1109668495830953,
+    "peakG": 5.870416316785652,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 0.5804272679772128,
+    "rcsFraction": 0.9303718723256093,
+    "maxTempFraction": 0.3453495306366931,
+    "deltaVRemaining": 0,
+    "stagesFired": 9,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 5,
+    "surfaceGravity": 9.820250487063928,
+    "chuteEnvelope": 0,
+    "deployAltitude": 7444.637400647625,
+    "deployMach": 0.42632336751643296,
+    "deploySpeed": 132.34714904828863,
+    "deployDynamicPressure": 4910.155117932391
+   }
+  },
+  {
+   "id": "MAIN_DEPLOY",
+   "ut": 938920948.8,
+   "data": {
+    "ut": 938920948.8,
+    "met": 679529.9416666031,
+    "altitude": 3175.0758602172136,
+    "radarAltitude": 3173.286317409829,
+    "latitudeDeg": 15.326766826597858,
+    "longitudeDeg": -141.59211924405983,
+    "speedOrbital": 451.3207301659252,
+    "speedSurface": 49.61709413918987,
+    "verticalSpeed": -49.61106133038213,
+    "horizontalSpeed": 0.7737082720847809,
+    "mass": 4866.619871045423,
+    "gLoad": 0.2612394014467799,
+    "peakG": 5.870416316785652,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 0.5804272679772128,
+    "rcsFraction": 0.9303718723256093,
+    "maxTempFraction": 0.3452152809868881,
+    "deltaVRemaining": 0,
+    "stagesFired": 10,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 5,
+    "surfaceGravity": 9.820250487063928,
+    "chuteEnvelope": 0,
+    "deployAltitude": 3174.610759090632,
+    "deployMach": 0.15114006769641045,
+    "deploySpeed": 49.55671387717887,
+    "deployDynamicPressure": 1096.4758099656035
+   }
+  },
+  {
+   "id": "SPLASHDOWN",
+   "ut": 938921332.0833334,
+   "data": {
+    "ut": 938921332.0833334,
+    "met": 679913.2250000238,
+    "altitude": 0.41724253818392754,
+    "radarAltitude": 0,
+    "latitudeDeg": 15.326699512485916,
+    "longitudeDeg": -141.59209743630697,
+    "speedOrbital": 448.05663367119513,
+    "speedSurface": 0.13594631656299405,
+    "verticalSpeed": 0.1358366710510529,
+    "horizontalSpeed": 0.005458917916299035,
+    "mass": 4866.619871045423,
+    "gLoad": 0.9814566554952183,
+    "peakG": 5.870416316785652,
+    "gDose": 0,
+    "peakGDose": 0,
+    "ablatorFraction": 0.5804272679772128,
+    "rcsFraction": 0.9303718723256093,
+    "maxTempFraction": 0.34457893632993286,
+    "deltaVRemaining": 0,
+    "stagesFired": 10,
+    "incompleteQueries": 0,
+    "terrainWarpClamps": 0,
+    "vesselCount": 4,
+    "surfaceGravity": 9.820250487063928,
+    "touchdownVerticalSpeed": 7.823234251891179,
+    "touchdownHorizontalSpeed": 0.010551765387872057,
+    "touchdownTiltDeg": 3.888452597724972,
+    "tiltDeg": 10.315061538001256,
+    "legs": 0,
+    "legsBroken": 0,
+    "legsIntact": 0,
+    "distanceToLandingTarget": -1,
+    "residentLevel": 7,
+    "availableLevel": 7,
+    "effectiveLevel": 7,
+    "terrainComplete": 1,
+    "surfaceWater": 1,
+    "recoveryZoneDistance": 1161384.6638557985,
+    "recoveryZoneRadius": 2000000,
+    "insideRecoveryZone": 1,
+    "crewAlive": 1,
+    "settledFor": 30
+   }
+  }
+ ],
+ "last": {
+  "scenario": {
+   "id": "lunar-direct",
+   "startKind": "pad",
+   "stagesAlreadyFired": 0
+  },
+  "cheatCounter": 0,
+  "mission": {
+   "failed": false,
+   "failureReason": null,
+   "crewAlive": true
+  },
+  "terrain": {
+   "complete": true,
+   "pending": false,
+   "incompleteQueries": 0
+  },
+  "vessels": [
+   {
+    "name": "Meridian / Heron / Kestrel lunar stack",
+    "bodyId": "earth",
+    "situation": "splashed",
+    "controllable": true,
+    "parts": [
+     "kestrel-capsule"
+    ]
+   },
+   {
+    "name": "Launch clamps",
+    "bodyId": "earth",
+    "situation": "landed",
+    "controllable": false,
+    "parts": [
+     "meridian-launch-clamp",
+     "meridian-launch-clamp",
+     "meridian-launch-clamp",
+     "meridian-launch-clamp"
+    ]
+   },
+   {
+    "name": "Meridian M-2",
+    "bodyId": "earth",
+    "situation": "orbiting",
+    "controllable": false,
+    "parts": [
+     "meridian-interstage-2",
+     "meridian-m2",
+     "vela-2",
+     "vela-2",
+     "vela-2",
+     "vela-2",
+     "vela-2",
+     "vela-2",
+     "meridian-m2-ullage-motors"
+    ]
+   },
+   {
+    "name": "Heron descent stage",
+    "bodyId": "moon",
+    "situation": "landed",
+    "controllable": false,
+    "parts": [
+     "heron-stage-separator",
+     "heron-descent-stage",
+     "lyra-d",
+     "heron-landing-legs"
+    ]
+   }
+  ],
+  "surfaceTargets": [
+   {
+    "kind": "landing",
+    "name": "Mare Tranquillitatis",
+    "radius": 0
+   },
+   {
+    "kind": "site",
+    "name": "Ka Lae Pacific Spaceport, Launch Complex 1",
+    "radius": 450
+   },
+   {
+    "kind": "recovery",
+    "name": "Central Pacific",
+    "radius": 2000000
+   },
+   {
+    "kind": "recovery",
+    "name": "South Pacific",
+    "radius": 1800000
+   },
+   {
+    "kind": "recovery",
+    "name": "Central Atlantic",
+    "radius": 1300000
+   }
+  ]
+ },
+ "phases": [
+  {
+   "phase": "prelaunch",
+   "realMinutes": 0.5754666666666667,
+   "frames": 2071,
+   "windows": 9,
+   "warp": "1-10",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.979999996721745,
+   "rafP99": 17.13000000268221,
+   "rafWorstP99": 17.389999993145466,
+   "over33ms": 1,
+   "gpuP50": 5.646048,
+   "gpuP99": 6.449120000000001,
+   "gpuWorstP99": 39.500575999999995,
+   "cpuP50": 3.165000006556511,
+   "cpuP99": 4.825000002980232,
+   "topStages": "render 4.1, sim 0.6, hud 0.3",
+   "topFeatures": "terrain 3.8, atmosphere 1.7, core 0.9",
+   "topFeaturesCpu": "terrain 1.7, vehicle 0.6, core 0.5"
+  },
+  {
+   "phase": "ignition",
+   "realMinutes": 0.0505,
+   "frames": 182,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.660000003874302,
+   "rafP95": 17.07999999821186,
+   "rafP99": 21.62000000476837,
+   "rafWorstP99": 21.62000000476837,
+   "over33ms": 0,
+   "gpuP50": 6.354688,
+   "gpuP99": 7.001984000000001,
+   "gpuWorstP99": 7.001984000000001,
+   "cpuP50": 3.4950000047683716,
+   "cpuP99": 7.360000006854534,
+   "topStages": "render 4.8, sim 0.7, hud 0.5",
+   "topFeatures": "terrain 3.6, atmosphere 1.7, core 1.0",
+   "topFeaturesCpu": "terrain 2.0, vfx 0.7, vehicle 0.6"
+  },
+  {
+   "phase": "vertical",
+   "realMinutes": 0.10941666666666666,
+   "frames": 333,
+   "windows": 2,
+   "warp": "4",
+   "rafP50": 16.674999997019768,
+   "rafP95": 17.695000000298023,
+   "rafP99": 19.804999999701977,
+   "rafWorstP99": 19.804999999701977,
+   "over33ms": 0,
+   "gpuP50": 6.306912000000003,
+   "gpuP99": 6.983296,
+   "gpuWorstP99": 6.983296,
+   "cpuP50": 7.119999997317791,
+   "cpuP99": 12.494999997317791,
+   "topStages": "render 10.9, sim 2.1, hud 0.6",
+   "topFeatures": "terrain 3.3, atmosphere 1.9, ocean 1.5",
+   "topFeaturesCpu": "terrain 5.4, core 2.5, vehicle 0.9"
+  },
+  {
+   "phase": "pitchProgramme",
+   "realMinutes": 0.59305,
+   "frames": 2071,
+   "windows": 9,
+   "warp": "1, 4",
+   "rafP50": 16.66499999910593,
+   "rafP95": 17.390000000596046,
+   "rafP99": 18.019999995827675,
+   "rafWorstP99": 19.160000003874302,
+   "over33ms": 0,
+   "gpuP50": 3.483808,
+   "gpuP99": 3.940576,
+   "gpuWorstP99": 6.318495999999999,
+   "cpuP50": 4.279999993741512,
+   "cpuP99": 8.074999995529652,
+   "topStages": "render 6.2, sim 1.9, hud 0.4",
+   "topFeatures": "atmosphere 2.0, core 1.0, terrain 0.6",
+   "topFeaturesCpu": "terrain 2.8, core 1.1, vehicle 0.8"
+  },
+  {
+   "phase": "m1Separation",
+   "realMinutes": 0.03331666666666667,
+   "frames": 120,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.679999999701977,
+   "rafP95": 17.134999997913837,
+   "rafP99": 19.565000005066395,
+   "rafWorstP99": 19.565000005066395,
+   "over33ms": 0,
+   "gpuP50": 3.1970880000000004,
+   "gpuP99": 3.532383999999999,
+   "gpuWorstP99": 3.532383999999999,
+   "cpuP50": 3.399999998509884,
+   "cpuP99": 6.78999999910593,
+   "topStages": "render 5.5, sim 1.1, hud 0.4",
+   "topFeatures": "atmosphere 1.9, core 0.9, vfx 0.6",
+   "topFeaturesCpu": "terrain 2.4, vfx 0.9, vehicle 0.8"
+  },
+  {
+   "phase": "m2Ascent",
+   "realMinutes": 1.8187166666666668,
+   "frames": 6092,
+   "windows": 26,
+   "warp": "1, 4",
+   "rafP50": 16.66499999910593,
+   "rafP95": 17.149999998509884,
+   "rafP99": 17.344999998807907,
+   "rafWorstP99": 19.475000001490116,
+   "over33ms": 0,
+   "gpuP50": 2.908928,
+   "gpuP99": 3.2446720000000004,
+   "gpuWorstP99": 3.762911999999999,
+   "cpuP50": 2.8900000005960464,
+   "cpuP99": 5.159999996423721,
+   "topStages": "render 3.9, sim 0.8, hud 0.3",
+   "topFeatures": "atmosphere 1.7, core 0.9, terrain 0.7",
+   "topFeaturesCpu": "terrain 2.0, vehicle 0.6, core 0.5"
+  },
+  {
+   "phase": "seco",
+   "realMinutes": 0.05001666666666667,
+   "frames": 180,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.67000000178814,
+   "rafP95": 17.109999999403954,
+   "rafP99": 17.554999999701977,
+   "rafWorstP99": 17.554999999701977,
+   "over33ms": 0,
+   "gpuP50": 2.601056,
+   "gpuP99": 2.8256639999999993,
+   "gpuWorstP99": 2.8256639999999993,
+   "cpuP50": 2.5250000059604645,
+   "cpuP99": 3.894999995827675,
+   "topStages": "render 3.0, sim 0.7, hud 0.3",
+   "topFeatures": "atmosphere 1.5, core 0.9, terrain 0.3",
+   "topFeaturesCpu": "terrain 1.4, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "dropM2",
+   "realMinutes": 0.05831666666666667,
+   "frames": 210,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.649999998509884,
+   "rafP95": 16.989999994635582,
+   "rafP99": 17.29500000178814,
+   "rafWorstP99": 17.29500000178814,
+   "over33ms": 0,
+   "gpuP50": 2.553088,
+   "gpuP99": 2.8302400000000008,
+   "gpuWorstP99": 2.8302400000000008,
+   "cpuP50": 2.2999999970197678,
+   "cpuP99": 4.449999995529652,
+   "topStages": "render 3.5, sim 0.6, hud 0.3",
+   "topFeatures": "atmosphere 1.5, core 0.9, terrain 0.4",
+   "topFeaturesCpu": "terrain 1.6, vehicle 0.5, core 0.5"
+  },
+  {
+   "phase": "parkingCoast (cockpit)",
+   "realMinutes": 0,
+   "frames": 240,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.65999999642372,
+   "rafP95": 16.929999999701977,
+   "rafP99": 17.100000001490116,
+   "rafWorstP99": 17.100000001490116,
+   "over33ms": 0,
+   "gpuP50": 1.9725759999999997,
+   "gpuP99": 2.496608,
+   "gpuWorstP99": 2.496608,
+   "cpuP50": 2.399999998509884,
+   "cpuP99": 4.1049999967217445,
+   "topStages": "render 3.5, sim 0.3, hud 0.2",
+   "topFeatures": "core 1.0, atmosphere 0.7, cockpit 0.7",
+   "topFeaturesCpu": "cockpit 1.4, terrain 0.8, core 0.5"
+  },
+  {
+   "phase": "parkingCoast",
+   "realMinutes": 2.8265666666666664,
+   "frames": 9541,
+   "windows": 40,
+   "warp": "1-100",
+   "rafP50": 16.65999999642372,
+   "rafP95": 16.969999998807907,
+   "rafP99": 17.125,
+   "rafWorstP99": 17.684999994933605,
+   "over33ms": 0,
+   "gpuP50": 2.5077119999999997,
+   "gpuP99": 2.7924160000000002,
+   "gpuWorstP99": 3.028,
+   "cpuP50": 1.8900000005960464,
+   "cpuP99": 3.619999997317791,
+   "topStages": "render 2.9, sim 0.4, hud 0.3",
+   "topFeatures": "atmosphere 1.6, core 0.9, terrain 0.4",
+   "topFeaturesCpu": "terrain 1.2, vehicle 0.5, core 0.5"
+  },
+  {
+   "phase": "tli:plan",
+   "realMinutes": 0.041683333333333336,
+   "frames": 150,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.70500000566244,
+   "rafP95": 17.30000000447035,
+   "rafP99": 17.53499999642372,
+   "rafWorstP99": 17.53499999642372,
+   "over33ms": 0,
+   "gpuP50": 2.5194880000000004,
+   "gpuP99": 2.796,
+   "gpuWorstP99": 2.796,
+   "cpuP50": 2.7599999979138374,
+   "cpuP99": 4.830000005662441,
+   "topStages": "render 3.8, sim 1.1, hud 0.3",
+   "topFeatures": "atmosphere 1.6, core 0.9, terrain 0.7",
+   "topFeaturesCpu": "terrain 2.2, vehicle 0.5, core 0.5"
+  },
+  {
+   "phase": "tli:align",
+   "realMinutes": 0.4253166666666667,
+   "frames": 1530,
+   "windows": 7,
+   "warp": "1-50",
+   "rafP50": 16.65999999642372,
+   "rafP95": 16.99499999731779,
+   "rafP99": 17.140000000596046,
+   "rafWorstP99": 17.33500000089407,
+   "over33ms": 0,
+   "gpuP50": 1.9069760000000002,
+   "gpuP99": 2.2859199999999995,
+   "gpuWorstP99": 3.136928,
+   "cpuP50": 1.839999996125698,
+   "cpuP99": 4.045000001788139,
+   "topStages": "render 2.9, sim 0.7, hud 0.2",
+   "topFeatures": "atmosphere 0.9, core 0.7, terrain 0.7",
+   "topFeaturesCpu": "terrain 1.8, vehicle 0.5, core 0.4"
+  },
+  {
+   "phase": "tli:coast",
+   "realMinutes": 1.6167166666666666,
+   "frames": 5820,
+   "windows": 25,
+   "warp": "1-100",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.924999997019768,
+   "rafP99": 17.070000000298023,
+   "rafWorstP99": 17.200000002980232,
+   "over33ms": 0,
+   "gpuP50": 1.84976,
+   "gpuP99": 2.410816,
+   "gpuWorstP99": 2.8296000000000006,
+   "cpuP50": 1.6899999976158142,
+   "cpuP99": 2.9299999997019768,
+   "topStages": "render 2.4, sim 0.3, hud 0.3",
+   "topFeatures": "atmosphere 0.9, core 0.7, terrain 0.4",
+   "topFeaturesCpu": "terrain 1.0, vehicle 0.5, core 0.4"
+  },
+  {
+   "phase": "tli:burn",
+   "realMinutes": 1.6000833333333333,
+   "frames": 5760,
+   "windows": 24,
+   "warp": "1, 4",
+   "rafP50": 16.655000001192093,
+   "rafP95": 17.059999994933605,
+   "rafP99": 17.21000000089407,
+   "rafWorstP99": 21.515000000596046,
+   "over33ms": 0,
+   "gpuP50": 2.2469439999999996,
+   "gpuP99": 2.6955839999999993,
+   "gpuWorstP99": 2.930176000000001,
+   "cpuP50": 2.160000003874302,
+   "cpuP99": 3.7050000056624413,
+   "topStages": "render 2.8, sim 0.7, hud 0.3",
+   "topFeatures": "atmosphere 1.3, core 0.8, terrain 0.4",
+   "topFeaturesCpu": "terrain 1.5, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "tli:tail",
+   "realMinutes": 0.06778333333333333,
+   "frames": 210,
+   "windows": 2,
+   "warp": "1",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.989999994635582,
+   "rafP99": 17.29500000178814,
+   "rafWorstP99": 17.29500000178814,
+   "over33ms": 0,
+   "gpuP50": 2.470528,
+   "gpuP99": 3.0498879999999984,
+   "gpuWorstP99": 3.0498879999999984,
+   "cpuP50": 2.0349999964237213,
+   "cpuP99": 3.1649999991059303,
+   "topStages": "render 2.4, sim 0.6, hud 0.3",
+   "topFeatures": "atmosphere 1.5, core 0.8, cockpit 0.4",
+   "topFeaturesCpu": "terrain 1.1, vehicle 0.4, core 0.4"
+  },
+  {
+   "phase": "postTli",
+   "realMinutes": 0.10006666666666666,
+   "frames": 360,
+   "windows": 3,
+   "warp": "1, 4",
+   "rafP50": 16.655000001192093,
+   "rafP95": 17.070000000298023,
+   "rafP99": 17.434999994933605,
+   "rafWorstP99": 18.009999997913837,
+   "over33ms": 0,
+   "gpuP50": 2.363039999999999,
+   "gpuP99": 2.8327999999999998,
+   "gpuWorstP99": 2.8495999999999997,
+   "cpuP50": 1.915000006556511,
+   "cpuP99": 3.3400000035762787,
+   "topStages": "render 2.6, sim 0.6, hud 0.2",
+   "topFeatures": "atmosphere 1.5, core 0.8, terrain 0.4",
+   "topFeaturesCpu": "terrain 1.2, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "tliTrim:align",
+   "realMinutes": 0.29996666666666666,
+   "frames": 1080,
+   "windows": 5,
+   "warp": "1-10",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.939999997615814,
+   "rafP99": 17.115000002086163,
+   "rafWorstP99": 17.135000005364418,
+   "over33ms": 0,
+   "gpuP50": 2.084512,
+   "gpuP99": 2.5920320000000006,
+   "gpuWorstP99": 2.8055360000000005,
+   "cpuP50": 1.8950000032782555,
+   "cpuP99": 3.0150000005960464,
+   "topStages": "render 2.4, sim 0.5, hud 0.2",
+   "topFeatures": "atmosphere 1.5, core 0.7, terrain 0.3",
+   "topFeaturesCpu": "terrain 1.2, core 0.4, vehicle 0.4"
+  },
+  {
+   "phase": "tliTrim:coast",
+   "realMinutes": 0.24168333333333333,
+   "frames": 870,
+   "windows": 4,
+   "warp": "4-10",
+   "rafP50": 16.66500000655651,
+   "rafP95": 16.969999998807907,
+   "rafP99": 17.149999998509884,
+   "rafWorstP99": 17.21000000089407,
+   "over33ms": 0,
+   "gpuP50": 2.2723199999999997,
+   "gpuP99": 2.6406400000000008,
+   "gpuWorstP99": 2.6407039999999995,
+   "cpuP50": 1.905000001192093,
+   "cpuP99": 3.3299999982118607,
+   "topStages": "render 2.7, sim 0.4, hud 0.3",
+   "topFeatures": "atmosphere 1.5, core 0.8, terrain 0.4",
+   "topFeaturesCpu": "terrain 1.4, core 0.5, vehicle 0.5"
+  },
+  {
+   "phase": "tliTrim:burn",
+   "realMinutes": 0.05,
+   "frames": 180,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.67500000447035,
+   "rafP95": 17.070000000298023,
+   "rafP99": 17.730000004172325,
+   "rafWorstP99": 17.730000004172325,
+   "over33ms": 0,
+   "gpuP50": 2.1593599999999995,
+   "gpuP99": 2.6804479999999997,
+   "gpuWorstP99": 2.6804479999999997,
+   "cpuP50": 1.9350000023841858,
+   "cpuP99": 2.844999998807907,
+   "topStages": "render 2.1, sim 0.9, hud 0.3",
+   "topFeatures": "atmosphere 1.4, core 0.7, vfx 0.4",
+   "topFeaturesCpu": "terrain 0.8, vehicle 0.4, core 0.4"
+  },
+  {
+   "phase": "tliTrim:tail",
+   "realMinutes": 0.05,
+   "frames": 180,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.674999997019768,
+   "rafP95": 17.13000000268221,
+   "rafP99": 18.140000000596046,
+   "rafWorstP99": 18.140000000596046,
+   "over33ms": 0,
+   "gpuP50": 2.238432000000001,
+   "gpuP99": 2.763328,
+   "gpuWorstP99": 2.763328,
+   "cpuP50": 1.9450000002980232,
+   "cpuP99": 3.9099999964237213,
+   "topStages": "render 2.3, sim 1.2, hud 0.2",
+   "topFeatures": "atmosphere 1.4, core 0.8, terrain 0.4",
+   "topFeaturesCpu": "terrain 1.0, vehicle 0.4, core 0.4"
+  },
+  {
+   "phase": "tliTrim:trim",
+   "realMinutes": 0.25835,
+   "frames": 930,
+   "windows": 4,
+   "warp": "4",
+   "rafP50": 16.609999999403954,
+   "rafP95": 17.554999999701977,
+   "rafP99": 17.88000000268221,
+   "rafWorstP99": 17.895000003278255,
+   "over33ms": 0,
+   "gpuP50": 2.1337599999999997,
+   "gpuP99": 2.624320000000001,
+   "gpuWorstP99": 2.680351999999999,
+   "cpuP50": 2.439999997615814,
+   "cpuP99": 3.619999997317791,
+   "topStages": "render 2.3, sim 1.4, hud 0.2",
+   "topFeatures": "atmosphere 1.4, core 0.8, terrain 0.4",
+   "topFeaturesCpu": "terrain 1.1, vehicle 0.4, core 0.4"
+  },
+  {
+   "phase": "translunar",
+   "realMinutes": 1.5834,
+   "frames": 5700,
+   "windows": 24,
+   "warp": "1-100",
+   "rafP50": 16.67500000447035,
+   "rafP95": 16.989999994635582,
+   "rafP99": 17.20499999821186,
+   "rafWorstP99": 17.49500000476837,
+   "over33ms": 0,
+   "gpuP50": 1.8611199999999999,
+   "gpuP99": 2.3406080000000005,
+   "gpuWorstP99": 2.5334719999999997,
+   "cpuP50": 2.0399999991059303,
+   "cpuP99": 3.190000005066395,
+   "topStages": "render 2.5, sim 0.7, hud 0.2",
+   "topFeatures": "atmosphere 1.3, core 0.8, vfx 0.4",
+   "topFeaturesCpu": "terrain 1.4, vehicle 0.4, core 0.4"
+  },
+  {
+   "phase": "mcc1:align",
+   "realMinutes": 0.3417,
+   "frames": 1230,
+   "windows": 6,
+   "warp": "1-10",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.939999997615814,
+   "rafP99": 17.075000002980232,
+   "rafWorstP99": 17.135000005364418,
+   "over33ms": 0,
+   "gpuP50": 1.7278399999999998,
+   "gpuP99": 2.260096,
+   "gpuWorstP99": 3.1695679999999986,
+   "cpuP50": 2.1649999991059303,
+   "cpuP99": 3.439999997615814,
+   "topStages": "render 2.7, sim 0.5, hud 0.2",
+   "topFeatures": "atmosphere 0.9, core 0.7, vfx 0.4",
+   "topFeaturesCpu": "terrain 1.6, vehicle 0.4, core 0.4"
+  },
+  {
+   "phase": "mcc1:coast",
+   "realMinutes": 0.2750166666666667,
+   "frames": 960,
+   "windows": 4,
+   "warp": "1-10",
+   "rafP50": 16.65999999642372,
+   "rafP95": 16.890000000596046,
+   "rafP99": 17.019999995827675,
+   "rafWorstP99": 17.029999993741512,
+   "over33ms": 0,
+   "gpuP50": 1.8780160000000001,
+   "gpuP99": 2.3059199999999995,
+   "gpuWorstP99": 2.3739199999999996,
+   "cpuP50": 2.1049999967217445,
+   "cpuP99": 3.375,
+   "topStages": "render 2.8, sim 0.4, hud 0.2",
+   "topFeatures": "atmosphere 1.0, core 0.7, vfx 0.4",
+   "topFeaturesCpu": "terrain 1.7, core 0.4, vehicle 0.4"
+  },
+  {
+   "phase": "mcc1:burn",
+   "realMinutes": 0.075,
+   "frames": 240,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.66499999910593,
+   "rafP95": 17.064999997615814,
+   "rafP99": 17.16499999910593,
+   "rafWorstP99": 17.16499999910593,
+   "over33ms": 0,
+   "gpuP50": 2.2666559999999993,
+   "gpuP99": 2.914688000000001,
+   "gpuWorstP99": 2.914688000000001,
+   "cpuP50": 2.230000004172325,
+   "cpuP99": 3.3549999967217445,
+   "topStages": "render 2.6, sim 0.5, hud 0.2",
+   "topFeatures": "vfx 1.1, atmosphere 0.9, core 0.7",
+   "topFeaturesCpu": "terrain 1.3, core 0.3, vehicle 0.3"
+  },
+  {
+   "phase": "mcc1:tail",
+   "realMinutes": 0.05001666666666667,
+   "frames": 180,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.655000001192093,
+   "rafP95": 16.935000002384186,
+   "rafP99": 17.070000000298023,
+   "rafWorstP99": 17.070000000298023,
+   "over33ms": 0,
+   "gpuP50": 2.603136,
+   "gpuP99": 3.1223039999999997,
+   "gpuWorstP99": 3.1223039999999997,
+   "cpuP50": 2.7899999991059303,
+   "cpuP99": 3.6950000002980232,
+   "topStages": "render 3.0, sim 0.5, hud 0.2",
+   "topFeatures": "vfx 1.3, atmosphere 1.0, core 0.7",
+   "topFeaturesCpu": "terrain 1.7, vehicle 0.4, core 0.4"
+  },
+  {
+   "phase": "mcc1:trim",
+   "realMinutes": 0.025,
+   "frames": 90,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.679999999701977,
+   "rafP95": 16.96000000089407,
+   "rafP99": 21.469999998807907,
+   "rafWorstP99": 21.469999998807907,
+   "over33ms": 0,
+   "gpuP50": 2.0991999999999997,
+   "gpuP99": 2.401248,
+   "gpuWorstP99": 2.401248,
+   "cpuP50": 2.3650000020861626,
+   "cpuP99": 3.2700000032782555,
+   "topStages": "render 2.5, sim 0.7, hud 0.2",
+   "topFeatures": "atmosphere 0.9, core 0.7, vfx 0.6",
+   "topFeaturesCpu": "terrain 1.3, core 0.3, vehicle 0.3"
+  },
+  {
+   "phase": "coastToMoon",
+   "realMinutes": 1.6714666666666667,
+   "frames": 5970,
+   "windows": 25,
+   "warp": "10-10000",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.875,
+   "rafP99": 17.04000000655651,
+   "rafWorstP99": 21.520000003278255,
+   "over33ms": 0,
+   "gpuP50": 0.910304,
+   "gpuP99": 2.964960000000001,
+   "gpuWorstP99": 3.8200639999999995,
+   "cpuP50": 2.0200000032782555,
+   "cpuP99": 3.4249999970197678,
+   "topStages": "render 2.9, sim 0.3, hud 0.3",
+   "topFeatures": "core 0.8, atmosphere 0.7, terrain 0.7",
+   "topFeaturesCpu": "terrain 1.7, vehicle 0.4, core 0.4"
+  },
+  {
+   "phase": "moonArrival",
+   "realMinutes": 0.42391666666666666,
+   "frames": 1500,
+   "windows": 7,
+   "warp": "1-10",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.91499999910593,
+   "rafP99": 17.060000002384186,
+   "rafWorstP99": 17.320000000298023,
+   "over33ms": 1,
+   "gpuP50": 0.94064,
+   "gpuP99": 2.6942399999999997,
+   "gpuWorstP99": 3.273728,
+   "cpuP50": 1.4350000023841858,
+   "cpuP99": 2.2700000032782555,
+   "topStages": "render 1.7, sim 0.3, hud 0.2",
+   "topFeatures": "core 0.8, vfx 0.6, cockpit 0.6",
+   "topFeaturesCpu": "terrain 0.4, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "mcc2:align",
+   "realMinutes": 0.3166833333333333,
+   "frames": 1140,
+   "windows": 6,
+   "warp": "1-10",
+   "rafP50": 16.67000000178814,
+   "rafP95": 16.890000000596046,
+   "rafP99": 17.00499999523163,
+   "rafWorstP99": 17.104999996721745,
+   "over33ms": 0,
+   "gpuP50": 0.8605760000000001,
+   "gpuP99": 3.3691520000000006,
+   "gpuWorstP99": 3.9895359999999997,
+   "cpuP50": 1.4799999967217445,
+   "cpuP99": 2.0549999997019768,
+   "topStages": "render 1.4, sim 0.4, hud 0.2",
+   "topFeatures": "core 1.3, sky 1.0, vfx 0.7",
+   "topFeaturesCpu": "terrain 0.4, vehicle 0.3, core 0.3"
+  },
+  {
+   "phase": "mcc2:coast",
+   "realMinutes": 0.38335,
+   "frames": 1380,
+   "windows": 6,
+   "warp": "4-10",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.865000002086163,
+   "rafP99": 17,
+   "rafWorstP99": 17.135000005364418,
+   "over33ms": 0,
+   "gpuP50": 0.7238079999999999,
+   "gpuP99": 3.23424,
+   "gpuWorstP99": 3.5697920000000005,
+   "cpuP50": 1.4299999997019768,
+   "cpuP99": 2.1549999937415123,
+   "topStages": "render 1.6, sim 0.3, hud 0.2",
+   "topFeatures": "core 1.4, sky 1.0, vfx 0.5",
+   "topFeaturesCpu": "terrain 0.4, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "mcc2:trim",
+   "realMinutes": 0.03331666666666667,
+   "frames": 120,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.66500000655651,
+   "rafP95": 16.974999994039536,
+   "rafP99": 17.065000005066395,
+   "rafWorstP99": 17.065000005066395,
+   "over33ms": 0,
+   "gpuP50": 0.9488000000000001,
+   "gpuP99": 2.789024,
+   "gpuWorstP99": 2.789024,
+   "cpuP50": 1.6099999994039536,
+   "cpuP99": 2.094999998807907,
+   "topStages": "render 1.4, sim 0.6, hud 0.2",
+   "topFeatures": "core 0.8, cockpit 0.7, vfx 0.6",
+   "topFeaturesCpu": "terrain 0.4, core 0.3, vehicle 0.3"
+  },
+  {
+   "phase": "loi:align",
+   "realMinutes": 0.35835,
+   "frames": 1290,
+   "windows": 6,
+   "warp": "1-10000",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.95499999821186,
+   "rafP99": 17.064999997615814,
+   "rafWorstP99": 17.195000000298023,
+   "over33ms": 0,
+   "gpuP50": 0.8952000000000001,
+   "gpuP99": 2.9104319999999997,
+   "gpuWorstP99": 4.104928000000001,
+   "cpuP50": 1.994999997317791,
+   "cpuP99": 3.5549999997019768,
+   "topStages": "render 2.9, sim 0.5, hud 0.2",
+   "topFeatures": "core 0.8, terrain 0.6, vfx 0.4",
+   "topFeaturesCpu": "terrain 1.7, core 0.4, vehicle 0.4"
+  },
+  {
+   "phase": "loi:coast",
+   "realMinutes": 1.69205,
+   "frames": 6091,
+   "windows": 26,
+   "warp": "1-1000",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.890000000596046,
+   "rafP99": 17.035000003874302,
+   "rafWorstP99": 18.280000001192093,
+   "over33ms": 0,
+   "gpuP50": 0.938048,
+   "gpuP99": 2.9600639999999996,
+   "gpuWorstP99": 3.7011200000000004,
+   "cpuP50": 1.9600000008940697,
+   "cpuP99": 3.1549999937415123,
+   "topStages": "render 2.5, sim 0.3, hud 0.2",
+   "topFeatures": "core 0.8, terrain 0.7, vfx 0.4",
+   "topFeaturesCpu": "terrain 1.5, core 0.4, vehicle 0.4"
+  },
+  {
+   "phase": "loi:burn",
+   "realMinutes": 1.41675,
+   "frames": 5100,
+   "windows": 22,
+   "warp": "1, 4",
+   "rafP50": 16.674999997019768,
+   "rafP95": 17.09000000357628,
+   "rafP99": 17.28499999642372,
+   "rafWorstP99": 18.234999999403954,
+   "over33ms": 0,
+   "gpuP50": 1.2093759999999996,
+   "gpuP99": 1.486304,
+   "gpuWorstP99": 2.231072,
+   "cpuP50": 2.344999998807907,
+   "cpuP99": 3.6950000002980232,
+   "topStages": "render 2.8, sim 0.6, hud 0.2",
+   "topFeatures": "terrain 0.6, core 0.5, vfx 0.3",
+   "topFeaturesCpu": "terrain 1.7, core 0.4, vehicle 0.4"
+  },
+  {
+   "phase": "loi:tail",
+   "realMinutes": 0.06916666666666667,
+   "frames": 180,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.640000000596046,
+   "rafP95": 17.200000002980232,
+   "rafP99": 17.32499999552965,
+   "rafWorstP99": 17.32499999552965,
+   "over33ms": 0,
+   "gpuP50": 1.7766720000000003,
+   "gpuP99": 2.249439999999999,
+   "gpuWorstP99": 2.249439999999999,
+   "cpuP50": 3.3049999997019768,
+   "cpuP99": 5.185000002384186,
+   "topStages": "render 4.3, sim 0.6, hud 0.3",
+   "topFeatures": "vfx 1.1, core 0.7, terrain 0.6",
+   "topFeaturesCpu": "terrain 2.2, core 0.6, vehicle 0.6"
+  },
+  {
+   "phase": "loi:trim",
+   "realMinutes": 0.025016666666666666,
+   "frames": 90,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.625,
+   "rafP95": 17.34000000357628,
+   "rafP99": 17.765000000596046,
+   "rafWorstP99": 17.765000000596046,
+   "over33ms": 0,
+   "gpuP50": 1.779456,
+   "gpuP99": 2.1209919999999984,
+   "gpuWorstP99": 2.1209919999999984,
+   "cpuP50": 3.8200000002980232,
+   "cpuP99": 5.689999997615814,
+   "topStages": "render 4.4, sim 0.9, hud 0.3",
+   "topFeatures": "vfx 1.2, core 0.7, terrain 0.6",
+   "topFeaturesCpu": "terrain 2.6, core 0.6, vehicle 0.6"
+  },
+  {
+   "phase": "lunarOrbit",
+   "realMinutes": 0.025,
+   "frames": 60,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.63000000268221,
+   "rafP95": 17.234999999403954,
+   "rafP99": 17.765000000596046,
+   "rafWorstP99": 17.765000000596046,
+   "over33ms": 0,
+   "gpuP50": 0.9791999999999998,
+   "gpuP99": 1.4191360000000004,
+   "gpuWorstP99": 1.4191360000000004,
+   "cpuP50": 3.310000002384186,
+   "cpuP99": 4.755000002682209,
+   "topStages": "render 3.8, sim 0.8, hud 0.3",
+   "topFeatures": "core 0.8, terrain 0.6, vfx 0.2",
+   "topFeaturesCpu": "terrain 2.2, core 0.6, vehicle 0.5"
+  },
+  {
+   "phase": "planeTrim:align",
+   "realMinutes": 0.32505,
+   "frames": 1170,
+   "windows": 6,
+   "warp": "1-1000",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.945000000298023,
+   "rafP99": 17.08499999344349,
+   "rafWorstP99": 17.484999999403954,
+   "over33ms": 0,
+   "gpuP50": 1.0093759999999998,
+   "gpuP99": 1.462112,
+   "gpuWorstP99": 2.131168,
+   "cpuP50": 2.0950000062584877,
+   "cpuP99": 3.3599999994039536,
+   "topStages": "render 2.7, sim 0.5, hud 0.2",
+   "topFeatures": "terrain 0.7, core 0.7, vfx 0.5",
+   "topFeaturesCpu": "terrain 1.7, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "planeTrim:coast",
+   "realMinutes": 1.0752833333333334,
+   "frames": 3841,
+   "windows": 16,
+   "warp": "1-100",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.96500000357628,
+   "rafP99": 17.145000003278255,
+   "rafWorstP99": 17.59000000357628,
+   "over33ms": 0,
+   "gpuP50": 1.031424,
+   "gpuP99": 2.6462720000000006,
+   "gpuWorstP99": 3.718272,
+   "cpuP50": 2.719999998807907,
+   "cpuP99": 4.03999999910593,
+   "topStages": "render 3.4, sim 0.4, hud 0.3",
+   "topFeatures": "core 0.9, terrain 0.7, vfx 0.4",
+   "topFeaturesCpu": "terrain 2.0, core 0.6, vehicle 0.5"
+  },
+  {
+   "phase": "planeTrim:trim",
+   "realMinutes": 0.024983333333333333,
+   "frames": 90,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.655000001192093,
+   "rafP95": 17.04500000178814,
+   "rafP99": 19.04000000655651,
+   "rafWorstP99": 19.04000000655651,
+   "over33ms": 0,
+   "gpuP50": 1.2611199999999998,
+   "gpuP99": 1.708,
+   "gpuWorstP99": 1.708,
+   "cpuP50": 2.214999996125698,
+   "cpuP99": 3.494999997317791,
+   "topStages": "render 2.8, sim 0.5, hud 0.2",
+   "topFeatures": "terrain 0.7, core 0.7, vfx 0.4",
+   "topFeaturesCpu": "terrain 1.6, core 0.4, vehicle 0.4"
+  },
+  {
+   "phase": "deorbit:plan",
+   "realMinutes": 0.016666666666666666,
+   "frames": 60,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.689999997615814,
+   "rafP95": 16.964999996125698,
+   "rafP99": 18.179999999701977,
+   "rafWorstP99": 18.179999999701977,
+   "over33ms": 0,
+   "gpuP50": 1.0695359999999998,
+   "gpuP99": 1.3550080000000002,
+   "gpuWorstP99": 1.3550080000000002,
+   "cpuP50": 1.9549999982118607,
+   "cpuP99": 2.935000002384186,
+   "topStages": "render 2.3, sim 0.5, hud 0.2",
+   "topFeatures": "terrain 0.7, core 0.7, cockpit 0.3",
+   "topFeaturesCpu": "terrain 1.3, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "deorbit:align",
+   "realMinutes": 0.34173333333333333,
+   "frames": 1230,
+   "windows": 6,
+   "warp": "1-100",
+   "rafP50": 16.67000000178814,
+   "rafP95": 16.91499999910593,
+   "rafP99": 17.035000003874302,
+   "rafWorstP99": 17.094999998807907,
+   "over33ms": 0,
+   "gpuP50": 1.006688,
+   "gpuP99": 1.5250559999999995,
+   "gpuWorstP99": 2.1728319999999997,
+   "cpuP50": 2.125,
+   "cpuP99": 3.755000002682209,
+   "topStages": "render 3.0, sim 0.4, hud 0.2",
+   "topFeatures": "terrain 0.7, core 0.4, vfx 0.4",
+   "topFeaturesCpu": "terrain 1.9, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "deorbit:coast",
+   "realMinutes": 0.64165,
+   "frames": 2310,
+   "windows": 10,
+   "warp": "4-100",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.87000000476837,
+   "rafP99": 17.015000000596046,
+   "rafWorstP99": 17.094999998807907,
+   "over33ms": 0,
+   "gpuP50": 1.1683520000000003,
+   "gpuP99": 1.4706880000000004,
+   "gpuWorstP99": 2.6895999999999995,
+   "cpuP50": 2.065000005066395,
+   "cpuP99": 3.8250000029802322,
+   "topStages": "render 3.3, sim 0.3, hud 0.2",
+   "topFeatures": "terrain 0.8, core 0.6, vfx 0.4",
+   "topFeaturesCpu": "terrain 2.1, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "deorbit:burn",
+   "realMinutes": 0.15833333333333333,
+   "frames": 570,
+   "windows": 3,
+   "warp": "1",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.884999997913837,
+   "rafP99": 16.99500000476837,
+   "rafWorstP99": 18.66999999433756,
+   "over33ms": 0,
+   "gpuP50": 1.2849919999999997,
+   "gpuP99": 1.656128,
+   "gpuWorstP99": 2.3446719999999996,
+   "cpuP50": 2.1599999964237213,
+   "cpuP99": 3.5850000008940697,
+   "topStages": "render 2.7, sim 0.4, hud 0.3",
+   "topFeatures": "terrain 0.8, core 0.4, vfx 0.4",
+   "topFeaturesCpu": "terrain 1.6, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "deorbit:tail",
+   "realMinutes": 0.05,
+   "frames": 180,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.86999999731779,
+   "rafP99": 17.05000000447035,
+   "rafWorstP99": 17.05000000447035,
+   "over33ms": 0,
+   "gpuP50": 1.836416,
+   "gpuP99": 2.302751999999999,
+   "gpuWorstP99": 2.302751999999999,
+   "cpuP50": 2.185000002384186,
+   "cpuP99": 3.5850000008940697,
+   "topStages": "render 3.1, sim 0.4, hud 0.2",
+   "topFeatures": "vfx 1.0, terrain 0.8, core 0.4",
+   "topFeaturesCpu": "terrain 1.8, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "deorbit:trim",
+   "realMinutes": 0.025016666666666666,
+   "frames": 90,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.65999999642372,
+   "rafP95": 16.929999999701977,
+   "rafP99": 17.734999999403954,
+   "rafWorstP99": 17.734999999403954,
+   "over33ms": 0,
+   "gpuP50": 1.6917760000000004,
+   "gpuP99": 1.9576639999999996,
+   "gpuWorstP99": 1.9576639999999996,
+   "cpuP50": 2.314999997615814,
+   "cpuP99": 3.630000002682209,
+   "topStages": "render 2.9, sim 0.5, hud 0.4",
+   "topFeatures": "vfx 1.0, terrain 0.6, core 0.4",
+   "topFeaturesCpu": "terrain 1.8, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "pdiCoast",
+   "realMinutes": 1.7000833333333334,
+   "frames": 6120,
+   "windows": 26,
+   "warp": "1-100",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.890000000596046,
+   "rafP99": 17.05000000447035,
+   "rafWorstP99": 17.274999998509884,
+   "over33ms": 0,
+   "gpuP50": 1.414272,
+   "gpuP99": 1.8949760000000002,
+   "gpuWorstP99": 3.3484480000000003,
+   "cpuP50": 2.0900000035762787,
+   "cpuP99": 3.8849999979138374,
+   "topStages": "render 3.1, sim 0.4, hud 0.2",
+   "topFeatures": "terrain 1.1, core 0.8, cockpit 0.2",
+   "topFeaturesCpu": "terrain 2.1, core 0.4, vehicle 0.4"
+  },
+  {
+   "phase": "braking",
+   "realMinutes": 2.733433333333333,
+   "frames": 9840,
+   "windows": 41,
+   "warp": "1, 4",
+   "rafP50": 16.67000000178814,
+   "rafP95": 17.185000002384186,
+   "rafP99": 17.435000002384186,
+   "rafWorstP99": 20.979999996721745,
+   "over33ms": 0,
+   "gpuP50": 1.999136,
+   "gpuP99": 2.5062400000000005,
+   "gpuWorstP99": 2.936096000000001,
+   "cpuP50": 3.510000005364418,
+   "cpuP99": 4.785000003874302,
+   "topStages": "render 3.8, sim 1.0, hud 0.3",
+   "topFeatures": "terrain 1.3, core 0.9, vfx 0.2",
+   "topFeaturesCpu": "terrain 2.4, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "approach",
+   "realMinutes": 0.40835,
+   "frames": 1440,
+   "windows": 6,
+   "warp": "1",
+   "rafP50": 16.689999997615814,
+   "rafP95": 16.974999994039536,
+   "rafP99": 17.179999999701977,
+   "rafWorstP99": 17.299999997019768,
+   "over33ms": 0,
+   "gpuP50": 2.3453759999999995,
+   "gpuP99": 2.9301439999999994,
+   "gpuWorstP99": 3.5199039999999986,
+   "cpuP50": 2.780000001192093,
+   "cpuP99": 5.679999999701977,
+   "topStages": "render 4.8, sim 0.6, hud 0.2",
+   "topFeatures": "terrain 1.9, core 0.9, vfx 0.3",
+   "topFeaturesCpu": "terrain 3.8, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "terminal",
+   "realMinutes": 0.6305666666666667,
+   "frames": 2071,
+   "windows": 10,
+   "warp": "1",
+   "rafP50": 16.66999999433756,
+   "rafP95": 16.92000000178814,
+   "rafP99": 17.094999998807907,
+   "rafWorstP99": 17.299999997019768,
+   "over33ms": 0,
+   "gpuP50": 2.46848,
+   "gpuP99": 2.944544,
+   "gpuWorstP99": 3.4344,
+   "cpuP50": 2.8350000008940697,
+   "cpuP99": 12.269999995827675,
+   "topStages": "render 11.7, sim 0.4, hud 0.2",
+   "topFeatures": "terrain 1.7, core 1.0, vfx 0.3",
+   "topFeaturesCpu": "terrain 10.8, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "touchdown",
+   "realMinutes": 0.21416666666666667,
+   "frames": 241,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.904999993741512,
+   "rafP99": 17.100000001490116,
+   "rafWorstP99": 17.100000001490116,
+   "over33ms": 0,
+   "gpuP50": 2.1703680000000007,
+   "gpuP99": 2.67248,
+   "gpuWorstP99": 2.67248,
+   "cpuP50": 2.7450000047683716,
+   "cpuP99": 4.8950000032782555,
+   "topStages": "render 4.6, sim 0.5, hud 0.2",
+   "topFeatures": "terrain 1.8, core 0.9, cockpit 0.1",
+   "topFeaturesCpu": "terrain 3.5, core 0.4, vehicle 0.4"
+  },
+  {
+   "phase": "touchdown (cockpit)",
+   "realMinutes": 0,
+   "frames": 241,
+   "windows": 1,
+   "warp": "100",
+   "rafP50": 16.660000003874302,
+   "rafP95": 16.984999999403954,
+   "rafP99": 17.174999997019768,
+   "rafWorstP99": 17.174999997019768,
+   "over33ms": 0,
+   "gpuP50": 1.8124159999999996,
+   "gpuP99": 2.11712,
+   "gpuWorstP99": 2.11712,
+   "cpuP50": 3.9450000002980232,
+   "cpuP99": 9.815000005066395,
+   "topStages": "render 9.3, sim 0.6, hud 0.2",
+   "topFeatures": "terrain 1.0, core 0.9, cockpit 0.5",
+   "topFeaturesCpu": "terrain 5.0, core 3.4, cockpit 1.6"
+  },
+  {
+   "phase": "surface",
+   "realMinutes": 0.45,
+   "frames": 1620,
+   "windows": 7,
+   "warp": "1-100",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.850000001490116,
+   "rafP99": 16.950000002980232,
+   "rafWorstP99": 17.140000000596046,
+   "over33ms": 0,
+   "gpuP50": 2.7387520000000003,
+   "gpuP99": 3.1743360000000003,
+   "gpuWorstP99": 3.2627519999999994,
+   "cpuP50": 2.755000002682209,
+   "cpuP99": 3.8450000062584877,
+   "topStages": "render 3.4, sim 0.3, hud 0.2",
+   "topFeatures": "terrain 2.3, core 0.9, cockpit 0.2",
+   "topFeaturesCpu": "terrain 2.4, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "lunarLiftoff",
+   "realMinutes": 0.23725,
+   "frames": 811,
+   "windows": 4,
+   "warp": "1, 4",
+   "rafP50": 16.67000000178814,
+   "rafP95": 16.975000001490116,
+   "rafP99": 17.174999997019768,
+   "rafWorstP99": 17.28999999910593,
+   "over33ms": 0,
+   "gpuP50": 3.0944,
+   "gpuP99": 3.6056960000000005,
+   "gpuWorstP99": 3.69376,
+   "cpuP50": 3.105000004172325,
+   "cpuP99": 4.449999995529652,
+   "topStages": "render 3.8, sim 0.7, hud 0.2",
+   "topFeatures": "terrain 2.4, core 0.9, vfx 0.2",
+   "topFeaturesCpu": "terrain 2.8, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "lunarAscent",
+   "realMinutes": 1.73335,
+   "frames": 6240,
+   "windows": 26,
+   "warp": "4",
+   "rafP50": 16.66499999910593,
+   "rafP95": 17.33500000089407,
+   "rafP99": 17.530000001192093,
+   "rafWorstP99": 19.964999996125698,
+   "over33ms": 0,
+   "gpuP50": 1.7404800000000005,
+   "gpuP99": 2.068415999999999,
+   "gpuWorstP99": 2.9279359999999994,
+   "cpuP50": 2.8599999994039536,
+   "cpuP99": 4.954999998211861,
+   "topStages": "render 3.8, sim 1.1, hud 0.2",
+   "topFeatures": "terrain 1.1, core 0.8, vfx 0.3",
+   "topFeaturesCpu": "terrain 2.5, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "lunarCircularise:align",
+   "realMinutes": 0.3001,
+   "frames": 1080,
+   "windows": 5,
+   "warp": "1-50",
+   "rafP50": 16.65999999642372,
+   "rafP95": 16.899999998509884,
+   "rafP99": 16.990000002086163,
+   "rafWorstP99": 17.154999993741512,
+   "over33ms": 0,
+   "gpuP50": 0.90464,
+   "gpuP99": 2.6013440000000005,
+   "gpuWorstP99": 2.9203520000000007,
+   "cpuP50": 2.1749999970197678,
+   "cpuP99": 3.4600000008940697,
+   "topStages": "render 2.8, sim 0.4, hud 0.2",
+   "topFeatures": "terrain 0.9, core 0.8, cockpit 0.2",
+   "topFeaturesCpu": "terrain 1.9, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "lunarCircularise:coast",
+   "realMinutes": 1.05855,
+   "frames": 3810,
+   "windows": 16,
+   "warp": "4-100",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.859999999403954,
+   "rafP99": 16.99500000476837,
+   "rafWorstP99": 17.109999999403954,
+   "over33ms": 0,
+   "gpuP50": 0.9104,
+   "gpuP99": 2.8613440000000003,
+   "gpuWorstP99": 3.950784,
+   "cpuP50": 2.060000002384186,
+   "cpuP99": 3.3200000002980232,
+   "topStages": "render 2.9, sim 0.3, hud 0.2",
+   "topFeatures": "core 1.0, terrain 1.0, cockpit 0.2",
+   "topFeaturesCpu": "terrain 2.0, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "lunarCircularise:burn",
+   "realMinutes": 0.11666666666666667,
+   "frames": 420,
+   "windows": 2,
+   "warp": "1",
+   "rafP50": 16.67000000178814,
+   "rafP95": 16.895000003278255,
+   "rafP99": 17.024999998509884,
+   "rafWorstP99": 17.024999998509884,
+   "over33ms": 0,
+   "gpuP50": 1.123456,
+   "gpuP99": 1.6090240000000002,
+   "gpuWorstP99": 1.6090240000000002,
+   "cpuP50": 2.3299999982118607,
+   "cpuP99": 3.4499999955296516,
+   "topStages": "render 2.9, sim 0.3, hud 0.3",
+   "topFeatures": "core 0.6, terrain 0.6, vfx 0.6",
+   "topFeaturesCpu": "terrain 1.8, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "lunarCircularise:tail",
+   "realMinutes": 0.016683333333333335,
+   "frames": 60,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.655000001192093,
+   "rafP95": 16.839999996125698,
+   "rafP99": 17,
+   "rafWorstP99": 17,
+   "over33ms": 0,
+   "gpuP50": 1.4140480000000002,
+   "gpuP99": 1.8132479999999995,
+   "gpuWorstP99": 1.8132479999999995,
+   "cpuP50": 2.135000005364418,
+   "cpuP99": 2.7299999967217445,
+   "topStages": "render 2.2, sim 0.3, hud 0.2",
+   "topFeatures": "vfx 0.7, terrain 0.6, core 0.4",
+   "topFeaturesCpu": "terrain 1.3, core 0.3, vehicle 0.2"
+  },
+  {
+   "phase": "lunarCircularise:trim",
+   "realMinutes": 0.025,
+   "frames": 90,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.689999997615814,
+   "rafP95": 16.929999999701977,
+   "rafP99": 17.030000001192093,
+   "rafWorstP99": 17.030000001192093,
+   "over33ms": 0,
+   "gpuP50": 1.648192,
+   "gpuP99": 2.0021440000000004,
+   "gpuWorstP99": 2.0021440000000004,
+   "cpuP50": 2.369999997317791,
+   "cpuP99": 4.009999997913837,
+   "topStages": "render 3.4, sim 0.4, hud 0.2",
+   "topFeatures": "vfx 1.0, terrain 0.6, core 0.4",
+   "topFeaturesCpu": "terrain 2.4, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "lunarOrbitReturn",
+   "realMinutes": 0.024983333333333333,
+   "frames": 90,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.67500000447035,
+   "rafP95": 16.950000002980232,
+   "rafP99": 17.604999996721745,
+   "rafWorstP99": 17.604999996721745,
+   "over33ms": 0,
+   "gpuP50": 1.0248000000000002,
+   "gpuP99": 1.6014079999999995,
+   "gpuWorstP99": 1.6014079999999995,
+   "cpuP50": 2.190000005066395,
+   "cpuP99": 3.255000002682209,
+   "topStages": "render 2.8, sim 0.7, hud 0.2",
+   "topFeatures": "core 0.7, terrain 0.6, vfx 0.4",
+   "topFeaturesCpu": "terrain 1.9, core 0.3, vehicle 0.2"
+  },
+  {
+   "phase": "tei:plan",
+   "realMinutes": 0.11668333333333333,
+   "frames": 420,
+   "windows": 2,
+   "warp": "1, 4",
+   "rafP50": 16.690000005066395,
+   "rafP95": 17.04500000178814,
+   "rafP99": 17.20499999821186,
+   "rafWorstP99": 17.20499999821186,
+   "over33ms": 0,
+   "gpuP50": 0.9156160000000001,
+   "gpuP99": 4.016832,
+   "gpuWorstP99": 4.016832,
+   "cpuP50": 2.280000001192093,
+   "cpuP99": 3.6049999967217445,
+   "topStages": "render 2.9, sim 0.6, hud 0.2",
+   "topFeatures": "terrain 2.2, core 1.1, vfx 0.9",
+   "topFeaturesCpu": "terrain 1.7, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "tei:align",
+   "realMinutes": 0.27505,
+   "frames": 990,
+   "windows": 5,
+   "warp": "1-1000",
+   "rafP50": 16.65999999642372,
+   "rafP95": 17.009999997913837,
+   "rafP99": 17.219999998807907,
+   "rafWorstP99": 17.384999997913837,
+   "over33ms": 0,
+   "gpuP50": 0.8823679999999999,
+   "gpuP99": 1.26384,
+   "gpuWorstP99": 7.315712,
+   "cpuP50": 2.839999996125698,
+   "cpuP99": 4.429999999701977,
+   "topStages": "render 3.6, sim 0.6, hud 0.2",
+   "topFeatures": "terrain 0.5, core 0.5, cockpit 0.2",
+   "topFeaturesCpu": "terrain 2.5, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "tei:coast",
+   "realMinutes": 2.5250166666666667,
+   "frames": 9090,
+   "windows": 38,
+   "warp": "4-1000",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.859999999403954,
+   "rafP99": 16.95500000566244,
+   "rafWorstP99": 17.200000002980232,
+   "over33ms": 0,
+   "gpuP50": 0.8467520000000001,
+   "gpuP99": 2.4352,
+   "gpuWorstP99": 3.537792000000001,
+   "cpuP50": 1.9799999967217445,
+   "cpuP99": 2.850000001490116,
+   "topStages": "render 2.3, sim 0.3, hud 0.2",
+   "topFeatures": "core 1.0, terrain 0.8, cockpit 0.3",
+   "topFeaturesCpu": "terrain 1.4, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "tei:burn",
+   "realMinutes": 0.8416833333333333,
+   "frames": 3030,
+   "windows": 13,
+   "warp": "1, 4",
+   "rafP50": 16.660000003874302,
+   "rafP95": 17.030000001192093,
+   "rafP99": 17.214999996125698,
+   "rafWorstP99": 17.804999999701977,
+   "over33ms": 0,
+   "gpuP50": 1.0865280000000002,
+   "gpuP99": 1.3901439999999998,
+   "gpuWorstP99": 11.420704000000002,
+   "cpuP50": 2.8499999940395355,
+   "cpuP99": 4.405000001192093,
+   "topStages": "render 3.5, sim 0.7, hud 0.3",
+   "topFeatures": "terrain 0.6, core 0.4, vfx 0.2",
+   "topFeaturesCpu": "terrain 2.3, core 0.5, vehicle 0.3"
+  },
+  {
+   "phase": "tei:tail",
+   "realMinutes": 0.0167,
+   "frames": 60,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.695000000298023,
+   "rafP95": 16.984999999403954,
+   "rafP99": 17.189999997615814,
+   "rafWorstP99": 17.189999997615814,
+   "over33ms": 0,
+   "gpuP50": 1.4766720000000007,
+   "gpuP99": 1.8181759999999998,
+   "gpuWorstP99": 1.8181759999999998,
+   "cpuP50": 3.144999995827675,
+   "cpuP99": 4.445000000298023,
+   "topStages": "render 3.8, sim 0.6, hud 0.2",
+   "topFeatures": "vfx 0.9, core 0.4, terrain 0.4",
+   "topFeaturesCpu": "terrain 2.3, core 0.5, vehicle 0.3"
+  },
+  {
+   "phase": "tei:trim",
+   "realMinutes": 0.024966666666666668,
+   "frames": 90,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.70499999821186,
+   "rafP95": 17.025000005960464,
+   "rafP99": 17.189999997615814,
+   "rafWorstP99": 17.189999997615814,
+   "over33ms": 0,
+   "gpuP50": 1.644224,
+   "gpuP99": 1.9798399999999998,
+   "gpuWorstP99": 1.9798399999999998,
+   "cpuP50": 2.9600000008940697,
+   "cpuP99": 4.189999997615814,
+   "topStages": "render 3.4, sim 0.7, hud 0.2",
+   "topFeatures": "vfx 1.1, core 0.7, terrain 0.6",
+   "topFeaturesCpu": "terrain 2.2, core 0.4, vehicle 0.4"
+  },
+  {
+   "phase": "coastFromMoon",
+   "realMinutes": 1.4156166666666667,
+   "frames": 5041,
+   "windows": 21,
+   "warp": "10-1000",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.950000002980232,
+   "rafP99": 17.089999996125698,
+   "rafWorstP99": 19.190000005066395,
+   "over33ms": 0,
+   "gpuP50": 1.036704,
+   "gpuP99": 3.0632,
+   "gpuWorstP99": 4.035936,
+   "cpuP50": 3.2150000035762787,
+   "cpuP99": 4.4849999994039536,
+   "topStages": "render 3.9, sim 0.3, hud 0.3",
+   "topFeatures": "core 0.9, terrain 0.6, vfx 0.6",
+   "topFeaturesCpu": "terrain 2.5, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "transEarth",
+   "realMinutes": 1.94295,
+   "frames": 6995,
+   "windows": 30,
+   "warp": "1-10000",
+   "rafP50": 16.660000003874302,
+   "rafP95": 17.015000000596046,
+   "rafP99": 17.174999997019768,
+   "rafWorstP99": 19.87999999523163,
+   "over33ms": 0,
+   "gpuP50": 1.5498560000000001,
+   "gpuP99": 2.0433600000000003,
+   "gpuWorstP99": 4.376736000000001,
+   "cpuP50": 3.7950000017881393,
+   "cpuP99": 5.009999997913837,
+   "topStages": "render 4.3, sim 0.4, hud 0.3",
+   "topFeatures": "vfx 0.7, core 0.6, atmosphere 0.4",
+   "topFeaturesCpu": "terrain 2.8, core 0.6, vehicle 0.5"
+  },
+  {
+   "phase": "tec1:plan",
+   "realMinutes": 0.025016666666666666,
+   "frames": 90,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.695000000298023,
+   "rafP95": 17.274999998509884,
+   "rafP99": 17.450000002980232,
+   "rafWorstP99": 17.450000002980232,
+   "over33ms": 0,
+   "gpuP50": 0.9326080000000001,
+   "gpuP99": 1.8664640000000003,
+   "gpuWorstP99": 1.8664640000000003,
+   "cpuP50": 3.850000001490116,
+   "cpuP99": 4.8599999994039536,
+   "topStages": "render 3.9, sim 0.8, hud 0.3",
+   "topFeatures": "vfx 0.6, atmosphere 0.4, terrain 0.3",
+   "topFeaturesCpu": "terrain 2.5, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "tec1:align",
+   "realMinutes": 0.2916666666666667,
+   "frames": 1050,
+   "windows": 5,
+   "warp": "1-10",
+   "rafP50": 16.650000005960464,
+   "rafP95": 17.07999999821186,
+   "rafP99": 17.24499999731779,
+   "rafWorstP99": 17.45499999821186,
+   "over33ms": 0,
+   "gpuP50": 0.864704,
+   "gpuP99": 3.0329279999999996,
+   "gpuWorstP99": 3.947360000000001,
+   "cpuP50": 3.5399999991059303,
+   "cpuP99": 4.760000005364418,
+   "topStages": "render 3.8, sim 0.6, hud 0.3",
+   "topFeatures": "core 0.9, atmosphere 0.7, terrain 0.4",
+   "topFeaturesCpu": "terrain 2.5, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "tec1:coast",
+   "realMinutes": 0.39168333333333333,
+   "frames": 1410,
+   "windows": 6,
+   "warp": "4-10",
+   "rafP50": 16.66499999910593,
+   "rafP95": 16.990000002086163,
+   "rafP99": 17.125,
+   "rafWorstP99": 17.45999999344349,
+   "over33ms": 0,
+   "gpuP50": 0.8508799999999999,
+   "gpuP99": 2.784608,
+   "gpuWorstP99": 3.3511360000000003,
+   "cpuP50": 3.7100000008940697,
+   "cpuP99": 4.629999995231628,
+   "topStages": "render 3.9, sim 0.4, hud 0.3",
+   "topFeatures": "core 0.9, atmosphere 0.7, terrain 0.4",
+   "topFeaturesCpu": "terrain 2.6, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "tec1:burn",
+   "realMinutes": 0.06668333333333333,
+   "frames": 240,
+   "windows": 1,
+   "warp": "1",
+   "rafP50": 16.674999997019768,
+   "rafP95": 17.020000003278255,
+   "rafP99": 17.155000001192093,
+   "rafWorstP99": 17.155000001192093,
+   "over33ms": 0,
+   "gpuP50": 1.024192,
+   "gpuP99": 2.0222720000000005,
+   "gpuWorstP99": 2.0222720000000005,
+   "cpuP50": 3.7299999967217445,
+   "cpuP99": 4.810000002384186,
+   "topStages": "render 4.1, sim 0.6, hud 0.3",
+   "topFeatures": "vfx 1.1, core 0.3, atmosphere 0.2",
+   "topFeaturesCpu": "terrain 2.6, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "tec1:tail",
+   "realMinutes": 0.026133333333333335,
+   "frames": 60,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.62999999523163,
+   "rafP95": 17.134999997913837,
+   "rafP99": 17.399999998509884,
+   "rafWorstP99": 17.399999998509884,
+   "over33ms": 0,
+   "gpuP50": 1.4962559999999998,
+   "gpuP99": 4.347935999999999,
+   "gpuWorstP99": 4.347935999999999,
+   "cpuP50": 4.299999997019768,
+   "cpuP99": 5.159999996423721,
+   "topStages": "render 4.3, sim 0.7, hud 0.3",
+   "topFeatures": "core 1.6, vfx 1.1, atmosphere 0.7",
+   "topFeaturesCpu": "terrain 2.6, core 0.5, vehicle 0.5"
+  },
+  {
+   "phase": "tec1:trim",
+   "realMinutes": 0.0166,
+   "frames": 60,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.66999999433756,
+   "rafP95": 17.054999999701977,
+   "rafP99": 17.384999997913837,
+   "rafWorstP99": 17.384999997913837,
+   "over33ms": 0,
+   "gpuP50": 1.4073600000000002,
+   "gpuP99": 1.566784,
+   "gpuWorstP99": 1.566784,
+   "cpuP50": 4.125,
+   "cpuP99": 4.9849999994039536,
+   "topStages": "render 4.0, sim 0.7, hud 0.3",
+   "topFeatures": "vfx 0.6, core 0.6, atmosphere 0.2",
+   "topFeaturesCpu": "terrain 2.5, core 0.6, vehicle 0.4"
+  },
+  {
+   "phase": "entryPrep",
+   "realMinutes": 0.050166666666666665,
+   "frames": 180,
+   "windows": 1,
+   "warp": "4",
+   "rafP50": 16.685000002384186,
+   "rafP95": 17.145000003278255,
+   "rafP99": 17.355000004172325,
+   "rafWorstP99": 17.355000004172325,
+   "over33ms": 0,
+   "gpuP50": 1.6184639999999995,
+   "gpuP99": 2.475071999999999,
+   "gpuWorstP99": 2.475071999999999,
+   "cpuP50": 3.780000001192093,
+   "cpuP99": 5.260000005364418,
+   "topStages": "render 4.6, sim 0.7, hud 0.3",
+   "topFeatures": "vfx 1.3, core 0.7, atmosphere 0.6",
+   "topFeaturesCpu": "terrain 3.0, core 0.5, vehicle 0.4"
+  },
+  {
+   "phase": "entry",
+   "realMinutes": 3.2331333333333334,
+   "frames": 11372,
+   "windows": 48,
+   "warp": "4-50",
+   "rafP50": 16.660000003874302,
+   "rafP95": 17.100000001490116,
+   "rafP99": 17.365000002086163,
+   "rafWorstP99": 20.519999995827675,
+   "over33ms": 0,
+   "gpuP50": 2.3880000000000003,
+   "gpuP99": 2.7362559999999996,
+   "gpuWorstP99": 3.442016,
+   "cpuP50": 3.394999995827675,
+   "cpuP99": 4.9000000059604645,
+   "topStages": "render 4.1, sim 0.9, hud 0.3",
+   "topFeatures": "atmosphere 1.2, core 0.9, terrain 0.4",
+   "topFeaturesCpu": "terrain 2.6, core 0.6, vehicle 0.3"
+  },
+  {
+   "phase": "chutes",
+   "realMinutes": 0.5697333333333333,
+   "frames": 1950,
+   "windows": 10,
+   "warp": "4",
+   "rafP50": 16.67000000178814,
+   "rafP95": 17.00499999523163,
+   "rafP99": 17.19999999552965,
+   "rafWorstP99": 18.08500000089407,
+   "over33ms": 0,
+   "gpuP50": 3.689088000000001,
+   "gpuP99": 4.163200000000001,
+   "gpuWorstP99": 4.600384,
+   "cpuP50": 3.459999993443489,
+   "cpuP99": 4.75,
+   "topStages": "render 3.9, sim 0.7, hud 0.2",
+   "topFeatures": "atmosphere 1.9, core 1.0, ocean 0.9",
+   "topFeaturesCpu": "terrain 2.8, core 0.4, vehicle 0.3"
+  },
+  {
+   "phase": "splashdown",
+   "realMinutes": 1.7272666666666667,
+   "frames": 5730,
+   "windows": 26,
+   "warp": "4",
+   "rafP50": 16.66499999910593,
+   "rafP95": 17.020000003278255,
+   "rafP99": 17.229999996721745,
+   "rafWorstP99": 19.979999996721745,
+   "over33ms": 0,
+   "gpuP50": 4.627999999999998,
+   "gpuP99": 5.249856,
+   "gpuWorstP99": 6.1754560000000005,
+   "cpuP50": 3.780000001192093,
+   "cpuP99": 5.0150000005960464,
+   "topStages": "render 4.1, sim 0.9, hud 0.2",
+   "topFeatures": "atmosphere 1.8, terrain 1.8, ocean 1.2",
+   "topFeaturesCpu": "terrain 2.9, core 0.4, vehicle 0.3"
+  }
+ ],
+ "atMilestone": {
+  "LIFTOFF": {
+   "wallMs": 43832,
+   "phase": "vertical",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "MAX_Q": {
+   "wallMs": 64895,
+   "phase": "pitchProgramme",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "STAGE_SEP_1": {
+   "wallMs": 88479,
+   "phase": "m2Ascent",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "FAIRING_JETTISON": {
+   "wallMs": 96251,
+   "phase": "m2Ascent",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "STAGE_SEP_2": {
+   "wallMs": 203602,
+   "phase": "parkingCoast",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "EARTH_ORBIT": {
+   "wallMs": 203602,
+   "phase": "parkingCoast",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "TLI_COMPLETE": {
+   "wallMs": 595724,
+   "phase": "tli:tail",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "MOON_SOI_ENTER": {
+   "wallMs": 898807,
+   "phase": "coastToMoon",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "LUNAR_ORBIT": {
+   "wallMs": 1178556,
+   "phase": "loi:tail",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "LUNAR_TOUCHDOWN": {
+   "wallMs": 1679278,
+   "phase": "touchdown",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "LUNAR_LIFTOFF": {
+   "wallMs": 1721929,
+   "phase": "lunarLiftoff",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "MOON_SOI_EXIT": {
+   "wallMs": 2236710,
+   "phase": "coastFromMoon",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "EARTH_PERIGEE_TARGETED": {
+   "wallMs": 2306629,
+   "phase": "tec1:tail",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "ENTRY_INTERFACE": {
+   "wallMs": 2457283,
+   "phase": "entry",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "DROGUE_DEPLOY": {
+   "wallMs": 2613267,
+   "phase": "chutes",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "MAIN_DEPLOY": {
+   "wallMs": 2634951,
+   "phase": "splashdown",
+   "cheatCounter": 0,
+   "failed": false
+  },
+  "SPLASHDOWN": {
+   "wallMs": 2736654,
+   "phase": "splashdown",
+   "cheatCounter": 0,
+   "failed": false
+  }
+ },
+ "shots": [
+  {
+   "milestone": "PAD",
+   "stop": null,
+   "view": "chase",
+   "file": "out/screens/mission/00-pad-chase.png",
+   "phase": "prelaunch",
+   "altitudeAsl": 77.3451162930578,
+   "stats": {
+    "meanLuma": 63.62813857370461,
+    "stdLuma": 43.14140733737041,
+    "fractionNonBlack": 0.9898187934027778,
+    "distinctColorBuckets": 882
+   },
+   "hdr": {
+    "maxLuminance": 354.9586,
+    "meanLuminance": 0.11160369062887941,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0
+   },
+   "exposure": {
+    "ev100": 15.068380782498624,
+    "targetEv100": 15.023396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 139.99999999999994
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": -8.031112678693452e-11,
+     "y": -9.03655527753298,
+     "heightShare": 3.2606830282889945
+    },
+    {
+     "id": "moon",
+     "star": false,
+     "x": 0.5816564037805806,
+     "y": 0.035824255455556495,
+     "heightShare": 0.009024829877516736
+    }
+   ]
+  },
+  {
+   "milestone": "LIFTOFF",
+   "stop": {
+    "id": "LIFTOFF",
+    "ut": 938241418.8695667,
+    "triggerUt": 938241418.8666667
+   },
+   "view": "chase",
+   "file": "out/screens/mission/01-liftoff-chase.png",
+   "phase": "vertical",
+   "altitudeAsl": 77.3492118967697,
+   "stats": {
+    "meanLuma": 92.63014293982798,
+    "stdLuma": 58.46275249578315,
+    "fractionNonBlack": 0.9891018337673612,
+    "distinctColorBuckets": 1280
+   },
+   "hdr": {
+    "maxLuminance": 231.35897500000002,
+    "meanLuminance": 0.28564285963643915,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.04075621298006612,
+    "aero": 0.004207821979518669,
+    "reentry": 0,
+    "events": 0.0028035185559600268,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.12703465958058116
+   },
+   "exposure": {
+    "ev100": 15.279191518423394,
+    "targetEv100": 15.273396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 139.99999999999994
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": -8.090554567977208e-11,
+     "y": -9.03655527753661,
+     "heightShare": 3.2606828042959926
+    },
+    {
+     "id": "moon",
+     "star": false,
+     "x": 0.5861879508304322,
+     "y": 0.0516767200473287,
+     "heightShare": 0.009025801722513995
+    }
+   ]
+  },
+  {
+   "milestone": "MAX_Q",
+   "stop": {
+    "id": "MAX_Q",
+    "ut": 938241498.7747467,
+    "triggerUt": 938241498.75
+   },
+   "view": "chase",
+   "file": "out/screens/mission/02-max-q-chase.png",
+   "phase": "pitchProgramme",
+   "altitudeAsl": 14877.650386549532,
+   "stats": {
+    "meanLuma": 92.10611797416408,
+    "stdLuma": 52.76554264314054,
+    "fractionNonBlack": 0.9888576931423612,
+    "distinctColorBuckets": 828
+   },
+   "hdr": {
+    "maxLuminance": 24.1154875,
+    "meanLuminance": 0.25102418082922767,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.015798471961987595,
+    "aero": 0.015027594323135118,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.07124341713562891
+   },
+   "exposure": {
+    "ev100": 14.898396782498619,
+    "targetEv100": 14.898396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 139.99999999999994
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.000010809992984258205,
+     "y": -9.036393296441638,
+     "heightShare": 3.130340978741099
+    },
+    {
+     "id": "moon",
+     "star": false,
+     "x": 0.5897686327657428,
+     "y": 0.06408429797982046,
+     "heightShare": 0.009026522234713707
+    }
+   ]
+  },
+  {
+   "milestone": "STAGE_SEP_1",
+   "stop": {
+    "id": "STAGE_SEP_1",
+    "ut": 938241580.8134418,
+    "triggerUt": 938241580.8
+   },
+   "view": "chase",
+   "file": "out/screens/mission/03-stage-sep-1-chase.png",
+   "phase": "m2Ascent",
+   "altitudeAsl": 77100.55996074248,
+   "stats": {
+    "meanLuma": 67.56571606404154,
+    "stdLuma": 60.196078531291185,
+    "fractionNonBlack": 0.6828911675347222,
+    "distinctColorBuckets": 892
+   },
+   "hdr": {
+    "maxLuminance": 32.850090625,
+    "meanLuminance": 0.13256137821041727,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.04102298933236348,
+    "aero": 0.00004063430636547489,
+    "reentry": 0.000057845035024455896,
+    "events": 0.000006687715018169519,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.13432897916700573
+   },
+   "exposure": {
+    "ev100": 14.54254019641752,
+    "targetEv100": 14.54254019641752
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 139.99999999999994
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.00002403885250574563,
+     "y": -9.036680766797803,
+     "heightShare": 2.950157359371531
+    }
+   ]
+  },
+  {
+   "milestone": "STAGE_SEP_1",
+   "stop": {
+    "id": "STAGE_SEP_1+0.5s",
+    "ut": 938241581.3467817,
+    "triggerUt": 938241580.8
+   },
+   "view": "chase",
+   "file": "out/screens/mission/03-stage-sep-1-plus-0.5s-chase.png",
+   "phase": "m2Ascent",
+   "altitudeAsl": 77620.7531143045,
+   "stats": {
+    "meanLuma": 68.6159404000269,
+    "stdLuma": 60.830437633774544,
+    "fractionNonBlack": 0.6829733615451389,
+    "distinctColorBuckets": 867
+   },
+   "hdr": {
+    "maxLuminance": 29.831474999999998,
+    "meanLuminance": 0.13114127214622762,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.007265711579148242,
+    "aero": 0.00004684340303595788,
+    "reentry": 0.00004860478435208078,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.029568943842354155
+   },
+   "exposure": {
+    "ev100": 14.542540226299183,
+    "targetEv100": 14.542540226299183
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 139.99999999999994
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.000021653836848709535,
+     "y": -9.036707677266428,
+     "heightShare": 2.9490822290981513
+    }
+   ]
+  },
+  {
+   "milestone": "STAGE_SEP_1",
+   "stop": {
+    "id": "STAGE_SEP_1+2s",
+    "ut": 938241582.8134817,
+    "triggerUt": 938241580.8
+   },
+   "view": "chase",
+   "file": "out/screens/mission/03-stage-sep-1-plus-2s-chase.png",
+   "phase": "m2Ascent",
+   "altitudeAsl": 79042.41415213235,
+   "stats": {
+    "meanLuma": 69.15035570219048,
+    "stdLuma": 61.463881180774,
+    "fractionNonBlack": 0.6818142361111111,
+    "distinctColorBuckets": 880
+   },
+   "hdr": {
+    "maxLuminance": 16.796104687499998,
+    "meanLuminance": 0.13221259486478484,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.005866378432489479,
+    "aero": 0.000032606537075119844,
+    "reentry": 0.000050164515244278574,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.02498467955827683
+   },
+   "exposure": {
+    "ev100": 14.542540307936545,
+    "targetEv100": 14.542540307936545
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 139.99999999999994
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.000018736306919969913,
+     "y": -9.03672759002081,
+     "heightShare": 2.946162727664247
+    }
+   ]
+  },
+  {
+   "milestone": "FAIRING_JETTISON",
+   "stop": {
+    "id": "FAIRING_JETTISON",
+    "ut": 938241601.2812816,
+    "triggerUt": 938241601.275
+   },
+   "view": "chase",
+   "file": "out/screens/mission/04-fairing-jettison-chase.png",
+   "phase": "m2Ascent",
+   "altitudeAsl": 96026.44777393527,
+   "stats": {
+    "meanLuma": 67.12488798197849,
+    "stdLuma": 61.17224491445933,
+    "fractionNonBlack": 0.6666498480902778,
+    "distinctColorBuckets": 905
+   },
+   "hdr": {
+    "maxLuminance": 24.738290624999998,
+    "meanLuminance": 0.12214338046998449,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.003548837239183106,
+    "aero": 0.000001853710270808805,
+    "reentry": 0.000001692923800321853,
+    "events": 0.003607324843639264,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.019438611134772923
+   },
+   "exposure": {
+    "ev100": 14.648396782498619,
+    "targetEv100": 14.648396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 138.92818282746748
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.00001542914694194094,
+     "y": -9.036797661141366,
+     "heightShare": 2.91318708936908
+    }
+   ]
+  },
+  {
+   "milestone": "FAIRING_JETTISON",
+   "stop": {
+    "id": "FAIRING_JETTISON+0.5s",
+    "ut": 938241601.8145818,
+    "triggerUt": 938241601.275
+   },
+   "view": "chase",
+   "file": "out/screens/mission/04-fairing-jettison-plus-0.5s-chase.png",
+   "phase": "m2Ascent",
+   "altitudeAsl": 96488.12165536825,
+   "stats": {
+    "meanLuma": 66.09759670735733,
+    "stdLuma": 60.19691356783575,
+    "fractionNonBlack": 0.6741102430555556,
+    "distinctColorBuckets": 943
+   },
+   "hdr": {
+    "maxLuminance": 34.3121625,
+    "meanLuminance": 0.12309151121980123,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.004205449231678569,
+    "aero": 0.0000016086136647577963,
+    "reentry": 0.0000016454475335132527,
+    "events": 0.0000704510866901598,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.016357559956123105
+   },
+   "exposure": {
+    "ev100": 14.648396782498619,
+    "targetEv100": 14.648396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 138.07305026966162
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.000015240606257133772,
+     "y": -9.03680489440588,
+     "heightShare": 2.9123351828487554
+    }
+   ]
+  },
+  {
+   "milestone": "FAIRING_JETTISON",
+   "stop": {
+    "id": "FAIRING_JETTISON+2s",
+    "ut": 938241603.2813216,
+    "triggerUt": 938241601.275
+   },
+   "view": "chase",
+   "file": "out/screens/mission/04-fairing-jettison-plus-2s-chase.png",
+   "phase": "m2Ascent",
+   "altitudeAsl": 97748.56626931857,
+   "stats": {
+    "meanLuma": 66.34257401372894,
+    "stdLuma": 60.21420930405295,
+    "fractionNonBlack": 0.6743956163194444,
+    "distinctColorBuckets": 861
+   },
+   "hdr": {
+    "maxLuminance": 9.4998609375,
+    "meanLuminance": 0.12102169674494644,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.0031520498794866507,
+    "aero": 0.0000012820532225641662,
+    "reentry": 9.620740013964376e-7,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.012368074782718572
+   },
+   "exposure": {
+    "ev100": 14.648396782498619,
+    "targetEv100": 14.648396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 137.8712438320036
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.00001516047074856534,
+     "y": -9.036808014681762,
+     "heightShare": 2.910018968390567
+    }
+   ]
+  },
+  {
+   "milestone": "STAGE_SEP_2",
+   "stop": {
+    "id": "STAGE_SEP_2",
+    "ut": 938241998.4729717,
+    "triggerUt": 938241998.4666667
+   },
+   "view": "chase",
+   "file": "out/screens/mission/05-stage-sep-2-chase.png",
+   "phase": "parkingCoast",
+   "altitudeAsl": 183780.98631052673,
+   "stats": {
+    "meanLuma": 59.361692463133565,
+    "stdLuma": 63.1310588539661,
+    "fractionNonBlack": 0.5875162760416667,
+    "distinctColorBuckets": 899
+   },
+   "hdr": {
+    "maxLuminance": 26.056553125,
+    "meanLuminance": 0.10106088083661609,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00011261931131852081,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.00040847816684176674
+   },
+   "exposure": {
+    "ev100": 15.135052782498624,
+    "targetEv100": 15.023396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 50.28299017768985
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.000006085289963361047,
+     "y": -9.037235214766255,
+     "heightShare": 2.77817963689076
+    }
+   ]
+  },
+  {
+   "milestone": "EARTH_ORBIT",
+   "stop": {
+    "id": "EARTH_ORBIT",
+    "ut": 938241998.5729717,
+    "triggerUt": 938241998.4666667
+   },
+   "view": "chase",
+   "file": "out/screens/mission/06-earth-orbit-chase.png",
+   "phase": "parkingCoast",
+   "altitudeAsl": 183782.6964427922,
+   "stats": {
+    "meanLuma": 57.61159804261905,
+    "stdLuma": 61.49624721902117,
+    "fractionNonBlack": 0.5882001410590277,
+    "distinctColorBuckets": 888
+   },
+   "hdr": {
+    "maxLuminance": 19.958953125,
+    "meanLuminance": 0.100770912179729,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00008984684714886066,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.000375052330049394
+   },
+   "exposure": {
+    "ev100": 15.148396782498619,
+    "targetEv100": 15.148396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 49.33143285387147
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.000006086267116060399,
+     "y": -9.03724151733835,
+     "heightShare": 2.7781776499826853
+    }
+   ]
+  },
+  {
+   "milestone": "EARTH_ORBIT",
+   "stop": {
+    "id": "EARTH_ORBIT",
+    "ut": 938241998.5729717,
+    "triggerUt": 938241998.4666667
+   },
+   "view": "cockpit",
+   "file": "out/screens/mission/06-earth-orbit-cockpit.png",
+   "phase": "parkingCoast",
+   "altitudeAsl": 183782.6964427922,
+   "stats": {
+    "meanLuma": 121.19376951047008,
+    "stdLuma": 55.04232236581438,
+    "fractionNonBlack": 0.9996148003472223,
+    "distinctColorBuckets": 989
+   },
+   "hdr": {
+    "maxLuminance": 453.5023,
+    "meanLuminance": 0.4437391451274734,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.0007217959216496142,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0.003701264153069155,
+    "ui": 0,
+    "master": 0.013935593730557926
+   },
+   "exposure": {
+    "ev100": 5.272568588201265,
+    "targetEv100": 5.272568588201265
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 49.32503565178195
+   },
+   "bodies": [
+    {
+     "id": "moon",
+     "star": false,
+     "x": -0.03072573542708651,
+     "y": -0.8865241028398115,
+     "heightShare": 0.00712605451656947
+    },
+    {
+     "id": "sun",
+     "star": true,
+     "x": -0.08203048539929939,
+     "y": 0.2733323395341892,
+     "heightShare": 0.007590071950017971
+    }
+   ]
+  },
+  {
+   "milestone": "STAGE_SEP_2",
+   "stop": {
+    "id": "STAGE_SEP_2+0.5s",
+    "ut": 938241998.9729717,
+    "triggerUt": 938241998.4666667
+   },
+   "view": "chase",
+   "file": "out/screens/mission/05-stage-sep-2-plus-0.5s-chase.png",
+   "phase": "parkingCoast",
+   "altitudeAsl": 183789.5419388106,
+   "stats": {
+    "meanLuma": 57.22558615322728,
+    "stdLuma": 61.383189416468404,
+    "fractionNonBlack": 0.5821934678819445,
+    "distinctColorBuckets": 877
+   },
+   "hdr": {
+    "maxLuminance": 6.514590624999999,
+    "meanLuminance": 0.10077685078977966,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00009384777701362164,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.00035575810516280004
+   },
+   "exposure": {
+    "ev100": 15.148396782498619,
+    "targetEv100": 15.148396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 49.05829935455931
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.000006087606561677672,
+     "y": -9.037243318711349,
+     "heightShare": 2.7781687307855227
+    }
+   ]
+  },
+  {
+   "milestone": "STAGE_SEP_2",
+   "stop": {
+    "id": "STAGE_SEP_2+2s",
+    "ut": 938242000.5062116,
+    "triggerUt": 938241998.4666667
+   },
+   "view": "chase",
+   "file": "out/screens/mission/05-stage-sep-2-plus-2s-chase.png",
+   "phase": "parkingCoast",
+   "altitudeAsl": 183815.85660377704,
+   "stats": {
+    "meanLuma": 59.19838507116348,
+    "stdLuma": 63.11932057488715,
+    "fractionNonBlack": 0.5826746961805556,
+    "distinctColorBuckets": 879
+   },
+   "hdr": {
+    "maxLuminance": 6.021321874999999,
+    "meanLuminance": 0.10471370624320009,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00003797036785343165,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.00015161632921086975
+   },
+   "exposure": {
+    "ev100": 15.081778282498574,
+    "targetEv100": 15.023396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 49.03079260517108
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.0000060897450703661915,
+     "y": -9.037243485104264,
+     "heightShare": 2.7781341691142005
+    }
+   ]
+  },
+  {
+   "milestone": "TLI_COMPLETE",
+   "stop": {
+    "id": "TLI_COMPLETE",
+    "ut": 938252058.6762345,
+    "triggerUt": 938252058.6666666
+   },
+   "view": "chase",
+   "file": "out/screens/mission/07-tli-complete-chase.png",
+   "phase": "tli:tail",
+   "altitudeAsl": 299864.1469016513,
+   "stats": {
+    "meanLuma": 52.2258058973565,
+    "stdLuma": 64.4618205194823,
+    "fractionNonBlack": 0.5079307725694444,
+    "distinctColorBuckets": 875
+   },
+   "hdr": {
+    "maxLuminance": 28.802578125,
+    "meanLuminance": 0.1261129014163061,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.0002568788692614608,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.0010230907048157482
+   },
+   "exposure": {
+    "ev100": 14.497337987741279,
+    "targetEv100": 14.497337987741279
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 43.93315252812656
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.000003583089218119319,
+     "y": -9.037262379790429,
+     "heightShare": 2.645657373308518
+    }
+   ]
+  },
+  {
+   "milestone": "MOON_SOI_ENTER",
+   "stop": {
+    "id": "MOON_SOI_ENTER",
+    "ut": 938468841.15,
+    "triggerUt": 938468841.1457597
+   },
+   "view": "chase",
+   "file": "out/screens/mission/08-moon-soi-enter-chase.png",
+   "phase": "coastToMoon",
+   "altitudeAsl": 64362595.44369563,
+   "stats": {
+    "meanLuma": 11.442365914588928,
+    "stdLuma": 35.4350686186543,
+    "fractionNonBlack": 0.17350368923611112,
+    "distinctColorBuckets": 687
+   },
+   "hdr": {
+    "maxLuminance": 73.985925,
+    "meanLuminance": 0.0058749143758264006,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0
+   },
+   "exposure": {
+    "ev100": 15.411023318441993,
+    "targetEv100": 15.411023318441993
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 1.1344640137963142,
+    "distance": 31.627197115239156
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": -0.3558544922324866,
+     "y": -0.25156976296883093,
+     "heightShare": 0.03698330582890045
+    }
+   ]
+  },
+  {
+   "milestone": "LUNAR_ORBIT",
+   "stop": {
+    "id": "LUNAR_ORBIT",
+    "ut": 938524794.8158251,
+    "triggerUt": 938524794.8
+   },
+   "view": "chase",
+   "file": "out/screens/mission/09-lunar-orbit-chase.png",
+   "phase": "loi:tail",
+   "altitudeAsl": 104664.460707749,
+   "stats": {
+    "meanLuma": 45.08803177055415,
+    "stdLuma": 60.59661578350568,
+    "fractionNonBlack": 0.4506646050347222,
+    "distinctColorBuckets": 696
+   },
+   "hdr": {
+    "maxLuminance": 28.713278124999995,
+    "meanLuminance": 0.08468323573308534,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.000327328298590486,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.0012857196859010728
+   },
+   "exposure": {
+    "ev100": 14.46043163010282,
+    "targetEv100": 14.46043163010282
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 32.17583251830133
+   },
+   "bodies": [
+    {
+     "id": "moon",
+     "star": false,
+     "x": 0.00000893032335054758,
+     "y": -9.036666683801174,
+     "heightShare": 2.5669893254463623
+    }
+   ]
+  },
+  {
+   "milestone": "LUNAR_TOUCHDOWN",
+   "stop": {
+    "id": "descent-30m",
+    "ut": 938534888.9450984,
+    "triggerUt": 938534888.9450984
+   },
+   "view": "chase",
+   "file": "out/screens/mission/10-lunar-touchdown-descent-30m-chase.png",
+   "phase": "terminal",
+   "altitudeAsl": -1872.2744582532905,
+   "stats": {
+    "meanLuma": 86.17366198594156,
+    "stdLuma": 62.14045616085642,
+    "fractionNonBlack": 0.7704768880208334,
+    "distinctColorBuckets": 645
+   },
+   "hdr": {
+    "maxLuminance": 33.32146875,
+    "meanLuminance": 0.1909777041523765,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00035971519967497846,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.0014785051723521226
+   },
+   "exposure": {
+    "ev100": 12.783259404235785,
+    "targetEv100": 12.783259404235785
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 36.21461928850419
+   },
+   "bodies": []
+  },
+  {
+   "milestone": "LUNAR_TOUCHDOWN",
+   "stop": {
+    "id": "descent-10m",
+    "ut": 938534896.3288734,
+    "triggerUt": 938534896.3288734
+   },
+   "view": "chase",
+   "file": "out/screens/mission/10-lunar-touchdown-descent-10m-chase.png",
+   "phase": "terminal",
+   "altitudeAsl": -1892.2251529884525,
+   "stats": {
+    "meanLuma": 86.64121296361228,
+    "stdLuma": 62.04293268399636,
+    "fractionNonBlack": 0.77364990234375,
+    "distinctColorBuckets": 642
+   },
+   "hdr": {
+    "maxLuminance": 33.63396875,
+    "meanLuminance": 0.1946454209093283,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00024101872905174564,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.000908709665509011
+   },
+   "exposure": {
+    "ev100": 12.783371211335437,
+    "targetEv100": 12.783371211335437
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 36.264764764207875
+   },
+   "bodies": []
+  },
+  {
+   "milestone": "LUNAR_TOUCHDOWN",
+   "stop": {
+    "id": "descent-3m",
+    "ut": 938534902.6459134,
+    "triggerUt": 938534902.6459134
+   },
+   "view": "chase",
+   "file": "out/screens/mission/10-lunar-touchdown-descent-3m-chase.png",
+   "phase": "terminal",
+   "altitudeAsl": -1899.209446390858,
+   "stats": {
+    "meanLuma": 85.68536739705428,
+    "stdLuma": 62.05223012198071,
+    "fractionNonBlack": 0.7746706814236111,
+    "distinctColorBuckets": 629
+   },
+   "hdr": {
+    "maxLuminance": 32.559309375,
+    "meanLuminance": 0.19037492270587014,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.0004096026151361571,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.0017369442169094561
+   },
+   "exposure": {
+    "ev100": 12.783466705855568,
+    "targetEv100": 12.783466705855568
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 36.30161168435754
+   },
+   "bodies": []
+  },
+  {
+   "milestone": "LUNAR_TOUCHDOWN",
+   "stop": {
+    "id": "contact",
+    "ut": 938534905.5627434,
+    "triggerUt": 938534905.55
+   },
+   "view": "chase",
+   "file": "out/screens/mission/10-lunar-touchdown-contact-chase.png",
+   "phase": "terminal",
+   "altitudeAsl": -1902.1212702351622,
+   "stats": {
+    "meanLuma": 86.28562406752475,
+    "stdLuma": 62.02296565120278,
+    "fractionNonBlack": 0.7793248155381944,
+    "distinctColorBuckets": 629
+   },
+   "hdr": {
+    "maxLuminance": 31.167618749999995,
+    "meanLuminance": 0.18797515018176073,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00048370181111493255,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0.000003146929901435458,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.001727141494416918
+   },
+   "exposure": {
+    "ev100": 12.783510798721684,
+    "targetEv100": 12.783510798721684
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 36.31744745233375
+   },
+   "bodies": []
+  },
+  {
+   "milestone": "LUNAR_TOUCHDOWN",
+   "stop": {
+    "id": "contact+1s",
+    "ut": 938534906.5627834,
+    "triggerUt": 938534905.55
+   },
+   "view": "chase",
+   "file": "out/screens/mission/10-lunar-touchdown-contact-plus-1s-chase.png",
+   "phase": "touchdown",
+   "altitudeAsl": -1902.3814572168048,
+   "stats": {
+    "meanLuma": 85.76414802620718,
+    "stdLuma": 62.069386945063926,
+    "fractionNonBlack": 0.7797637261284722,
+    "distinctColorBuckets": 670
+   },
+   "hdr": {
+    "maxLuminance": 32.286959375,
+    "meanLuminance": 0.186069236672763,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00005366781791534769,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.0001956730679100561
+   },
+   "exposure": {
+    "ev100": 12.783526154293106,
+    "targetEv100": 12.783526154293106
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 36.31987635400369
+   },
+   "bodies": []
+  },
+  {
+   "milestone": "LUNAR_TOUCHDOWN",
+   "stop": {
+    "id": "LUNAR_TOUCHDOWN",
+    "ut": 938534910.5630283,
+    "triggerUt": 938534910.5583333
+   },
+   "view": "chase",
+   "file": "out/screens/mission/10-lunar-touchdown-chase.png",
+   "phase": "touchdown",
+   "altitudeAsl": -1902.3473566065077,
+   "stats": {
+    "meanLuma": 87.86922545059639,
+    "stdLuma": 62.363255205231056,
+    "fractionNonBlack": 0.7823760308159722,
+    "distinctColorBuckets": 643
+   },
+   "hdr": {
+    "maxLuminance": 31.73011875,
+    "meanLuminance": 0.1874703968457291,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0
+   },
+   "exposure": {
+    "ev100": 12.783586375816524,
+    "targetEv100": 12.783586375816524
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 36.32025897453316
+   },
+   "bodies": []
+  },
+  {
+   "milestone": "LUNAR_TOUCHDOWN",
+   "stop": {
+    "id": "LUNAR_TOUCHDOWN",
+    "ut": 938534910.5630283,
+    "triggerUt": 938534910.5583333
+   },
+   "view": "cockpit",
+   "file": "out/screens/mission/10-lunar-touchdown-cockpit.png",
+   "phase": "touchdown",
+   "altitudeAsl": -1902.3473566065077,
+   "stats": {
+    "meanLuma": 105.02713159642177,
+    "stdLuma": 54.14954811131691,
+    "fractionNonBlack": 0.9998868815104167,
+    "distinctColorBuckets": 1034
+   },
+   "hdr": {
+    "maxLuminance": 27.017124999999997,
+    "meanLuminance": 0.36295144454402445,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0.0036953180868744425,
+    "ui": 0,
+    "master": 0.014639567127719973
+   },
+   "exposure": {
+    "ev100": 3.0722821952864834,
+    "targetEv100": 3.0722821952864834
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 36.32025899679255
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 0.29227331835498954,
+     "y": -0.5973963544326221,
+     "heightShare": 0.025822151443855433
+    }
+   ]
+  },
+  {
+   "milestone": "LUNAR_LIFTOFF",
+   "stop": {
+    "id": "LUNAR_LIFTOFF",
+    "ut": 938535821.5747534,
+    "triggerUt": 938535821.5583333
+   },
+   "view": "chase",
+   "file": "out/screens/mission/11-lunar-liftoff-chase.png",
+   "phase": "lunarLiftoff",
+   "altitudeAsl": -1855.011617039796,
+   "stats": {
+    "meanLuma": 60.90761768823097,
+    "stdLuma": 46.7934741486121,
+    "fractionNonBlack": 0.7738221571180556,
+    "distinctColorBuckets": 617
+   },
+   "hdr": {
+    "maxLuminance": 12.802193749999999,
+    "meanLuminance": 0.0827617301156372,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.001810260572807283,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.007610298706245846
+   },
+   "exposure": {
+    "ev100": 14.17969668412092,
+    "targetEv100": 14.17969668412092
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 17.71457824936209
+   },
+   "bodies": []
+  },
+  {
+   "milestone": "MOON_SOI_EXIT",
+   "stop": {
+    "id": "MOON_SOI_EXIT",
+    "ut": 938685886.0916667,
+    "triggerUt": 938685886.0855696
+   },
+   "view": "chase",
+   "file": "out/screens/mission/12-moon-soi-exit-chase.png",
+   "phase": "coastFromMoon",
+   "altitudeAsl": 359700327.49147385,
+   "stats": {
+    "meanLuma": 15.588444415762135,
+    "stdLuma": 39.70201439833819,
+    "fractionNonBlack": 0.21333089192708332,
+    "distinctColorBuckets": 647
+   },
+   "hdr": {
+    "maxLuminance": 8.1927515625,
+    "meanLuminance": 0.009692078281143601,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0
+   },
+   "exposure": {
+    "ev100": 14.546664487067645,
+    "targetEv100": 14.546664487067645
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 1.1344640137963142,
+    "distance": 14.247132042283727
+   },
+   "bodies": [
+    {
+     "id": "moon",
+     "star": false,
+     "x": -0.36736104602050607,
+     "y": -0.6757859496791602,
+     "heightShare": 0.054769425766409294
+    }
+   ]
+  },
+  {
+   "milestone": "EARTH_PERIGEE_TARGETED",
+   "stop": {
+    "id": "EARTH_PERIGEE_TARGETED",
+    "ut": 938686429.6000667,
+    "triggerUt": 938686429.6
+   },
+   "view": "chase",
+   "file": "out/screens/mission/13-earth-perigee-targeted-chase.png",
+   "phase": "tec1:tail",
+   "altitudeAsl": 359276658.74298036,
+   "stats": {
+    "meanLuma": 14.844187938436798,
+    "stdLuma": 37.325285325595786,
+    "fractionNonBlack": 0.22949164496527777,
+    "distinctColorBuckets": 678
+   },
+   "hdr": {
+    "maxLuminance": 7.10832734375,
+    "meanLuminance": 0.0074574932879853725,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00019159656291225404,
+    "aero": 0,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.0007511117880989469
+   },
+   "exposure": {
+    "ev100": 14.421148260263827,
+    "targetEv100": 14.421148260263827
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 1.1344640137963142,
+    "distance": 14.231344293340923
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": -0.3719741553689885,
+     "y": -0.3083633762416395,
+     "heightShare": 0.03630418572949978
+    }
+   ]
+  },
+  {
+   "milestone": "ENTRY_INTERFACE",
+   "stop": {
+    "id": "ENTRY_INTERFACE",
+    "ut": 938920266.0213933,
+    "triggerUt": 938920266.0166667
+   },
+   "view": "chase",
+   "file": "out/screens/mission/14-entry-interface-chase.png",
+   "phase": "entry",
+   "altitudeAsl": 121981.57375441678,
+   "stats": {
+    "meanLuma": 10.485206779956062,
+    "stdLuma": 32.45261381803534,
+    "fractionNonBlack": 0.1791449652777778,
+    "distinctColorBuckets": 566
+   },
+   "hdr": {
+    "maxLuminance": 3.1001980468749997,
+    "meanLuminance": 0.0015419177683745023,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 7.023082948191432e-7,
+    "reentry": 8.30478073783682e-7,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.000004544791566601368
+   },
+   "exposure": {
+    "ev100": 5.23337278249841,
+    "targetEv100": 5.148396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.588176806363354
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": -3.526058109300325e-7,
+     "y": -9.037438145227034,
+     "heightShare": 2.868222522744766
+    }
+   ]
+  },
+  {
+   "milestone": "ENTRY_INTERFACE",
+   "stop": {
+    "id": "peak-heating",
+    "ut": 938920342.7592933,
+    "triggerUt": 938920342.7592933
+   },
+   "view": "chase",
+   "file": "out/screens/mission/14-entry-interface-peak-heating-chase.png",
+   "phase": "entry",
+   "altitudeAsl": 59975.750659201294,
+   "stats": {
+    "meanLuma": 18.90488328917467,
+    "stdLuma": 43.95603680046713,
+    "fractionNonBlack": 0.2907647026909722,
+    "distinctColorBuckets": 736
+   },
+   "hdr": {
+    "maxLuminance": 5.20053515625,
+    "meanLuminance": 0.037543037134322874,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.01032849880872729,
+    "reentry": 0.014633511526023659,
+    "events": 2.0575404064301285e-7,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.052741427778406264
+   },
+   "exposure": {
+    "ev100": 16.5,
+    "targetEv100": 16.5
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.575867880861228
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": -3.01681838359424e-7,
+     "y": -9.037437582500207,
+     "heightShare": 2.9879484974346466
+    }
+   ]
+  },
+  {
+   "milestone": "ENTRY_INTERFACE",
+   "stop": {
+    "id": "peak-heating",
+    "ut": 938920342.7592933,
+    "triggerUt": 938920342.7592933
+   },
+   "view": "cockpit",
+   "file": "out/screens/mission/14-entry-interface-peak-heating-cockpit.png",
+   "phase": "entry",
+   "altitudeAsl": 59975.750659201294,
+   "stats": {
+    "meanLuma": 42.98833314015915,
+    "stdLuma": 49.91649361722847,
+    "fractionNonBlack": 0.8336113823784722,
+    "distinctColorBuckets": 713
+   },
+   "hdr": {
+    "maxLuminance": 5.43980390625,
+    "meanLuminance": 0.07465411538934597,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.02772802880961127,
+    "reentry": 0.07359945032606871,
+    "events": 1.285224301979306e-8,
+    "cabin": 0.0036376203954839987,
+    "ui": 0,
+    "master": 0.1297233980944147
+   },
+   "exposure": {
+    "ev100": 8.243358476251641,
+    "targetEv100": 8.161482725829684
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.575851061950083
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": -0.026283946242333697,
+     "y": 4.099444921630957,
+     "heightShare": 2.3476779916051904
+    }
+   ]
+  },
+  {
+   "milestone": "ENTRY_INTERFACE",
+   "stop": {
+    "id": "peak-g",
+    "ut": 938920386.4953734,
+    "triggerUt": 938920386.4953734
+   },
+   "view": "chase",
+   "file": "out/screens/mission/14-entry-interface-peak-g-chase.png",
+   "phase": "entry",
+   "altitudeAsl": 54643.32706332393,
+   "stats": {
+    "meanLuma": 61.122531458728,
+    "stdLuma": 83.50295697145847,
+    "fractionNonBlack": 0.5707524956597222,
+    "distinctColorBuckets": 831
+   },
+   "hdr": {
+    "maxLuminance": 526.3088499999999,
+    "meanLuminance": 3.840048769248236,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0.00010457214503821351,
+    "aero": 0.013627117648397349,
+    "reentry": 0.019450210229053088,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.07581860446236977
+   },
+   "exposure": {
+    "ev100": 7.713987653042656,
+    "targetEv100": 7.713987653042656
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.562392807370722
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": -3.278734555599372e-7,
+     "y": -9.037437799896786,
+     "heightShare": 3.0008119942516913
+    }
+   ]
+  },
+  {
+   "milestone": "DROGUE_DEPLOY",
+   "stop": {
+    "id": "DROGUE_DEPLOY",
+    "ut": 938920871.1918734,
+    "triggerUt": 938920871.1666666
+   },
+   "view": "chase",
+   "file": "out/screens/mission/15-drogue-deploy-chase.png",
+   "phase": "chutes",
+   "altitudeAsl": 7440.834783333354,
+   "stats": {
+    "meanLuma": 126.53114638630939,
+    "stdLuma": 56.37253013884166,
+    "fractionNonBlack": 0.9966197374131944,
+    "distinctColorBuckets": 828
+   },
+   "hdr": {
+    "maxLuminance": 4.19511201171875,
+    "meanLuminance": 0.4659815374557676,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.005886597297919278,
+    "reentry": 0,
+    "events": 0.00011128957080514646,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.022036799391545233
+   },
+   "exposure": {
+    "ev100": 10.023396782498619,
+    "targetEv100": 10.023396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.630030109048409
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 1.1998538076578608e-7,
+     "y": -9.037438491114584,
+     "heightShare": 3.172058312943002
+    }
+   ]
+  },
+  {
+   "milestone": "DROGUE_DEPLOY",
+   "stop": {
+    "id": "DROGUE_DEPLOY+3s",
+    "ut": 938920874.1920334,
+    "triggerUt": 938920871.1666666
+   },
+   "view": "chase",
+   "file": "out/screens/mission/15-drogue-deploy-plus-3s-chase.png",
+   "phase": "chutes",
+   "altitudeAsl": 7101.554846781306,
+   "stats": {
+    "meanLuma": 124.70096766529448,
+    "stdLuma": 56.62712040677593,
+    "fractionNonBlack": 0.99646240234375,
+    "distinctColorBuckets": 817
+   },
+   "hdr": {
+    "maxLuminance": 4.076815234375,
+    "meanLuminance": 0.4583124545213237,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.003380300958530194,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.014023364926972063
+   },
+   "exposure": {
+    "ev100": 10.023396782498619,
+    "targetEv100": 10.023396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.650854592377538
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 8.544430288699845e-8,
+     "y": -9.037438178146132,
+     "heightShare": 3.1743787185474135
+    }
+   ]
+  },
+  {
+   "milestone": "MAIN_DEPLOY",
+   "stop": {
+    "id": "MAIN_DEPLOY",
+    "ut": 938920948.8633534,
+    "triggerUt": 938920948.8
+   },
+   "view": "chase",
+   "file": "out/screens/mission/16-main-deploy-chase.png",
+   "phase": "splashdown",
+   "altitudeAsl": 3171.7526056123897,
+   "stats": {
+    "meanLuma": 114.74627358959395,
+    "stdLuma": 60.085550069028805,
+    "fractionNonBlack": 0.9965741644965278,
+    "distinctColorBuckets": 789
+   },
+   "hdr": {
+    "maxLuminance": 2.5765710449218746,
+    "meanLuminance": 0.42279709524773224,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.0016976681058376811,
+    "reentry": 0,
+    "events": 0.000013916925035103656,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.006497384076344266
+   },
+   "exposure": {
+    "ev100": 9.87172878249865,
+    "targetEv100": 9.773396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.653310446708547
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 1.494905525342723e-7,
+     "y": -9.037438405111914,
+     "heightShare": 3.206973059429635
+    }
+   ]
+  },
+  {
+   "milestone": "MAIN_DEPLOY",
+   "stop": {
+    "id": "MAIN_DEPLOY+8s",
+    "ut": 938920956.8638533,
+    "triggerUt": 938920948.8
+   },
+   "view": "chase",
+   "file": "out/screens/mission/16-main-deploy-plus-8s-chase.png",
+   "phase": "splashdown",
+   "altitudeAsl": 2902.8151073493063,
+   "stats": {
+    "meanLuma": 112.79828022229749,
+    "stdLuma": 60.42671142039502,
+    "fractionNonBlack": 0.9965568033854166,
+    "distinctColorBuckets": 795
+   },
+   "hdr": {
+    "maxLuminance": 2.4136530273437504,
+    "meanLuminance": 0.4060184639845971,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.00025848378371712066,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.001010524563348334
+   },
+   "exposure": {
+    "ev100": 9.898396782498619,
+    "targetEv100": 9.898396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.653310446708561
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 1.383242766474716e-7,
+     "y": -9.037438349820075,
+     "heightShare": 3.209820452970992
+    }
+   ]
+  },
+  {
+   "milestone": "SPLASHDOWN",
+   "stop": {
+    "id": "splash+0.2s",
+    "ut": 938921298.2851733,
+    "triggerUt": 938921298.0416666
+   },
+   "view": "chase",
+   "file": "out/screens/mission/17-splashdown-splash-plus-0.2s-chase.png",
+   "phase": "splashdown",
+   "altitudeAsl": -0.8764496818184853,
+   "stats": {
+    "meanLuma": 115.80632882827639,
+    "stdLuma": 74.8152725425316,
+    "fractionNonBlack": 0.9962424045138889,
+    "distinctColorBuckets": 958
+   },
+   "hdr": {
+    "maxLuminance": 31.66416015625,
+    "meanLuminance": 0.6085467265607251,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.0042114691338341614,
+    "reentry": 0,
+    "events": 0.05833805785362543,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.12749638087182671
+   },
+   "exposure": {
+    "ev100": 9.023396782498619,
+    "targetEv100": 9.023396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.653310446708575
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 1.0474438179355448e-7,
+     "y": -5.950532177229007,
+     "heightShare": 3.270881530419242
+    }
+   ]
+  },
+  {
+   "milestone": "SPLASHDOWN",
+   "stop": {
+    "id": "splash+1s",
+    "ut": 938921299.0851934,
+    "triggerUt": 938921298.0416666
+   },
+   "view": "chase",
+   "file": "out/screens/mission/17-splashdown-splash-plus-1s-chase.png",
+   "phase": "splashdown",
+   "altitudeAsl": -0.2663458241149783,
+   "stats": {
+    "meanLuma": 125.56886939052154,
+    "stdLuma": 76.05364526690424,
+    "fractionNonBlack": 0.9958493381076389,
+    "distinctColorBuckets": 1141
+   },
+   "hdr": {
+    "maxLuminance": 15.8592115234375,
+    "meanLuminance": 0.8228590240765917,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.004668895824340707,
+    "reentry": 0,
+    "events": 0.005849623027571482,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.02940608733090954
+   },
+   "exposure": {
+    "ev100": 9.273396782498619,
+    "targetEv100": 9.273396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.653310446708584
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 2.0936406707407404e-7,
+     "y": -7.219853159106564,
+     "heightShare": 3.2708815304187198
+    }
+   ]
+  },
+  {
+   "milestone": "SPLASHDOWN",
+   "stop": {
+    "id": "splash+3s",
+    "ut": 938921301.0853133,
+    "triggerUt": 938921298.0416666
+   },
+   "view": "chase",
+   "file": "out/screens/mission/17-splashdown-splash-plus-3s-chase.png",
+   "phase": "splashdown",
+   "altitudeAsl": 0.5269823428243399,
+   "stats": {
+    "meanLuma": 88.0142461615349,
+    "stdLuma": 63.691797042805575,
+    "fractionNonBlack": 0.9934950086805555,
+    "distinctColorBuckets": 1101
+   },
+   "hdr": {
+    "maxLuminance": 4.867694531250001,
+    "meanLuminance": 0.15892345214426146,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.0077730256191150295,
+    "reentry": 0,
+    "events": 0.00007294009205080768,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.026537689150290145
+   },
+   "exposure": {
+    "ev100": 11.731947157630815,
+    "targetEv100": 11.731947157630815
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.653310446708595
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 1.7907631230965195e-7,
+     "y": -9.037438302435019,
+     "heightShare": 3.270794901983866
+    }
+   ]
+  },
+  {
+   "milestone": "SPLASHDOWN",
+   "stop": {
+    "id": "splash+10s",
+    "ut": 938921308.0857134,
+    "triggerUt": 938921298.0416666
+   },
+   "view": "chase",
+   "file": "out/screens/mission/17-splashdown-splash-plus-10s-chase.png",
+   "phase": "splashdown",
+   "altitudeAsl": 0.3803027765825391,
+   "stats": {
+    "meanLuma": 59.0633351815306,
+    "stdLuma": 60.70996566655666,
+    "fractionNonBlack": 0.9210007052951389,
+    "distinctColorBuckets": 973
+   },
+   "hdr": {
+    "maxLuminance": 5.344440625,
+    "meanLuminance": 0.1598105038713299,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.0031405421312953696,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.013429420812422394
+   },
+   "exposure": {
+    "ev100": 11.148396782498619,
+    "targetEv100": 11.148396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.653310446708604
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 1.8393545187934813e-7,
+     "y": -9.03743846161638,
+     "heightShare": 3.2708474843438164
+    }
+   ]
+  },
+  {
+   "milestone": "SPLASHDOWN",
+   "stop": {
+    "id": "SPLASHDOWN",
+    "ut": 938921332.0871533,
+    "triggerUt": 938921332.0833334
+   },
+   "view": "chase",
+   "file": "out/screens/mission/17-splashdown-chase.png",
+   "phase": "splashdown",
+   "altitudeAsl": 0.4183658817782998,
+   "stats": {
+    "meanLuma": 60.16464195850029,
+    "stdLuma": 61.07223816025581,
+    "fractionNonBlack": 0.90731689453125,
+    "distinctColorBuckets": 1050
+   },
+   "hdr": {
+    "maxLuminance": 5.8599671875,
+    "meanLuminance": 0.1635508271751671,
+    "nanPixels": 0
+   },
+   "audio": {
+    "engines": 0,
+    "aero": 0.0036230211358745904,
+    "reentry": 0,
+    "events": 0,
+    "cabin": 0,
+    "ui": 0,
+    "master": 0.01769629100779741
+   },
+   "exposure": {
+    "ev100": 11.148396782498619,
+    "targetEv100": 11.148396782498619
+   },
+   "framing": {
+    "auto": true,
+    "pitch": 0,
+    "zoom": 1,
+    "roll": 0,
+    "distance": 10.653310446708613
+   },
+   "bodies": [
+    {
+     "id": "earth",
+     "star": false,
+     "x": 1.8036852933829355e-7,
+     "y": -9.037438433176057,
+     "heightShare": 3.2708331729810376
+    }
+   ]
+  }
+ ],
+ "errors": [],
+ "console": [
+  "warning: The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127"
+ ],
+ "comparison": {
+  "with": "browser-mission-2026-11-11.json",
+  "realMinutes": {
+   "now": 45.6349,
+   "then": 44.87553333333334,
+   "heldAtPictureStopsNow": 0.5275333333333333
+  },
+  "gates": [
+   {
+    "milestone": "LIFTOFF",
+    "now": "surface speed 0.017 m/s, inertial 439.3 m/s",
+    "then": "surface speed 0.017 m/s, inertial 439.3 m/s"
+   },
+   {
+    "milestone": "MAX_Q",
+    "now": "28.35 kPa at 11.0 km",
+    "then": "28.35 kPa at 11.0 km"
+   },
+   {
+    "milestone": "STAGE_SEP_1",
+    "now": "77.1 km, 2067 m/s, 1 debris vessel(s)",
+    "then": "77.0 km, 2064 m/s, 1 debris vessel(s)"
+   },
+   {
+    "milestone": "FAIRING_JETTISON",
+    "now": "96.0 km, 5 debris vessels",
+    "then": "96.0 km, 5 debris vessels"
+   },
+   {
+    "milestone": "STAGE_SEP_2",
+    "now": "183.8 km, 7819 m/s, 1 debris vessel(s)",
+    "then": "183.8 km, 7819 m/s, 1 debris vessel(s)"
+   },
+   {
+    "milestone": "EARTH_ORBIT",
+    "now": "181.0 km x 257.2 km, incl. 20.89 deg",
+    "then": "181.0 km x 257.8 km, incl. 20.89 deg"
+   },
+   {
+    "milestone": "TLI_COMPLETE",
+    "now": "Moon encounter predicted 67.6 h ahead",
+    "then": "Moon encounter predicted 67.5 h ahead"
+   },
+   {
+    "milestone": "MOON_SOI_ENTER",
+    "now": "0.000 s from the predicted time",
+    "then": "0.000 s from the predicted time"
+   },
+   {
+    "milestone": "LUNAR_ORBIT",
+    "now": "102.4 km x 113.7 km, e 0.0031",
+    "then": "103.0 km x 114.7 km, e 0.0032"
+   },
+   {
+    "milestone": "LUNAR_TOUCHDOWN",
+    "now": "0.82 m from the target; data level 12 resident of 12 available (deepest 12); 1.00 m/s down, 0.016 m/s across, tilt 0.36 deg (1.43 at the record), 4 of 4 legs intact; 911 s on the surface",
+    "then": "1.94 m from the target; data level 12 resident of 12 available (deepest 12); 1.00 m/s down, 0.018 m/s across, tilt 0.35 deg (0.86 at the record), 4 of 4 legs intact; 911 s on the surface"
+   },
+   {
+    "milestone": "LUNAR_LIFTOFF",
+    "now": "after 916 s on the surface; \"Heron descent stage\" still landed at the end",
+    "then": "after 916 s on the surface; \"Heron descent stage\" still landed at the end"
+   },
+   {
+    "milestone": "MOON_SOI_EXIT",
+    "now": "0.000 s from the predicted time",
+    "then": "0.000 s from the predicted time"
+   },
+   {
+    "milestone": "EARTH_PERIGEE_TARGETED",
+    "now": "vacuum perigee 38.1 km",
+    "then": "vacuum perigee 48.5 km"
+   },
+   {
+    "milestone": "ENTRY_INTERFACE",
+    "now": "122.0 km, 11.010 km/s; peak 5.87 g, g-dose 0.00, ablator left 58.0 %, capsule RCS left at drogues 93.0 %",
+    "then": "122.0 km, 11.010 km/s; peak 5.93 g, g-dose 0.00, ablator left 58.1 %, capsule RCS left at drogues 93.0 %"
+   },
+   {
+    "milestone": "DROGUE_DEPLOY",
+    "now": "7445 m, Mach 0.43, 4.91 kPa",
+    "then": "7447 m, Mach 0.43, 4.91 kPa"
+   },
+   {
+    "milestone": "MAIN_DEPLOY",
+    "now": "3175 m, 49.6 m/s, 1.10 kPa",
+    "then": "3175 m, 49.6 m/s, 1.10 kPa"
+   },
+   {
+    "milestone": "SPLASHDOWN",
+    "now": "15.33 deg, -141.59 deg on water, 1161.4 km from the centre of \"Central Pacific\" (radius 2000.0 km); 7.82 m/s; upright at 10.3 deg after 30 s",
+    "then": "15.44 deg, -141.63 deg on water, 1174.9 km from the centre of \"Central Pacific\" (radius 2000.0 km); 7.82 m/s; upright at 11.8 deg after 30 s"
+   },
+   {
+    "milestone": "budgets",
+    "now": "7.87 days from lift-off to splashdown; 45.6 minutes of real time from ready to splashdown",
+    "then": "7.87 days from lift-off to splashdown; 44.9 minutes of real time from ready to splashdown"
+   }
+  ],
+  "segments": [
+   {
+    "segment": "pad",
+    "phases": 1,
+    "minutes": 0.5754666666666667,
+    "frames": 2071,
+    "gpuP99": 6.449120000000001,
+    "gpuP99Phase": "prelaunch",
+    "gpuWorstWindowP99": 39.500575999999995,
+    "cpuP99": 4.825000002980232,
+    "cpuP99Phase": "prelaunch",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 17.13000000268221,
+    "over33ms": 1,
+    "then": {
+     "gpuP99": 6.919232,
+     "cpuP99": 6.394999999902211,
+     "cpuP99Phase": "prelaunch",
+     "over33ms": 0,
+     "rafP99": 18.275000000023283
+    }
+   },
+   {
+    "segment": "ignition and lift-off",
+    "phases": 2,
+    "minutes": 0.15991666666666665,
+    "frames": 515,
+    "gpuP99": 7.001984000000001,
+    "gpuP99Phase": "ignition",
+    "gpuWorstWindowP99": 7.001984000000001,
+    "cpuP99": 12.494999997317791,
+    "cpuP99Phase": "vertical",
+    "phasesOver6ms": [
+     "ignition 7.36",
+     "vertical 12.49"
+    ],
+    "phasesOver11ms": [],
+    "rafP99": 21.62000000476837,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 8.367519999999999,
+     "cpuP99": 17.68500000005588,
+     "cpuP99Phase": "ignition",
+     "over33ms": 1,
+     "rafP99": 25.770000000018626
+    }
+   },
+   {
+    "segment": "ascent",
+    "phases": 5,
+    "minutes": 2.5534166666666667,
+    "frames": 8673,
+    "gpuP99": 3.940576,
+    "gpuP99Phase": "pitchProgramme",
+    "gpuWorstWindowP99": 6.318495999999999,
+    "cpuP99": 8.074999995529652,
+    "cpuP99Phase": "pitchProgramme",
+    "phasesOver6ms": [
+     "pitchProgramme 8.07",
+     "m1Separation 6.79"
+    ],
+    "phasesOver11ms": [],
+    "rafP99": 19.565000005066395,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 4.416831999999999,
+     "cpuP99": 10.050000000046566,
+     "cpuP99Phase": "pitchProgramme",
+     "over33ms": 0,
+     "rafP99": 19.165000000037253
+    }
+   },
+   {
+    "segment": "parking orbit",
+    "phases": 1,
+    "minutes": 2.8265666666666664,
+    "frames": 9541,
+    "gpuP99": 2.7924160000000002,
+    "gpuP99Phase": "parkingCoast",
+    "gpuWorstWindowP99": 3.028,
+    "cpuP99": 3.619999997317791,
+    "cpuP99Phase": "parkingCoast",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 17.125,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 3.6737279999999997,
+     "cpuP99": 6.584999999962747,
+     "cpuP99Phase": "parkingCoast",
+     "over33ms": 0,
+     "rafP99": 18.419999999925494
+    }
+   },
+   {
+    "segment": "parking orbit, cockpit",
+    "phases": 1,
+    "minutes": 0,
+    "frames": 240,
+    "gpuP99": 2.496608,
+    "gpuP99Phase": "parkingCoast (cockpit)",
+    "gpuWorstWindowP99": 2.496608,
+    "cpuP99": 4.1049999967217445,
+    "cpuP99Phase": "parkingCoast (cockpit)",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 17.100000001490116,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 2.5261760000000004,
+     "cpuP99": 4.159999999916181,
+     "cpuP99Phase": "parkingCoast (cockpit)",
+     "over33ms": 0,
+     "rafP99": 18.574999999953434
+    }
+   },
+   {
+    "segment": "translunar injection",
+    "phases": 11,
+    "minutes": 4.75165,
+    "frames": 17070,
+    "gpuP99": 3.0498879999999984,
+    "gpuP99Phase": "tli:tail",
+    "gpuWorstWindowP99": 3.136928,
+    "cpuP99": 4.830000005662441,
+    "cpuP99Phase": "tli:plan",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 18.140000000596046,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 4.517920000000001,
+     "cpuP99": 6.689999999944121,
+     "cpuP99Phase": "tli:coast",
+     "over33ms": 0,
+     "rafP99": 19.710000000195578
+    }
+   },
+   {
+    "segment": "coast to the Moon",
+    "phases": 11,
+    "minutes": 5.178866666666668,
+    "frames": 18510,
+    "gpuP99": 3.3691520000000006,
+    "gpuP99Phase": "mcc2:align",
+    "gpuWorstWindowP99": 3.9895359999999997,
+    "cpuP99": 3.6950000002980232,
+    "cpuP99Phase": "mcc1:tail",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 21.469999998807907,
+    "over33ms": 1,
+    "then": {
+     "gpuP99": 3.2075520000000006,
+     "cpuP99": 4.560000000055879,
+     "cpuP99Phase": "mcc2:trim",
+     "over33ms": 0,
+     "rafP99": 18.540000000037253
+    }
+   },
+   {
+    "segment": "lunar orbit",
+    "phases": 16,
+    "minutes": 7.945133333333334,
+    "frames": 28472,
+    "gpuP99": 2.9600639999999996,
+    "gpuP99Phase": "loi:coast",
+    "gpuWorstWindowP99": 4.104928000000001,
+    "cpuP99": 5.689999997615814,
+    "cpuP99Phase": "loi:trim",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 19.04000000655651,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 2.963520000000001,
+     "cpuP99": 18.84999999962747,
+     "cpuP99Phase": "loi:tail",
+     "over33ms": 1,
+     "rafP99": 22.200000000186265
+    }
+   },
+   {
+    "segment": "powered descent",
+    "phases": 4,
+    "minutes": 3.9865166666666667,
+    "frames": 13592,
+    "gpuP99": 2.944544,
+    "gpuP99Phase": "terminal",
+    "gpuWorstWindowP99": 3.5199039999999986,
+    "cpuP99": 12.269999995827675,
+    "cpuP99Phase": "terminal",
+    "phasesOver6ms": [
+     "terminal 12.27"
+    ],
+    "phasesOver11ms": [],
+    "rafP99": 17.435000002384186,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 4.30624,
+     "cpuP99": 13.56499999994412,
+     "cpuP99Phase": "terminal",
+     "over33ms": 0,
+     "rafP99": 20.300000000279397
+    }
+   },
+   {
+    "segment": "lunar surface",
+    "phases": 1,
+    "minutes": 0.45,
+    "frames": 1620,
+    "gpuP99": 3.1743360000000003,
+    "gpuP99Phase": "surface",
+    "gpuWorstWindowP99": 3.2627519999999994,
+    "cpuP99": 3.8450000062584877,
+    "cpuP99Phase": "surface",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 16.950000002980232,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 4.724288,
+     "cpuP99": 4.3549999999813735,
+     "cpuP99Phase": "surface",
+     "over33ms": 0,
+     "rafP99": 18.24500000011176
+    }
+   },
+   {
+    "segment": "lunar surface, cockpit",
+    "phases": 1,
+    "minutes": 0,
+    "frames": 241,
+    "gpuP99": 2.11712,
+    "gpuP99Phase": "touchdown (cockpit)",
+    "gpuWorstWindowP99": 2.11712,
+    "cpuP99": 9.815000005066395,
+    "cpuP99Phase": "touchdown (cockpit)",
+    "phasesOver6ms": [
+     "touchdown (cockpit) 9.82"
+    ],
+    "phasesOver11ms": [],
+    "rafP99": 17.174999997019768,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 4.408576,
+     "cpuP99": 4.805000000167638,
+     "cpuP99Phase": "touchdown (cockpit)",
+     "over33ms": 0,
+     "rafP99": 18.244999999646097
+    }
+   },
+   {
+    "segment": "lunar ascent",
+    "phases": 8,
+    "minutes": 3.512583333333333,
+    "frames": 12601,
+    "gpuP99": 3.6056960000000005,
+    "gpuP99Phase": "lunarLiftoff",
+    "gpuWorstWindowP99": 3.950784,
+    "cpuP99": 4.954999998211861,
+    "cpuP99Phase": "lunarAscent",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 17.604999996721745,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 3.267232,
+     "cpuP99": 10.31000000005588,
+     "cpuP99Phase": "lunarLiftoff",
+     "over33ms": 0,
+     "rafP99": 18.700000000186265
+    }
+   },
+   {
+    "segment": "return to the Earth",
+    "phases": 15,
+    "minutes": 8.026616666666667,
+    "frames": 28806,
+    "gpuP99": 4.347935999999999,
+    "gpuP99Phase": "tec1:tail",
+    "gpuWorstWindowP99": 11.420704000000002,
+    "cpuP99": 5.260000005364418,
+    "cpuP99Phase": "entryPrep",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 17.450000002980232,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 2.802112000000001,
+     "cpuP99": 6.7999999998137355,
+     "cpuP99Phase": "tei:coast",
+     "over33ms": 0,
+     "rafP99": 18.43500000005588
+    }
+   },
+   {
+    "segment": "entry",
+    "phases": 1,
+    "minutes": 3.2331333333333334,
+    "frames": 11372,
+    "gpuP99": 2.7362559999999996,
+    "gpuP99Phase": "entry",
+    "gpuWorstWindowP99": 3.442016,
+    "cpuP99": 4.9000000059604645,
+    "cpuP99Phase": "entry",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 17.365000002086163,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 1.740032,
+     "cpuP99": 8.240000000223517,
+     "cpuP99Phase": "entry",
+     "over33ms": 0,
+     "rafP99": 18.350000000093132
+    }
+   },
+   {
+    "segment": "chutes",
+    "phases": 1,
+    "minutes": 0.5697333333333333,
+    "frames": 1950,
+    "gpuP99": 4.163200000000001,
+    "gpuP99Phase": "chutes",
+    "gpuWorstWindowP99": 4.600384,
+    "cpuP99": 4.75,
+    "cpuP99Phase": "chutes",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 17.19999999552965,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 1.9570879999999993,
+     "cpuP99": 7.754999999888241,
+     "cpuP99Phase": "chutes",
+     "over33ms": 0,
+     "rafP99": 18.324999999720603
+    }
+   },
+   {
+    "segment": "splashdown",
+    "phases": 1,
+    "minutes": 1.7272666666666667,
+    "frames": 5730,
+    "gpuP99": 5.249856,
+    "gpuP99Phase": "splashdown",
+    "gpuWorstWindowP99": 6.1754560000000005,
+    "cpuP99": 5.0150000005960464,
+    "cpuP99Phase": "splashdown",
+    "phasesOver6ms": [],
+    "phasesOver11ms": [],
+    "rafP99": 17.229999996721745,
+    "over33ms": 0,
+    "then": {
+     "gpuP99": 2.26288,
+     "cpuP99": 3.9499999997206032,
+     "cpuP99Phase": "splashdown",
+     "over33ms": 0,
+     "rafP99": 18.31499999994412
+    }
+   }
+  ],
+  "phasesOver6msMainThread": {
+   "now": [
+    {
+     "phase": "ignition",
+     "cpuP99": 7.360000006854534
+    },
+    {
+     "phase": "vertical",
+     "cpuP99": 12.494999997317791
+    },
+    {
+     "phase": "pitchProgramme",
+     "cpuP99": 8.074999995529652
+    },
+    {
+     "phase": "m1Separation",
+     "cpuP99": 6.78999999910593
+    },
+    {
+     "phase": "terminal",
+     "cpuP99": 12.269999995827675
+    },
+    {
+     "phase": "touchdown (cockpit)",
+     "cpuP99": 9.815000005066395
+    }
+   ],
+   "then": [
+    {
+     "phase": "prelaunch",
+     "cpuP99": 6.394999999902211
+    },
+    {
+     "phase": "ignition",
+     "cpuP99": 17.68500000005588
+    },
+    {
+     "phase": "vertical",
+     "cpuP99": 13.51500000001397
+    },
+    {
+     "phase": "pitchProgramme",
+     "cpuP99": 10.050000000046566
+    },
+    {
+     "phase": "m2Ascent",
+     "cpuP99": 8.025000000023283
+    },
+    {
+     "phase": "seco",
+     "cpuP99": 7.8250000001862645
+    },
+    {
+     "phase": "parkingCoast",
+     "cpuP99": 6.584999999962747
+    },
+    {
+     "phase": "tli:coast",
+     "cpuP99": 6.689999999944121
+    },
+    {
+     "phase": "loi:burn",
+     "cpuP99": 6.725000000093132
+    },
+    {
+     "phase": "loi:tail",
+     "cpuP99": 18.84999999962747
+    },
+    {
+     "phase": "loi:trim",
+     "cpuP99": 7.564999999944121
+    },
+    {
+     "phase": "deorbit:burn",
+     "cpuP99": 6.859999999869615
+    },
+    {
+     "phase": "braking",
+     "cpuP99": 7.264999999664724
+    },
+    {
+     "phase": "approach",
+     "cpuP99": 10.115000000223517
+    },
+    {
+     "phase": "terminal",
+     "cpuP99": 13.56499999994412
+    },
+    {
+     "phase": "touchdown",
+     "cpuP99": 9.075000000186265
+    },
+    {
+     "phase": "lunarLiftoff",
+     "cpuP99": 10.31000000005588
+    },
+    {
+     "phase": "lunarAscent",
+     "cpuP99": 7.919999999925494
+    },
+    {
+     "phase": "lunarCircularise:burn",
+     "cpuP99": 7.540000000037253
+    },
+    {
+     "phase": "lunarCircularise:tail",
+     "cpuP99": 7.2700000000186265
+    },
+    {
+     "phase": "lunarCircularise:trim",
+     "cpuP99": 7.515000000130385
+    },
+    {
+     "phase": "tei:coast",
+     "cpuP99": 6.7999999998137355
+    },
+    {
+     "phase": "entry",
+     "cpuP99": 8.240000000223517
+    },
+    {
+     "phase": "chutes",
+     "cpuP99": 7.754999999888241
+    }
+   ]
+  },
+  "phasesOver11msGpu": {
+   "now": [],
+   "then": []
+  },
+  "framesOf33msOrMore": {
+   "now": 2,
+   "then": 2
+  },
+  "pictures": {
+   "now": 40,
+   "then": 20
+  }
+ },
+ "windowsOverTheLines": {
+  "windows": 711,
+  "gpuP99Over11ms": [
+   {
+    "phase": "prelaunch",
+    "warp": 1,
+    "gpuP99": 37.732831999999995,
+    "gpuP50": 5.632255999999999,
+    "features": {
+     "core": 4.063904,
+     "terrain": 17.357872307564712,
+     "vehicle": 0.1860825975421473,
+     "site": 0.594679539602496,
+     "ocean": 1.8784640000000004,
+     "sky": 0.617039179387933,
+     "atmosphere": 9.952384,
+     "vfx": 0.029522278757032255,
+     "cockpit": 0.1752790368511576,
+     "map": 0
+    }
+   },
+   {
+    "phase": "prelaunch",
+    "warp": 1,
+    "gpuP99": 39.500575999999995,
+    "gpuP50": 5.646048,
+    "features": {
+     "core": 5.314176,
+     "terrain": 18.160344263298278,
+     "vehicle": 0.19441475314384152,
+     "site": 0.63849064272402,
+     "ocean": 1.9174080000000002,
+     "sky": 0.6574526415720303,
+     "atmosphere": 10.058976000000001,
+     "vfx": 0.029485873710946024,
+     "cockpit": 0.18514917962589644,
+     "map": 0
+    }
+   },
+   {
+    "phase": "tei:burn",
+    "warp": 4,
+    "gpuP99": 11.420704000000002,
+    "gpuP50": 1.107648,
+    "features": {
+     "core": 3.88016,
+     "terrain": 3.8823253138147673,
+     "vehicle": 0.4214897266818235,
+     "site": 0.0003708438409880871,
+     "ocean": 0.000096,
+     "sky": 0.5232963291149368,
+     "atmosphere": 0,
+     "vfx": 0.9206245033178829,
+     "cockpit": 1.5165389763188308,
+     "map": 0
+    }
+   }
+  ],
+  "mainThreadP99Over6ms": [
+   {
+    "phase": "ignition",
+    "windows": 1,
+    "of": 1
+   },
+   {
+    "phase": "vertical",
+    "windows": 2,
+    "of": 2
+   },
+   {
+    "phase": "pitchProgramme",
+    "windows": 9,
+    "of": 9
+   },
+   {
+    "phase": "m1Separation",
+    "windows": 1,
+    "of": 1
+   },
+   {
+    "phase": "m2Ascent",
+    "windows": 6,
+    "of": 26
+   },
+   {
+    "phase": "parkingCoast",
+    "windows": 3,
+    "of": 40
+   },
+   {
+    "phase": "tli:burn",
+    "windows": 2,
+    "of": 24
+   },
+   {
+    "phase": "coastToMoon",
+    "windows": 6,
+    "of": 25
+   },
+   {
+    "phase": "loi:coast",
+    "windows": 5,
+    "of": 26
+   },
+   {
+    "phase": "loi:burn",
+    "windows": 1,
+    "of": 22
+   },
+   {
+    "phase": "planeTrim:align",
+    "windows": 1,
+    "of": 6
+   },
+   {
+    "phase": "planeTrim:coast",
+    "windows": 3,
+    "of": 16
+   },
+   {
+    "phase": "deorbit:coast",
+    "windows": 2,
+    "of": 10
+   },
+   {
+    "phase": "pdiCoast",
+    "windows": 4,
+    "of": 26
+   },
+   {
+    "phase": "braking",
+    "windows": 4,
+    "of": 41
+   },
+   {
+    "phase": "approach",
+    "windows": 2,
+    "of": 6
+   },
+   {
+    "phase": "terminal",
+    "windows": 6,
+    "of": 10
+   },
+   {
+    "phase": "touchdown (cockpit)",
+    "windows": 1,
+    "of": 1
+   },
+   {
+    "phase": "surface",
+    "windows": 1,
+    "of": 7
+   },
+   {
+    "phase": "lunarAscent",
+    "windows": 4,
+    "of": 26
+   },
+   {
+    "phase": "lunarCircularise:align",
+    "windows": 1,
+    "of": 5
+   },
+   {
+    "phase": "lunarCircularise:coast",
+    "windows": 1,
+    "of": 16
+   },
+   {
+    "phase": "tei:align",
+    "windows": 1,
+    "of": 5
+   },
+   {
+    "phase": "tei:coast",
+    "windows": 2,
+    "of": 38
+   },
+   {
+    "phase": "coastFromMoon",
+    "windows": 1,
+    "of": 21
+   },
+   {
+    "phase": "transEarth",
+    "windows": 11,
+    "of": 30
+   },
+   {
+    "phase": "entry",
+    "windows": 10,
+    "of": 48
+   },
+   {
+    "phase": "splashdown",
+    "windows": 4,
+    "of": 26
+   }
+  ],
+  "framesOf33msOrMore": [
+   {
+    "phase": "prelaunch",
+    "warp": 1,
+    "count": 1,
+    "rafMax": 33.65500000119209,
+    "mainThreadMax": 6.054999999701977,
+    "gpuP99": 39.500575999999995
+   },
+   {
+    "phase": "moonArrival",
+    "warp": 10,
+    "count": 1,
+    "rafMax": 452.49000000208616,
+    "mainThreadMax": 451.75999999791384,
+    "gpuP99": 2.6404479999999997
+   }
+  ]
+ },
+ "pictureReadings": [
+  {
+   "file": "00-pad-chase.png",
+   "shows": "The stack at the umbilical tower from above, the pad's apron, lava plain, the coast and the sea with the sun's glitter, cumulus; launch panel (plane crossing T- 2:21), warp x50 while the pilot waits for the window.",
+   "wrong": ""
+  },
+  {
+   "file": "01-liftoff-chase.png",
+   "shows": "The frame of lift-off (T+0, 19.1 m): the launch cloud rolling out left and right of the pad, the stack still beside the tower, toast \"Lift-off\".",
+   "wrong": "No flame is visible in this frame: the base of the vehicle is behind the pad's structure and the HUD's navball."
+  },
+  {
+   "file": "02-max-q-chase.png",
+   "shows": "14.9 km, Mach 1.67: the stack from behind and below, the plume at the lower edge behind the navball, cloud field and sea far below.",
+   "wrong": "In the sun's glint on the sea (lower right) a pair of pale meandering ribbons and several fans of dark parallel arcs: drawn-looking lines, not water (checked in a crop at full resolution)."
+  },
+  {
+   "file": "03-stage-sep-1-chase.png",
+   "shows": "77.1 km: the first stage just free, a white flash at the gap, the second stage and spacecraft ahead; the Earth's limb with a thin blue line of air, cloud field.",
+   "wrong": ""
+  },
+  {
+   "file": "03-stage-sep-1-plus-0.5s-chase.png",
+   "shows": "Half a second later: the first stage a few metres behind, the second stage's engine glowing.",
+   "wrong": ""
+  },
+  {
+   "file": "03-stage-sep-1-plus-2s-chase.png",
+   "shows": "Two seconds later: the first stage a length and a half behind and below, the second stage's plume a pale cone.",
+   "wrong": ""
+  },
+  {
+   "file": "04-fairing-jettison-chase.png",
+   "shows": "96.0 km: a small glow at the nose (the tower's motors), the second stage burning, the spent first stage a speck at the lower left.",
+   "wrong": ""
+  },
+  {
+   "file": "04-fairing-jettison-plus-0.5s-chase.png",
+   "shows": "The four fairing petals opening around the spacecraft, the tower leaving ahead on its motor's flame.",
+   "wrong": ""
+  },
+  {
+   "file": "04-fairing-jettison-plus-2s-chase.png",
+   "shows": "The four petals tumbling away on all sides, lander and capsule exposed on top of the second stage.",
+   "wrong": ""
+  },
+  {
+   "file": "05-stage-sep-2-chase.png",
+   "shows": "183.8 km, in orbit: the second stage's tank just apart from the third stage and spacecraft, no plume, cloud field below, stars above the limb.",
+   "wrong": ""
+  },
+  {
+   "file": "05-stage-sep-2-plus-0.5s-chase.png",
+   "shows": "The second stage half a metre apart.",
+   "wrong": ""
+  },
+  {
+   "file": "05-stage-sep-2-plus-2s-chase.png",
+   "shows": "The second stage two metres apart, the third stage's engine visible in the open ring.",
+   "wrong": ""
+  },
+  {
+   "file": "06-earth-orbit-chase.png",
+   "shows": "The same instant as the stage separation (0.1 s later), toasts \"M-2 separation\" and \"Earth orbit\".",
+   "wrong": ""
+  },
+  {
+   "file": "06-earth-orbit-cockpit.png",
+   "shows": "The pilot's couch: panel, caution lights and the three displays legible (flight, orbit, systems), the cabin evenly lit.",
+   "wrong": "Both forward windows are a flat light grey with faint scratches. The Sun stands in the windows (frame position -0.08, 0.27): no sun disc, no bloom, no Earth or sky can be made out. (The stack flies heads-up here; the heads-down picture with the Earth in the windows is the app spec's leo-cockpit.png.)"
+  },
+  {
+   "file": "07-tli-complete-chase.png",
+   "shows": "299.9 km at cut-off: the third stage and spacecraft, two RCS jets at the tail, cloud field and limb below, toast \"TLI complete\", burn panel with 0.6 m/s remaining.",
+   "wrong": ""
+  },
+  {
+   "file": "08-moon-soi-enter-chase.png",
+   "shows": "64.4 Mm from the Moon: the lander stack sunlit from the side against black; a small gibbous Earth (blue and white at full resolution) at the lower left.",
+   "wrong": "The Moon, 64 Mm ahead, is not in the frame."
+  },
+  {
+   "file": "09-lunar-orbit-chase.png",
+   "shows": "104.7 km over the Moon: the stack from behind (the descent engine's bell and truss), RCS puffs, the grey surface below with a sharp limb, toast \"Lunar orbit\".",
+   "wrong": "To judge: from this height the surface is smooth, with few craters to be seen."
+  },
+  {
+   "file": "10-lunar-touchdown-descent-30m-chase.png",
+   "shows": "30 m, 4.4 m/s down: the lander with its gear down over the mare, its shadow far to the left, black sky, sharp horizon.",
+   "wrong": "No engine plume and no dust (throttle 21 %). The small craters farther off read as flat dark ovals."
+  },
+  {
+   "file": "10-lunar-touchdown-descent-10m-chase.png",
+   "shows": "10 m, 1.5 m/s down: the shadow nearer.",
+   "wrong": "No dust at 10 m (throttle 15 %), no plume."
+  },
+  {
+   "file": "10-lunar-touchdown-descent-3m-chase.png",
+   "shows": "3 m, 1.0 m/s down: the shadow reaches the lander's feet.",
+   "wrong": "No dust, no plume (throttle 12 %)."
+  },
+  {
+   "file": "10-lunar-touchdown-contact-chase.png",
+   "shows": "The first footpad on the ground (panel \"LANDED\"), throttle still 12 %.",
+   "wrong": "No dust at the contact."
+  },
+  {
+   "file": "10-lunar-touchdown-contact-plus-1s-chase.png",
+   "shows": "One second later: engine off, the lander at rest on its four legs.",
+   "wrong": ""
+  },
+  {
+   "file": "10-lunar-touchdown-chase.png",
+   "shows": "At rest 0.8 m from the target in Mare Tranquillitatis: long shadow to the left, a small crater with rocks in the foreground, toast \"Lunar touchdown\".",
+   "wrong": ""
+  },
+  {
+   "file": "10-lunar-touchdown-cockpit.png",
+   "shows": "The cabin on the Moon, lit; displays legible (the orbit page reads \"Moon - landed - no orbit\").",
+   "wrong": "The forward windows are plain black: they look at the sky; the Earth is in the frame's lower part, behind the panel."
+  },
+  {
+   "file": "11-lunar-liftoff-chase.png",
+   "shows": "50 m up at 13 m/s: the ascent stage and capsule, framed closer (the vessel is smaller now), the mare below, darker than in the landing pictures (EV100 14.2 against 12.8).",
+   "wrong": "No plume under the ascent engine at 100 % throttle, no dust; the descent stage left behind is not in the frame."
+  },
+  {
+   "file": "12-moon-soi-exit-chase.png",
+   "shows": "359.7 Mm from the Earth: the ascent stage and capsule sunlit, the Moon a small full disc at the lower left.",
+   "wrong": ""
+  },
+  {
+   "file": "13-earth-perigee-targeted-chase.png",
+   "shows": "The stage from its shadowed side, RCS jets with a wide grey haze around them, a small gibbous Earth at the lower left, the capsule's nose catching the light at the lower right; toast \"Entry corridor targeted\".",
+   "wrong": "To judge: the haze of the RCS jets is as wide as the vehicle."
+  },
+  {
+   "file": "14-entry-interface-chase.png",
+   "shows": "122.0 km, 10.8 km/s, at night: the capsule alone, dark, faintly lit from one side, heat shield forward; entry panel (14 kW/m^2).",
+   "wrong": "The Earth below is black (night side): nothing but the capsule in the frame."
+  },
+  {
+   "file": "14-entry-interface-peak-heating-chase.png",
+   "shows": "60.0 km, 2.47 MW/m^2, 4.8 g: a white to pale pink sheath wrapped round the heat shield with a long pale wake, the capsule dark inside it.",
+   "wrong": "To judge: the glow is nearly white (little colour), and the capsule's flank carries a pattern of light streaks. The recovery panel reads \"Central Atlantic, 13.92 Mm\" in this frame and \"Central Pacific\" before and after."
+  },
+  {
+   "file": "14-entry-interface-peak-heating-cockpit.png",
+   "shows": "The couch during the peak: the cabin dim, displays legible (4.78 g, 60.0 km), caution lights SAS, RCS, COMM BLK and LIFT UP lit.",
+   "wrong": "Both windows are a flat light grey: no structure, no flicker, no colour of the plasma, and the cabin walls are not tinted by it."
+  },
+  {
+   "file": "14-entry-interface-peak-g-chase.png",
+   "shows": "54.6 km, 5.58 g, 901 kW/m^2: a white-pink glow as wide as the frame.",
+   "wrong": "The capsule is burnt out to white inside the glow, its detail gone: the exposure stands at EV100 7.7 here (16.5 at the peak of the heating 44 s earlier)."
+  },
+  {
+   "file": "15-drogue-deploy-chase.png",
+   "shows": "7.4 km, 132 m/s, low sun: the capsule tan in the warm light, one riser running up out of the frame, pink cumulus and a grey sea in haze below.",
+   "wrong": "The drogues are above the frame: only the riser shows. A pale vertical streak hangs below the capsule."
+  },
+  {
+   "file": "15-drogue-deploy-plus-3s-chase.png",
+   "shows": "Three seconds later, 99 m/s: two risers running up.",
+   "wrong": "The canopies are above the frame."
+  },
+  {
+   "file": "16-main-deploy-chase.png",
+   "shows": "3.2 km, 50 m/s: the capsule under one riser, cumulus in sunset colours, the sea a flat purple-grey.",
+   "wrong": "The mains are above the frame."
+  },
+  {
+   "file": "16-main-deploy-plus-8s-chase.png",
+   "shows": "Eight seconds later, 18 m/s: three risers.",
+   "wrong": "The canopies are above the frame: no picture of this flight shows an open chute."
+  },
+  {
+   "file": "17-splashdown-splash-plus-0.2s-chase.png",
+   "shows": "The capsule in the water, a crown of white spray with flying drops around it, a ring of foam, dark blue swell, warm clouds at the horizon.",
+   "wrong": "A box-shaped darker patch on the water in front of the capsule, with straight vertical edges."
+  },
+  {
+   "file": "17-splashdown-splash-plus-1s-chase.png",
+   "shows": "The crown at its largest, a sheet of spray, the foam patch spreading; the capsule hidden in the spray.",
+   "wrong": "Patches of turquoise speckles on the water at the lower left; some spray drops are drawn as long straight lines."
+  },
+  {
+   "file": "17-splashdown-splash-plus-3s-chase.png",
+   "shows": "The capsule afloat, dark brown, upright; a wide patch of foam with dark holes over the swell, tinted pink by the low sun; a main canopy (orange and white gores) coming down at the left with its risers taut.",
+   "wrong": "To judge: the foam patch fills the lower half of the frame. The canopy stands on the water like a flat fan."
+  },
+  {
+   "file": "17-splashdown-splash-plus-10s-chase.png",
+   "shows": "The foam thinner and broken up (the patch has aged), the capsule upright, panel \"SPLASHED\", the sea very dark under the low sun.",
+   "wrong": "The box-shaped darker patch in front of the capsule again; the canopy still stands as a fan at the left edge."
+  },
+  {
+   "file": "17-splashdown-chase.png",
+   "shows": "34 s after the splash: the capsule riding upright in what is left of the foam, toast \"Splashdown\".",
+   "wrong": "The box-shaped darker patch in front of the capsule (edges about a capsule's width apart, from the waterline down); the fan-shaped canopy."
+  }
+ ]
+}
