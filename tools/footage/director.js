@@ -1,19 +1,26 @@
 /**
- * Footage director: injected into the game page (`/` with `capture=0`) by tools/footage/record.mjs.
+ * Footage director: injected into the game page by tools/footage/record.mjs.
  *
- * CAMERA AND VIEW ONLY. It reads `window.__app.brief()`, `window.__test.pilot.phase()` and (a few times a second)
- * `window.__test.state()`, and it writes nothing but `window.__test.setView(mode)` (what C and M do) and
- * `window.__test.setCameraOrbit(azimuth, elevation, distance)` (what the arrow keys, PgUp/PgDn and the wheel do).
- * It never touches the flight controls, time warp, pause, the pilot, the map's pointer or any command.
+ * CAMERA AND VIEW, plus two things the recorder does for it with real key presses: the HUD (the game's F2, from
+ * `hudWant`) and, in the full plan, the heads-down roll in the parking orbit (`routine`). It reads
+ * `window.__app.brief()`, `window.__test.pilot.phase()` and (five times a second) `window.__test.state()`; it writes
+ * `window.__test.setView(mode)` (what C and M do) and `window.__test.setCameraOrbit(azimuth, elevation, distance)`
+ * (what the arrow keys, PgUp/PgDn and the wheel do). Once, in the full plan, the moment the second stage has
+ * separated, it stops the pilot and sets the warp to real time (what the '/' key does; the pilot would otherwise
+ * warp on rails before the stage has drifted off) and asks the recorder for the roll; the recorder starts the pilot
+ * again afterwards.
  *
- * Shots are chosen from the pilot's phase, the time spent in it and the milestones. A chase shot names the eye
- * direction (from the vessel's centre of mass to the eye, ROOT axes) and the distance; the director re-expresses
- * it in the chase rig's reference frame (src/camera/chaseRig.ts: the local vertical is up; azimuth from north in
- * the navball's surface mode, from the horizontal part of the velocity in orbit mode) and eases the rig there
- * every frame. A map shot names the map rig's orbit
- * (azimuth about ROOT +Z, elevation above the ROOT equator, distance from the focus surface).
+ * It also says when it wants footage (`wantRec`): the recorder opens a file for every such window, so the long
+ * coasts are not recorded. Shots are chosen from the pilot's phase, the time spent in it, the MET (the flight up to
+ * orbit is the same every time: the times of the 2026-11-12 flight anticipate the staging events), the altitude
+ * and the milestones. A chase shot names the eye direction (from the vessel's centre of mass to the eye, ROOT axes)
+ * and the distance, or the rig's own angles (`rig`); the director re-expresses it in the chase rig's reference
+ * frame (src/camera/chaseRig.ts: the local vertical is up; azimuth from north in the navball's surface mode, from
+ * the horizontal part of the velocity in orbit mode) and eases the rig there every frame. A map shot names the map
+ * rig's orbit (azimuth about ROOT +Z, elevation above the ROOT equator, distance from the focus surface).
  *
- * Every shot change, phase and milestone is logged with performance.now() so the editor can cut the recording.
+ * Every shot change, phase, milestone, HUD wish and recorder window is logged with performance.now() so the editor
+ * can cut the recording.
  */
 (() => {
   if (window.__director) return;
@@ -21,6 +28,8 @@
   const A = window.__app;
   const DEG = Math.PI / 180;
   const RADIUS = { earth: 6371000, moon: 1737400 };
+  // MET (s) of events of the flight of 2026-11-12 (docs/qa/mission/browser-mission-2026-11-12.json).
+  const REF_MET = { MAX_Q: 79.9, STAGE_SEP_1: 161.9, FAIRING_JETTISON: 182.4 };
 
   // ------------------------------------------------------------------------------------------ vectors
   const V = (x, y, z) => ({ x, y, z });
@@ -36,7 +45,6 @@
     return l > 0 ? mul(a, 1 / l) : V(0, 0, 1);
   }
   const rej = (a, n) => sub(a, mul(n, dot(a, n)));
-  const lerp3 = (a, b, k) => add(mul(a, 1 - k), mul(b, k));
   const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
   const angle = (a, b) => Math.acos(clamp(dot(norm(a), norm(b)), -1, 1));
   const qrot = (q, v) => {
@@ -59,10 +67,22 @@
     sampleMs: 0,
     sampleCount: 0,
     plan: 'full',
+    wantRec: false,
+    hudWant: true,
+    routine: 'idle',
+    override: null,
+    padDefault: null,
     drain() {
       const e = this.events;
       this.events = [];
       return e;
+    },
+    note(type, data) {
+      log(type, data ?? {});
+    },
+    setOverride(o) {
+      this.override = o;
+      log('override', o ? { ...o } : { off: true });
     },
   });
   const log = (type, data) => D.events.push({ t: performance.now(), type, ...data });
@@ -73,10 +93,13 @@
   let phaseSince = performance.now();
   let lastMilestones = 0;
   const milestoneAt = {};
-  let shot = null; // { id, since, spec }
+  let shot = null; // { id, since }
   let cam = null; // smoothed { az, el, logd, kind }
   let requestedView = null;
-  let startedAt = 0;
+  // Entry: peak of the heat flux and of the load.
+  const entry = { maxFlux: 0, peakHeatAt: 0, maxG: 0, peakGAt: 0, below40At: 0 };
+  // Parachute modules in the order they were first seen open (0 = the drogues).
+  const chuteOrder = new Map();
 
   function sample() {
     const t0 = performance.now();
@@ -94,6 +117,21 @@
     const pole = qrot(body.qFixedToRoot, V(0, 0, 1));
     const star = B[s.starId];
     const vRoot = add(body.vRoot, av.v);
+    // Drift over the ground (velocity minus the body's spin), horizontal part: under the mains, the wind.
+    const ground = sub(av.v, cross(body.spinRoot ?? V(0, 0, 0), av.r));
+    // Parachutes of the active vessel: the open ones and their line direction (ROOT). One module per kind of chute
+    // (the capsule's drogue pair, then its three mains): the first module seen open is the drogues, any later one
+    // the mains (sorted mains first).
+    const chutes = [];
+    for (const p of av.parts ?? []) {
+      (p.modules ?? []).forEach((m, mi) => {
+        if (!m || m.type !== 'parachute' || !(m.state === 'reefed' || m.state === 'full')) return;
+        const key = `${p.instanceId ?? p.def}:${mi}`;
+        if (!chuteOrder.has(key)) chuteOrder.set(key, chuteOrder.size);
+        chutes.push({ key, main: chuteOrder.get(key) >= 1, inflation: m.inflation, age: m.deployAge, dir: norm(qrot(av.q, m.lineDir)) });
+      });
+    }
+    chutes.sort((a, b) => Number(b.main) - Number(a.main));
     const out = {
       ut: s.ut,
       mode: s.navball.mode,
@@ -116,9 +154,13 @@
       moon: B.moon,
       alt: s.readouts.altitudeAsl,
       radar: s.readouts.altitudeRadar,
+      heatFlux: s.readouts.heatFlux ?? 0,
+      gLoad: s.readouts.gLoad ?? 0,
       vessels: s.vessels.length,
+      chutes,
+      drift: rej(ground, up),
     };
-    D.lastSample = { ut: out.ut, bodyId: out.bodyId, alt: out.alt, mode: out.mode, situation: out.situation, sampleMs: D.sampleMs };
+    D.lastSample = { ut: out.ut, bodyId: out.bodyId, alt: out.alt, mode: out.mode, situation: out.situation, sampleMs: D.sampleMs, chutes: chutes.length };
     return out;
   }
 
@@ -189,24 +231,30 @@
   };
 
   // ------------------------------------------------------------------------------------------ shots
-  // Each chase shot returns { dir (unit, COM -> eye, ROOT), dist (m) } for geometry `geo` and shot time `t` (s).
+  // Each chase shot returns { dir (unit, COM -> eye, ROOT), dist (m) } or { rig: { az, el } (rad, the rig's
+  // frame), dist } for geometry `geo` and shot time `t` (s).
   const chase = {
-    // Pad: low on the starboard / dorsal side, looking up the stack (the tower behind it at az 90).
-    padLow: (geo, t) => ({ dir: padDir(geo, 4 + 0.5 * t, -3), dist: 130 }),
-    padUp: (geo, t) => ({ dir: padDir(geo, 22 + 0.7 * t, -24), dist: 46 }),
-    padHigh: (geo, t) => ({ dir: padDir(geo, -12 + 0.9 * t, 24), dist: 175 }),
-    padPort: (geo, t) => ({ dir: padDir(geo, 178 - 0.6 * t, 3), dist: 120 }),
-    ignition: (geo, t) => ({ dir: padDir(geo, 18 + 0.5 * t, -15), dist: 62 }),
-    liftoff: (geo, t) => ({ dir: padDir(geo, 22 + 0.6 * t, Math.min(4, -8 + 0.8 * t)), dist: 85 + 3 * t }),
+    // The pad, around the default view of the pad (the rig's own: 70 degrees off the flame trench, on the
+    // sunward side, clear of the tower), which is read at the start.
+    padDefault: (geo, t) => padRel(geo, 0, null, null),
+    padWide: (geo, t) => padRel(geo, -32 + 0.35 * t, 5, 720),
+    padLow: (geo, t) => padRel(geo, 24 + 0.45 * t, -13, 78),
+    padTop: (geo, t) => padRel(geo, -14 + 0.6 * t, 30, 175),
+    padSide: (geo, t) => padRel(geo, 38 - 0.5 * t, 6, 105),
+    liftoffPull: (geo, t) => padRel(geo, 0.3 * t, Math.max(-4, (D.padDefault ? D.padDefault.el / DEG : 12) - 1.6 * t), Math.min(260, (D.padDefault ? D.padDefault.dist : 140) + 10 * t)),
     // Ascent (heading = the nose's horizontal part).
-    climbSide: (geo, t) => ({ dir: sph(basis(geo), 100, 2), dist: 95 }),
-    climbBehind: (geo, t) => ({ dir: sph(basis(geo), 150 - 0.5 * t, 6), dist: 110 }),
-    sepWide: (geo, t) => ({ dir: sph(basis(geo), 125, 7), dist: 150 }),
-    fairing: (geo, t) => ({ dir: sph(basis(geo), 65, 8), dist: 70 }),
+    climbSide: (geo, t) => ({ dir: sph(basis(geo), 100, 2), dist: 105 }),
+    maxqBelow: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo), 128 - 0.3 * t, -30), geo.up), dist: 125 }),
+    climbBehind: (geo, t) => ({ dir: sph(basis(geo), 150 - 0.5 * t, 6), dist: 115 }),
+    sepClose: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo), 132, 7), geo.up), dist: 62 }),
+    fairingClose: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo), 96, 10), geo.up), dist: 62 }),
     limbAscent: (geo, t) => ({ dir: sph(basis(geo), 160 - 0.6 * t, 16), dist: 90 }),
     sideLimb: (geo, t) => ({ dir: sph(basis(geo), 92, 13), dist: 85 }),
+    sep2Close: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo), 152 - 0.3 * t, 11), geo.up), dist: 40 }),
+    rollChase: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo, 'velocity'), 205 + 0.2 * t, 20), geo.up), dist: 58 }),
     // Orbit: eye above and behind, looking down at the vessel with the limb across the frame.
     limb: (geo, t, o = {}) => limbShot(geo, t, o),
+    limbLow: (geo, t) => limbShot(geo, t, { az: 120, el: 8, dist: 60, drift: 0.4 }),
     burnLimb: (geo, t) => limbShot(geo, t, { az: 140, el: 14, dist: 75, drift: 0.4 }),
     burnSide: (geo, t) => limbShot(geo, t, { az: 95, el: 24, dist: 65, drift: -0.3 }),
     burnHigh: (geo, t) => limbShot(geo, t, { az: 200, el: 34, dist: 70, drift: 0.3 }),
@@ -223,28 +271,36 @@
     landingLow: (geo, t) => ({ dir: earthFacing(geo, 20 + 0.6 * t, 4), dist: 38 }),
     surfaceOrbit: (geo, t) => ({ dir: earthFacing(geo, 40 + 3 * t, 7), dist: 34 }),
     surfaceHigh: (geo, t) => ({ dir: earthFacing(geo, 160 + 2 * t, 18), dist: 45 }),
-    moonLiftoff: (geo, t) => ({ dir: earthFacing(geo, 90, 22), dist: 40 + 3 * t }),
+    surfaceWide: (geo, t) => ({ dir: earthFacing(geo, 100 + 1.5 * t, 10), dist: 80 }),
+    moonLiftoff: (geo, t) => ({ dir: earthFacing(geo, 90, 24), dist: 40 + 3 * t }),
     ascentSide: (geo, t) => ({ dir: sph(basis(geo), 95, 14), dist: 50 }),
-    // Entry, chutes, splashdown (heading = velocity).
+    // Entry (heading = velocity).
     entryHigh: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo, 'velocity'), 150, 18), geo.up), dist: 24 }),
     entrySide: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo, 'velocity'), 105 - 0.4 * t, 6), geo.up), dist: 16 }),
     entryBehind: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo, 'velocity'), 168, 10), geo.up), dist: 20 }),
     entryFront: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo, 'velocity'), 35, 4), geo.up), dist: 18 }),
-    drogue: (geo, t) => ({ dir: sunSide(geo, 30 + 1.5 * t, -14), dist: 38 }),
-    mains: (geo, t) => ({ dir: sunSide(geo, 60 + 1.2 * t, -10), dist: 60 }),
-    mainsHigh: (geo, t) => ({ dir: sunSide(geo, 120 + 1.0 * t, 8), dist: 70 }),
-    splash: (geo, t) => ({ dir: sunSide(geo, 20 + 2.5 * t, 5), dist: 26 }),
-    splashWide: (geo, t) => ({ dir: sunSide(geo, 140 + 1.5 * t, 9), dist: 55 }),
+    entryFar: (geo, t) => ({ dir: avoidSun(geo, sph(basis(geo, 'velocity'), 120 + 0.3 * t, 12), geo.up), dist: 140 }),
+    // Chutes: from below the capsule, up along the canopy lines, so the open canopies are in the frame.
+    chuteBelow: (geo, t) => chuteShot(geo, t, { thetaDeg: 36, swing: 0.9 }),
+    chuteSide: (geo, t) => chuteShot(geo, t, { thetaDeg: 58, swing: -0.7, far: 1.45 }),
+    // Splash and afloat: crosswind of the capsule's last drift, close in. The canopy comes down downwind, about
+    // its 52 m of lines away, and so stays outside the frame (it stands on the water like a flat fan).
+    splash: (geo, t) => ({ dir: waterSide(geo, 102 + 0.4 * t, 6), dist: 30 }),
+    afloat: (geo, t) => ({ dir: waterSide(geo, 112 + 0.8 * t, 9), dist: 26 }),
+    afloatWide: (geo, t) => ({ dir: waterSide(geo, 96 + 0.6 * t, 20), dist: 42 }),
   };
 
-  /** Pad / landed: azimuth in the plane of the vessel's starboard (+X, 0 deg) and dorsal (+Z, 90 deg) axes. */
-  function padDir(geo, azDeg, elDeg) {
-    const up = geo.up;
-    const x = norm(rej(geo.ax, up));
-    const z = norm(rej(geo.az, up));
-    const a = azDeg * DEG;
-    const e = elDeg * DEG;
-    return avoidSun(geo, norm(add(mul(add(mul(x, Math.cos(a)), mul(z, Math.sin(a))), Math.cos(e)), mul(up, Math.sin(e)))), up, 45);
+  /** The pad: the default view's angles (rig frame) turned by dAz, at elevation el (deg, null = the default's) and distance d (null = the default's). */
+  function padRel(geo, dAzDeg, elDeg, dist) {
+    const pd = D.padDefault ?? { az: 0, el: 12 * DEG, dist: 140 };
+    let az = pd.az + dAzDeg * DEG;
+    // Keep clear of the tower (off the vessel's ventral side, -Z), as the rig's default does.
+    const fr = rigFrame(geo, 'surface');
+    const ventral = mul(geo.az, -1);
+    const vAz = Math.atan2(dot(ventral, fr.Y), dot(ventral, fr.X));
+    const off = wrapPi(az - vAz);
+    if (Math.abs(off) < 55 * DEG) az = vAz + Math.sign(off || 1) * 55 * DEG;
+    return { rig: { az, el: elDeg === null ? pd.el : elDeg * DEG }, dist: dist === null ? pd.dist : dist };
   }
 
   function limbShot(geo, t, o) {
@@ -307,13 +363,53 @@
     return avoidSun(geo, sph(bs, azDeg, elDeg), up);
   }
 
-  /** Eye on the sunlit side (azimuth 0 = toward the Sun's azimuth). */
-  function sunSide(geo, azDeg, elDeg) {
+  /**
+   * Under open canopies: the eye sits below the capsule, `thetaDeg` off the line from the capsule up to the
+   * canopies, on the sunward side, swinging slowly round the line. Seen from there the canopies stand 10-20
+   * degrees above the capsule in the frame (the rig always looks at the capsule). Mains: 52 m of lines and
+   * 26 m canopies; drogues: 22 m and 5.6 m.
+   */
+  function chuteShot(geo, t, o) {
+    const c = geo.chutes[0];
+    const main = !!c && c.main;
+    const u = c ? c.dir : geo.up;
+    let s = rej(geo.sunDir, u);
+    s = len(s) < 1e-6 ? anyOrth(u) : norm(s);
+    s = rotAbout(s, u, (o.swing * t + 25) * DEG);
+    const th = o.thetaDeg * DEG;
+    const dir = norm(add(mul(u, -Math.cos(th)), mul(s, Math.sin(th))));
+    const base = main ? 78 : 44;
+    return { dir: avoidSun(geo, dir, u, 38), dist: base * (o.far ?? 1) };
+  }
+
+  /**
+   * On the water: azimuth 0 = downwind (where the canopy comes down), fixed the first time it is asked for: the
+   * capsule's drift over the ground when it has one, else the lines' lean, else the sun. The side (+90 or -90)
+   * is the one with the sun more behind the camera.
+   */
+  let water = null;
+  function waterSide(geo, azDeg, elDeg) {
     const up = geo.up;
-    let h = rej(geo.sunDir, up);
-    h = len(h) < 1e-6 ? anyOrth(up) : norm(h);
-    const bs = { up, h, side: cross(up, h) };
-    return avoidSun(geo, sph(bs, azDeg % 360 > 180 ? (azDeg % 360) - 360 : azDeg % 360, elDeg), up, 40);
+    if (!water) {
+      let h = null;
+      let how = 'sun';
+      if (len(geo.drift) > 0.4) {
+        h = norm(geo.drift);
+        how = 'drift';
+      }
+      const c = geo.chutes[0];
+      if (!h && c && len(rej(c.dir, up)) > 0.08) {
+        h = norm(rej(c.dir, up));
+        how = 'lines';
+      }
+      if (!h) h = len(rej(geo.sunDir, up)) > 1e-6 ? norm(rej(geo.sunDir, up)) : anyOrth(up);
+      const side = cross(up, h);
+      const sign = dot(side, geo.sunDir) >= 0 ? 1 : -1;
+      water = { h, sign };
+      log('water', { how, drift: +len(geo.drift).toFixed(2), sign });
+    }
+    const bs = { up, h: water.h, side: mul(cross(up, water.h), water.sign) };
+    return sph(bs, azDeg, elDeg);
   }
 
   // Map shots: { az, el, dist } of the map rig (pivot = the focus body, the Earth after the first visit).
@@ -366,56 +462,65 @@
   }
 
   // ------------------------------------------------------------------------------------------ the plan
-  // Per pilot phase: a list of [seconds into the phase, shot]; the last entry before `t` wins, and when a phase's
-  // list is exhausted the `cycle` (if any) repeats every `every` seconds. Shots: 'chase:<name>', 'map:<name>',
-  // 'cockpit'. Phases not listed fall back to their group.
+  // Per pilot phase: `at` = a list of [seconds into the phase, shot, rec, hud]; the last entry before `t` wins,
+  // and when the list is exhausted the `cycle` (if any) repeats every `every` seconds. rec: true (record while the
+  // entry is the shot), a number (record that many seconds of it), false / absent (do not record); recording
+  // starts a second before an entry that records, so the file is open at the cut. hud: false hides the HUD (a
+  // beauty shot). `rec: 'all'` on the phase records all of it. `dynamic` phases choose in code. Shots:
+  // 'chase:<name>', 'map:<name>', 'cockpit'. Phases not listed fall back to their group (not recorded).
   const DEEP = { cycle: ['chase:bestBody', 'chase:earthBehind', 'chase:moonBehind'], every: 16 };
   const LUNAR_ORBIT = { cycle: ['chase:limb', 'chase:burnSide', 'chase:earthrise', 'chase:burnHigh'], every: 15 };
   const EARTH_ORBIT = { cycle: ['chase:limb', 'chase:burnSide', 'chase:burnHigh'], every: 16 };
   const PLAN = {
-    test: { at: [[0, 'chase:padLow'], [8, 'cockpit'], [12, 'map:parking'], [17, 'chase:padUp']] },
-    pad: { at: [[0, 'chase:padLow'], [14, 'chase:padUp'], [26, 'chase:padPort'], [37, 'cockpit'], [44, 'chase:padHigh']] },
-    prelaunch: { at: [[0, 'chase:padHigh'], [14, 'chase:padLow']] },
-    ignition: { at: [[0, 'chase:ignition']] },
-    vertical: { at: [[0, 'chase:liftoff']] },
-    pitchProgramme: { at: [[0, 'chase:liftoff'], [7, 'chase:climbSide'], [19, 'cockpit'], [25, 'chase:climbBehind']] },
-    m1Separation: { at: [[0, 'chase:sepWide']] },
-    m2Ascent: { at: [[0, 'chase:sepWide'], [14, 'chase:limbAscent'], [38, 'chase:sideLimb'], [62, 'chase:limbAscent'], [85, 'chase:sideLimb']] },
-    seco: { at: [[0, 'chase:sideLimb']] },
-    dropM2: { at: [[0, 'chase:sepWide']] },
-    parkingCoast: { at: [[0, 'chase:limb'], [18, 'chase:burnSide'], [34, 'map:parking'], [48, 'chase:burnHigh'], [64, 'cockpit'], [72, 'chase:limb']], ...EARTH_ORBIT },
-    'tli:coast': { at: [[0, 'chase:burnSide'], [20, 'map:parking'], [32, 'chase:limb']], ...EARTH_ORBIT },
-    'tli:burn': { at: [[0, 'chase:burnLimb'], [24, 'chase:burnSide'], [48, 'chase:burnHigh'], [70, 'chase:burnLimb']], cycle: ['chase:burnSide', 'chase:burnLimb', 'chase:burnHigh'], every: 20 },
-    'tli:tail': { at: [[0, 'chase:burnLimb']] },
-    postTli: { at: [[0, 'map:translunar']] },
-    'tliTrim:align': { at: [[0, 'map:translunar'], [10, 'chase:earthBehind']], ...DEEP },
-    translunar: { at: [[0, 'chase:earthBehind'], [20, 'map:translunar'], [36, 'chase:bestBody']], ...DEEP },
-    coastToMoon: { at: [[0, 'chase:moonBehind'], [16, 'chase:earthBehind'], [32, 'map:translunar'], [46, 'chase:moonBehind']], ...DEEP },
-    moonArrival: { at: [[0, 'chase:moonBehind']] },
-    'loi:burn': { at: [[0, 'chase:moonBehind'], [16, 'chase:burnLimb'], [40, 'chase:burnSide'], [62, 'chase:burnHigh']], cycle: ['chase:burnLimb', 'chase:burnSide'], every: 20 },
+    test: { rec: 'all', at: [[0, 'chase:padDefault'], [6, 'chase:padWide', true, false], [12, 'cockpit'], [16, 'map:parking'], [20, 'chase:padLow', true, false], [26, 'chase:padTop']] },
+    // The pad before the pilot starts (record.mjs: 40 s).
+    pad: { rec: 'all', at: [[0, 'chase:padWide', true, false], [11, 'chase:padLow', true, false], [21, 'chase:padSide', true, false], [30, 'chase:padTop', true, true]] },
+    prelaunch: { dynamic: 'prelaunch' },
+    ignition: { rec: 'all', at: [[0, 'chase:padDefault']] },
+    vertical: { rec: 'all', dynamic: 'vertical' },
+    pitchProgramme: { rec: 'all', dynamic: 'ascent' },
+    m1Separation: { rec: 'all', at: [[0, 'chase:sepClose']] },
+    m2Ascent: { dynamic: 'm2' },
+    seco: { rec: 'all', at: [[0, 'chase:sep2Close']] },
+    dropM2: { rec: 'all', at: [[0, 'chase:sep2Close']] },
+    parkingCoast: { at: [[0, 'chase:limb'], [10, 'chase:burnHigh'], [26, 'map:parking'], [40, 'chase:limb']], ...EARTH_ORBIT },
+    'tli:plan': { at: [[0, 'chase:limb']] },
+    'tli:align': { at: [[0, 'map:parking'], [5, 'map:parking', 7], [18, 'chase:burnSide']] },
+    'tli:coast': { at: [[0, 'chase:limb'], [8, 'chase:burnSide'], [40, 'map:parking']], ...EARTH_ORBIT },
+    'tli:burn': { at: [[0, 'chase:burnHigh', 10], [16, 'chase:burnSide'], [28, 'map:translunar', 8], [44, 'chase:burnHigh'], [60, 'chase:burnLimb']], cycle: ['chase:burnSide', 'chase:burnLimb', 'chase:burnHigh'], every: 20 },
+    'tli:tail': { rec: 'all', at: [[0, 'chase:burnLimb']] },
+    postTli: { rec: 'all', at: [[0, 'map:translunar']] },
+    'tliTrim:align': { at: [[0, 'chase:earthBehind', 7]], ...DEEP },
+    translunar: { at: [[0, 'chase:earthBehind'], [10, 'map:translunar'], [30, 'chase:bestBody', 6], [46, 'chase:earthBehind']], ...DEEP },
+    coastToMoon: { at: [[0, 'chase:moonBehind', 6], [20, 'map:translunar'], [50, 'chase:earthBehind'], [80, 'chase:moonBehind', 6]], ...DEEP },
+    moonArrival: { at: [[0, 'map:lunar', 8], [12, 'chase:moonBehind'], [30, 'chase:bestBody']] },
+    'loi:coast': { at: [[0, 'map:lunar'], [12, 'chase:moonBehind']], ...DEEP },
+    'loi:burn': { at: [[0, 'chase:burnLimb', 10], [18, 'chase:burnSide'], [34, 'map:lunar'], [46, 'chase:burnHigh']], cycle: ['chase:burnLimb', 'chase:burnSide'], every: 20 },
     'loi:tail': { at: [[0, 'chase:limb']] },
     lunarOrbit: { at: [[0, 'chase:limb']] },
-    'planeTrim:coast': { at: [[0, 'chase:limb'], [14, 'map:lunar'], [30, 'chase:earthrise'], [44, 'chase:burnSide']], ...LUNAR_ORBIT },
-    pdiCoast: { at: [[0, 'chase:limb'], [20, 'chase:earthrise'], [36, 'chase:burnSide']], ...LUNAR_ORBIT },
-    braking: { at: [[0, 'chase:descentSide']], cycle: ['chase:descentBehind', 'chase:descentSide', 'chase:descentAbove'], every: 16 },
-    approach: { at: [[0, 'chase:landingSide']] },
-    terminal: { at: [[0, 'chase:landingSide'], [14, 'cockpit'], [22, 'chase:landingLow']] },
-    touchdown: { at: [[0, 'chase:landingLow']] },
-    surface: { at: [[0, 'chase:surfaceOrbit'], [10, 'cockpit'], [17, 'chase:surfaceHigh'], [27, 'chase:surfaceOrbit']] },
-    lunarLiftoff: { at: [[0, 'chase:moonLiftoff']] },
-    lunarAscent: { at: [[0, 'chase:moonLiftoff'], [14, 'chase:ascentSide'], [34, 'chase:limb'], [54, 'chase:earthrise']], ...LUNAR_ORBIT },
-    'lunarCircularise:coast': { at: [[0, 'chase:earthrise'], [16, 'chase:limb']], ...LUNAR_ORBIT },
-    'tei:coast': { at: [[0, 'chase:limb'], [16, 'chase:earthrise'], [32, 'chase:burnHigh']], ...LUNAR_ORBIT },
-    'tei:burn': { at: [[0, 'chase:burnLimb'], [18, 'chase:burnSide'], [34, 'chase:moonBehind']], cycle: ['chase:moonBehind', 'chase:burnLimb'], every: 16 },
-    coastFromMoon: { at: [[0, 'chase:moonBehind'], [18, 'map:returnLeg'], [34, 'chase:bestBody']], ...DEEP },
-    transEarth: { at: [[0, 'chase:earthBehind'], [18, 'map:returnLeg'], [32, 'chase:moonBehind'], [48, 'chase:earthBehind']], ...DEEP },
+    'planeTrim:coast': { at: [[0, 'chase:limb', 9, false], [16, 'chase:earthrise', 9, false], [34, 'chase:burnSide']], ...LUNAR_ORBIT },
+    'deorbit:burn': { at: [[0, 'chase:burnSide']] },
+    pdiCoast: { at: [[0, 'chase:limb'], [16, 'chase:earthrise', 7, false], [40, 'chase:descentAbove'], [70, 'chase:limbLow', 8]], ...LUNAR_ORBIT },
+    braking: { dynamic: 'braking' },
+    approach: { rec: 'all', at: [[0, 'chase:landingSide']] },
+    terminal: { rec: 'all', at: [[0, 'chase:landingSide'], [16, 'chase:landingLow']] },
+    touchdown: { rec: 'all', at: [[0, 'chase:landingLow']] },
+    surface: { rec: 'all', at: [[0, 'chase:surfaceOrbit', true, false], [11, 'chase:surfaceHigh', true, false], [20, 'chase:surfaceWide', true, true]] },
+    lunarLiftoff: { rec: 'all', at: [[0, 'chase:moonLiftoff']] },
+    lunarAscent: { at: [[0, 'chase:moonLiftoff', 10], [10, 'chase:ascentSide', 8], [34, 'chase:limb'], [54, 'chase:earthrise', 7, false]], ...LUNAR_ORBIT },
+    'tei:coast': { at: [[0, 'chase:limb'], [20, 'chase:earthrise', 8, false], [40, 'chase:burnHigh']], ...LUNAR_ORBIT },
+    'tei:burn': { at: [[0, 'chase:burnLimb', 9], [18, 'chase:moonBehind', 8], [34, 'chase:burnSide']], cycle: ['chase:moonBehind', 'chase:burnLimb'], every: 16 },
+    coastFromMoon: { at: [[0, 'chase:moonBehind', 8], [18, 'map:returnLeg', 8], [40, 'chase:bestBody']], ...DEEP },
+    transEarth: { at: [[0, 'chase:earthBehind'], [30, 'map:returnLeg'], [60, 'chase:moonBehind'], [92, 'chase:earthBehind', 8]], ...DEEP },
     entryPrep: { at: [[0, 'chase:entryHigh']] },
-    entry: { at: [[0, 'chase:entryHigh']], dynamic: 'entry' },
-    chutes: { at: [[0, 'chase:drogue']], dynamic: 'chutes' },
-    splashdown: { at: [[0, 'chase:mains']], dynamic: 'splash' },
-    done: { at: [[0, 'chase:splash']], cycle: ['chase:splash', 'chase:splashWide'], every: 18 },
+    entry: { dynamic: 'entry' },
+    chutes: { rec: 'all', dynamic: 'chutes' },
+    splashdown: { dynamic: 'chutes' },
+    done: { rec: 'all', dynamic: 'afloat' },
+    // The chute test (qa-drogues): the same shots as the flight's chutes and splash.
+    chutesTest: { rec: 'all', dynamic: 'chutes' },
   };
-  /** Phases without an entry: by prefix and situation. */
+  /** Phases without an entry: by prefix and situation (not recorded). */
   function groupOf(ph, geo) {
     if (!geo) return { at: [[0, 'chase:limb']] };
     if (geo.bodyId === 'moon') {
@@ -431,22 +536,27 @@
   const EARTH_ORBIT_DEFAULT = { at: [[0, 'chase:limb']], ...EARTH_ORBIT };
   const DEEP_DEFAULT = { at: [[0, 'chase:bestBody']], ...DEEP };
 
-  let cycleCount = 0;
+  /** { id, rec, hud } for phase `ph` at `t` s into it. */
   function chooseShot(ph, t, geo, b) {
     const plan = PLAN[ph] ?? groupOf(ph, geo);
-    let id = plan.at[0][1];
-    let last = 0;
-    for (const [at, s] of plan.at) if (t >= at) {
-      id = s;
-      last = at;
+    let pick;
+    if (plan.dynamic) pick = dynamicShot(plan.dynamic, t, geo, b);
+    else {
+      let e = plan.at[0];
+      for (const x of plan.at) if (t >= x[0]) e = x;
+      pick = { id: e[1], rec: recOf(e, t), hud: e[3] !== false };
+      // Open the file a second before an entry that records.
+      for (const x of plan.at) if (x[0] > t && x[0] - t < 1.0 && x[2]) pick.rec = true;
+      const lastAt = plan.at[plan.at.length - 1][0];
+      if (plan.cycle && t - lastAt >= (plan.every ?? 16)) {
+        const k = Math.floor((t - lastAt) / (plan.every ?? 16));
+        pick = { id: plan.cycle[(k - 1) % plan.cycle.length], rec: false, hud: true };
+      }
     }
-    if (plan.cycle && t - last >= (plan.every ?? 16) && plan.at[plan.at.length - 1][0] <= t) {
-      const k = Math.floor((t - last) / (plan.every ?? 16));
-      id = plan.cycle[(k - 1) % plan.cycle.length];
-    }
-    if (plan.dynamic === 'entry') id = entryShot(t, geo, b);
-    if (plan.dynamic === 'chutes') id = chuteShot(t, b);
-    if (plan.dynamic === 'splash') id = splashShot(t, b);
+    if (plan.rec === 'all') pick.rec = true;
+    // The chute rehearsal closes and reopens its file once (the duty windows of the flight).
+    if (ph === 'chutesTest' && t > 20 && t < 28) pick.rec = false;
+    let id = pick.id;
     // A body that sits next to the Sun is seen dark against the glare: take the better one instead.
     if (geo && (id === 'chase:earthBehind' || id === 'chase:moonBehind')) {
       const bg = bodyGeo(geo, id === 'chase:earthBehind' ? 'earth' : 'moon');
@@ -454,32 +564,106 @@
     }
     // An earthrise that does not fit falls back to a limb shot.
     if (id === 'chase:earthrise' && geo && !earthrise(geo, 0).fits) id = 'chase:burnHigh';
-    return id;
+    pick.id = id;
+    return pick;
+  }
+  function recOf(e, t) {
+    const r = e[2];
+    if (r === true) return true;
+    if (typeof r === 'number') return t - e[0] < r;
+    return false;
+  }
+
+  function dynamicShot(kind, t, geo, b) {
+    const met = b.met;
+    const now = performance.now();
+    switch (kind) {
+      case 'prelaunch':
+        // The pilot warps to T-15 s; the last real-time seconds in the pad's default view (the trench jets left
+        // and right of the vehicle at ignition).
+        if (b.warpFactor <= 1 && t > 3) return { id: 'chase:padDefault', rec: true, hud: true };
+        return { id: t < 16 ? 'chase:padTop' : 'chase:padSide', rec: t > 8 && t < 15, hud: true };
+      case 'vertical':
+        return { id: t < 2.5 ? 'chase:padDefault' : 'chase:liftoffPull', rec: true, hud: true };
+      case 'ascent':
+        if (met >= REF_MET.STAGE_SEP_1 - 14) return { id: 'chase:sepClose', rec: true, hud: true };
+        if (met >= REF_MET.MAX_Q - 30 && met < REF_MET.MAX_Q + 22) return { id: 'chase:maxqBelow', rec: true, hud: true };
+        return { id: t < 6 ? 'chase:climbSide' : 'chase:climbBehind', rec: true, hud: true };
+      case 'm2': {
+        const fairingDone = milestoneAt.FAIRING_JETTISON ? (now - milestoneAt.FAIRING_JETTISON) / 1000 : -1;
+        if (t < 7) return { id: 'chase:sepClose', rec: true, hud: true };
+        if ((b.nextStage <= 2 && met >= REF_MET.FAIRING_JETTISON - 12) || (fairingDone >= 0 && fairingDone < 9)) return { id: 'chase:fairingClose', rec: true, hud: true };
+        const k = Math.floor(t / 18) % 2;
+        return { id: k ? 'chase:sideLimb' : 'chase:limbAscent', rec: t < 14 || (fairingDone >= 0 && fairingDone < 11) || (t > 72 && t < 86), hud: !(t > 74 && t < 88) };
+      }
+      case 'braking': {
+        const k = Math.floor(t / 20) % 3;
+        const id = ['chase:descentSide', 'chase:descentBehind', 'chase:descentAbove'][k];
+        const inK = t % 20;
+        const rec = (k === 0 && t < 20 && inK < 10) || (k === 2 && inK < 10 && t < 70) || (geo && geo.radar < 2000);
+        return { id, rec, hud: true };
+      }
+      case 'entry':
+        return entryShot(t, geo, b);
+      case 'chutes':
+        return chuteOrSplash(t, geo, b);
+      case 'afloat': {
+        const ts = milestoneAt.__splash ? (now - milestoneAt.__splash) / 1000 : t;
+        if (ts < 22) return { id: 'chase:splash', rec: true, hud: true };
+        if (ts < 34) return { id: 'chase:afloat', rec: true, hud: false };
+        return { id: 'chase:afloatWide', rec: true, hud: false };
+      }
+    }
+    return { id: 'chase:limb', rec: false, hud: true };
   }
 
   function entryShot(t, geo, b) {
     const alt = b.altitudeAsl;
-    if (alt > 100e3) return t % 32 < 16 ? 'chase:entryHigh' : 'chase:entrySide';
-    // Through the plasma: rotate side / behind / front, with one look out of the window at peak heating.
-    if (alt < 72e3 && alt > 58e3 && !milestoneAt.__entryCockpit) {
-      milestoneAt.__entryCockpit = performance.now();
+    const now = performance.now();
+    if (geo) {
+      if (geo.heatFlux > entry.maxFlux) entry.maxFlux = geo.heatFlux;
+      if (!entry.peakHeatAt && entry.maxFlux > 1e6 && geo.heatFlux < 0.97 * entry.maxFlux) {
+        entry.peakHeatAt = now;
+        log('peak', { what: 'heatFlux', value: entry.maxFlux, alt });
+      }
+      if (geo.gLoad > entry.maxG) entry.maxG = geo.gLoad;
+      if (!entry.peakGAt && entry.maxG > 3 && geo.gLoad < 0.95 * entry.maxG) {
+        entry.peakGAt = now;
+        log('peak', { what: 'gLoad', value: entry.maxG, alt });
+      }
     }
-    if (milestoneAt.__entryCockpit && performance.now() - milestoneAt.__entryCockpit < 8000) return 'cockpit';
-    const k = Math.floor(t / 14) % 3;
-    return ['chase:entrySide', 'chase:entryBehind', 'chase:entryFront'][k];
-  }
-  function chuteShot(t, b) {
-    if (b.milestones.includes('MAIN_DEPLOY')) return 'chase:mains';
-    return 'chase:drogue';
-  }
-  function splashShot(t, b) {
-    if (b.milestones.includes('SPLASHDOWN')) {
-      const ts = (performance.now() - (milestoneAt.SPLASHDOWN ?? performance.now())) / 1000;
-      return ts < 20 ? 'chase:splash' : Math.floor(ts / 18) % 2 ? 'chase:splashWide' : 'chase:splash';
+    if (alt < 40e3 && !entry.below40At) entry.below40At = now;
+    if (alt > 100e3) return { id: t % 32 < 16 ? 'chase:entryHigh' : 'chase:entrySide', rec: t < 8, hud: true };
+    // Through the plasma: side, behind, front; after the peak of the heating the camera pulls back while the load
+    // peaks (the capsule burns out to white close up then), and closes in again once the glow has gone.
+    if (entry.peakHeatAt && now - entry.peakHeatAt > 3000 && (!entry.peakGAt || now - entry.peakGAt < 12000) && alt > 30e3) return { id: 'chase:entryFar', rec: true, hud: true };
+    if (alt > 40e3) {
+      const k = Math.floor(t / 12) % 3;
+      return { id: ['chase:entrySide', 'chase:entryBehind', 'chase:entryFront'][k], rec: true, hud: true };
     }
-    if (!b.milestones.includes('MAIN_DEPLOY')) return 'chase:drogue';
-    const ts = (performance.now() - (milestoneAt.MAIN_DEPLOY ?? performance.now())) / 1000;
-    return Math.floor(ts / 20) % 2 ? 'chase:mainsHigh' : 'chase:mains';
+    const since40 = (now - entry.below40At) / 1000;
+    return { id: 'chase:entryBehind', rec: since40 < 8 || alt < 11e3, hud: true };
+  }
+
+  function chuteOrSplash(t, geo, b) {
+    const now = performance.now();
+    if (b.situation === 'splashed' || b.milestones.includes('SPLASHDOWN')) {
+      if (!milestoneAt.__splash) milestoneAt.__splash = now;
+      const ts = (now - milestoneAt.__splash) / 1000;
+      if (ts < 22) return { id: 'chase:splash', rec: true, hud: true };
+      if (ts < 34) return { id: 'chase:afloat', rec: true, hud: false };
+      return { id: 'chase:afloatWide', rec: true, hud: false };
+    }
+    if (!geo || geo.chutes.length === 0) return { id: 'chase:entryBehind', rec: true, hud: true };
+    // Near the water the eye below the capsule would be under the sea: from the side for the splash.
+    if (geo.radar < 220) return { id: 'chase:splash', rec: true, hud: true };
+    const main = geo.chutes.some((c) => c.main);
+    if (main && !milestoneAt.__main) milestoneAt.__main = now;
+    const tm = milestoneAt.__main ? (now - milestoneAt.__main) / 1000 : t;
+    // The mains' descent is long (about 80 s at 4x): two shots of it and the last 400 m are recorded.
+    const rec = !main || tm < 34 || geo.radar < 420;
+    if (main && Math.floor(tm / 17) % 2 === 1) return { id: 'chase:chuteSide', rec, hud: true };
+    return { id: 'chase:chuteBelow', rec, hud: tm > 50 ? false : true };
   }
 
   // ------------------------------------------------------------------------------------------ apply
@@ -503,8 +687,22 @@
     T.setCameraOrbit(cam.az, cam.el, Math.exp(cam.logd));
   }
 
+  /** The default chase view as it is at the start, in the rig's frame (the pad: its surface frame). */
+  function readDefaultView() {
+    const geo = sample();
+    if (!geo) return null;
+    const c = T.camera();
+    if (!c || !c.positionRoot) return null;
+    const rel = sub(c.positionRoot, geo.com);
+    const dir = norm(rel);
+    const fr = rigFrame(geo, A.brief().navballMode);
+    return { az: Math.atan2(dot(dir, fr.Y), dot(dir, fr.X)), el: Math.asin(clamp(dot(dir, fr.Z), -1, 1)), dist: len(rel) };
+  }
+
   let lastFrame = performance.now();
   let statusAt = 0;
+  let lastWant = null;
+  let lastHud = null;
   function tick() {
     requestAnimationFrame(tick);
     const now = performance.now();
@@ -526,14 +724,25 @@
       }
       const pilotPhase = T.pilot && T.pilot.phase ? T.pilot.phase() : null;
       const done = T.pilot && T.pilot.done ? T.pilot.done() : false;
-      const ph = D.plan === 'test' ? 'test' : pilotPhase === null ? 'pad' : done ? 'done' : pilotPhase;
+      let ph = D.plan === 'test' ? 'test' : D.plan === 'chutes' ? 'chutesTest' : pilotPhase === null ? 'pad' : done ? 'done' : pilotPhase;
+      if (ph === 'chutesTest' && (done || b.situation === 'splashed')) ph = 'done';
+      // The full plan's one intervention: the moment the second stage has gone, stop the pilot before it warps
+      // on rails, back to real time (the '/' key's command), and hand over to the recorder's heads-down routine.
+      if (D.plan === 'full' && D.routine === 'idle' && ((ph === 'dropM2' && b.nextStage >= 4) || ph === 'parkingCoast')) {
+        T.pilot.stop();
+        if (b.warpIndex !== 0) T.commands.setWarpLevel(0);
+        D.routine = 'requested';
+        D.setOverride({ shot: 'chase:sep2Close', rec: true, hud: true });
+        log('pilot', { action: 'stop', phase: ph, warp: b.warpFactor, why: 'heads-down roll for the cockpit' });
+      }
       if (ph !== phase) {
         log('phase', { phase: ph, met: b.met, alt: b.altitudeAsl, warp: b.warpFactor });
         phase = ph;
         phaseSince = now;
       }
       const t = (now - phaseSince) / 1000;
-      const id = chooseShot(ph, t, g, b);
+      const pick = D.override ? { id: D.override.shot, rec: !!D.override.rec, hud: D.override.hud !== false } : chooseShot(ph, t, g, b);
+      const id = pick.id;
       let cut = false;
       if (!shot || shot.id !== id) {
         shot = { id, since: now };
@@ -541,6 +750,16 @@
         log('shot', { shot: id, phase: ph, alt: b.altitudeAsl, warp: b.warpFactor, met: b.met });
       }
       D.shot = shot.id;
+      D.wantRec = !!pick.rec;
+      D.hudWant = pick.hud;
+      if (D.wantRec !== lastWant) {
+        lastWant = D.wantRec;
+        log('want', { rec: D.wantRec, shot: id });
+      }
+      if (D.hudWant !== lastHud) {
+        lastHud = D.hudWant;
+        log('hudWant', { hud: D.hudWant, shot: id });
+      }
       const ts = (now - shot.since) / 1000;
       const [kind, name] = id.split(':');
       if (kind === 'cockpit') {
@@ -552,9 +771,13 @@
         applyView('chase');
         if (g && chase[name] && b.viewMode === 'chase') {
           const r = chase[name](g, ts);
-          const fr = rigFrame(g, b.navballMode);
-          const dir = r.dir;
-          const target = { az: Math.atan2(dot(dir, fr.Y), dot(dir, fr.X)), el: Math.asin(clamp(dot(dir, fr.Z), -1, 1)), dist: r.dist };
+          let target;
+          if (r.rig) target = { az: r.rig.az, el: r.rig.el, dist: r.dist };
+          else {
+            const fr = rigFrame(g, b.navballMode);
+            const dir = r.dir;
+            target = { az: Math.atan2(dot(dir, fr.Y), dot(dir, fr.X)), el: Math.asin(clamp(dot(dir, fr.Z), -1, 1)), dist: r.dist };
+          }
           // Cut on a new shot, and also when the view just came back to the chase rig.
           setOrbitSmooth(target, 'chase', dtS, cut || cam?.kind !== 'chase');
           if (r.bodyId && cut) log('shotInfo', { shot: id, body: r.bodyId, lit: +r.lit.toFixed(2), angDeg: +r.angDeg.toFixed(2) });
@@ -562,7 +785,7 @@
       }
       if (now - statusAt > 1000) {
         statusAt = now;
-        log('status', { phase: ph, shot: id, view: b.viewMode, alt: Math.round(b.altitudeAsl), warp: b.warpFactor, met: Math.round(b.met), body: g?.bodyId, situation: g?.situation, sampleMs: +D.sampleMs.toFixed(2) });
+        log('status', { phase: ph, shot: id, view: b.viewMode, rec: D.wantRec, hud: A.hudVisible(), alt: Math.round(b.altitudeAsl), warp: b.warpFactor, met: Math.round(b.met), body: g?.bodyId, situation: g?.situation, chutes: g?.chutes?.length ?? 0, roll: +b.rollDeg.toFixed(1), sampleMs: +D.sampleMs.toFixed(2) });
       }
     } catch (e) {
       if (D.errors.length < 50) D.errors.push(String(e && e.stack ? e.stack : e));
@@ -572,11 +795,15 @@
 
   D.start = (plan) => {
     D.plan = plan ?? 'full';
+    try {
+      D.padDefault = readDefaultView();
+    } catch (e) {
+      D.errors.push(String(e));
+    }
+    log('directorStart', { plan: D.plan, padDefault: D.padDefault ? { az: +(D.padDefault.az / DEG).toFixed(2), el: +(D.padDefault.el / DEG).toFixed(2), dist: +D.padDefault.dist.toFixed(1) } : null });
     D.enabled = true;
-    startedAt = performance.now();
     phase = null;
     shot = null;
-    log('directorStart', { plan: D.plan });
   };
   D.stop = () => {
     D.enabled = false;
