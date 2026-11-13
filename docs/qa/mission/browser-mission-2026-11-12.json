@@ -5672,5 +5672,1143 @@
    "shows": "34 s after the splash: the capsule riding upright in what is left of the foam, toast \"Splashdown\".",
    "wrong": "The box-shaped darker patch in front of the capsule (edges about a capsule's width apart, from the waterline down); the fan-shaped canopy."
   }
- ]
+ ],
+ "frameIntervalLine": {
+  "line": "ARCHITECTURE 29 as restated by the lead on 2026-11-12 (commit 9a873e0): per phase, against the measured harness clock, the median frame interval within 1 % of the nominal period; dropped frames (an interval over 1.5 periods) at most 0.5 % of the phase's frames; no frame of 33 ms or more.",
+  "judged": "offline on 2026-11-12 from out/mission/browser-mission.json, without a new flight",
+  "basis": "What the flight recorded per window (711 windows of up to 241 frames): the render core's frame-to-frame statistics p50, p99, max and its count of 33 ms or more, not the intervals. A phase's median lies between the smallest and the largest of its windows' medians; the dropped frames of a window are bounded by its max and p99 (in every window with an interval over 1.5 periods the p99 is under it, so the window has 1 or, with 240 frames, at most 2 of them). The core takes its time stamp where the frame is drawn; from the next flight on the spec judges the requestAnimationFrame time stamps themselves (src/app/frameIntervals.ts).",
+  "periodMs": 16.66799163179916,
+  "harnessClockHz": [
+   59.994477495795365,
+   59.99598353248319
+  ],
+  "phases": 80,
+  "frames": 161004,
+  "median": {
+   "holdsIn": 80,
+   "largestDeviationOfAWindowMedian": 0.0076788875061017375,
+   "windowMediansMs": [
+    16.53999999910593,
+    16.75
+   ]
+  },
+  "droppedFrames": {
+   "phasesWithAny": [
+    {
+     "phase": "prelaunch",
+     "frames": 2071,
+     "dropped": [
+      1,
+      2
+     ],
+     "sharePercent": [
+      0.048285852245292124,
+      0.09657170449058425
+     ],
+     "intervalsMs": [
+      33.65500000119209
+     ]
+    },
+    {
+     "phase": "ignition",
+     "frames": 182,
+     "dropped": [
+      1,
+      1
+     ],
+     "sharePercent": [
+      0.5494505494505495,
+      0.5494505494505495
+     ],
+     "intervalsMs": [
+      28.384999997913837
+     ]
+    },
+    {
+     "phase": "pitchProgramme",
+     "frames": 2071,
+     "dropped": [
+      1,
+      2
+     ],
+     "sharePercent": [
+      0.048285852245292124,
+      0.09657170449058425
+     ],
+     "intervalsMs": [
+      25.689999997615814
+     ]
+    },
+    {
+     "phase": "tli:burn",
+     "frames": 5760,
+     "dropped": [
+      2,
+      4
+     ],
+     "sharePercent": [
+      0.034722222222222224,
+      0.06944444444444445
+     ],
+     "intervalsMs": [
+      26.46000000089407,
+      25.269999995827675
+     ]
+    },
+    {
+     "phase": "moonArrival",
+     "frames": 1500,
+     "dropped": [
+      1,
+      2
+     ],
+     "sharePercent": [
+      0.06666666666666667,
+      0.13333333333333333
+     ],
+     "intervalsMs": [
+      452.49000000208616
+     ]
+    },
+    {
+     "phase": "lunarAscent",
+     "frames": 6240,
+     "dropped": [
+      2,
+      4
+     ],
+     "sharePercent": [
+      0.03205128205128205,
+      0.0641025641025641
+     ],
+     "intervalsMs": [
+      25.320000000298023,
+      27.054999999701977
+     ]
+    },
+    {
+     "phase": "transEarth",
+     "frames": 6995,
+     "dropped": [
+      1,
+      2
+     ],
+     "sharePercent": [
+      0.014295925661186561,
+      0.028591851322373123
+     ],
+     "intervalsMs": [
+      28.16499999910593
+     ]
+    }
+   ],
+   "total": [
+    9,
+    17
+   ]
+  },
+  "framesOf33msOrMore": [
+   {
+    "phase": "prelaunch",
+    "count": 1,
+    "intervalsMs": [
+     33.65500000119209
+    ]
+   },
+   {
+    "phase": "moonArrival",
+    "count": 1,
+    "intervalsMs": [
+     452.49000000208616
+    ]
+   }
+  ],
+  "failing": [
+   {
+    "phase": "prelaunch",
+    "frames": 2071,
+    "failures": [
+     "1 frame(s) of 33 ms or more (33.7 ms)"
+    ]
+   },
+   {
+    "phase": "ignition",
+    "frames": 182,
+    "failures": [
+     "1 dropped frame(s) in 182: 0.55 % (line 0.5 %); the interval(s): 28.4 ms"
+    ]
+   },
+   {
+    "phase": "moonArrival",
+    "frames": 1500,
+    "failures": [
+     "1 frame(s) of 33 ms or more (452.5 ms)"
+    ]
+   }
+  ],
+  "undetermined": [],
+  "holding": 77,
+  "perPhase": [
+   {
+    "phase": "prelaunch",
+    "frames": 2071,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0013793880527898973,
+    "dropped": [
+     1,
+     2
+    ],
+    "framesOf33msOrMore": 1,
+    "verdict": "fails"
+   },
+   {
+    "phase": "ignition",
+    "frames": 182,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.00047945955945963455,
+    "dropped": [
+     1,
+     1
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "fails"
+   },
+   {
+    "phase": "vertical",
+    "frames": 333,
+    "medianOfWindowMedians": 16.649999998509884,
+    "medianDeviationMax": 0.002579292859563348,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "pitchProgramme",
+    "frames": 2071,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0076788875061017375,
+    "dropped": [
+     1,
+     2
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "m1Separation",
+    "frames": 120,
+    "medianOfWindowMedians": 16.679999999701977,
+    "medianDeviationMax": 0.0007204448003145156,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "m2Ascent",
+    "frames": 6092,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0028792691730065356,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "seco",
+    "frames": 180,
+    "medianOfWindowMedians": 16.67000000178814,
+    "medianDeviationMax": 0.00012049262042744053,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "dropM2",
+    "frames": 210,
+    "medianOfWindowMedians": 16.649999998509884,
+    "medianDeviationMax": 0.0010794121863460099,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "parkingCoast (cockpit)",
+    "frames": 240,
+    "medianOfWindowMedians": 16.65999999642372,
+    "medianDeviationMax": 0.00047946000645893486,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "parkingCoast",
+    "frames": 9541,
+    "medianOfWindowMedians": 16.65999999642372,
+    "medianDeviationMax": 0.0016793643662330851,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tli:plan",
+    "frames": 150,
+    "medianOfWindowMedians": 16.70500000566244,
+    "medianDeviationMax": 0.002220325920531154,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tli:align",
+    "frames": 1530,
+    "medianOfWindowMedians": 16.65999999642372,
+    "medianDeviationMax": 0.0010794121863460099,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tli:coast",
+    "frames": 5820,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0013793880527898973,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tli:burn",
+    "frames": 5760,
+    "medianOfWindowMedians": 16.655000001192093,
+    "medianDeviationMax": 0.002879268726007235,
+    "dropped": [
+     2,
+     4
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tli:tail",
+    "frames": 210,
+    "medianOfWindowMedians": 16.66000000014901,
+    "medianDeviationMax": 0.00047946000645893486,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "postTli",
+    "frames": 360,
+    "medianOfWindowMedians": 16.655000001192093,
+    "medianDeviationMax": 0.0010794121863460099,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tliTrim:align",
+    "frames": 1080,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tliTrim:coast",
+    "frames": 870,
+    "medianOfWindowMedians": 16.662500005215406,
+    "medianDeviationMax": 0.0007794363199021226,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tliTrim:burn",
+    "frames": 180,
+    "medianOfWindowMedians": 16.67500000447035,
+    "medianDeviationMax": 0.00042046893387062825,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tliTrim:tail",
+    "frames": 180,
+    "medianOfWindowMedians": 16.674999997019768,
+    "medianDeviationMax": 0.00042046848687132794,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tliTrim:trim",
+    "frames": 930,
+    "medianOfWindowMedians": 16.609999999403954,
+    "medianDeviationMax": 0.0049791020261109485,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "translunar",
+    "frames": 5700,
+    "medianOfWindowMedians": 16.675000000745058,
+    "medianDeviationMax": 0.002220325920531154,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "mcc1:align",
+    "frames": 1230,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0007794363199021226,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "mcc1:coast",
+    "frames": 960,
+    "medianOfWindowMedians": 16.65999999642372,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "mcc1:burn",
+    "frames": 240,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.00017948369301574717,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "mcc1:tail",
+    "frames": 180,
+    "medianOfWindowMedians": 16.655000001192093,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "mcc1:trim",
+    "frames": 90,
+    "medianOfWindowMedians": 16.679999999701977,
+    "medianDeviationMax": 0.0007204448003145156,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "coastToMoon",
+    "frames": 5970,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0007794363199021226,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "moonArrival",
+    "frames": 1500,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     1,
+     2
+    ],
+    "framesOf33msOrMore": 1,
+    "verdict": "fails"
+   },
+   {
+    "phase": "mcc2:align",
+    "frames": 1140,
+    "medianOfWindowMedians": 16.667500000447035,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "mcc2:coast",
+    "frames": 1380,
+    "medianOfWindowMedians": 16.662500001490116,
+    "medianDeviationMax": 0.00047945955945963455,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "mcc2:trim",
+    "frames": 120,
+    "medianOfWindowMedians": 16.66500000655651,
+    "medianDeviationMax": 0.00017948324601644685,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "loi:align",
+    "frames": 1290,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "loi:coast",
+    "frames": 6091,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "loi:burn",
+    "frames": 5100,
+    "medianOfWindowMedians": 16.672499999403954,
+    "medianDeviationMax": 0.0019793402326769723,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "loi:tail",
+    "frames": 180,
+    "medianOfWindowMedians": 16.640000000596046,
+    "medianDeviationMax": 0.0016793643662330851,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "loi:trim",
+    "frames": 90,
+    "medianOfWindowMedians": 16.625,
+    "medianDeviationMax": 0.002579292859563348,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "lunarOrbit",
+    "frames": 60,
+    "medianOfWindowMedians": 16.63000000268221,
+    "medianDeviationMax": 0.0022793165461201604,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "planeTrim:align",
+    "frames": 1170,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.003179245039450423,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "planeTrim:coast",
+    "frames": 3841,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0016793643662330851,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "planeTrim:trim",
+    "frames": 90,
+    "medianOfWindowMedians": 16.655000001192093,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "deorbit:plan",
+    "frames": 60,
+    "medianOfWindowMedians": 16.689999997615814,
+    "medianDeviationMax": 0.0013203969802015908,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "deorbit:align",
+    "frames": 1230,
+    "medianOfWindowMedians": 16.667500000447035,
+    "medianDeviationMax": 0.001020420666758403,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "deorbit:coast",
+    "frames": 2310,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "deorbit:burn",
+    "frames": 570,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0010794117393467097,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "deorbit:tail",
+    "frames": 180,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.00017948369301574717,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "deorbit:trim",
+    "frames": 90,
+    "medianOfWindowMedians": 16.65999999642372,
+    "medianDeviationMax": 0.00047946000645893486,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "pdiCoast",
+    "frames": 6120,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0010794121863460099,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "braking",
+    "frames": 9840,
+    "medianOfWindowMedians": 16.67000000178814,
+    "medianDeviationMax": 0.004020182460192379,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "approach",
+    "frames": 1440,
+    "medianOfWindowMedians": 16.689999997615814,
+    "medianDeviationMax": 0.0019203491600886659,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "terminal",
+    "frames": 2071,
+    "medianOfWindowMedians": 16.667499996721745,
+    "medianDeviationMax": 0.0013203969802015908,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "touchdown",
+    "frames": 241,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.00017948369301574717,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "touchdown (cockpit)",
+    "frames": 241,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.00047945955945963455,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "surface",
+    "frames": 1620,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.00017948369301574717,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "lunarLiftoff",
+    "frames": 811,
+    "medianOfWindowMedians": 16.67000000178814,
+    "medianDeviationMax": 0.00017948369301574717,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "lunarAscent",
+    "frames": 6240,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.004920110953522642,
+    "dropped": [
+     2,
+     4
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "lunarCircularise:align",
+    "frames": 1080,
+    "medianOfWindowMedians": 16.65999999642372,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "lunarCircularise:coast",
+    "frames": 3810,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "lunarCircularise:burn",
+    "frames": 420,
+    "medianOfWindowMedians": 16.662499997764826,
+    "medianDeviationMax": 0.0007794363199021226,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "lunarCircularise:tail",
+    "frames": 60,
+    "medianOfWindowMedians": 16.655000001192093,
+    "medianDeviationMax": 0.0007794358729028223,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "lunarCircularise:trim",
+    "frames": 90,
+    "medianOfWindowMedians": 16.689999997615814,
+    "medianDeviationMax": 0.0013203969802015908,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "lunarOrbitReturn",
+    "frames": 90,
+    "medianOfWindowMedians": 16.67500000447035,
+    "medianDeviationMax": 0.00042046893387062825,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tei:plan",
+    "frames": 420,
+    "medianOfWindowMedians": 16.672500003129244,
+    "medianDeviationMax": 0.001320397427200891,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tei:align",
+    "frames": 990,
+    "medianOfWindowMedians": 16.65999999642372,
+    "medianDeviationMax": 0.0010794121863460099,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tei:coast",
+    "frames": 9090,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0010794117393467097,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tei:burn",
+    "frames": 3030,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0016203732936447785,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tei:tail",
+    "frames": 60,
+    "medianOfWindowMedians": 16.695000000298023,
+    "medianDeviationMax": 0.0016203732936447785,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tei:trim",
+    "frames": 90,
+    "medianOfWindowMedians": 16.70499999821186,
+    "medianDeviationMax": 0.0022203254735318535,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "coastFromMoon",
+    "frames": 5041,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0010204211137577034,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "transEarth",
+    "frames": 6995,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.0022793165461201604,
+    "dropped": [
+     1,
+     2
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tec1:plan",
+    "frames": 90,
+    "medianOfWindowMedians": 16.695000000298023,
+    "medianDeviationMax": 0.0016203732936447785,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tec1:align",
+    "frames": 1050,
+    "medianOfWindowMedians": 16.650000005960464,
+    "medianDeviationMax": 0.0010794121863460099,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tec1:coast",
+    "frames": 1410,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.0010794117393467097,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tec1:burn",
+    "frames": 240,
+    "medianOfWindowMedians": 16.674999997019768,
+    "medianDeviationMax": 0.00042046848687132794,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tec1:tail",
+    "frames": 60,
+    "medianOfWindowMedians": 16.62999999523163,
+    "medianDeviationMax": 0.0022793169931194603,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "tec1:trim",
+    "frames": 60,
+    "medianOfWindowMedians": 16.66999999433756,
+    "medianDeviationMax": 0.00012049217342814023,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "entryPrep",
+    "frames": 180,
+    "medianOfWindowMedians": 16.685000002384186,
+    "medianDeviationMax": 0.0010204211137577034,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "entry",
+    "frames": 11372,
+    "medianOfWindowMedians": 16.660000003874302,
+    "medianDeviationMax": 0.004920110953522642,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "chutes",
+    "frames": 1950,
+    "medianOfWindowMedians": 16.67000000178814,
+    "medianDeviationMax": 0.0016793643662330851,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   },
+   {
+    "phase": "splashdown",
+    "frames": 5730,
+    "medianOfWindowMedians": 16.66499999910593,
+    "medianDeviationMax": 0.002579292859563348,
+    "dropped": [
+     0,
+     0
+    ],
+    "framesOf33msOrMore": 0,
+    "verdict": "holds"
+   }
+  ]
+ }
 }

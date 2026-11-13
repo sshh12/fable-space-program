@@ -1,9 +1,79 @@
 # Project status and how to resume
 
 Living checkpoint, kept current by the lead. Read this first when picking the work up in a new session.
-Last updated: 2026-11-12, 10:30 Pacific, by the lead: sub-wave 3.1 of v2 built (five packages), the visual
-close-out two to five rounds further on, the stage-0 hosting skeleton deployed on Railway.
-Checkpoint that still holds: the original mission flies end to end in real Chrome (2026-11-11).
+Last updated: 2026-11-12, about 20:30 Pacific, by the lead, at the user's request to stop at a checkpoint
+(the model credit is nearly spent). **The section below is the current state; where a later section of this
+file differs from it, the section below is right.**
+
+## CHECKPOINT 2026-11-12 (evening): start here
+
+**What works, verified today**
+- The original mission flies end to end in real Chrome on today's tree: pad to splashdown, all 17 milestones,
+  `cheatCounter` 0, 45.6 minutes (`docs/qa/mission/browser-mission-2026-11-12.json`, 40 milestone pictures in
+  `out/screens/mission/`, each with a one-line reading in the record). Main-thread p99 over 6 ms in 6 of 80
+  phases (24 on 2026-11-11); worst GPU p99 7.0 ms against 11.
+- Headless: `npm run test:mission` 36 of 36 at golden `b8221b0fd316207e`; the unit suite green (1,952+); terrain
+  guard 10 of 10; CI on `main` green (GitHub Actions, main and pull requests only).
+- v2 sub-wave 3.1 is CLOSED: `sim-core-v2`, `bodies-ephemeris`, `planet-bake` (25 bodies, verify 838 of 838),
+  `site-bake` (Madrakah 16 pads, Ka Lae 9 with LC-1 fixed; 25 pads in all), `platform-delivery` (built,
+  independently reviewed, all 13 findings fixed, redeployed). Each has a hand-off in `docs/handoff/`.
+- Deployed (Railway project `fable-space-program`, Hobby): stand-in `game` and `shell` roles, Postgres, an
+  hourly dump job, buckets `packs` (17.8 GB: Earth with Madrakah, Moon, sky, 25 bodies; byte-verified) and
+  `dumps`; no source maps public; secrets sealed. Idle cost about 7.7 USD a month against the 30 USD ceiling
+  (readings in `docs/capacity/railway-usage.jsonl`; the 72 h reading is due 2026-11-15: `node
+  deploy/railway/usage.mjs snapshot`, then `report`).
+- Reference images for the presentation sweep: 30 of 33 recorded in `data/baselines` (git-ignored; a copy is
+  on the orphan branch `baselines/2026-11-12` of the GitHub repository if the lead's last step ran - check
+  `git ls-remote origin "baselines/*"`), 25 of them `exact` (any differing pixel fails); the budget table is
+  recorded as the pre-sweep baseline (`tests/browser/budget.baseline.json`; every frame under 6.7 ms of 11).
+
+**What was in flight when the session stopped** (look at `git log --oneline -30` and `git status --short`)
+- Three small determinism fixes, so that the last three reference images can be recorded and two weak ones
+  tightened: `lead-5` (cockpit: `resetTemporal`, the cabin's sequences on the core's sequence index), `lead-6`
+  (app shell: a start switch that holds the simulation from the first frame), `lead-7` (ocean: `resetTemporal`,
+  wave phase from simulation time). Each request file says whether it is resolved. Then the lead records
+  `lunar-surface-cockpit`, `sweep-cockpit-leo`, `sweep-app-cockpit`, re-records `sweep-app-pad`, and runs the
+  full self-check (`docs/handoff/lead-baseline-v2.md` sections 22 and 23 have the commands and the order).
+- An updated gameplay video of the full mission (`tools/footage/`), written to the user's desktop as
+  `fable-space-program-mission-2026-11-12.mp4`.
+
+**Next steps, in order**
+1. Finish the item above (three recordings, the self-check), then the lead step of sub-wave 3.2
+   (MIGRATION_V2: join the v2 union members, `setTarget(TargetRef)`, `'ui.scrimRects'`, `TilePackIndex` and
+   `PackList` into the terrain contract) and `presentation-sweep` (brief in `docs/WORK_PACKAGES_V2.json`, with
+   two LEAD NOTES on its gates). The sweep needs the presentation code to itself: NO visual fix round runs
+   during it. `wire-protocol` may run beside it (it owns only `src/net` and the net contract); `island-core`
+   and `solar-system-sim` may not (they change the simulation the sweep stands on).
+2. After the sweep, before visual rounds resume: the display curve (`docs/requests/ocean-10.md`, lead
+   decision: sunlit white at about 0.9 of display white with a shoulder, judged by an A/B of eight scenes);
+   then the tighten step (deprecated fields out; presentation fields out of the hashed projection of a vehicle
+   definition, one codec version step, corpus re-recorded once; PACKAGE_RULES rule 7a holds until then: no
+   hashed definition field may change).
+3. Then wave 4.1 (`island-core`, `solar-system-sim`, `fleet-data`, `shell-menu`, `capability-settings`) in
+   parallel with the visual rounds below. Before `shell-menu` and `universe-directory`: decide lead item L1 of
+   OPEN_QUESTIONS_V2 (25 pads give 600 launches an hour, not 768; the lead's leaning: a 16-day cohort horizon,
+   a private-clock launch offered when the horizon is full, launches per hour shown per class).
+4. Visual rounds (table under "Visual close-out"): every package gets a fresh fixer that first regenerates
+   its pictures, then works its latest critique list plus the faults in today's mission pictures and in the
+   reference images (`docs/handoff/lead-baseline-v2.md` section 22, "visible faults"). The most serious, by
+   package: vfx - no dust or plume at the lunar landing and lift-off, the collapsed canopy standing on the
+   water like a fan, dust particles not deterministic (`lead-8`), vent vapour (`vehicle-pad-9`), beams
+   (`vehicle-pad-12`), entry streaks (`cockpit-19`); ocean - a box-shaped dark patch round the floating
+   capsule, slicks as line art, arcs and bands, the near-pass pipeline (waiver); terrain - the material cache
+   (design note in its hand-off, section 14; three waived ground views), the Moon's terminator from afar, the
+   stone row as dots, the two-state ground-cover cost at the pad; atmosphere - soft cloud edges, the planet
+   dimming with distance (`sky-lighting-11`), a cloud sheet following Egypt's coast, the green night side,
+   the cloud clock (it must follow simulation time for multiplayer); cockpit - flat grey panes with the Sun or
+   plasma in them, night pooling, the hatch area; sky - `core-7` (probe convergence at the first capture),
+   `core-3` (flare of a hidden sun), and its critique r2; map-view - critique r5; flight-ui - critique r7, the
+   recovery panel flipping to "Central Atlantic" at peak heating; camera - open chutes never in frame.
+5. Hosting, later: the bucket measurement redone by `deploy-loadtest` (the first one was inconclusive); the
+   Docker compose suites once the user has written `C:\Users\Shriv\.wslconfig`; the stale `assets` pack set.
+
+**Waiting on the user**: `.wslconfig` (6 GB cap) and `wsl --shutdown`; the empty bucket
+`packs-orphan-undeployed` (Railway dashboard); a say on whether the DLR/ESA Phobos DEM's licence class is
+acceptable (accepted by the lead, credited); the front-page overflow question (L1) if they want a visible
+queue instead of the lead's leaning.
 
 ## Where the project is
 
@@ -46,6 +116,17 @@ everything into as few runs as possible.
 
 | Package | Round 0 | Latest critique | State at the checkpoint (next step) |
 |---|---|---|---|
+| (state on 2026-11-12, evening; the nine rows that follow are from the morning) | | | |
+| flight-ui | 5.5 / 6.5 | r6: 7.3 / 7.6 | round 7 committed (own 8 / 8), plus the Home and V keys; critique r7 next on today's mission pictures |
+| map-view | 4 / 4.5 | r4: 6.5 / 7 | round 5 partly committed; critique r5, then a fix round |
+| atmosphere-clouds | 4 / 4 | r1: 5.5 / 5.5 | round 2 committed (own 6.5 / 7; frame-exact; streaks, popcorn, pad cumulus, night side fixed); perf red by a spike (p99 0.807 / 0.826 against 0.8); critique r2 next |
+| ocean | 4 / 4 | r2: 5.5 / 6 (1 blocker) | round 3 (narrow) committed: the blocker (sea brighter than an overcast sky) fixed at the cause, splash patch ages, terraces fixed; near pass under a lead waiver; own 6.5 / 7; critique r3 next |
+| vfx | 3.5 / 3.5 | r3: 6 / 6.5 (0 blockers, 13 majors) | list saved; round 4 next |
+| sky-lighting | 4.5 / 5 | r1: 6 / 6.5 | round 2 committed; critique r2, then a fix round |
+| cockpit | 3 / 3.5 | r5: 6 / 6.5 (0 blockers, 17 majors) | round 6 committed (own 6.5 / 7): default eye in the centre couch through layout data, sun patch, harness, moire; interior inside its line; critique r6 next |
+| terrain-render | 5 / 4.5 | r1: 5.5 / 5.5 | round 2 and its continuation committed (own 7 / 7): trees, imagery, lava, lunar ground, the ink blot's cause, the pop detector; pad inside its line, three ground views under lead waivers; critique r2 next |
+| vehicle-pad | 4 / 4 | r3: 6.5 / 6.5 (0 blockers, 5 majors) | list saved; round 4 next (flown capsule, hatch-rail shadow, pad hardware, stickers on fairing and boost cover, lander blankets) |
+| (morning rows) | | | |
 | flight-ui | 5.5 / 6.5 | r6: 7.3 / 7.6 | round 7 fixes committed (fixer's own 8 / 8); critique r7 next, on real-game pictures from the mission re-flight |
 | map-view | 4 / 4.5 | r4: 6.5 / 7 (0 blockers, 2 + 2 majors) | round 5 fixes partly committed; critique r5, then a fix round |
 | atmosphere-clouds | 4 / 4 | r1: 5.5 / 5.5 (0 blockers, 8 + 8 majors) | fix round 2 running (also request `core-4`: cloud sequences keyed to the absolute frame index, which blocks the reference images); critique r2 next |
