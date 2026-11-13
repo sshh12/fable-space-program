@@ -205,3 +205,16 @@ proceeds a level per round trip) is unchanged by this.
 - Part 7: the "Atmosphere and clouds" row reads `AtmosphereFeature.status()`: parts done / in all = the tables
   (one flag) + the cloud noise (one flag) + the coverage maps loaded / total. What the row still lacks: progress
   inside the tables and the noise, and anything from the ocean (the row's other feature).
+
+## The app's side in a browser (app-integration, 2026-11-12 14:49 to 16:07, three loads of the pad, quiet machine)
+- `renderer.warm()` resolves after 1.4-2.1 s. The view is revealed after 29.1-33.1 s (1280 x 720; 34.0 s at
+  2560 x 1440).
+- The first frames after it: frame 1 at 12.9-14.7 s with 144-147 of 155 modules and pipelines done and the
+  atmosphere at 2 of 3; frame 16-19 at 20.2-22.6 s (6.4, 7.3 and 8.0 s later); from there 60 Hz. The app's frame
+  function ran for under 1 s in that span (per-hook timers: frame 0 190-409 ms and one frame of 130 ms, all
+  `terrain.prepare`), and a Playwright screenshot asked for at frame 1 returns with frame 16-19: the frames wait
+  for the GPU process, not for the main thread. It was 14 s for the same 19 frames before (Evidence, above), so
+  about half is gone; what is left is the packages' halves of part 1 (8-11 modules are begun in frame 1) and the
+  atmosphere's last part, as "Open" above says.
+- After that the terrain streams for 9-11 s (440 tiles wanted to level 20; part B, unchanged).
+- The atmosphere row equals `AtmosphereFeature.status()` in every sample of the loading test (3 / 3 at the end).

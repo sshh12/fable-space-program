@@ -188,6 +188,14 @@ temporal sequences (and every feature's `resetTemporal`, which the feature wrapp
 (`renderer.holding`) the game's loop renders nothing and only counts the display's frames. Precondition, as the
 contract says: `setDeterministic(true)` and `setPaused(true)` (the core refuses without deterministic mode; the
 app refuses while the loading screen is up). `setDeterministic(false)` ends the hold.
+`window.__app.exactInfo()` passes on the core's record of the last capture (who was busy before and after its
+frames, how many meterings the lead-in took).
+
+In the browser (2026-11-12 14:57, the pad, 1280 x 720, no HUD): `renderExact(8)` renders 8 frames and holds (no
+game frame and no simulation time in 40 display frames); two captures of 64 frames through the harness's
+`captureDeterministic`, the hold and 40 display frames between them, are the same picture to the bit (largest
+difference 0 of 255; one metering, nobody busy before, after or in the lead-in). The spec asserts it; if it ever
+fails it prints the difference per cell of a 4 x 4 grid and saves it as `out/screens/app/exact-pad-difference.png`.
 
 ### Render features (registration order)
 
@@ -236,12 +244,13 @@ reset with stages, features, hooks and a note of throttle / thrust / warp / alti
 `bodiesInFrame()` (bodies whose disc reaches into the presented frame, with their place in it), `seat()` (the
 cockpit rig's seat), `groundSamples(distances, bearings)` (points of the ground on rings around the vessel: land
 or water by the height authority, height above the sea, and where each falls in the frame), `warmMs()`,
+`exactInfo()` (the core's record of the last frame-exact capture),
 `setPictureStops(stops)` / `pictureStop()` / `resumeFromPictureStop()` / `pictureStopsFired()`,
 `exposure()`, `viewMode()`, `viewBlending()`, `hudVisible()`, `keyboardLocked()`,
 `toggleKeyboardCapture()`, `heldCodes()`, `paused()`, `frames()`, `lever()`, `simStats()`, `inFlight()`,
 `notifications()`, `pilotReport()`, `mfdPages()`, `mfdPaintStats(reset?)` (the cockpit displays' paints and their
 Canvas 2D / upload / mip time), `cockpitFrame()`, `brief()` (a few numbers of the latest snapshot, cheap to
-poll), `frameLights()` (local lights of the last frame), `busyFeatures()` (what `isIdle()` waits for),
+poll; with the navball's `pitchDeg` and `rollDeg`), `frameLights()` (local lights of the last frame), `busyFeatures()` (what `isIdle()` waits for),
 `terrainStats()` (the terrain's stream counters, selection and per-frame CPU).
 
 ## How to run
@@ -322,6 +331,49 @@ cockpit displays' paint split.
 | ` | key-help sheet generated from the binding table |
 
 ## Measured
+
+### 2026-11-12 14:49: phase 2, first half: the phase-1 boot path and test facilities in a browser (quiet machine)
+
+One run of `tests/browser/app` (functional + perf, 12 tests, 12.7 min in the slot, 14:49-15:02), alone on the GPU
+and with no bake or CPU job in the gate's slots: functional 8 of 9, perf 3 of 3. The one failure was the loading
+test's land statistic, not the boot (below); the test was changed and re-run alone (15:57, 40 s in the slot: passes; and once more at 16:07 after the sea points' projection was corrected: passes).
+
+What only a browser could settle:
+
+| Item | Result |
+|---|---|
+| Boot with `await renderer.warm()` | works: `warm()` resolves after 2.0 s (`warmMs()`); 33.1 s to the revealed view in the functional test, 34.0 s at 1440p in the perf test (28.4 s on the quiet night of 2026-11-11, before the terrain's and the site's content of 2026-11-12). The first frames do NOT come at once: frame 1 is drawn right after `warm()` (12.9-14.7 s after the page opened) with 144-147 of 155 shader modules and pipelines done and the atmosphere at 2 of 3, and frame 16-19 only 6.4-8.0 s later (three runs: 6.4, 7.3, 8.0 s); from there on frames come at 60 Hz. The main thread is not what waits: the app's frame function ran for less than 1 s in those frames (the slowest: frame 0 with 190-409 ms and one of 130 ms, all `terrain.prepare`), and a screenshot asked for at frame 1 comes back with frame 16-19. That is the GPU process working off the packages' pipelines (8-11 modules are begun in frame 1, none of them through `shaders.warm`) and the atmosphere's last part: request -11, part 1, the packages' halves. Before `warm()` the same span was 14 s (2026-11-11). After it the terrain streams for 9-11 s (440 tiles wanted, level 20), which is the larger half of what is left |
+| Atmosphere row | "Atmosphere and clouds: scattering tables, cloud noise, coverage maps, 3 / 3", from 14.7 to 21.1 s; equal to `AtmosphereFeature.status()` in every sample (asserted) |
+| Land where land is | the picture `loading-revealed-first.png` shows land at every land point and the real sea beyond the coast. The statistic did not agree: 4 of 25 land points read as water (limit 15 %), all on dark ground in shadow, where a luminance step of 2 of 255 is no measure of smoothness. It now takes the step relative to the pixel's luminance (4 %): on the same picture land 0.00-0.06, the open sea 0.37-0.54; 0 of 25 land points in both re-runs. `groundSamples` against the picture (`loading-revealed-first-land-points.png`, every point drawn on the frame): the 25 land points lie on the lava plain and scrub in five rings around the stack, the coast runs between the 800 m and the 1200 m ring at bearings 60-105 degrees as the height authority says. One error found by looking: sea points were projected at the sea BED (2-242 m down within 1.8 km), so three of them fell on the land in front; they are now projected at the water's surface and lie in the sea. Limit of the statistic: today's near-shore sea, with its waves resolved, reads 0.08-0.16 at those sea points (0 of 8 as water): the check tells land from a flat sea, the look of the failure of 2026-11-11, not from every sea. A firm check needs what was drawn at a pixel (terrain or water) from the renderer; not asked for |
+| `renderExact` in the app | 8 frames rendered and held; two captures of 64 frames identical to the bit (see "Frame-exact capture"); now asserted |
+| Picture stops in a flight | the short flight holds at the stage event (T+0, throttle 100 %, thrust not yet on the plume: the frame of the event's own tick), at the lift-off milestone and one second after it (the launch cloud around the pad); the simulation time stands at each (asserted), a stop that never fires stays pending; pictures `stop-stage-fired.png`, `stop-liftoff.png`, `stop-liftoff-plus-1s.png` |
+| Home key | after ArrowUp / ArrowLeft the chase rig reports a framing of its own; Home puts it back to the default (asserted; `leo-chase.png` and `leo-chase-reset.png` are the same framing) |
+| V key | in the cockpit: plt -> ms -> cdr -> plt, a toast per seat ("Seat: Noor Valkonen"); nothing in the chase view (asserted) |
+| Heads-down for the cockpit picture | the low-orbit test switches SAS on (T), holds E until the navball's roll reads beyond 168 degrees, lets go and waits until SAS has taken the rate out: roll 0.0 -> 174.6 degrees, pitch 2.2 degrees, in about 27 s of flight with the scenario's RCS on. `leo-cockpit.png` then has the Earth's clouds in both forward windows (EV100 5.53 against a target of 5.54). `data/defs/scenarios/qa-leo.json` is untouched |
+
+Frame time, 2560 x 1440, render scale 1, governor off (median of three windows of 240 frames; harness clock
+60.00 Hz, so the rAF lines are judged):
+
+| Situation | GPU p50 / p99 ms | rAF p99 / max ms | main thread p50 / p99 ms | largest features on the main thread, p99 ms |
+|---|---|---|---|---|
+| pad | 5.52 / 6.06 | 17.03 / 21.1 | 2.77 / 4.63 | terrain 1.72, vehicle 0.60, site 0.50, core 0.48 |
+| climb (to 1 km) | 5.77 / 6.26 | 17.17 / 19.3 | 3.28 / 5.41 | terrain 2.01, vehicle 0.57, core 0.47, vfx 0.41 |
+| lunar orbit, coast | 0.96 / 1.18 | 17.11 / 17.7 | 1.17 / 2.38 | terrain 0.68, core 0.50 |
+| lunar orbit, burn | 1.13 / 1.34 | 17.09 / 20.0 | 1.29 / 2.22 | terrain 0.53, core 0.44, vehicle 0.30 |
+| pad, 1280 x 720 | 2.67 / 3.15 | 17.09 / 17.4 | 2.27 / 3.73 | terrain 0.96, vehicle 0.54 |
+| climb, 1280 x 720 | 2.87 / 3.41 | 17.37 / 19.7 | 2.98 / 4.57 | terrain 1.43, vehicle 0.57 |
+
+Ignition and lift-off at 1440p, 934 consecutive frames: main thread p50 4.05 / p99 10.13 / max 20.33 ms; the
+slowest frame is the lift-off frame (render 10.84 with terrain 5.92, simulation 7.87, the snapshot going from
+one vessel to two: request -13); 161 of the 934 frames take 6 ms or more, the slowest of them 10-14 ms at 0.2 km
+with 4-7 ms in the terrain's hooks. No display is painted outside the cockpit view (0.00 paints per frame in the
+burn test). No frame of 33 ms or more in any window of the perf spec.
+
+Seen in the pictures and not the app's: in the frame-exact capture of the pad (`exact-pad.png`) the row of
+stones along the edge of the access road is a chain of separate dark dots; in the running display
+(`loading-revealed-later.png`, same camera) the same row is a soft band. The capture is 64 frames from a restart
+of the temporal sequences with the camera at rest; the display's frame has hundreds of frames of history. Which
+of the two is what the ground cover means to show is the terrain's to say.
 
 ### 2026-11-12 06:00: the whole app suite after the follow-up round (machine under bake load)
 
@@ -539,6 +591,28 @@ Added 2026-11-11 night (all looked at):
   lit, the navball instrument and the flight display legible. `start-trans-earth.png`: the first frame of the
   trans-Earth coast: the ascent stage and capsule seen from behind at 322.6 Mm, the Earth and the Moon as two small
   discs near the left edge (the framing of request app-integration-10).
+
+Added 2026-11-12 14:49 (phase 2, first half; all looked at):
+- `loading-2-pipelines.png`: "Render pipelines: starting terrain (1 of 9) · shader modules compiled, 0 / 29",
+  sound already done (38 / 38), 0:02. `loading-revealed-first.png` / `-later.png`: the default pad view of today:
+  the stack at the tower from above, the pad's apron and flame trench, lava plain with scrub and salt-white
+  patches, the coast and the sea with the sun's glitter, clouds; the two are the same picture.
+  `loading-revealed-first-land-points.png`: the first frame with the height authority's points drawn on it: green rings on the plain in five arcs around the stack (300 to 1800 m), blue rings in the water along and beyond the shore line; no red ring (a land point reading as water).
+- `stop-stage-fired.png`: T+00:00:00, throttle 100 %, 19.1 m on the pad, no flame yet (the tick of the event);
+  `stop-liftoff.png`; `stop-liftoff-plus-1s.png`: T+00:00:01, 2.4 m/s, the "Lift-off" toast, the launch cloud
+  rolling out on both sides of the pad.
+- `leo-chase.png`, `leo-chase-reset.png` (after turning the camera and pressing Home: the same framing, the stack
+  from behind, the Earth's limb and clouds below); `leo-chase-heads-down.png`: the navball brown side up, roll
+  173.8 degrees, SAS and RCS lit.
+- `leo-cockpit.png`: the pilot's couch, heads-down: sunlit cloud fields and blue sea in both forward windows, the
+  caution panel with SAS ACTIVE and RCS ARMED lit, the three displays legible (flight, orbit, systems).
+  `leo-cockpit-next-seat.png`: the next couch (toast "Seat: Noor Valkonen"): the right-hand display, the side
+  window with the Earth in it, the quilted wall.
+- `exact-pad.png`: the held frame of a frame-exact capture (no HUD): the pad view; see the remark on the stones
+  along the road above.
+- `start-lunar-surface-cockpit.png` (cabin lit, black sky in the windows, EV100 2.71), `start-trans-earth.png`
+  (the stack from behind in its own shadow, the Earth a small half disc at the lower left, 2 % of the frame's
+  height).
 
 ## Browser mission (ARCHITECTURE 18.2)
 
@@ -831,7 +905,7 @@ visual gap of the flight. Both cockpit pictures are nearly black.
 | `app-integration-8` | lead harness | resolved (lead-baseline-v2: `870d19e`, `050b2b3`, `37c6668`) | headless rAF clock at ~57.5 Hz (p50 17.4 ms in every mission phase, whatever the load): rAF budgets cannot be judged |
 | `app-integration-9` | flight-ui HUD, src/input | resolved (`cc8e8cb`, `e4d5188`; wired in `1b9f665`) | the capture pill as an explicit switch that also releases, a switch to hide it, `InputSystem.releaseKeyboardCapture` |
 | `app-integration-10` | src/camera (shared code), vehicle data | resolved (`1e5bceb`, NOTICE-core-4) | chase default framing in deep space: distance by the vessel's size after separations, the nearest body in frame, the Sun out of it (pictures 07-14 of the mission). The new default needs no wiring (`createChaseRig({ defs, terrain })` as before); `rig.resetView()` exists and is not bound to a key |
-| `app-integration-11` | render core, terrain-render, atmosphere | open; parts 2-7 done (`189d1e2`, `aea5efa`, `1e5bceb`, `cce44d3`) and wired here (`TerrainDebug.residency`, `setUploadBudget`, `CoreShaderLibrary.compilations`, `MeshSystem.loads`, `AtmosphereFeature.status`); part 1: the core's `shaders.warm` exists (`038cf6f`), the packages' pipelines are theirs to move; `await renderer.warm()` before the app's loop is the lead's decision and not made | load time: synchronous pipeline compiles hold the first 19 frames for 14 s, terrain streams only afterwards and one level per round trip; counts the loading screen lacks (terrain residency by level, shader and texture totals, atmosphere status) |
+| `app-integration-11` | render core, terrain-render, atmosphere | open; parts 2-7 done (`189d1e2`, `aea5efa`, `1e5bceb`, `cce44d3`) and wired here (`TerrainDebug.residency`, `setUploadBudget`, `CoreShaderLibrary.compilations`, `MeshSystem.loads`, `AtmosphereFeature.status`); part 1: the core's `shaders.warm` exists (`038cf6f`) and the app awaits `renderer.warm()` (`732962c`; 2.0 s in the browser on 2026-11-12); what is left is in "Measured", 2026-11-12 14:49 | load time: synchronous pipeline compiles hold the first 19 frames for 14 s, terrain streams only afterwards and one level per round trip; counts the loading screen lacks (terrain residency by level, shader and texture totals, atmosphere status) |
 | `app-integration-12` | cockpit, flight-ui MFD painter | answered: items 1-2 by the cockpit (round 4), item 3 by flight-ui (round 7); confirmed by the run of 2026-11-12 (no display paint in the chase view, burn 3.88 ms p99) | the cockpit's displays are painted in the chase view; the ORB page costs 5.2-5.7 ms per paint while the orbit changes; 16-26 ms in the lift-off frame |
 | `app-integration-13` | sim-world-pilot, vfx, audio | open | one-off costs in the ignition and lift-off frames: sim 5.9-6.4 ms (10-23 ms under load on 2026-11-12), first plume frame 1.5-2.8 ms, audio 1.5-1.9 ms |
 | `app-integration-14` | flight-ui (src/input/bindings.ts) | resolved (`b90ade9`; wired in `732962c`) | a key for the chase rig's `resetView()`: a presentation action `ui:resetCamera` on `Home` |
@@ -854,29 +928,19 @@ switch), both in `83c80f1`.
 - The main-thread CPU line is missed in three measured situations at 1440p (pad 6.7, first kilometre 6.5, engine
   burns 7.1 ms p99) and in the lift-off frame (30 ms); every part of it is attributed and requested (-7, -12,
   -13). Nothing in `src/app` contributes more than 0.15 ms.
-- Loading takes 30-32 s on the pad on this machine; the screen is honest about it but it is long. The largest
-  part is not the app's: 14 s in which the first 19 frames wait for shader compiles (request -11, open).
+- Loading takes 33-34 s on the pad on this machine (2026-11-12, quiet); the screen is honest about it but it is
+  long. Where the time goes is in "Measured", 2026-11-12 14:49.
 - The chase view's default framing changed in `src/camera` while this round ran (request -10, NOTICE-core-4): the
   app needs no wiring for it and none was done; the mission's deep-space pictures have not been re-shot with it
   (`start-trans-earth.png` of the night's third run predates it).
-- **Phase 1 of the re-flight has not run in a browser.** Type-checked, and unit-tested where it is plain logic
-  (`npx vitest run src/app`: the wrapper, picture stops, frame geometry, timings, seat names). What only a
-  browser can confirm, in the order the short gate run of phase 2 will meet it:
-  - the boot with `await renderer.warm()` (that it resolves, how long it takes, that the first frames then come
-    at once: `warmMs()` and the loading test's timeline);
-  - the atmosphere row's counts against `AtmosphereFeature.status()` (the loading test asserts them equal);
-  - the land statistic at the height authority's points (the loading test; `groundSamples` projects with the
-    camera's quaternion and field of view, which no test has compared with a picture);
-  - `renderExact` in the app (the new capture test): that 64 frames stay idle, that the hold holds, and how far
-    two captures are apart (the clouds' sequence is open as core-4);
-  - picture stops in a flight (the short-flight test holds at the stage, at lift-off and one second later);
-  - the Home and V keys (the low-orbit test; also the part of that test that has never run: turning the chase
-    camera with the arrows);
-  - the mission spec's whole picture flow: 17 milestone stops and 20 added ones, the cockpit pictures at stops,
-    the `'splash'` and `'touchdown'` events of the active vessel as triggers, the 1 MW/m^2 floor of the heating
-    peak and the 3 g floor of the load peak (if a stop is never reached the spec says which, softly).
-- The `qa-leo` scenario's attitude (prograde, forward windows towards space) is the scenario definition
-  `data/defs/scenarios/qa-leo.json`, not the app's code or test data: left as it is.
+- Phase 1 of the re-flight ran in a browser on 2026-11-12 14:49 ("Measured"), except the mission spec: its
+  whole picture flow is unrun (17 milestone stops and 20 added ones, the cockpit pictures at stops, the `'splash'`
+  and `'touchdown'` events of the active vessel as triggers, the 1 MW/m^2 floor of the heating peak and the 3 g
+  floor of the load peak; if a stop is never reached the spec says which, softly). The mission spec does not yet
+  roll heads-down for its Earth-orbit cockpit pictures; the low-orbit test's key sequence (T, hold E to 168
+  degrees, wait for the rate to go) is what it would use.
+- The `qa-leo` scenario starts heads-up (`data/defs/scenarios/qa-leo.json`, not the app's): left as it is; the
+  low-orbit test rolls the stack heads-down through the keys before its cockpit pictures.
 - The browser mission has not been re-flown since 2026-11-11.
 - `isIdle()` at 1440p on the pad: true since the pool work for app-integration-7 (`189d1e2`; idle in the second
   run of the night, never idle in the first).

@@ -82,9 +82,12 @@ async function openGame(page: Page, query = ''): Promise<void> {
  * 0.37-0.65 on sea (the frame of 2026-11-11 in which the land around the pad was drawn as sea: 0.62-0.65; the real
  * sea off the pad's coast outside the sun's glitter: 0.37-0.45), 0.00-0.06 on land, 0.11 on the pad's concrete in
  * shadow. Colour alone does not tell them apart (fresh lava is blue-grey), and a smoothness in absolute levels
- * takes dark ground in shadow for water (0.19-0.42 with a step of 2 of 255). Two things it cannot tell from
- * water: the sun's glitter on real water (bright, warm, rough: 0.00) and the white of the vehicle in shade
- * (0.67), so a land point hidden behind the stack reads as water: the limit on the share of points leaves room.
+ * takes dark ground in shadow for water (0.19-0.42 with a step of 2 of 255).
+ * What it does not do: it tells land from a FLAT sea, the look of the failure it was written for (request
+ * app-integration-6), not from every sea. The sea within 2 km of the pad as it is drawn since 2026-11-12, with
+ * its waves resolved, reads 0.08-0.16 at the height authority's own water points and the sun's glitter 0.00
+ * (the open sea farther out 0.34-0.54). And the white of the vehicle in shade reads 0.67, so a land point hidden
+ * behind the stack can count as water: the limit on the share of points leaves room for that.
  */
 function waterLikeAt(img: PNG, cx: number, cy: number): number {
   const lum = (i: number): number => 0.2126 * img.data[i]! + 0.7152 * img.data[i + 1]! + 0.0722 * img.data[i + 2]!;
@@ -114,7 +117,9 @@ interface GroundSample {
  * "Land where land is", whatever the camera shows: of the ground points around the pad that the height authority
  * calls land at least 3 m above the sea and that fall into the frame, the share whose patch of the picture looks
  * like water (waterLikeAt at 0.25 or more). The same for the points the authority calls water, as a reading of
- * the statistic on real sea when the view has some.
+ * the statistic on real sea when the view has some (logged, not asserted: see waterLikeAt). `annotated` saves
+ * the picture with every point drawn on it: that the points lie where the picture has land, and the sea points
+ * in the sea, is checked by looking (hand-off, 2026-11-12).
  */
 function landAsWater(png: Buffer, samples: GroundSample[], annotated?: string): { land: number; landAsWater: number; water: number; waterAsWater: number; flagged: string[] } {
   const img = PNG.sync.read(png);
@@ -338,6 +343,7 @@ test('the loading screen shows real progress and stays until the view at the pad
   );
   expect(seaFirst.land, 'land points of the pad surroundings in the first revealed frame').toBeGreaterThanOrEqual(15);
   if (seaFirst.flagged.length > 0) console.log(`  land points that read as water in the first frame: ${seaFirst.flagged.join('; ')}`);
+  console.log(`  water points in the frame (distance m / bearing deg / depth of the bed m / x, y): ${ground.filter((p) => p.kind === 'water' && p.x !== null && p.y !== null).map((p) => `${p.distance} / ${p.bearingDeg} / ${p.heightAboveSea === null ? '-' : (-p.heightAboveSea).toFixed(0)} / ${p.x!.toFixed(0)}, ${p.y!.toFixed(0)}`).join('; ')}`);
   expect(seaFirst.landAsWater, 'share of the land points that look like water in the first revealed frame').toBeLessThan(0.25);
   expect(Math.abs(seaLater.landAsWater - seaFirst.landAsWater), 'the land does not change after the reveal').toBeLessThan(0.1);
   expect(diff.meanAbsDiff, 'first revealed frame against the frame ten seconds later').toBeLessThan(6);

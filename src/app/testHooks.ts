@@ -245,13 +245,18 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
           const dirRoot = v3.normalize(v3.add(v3.scale(up, Math.cos(a)), v3.scale(horizontal, Math.sin(a))));
           const dirFixed = fixed(dirRoot);
           const height = game.terrain.heightAt(vessel.bodyId, dirFixed);
-          const posRoot = v3.add(body.rRoot, v3.scale(dirRoot, def.radius + height));
+          const kind = game.terrain.surfaceKind(vessel.bodyId, dirFixed);
+          // What the picture shows at the point: the ground, or the water's surface where the ground is the sea
+          // bed (off Ka Lae the bed is 100-200 m down within 600 m of the coast: projected at the bed, a point of
+          // the sea falls on the land in front of it).
+          const surface = kind === 'water' && seaLevel !== null ? Math.max(height, seaLevel) : height;
+          const posRoot = v3.add(body.rRoot, v3.scale(dirRoot, def.radius + surface));
           const p = projectToFrame(quat.rotateInv(cam.qViewToRoot, v3.sub(posRoot, cam.positionRoot)), tanX, tanY);
           const inside = p !== null && Math.abs(p.x) < 1 && Math.abs(p.y) < 1;
           out.push({
             distance,
             bearingDeg: (360 * k) / bearings,
-            kind: game.terrain.surfaceKind(vessel.bodyId, dirFixed),
+            kind,
             heightAboveSea: seaLevel === null ? null : height - seaLevel,
             x: inside ? (p.x * 0.5 + 0.5) * canvas.clientWidth : null,
             y: inside ? (0.5 - p.y * 0.5) * canvas.clientHeight : null,
