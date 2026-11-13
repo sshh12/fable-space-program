@@ -28,12 +28,23 @@ file differs from it, the section below is right.**
   recorded as the pre-sweep baseline (`tests/browser/budget.baseline.json`; every frame under 6.7 ms of 11).
 
 **What was in flight when the session stopped** (look at `git log --oneline -30` and `git status --short`)
-- Three small determinism fixes, so that the last three reference images can be recorded and two weak ones
-  tightened: `lead-5` (cockpit: `resetTemporal`, the cabin's sequences on the core's sequence index), `lead-6`
-  (app shell: a start switch that holds the simulation from the first frame), `lead-7` (ocean: `resetTemporal`,
-  wave phase from simulation time). Each request file says whether it is resolved. Then the lead records
-  `lunar-surface-cockpit`, `sweep-cockpit-leo`, `sweep-app-cockpit`, re-records `sweep-app-pad`, and runs the
-  full self-check (`docs/handoff/lead-baseline-v2.md` sections 22 and 23 have the commands and the order).
+- Three small determinism fixes are DONE and committed (2026-11-12, about 21:20): `lead-5` (cockpit, `19ab596`:
+  `resetTemporal`; `lunar-surface-cockpit` and `sweep-cockpit-leo` now give 0 differing pixels in the lead's
+  probe), `lead-6` (app shell, `8c0f2cb`: the page switch `?deterministic=1&paused=1` holds the simulation and
+  the camera from the first frame; both app checkpoints 0 pixels over three loads with it), `lead-7` (ocean,
+  `39dacd5`: `resetTemporal`, wave phase on simulation time; near sea and splashdown 0 pixels).
+  **NOT YET DONE, the first thing to do next (about 15 minutes of GPU):** the lead records
+  `lunar-surface-cockpit`, `sweep-cockpit-leo` and `sweep-app-cockpit`, and re-records `sweep-app-pad` - the
+  two app checkpoints with the page `/?scenario=lunar-direct&governor=off&mute=1&capturepill=0&deterministic=1&paused=1`
+  (the cockpit one with `&view=cockpit`) and setup `[{ "waitIdle": true }]`, which also puts the cockpit rig's
+  head sway at rest (request `cockpit-22` is then moot for the checkpoint) - marks them `exact` where three
+  loads agree, runs the full self-check and pushes the new PNGs to a `baselines/<date>` branch
+  (`docs/handoff/lead-baseline-v2.md` sections 22 and 23 have the commands and the order).
+  Still open from these fixes: the atmosphere is not frame-exact after a STEPPED simulation (`ocean-12`; no
+  recorded checkpoint steps it over the sea); `shoreline` lands in a second state on some loads (tolerance
+  stays); the first capture of a cold browser context differs in the cockpit lab's seat views (discarded by
+  the rule); the cockpit's turning-vessel perf line failed in two of six runs by a sun-map spike (0.94 / 0.97
+  against 0.8; cause not found).
 - An updated gameplay video of the full mission (`tools/footage/`), written to the user's desktop as
   `fable-space-program-mission-2026-11-12.mp4`.
 
