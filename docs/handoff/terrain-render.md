@@ -1161,3 +1161,211 @@ under machine load earlier passed in this run).
 - No blocker in the pictures. What stands against the brief is the five perf tests above (four ground
   views over their GPU lines, two of them also 0.06 to 0.11 ms over the main-thread line, and the descent's
   upload p99 at 2.10 against 2): the coordinator's decision, with the trades as listed.
+
+### Lead decisions of 2026-11-12 on the continuation, and what was done
+
+The decisions are the lead's (coordinator's message of 2026-11-12, after the report above); what was done
+about each is this package's.
+
+1. **The G-buffer line on the Earth's ground views is to be met by a cache, later.** Going back to one flat
+   material to stand inside 1.5 ms is refused (the print the critics rejected). The detail layers are to be
+   composited into a cached clipmap around the camera and read with one sample, as a work item of its own
+   after the presentation sweep. *Done:* the design note below.
+2. **The pad view is to meet its line now** (1.59 against 1.5; the heaviest frame of the mission), from the
+   pad's far detail layer or the tussocks' finest blades, whichever a 1:1 side-by-side shows less. *Done:*
+   a site's slab shows its first two detail scales only (`slabDetailScales`: Earth 2; the far and aerial
+   layers have nothing to say on poured concrete). Side by side at the pad view's own camera the apron
+   keeps its grain, stains and joints and loses a hint of its broadest tone variation; nothing a viewer
+   could name. Measured in one run, three page loads each way: terrain G-buffer 1.24 ms with all four
+   scales, 1.19 with two (the aerial layer alone: nothing, 1.24). The tussocks were not the other
+   candidate here: the pad view holds no tussock near enough for its finest mesh (its cover is 23,802
+   bushes and trees at the horizon out of 27,537 instances). **The pad stood at 1.31 to 1.32 ms in that
+   run, and the cut is 0.05 ms of the 0.27 that went: see "the cover's pass at the pad" below.**
+3. **Bounded waivers for the three ground views away from the pad, until the cache lands.** *Done:*
+   `leadWaiver: { until: 'terrain material cache', ceiling }` beside the unchanged budgets in
+   `tests/browser/terrain/terrain.perf.spec.ts`: G-buffer with ground cover at most 2.90 ms on stony
+   ground, 2.05 among kiawe, 3.45 over the thickets from 120 m; kiawe shadows at most 0.65. The budget
+   (1.5, 0.5) is printed with the measurement and the overrun in every run (`LEAD WAIVER until ...`), and
+   the line says so when a waiver is no longer needed. **The frame-total assertion** (the whole frame under
+   the 11 ms of ARCHITECTURE 17.1 at those three views with every package loaded) is NOT in this package's
+   spec: the spec that measures the frame is the maintainer's (`tests/browser/integration/
+   budget.perf.spec.ts`), so it is asked for in **request `docs/requests/terrain-render-10.md`**, with the
+   three camera recipes. Until that request is resolved the condition the lead attached to the waivers is
+   not being checked by any test.
+4. **Cover levels: the middle level of bushes and trees from 60 px across, crowns' shadows from the
+   coarsest mesh, only where a 1:1 side-by-side shows nothing a viewer could name.** *Done:* both were
+   built as levels of their own for bushes, trees and groves (`woodyMiddlePixels`,
+   `woodyShadowMiddleTexels`; lab `coverlod=..,<5th>,<6th>`), measured and looked at, and **both were
+   taken back**:
+   - *Middle level from 60 px:* over the thickets from 120 m the bushes of 40 to 60 px become a few flat
+     leaf cards (`out/terrain/r2/ab/thickets-120-m-mid20.png`, middle row). It was worth 0.03 to 0.06 ms
+     of the cover's G-buffer (0.64 -> 0.61 among kiawe, 0.79 -> 0.75 over the thickets), not the 0.4 the
+     report above expected: the cover's G-buffer cost is not its middle level between 40 and 60 px.
+   - *Crowns' shadows from the coarsest mesh:* among kiawe the shadow of a tree 15 m from the eye thins
+     to a few streaks (`ab/kiawe-shadow32.png`, top row); over the thickets and from the pad nothing
+     shows. It was worth 0.20 / 0.17 / 0.08 ms of the cover's shadows (kiawe / thickets / pad) and would
+     put the kiawe view's shadows at 0.35, inside their line. A rule between the two (the middle mesh in
+     the nearest cascade only, or from 64 texels) is the next thing to try and needs its own side-by-side;
+     it was not tried, because no setting is taken without one.
+5. **Load-sensitive lines are provisional** (PACKAGE_RULES rule 16): recorded with the machine's load,
+   nothing changed, the lead re-measures on a quiet machine. *Recorded:* the batched run of this section
+   happened to have the machine to itself (no other job in any of the gate's slots at its four
+   checkpoints). Main thread p99 there: stony ground 0.97 and 0.98 ms; among kiawe 0.84, 0.93, 0.98 and
+   1.00 in four page loads (the last fails `< 1`); medians 0.51 to 0.61. Descent: upload time p99 2.03 ms
+   against 2 (largest 2.51; 1.98 / 2.10 / 2.23 in the three runs before, under load). The upload loop
+   stops at the tile that would pass 2 ms by its running clock, so the p99 of a frame's upload time sits
+   at 2 by construction and the assertion `<= 2` falls either side of it by the timer's noise, on a quiet
+   machine as on a loaded one.
+6. **Accepted by the lead:** the non-black check of the integrated views as `expect.soft` (same threshold,
+   still fails the test, later views still render); the exposures (EV100 13.5 for the integrated ground
+   views, 14.0 in the terrain lab).
+
+**The batched run** (`out/terrain/r2/batch2.mjs`, 34 minutes in one gate slot, quiet machine; code
+6d056c9 = the slab's two scales with both cover cuts in; each cut taken back in turn by lab switches for
+the numbers and the pictures `perf-<view>-<variant>.png`). The state committed afterwards (b9f7bc5: the
+slab's two scales, the cover's levels as before) is, for the three views without a slab in them, the
+variant `base` of that run to the letter; its pad row is measured directly in the short run below.
+
+| View | G-buffer + cover (budget; waiver ceiling) | Shadows + cover (budget; ceiling) | Rocks | Main thread p99 / median (budget 1) |
+|---|---|---|---|---|
+| pad | 1.19 + 0.13 = 1.32, and 1.23 + 0.13 = 1.36 (1.5) | 0.21 + 0.09 = 0.30 (0.5) | 0.00 | 0.84 / 0.49, and 0.98 / 0.66 |
+| stony ground | 2.65 + 0.09 = **2.74** (1.5; 2.90) | 0.29 + 0.17 = 0.46 (0.5) | 0.13 (0.3) | 0.98 / 0.60 |
+| kiawe | 1.30 + 0.64 = **1.94** (1.5; 2.05) | 0.26 + 0.30 = **0.55** (0.5; 0.65) | 0.01 | 1.00 / 0.56 (see 5) |
+| thickets, 120 m | 2.51 + 0.79 = **3.29** (1.5; 3.45) | 0.15 + 0.23 = 0.38 (0.5) | 0.00 | 0.93 / 0.52 |
+| 10 km | 1.45 (1.5) | 0.07 (0.5) | - | 0.53 / 0.28 |
+| LEO | 0.25 (1.5) | 0.07 (0.4) | - | 0.42 / 0.21 |
+| lunar orbit | 0.78 (1.8) | 0.05 (0.6) | - | 0.41 / 0.20 |
+| lunar surface | 1.19 (1.8) | 0.27 (0.6) | 0.04 (0.3) | 0.86 / 0.51 |
+| Moon from 5,000 km | 1.07 (1.8) | 0.05 (0.6) | - | 0.32 / 0.17 |
+| Earth from 20,000 km | 0.25 (1.5) | 0.04 (0.4) | - | 0.39 / 0.17 |
+
+**Bold** = over its budget and held by a waiver's ceiling. The perf spec on 6d056c9: 11 of 12 (every
+budget view; the warp; the descent fails on its upload p99 of 2.03 against 2, see 5). Descent: 0 frames
+over 33 ms (largest 18.5), selection p99 0.51 ms. Functional specs the cuts touch, on 6d056c9: 12 of 12
+(`views` both bodies, the three integrated tests, `pops`: control 18 block spikes in 11 frames, worst
+8.32; the six paths 0 spikes, worst 1.28 / 1.26 / 1.78 / 1.66 / 1.01 / 1.05).
+
+**The cover's pass at the pad: an open finding.** The pad's G-buffer fell from 1.59 to 1.32 ms in this
+run, and only 0.05 of that is the slab. The rest is the ground cover's G-buffer pass, which measured 0.13
+to 0.14 ms in six page loads of this run and 0.34 in the seventh, where runs 4, 5 and 6 and the diagnostic
+run had 0.34 to 0.36 every time. The work was the same: the variant `base` draws the 27,537 instances and
+1,607,291 triangles of run 6 to the triangle and measured 0.14; the seventh load drew fewer (bushes and
+trees only: 23,802 instances) and measured 0.34. So the pass has two states for the same work and this
+package does not know what selects them; nothing in this round's changes explains it. At 0.34 the pad
+stands at 1.53 (that seventh load failed its line by 0.03). In the short run on the committed state it measured 0.13 twice more (the pad at 1.32 and 1.36, both
+passes): eight page loads of nine on this day. What would settle it in one
+minute of GPU time: the perf spec printing the cover pass's median and its p99 per measuring round beside
+the minimum (a p99 over 200 frames is set by its two or three largest values: an event every hundred-odd
+frames would make it flip between two values from page load to page load; that is a guess).
+
+**A second, short gate run** (`out/terrain/r2/batch3.mjs`, 9 minutes, the machine again to itself; on
+b9f7bc5). The lead asked for one run; this one was added because the batched run had rendered the
+reviewed pictures with the two cover cuts that the side-by-sides then rejected, and pictures that do not
+show the committed state are worse than a second run. It rendered the Earth's reviewed views, the
+thirteen integrated views and the close kiawe again (3 of 3 pass; looked at) and measured the pad twice
+(the pad row above). Not rendered again: `integrated-game-pad.png` (the batched run's: bushes far off
+and crown shadows may differ slightly) and the Moon's pictures (no ground cover in them). On b9f7bc5
+the scoped typecheck is clean and `tests/unit/terrain-render` with `tools/dev/boundaries.test.ts` is
+153 of 153. The whole perf spec was not run again on b9f7bc5: its rows for the three waived views are
+the variant `base` of the batched run, the rest are unaffected by what was taken back.
+
+### Design note: the terrain material cache (not built; for whoever builds it)
+
+The lead's decision (2026-11-12): the terrain's G-buffer line on the Earth's ground views is to be met by
+compositing the detail layers once into a cached clipmap around the camera and reading it with one sample,
+as a work item of its own after the presentation sweep. What follows is what this package knows that bears
+on it. Measured numbers are marked as such; everything else is an estimate or an open question and says so.
+
+**What the pass does per pixel today** (`terrainDetail` in `shaders/surface.ts`). Four detail scales with
+periods of 2, 14, 110 and 900 m (`detailScale0M..3M`; textures of 1024 texels for the near scale and 512
+for the others: texels of 2 mm, 2.7 cm, 21 cm and 1.76 m). A scale is sampled while one period spans more
+than 8 pixels and one texel fewer than 64 (from an eye at 1.7 m: two scales within 4 m, three to 34 m, four
+from there to about 300 m, three beyond). Each sample is taken for up to two materials (the land-cover classes'
+weights, slope, channel, noise), through up to three hexagon copies (anti-tiling, blended by height) and,
+on steep ground, two or three projection planes; it returns an albedo ratio, the height's gradient, a
+height, roughness and occlusion. The near and mid scales also march their height along the sun
+(`reliefShadowTaps`: 4 on Earth, 6 on the Moon; the far and aerial scales too where `reliefShadowFar`).
+Measured (section 14, table of the batched A/B): without any detail layer the pass costs 0.83 / 1.04 /
+0.77 / 1.30 / 1.08 ms (pad / stony ground / kiawe / thickets from 120 m / 10 km); the layers add 0.4 to
+0.5 ms on the pad and at 10 km, 0.3 to 0.8 among kiawe, 1.2 to 1.5 over the thickets and 1.6 to 1.9 on
+broken lava (the lower figures after the cuts of this round); the march is 0.13 to 0.31 ms of that, the class bands 0.03 to 0.11.
+
+**What is composited.** Everything of that evaluation that is fixed to the ground: per cache texel the
+blended result of all materials with a weight there (the cache can afford more than two), over all scales
+that show at that texel size, with the hexagon and height-blend decisions made. Channels (8 bytes a texel
+in two targets is the size to aim for): albedo ratio (rgb) and occlusion; the gradient of the detail
+height in the ground frame (2), the height itself (1) and roughness (1). A third target is needed if the
+variance of the gradient is to survive minification (gx, gy and gx^2 + gy^2, in the manner of LEAN
+mapping): today the pass adds the slope variance below the pixel footprint to the roughness by hand, and
+the sheen of lava at grazing angles depends on it; a cache read through mips and anisotropic filtering
+loses it unless it is stored. What stays per pixel: the tile's own normal and albedo with the imagery and
+its calibration (regions, class tone, class bands), the orbital detail, the site's ground plan, water and
+shore, the BRDF inputs, and everything that depends on the sun or the eye.
+
+**The per-scale fade becomes a per-ring rule.** The weight of a scale today is a function of the pixel
+footprint. In the cache it is the same function of the ring's texel size: a ring holds the scales whose
+period spans more than 8 of its texels and whose texels are fewer than 64 of its own. Blending two
+neighbouring rings by the footprint then reproduces today's fades. This is the one place where the picture
+can change without anyone meaning it to: a side-by-side of the cached and the per-pixel path at the
+reviewed views is the acceptance test.
+
+**Texel densities.** At 1440p and a 60 degree field one pixel is 0.0008 rad: a pixel's short axis on the
+ground is 0.0008 x its distance, and a ring centred under the camera with N texels across has texels of
+(2 / N) x the distance to its edge. N = 2048 gives 0.00098 x distance: 1.2 times magnified at the ring's
+edge, which is about what the mid layer is today; N = 1024 is 2.4 times and would show as a loss of grain
+from 5 m outwards. Rings from a half-extent of 2 m (texel 2 mm, the near layer's own) doubling to 2 km
+(texel 2 m) are eleven; beyond the last one a pixel is larger than 1.6 m, only the far and aerial scales
+show, and today's per-pixel path with those two is within the line (the 10 km view: 1.47 of 1.5, measured).
+The finest ring needed is the one whose texel is the footprint of the nearest ground: 0.0008 x the
+camera's height above it (ring 0 at 1.7 m, ring 5 or 6 at 120 m); finer ones are neither filled nor read.
+
+**Memory is the first constraint.** Eleven dense rings of 2048^2 at 8 bytes are 352 MiB (198 MiB at
+1536^2), and the terrain's pools stand at 1,046 MiB against their line of 1.15 GiB (measured, descent).
+Either the lead moves that line, or the rings are sparse: pages of 256^2 from a pool, allocated only
+where the view frustum crosses a ring (about a third of each: some 240 pages, 120 to 160 MiB with slack)
+behind a page table. The sparse form is a virtual texture and costs a page-table fetch per sample and the
+bookkeeping; the dense form is the simple one. This choice should be made first.
+
+**Update cost while moving** (estimates from the measured per-pixel cost of the layers: up to 1.6 ms for
+3.7 million pixels, so about 0.45 ms per million texels at the rate of broken lava). Rings are addressed
+toroidally and only newly exposed strips are filled. At 5 m/s and 60 frames a second ring 0 exposes 42
+columns of 2048 texels per axis a frame and each coarser ring half as many: about 170 thousand texels a
+frame over all rings, under 0.1 ms. A vehicle low over the ground at 100 m/s replaces 40 % of a 4 m ring
+every frame, which is why rings finer than the footprint at the camera's height must be skipped, and why
+the fill needs a cap in texels per frame (250 thousand is about 0.1 ms) with a pixel reading the finest
+ring that is valid at its place and the coarser one meanwhile. After a cut (a seat change, a jump of the
+camera, `resetTemporal`) every ring is invalid: eleven rings are 46 million texels, about 20 ms of GPU work
+at the rate above, to be spread over some frames coarse to fine, and the feature must report itself busy
+until it is done (the frame-exact capture waits on that: RENDER_API section 13, request core-2).
+
+**How relief and normals survive.** The normal is perturbed per pixel with the cached gradient exactly as
+it is with the summed gradients today; anisotropic filtering of one texture replaces the hand-made
+footprint handling of many. The relief's shadow stays per pixel and becomes cheaper and better: a march
+along the sun in the cached height is one fetch per tap whatever the number of scales, materials and
+copies behind it, so nothing in the cache depends on the sun, and one march covers all scales where today
+each scale marches its own height. There is no parallax and no silhouette today and the cache adds none
+(request terrain-render-9 is the remedy for lava that reads as a print). OPEN: steep faces. The cache is a
+map seen from above; the two or three projection planes of today exist because such a map stretches on a
+face steeper than about 45 degrees, and broken lava, where the planes cost the most, is where such faces
+are many. Either steep pixels keep a per-pixel path (near and mid scale, one material chosen from the
+cache), or the cache holds a second pair of side projections for the finest rings; neither is costed.
+OPEN too: the layers are addressed today from per-tile origins (`detail0..3` of the tile record plus the
+position in the tile); the rings must use the same ground parametrisation and the same split of precision,
+or the pattern moves against the tiles.
+
+**What to expect from it** (estimate): the floor measured above plus two or three filtered fetches, the
+march at one fetch per tap and the amortised fill: perhaps 0.2 to 0.4 ms over the floor, where the layers
+cost 0.8 to 1.9 today. That puts broken lava near 1.3 to 1.4 ms and the view among kiawe near 1.1 before
+ground cover. It does NOT by itself bring the thickets from 120 m under 1.5: the floor there is 1.30
+(measured) before any detail and the ground cover is on top (0.4 to 0.8), so that view also needs the
+floor looked at (the tile sampling, the imagery and the class blend at a camera that sees the most tiles)
+or less cover.
+
+**The Moon and other bodies.** The same cache serves whichever body the camera stands on (one cache,
+invalidated when the body under the camera changes; a body without a material set has no detail layers
+and is untouched). The lunar ground view is inside its line today (1.19 of 1.8 ms, measured), so there it
+buys headroom and picture rather than a line: craters at every scale cast in one march instead of one per
+scale (`reliefShadowFar` is 1 there), the march can afford more taps for a sun at 11 degrees, and the
+straight edges in the self-shadow of small craters (a six-tap march on a per-scale height) are the kind
+of fault a single finer march on one height removes. Body-fixed keys mean nothing moves with rotation.
+The lead's waivers in the perf spec (`leadWaiver`, `until: 'terrain material cache'`) go when it lands.
