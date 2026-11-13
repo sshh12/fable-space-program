@@ -22,10 +22,29 @@
  * Asserted: each loaded package stays within the sum of its lines, and the frame (the sum of the packages'
  * p99s: an upper bound of the frame's p99) within 11 ms once every package is loaded. A package with no
  * line at a checkpoint (0 ms) is reported, not asserted, while it stays under UNBUDGETED_MS.
+ *
+ * WHOLE-FRAME ROWS (request terrain-render-10, added by the lead): three ground views of the Earth away from
+ * the pad at which the terrain is over its own line under a lead waiver. With every package loaded they are
+ * asserted on the FRAME TOTAL alone (under 11 ms); the packages' sums are reported. The waivers themselves
+ * are held by the terrain's perf spec.
+ *
+ * NAMED LEAD WAIVERS (budgetTable.ts): a package over the sum of its lines at a row where its own perf spec
+ * carries a `leadWaiver` is reported with that waiver and not asserted here (the waiver's ceiling is held by
+ * that spec, in its own method); the frame total is asserted all the same. Every row prints one line per
+ * package: measured, budget, waivers.
+ *
+ * THE BASELINE (the lead's act, on a quiet machine): BUDGET_RECORD="<who, when, why>" writes every row of
+ * the run into tests/browser/budget.baseline.json (tracked). A run without it prints each row against that
+ * file; BUDGET_COMPARE=1 also ASSERTS that no row's summed GPU time rose by more than 3 % (the gate of the
+ * presentation sweep, to be run on a machine as quiet as the recording's).
+ *
+ *   node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/integration/budget.perf.spec.ts --project=perf
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, withGpuLock } from '../harness';
+import { spawnSync } from 'node:child_process';
+import { compareWithBaseline, describeBaselineComparison, FRAME_BUDGET_MS, FRAME_VIEWS, judgeRow, packageLines, UNBUDGETED_MS, withBaselineRow, type BudgetBaseline } from './budgetTable';
 import { expectClean, openIntegration, PACKAGE_OWNER, record, repoRoot, save, settle, type FeaturePackage, type LabInfo } from './helpers';
 
 test.use({ viewport: { width: 2560, height: 1440 } });
@@ -50,11 +69,8 @@ const LINES: { line: string; pkg: FeaturePackage | 'core' | 'ui'; ms: number[] }
   { line: 'Plumes, smoke, particles, plasma, canopies', pkg: 'vfx', ms: [1.3, 1.0, 0.6, 0.6, 0.9, 1.2, 0.9] },
   { line: 'Navball; map overlay in map view', pkg: 'ui', ms: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1] },
 ];
-const FRAME_BUDGET_MS = 11;
 /** The navball texture (0.008 ms) and the map overlay (0.012 ms), measured by their own specs: added to the frame sum. */
 const UI_MEASURED_MS = 0.02;
-/** A package without a line at a checkpoint may cost this much before it is treated as over its (zero) budget. */
-const UNBUDGETED_MS = 0.1;
 const WINDOWS = 6;
 const WINDOW_FRAMES = 240;
 
@@ -95,7 +111,10 @@ interface Spread {
 }
 
 interface Row {
-  checkpoint: Checkpoint;
+  /** A checkpoint of the table, or the name of a whole-frame view. */
+  checkpoint: string;
+  /** 'lines': held package by package and on the frame; 'frame': held on the frame total alone. */
+  kind: 'lines' | 'frame';
   loaded: FeaturePackage[];
   /** p99 GPU ms per package (its feature ids summed), 'core': median over the windows. */
   measured: Record<string, number>;
@@ -119,12 +138,27 @@ const median = (xs: number[]): number => {
   return s.length === 0 ? 0 : 0.5 * (s[(s.length - 1) >> 1]! + s[s.length >> 1]!);
 };
 
-for (const [index, checkpoint] of CHECKPOINTS.entries()) {
-  test(`summed GPU budget: ${checkpoint}`, async ({ page, pageLog }) => {
+/** Every row of the table: the seven checkpoints with their lines, then the three whole-frame views. */
+const ROWS: { checkpoint: string; kind: 'lines' | 'frame'; scene: Scene; index: number }[] = [
+  ...CHECKPOINTS.map((c, index) => ({ checkpoint: c as string, kind: 'lines' as const, scene: SCENES[c], index })),
+  ...FRAME_VIEWS.map((v) => ({ checkpoint: v.name, kind: 'frame' as const, scene: { query: v.query }, index: -1 })),
+];
+const owner = (pkg: string): string => (pkg in PACKAGE_OWNER ? PACKAGE_OWNER[pkg as FeaturePackage] : pkg);
+const BASELINE_FILE = path.join(repoRoot, 'tests', 'browser', 'budget.baseline.json');
+const METHOD = `p99 GPU ms per package, 2560 x 1440 internal, qualityScale 1, attribution mode, ballast to about 9 ms per frame; the median over ${WINDOWS} windows of ${WINDOW_FRAMES} frames of the window's p99; the frame is the sum of the packages' p99s`;
+const readBaseline = (): BudgetBaseline | null => {
+  try {
+    return JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8')) as BudgetBaseline;
+  } catch {
+    return null;
+  }
+};
+
+for (const { checkpoint, kind, scene, index } of ROWS) {
+  test(`${kind === 'lines' ? 'summed GPU budget' : 'whole frame under 11 ms'}: ${checkpoint}`, async ({ page, pageLog }) => {
     test.setTimeout(40 * 60_000);
     let info!: LabInfo;
     const row = await withGpuLock(async (): Promise<Row> => {
-      const scene = SCENES[checkpoint];
       info = await openIntegration(page, `${scene.query}&hud=0&perf=features&scale=1&governor=off&ballast=1`);
       if (scene.cockpit) expect(await page.evaluate(() => window.__integration!.sitAtWindowBelow()), 'the vehicle has a cockpit seat with a window to look through').not.toBeNull();
       if (scene.stack) {
@@ -207,9 +241,10 @@ for (const [index, checkpoint] of CHECKPOINTS.entries()) {
         passes[name] = { p50: of('p50'), p99: of('p99'), mean: of('mean') };
       }
       const budget: Record<string, number> = {};
-      for (const l of LINES) budget[l.pkg] = (budget[l.pkg] ?? 0) + l.ms[index]!;
+      if (kind === 'lines') for (const l of LINES) budget[l.pkg] = (budget[l.pkg] ?? 0) + l.ms[index]!;
       return {
         checkpoint,
+        kind,
         loaded: info.loaded,
         measured,
         spread,
@@ -234,36 +269,53 @@ for (const [index, checkpoint] of CHECKPOINTS.entries()) {
 
     expect(row.qualityScale).toBe(1);
     expect(row.renderScale).toBe(1);
-    const over: string[] = [];
-    for (const [pkg, ms] of Object.entries(row.measured)) {
-      const limit = row.budget[pkg];
-      const owner = pkg in PACKAGE_OWNER ? PACKAGE_OWNER[pkg as FeaturePackage] : pkg;
-      if (limit === undefined) over.push(`${pkg}: ${ms.toFixed(3)} ms has no line in the table`);
-      else if (limit === 0 ? ms > UNBUDGETED_MS : ms > limit) over.push(`${pkg} (${owner}): ${ms.toFixed(3)} ms against ${limit.toFixed(2)} ms`);
-      else if (limit === 0 && ms > 0.005) console.log(`  ${pkg} (${owner}) has no line at this checkpoint and costs ${ms.toFixed(3)} ms`);
+    // One line per package beside its budget and its named waivers; then the verdict (budgetTable.ts).
+    for (const line of packageLines(row, owner)) console.log(`  ${line}`);
+    const verdict = judgeRow(row, owner);
+    for (const w of verdict.waived) console.log(`  WAIVED, held by its own spec: ${w}`);
+    for (const u of verdict.unbudgeted) console.log(`  ${u}`);
+
+    // The recorded baseline: written by the lead's recording run, printed otherwise, asserted for the sweep's gate.
+    const recordNote = process.env.BUDGET_RECORD ?? '';
+    if (recordNote !== '') {
+      const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' });
+      const next = withBaselineRow(readBaseline(), row, { note: recordNote, method: METHOD, at: new Date().toISOString(), commit: head.status === 0 ? head.stdout.trim() : 'unknown' });
+      fs.writeFileSync(BASELINE_FILE, `${JSON.stringify(next, null, 1)}\n`);
+      console.log(`  [budget baseline] recorded ${checkpoint}: summed GPU time ${row.frame.sum.toFixed(2)} ms`);
+    } else {
+      const baseline = readBaseline();
+      const compared = baseline ? compareWithBaseline(baseline, row) : null;
+      if (compared) console.log(`  [budget baseline] ${describeBaselineComparison(compared)}`);
+      else console.log(`  [budget baseline] no recorded row to compare ${checkpoint} with (${baseline ? 'not recorded, or recorded with other packages loaded' : 'tests/browser/budget.baseline.json is not recorded yet'})`);
+      if (process.env.BUDGET_COMPARE) {
+        expect(compared, `${checkpoint}: BUDGET_COMPARE needs a recorded baseline row with the same packages loaded`).not.toBeNull();
+        expect(compared!.regressed, describeBaselineComparison(compared!)).toBe(false);
+      }
     }
-    const all: FeaturePackage[] = ['terrain', 'vehicle', 'cockpit', 'ocean', 'sky', 'atmosphere', 'vfx'];
-    if (all.every((p) => row.loaded.includes(p)) && row.frame.sum > FRAME_BUDGET_MS) over.push(`frame: ${row.frame.sum.toFixed(2)} ms against ${FRAME_BUDGET_MS} ms`);
-    expect(over, `${checkpoint}: over budget`).toEqual([]);
+    expect(verdict.over, `${checkpoint}: over budget`).toEqual([]);
     await expectClean(page, pageLog, info);
   });
 }
 
 /**
- * out/core-support/budget.json and budget.md: the row just measured replaces the one of its checkpoint in
- * the file (a failed test restarts the worker, so the table is kept on disk, not in memory).
+ * out/core-support/budget.json and budget.md: the row just measured replaces the one of its name in the file
+ * (a failed test restarts the worker, so the table is kept on disk, not in memory). budget.md holds the
+ * table of the checkpoints against their lines, the whole-frame views, and one line per package and row
+ * with its budget and its named waivers.
  */
 function writeTable(row: Row): void {
   const dir = path.join(repoRoot, 'out', 'core-support');
   fs.mkdirSync(dir, { recursive: true });
   let kept: Row[] = [];
   try {
-    kept = (JSON.parse(fs.readFileSync(path.join(dir, 'budget.json'), 'utf8')) as Row[]).filter((r) => r.spread !== undefined);
+    kept = (JSON.parse(fs.readFileSync(path.join(dir, 'budget.json'), 'utf8')) as Row[]).filter((r) => r.spread !== undefined).map((r) => ({ ...r, kind: r.kind ?? 'lines' }));
   } catch {
     kept = [];
   }
-  const rows = CHECKPOINTS.map((c) => (c === row.checkpoint ? row : kept.find((r) => r.checkpoint === c))).filter((r): r is Row => r !== undefined);
-  fs.writeFileSync(path.join(dir, 'budget.json'), JSON.stringify(rows, null, 2));
+  const all = ROWS.map((x) => (x.checkpoint === row.checkpoint ? row : kept.find((r) => r.checkpoint === x.checkpoint))).filter((r): r is Row => r !== undefined);
+  fs.writeFileSync(path.join(dir, 'budget.json'), JSON.stringify(all, null, 2));
+  const rows = all.filter((r) => r.kind === 'lines');
+  const frames = all.filter((r) => r.kind === 'frame');
   const pkgs = ['core', 'terrain', 'vehicle', 'cockpit', 'atmosphere', 'ocean', 'sky', 'vfx', 'ui'];
   const head = `| Package (lines of 17.1 summed) | ${rows.map((r) => r.checkpoint).join(' | ')} |\n|---|${rows.map(() => '---').join('|')}|`;
   const body = pkgs
@@ -283,6 +335,12 @@ function writeTable(row: Row): void {
   const sum = `| **Sum of the p99s** (budget ${FRAME_BUDGET_MS}) | ${rows.map((r) => `**${r.frame.sum.toFixed(2)}**`).join(' | ')} |`;
   const typical = `| Frame median without the ballast | ${rows.map((r) => r.frame.typical.toFixed(2)).join(' | ')} |`;
   const note = `Measured p99 GPU ms / budget, 2560 x 1440 internal, qualityScale 1, attribution mode, ballast to about 9 ms per frame; each value is the median over ${WINDOWS} windows of ${WINDOW_FRAMES} frames of the window's p99.`;
-  fs.writeFileSync(path.join(dir, 'budget.md'), `${note}\n\n${head}\n${body}\n${sum}\n${typical}\n`);
-  record('budget', { rows: rows.map((r) => ({ checkpoint: r.checkpoint, loaded: r.loaded, measured: r.measured, spread: r.spread, budget: r.budget, frame: r.frame, ballastMs: r.ballastMs })) });
+  const frameTable =
+    frames.length === 0
+      ? ''
+      : `\n\nWhole-frame views (request terrain-render-10): asserted on the frame total alone, the packages' sums reported.\n\n| View | ${pkgs.filter((p) => p !== 'ui').join(' | ')} | **Sum of the p99s** (budget ${FRAME_BUDGET_MS}) | Frame median without the ballast |\n|---|${pkgs.filter((p) => p !== 'ui').map(() => '---').join('|')}|---|---|\n` +
+        frames.map((r) => `| ${r.checkpoint} | ${pkgs.filter((p) => p !== 'ui').map((p) => (p === 'core' || r.loaded.includes(p as FeaturePackage) ? (r.measured[p] ?? 0).toFixed(3) : 'absent')).join(' | ')} | ${r.frame.sum > FRAME_BUDGET_MS ? '**' : ''}${r.frame.sum.toFixed(2)}${r.frame.sum > FRAME_BUDGET_MS ? '**' : ''} | ${r.frame.typical.toFixed(2)} |`).join('\n');
+  const perPackage = `\n\nPer row, one line per package: measured, budget, named lead waivers.\n\n${all.map((r) => `${r.checkpoint}\n${packageLines(r, owner).map((l) => `- ${l}`).join('\n')}`).join('\n\n')}`;
+  fs.writeFileSync(path.join(dir, 'budget.md'), `${note}\n\n${head}\n${body}\n${sum}\n${typical}${frameTable}${perPackage}\n`);
+  record('budget', { rows: all.map((r) => ({ checkpoint: r.checkpoint, kind: r.kind, loaded: r.loaded, measured: r.measured, spread: r.spread, budget: r.budget, frame: r.frame, ballastMs: r.ballastMs })) });
 }
