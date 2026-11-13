@@ -45,8 +45,17 @@ file differs from it, the section below is right.**
   stays); the first capture of a cold browser context differs in the cockpit lab's seat views (discarded by
   the rule); the cockpit's turning-vessel perf line failed in two of six runs by a sun-map spike (0.94 / 0.97
   against 0.8; cause not found).
-- An updated gameplay video of the full mission (`tools/footage/`), written to the user's desktop as
-  `fable-space-program-mission-2026-11-12.mp4`.
+- The updated gameplay video is DONE: `C:\Users\Shriv\Desktop\fable-space-program-mission-2026-11-12.mp4`
+  (9:40, 2560x1440 at a constant 60 fps, H.264, game audio; one flight, all 17 milestones, `cheatCounter` 0;
+  tooling in `tools/footage`, commits 1b9707b, 5ad2db2, 324d7c7).
+- **NEW REGRESSION seen in that flight, the first bug to look at:** about a second after the capsule meets the
+  water the WHOLE SEA RENDERS BLACK for stretches of several seconds. It was not in the afternoon's mission
+  flight (pictures `out/screens/mission/17-splashdown-*`), so it came in with the evening's ocean changes
+  (round 3 and/or `lead-7`, commits 4ac6e90 ... 39dacd5, a754ea9: the reset drops the impacts and the splash
+  of a frozen snapshot is taken once); the suspect is the splash response in the running game. Reproduce with
+  the `qa-drogues` scenario flown to the water (the video agent's rehearsal there did not show it, the full
+  flight did), then fix in `src/render/ocean`; the ocean's own `splash.spec.ts` passed, so add the missing
+  case.
 
 **Next steps, in order**
 1. Finish the item above (three recordings, the self-check), then the lead step of sub-wave 3.2
