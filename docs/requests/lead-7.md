@@ -44,3 +44,12 @@ load identical to the first.
 ## What the lead did meanwhile
 `ascent-cloud-deck` is framed from 1.2 km north of the pad looking up at the vehicle: sky, clouds, the
 vehicle and its plume, no sea. Four loads of that are identical to the bit.
+
+## Lead note (2026-11-12, 19:10): the shoreline as well
+
+`shoreline` (frozen from its first frame, never stepped) is the other recorded checkpoint in which the sea
+differs between loads: the recording's three loads differ by a 99.9th percentile of one level (mean
+0.00097), and a fresh load in the self-check differed from the reference in 0.183 % of the pixels by up to
+3 levels. It is compared within a tolerance and marked `notExact` in the manifest with this request. A
+probe of four loads at 19:08, with this package's work in progress in the tree, gave four identical
+loads: when the fix is in, the lead re-records `shoreline` and it should become `exact`.

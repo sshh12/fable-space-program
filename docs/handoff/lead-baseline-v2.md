@@ -1005,7 +1005,7 @@ of one level (tolerance 3; about 0.2 % of the pixels by up to 3 and 8 levels in 
 test hooks freeze it (tolerance mean 0.253, 99.9th percentile 21; request **lead-6** asks the app for a
 frozen start).
 
-**For the lead to decide: the floor is loose for "must not move a pixel".** The pass rule is mean and
+**For the lead to decide (DECIDED: section 23, the `exact` flag): the floor is loose for "must not move a pixel".** The pass rule is mean and
 99.9th percentile, as it was. A change confined to fewer than 0.1 % of the pixels (about 920: a small
 vessel, a marker, a HUD digit) passes the floor however large it is. The gate prints, for every
 checkpoint, the share of pixels that differ and the largest difference; the 25 checkpoints whose loads
@@ -1078,3 +1078,67 @@ the tree at 9a873e0, every gate slot free. What it says:
   repository).
 - The app shell's two files of 17:02 did not disturb a capture. If a later fix of the app changes a
   recorded picture, the lead names the checkpoints and they are re-recorded with BASELINE_ONLY.
+
+## 23. The lead's decisions on phase 2 (2026-11-12, 19:00-19:30): the exact flag, two lines of the budget table
+
+**1. `exact` in the manifest.** A recorded checkpoint whose three loads were one picture to the bit carries
+`exact: true`, and a comparison of it (`compareToBaseline`, `expectBaseline`, the gate run) passes only
+when NO pixel differs: "must not move a pixel" is an assertion, the tolerance is not consulted. 25 of the
+30 are exact. The other five keep their tolerance and carry `notExact`: the reason in one line and the
+request to the owner whose fix would make them exact:
+
+| Checkpoint | Why its loads differ | Request |
+|---|---|---|
+| `leo-terminator` | one pixel on the capsule's hull differs by one level in one load of four | core-7 (sky-lighting) |
+| `sweep-lunar-orbit` | two pixels on the vessel's hull differ by one level in two loads of four | core-7 (sky-lighting) |
+| `shoreline` | the near sea and the surf: about 0.2 % of the pixels by up to 3 levels | lead-7 (ocean) |
+| `lunar-touchdown` | the dust particles under the burning descent engine fall differently: about 0.2 %, up to 8 levels (new request, with the probe's picture) | lead-8 (vfx) |
+| `sweep-app-pad` | the app runs from its reveal until the hooks freeze it: about 100,000 pixels, up to 31 levels | lead-6 (app shell) |
+
+The manifest's validation (`manifestProblems`, unit-tested; the tracked manifest is held to it by
+`tools/dev/baseline-logic.test.ts`) asks every recorded checkpoint for one of the two, refuses `exact` on
+loads that differ and `notExact` on loads that do not, and asks the request to exist in `docs/requests`.
+The recorder sets `exact` itself; where the loads differ it keeps the lead's reason, or leaves an empty
+one that the validation rejects until the lead has written it.
+
+The whole self-check was NOT run again for this: the cockpit and the ocean packages were editing
+`src/render` in the working tree at that hour, so a run would have compared their work in progress with
+the recordings. What stands for the 25: the self-check of 18:2x on the quiet tree printed "max 0" for every
+one of them from a fresh load. The assertion's own path was run on three exact checkpoints that show
+neither the sea nor a cabin (translunar-moon, lunar-terminator-5000km, sweep-map-translunar at 19:25: each "EXACT (no pixel may differ): 0 pixels differ", passed). The full gate run follows the re-recordings below.
+
+**2. The budget table's two lines** (ARCHITECTURE 29.1, "Lead additions of 2026-11-12"):
+
+- **The cabin seen from outside** is a line of the table: 0.15 ms for the cockpit package wherever the
+  vessel's cabin is in an outside view (ascent, LEO, lunar descent, reentry, splashdown), from the frame's
+  unallocated remainder. **None at the pad lift-off**: that column sums to 10.95 ms, so only 0.05 ms is
+  unallocated there, and a line of 0.15 would put the column over 11.0 on paper. The cockpit stays at the
+  pad under the 0.1 ms that a package without a line may cost (0.077 ms recorded). If the lead wants the
+  line at the pad as well, it has to come out of another line of that column.
+- **The pad's terrain** (2.348 ms against 2.15) stands under a lead waiver on the table's own line,
+  ceiling 2.47 ms, until the terrain material cache (`TABLE_WAIVERS` in `budgetTable.ts`). Unlike the
+  waivers of the packages' own specs, its ceiling is asserted by the table, since nothing else holds it;
+  it goes stale (and fails) if the line it was granted on changes.
+- **The baseline was not re-recorded.** The two edits change what the table ASSERTS at six rows (the
+  cockpit's line at five, a ceiling instead of a line for the pad's terrain), and with them all ten rows pass on the recorded numbers (a unit test judges the recorded
+  rows against the table as it now stands). They change nothing that is MEASURED, and the baseline is
+  compared on the measured p99s and their sums alone; its rows keep the budgets of the hour they were
+  recorded in, as information. A re-recording would be a second measurement of the same thing on a machine
+  that three packages are using tonight.
+
+**What remains, on the lead's word** (the cockpit is fixing lead-5, the app shell lead-6, the ocean lead-7;
+each reports to the lead first):
+
+1. Cockpit: probe `lunar-surface-cockpit`, `sweep-cockpit-leo`, `sweep-app-cockpit`; record the three;
+   put `leo-night` and `reentry-peak-heating` back to framings with a cabin window in view if the probe
+   shows them identical (orbit yaw 30 and yaw 160 were the first framings).
+2. App shell: re-record `sweep-app-pad` (and frame `sweep-app-cockpit`) with the app's switch for a
+   frozen start in the page's query; `manifestProblems` then accepts an app page that is frozen by its
+   query instead of by its setup; the tolerance should fall to the floor or the checkpoint become exact.
+3. Ocean: probe the first framing of `ascent-cloud-deck` (the near sea in the foreground, request lead-7)
+   with four loads; if identical, put a near-sea view back (or add a near-sea checkpoint), and re-record
+   `shoreline`, which should become exact. A change of the wave phase moves every picture with the sea in
+   it: those are re-recorded with the lead's note, and the lead names them.
+4. Then ONE full gate run (the self-check of all recorded checkpoints) on the quiet tree, and the manifest
+   committed. The lead pushes `data/baselines` to the private repository on an orphan branch after the last
+   re-recording.

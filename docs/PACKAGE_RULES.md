@@ -160,7 +160,9 @@ VIDEO_SCHEDULER_INTERNAL_ERROR, in the GPU driver): at 15:35 with four WebGPU Ch
      `expectBaseline` / `compareToBaseline` of `tests/browser/harness.ts`; never re-record one yourself:
      re-recording needs a note signed by the lead. The comparison captures a lead-in frame and then two
      that must be identical to the bit (request core-7): a `NotFrameExactError` means your page still
-     changes when every feature reports idle, which is a finding, not a tolerance to raise. They were
+     changes when every feature reports idle, which is a finding, not a tolerance to raise. A checkpoint
+     marked `exact` in the manifest (most are) passes only when NO pixel differs from its reference; the
+     few that are not exact say why and name the request that would make them so. They were
      recorded before sub-wave 3.2 on the tree as it stood: a change that is MEANT to move pixels says which
      checkpoints it moves and asks the lead to re-record them. To find WHAT moves in a page that is not
      frame-exact: `BASELINE_EXACT_PROBE=<checkpoint>` with `tests/browser/shell/baseline-exact-probe.spec.ts`
