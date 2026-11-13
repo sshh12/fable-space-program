@@ -2,7 +2,9 @@
 
 The lead's step before wave 3 of `docs/WORK_PACKAGES_V2.json` (MIGRATION_V2 step 3.0), with the lead's
 amendments of 2026-11-11: five other agents were working in the tree, the reference images are deferred to
-the visually signed-off tree, the document swap comes last.
+the visually signed-off tree, the document swap comes last. (The second amendment is superseded by the lead
+decision of 2026-11-12: the reference images are recorded before sub-wave 3.2 on the tree as it stands;
+section 21.)
 
 It changed no behaviour: the suites give the results they gave before it (section 9). An independent review
 followed (six majors, five minors); what it changed is in section 12, and sections 3, 4 and 5 below are
@@ -145,9 +147,10 @@ events were therefore made members of `SimEvent` at once (the only exhaustive co
 
 ## 3. Reference images (ARCHITECTURE 31.3): tooling complete, recording DEFERRED
 
-By the lead's amendment the set is NOT recorded now: the visual close-out still changes pixels in every
-rendering package. **The lead records the full set immediately before sub-wave 3.2 (presentation-sweep), on
-the visually signed-off tree.**
+By the lead's amendment the set was NOT recorded in step 3.0: the visual close-out still changed pixels in
+every rendering package. **Superseded by the lead decision of 2026-11-12 (section 21): the set is recorded
+before sub-wave 3.2 on the tree AS IT STANDS, as the regression gate of the presentation sweep; later
+changes that are meant to move pixels re-record what they touch with a lead note.**
 
 What exists (`tests/browser/harness.ts`):
 
@@ -185,7 +188,8 @@ readBaselineManifest(store?), tileSnapshot(), describeComparison(c)
   lunar-orbit-low-sun, lunar-touchdown, lunar-surface-cockpit, reentry-peak-heating, parachute-descent,
   splashdown, shoreline, ocean-climb-2m / -200m / -20km / -400km. Eleven have a page (an integration-lab
   query taken from `tests/browser/integration/budget.perf.spec.ts`); fourteen have `page: null`: the lead
-  frames them when recording (camera parameters of `labs/integration/main.ts`).
+  frames them when recording (camera parameters of `labs/integration/main.ts`). (As of step 3.0. Since
+  section 21: 33 checkpoints, every one framed, a checkpoint being its page plus setup steps.)
 - Specs: `tests/browser/shell/baselines.record.spec.ts` (record with `BASELINE_RECORD="<signed note>"`,
   optional `BASELINE_ONLY=a,b`; without it: every recorded checkpoint is captured again and must compare
   clean); `tests/browser/shell/baseline-tooling.spec.ts` (the difference measure on synthetic images, always;
@@ -211,7 +215,7 @@ floor.
 Commands:
 
 ```
-BASELINE_RECORD="lead, <date>, signed-off tree" node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional
+BASELINE_RECORD="lead, <date>, <why>" node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional     # self-check of what is recorded
 BASELINE_TOOLING_PROOF=1 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baseline-tooling.spec.ts --project=functional
 ```
@@ -871,3 +875,64 @@ pilot's couch as the vehicle's cockpit seat; the cockpit takes its default eye p
 data instead.
 
 Suites, through the gate, before the commit: `tests/unit/sim-vessel/codec.test.ts` 23 of 23 (the two that failed pass), `tools/dev/guard-pins.test.ts` 3 of 3, the terrain guard 10 of 10, `tests/unit/sim-vessel/data.test.ts` 14 of 14; `npm run test:mission` 5 files, 36 of 36 on the golden `b8221b0fd316207e`. Also run to see what else the seat touches: `tests/unit/cockpit`, `sim-vessel`, `sim-world` and `vehicle`, 47 files, 393 tests, all pass.
+
+## 21. Lead step before sub-wave 3.2, phase 1: code and documents, no browser run (2026-11-12, finished 16:35)
+
+**Lead decision.** The reference images are recorded NOW, on the tree as it stands, not on a visually
+signed-off tree: they are the regression gate of the presentation sweep (a refactor that must not move a
+pixel). The visual close-out goes on after the sweep, the display curve changes right after it (request
+ocean-10), and each such change re-records the affected checkpoints with a lead note (ARCHITECTURE 31.3).
+Written into MIGRATION_V2 (lead steps "before 3.2", section 8), STATUS, PACKAGE_RULES 15a, and as a LEAD
+NOTE at the end of `presentation-sweep`'s brief (how the sweep runs its two gates: the record spec without
+BASELINE_RECORD after each subsystem commit, `BUDGET_COMPARE=1` at the end; the manifest and the budget
+baseline are the lead's files; the test handles a setup step names stay working).
+
+| Item | What is ready | Commit |
+|---|---|---|
+| 1. First-capture rule (request core-7) | `tests/browser/baselineLogic.ts`: `captureFrameExact` (a lead-in capture thrown away, two more that must be identical to the bit, the second returned), `exactPairVerdict`, `NotFrameExactError` with the number of differing pixels. `harness.ts`: `captureReference`; `compareToBaseline` / `expectBaseline` and `recordBaseline` use it (a recording that is not frame-exact writes nothing; the lead-in's differing pixels are logged and stored per load). The tolerance against the stored image is unchanged (three loads, three times their largest difference, the floor) | 73fc7b3 |
+| 2. Checkpoints framed | All 33 of `tests/browser/baselines.manifest.json` have a page, a scene, a camera, an exposure rule and frames; none is recorded. A checkpoint is its page plus `setup` steps on the page's test handles (`openCheckpoint`; `runBaselineSteps`): calls with JSON arguments, `repeat` for frames stepped with the loop stopped, waits. `manifestProblems` validates a manifest (a lab page frozen by its query, an app page by its setup, a stepped lab handed back paused with its loop running, recorded entries complete) | 73fc7b3 |
+| 3. Budget table (request terrain-render-10) | Three whole-frame rows asserted on the frame total under 11 ms; one printed line per package and row with its budget and its named lead waivers (the terrain's four ceilings, the ocean's four); `BUDGET_RECORD` writes `tests/browser/budget.baseline.json`, `BUDGET_COMPARE=1` asserts the sweep's 3 % | 77063e5 |
+| 4. Suites | `npm run typecheck` (both configurations, through the gate) clean; `tools/dev`: 6 files, 148 tests pass (`baseline-logic.test.ts` 12, `budget-table.test.ts` 12); the whole unit suite through the gate (16:31): 1,952 pass, 11 skipped, 1 fails, which is the known one of request site-bake-2 (`tests/unit/terrain-core/realData.test.ts`, the coverage-edge check pins the boundary tiles of two regions past its provider's 384 MiB cache; not this step's, not the lead's file); stub and secrets scans OK | - |
+
+**The checkpoints.** The 25 of ARCHITECTURE 31.3 in the integration lab on the FakeSim (frozen from the
+first frame by `deterministic=1&paused=1`): the eleven that had pages keep them; the fourteen others are
+framed by query (nadir views over the Nile delta by day and night, the shoreline east-south-east of LC-1,
+the four ocean stations at 8 N 140 W) or by a setup call (`watchVesselFrom` for the ascent under the cloud
+deck, `setSunInVesselFrame` for the terminator and the night side, `viewBodyAtPhase` for the Moon at 60
+and 90 degrees of phase, `sitAtWindowBelow` for the cockpit on the lunar surface). Eight `sweep-*`
+checkpoints are what the presentation sweep can break, all with the snapshot of the REAL simulation:
+
+| Checkpoint | Page | What consumes the snapshot there |
+|---|---|---|
+| `sweep-hud-leo` | lab, `sim=real&scenario=qa-leo&flighthud=1` | the flight HUD: resources, staging, read-outs, navball; the chase view |
+| `sweep-map-translunar` | lab, `qa-translunar&map=1&flighthud=1`, `mapCamera` | the map: patches across the SOI change, markers, bodies |
+| `sweep-cockpit-leo` | lab, `qa-leo`, `sitInCockpit` | the cockpit rig and the three displays |
+| `sweep-separation-debris` | lab, `qa-leo`: the next stage fired, 180 frames of 1/60 s stepped, frozen | a second vessel (the third stage), the staging read-out after the event |
+| `sweep-lunar-orbit` | lab, `qa-lunar-orbit&flighthud=1` | the render frame with its origin at the Moon |
+| `sweep-rails-warp` | lab, `qa-translunar`: 120 frames at 1,000x, back to 1x, frozen | the clock and warp read-outs, the state after rails |
+| `sweep-app-pad` | the app, `scenario=lunar-direct`, frozen by its setup | the app shell's own wiring: chase rig, HUD, the site |
+| `sweep-app-cockpit` | the app, `view=cockpit` | the app's cockpit rig and displays |
+
+**What only a browser can settle** (phase 2; nothing below has been seen):
+
+1. Whether each framing shows what its `what` says: the cloud deck over the pad at the lab's frozen cloud
+   clock, the FakeSim's axes for the pinned sun (terminator, night), the field of view at the Moon, the
+   shoreline's heading, the map camera's distance, whether the third stage is in frame three seconds after
+   the separation. A framing that misses is corrected in the manifest before its recording counts.
+2. Whether the lab runs the real simulation frozen (`sim=real&scenario=qa-*&paused=1`) and its commands
+   (`stage`, `setWarpLevel`) act through stepped frames as the setup assumes.
+3. Whether the pages with DOM over the canvas (the flight HUD, the map's labels, the app) are frame-exact:
+   a blinking element, a CSS transition or a clock read-out would fail the two-captures rule, which is
+   then a finding against that element, not a reason to relax the rule.
+4. The app's two checkpoints: the simulation runs from the reveal until the setup pauses it; on the pad
+   that should change nothing, and three loads will show whether it does.
+5. Every number of the budget table: the three whole-frame rows have never been measured, and whether the
+   ocean is over its lines at the pad and the splashdown in the table's method decides whether its waivers
+   are printed as needed or as not needed.
+6. The lead-in itself: how many pixels it differs by, per checkpoint (stored with each recording).
+
+**Phase 2, on the coordinator's word** (after the browser mission): record all checkpoints in ONE gate run
+with the BASELINE_RECORD note; Read every PNG and list any that shows a fault, with the package; commit the
+manifest; then the budget table in one run on a quiet machine with BUDGET_RECORD, committed as the pre-sweep
+baseline. After it, the lead step of sub-wave 3.2 (union joins, `setTarget(TargetRef)`, `'ui.scrimRects'`,
+`TilePackIndex` and `PackList` into the terrain contract).

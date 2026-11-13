@@ -56,3 +56,18 @@ Must not change: the probe's ramp between completed probes in a running game.
 capture and asks (softly) for three bit-identical captures; the page with `&without=terrain` shows the
 difference in most runs (the diagnosis tests were taken out of the spec again; they are in its history,
 commit 82e1bb8).
+
+## Lead note (2026-11-12): the harness discards the first capture until this is fixed
+
+The request stays open and stays the sky package's, after the presentation sweep. Until then the reference
+images do not depend on it: a reference capture, for a recording and for every comparison, is a LEAD-IN
+frame-exact capture that is thrown away, then two more that must be identical to the bit; the second is the
+capture (`captureReference` in `tests/browser/harness.ts`, the rule in `tests/browser/baselineLogic.ts`,
+unit-tested in `tools/dev/baseline-logic.test.ts`). The number of pixels in which each load's lead-in
+differed is logged and stored with the recording (`recorded.leadInDifferingPixels` in the manifest), so the
+size of this effect per checkpoint is on record. If the two captures after the lead-in still differ, the
+checkpoint fails as NOT FRAME-EXACT with the count: that would mean one more cycle of the probe is not
+enough, and comes back to this request.
+
+When the sky reports busy until its probe has converged, the lead-in can go; the requirement of two
+identical captures stays.

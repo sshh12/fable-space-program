@@ -155,9 +155,14 @@ VIDEO_SCHEDULER_INTERNAL_ERROR, in the GPU driver): at 15:35 with four WebGPU Ch
     adapter. Close loops on state with `waitForFunction`, never sleep. Then LOOK at every PNG you save (Read
     it) and iterate until it is convincing; a screenshot nobody looked at proves nothing.
 15. Photometric rendering: luminance in cd/m^2 times `frame.exposure`, written through `writeHdr()`.
-15a. Reference images (ARCHITECTURE 31.3): where your brief names them, compare with `expectBaseline` /
-     `compareToBaseline` of `tests/browser/harness.ts` and never re-record one yourself; re-recording needs
-     a note signed by the lead.
+15a. Reference images (ARCHITECTURE 31.3): where your brief names them, open a checkpoint with
+     `openCheckpoint(page, name)` (its page and its setup steps, at the manifest's viewport) and compare with
+     `expectBaseline` / `compareToBaseline` of `tests/browser/harness.ts`; never re-record one yourself:
+     re-recording needs a note signed by the lead. The comparison captures a lead-in frame and then two
+     that must be identical to the bit (request core-7): a `NotFrameExactError` means your page still
+     changes when every feature reports idle, which is a finding, not a tolerance to raise. They were
+     recorded before sub-wave 3.2 on the tree as it stood: a change that is MEANT to move pixels says which
+     checkpoints it moves and asks the lead to re-record them.
 15b. Frame pacing: perf numbers are taken inside `withGpuLock`, which also keeps the display awake (Chrome
      paces frames at about 57.5 Hz while the monitor sleeps). A spec that asserts a requestAnimationFrame
      line measures the harness clock (`measureHarnessClock`) and asserts on a nominal one

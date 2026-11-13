@@ -1,4 +1,4 @@
-Status: open (read by the maintainer, not started: see the note; nothing asserts the whole frame at the three views yet)
+Status: resolved in code (lead, 77063e5: three whole-frame rows in the budget table; first measured in the lead's recording run of the table before sub-wave 3.2)
 From: terrain-render (on the lead's decision of 2026-11-12)
 Owner path: tests/browser/integration/budget.perf.spec.ts (the summed GPU budget of ARCHITECTURE 17.1; the maintainer's)
 Blocking: no
@@ -61,3 +61,21 @@ method (ballast, the median over six windows of the window's p99) stays as it is
 
 Until then the lead's condition for the waivers is not asserted anywhere: the three views are over the
 terrain's own line by the terrain's spec, and nothing measures the whole frame there.
+
+## Done by the lead (2026-11-12, by the maintainer's note above; commit 77063e5)
+
+- `tests/browser/integration/budget.perf.spec.ts` has three more rows, `whole frame under 11 ms: stony
+  ground`, `among kiawe` and `thickets from 120 m`: the request's three cameras as integration-lab queries
+  (`budgetTable.ts`, `FRAME_VIEWS`; a unit test holds them equal to the request and to the terrain's own
+  perf views), every package loaded, 1440p internal, governor off, the table's own method (ballast, the
+  median over six windows of the window's p99). Asserted: the frame total (the sum of the packages' p99s)
+  under 11 ms, and that every render package is loaded; the packages' sums are reported, not asserted.
+- The waivers stay where they are (`leadWaiver` in the terrain's perf spec). The table lists them
+  (`NAMED_WAIVERS`; a unit test reads them out of the two specs' sources, so a changed ceiling or a removed
+  waiver fails the unit suite until the list follows) and prints them beside the terrain's line at these
+  rows.
+- **Not yet measured**: nothing has run in a browser. The first numbers come with the lead's recording run
+  of the table (`BUDGET_RECORD`), which also becomes the pre-sweep baseline in
+  `tests/browser/budget.baseline.json`.
+- When the material cache has landed and the waivers are gone from the terrain's spec, remove their entries
+  from `NAMED_WAIVERS` (the unit test will ask for it); the rows can stay as ordinary whole-frame rows.
