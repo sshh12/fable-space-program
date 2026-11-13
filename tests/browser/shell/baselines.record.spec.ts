@@ -22,14 +22,16 @@
  * lead then LOOKS at every PNG (a baseline of a broken picture is worthless), commits the manifest and
  * keeps a copy of data/baselines outside the working tree.
  *
- * SELF-CHECK (without BASELINE_RECORD; part of the functional project): every recorded checkpoint is
- * opened once more, from a fresh load, and must compare clean against its own reference. Skipped while
- * nothing is recorded or data/baselines is not on this machine.
+ * SELF-CHECK, which is also THE GATE of a refactor that must not move a pixel (without BASELINE_RECORD;
+ * part of the functional project): every recorded checkpoint (BASELINE_ONLY=a,b: the named ones) is opened
+ * once more, from a fresh load, and must compare clean against its own reference. Every one is compared,
+ * whatever the one before it did; the test fails at the end with the list of those that differ or are not
+ * frame-exact. Skipped while nothing is recorded or data/baselines is not on this machine.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describeComparison, expectBaseline, openCheckpoint, readBaselineManifest, recordBaseline, test } from '../harness';
+import { compareToBaseline, describeComparison, expect, openCheckpoint, readBaselineManifest, recordBaseline, test } from '../harness';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const manifest = readBaselineManifest();
@@ -67,12 +69,25 @@ test.describe('reference images: every recorded checkpoint compares clean agains
   test('the recorded set', async ({ page }) => {
     test.skip(recorded.length === 0, 'no checkpoint is recorded yet (the lead records the set before sub-wave 3.2)');
     test.skip(!present, `${manifest.dir} is not on this machine`);
-    test.setTimeout(recorded.length * 5 * 60_000);
-    for (const [name] of recorded) {
-      await openCheckpoint(page, name);
-      const result = await expectBaseline(page, name);
-      console.log(`[baseline] ${describeComparison(result)}`);
+    const chosen = recorded.filter(([name]) => only.length === 0 || only.includes(name));
+    test.skip(chosen.length === 0, `BASELINE_ONLY names no recorded checkpoint (${only.join(', ')})`);
+    test.setTimeout(chosen.length * 5 * 60_000);
+    // Every chosen checkpoint is compared, whatever the one before it did: the run ends with the whole list
+    // of the pictures that moved, not with the first of them.
+    const failed: string[] = [];
+    for (const [name] of chosen) {
+      try {
+        await openCheckpoint(page, name);
+        const result = await compareToBaseline(page, name);
+        console.log(`[baseline] ${result.pass ? 'same' : 'DIFFERS'}: ${describeComparison(result)}`);
+        if (!result.pass) failed.push(`${describeComparison(result)}. Re-recording needs a note signed by the lead.`);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.log(`[baseline] FAILED: ${name}: ${message}`);
+        failed.push(`${name}: ${message}`);
+      }
       await page.goto('about:blank');
     }
+    expect(failed, `${failed.length} of ${chosen.length} reference images do not compare clean`).toEqual([]);
   });
 });
