@@ -21,9 +21,12 @@
  * crosses a rotation is cut over to the next file in the middle of their overlap. A `title` segment is a plain card
  * (black, centred lines, silence).
  *
- * One pass, no intermediates (the disk is short): every piece is an input of its own (seeked with -ss), each segment
- * is made exactly `frames` long at 60 fps CFR, the chain joined with xfade / acrossfade / concat, and encoded to
- * H.264 High (x264, CRF 18 by default, preset slow, yuv420p, aq-mode 3 for the dark sky) + AAC 256 kbps, faststart.
+ * In chunks: consecutive segments (split only at hard cuts, about --chunk=7 at a time) are rendered from the raw files
+ * (every piece an input of its own, seeked with -ss; each segment exactly `frames` long at 60 fps CFR; joined with
+ * xfade / acrossfade / concat) to x264 CRF 12 intermediates with PCM sound; the chunks are then read one after
+ * another (concat demuxer) and encoded to H.264 High (x264, CRF 18 by default, preset slow, yuv420p, aq-mode 3 for the
+ * dark sky) + AAC 256 kbps, faststart. (One graph with every input ran out of memory: ffmpeg decodes ahead on each.)
+ * A chunk whose segments did not change is kept (--force renders all again); --pass1 stops before the final encode.
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -305,98 +308,141 @@ if (cmd === 'draft') {
   const out = path.resolve(String(arg('out')));
   const work = path.resolve(repoRoot, String(arg('work', 'out/footage/work')));
   fs.mkdirSync(work, { recursive: true });
-  const inputs = [];
-  const chains = [];
-  let nIn = 0;
-  for (const p of parts) {
-    const s = p.seg;
-    const vOut = `[sv${p.k}]`;
-    const aOut = `[sa${p.k}]`;
-    if (p.title) {
-      const vi = nIn++;
-      const ai = nIn++;
-      inputs.push('-f', 'lavfi', '-t', (p.dur + 0.5).toFixed(3), '-i', `color=c=black:s=${OUT_W}x${OUT_H}:r=60`);
-      inputs.push('-f', 'lavfi', '-t', (p.dur + 0.5).toFixed(3), '-i', 'anullsrc=r=48000:cl=stereo');
-      const lines = p.title;
-      const sizes = lines.map((_, i) => (i === 0 ? Math.round(OUT_H * 0.075) : Math.round(OUT_H * 0.03)));
-      const gap = Math.round(OUT_H * 0.03);
-      const heights = sizes.reduce((a, h) => a + h, 0) + gap * (lines.length - 1);
-      let y = Math.round((OUT_H - heights) / 2);
-      const dt = lines.map((line, i) => {
-        const f = `drawtext=fontfile='${TITLE_FONT}':text='${escText(line)}':fontsize=${sizes[i]}:fontcolor=${i === 0 ? 'white' : '0xC8CCD2'}:x=(w-text_w)/2:y=${y}`;
-        y += sizes[i] + gap;
-        return f;
+  fs.writeFileSync(path.join(work, path.basename(out).replace(/\.mp4$/, '.scenes.json')), JSON.stringify(parts.map((p) => ({ k: p.k, at: +p.at.toFixed(2), dur: +p.dur.toFixed(2), label: p.label, take: p.seg.take, from: p.seg.from, to: p.seg.to, speed: p.speed })), null, 1));
+
+  /** The filter graph of consecutive parts `list` (the first one's own join is ignored): inputs, graph, length. */
+  function graphOf(list) {
+    const inputs = [];
+    const chains = [];
+    let nIn = 0;
+    for (const p of list) {
+      const s = p.seg;
+      const vOut = `[sv${p.k}]`;
+      const aOut = `[sa${p.k}]`;
+      if (p.title) {
+        const vi = nIn++;
+        const ai = nIn++;
+        inputs.push('-f', 'lavfi', '-t', (p.dur + 0.5).toFixed(3), '-i', `color=c=black:s=${OUT_W}x${OUT_H}:r=60`);
+        inputs.push('-f', 'lavfi', '-t', (p.dur + 0.5).toFixed(3), '-i', 'anullsrc=r=48000:cl=stereo');
+        const lines = p.title;
+        const sizes = lines.map((_, i) => (i === 0 ? Math.round(OUT_H * 0.075) : Math.round(OUT_H * 0.03)));
+        const gap = Math.round(OUT_H * 0.03);
+        const heights = sizes.reduce((a, h) => a + h, 0) + gap * (lines.length - 1);
+        let y = Math.round((OUT_H - heights) / 2);
+        const dt = lines.map((line, i) => {
+          const f = `drawtext=fontfile='${TITLE_FONT}':text='${escText(line)}':fontsize=${sizes[i]}:fontcolor=${i === 0 ? 'white' : '0xC8CCD2'}:x=(w-text_w)/2:y=${y}`;
+          y += sizes[i] + gap;
+          return f;
+        });
+        chains.push(`[${vi}:v]${dt.join(',')},format=yuv420p,trim=end_frame=${p.frames},setpts=PTS-STARTPTS,settb=1/60${vOut}`);
+        chains.push(`[${ai}:a]aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=end=${p.dur.toFixed(4)},asetpts=PTS-STARTPTS${aOut}`);
+        continue;
+      }
+      const atempo = [];
+      let r = p.speed;
+      while (r > 2.0001) {
+        atempo.push('atempo=2');
+        r /= 2;
+      }
+      if (Math.abs(r - 1) > 1e-6) atempo.push(`atempo=${r.toFixed(6)}`);
+      const first = nIn;
+      p.pieces.forEach((pc, i) => {
+        const extra = i === p.pieces.length - 1 ? 0.5 : 0;
+        inputs.push('-threads', '4', '-ss', pc.a.toFixed(3), '-t', (pc.b - pc.a + extra).toFixed(3), '-i', pc.file);
+        nIn++;
       });
-      chains.push(`[${vi}:v]${dt.join(',')},format=yuv420p,trim=end_frame=${p.frames},setpts=PTS-STARTPTS${vOut}`);
-      chains.push(`[${ai}:a]aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=end=${p.dur.toFixed(4)},asetpts=PTS-STARTPTS${aOut}`);
-      continue;
+      let head;
+      if (p.pieces.length === 1) head = `[${first}:v]null[cv${p.k}];[${first}:a]anull[ca${p.k}]`;
+      else {
+        // Exact piece lengths, then join: the overlap of the two files makes this a seamless cut.
+        const trims = p.pieces.map((pc, i) =>
+          i === p.pieces.length - 1
+            ? `[${first + i}:v]setpts=PTS-STARTPTS[pv${p.k}_${i}];[${first + i}:a]asetpts=PTS-STARTPTS[pa${p.k}_${i}]`
+            : `[${first + i}:v]trim=duration=${(pc.b - pc.a).toFixed(4)},setpts=PTS-STARTPTS[pv${p.k}_${i}];[${first + i}:a]atrim=duration=${(pc.b - pc.a).toFixed(4)},asetpts=PTS-STARTPTS[pa${p.k}_${i}]`,
+        );
+        head = `${trims.join(';')};${p.pieces.map((_, i) => `[pv${p.k}_${i}][pa${p.k}_${i}]`).join('')}concat=n=${p.pieces.length}:v=1:a=1[cv${p.k}][ca${p.k}]`;
+      }
+      const src = p.pieces[0].src;
+      const scale = src.width !== OUT_W || src.height !== OUT_H ? [`scale=${OUT_W}:${OUT_H}:flags=lanczos`] : [];
+      const vf = [`setpts=(PTS-STARTPTS)/${p.speed}`, 'fps=60', `trim=end_frame=${p.frames}`, 'setpts=PTS-STARTPTS', ...scale, ...(s.vf ? [s.vf] : []), 'format=yuv420p', 'settb=1/60'].join(',');
+      const af = ['asetpts=PTS-STARTPTS', 'aformat=sample_fmts=fltp:channel_layouts=stereo', 'aresample=48000', ...atempo, ...(s.gain ? [`volume=${s.gain}`] : []), `apad=whole_dur=${p.dur.toFixed(4)}`, `atrim=end=${p.dur.toFixed(4)}`].join(',');
+      chains.push(`${head};[cv${p.k}]${vf}${vOut};[ca${p.k}]${af}${aOut}`);
     }
-    const atempo = [];
-    let r = p.speed;
-    while (r > 2.0001) {
-      atempo.push('atempo=2');
-      r /= 2;
+    // The chain. Output length after joining k: L_k = L_{k-1} + d_k - D (D = 0 for a cut).
+    const fv = [];
+    const fa = [];
+    let vPrev = `[sv${list[0].k}]`;
+    let aPrev = `[sa${list[0].k}]`;
+    let L = list[0].dur;
+    for (let j = 1; j < list.length; j++) {
+      const p = list[j];
+      const vOut = `[v${p.k}]`;
+      const aOut = `[a${p.k}]`;
+      if (p.join === 'cut') {
+        // (concat hands out a microsecond timebase; xfade wants both inputs on the same one)
+        fv.push(`${vPrev}[sv${p.k}]concat=n=2:v=1:a=0,settb=1/60${vOut}`);
+        fa.push(`${aPrev}[sa${p.k}]concat=n=2:v=0:a=1${aOut}`);
+        L += p.dur;
+      } else {
+        const Dj = joinD(p.join);
+        fv.push(`${vPrev}[sv${p.k}]xfade=transition=${p.join}:duration=${Dj}:offset=${(L - Dj).toFixed(4)}${vOut}`);
+        fa.push(`${aPrev}[sa${p.k}]acrossfade=d=${Dj}:c1=tri:c2=tri${aOut}`);
+        L += p.dur - Dj;
+      }
+      vPrev = vOut;
+      aPrev = aOut;
     }
-    if (Math.abs(r - 1) > 1e-6) atempo.push(`atempo=${r.toFixed(6)}`);
-    const first = nIn;
-    p.pieces.forEach((pc, i) => {
-      const extra = i === p.pieces.length - 1 ? 0.5 : 0;
-      inputs.push('-threads', '3', '-ss', pc.a.toFixed(3), '-t', (pc.b - pc.a + extra).toFixed(3), '-i', pc.file);
-      nIn++;
-    });
-    let head;
-    if (p.pieces.length === 1) head = `[${first}:v]null[cv${p.k}];[${first}:a]anull[ca${p.k}]`;
-    else {
-      // Exact piece lengths, then join: the overlap of the two files makes this a seamless cut.
-      const trims = p.pieces.map((pc, i) =>
-        i === p.pieces.length - 1
-          ? `[${first + i}:v]setpts=PTS-STARTPTS[pv${p.k}_${i}];[${first + i}:a]asetpts=PTS-STARTPTS[pa${p.k}_${i}]`
-          : `[${first + i}:v]trim=duration=${(pc.b - pc.a).toFixed(4)},setpts=PTS-STARTPTS[pv${p.k}_${i}];[${first + i}:a]atrim=duration=${(pc.b - pc.a).toFixed(4)},asetpts=PTS-STARTPTS[pa${p.k}_${i}]`,
-      );
-      head = `${trims.join(';')};${p.pieces.map((_, i) => `[pv${p.k}_${i}][pa${p.k}_${i}]`).join('')}concat=n=${p.pieces.length}:v=1:a=1[cv${p.k}][ca${p.k}]`;
-    }
-    const src = p.pieces[0].src;
-    const scale = src.width !== OUT_W || src.height !== OUT_H ? [`scale=${OUT_W}:${OUT_H}:flags=lanczos`] : [];
-    const vf = [`setpts=(PTS-STARTPTS)/${p.speed}`, 'fps=60', `trim=end_frame=${p.frames}`, 'setpts=PTS-STARTPTS', ...scale, ...(s.vf ? [s.vf] : []), 'format=yuv420p'].join(',');
-    const af = ['asetpts=PTS-STARTPTS', 'aformat=sample_fmts=fltp:channel_layouts=stereo', 'aresample=48000', ...atempo, ...(s.gain ? [`volume=${s.gain}`] : []), `apad=whole_dur=${p.dur.toFixed(4)}`, `atrim=end=${p.dur.toFixed(4)}`].join(',');
-    chains.push(`${head};[cv${p.k}]${vf}${vOut};[ca${p.k}]${af}${aOut}`);
-    console.log(`seg ${p.k}: ${p.label} ${s.take ?? takeIds[0]} ${s.from.toFixed(2)}-${s.to.toFixed(2)} x${p.speed} -> ${p.dur.toFixed(2)} s at ${fmt(p.at)} (${p.pieces.length} file${p.pieces.length > 1 ? 's' : ''})`);
+    fv.push(`${vPrev}format=yuv420p[vout]`);
+    fa.push(`${aPrev}anull[aout]`);
+    return { inputs, graph: [...chains, ...fv, ...fa].join(';\n'), length: L, nIn };
   }
 
-  // The chain. Output length after joining k: L_k = L_{k-1} + d_k - D (D = 0 for a cut).
-  const fv = [];
-  const fa = [];
-  let vPrev = '[sv0]';
-  let aPrev = '[sa0]';
-  let L = parts[0].dur;
-  for (let k = 1; k < parts.length; k++) {
-    const p = parts[k];
-    const vOut = `[v${k}]`;
-    const aOut = `[a${k}]`;
-    if (p.join === 'cut') {
-      fv.push(`${vPrev}[sv${k}]concat=n=2:v=1:a=0${vOut}`);
-      fa.push(`${aPrev}[sa${k}]concat=n=2:v=0:a=1${aOut}`);
-      L += p.dur;
-    } else {
-      const Dj = joinD(p.join);
-      fv.push(`${vPrev}[sv${k}]xfade=transition=${p.join}:duration=${Dj}:offset=${(L - Dj).toFixed(4)}${vOut}`);
-      fa.push(`${aPrev}[sa${k}]acrossfade=d=${Dj}:c1=tri:c2=tri${aOut}`);
-      L += p.dur - Dj;
+  // Chunks of consecutive segments, split only where the join is a hard cut (so the chunks simply follow one
+  // another), each at most CHUNK segments when a cut allows it: a graph of every input at once decodes ahead on
+  // all of them and ran out of memory (42 GB for 67 inputs). Intermediates: x264 CRF 12, PCM, in Matroska.
+  const CHUNK = Number(arg('chunk', 7));
+  const chunks = [];
+  let cur = [];
+  for (const p of parts) {
+    if (cur.length >= CHUNK && p.join === 'cut') {
+      chunks.push(cur);
+      cur = [];
     }
-    vPrev = vOut;
-    aPrev = aOut;
+    cur.push(p);
   }
+  if (cur.length) chunks.push(cur);
+  const files = [];
+  let total2 = 0;
+  chunks.forEach((list, c) => {
+    const g = graphOf(list);
+    total2 += g.length;
+    const file = path.join(work, `chunk-${String(c).padStart(2, '0')}.mkv`);
+    files.push(file);
+    const key = JSON.stringify(list.map((p) => [p.seg, p.join]));
+    const keyFile = `${file}.key`;
+    if (!arg('force', false) && fs.existsSync(file) && fs.existsSync(keyFile) && fs.readFileSync(keyFile, 'utf8') === key) {
+      console.log(`chunk ${c}: segments ${list[0].k}-${list[list.length - 1].k} (kept)`);
+      return;
+    }
+    const graphFile = path.join(work, `graph-${String(c).padStart(2, '0')}.txt`);
+    fs.writeFileSync(graphFile, g.graph);
+    console.log(`chunk ${c}: segments ${list[0].k}-${list[list.length - 1].k}, ${g.nIn} inputs, ${g.length.toFixed(2)} s`);
+    run(FFMPEG, ['-v', 'error', '-stats', '-y', ...g.inputs, '-/filter_complex', graphFile, '-map', '[vout]', '-map', '[aout]', '-c:v', 'libx264', '-preset', 'fast', '-crf', '12', '-pix_fmt', 'yuv420p', '-r', '60', '-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2', file]);
+    fs.writeFileSync(keyFile, key);
+  });
+  if (arg('pass1', false)) process.exit(0);
+
+  // The final encode: the chunks one after another (concat demuxer, read in turn), fade in and out, H.264 + AAC.
+  const listFile = path.join(work, 'chunks.txt');
+  fs.writeFileSync(listFile, files.map((f) => `file '${f.replace(/\\/g, '/')}'`).join('\n') + '\n');
+  const L = total2;
   const fadeOut = Math.max(0, L - 2.5);
-  fv.push(`${vPrev}fade=t=in:st=0:d=1.0,fade=t=out:st=${fadeOut.toFixed(3)}:d=2.5,format=yuv420p[vout]`);
-  fa.push(`${aPrev}afade=t=in:st=0:d=1.0,afade=t=out:st=${fadeOut.toFixed(3)}:d=2.5[aout]`);
-  const graphFile = path.join(work, 'graph.txt');
-  fs.writeFileSync(graphFile, [...chains, ...fv, ...fa].join(';\n'));
-  console.log(`render: ${parts.length} segments from ${nIn} inputs, ${L.toFixed(1)} s`);
-  fs.writeFileSync(out.replace(/\.mp4$/, '.scenes.json'), JSON.stringify(parts.map((p) => ({ k: p.k, at: +p.at.toFixed(2), dur: +p.dur.toFixed(2), label: p.label, take: p.seg.take, from: p.seg.from, to: p.seg.to, speed: p.speed })), null, 1));
+  console.log(`final: ${chunks.length} chunks, ${L.toFixed(1)} s`);
   const crf = String(arg('crf', 18));
   run(FFMPEG, [
-    '-v', 'error', '-stats', '-y', ...inputs,
-    '-/filter_complex', graphFile, '-map', '[vout]', '-map', '[aout]',
+    '-v', 'error', '-stats', '-y', '-f', 'concat', '-safe', '0', '-i', listFile,
+    '-vf', `fade=t=in:st=0:d=1.0,fade=t=out:st=${fadeOut.toFixed(3)}:d=2.5,format=yuv420p`,
+    '-af', `afade=t=in:st=0:d=1.0,afade=t=out:st=${fadeOut.toFixed(3)}:d=2.5`,
     '-c:v', 'libx264', '-preset', String(arg('preset', 'slow')), '-crf', crf, '-x264-params', 'aq-mode=3',
     '-profile:v', 'high', '-level:v', '5.1', '-pix_fmt', 'yuv420p', '-r', '60', '-g', '120',
     '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
