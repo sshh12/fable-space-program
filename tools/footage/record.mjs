@@ -81,6 +81,20 @@ const freeGb = () => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ------------------------------------------------------------------------------------------ tree
+// The whole flight is filmed only from a tree nobody is editing (the page loads the working tree): with modified
+// files under src or data/defs it does not start (exit 3; --allow-dirty to override, never for the real flight).
+if (PLAN === 'full' && TEST_SECONDS === 0 && !arg('allow-dirty', false)) {
+  const { spawnSync } = await import('node:child_process');
+  const st = spawnSync('git', ['status', '--porcelain', '--', 'src', 'data/defs'], { cwd: repoRoot, encoding: 'utf8' });
+  if (st.status !== 0 || st.stdout.trim() !== '') {
+    console.error(`the tree is being edited, not starting the flight:\n${st.stdout}${st.stderr ?? ''}`);
+    process.exit(3);
+  }
+  const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).stdout.trim();
+  say(`tree clean under src and data/defs at ${head}`);
+}
+
 // ------------------------------------------------------------------------------------------ disk
 const free0 = freeGb();
 say(`disk: ${free0.toFixed(1)} GB free (floor ${MIN_FREE_GB} GB, raw cap ${CAP_GB} GB)`);
