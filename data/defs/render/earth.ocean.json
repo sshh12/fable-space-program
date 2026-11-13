@@ -44,8 +44,8 @@
     "vesselDampingHullRadii": 3,
     "wakeExtentM": 96,
     "wakeFoamPerSplash": 0,
-    "splashFoamTimeS": 26,
-    "splashFoamSpread": 3.2,
+    "splashFoamTimeS": 15,
+    "splashFoamSpread": 2.0,
     "rippleWavelengthM": 5,
     "rippleAmplitudeM": 0.12,
     "rippleLifetimeS": 15,
@@ -57,6 +57,8 @@
     "gustVariability": 0.2,
     "filamentStrength": 0.8,
     "glintFacetSizeM": 0.05,
+    "glintLargeFacetSizeM": 0.6,
+    "glintLargeShare": 0.4,
     "glintReactive": 0.8,
     "taaReactive": 0.45
   }

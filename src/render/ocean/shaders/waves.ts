@@ -280,6 +280,8 @@ struct OceanSurfacePoint {
   fft: f32,          // FFT part (render-only)
   ripple: f32,       // splash ripple part (render-only)
   finalPlane: vec2f, // final horizontal position, plane offset (m)
+  swellGrad: vec3f,  // tangential gradient of the swell part there (body-fixed, m/m), at the filter width
+  swellVar: f32,     // slope variance the swell carries at that filter width
 }
 
 /// The displaced surface for Lagrangian plane offset p0: horizontal Gerstner motion of the swell plus FFT chop
@@ -303,6 +305,8 @@ fn oceanSurfaceFrom(p0: vec2f, delta0: vec3f, up0: vec3f, filterWidth: f32, deta
     o.fft = 0.0;
     o.ripple = 0.0;
     o.finalPlane = p0;
+    o.swellGrad = vec3f(0.0);
+    o.swellVar = 0.0;
     return o;
   }
   let sw0 = oceanSwellEval(delta0, up0, filterWidth, prev);
@@ -314,6 +318,8 @@ fn oceanSurfaceFrom(p0: vec2f, delta0: vec3f, up0: vec3f, filterWidth: f32, deta
   let sw = oceanSwellEval(o.delta, o.up, filterWidth, prev);
   let rp = oceanRipples(p, prev);
   o.swell = sw.height * detail;
+  o.swellGrad = sw.grad * detail;
+  o.swellVar = sw.variance * detail * detail;
   o.fft = f.disp.y;
   o.ripple = rp.x * detail;
   o.height = o.swell + o.fft + o.ripple;

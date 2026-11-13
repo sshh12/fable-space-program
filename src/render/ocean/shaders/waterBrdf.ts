@@ -27,7 +27,8 @@
  *  - Sky reflection: mean Fresnel of the visible facets (Schlick at the cosine the roughness leaves at grazing
  *    angles) x the sky along the mirror direction of the mean visible facet (lifted from the horizon by the
  *    roughness), from the environment probe (kept above the horizon) or the sky-view table near the camera, the
- *    local sky irradiance / pi far away.
+ *    local sky irradiance / pi far away; under cloud (chunk "cloud_shadow", the terms the scene is lit with) the
+ *    beam share of that sky plus the cloud base's own luminance: the water mirrors the sky that lights it.
  *  - Body colour: the shallow-water remote-sensing reflectance of Lee et al. (1998/1999) with per-channel
  *    absorption a (BodyDef.render.ocean.absorption) and backscatter bb (params), single scattering of the
  *    water column (rrs_deep = (0.084 + 0.17 u) u, u = bb / (a + bb)) attenuated along the refracted sun and
@@ -324,9 +325,47 @@ const FIELD_FROM_PASS = /* wgsl */ `
 var<private> waterFieldValue: f32 = 1.0;
 var<private> waterFieldBaked: f32 = 1.0;
 fn waterFieldOf(ch: WaterChart, c: vec3f, dlt: vec3f, radius: f32, wind: vec2f, q: vec4f, invMean: f32, fpS: vec2f, vh: vec2f) -> f32 {
-  if (waterFieldBaked >= 1.0) { return waterFieldValue; }
+  if (WATER_PROBE_LEAN || waterFieldBaked >= 1.0) { return waterFieldValue; }
   return mix(waterField(ch, c, dlt, radius, wind, q, invMean, fpS, vh), waterFieldValue, waterFieldBaked);
 }`;
+
+/**
+ * What the two variants of the chunk know about the pixel and the clouds over it. The deferred pass (and whoever
+ * includes "brdf_water") works both out from the surface point; the forward near-field pass ("ocean_water_forward")
+ * has both at hand and sets them, and its variant holds none of the lookups (a lookup behind a switch that is never
+ * taken was still paid for: 0.03 ms of the near pass in the first run of round 3).
+ */
+const PIXEL_AND_CLOUD_PER_PIXEL = /* wgsl */ `
+/// The eye ray through the centre of the pixel that shows the surface point (unit, camera-relative).
+fn waterPixelRay(s: Surface) -> vec3f {
+  let pu = projectToUv(s.pos);
+  let pixUv = (floor((pu.xy + vec2f(0.5, -0.5) * frame.jitter.zw) * frame.renderSize.xy) + 0.5) * frame.renderSize.zw;
+  return normalize(viewRay(pixUv));
+}
+/// The clouds over a water point as the lighting of the scene has them (chunk "cloud_shadow", the terms the
+/// deferred pass lights every surface with): see waterCloudTerms.
+fn waterCloud(s: Surface) -> vec4f {
+  if (s.bodyIndex < 0) { return vec4f(0.0, 0.0, 0.0, 1.0); }
+  let b = frame.bodies[s.bodyIndex];
+  let sunDir = b.sunDir.xyz;
+  let r = b.center.w + s.altitude;
+  let cl = cloudLight(s.pos, s.bodyIndex, s.up, r, sunDir);
+  let muS = dot(s.up, sunDir);
+  if (cl.y - cl.x <= 0.0 || muS <= 0.0) { return vec4f(0.0, 0.0, 0.0, cl.x); }
+  let sunE = frame.sunIlluminance.rgb * atmosphereSunTransmittance(transmittanceLut, u32(s.bodyIndex), r, muS) * sunVisibility(s.pos, sunDir);
+  var skyE = vec3f(0.0);
+  let layer = i32(b.fixedX.w);
+  if (layer >= 0 && r < b.prevCenter.w) {
+    skyE = textureSampleLevel(skyIrradianceLut, linearClamp, skyIrradianceUvFromRMuS(max(r, b.center.w), muS, b.center.w, b.prevCenter.w), layer, 0.0).rgb;
+  }
+  return waterCloudTerms(cl, sunE, muS, skyE);
+}`;
+const PIXEL_AND_CLOUD_FROM_PASS = /* wgsl */ `
+// Set by the pass: the uv of the pixel's centre, and waterCloudTerms() of the cloud light it has looked up.
+var<private> waterPixelUv: vec2f = vec2f(0.5);
+var<private> waterCloudIn: vec4f = vec4f(0.0, 0.0, 0.0, 1.0);
+fn waterPixelRay(s: Surface) -> vec3f { return normalize(viewRay(waterPixelUv)); }
+fn waterCloud(s: Surface) -> vec4f { return waterCloudIn; }`;
 
 /** Rows of WATER_BODY per frame body. */
 const BODY_ROWS = 4;
@@ -336,7 +375,7 @@ const BODY_ROWS = 4;
  * null = no ocean). `fieldFromPass`: the variant of the forward near-field pass ("ocean_water_forward"), which
  * reads the roughness field from the private `waterFieldValue` its fragment shader sets.
  */
-export function buildWaterBrdfWgsl(bodies: readonly (WaterBody | null)[], options: { directSpecular?: boolean; fieldFromPass?: boolean } = {}): string {
+export function buildWaterBrdfWgsl(bodies: readonly (WaterBody | null)[], options: { directSpecular?: boolean; fieldFromPass?: boolean; cloudMirror?: boolean; probeLean?: boolean } = {}): string {
   const rows: string[] = [];
   const farA: string[] = [];
   const farB: string[] = [];
@@ -348,7 +387,7 @@ export function buildWaterBrdfWgsl(bodies: readonly (WaterBody | null)[], option
         `vec4f(${f(t.backscatter[0])}, ${f(t.backscatter[1])}, ${f(t.backscatter[2])}, ${f(t.imageryTint)})`,
         `vec4f(${f(t.foamAlbedo)}, ${f(Math.sin(t.windDir))}, ${f(Math.cos(t.windDir))}, ${f(1 / b.fieldMean)})`,
         `vec4f(${f(t.windVariability)}, ${f(t.slickStrength)}, ${f(t.gustVariability)}, ${f(t.filamentStrength)})`,
-        `vec4f(${f(t.glintFacetSize * t.glintFacetSize)}, ${f(Math.max(t.unresolvedFloor, 1e-6))}, 0.0, 0.0)`,
+        `vec4f(${f(t.glintFacetSize * t.glintFacetSize)}, ${f(Math.max(t.unresolvedFloor, 1e-6))}, ${f((t.glintFacetSize / t.glintLargeFacetSize) ** 2)}, ${f(t.glintLargeShare)})`,
       );
       if (b.farWaves.length !== FAR_WAVE_COUNT) throw new Error(`ocean: the far-wave bank of ${t.bodyId} has ${b.farWaves.length} components, expected ${FAR_WAVE_COUNT}`);
       for (const w of b.farWaves) {
@@ -366,15 +405,24 @@ export function buildWaterBrdfWgsl(bodies: readonly (WaterBody | null)[], option
   }
   return /* wgsl */ `
 // OVERRIDABLE chunk "brdf_water", provided by the ocean package (src/render/ocean/shaders/waterBrdf.ts).
-// Needs in scope: chunks frame, gbuffer, brdf; skyViewLut, skyIrradianceLut (set 'atmosphereLuts'),
-// envProbeCube, envSh9 (set 'env'). See the module comment for the meaning of the Surface fields.
+// Needs in scope: chunks frame, gbuffer, brdf, cloud_shadow (cloudLight) and the sun's terms of the lighting
+// (sunVisibility, atmosphereSunTransmittance); skyViewLut, skyIrradianceLut, transmittanceLut (set
+// 'atmosphereLuts'), envProbeCube, envSh9 (set 'env'). See the module comment for the meaning of the Surface fields.
 const WATER_IOR = 1.34;
 const WATER_GGX_KAPPA = ${GGX_KAPPA};
 // 1 = normal; 0 isolates the direct specular for tests (debug hook of the ocean feature).
 const WATER_DIRECT_SPECULAR = ${options.directSpecular === false ? '0.0' : '1.0'};
+// 1 = the sky the water mirrors is the sky the clouds leave (waterSkyRadiance); 0 = the published sky tables as
+// they are, whatever stands over the water (the state before visual round 3; debug hook, for the A/B of a spec).
+const WATER_CLOUD_MIRROR = ${options.cloudMirror === false ? '0.0' : '1.0'};
+// true = a perf probe (OceanDebug.setForwardProbe): the paths a pixel of the near field with its waves at full
+// strength never takes (the evaluated roughness field, the far-wave bank) are compiled out, to measure what they
+// cost such a pixel by being there. The picture towards fadeStart is wrong with it.
+const WATER_PROBE_LEAN = ${options.probeLean ? 'true' : 'false'};
 // Per frame body: (backscatter rgb per m, imagery tint), (foam albedo, sin / cos of the compass direction the wind
 // blows toward, 1 / mean of the raw roughness field), (wind variability, slick strength, gust variability,
-// filament strength), (area of a glitter facet in m^2, slope variance left to the lobe below every wave layer, 0, 0).
+// filament strength), (area of a glitter facet in m^2, slope variance left to the lobe below every wave layer,
+// large glints per facet of that area = (facet / large glint)^2, share of the lobe's energy in the large glints).
 const WATER_BODY = array<vec4f, ${MAX_BODIES * BODY_ROWS}>(${rows.join(', ')});
 // The far-wave bank per frame body: (k along the wind, k across it (rad per chart m), slope amplitude, omega) and
 // (unit direction along / across, |k|, phase at t = 0).
@@ -392,6 +440,23 @@ var<private> waterFarWeight: f32 = 1.0;
 // Factor on the weight of the drawn glitter (1; a forward pass's profiling switch sets 0).
 var<private> waterGlintScale: f32 = 1.0;
 
+/// The cloud terms of the sky a water surface mirrors, from the cloud light of the scene's lighting (cl = cloudLight:
+/// the share of the sun's illuminance in the direct beam, and the share that arrives at all), the sun's illuminance
+/// at the point after the air and the eclipses and before the clouds, the sun's zenith cosine there and the clear
+/// sky's irradiance of a horizontal face: rgb = the light of the cloud base on a horizontal face (lux), a = the beam
+/// share. As MUCH light as the deferred pass lights the scene with from the cloud base (sunE muS (cl.y - cl.x)), in
+/// the COLOUR of what falls on the cloud, the beam and the sky together: a cloud scatters all of it many times,
+/// and its base is near white, not the colour of a beam that has come down through the air to the sea (with the
+/// beam's colour alone the sea under a deck was a warm brown under a grey sky). Exactly (0, 0, 0, 1) under a clear sky.
+fn waterCloudTerms(cl: vec2f, sunE: vec3f, muS: f32, skyE: vec3f) -> vec4f {
+  let share = cl.y - cl.x;
+  if (share <= 0.0 || muS <= 0.0) { return vec4f(0.0, 0.0, 0.0, cl.x); }
+  let beam = sunE * muS;
+  let whole = beam + skyE;
+  return vec4f(whole * (luminance(beam) * share / max(luminance(whole), 1e-9)), cl.x);
+}
+${options.fieldFromPass ? PIXEL_AND_CLOUD_FROM_PASS : PIXEL_AND_CLOUD_PER_PIXEL}
+
 fn waterBodyParam(s: Surface, k: u32) -> vec4f { return WATER_BODY[u32(max(s.bodyIndex, 0)) * ${BODY_ROWS}u + k]; }
 fn waterWind(s: Surface) -> f32 { return frame.bodies[max(s.bodyIndex, 0)].ocean.a; }
 fn waterCoxMunk(s: Surface) -> f32 { return 0.003 + 0.00512 * waterWind(s); }
@@ -406,6 +471,7 @@ struct WaterPoint {
   resolved: f32,    // fraction of the Cox-Munk slope variance carried by n
   field: f32,       // roughness field (mean 1)
   glintU: vec2f,    // uniform random numbers of the pixel's glitter cells at the two levels
+  glintV: vec2f,    // a second, independent pair (the large glints' draw)
   glintN: vec2f,    // facets per cell at the two levels
   glintT: f32,      // blend from the finer level to the coarser
   glintW: f32,      // weight of the drawn factor (0 = the smooth lobe: the pixel resolves the facets)
@@ -413,13 +479,15 @@ struct WaterPoint {
 }
 var<private> waterPt: WaterPoint;
 
-/// The uniform random number of glitter cell 'idx' of a level at the time 'tk' (in re-draws): each cell is
-/// re-drawn at its own instants.
-fn waterGlintDraw(idx: vec2i, level: i32, tk: f32) -> f32 {
+/// Two independent uniform random numbers of glitter cell 'idx' of a level at the time 'tk' (in re-draws): each
+/// cell is re-drawn at its own instants. x draws the fine facets, y the large glints.
+fn waterGlintDraw(idx: vec2i, level: i32, tk: f32) -> vec2f {
   let h = waterHash(idx, level + 301);
   let ti = i32(floor(tk + f32(h & 1023u) / 1024.0));
   let h2 = waterHash(vec2i(i32(h >> 10u), ti), 977);
-  return (f32(h2 >> 8u) + 0.5) / 16777216.0;
+  var h3 = h2 * 0x9e3779b1u;
+  h3 = h3 ^ (h3 >> 15u);
+  return (vec2f(f32(h2 >> 8u), f32(h3 >> 8u)) + 0.5) / 16777216.0;
 }
 
 fn waterPoint(s: Surface) -> WaterPoint {
@@ -431,6 +499,7 @@ fn waterPoint(s: Surface) -> WaterPoint {
   pt.resolved = clamp(s.roughness, 0.0, 1.0);
   pt.field = 1.0;
   pt.glintU = vec2f(0.5);
+  pt.glintV = vec2f(0.5);
   pt.glintN = vec2f(1.0);
   pt.glintT = 0.0;
   pt.glintW = 0.0;
@@ -447,14 +516,19 @@ fn waterPoint(s: Surface) -> WaterPoint {
     // tessellation sags centimetres below it, the forward surface is lifted centimetres above; at a grazing angle
     // those are metres along the ray). Water away from sea level (a lake, a wave seen against the horizon) keeps
     // its own point, and so does the near field while it draws waves (waterAnchor: weight = wave detail).
+    // The eye ray is that of the PIXEL's centre, worked out from the pixel itself, not from the surface point: the
+    // two passes hand in points a little apart on that ray and beside it (an interpolated position, a position
+    // from the depth buffer), and a glitter cell whose border runs between the two would be another cell's draw in
+    // one of them. The pixel is the same in both, and so, to the last bit, is everything looked up from it.
     var cp = s.pos;
     let r0 = b.cameraUp.w;
     let hs = b.sunDir.w - (radius - b.center.w);
-    let mu = -dot(b.cameraUp.xyz, s.v);
+    let ray = waterPixelRay(s);
+    let mu = dot(b.cameraUp.xyz, ray);
     let disc = sq(r0 * mu) - hs * (r0 + radius);
     if (mu < 0.0 && hs > 0.0 && disc > 0.0) {
       let t = hs * (r0 + radius) / (-r0 * mu + sqrt(disc));
-      if (abs(t - s.viewDist) < 0.003 * s.viewDist + 3.0) { cp = -s.v * t; }
+      if (abs(t - s.viewDist) < 0.003 * s.viewDist + 3.0) { cp = ray * t; }
     }
     cp = mix(cp, waterAnchor.xyz, waterAnchor.w);
     // The chart point: camera position (coarse) + that point's offset from it (precise), body-fixed.
@@ -482,7 +556,7 @@ fn waterPoint(s: Surface) -> WaterPoint {
     // the sea is combed into lines that fan out from the camera; a sea of real heights shows the opposite.)
     let fpe = sqrt(0.5 * (fpMinor * fpMinor + fpMajor * fpMajor));
     var tilt = vec3f(0.0);
-    if (waterFarWeight > 0.0 && fpe < 110.0) {
+    if (!WATER_PROBE_LEAN && waterFarWeight > 0.0 && fpe < 110.0) {
       var g = vec2f(0.0);
       var variance = 0.0;
       let time = frame.time.x;
@@ -544,23 +618,12 @@ fn waterPoint(s: Surface) -> WaterPoint {
         let x = (cb - floor(cb)) + ch.d / cs;
         let xf = floor(x);
         let idx = vec2i(floor(cb)) + vec2i(xf);
-        var u = waterGlintDraw(idx, i32(level), tk);
-        // Within a tenth of a cell of its border the draw runs into the neighbours' (half and half on the border
-        // itself): it is CONTINUOUS over the sea. Two shadings of one point place it centimetres apart (the forward
-        // surface and the far sheet do not lie on the same sphere to the last digit); with cells of constant draw
-        // a pixel next to a border then took another cell's sparkle in one of the two (the hand-over's 3-7 % in
-        // single pixels).
-        let fc = x - xf;
-        let edge = smoothstep(vec2f(0.8), vec2f(1.0), abs(2.0 * fc - 1.0)) * 0.5;
-        if (edge.x > 0.0 || edge.y > 0.0) {
-          let sx = select(-1, 1, fc.x > 0.5);
-          let sy = select(-1, 1, fc.y > 0.5);
-          let u10 = waterGlintDraw(idx + vec2i(sx, 0), i32(level), tk);
-          let u01 = waterGlintDraw(idx + vec2i(0, sy), i32(level), tk);
-          let u11 = waterGlintDraw(idx + vec2i(sx, sy), i32(level), tk);
-          u = mix(mix(u, u10, edge.x), mix(u01, u11, edge.x), edge.y);
-        }
-        pt.glintU[k] = u;
+        let u = waterGlintDraw(idx, i32(level), tk);
+        // (One draw per cell, constant over it. The two passes of the hand-over look the cell up from the same
+        // pixel's ray, above: the same cell in both. Round 2 let the draw run into the neighbours' near a cell's
+        // border, because the passes then placed the point centimetres apart; that cost 0.04 ms of every near pixel.)
+        pt.glintU[k] = u.x;
+        pt.glintV[k] = u.y;
         // The facets the pixel integrates: those of its whole footprint on the sea (at a grazing angle many cells
         // long), or of the cell where the pixel is smaller than one. The cell's draw stands for the pixel.
         // (At least four: slopes a pixel does not resolve vary within it.)
@@ -599,11 +662,29 @@ fn waterGlintCell(u: f32, mean: f32) -> f32 {
   // whose share grows with their number (a dense path is bright between its sparkles, not holed).
   return mix(draw, 1.0, k / (k + 6.0));
 }
-/// The glitter factor of the lobe for a source that one facet mirrors with probability 'pFacet'.
-fn waterGlint(pt: WaterPoint, pFacet: f32) -> f32 {
+/// The same for the LARGE glints: the sun's images on the smooth faces of the short gravity waves, strips
+/// decimetres wide and a metre or more long. The glints of a sea are far from equal, and the variance of what a
+/// footprint holds is that of its few large ones (for sizes spread evenly over the logarithm from a centimetre to a
+/// metre, the facet that gives the same variance is a third of a metre, not the size of the many). They carry a
+/// share of the lobe's energy and are counted on their own: a footprint of some hundred square metres (a pixel
+/// from 3 km) still holds less than one of them on average, and a few pixels of the path stand far above white
+/// while the fine facets have long become a sheen. From about two per footprint on they are a sheen as well.
+fn waterGlintLarge(u: f32, mean: f32) -> f32 {
+  // (Drawn down to a 64th of one per footprint: a single large glint is up to 129 times its share of the lobe,
+  // which is what stands above white after the temporal resolve and the tone curve; rarer ones fade with the lobe.)
+  let k = max(mean, 0.015625);
+  return mix((1.0 + 2.0 / k) * pow(u, 2.0 / k), 1.0, smoothstep(0.5, 2.5, k));
+}
+/// The glitter factor of the lobe for a source that one facet mirrors with probability 'pFacet'; large = (large
+/// glints per facet, their share of the energy).
+fn waterGlint(pt: WaterPoint, pFacet: f32, large: vec2f) -> f32 {
   if (pt.glintW <= 0.0) { return 1.0; }
-  let f0 = waterGlintCell(pt.glintU.x, pFacet * pt.glintN.x);
-  let f1 = waterGlintCell(pt.glintU.y, pFacet * pt.glintN.y);
+  var f0 = waterGlintCell(pt.glintU.x, pFacet * pt.glintN.x);
+  var f1 = waterGlintCell(pt.glintU.y, pFacet * pt.glintN.y);
+  if (large.y > 0.0) {
+    f0 = mix(f0, waterGlintLarge(pt.glintV.x, pFacet * pt.glintN.x * large.x), large.y);
+    f1 = mix(f1, waterGlintLarge(pt.glintV.y, pFacet * pt.glintN.y * large.x), large.y);
+  }
   return mix(1.0, mix(f0, f1, pt.glintT), pt.glintW);
 }
 
@@ -692,8 +773,26 @@ fn waterBodyAmbient(s: Surface, a: AmbientInput) -> WaterBody {
   return w;
 }
 
-/// Sky radiance (cd/m^2) along 'dir' seen by a water surface, blurred over a GGX lobe of alpha 'alpha'.
+/// The sky a water surface mirrors along 'dir' (cd/m^2), blurred over a GGX lobe of alpha 'alpha': the sky that
+/// stands over the water. Under a clear sky the published sky (waterSkyTable) as it is. Under cloud the water
+/// mirrors what lights it: of the sky beyond the cloud the share the cloud leaves of a beam, and the cloud's own
+/// base (waterCloudTerms), whose luminance is the illuminance it sends down / pi (brightest overhead, half of that
+/// towards the horizon: the core's rule for every other mirror under cloud). The published tables are not that
+/// sky: the sky-view table and the probe carry a cloud base of their own model in the directions the coverage map
+/// marks, and the SUNLIT air of a clear day in front of it, which under a deck is in the deck's shadow; mirrored
+/// as they are, a sea under an overcast came out 1.5 times brighter than the deck above it (measured, visual
+/// round 3: tests/browser/ocean/overcast.spec.ts). Energy: the mirrored field never holds more than the clear sky
+/// or the cloud base alone would (a blend of the two by the beam share), and brdfWaterAmbient reflects the
+/// Fresnel share of it.
 fn waterSkyRadiance(s: Surface, dir: vec3f, alpha: f32) -> vec3f {
+  let sky = waterSkyTable(s, dir, alpha);
+  if (WATER_CLOUD_MIRROR == 0.0) { return sky; }
+  let cl = waterCloud(s);
+  return sky * cl.a + cl.rgb * ((0.5 + 0.5 * saturate(dot(dir, s.up))) / PI);
+}
+
+/// The published sky along 'dir' seen by a water surface, blurred over a GGX lobe of alpha 'alpha' (cd/m^2).
+fn waterSkyTable(s: Surface, dir: vec3f, alpha: f32) -> vec3f {
   if (s.bodyIndex < 0) { return vec3f(0.0); }
   let b = frame.bodies[s.bodyIndex];
   let sunDir = b.sunDir.xyz;
@@ -801,7 +900,7 @@ fn brdfWaterDirect(s: Surface, l: vec3f) -> vec3f {
       let rl = max(s.lightAlpha / 0.6, 0.0046);
       let nhk2 = max(sq(saturate(dot(pt.nk, h))), 1e-6);
       let dCount = exp(-(1.0 - nhk2) / (nhk2 * sig2)) / (PI * sig2 * nhk2 * nhk2);
-      spec *= waterGlint(pt, dCount * sqrt(nhk2) * PI * rl * rl / (4.0 * max(LoH, 0.05)));
+      spec *= waterGlint(pt, dCount * sqrt(nhk2) * PI * rl * rl / (4.0 * max(LoH, 0.05)), waterBodyParam(s, 3u).zw);
     }
   }
   let body = waterBodyDirect(s, l).total;

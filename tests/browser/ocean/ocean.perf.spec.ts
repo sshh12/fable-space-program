@@ -142,6 +142,22 @@ test('profile of the near pass: the cost of each term at the splashdown and abov
         rows.push(`  ${label}: ${p50.toFixed(3)} ms${mask === 0 ? '' : ` (the term: ${(base - p50).toFixed(3)})`}`);
       }
       await page.evaluate(() => window.__ocean!.ocean!.debug.setProfileSkip(0));
+      // The forward pass's chunk without the paths a near pixel with its waves at full strength never takes (the
+      // evaluated roughness field, the far-wave bank): what their presence in the shader costs such a pixel.
+      await page.evaluate(() => window.__ocean!.ocean!.debug.setForwardProbe(true));
+      await waitIdle(page, 30);
+      const lean = await page.evaluate(async () => {
+        window.__test!.resetPerf();
+        await window.__test!.waitFrames(240);
+        const ps = window.__lab!.renderer.passStats();
+        const separate = ['ocean.fft', 'ocean.foam', 'ocean.wake', 'ocean.reactive', 'ocean.fieldBake'];
+        return Object.entries(ps)
+          .filter(([n]) => n.startsWith('ocean.') && !separate.includes(n))
+          .reduce((a, [, v]) => a + v.p50, 0);
+      });
+      await page.evaluate(() => window.__ocean!.ocean!.debug.setForwardProbe(false));
+      await waitIdle(page, 30);
+      rows.push(`  probe, the forward chunk without the evaluated field and the far-wave bank: ${lean.toFixed(3)} ms (their presence: ${(base - lean).toFixed(3)})`);
       console.log(`near pass p50 with one term off, ${name}:\n${rows.join('\n')}`);
     };
     await scene('splashdown');

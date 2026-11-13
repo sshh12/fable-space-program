@@ -175,6 +175,50 @@ fn oceanBedPlaneDepth(px: vec2i, p: vec3f, up: vec3f) -> f32 {
   return dot(p - hit, n) / max(dot(up, n), 0.2);
 }
 
+/// Depth (m) of the bed straight below the sea-level point 'w' (camera-relative, ROOT; 'up' its unit up) where the
+/// eye ray of the pixel meets the bed far from that vertical (at 'hit', 'column' m below sea level): from TWO
+/// points of the bed, the one the pixel shows and the one seen where the vertical itself shows on screen (or, when
+/// it leaves the frame, where the frame's border cuts the way to it), the line through the two carried on towards
+/// the vertical, the less far the shorter the base between the two is against the way that is left (with no base
+/// at all the answer is the depth the pixel shows). 'plane' is returned where that second point is not the bed.
+/// Why not the bed's plane at the pixel (oceanBedPlaneDepth): it is the tangent of ONE facet of the bed's mesh
+/// carried over the whole way, and it jumps where the eye ray crosses from one facet to the next, by the change of
+/// slope times the way. Over a rippled shelf 5 to 20 m down that was 1 to 2 m from row to row of the bed's mesh:
+/// the water's colour stood in straight terraces along the rows (visual round 3). The line through two points of
+/// a continuous bed is continuous in the pixel.
+fn oceanBedSecantDepth(hit: vec3f, column: f32, w: vec3f, up: vec3f, plane: f32) -> f32 {
+  let size = frame.renderSize.xy;
+  let pa = projectToUv(hit);
+  let q = projectToUv(w - up * max(column, 0.5));
+  if (q.w <= 0.0 || pa.w <= 0.0) { return plane; }
+  // Towards the vertical's place on screen, as far as the frame reaches.
+  let dir = q.xy - pa.xy;
+  let lo = 0.5 / size;
+  let hi = vec2f(1.0) - lo;
+  var tMax = 1.0;
+  if (dir.x > 1e-7) { tMax = min(tMax, (hi.x - pa.x) / dir.x); }
+  if (dir.x < -1e-7) { tMax = min(tMax, (lo.x - pa.x) / dir.x); }
+  if (dir.y > 1e-7) { tMax = min(tMax, (hi.y - pa.y) / dir.y); }
+  if (dir.y < -1e-7) { tMax = min(tMax, (lo.y - pa.y) / dir.y); }
+  let pb = vec2i(clamp((pa.xy + dir * max(tMax, 0.0)) * size, vec2f(0.0), size - 1.0));
+  let db = textureLoad(sceneDepthOpaqueTex, pb, 0);
+  let idb = u32(textureLoad(gbufferMaterialTex, pb, 0).b * 255.0 + 0.5);
+  if (db <= 0.0 || (idb != MATERIAL_TERRAIN && idb != MATERIAL_REGOLITH)) { return plane; }
+  let second = positionFromDepth((vec2f(pb) + 0.5) / size, db);
+  let tb = length(second);
+  let body = frame.bodies[i32(oceanU.refRel.w)];
+  let depthB = oceanU.misc.x - altitudeAt(tb, body.cameraUp.w, body.sunDir.w, dot(second / max(tb, 1e-6), body.cameraUp.xyz));
+  // Horizontal ways of the two from the vertical, along the way of the first.
+  let a = hit - w;
+  let hA = a - up * dot(a, up);
+  let lA = length(hA);
+  if (lA < 1e-3) { return column; }
+  let bq = second - w;
+  let sB = max(dot(bq - up * dot(bq, up), hA) / lA, 0.0);
+  let base = max(lA - sB, 0.0);
+  return depthB - sB * (column - depthB) / max(base + 0.5 * sB, 1e-3);
+}
+
 /// The seabed seen BESIDE pixel 'px' (to its left and right, 12 to 96 px out), for a water point whose vertical is
 /// hidden by an object in the water: the shelf varies slowly, so the bed beside the object is the bed under it.
 /// x = its depth (m; OCEAN_DEEP when no seabed is in view beside it), yz = screen uv of one such bed pixel.
@@ -269,6 +313,10 @@ struct VsOut {
   @location(3) currClip: vec4f,
   @location(4) prevClip: vec4f,
   @location(5) height: f32,
+  // The swell at the vertex, for the pixels near the eye (fs): xyz = its gradient (body-fixed, x detail), w = the
+  // slope variance it carries; swellInfo = (its height x detail, the largest wavenumber of its components).
+  @location(6) swellGrad: vec4f,
+  @location(7) swellInfo: vec2f,
 }
 
 @vertex fn vs(@location(0) grid: vec2f, @builtin(instance_index) inst: u32) -> VsOut {
@@ -307,6 +355,10 @@ struct VsOut {
   o.plane0 = p;
   o.planeF = sp.finalPlane;
   o.height = sp.height + lift;
+  var kMax = 0.0;
+  for (var i = 0u; i < min(oceanU.counts.x, OCEAN_MAX_SWELL); i++) { kMax = max(kMax, oceanU.swellDirK[i].w); }
+  o.swellGrad = vec4f(sp.swellGrad, sp.swellVar);
+  o.swellInfo = vec2f(sp.swell, kMax);
   return o;
 }
 
@@ -386,6 +438,8 @@ struct FsOut {
     return op;
   }
   waterGlintScale = select(1.0, 0.0, (prof & 1u) != 0u);
+  // The pixel brdf_water looks its planet-fixed lattices up from (the deferred pass works the same uv out).
+  waterPixelUv = uv;
   // Something that floats or stands in the water is behind the surface here.
   let objectPix = !seabedPix && !strayWater && !sheet && dOpaque > 0.0;
   // Water column along the view ray to the opaque surface under the pixel (the refraction path).
@@ -416,7 +470,13 @@ struct FsOut {
         fallback = select(2.0 * guess + 2.0, beside.x, beside.x < 0.5 * OCEAN_DEEP);
       }
       if (seabedPix && (column >= OCEAN_VERTICAL_FROM || fallback > 4.0)) {
+        // Deeper than the march goes (or seen from far off): the bed's plane next to where the march ends, and
+        // from there the line through two points of the bed (continuous over the facets of the bed's mesh).
+        let far = max(smoothstep(4.0, 6.0, fallback), smoothstep(OCEAN_VERTICAL_FROM, OCEAN_VERTICAL_FROM + 4.0, column));
         seaDepth = fallback;
+        if (far > 0.0) {
+          seaDepth = mix(fallback, oceanBedSecantDepth(positionFromDepth(uv, dOpaque), column, posRel - upR * in.height, upR, fallback), far);
+        }
       } else {
         seaDepth = oceanDepthBelow(posRel - upR * in.height, upR, guess, fallback);
         if (seabedPix) {
@@ -519,15 +579,32 @@ struct FsOut {
   let vFix = oceanRotInv(posRel / max(dist, 1e-6));
   var vHor = vFix - upF * dot(vFix, upF);
   vHor = vHor / max(length(vHor), 1e-4);
-  var sw: OceanSwellSample;
-  if (detail > 0.0 && (prof & 64u) == 0u) { sw = oceanSwellEvalAlong(deltaF, upF, fpMin, vec4f(vHor, fpMaj), false); }
+  // Near the eye the swell comes from the vertex stage: where neither the pixel's footprint nor the mesh's filter
+  // (a 36th of the distance) is more than a sixth of a radian of the shortest component, both give that component
+  // whole, the mesh's cells are a hundredth of its length, and its slopes interpolate over them to a quarter of a
+  // per cent; the eight components are not worked out again for the pixel (from 3 m above the sea that is four
+  // pixels of the water in five; profile: 0.06 ms of the near pass). Further out, per pixel as before.
+  let swNear = 1.0 - smoothstep(0.15, 0.3, max(fpMaj, dist / 36.0) * in.swellInfo.y);
+  var swGrad = in.swellGrad.xyz;
+  var swVar = in.swellGrad.w;
+  var swHeight = in.swellInfo.x;
+  if ((prof & 64u) != 0u) {
+    swGrad = vec3f(0.0);
+    swVar = 0.0;
+    swHeight = 0.0;
+  } else if (detail > 0.0 && swNear < 1.0) {
+    let sw = oceanSwellEvalAlong(deltaF, upF, fpMin, vec4f(vHor, fpMaj), false);
+    swGrad = mix(sw.grad * detail, swGrad, swNear);
+    swVar = mix(sw.variance * sq(detail), swVar, swNear);
+    swHeight = mix(sw.height, swHeight, swNear);
+  }
   let e = oceanU.axisE.xyz;
   let f = oceanU.axisF.xyz;
-  let grad = sw.grad * detail + e * slope.x + f * slope.y;
+  let grad = swGrad + e * slope.x + f * slope.y;
   let nFixed = normalize(upF - grad);
-  resolved += sw.variance * sq(detail);
-  slowVar += sw.variance * sq(detail);
-  let nSlowFixed = normalize(upF - (sw.grad * detail + e * slowSlope.x + f * slowSlope.y));
+  resolved += swVar;
+  slowVar += swVar;
+  let nSlowFixed = normalize(upF - (swGrad + e * slowSlope.x + f * slowSlope.y));
 
   var s: Surface;
   s.pos = posRel;
@@ -635,8 +712,11 @@ struct FsOut {
         }
         break;
       }
-      let sid = u32(textureLoad(gbufferMaterialTex, px, 0).b * 255.0 + 0.5);
-      if (below && (sid == MATERIAL_TERRAIN || sid == MATERIAL_REGOLITH)) { bedUv = pu.xy; }
+      // (The bed beside the ray is only asked for where the pixel shows an object: the stand-in below.)
+      if (below && !seabedPix) {
+        let sid = u32(textureLoad(gbufferMaterialTex, px, 0).b * 255.0 + 0.5);
+        if (sid == MATERIAL_TERRAIN || sid == MATERIAL_REGOLITH) { bedUv = pu.xy; }
+      }
       tPrev = t;
     }
     // How far the refracted image is trusted over the bed straight behind the pixel: fully for a hit well inside
@@ -763,12 +843,12 @@ struct FsOut {
     let swash = max(lip, 0.3 * (1.0 - smoothstep(0.0, oceanU.shore.x, dyn)));
     let cu = oceanCascadeUv(0u, in.planeF);
     let stretch = smoothstep(0.3, 0.6, 0.5 + 0.5 * sin(TWO_PI * (19.0 * cu.x + 11.0 * cu.y) + 1.3 * sin(TWO_PI * (23.0 * cu.y - 7.0 * cu.x))));
-    let u = fract(oceanU.surf.y * sqrt(max(seaDepth, 0.0)) + oceanU.time.x * oceanU.surf.z + 0.12 * sw.height);
+    let u = fract(oceanU.surf.y * sqrt(max(seaDepth, 0.0)) + oceanU.time.x * oceanU.surf.z + 0.12 * swHeight);
     let env = (1.0 - smoothstep(0.55 * oceanU.surf.x, oceanU.surf.x, seaDepth)) * smoothstep(0.02, 0.2, seaDepth) * stretch;
     let front = smoothstep(0.0, 0.03, u) * (1.0 - smoothstep(0.03, 0.3, u)) * env;
     let bore = smoothstep(0.0, 0.03, u) * exp(-u / 0.45) * env;
     let carry = 0.3 * max(seaDepth, 0.0) + 0.12;
-    let b0 = smoothstep(0.0, 0.22, sw.height - carry);
+    let b0 = smoothstep(0.0, 0.22, swHeight - carry);
     let b1 = smoothstep(0.0, 0.22, oceanSwellHeightBack(deltaF, 0.8) - carry);
     let b2 = smoothstep(0.0, 0.22, oceanSwellHeightBack(deltaF, 1.8) - carry);
     let b3 = smoothstep(0.0, 0.22, oceanSwellHeightBack(deltaF, 3.0) - carry);
@@ -785,21 +865,36 @@ struct FsOut {
     breaker = max(breaker, 0.6 * smoothstep(0.75, 0.98, w));
     density = 1.0 - (1.0 - density) * (1.0 - 0.85 * w);
   }
-  // The foam of an impact (request vfx-9): full inside 1.2 hull radii at once, spreading to (1.2 + spread) radii
-  // with a time constant of 2.5 s and creeping on, thinning towards its rim (where the lace tears it) and with
-  // age, fresh and thick for the first seconds; rides the surface and is lit like every other foam.
+  // The foam of an impact (request vfx-9; its ageing: visual round 3). A patch of churned, aerated water that is
+  // brightest in its first second (thick white foam about the hull), has spread to (1.2 + spread) hull radii after
+  // two or three seconds and stays there; from the first second on its DENSITY falls (time constant: a third of
+  // its lifetime), which is how a whitecap's old foam goes: the lace tears it into strands and holes within 2-4 s,
+  // by 10 s a few thin strands are left, and those are a film the water shows through (splashOld, below), gone at
+  // the end of the lifetime. Its rim stands in tongues (what the spray throws out is not a circle). The water
+  // under it, and a little beyond, is full of bubbles for some seconds: a pale green that fades (aerated, below).
+  var splashOld = 0.0;   // density of impact foam that is past its first seconds
+  var aerated = 0.0;     // bubbles under the surface (0..1)
   for (var i = 0u; i < min(oceanU.counts.z, OCEAN_MAX_RIPPLES) && foamOn; i++) {
     let r = oceanU.ripples[i];
     let life = oceanU.foam.w;
     if (r.z <= 0.0 || r.z >= life) { continue; }
     let im = oceanImpact(r.w);
-    let reach = im.x * (1.2 + oceanU.surf.w * (1.0 - exp(-r.z / 2.5)) + 0.04 * r.z);
-    let d = distance(in.planeF, r.xy) / reach;
-    if (d >= 1.0) { continue; }
-    let aged = 1.0 - smoothstep(0.35 * life, life, r.z);
-    breaker = max(breaker, im.y * (1.0 - smoothstep(0.45, 0.9, d)) * (1.0 - smoothstep(1.0, 3.5, r.z)) * detail);
-    density = 1.0 - (1.0 - density) * (1.0 - 0.92 * im.y * (1.0 - smoothstep(0.5, 1.0, d)) * aged * detail);
+    let reach = im.x * (1.2 + oceanU.surf.w * (1.0 - exp(-r.z / 1.2)));
+    let off = in.planeF - r.xy;
+    let dc = length(off) / reach;
+    if (dc >= 1.3) { continue; }
+    // The tongues: the rim's radius by the direction (0.64 to 1 of the reach), the same for the life of the impact.
+    let ang = atan2(off.y, off.x + 1e-5);
+    let seed = 40.0 * r.w;
+    let d = dc / (0.82 + 0.18 * (0.6 * sin(5.0 * ang + seed) + 0.4 * sin(11.0 * ang + 2.3 * seed)));
+    let dens = 0.95 * exp(-3.0 * max(r.z - 0.8, 0.0) / life) * im.y * (1.0 - smoothstep(0.8, 1.0, d)) * detail;
+    breaker = max(breaker, im.y * (1.0 - smoothstep(0.5, 0.95, d)) * (1.0 - smoothstep(0.6, 2.5, r.z)) * detail);
+    density = 1.0 - (1.0 - density) * (1.0 - dens);
+    splashOld = max(splashOld, dens * smoothstep(2.0, 8.0, r.z));
+    aerated = max(aerated, im.y * (1.0 - smoothstep(0.5, 1.3, dc)) * smoothstep(0.0, 0.5, r.z) * exp(-3.3 * r.z / life) * detail);
   }
+  // (Before the lap and the dissolve below: how far the foam here is an impact's old foam.)
+  let filmy = saturate(splashOld / max(density, 1e-4));
   // The lap at a hull: where the water lies thin over something that floats in it (the eye ray meets the hull
   // within decimetres of the surface), the water works against it and froths: a ragged white ring at the waterline.
   if (objectPix && detail > 0.0 && foamOn) {
@@ -837,8 +932,9 @@ struct FsOut {
     let laceLo = max(laceT - laceHalf, 0.0);
     let laceHi = min(laceT + laceHalf, 1.0);
     let cover = saturate((laceHi - (1.0 - density)) / max(laceHi - laceLo, 1e-4));
-    thick = max(saturate(1.6 * breaker), saturate((laceT - (1.0 - density)) / 0.3));
-    foamOpaque = cover * mix(0.32 * (0.75 + 0.5 * (laceFine - 0.5)) / 0.75, 1.0, thick);
+    // (An impact's old foam is a film of bubbles, never a thick layer: no solid cores, and half the film's opacity.)
+    thick = max(saturate(1.6 * breaker), saturate((laceT - (1.0 - density)) / 0.3) * (1.0 - 0.85 * filmy));
+    foamOpaque = cover * mix(0.32 * (0.75 + 0.5 * (laceFine - 0.5)) / 0.75 * (1.0 - 0.45 * filmy), 1.0, thick);
     foamShade = 0.9 + 0.2 * (laceFine - 0.5);
     // (A foam 3 cm thick where T is 0.3 above the threshold; the solid core is flatter, bubbles only.)
     foamSlope = (transpose(lr) * gT) * (g3 * 0.1 * mix(1.0, 0.4, thick));
@@ -888,10 +984,12 @@ struct FsOut {
   var cl = vec2f(1.0);
   if ((prof & 256u) == 0u) { cl = cloudLight(posRel, bi, s.up, r, sunDir); }
   var cloudBase = vec3f(0.0);
+  var sunAboveCloud = vec3f(0.0);   // the sun's illuminance here after the air and the eclipses, before the clouds
   let vis = sunVisibility(posRel, sunDir);
   if (vis > 0.0) {
     var sunE = frame.sunIlluminance.rgb * vis;
     sunE *= atmosphereSunTransmittance(transmittanceLut, u32(bi), r, muS);
+    sunAboveCloud = sunE;
     cloudBase = sunE * (max(muS, 0.0) * (cl.y - cl.x));
     sunE *= cl.x;
     // The sun's shadow on the sea: of the shore and what stands on it (looked up over the shelf), of a thing in
@@ -904,7 +1002,9 @@ struct FsOut {
       if (distance(in.planeF, v.a.xy) < 6.0 * v.b.z) { shaded = true; }
     }
     var shadow = 1.0;
-    if (shaded && (prof & 128u) == 0u) { shadow = sampleSunShadow(posRel, s.n, pix); }
+    // (One comparison tap, request ocean-9: a shadow's edge on a sea with waves is broken by every ripple and seen
+    // through the glitter, and the filtered lookup's eight-tap search cost the shelf 0.1 ms to find no blocker.)
+    if (shaded && (prof & 128u) == 0u) { shadow = sampleSunShadowHard(posRel, s.n); }
     if (shadow > 0.0) {
       s.lightAlpha = 0.6 * frame.sunDir.w;
       if ((prof & 1024u) == 0u) { lit += brdfWaterDirect(s, sunDir) * sunE * shadow; }
@@ -927,6 +1027,8 @@ struct FsOut {
     skyHorizontal = textureSampleLevel(skyIrradianceLut, linearClamp, suv, layer, 0.0).rgb;
   }
   // Under cloud about a third of the blue sky is still seen, and the cloud base adds its white light.
+  // The same cloud terms for the sky the water mirrors (brdf_water works them out itself in the deferred pass).
+  waterCloudIn = waterCloudTerms(cl, sunAboveCloud, muS, skyHorizontal);
   amb.skyIrradiance = (skyHorizontal * mix(0.35, 1.0, cl.x) + cloudBase) * (0.5 + 0.5 * dot(s.n, s.up));
   if ((prof & 512u) == 0u) { lit += brdfWaterAmbient(s, amb); }
   if (seeBottom) { bottomFar += waterBodyAmbient(s, amb).bottom; }
@@ -958,6 +1060,11 @@ struct FsOut {
   }
   lit += s.albedo * frame.sunIlluminance.rgb * (frame.misc.x / PI);
   let cov = waterFoamCoverage(s);
+  // Aerated water after an impact: the bubbles under the surface send a tenth of the light that enters back out,
+  // green-white (the red is absorbed on the way): the pale patch a capsule sits in for the first seconds.
+  if (aerated > 0.0) {
+    lit += vec3f(0.42, 0.8, 0.72) * (amb.skyIrradiance + sunEff * max(muS, 0.0)) * (0.1 * aerated / PI * (1.0 - cov));
+  }
 
   // ---- the bed through the water, from the scene itself (the seabed as the deferred pass lit it, seen through
   // the column): the refracted image where the march is trusted, the bed straight behind the pixel elsewhere (the
@@ -1140,7 +1247,7 @@ struct FsOut {
       case 7u: { d = vec3f(breaker, density, mapped) * 2000.0; }
       case 8u: { d = vec3f(conf, min(seaDepth, 10.0) * 0.1, hitDepth * 0.1) * 2000.0; }
       // Surf inputs, on the display's scale: depth of the bed below sea level (0..3 m), the swell's height (-1.5..1.5 m), the film of water over the bed (0..1 m).
-      case 9u: { d = vec3f(saturate(seaDepth / 3.0), saturate(sw.height / 3.0 + 0.5), saturate(seaDepth + in.height)) * (0.6 / max(frame.exposure.x, 1e-30)); }
+      case 9u: { d = vec3f(saturate(seaDepth / 3.0), saturate(swHeight / 3.0 + 0.5), saturate(seaDepth + in.height)) * (0.6 / max(frame.exposure.x, 1e-30)); }
       default: { d = lit; }
     }
     lit = d;

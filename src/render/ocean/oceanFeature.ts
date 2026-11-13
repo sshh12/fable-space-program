@@ -108,6 +108,18 @@ export interface OceanDebug {
   setFoamSigma(sigma: number | null): void;
   /** Switch the direct specular of brdf_water (sun glint) off to isolate it in tests; true restores it. */
   setDirectSpecular(on: boolean): void;
+  /**
+   * false re-registers brdf_water with the sky reflection as it was before visual round 3 (the published sky tables
+   * mirrored as they are, whatever cloud stands over the water); true restores the shipped shading. For the A/B of
+   * tests/browser/ocean/overcast.spec.ts.
+   */
+  setCloudMirror(on: boolean): void;
+  /**
+   * Perf probe: true re-registers the forward pass's variant of brdf_water without the paths a near pixel with its
+   * waves at full strength never takes (the evaluated roughness field, the far-wave bank), to measure what their
+   * presence costs (ocean.perf.spec.ts, profile). The picture towards fadeStart is wrong while it is on.
+   */
+  setForwardProbe(on: boolean): void;
 
   /** Reversed-Z values of 'scene.depthOpaque' (this frame's opaque depth: the seabed inside fadeStart) at render pixels. */
   readOpaqueDepth(pixels: readonly [number, number][]): Promise<number[]>;
@@ -170,6 +182,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let profileSkip = 0;
   let foamSigmaOverride: number | null = null;
   let directSpecular = true;
+  let cloudMirror = true;
+  let forwardProbe = false;
   let lastFrame: FrameContext | null = null;
   let depthReadLayout: GPUBindGroupLayout;
   let depthReadPipeline: GPUComputePipeline;
@@ -253,11 +267,11 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const id = frame?.bodies[i]?.id;
       list.push(id ? (bodies.get(id)?.water ?? null) : null);
     }
-    const key = `${list.map((w) => w?.tunables.bodyId ?? '-').join(',')}:${directSpecular}`;
+    const key = `${list.map((w) => w?.tunables.bodyId ?? '-').join(',')}:${directSpecular}:${cloudMirror}:${forwardProbe}`;
     if (key === brdfKey) return;
     brdfKey = key;
-    ctx.shaders.register('brdf_water', buildWaterBrdfWgsl(list, { directSpecular }));
-    ctx.shaders.register('ocean_water_forward', buildWaterBrdfWgsl(list, { directSpecular, fieldFromPass: true }));
+    ctx.shaders.register('brdf_water', buildWaterBrdfWgsl(list, { directSpecular, cloudMirror }));
+    ctx.shaders.register('ocean_water_forward', buildWaterBrdfWgsl(list, { directSpecular, cloudMirror, fieldFromPass: true, probeLean: forwardProbe }));
   };
 
   const oceanGroup = (fft: OceanFft, foam: OceanFoamMap): GPUBindGroup => {
@@ -310,6 +324,16 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     },
     setDirectSpecular(on) {
       directSpecular = on;
+      brdfKey = '';
+      registerBrdf(lastFrame);
+    },
+    setCloudMirror(on) {
+      cloudMirror = on;
+      brdfKey = '';
+      registerBrdf(lastFrame);
+    },
+    setForwardProbe(on) {
+      forwardProbe = on;
       brdfKey = '';
       registerBrdf(lastFrame);
     },

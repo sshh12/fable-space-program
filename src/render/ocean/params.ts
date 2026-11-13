@@ -87,7 +87,8 @@ export interface OceanTunables {
    * The water's answer to a vessel entering it (request vfx-9): ring waves of rippleWavelength (m) leave the hull's
    * radius R0, rippleAmplitude x R0 x strength high there (the parameter is that FRACTION of the radius; strength =
    * entry speed / 6 m/s, at most 1), for rippleLifetime (s); a foam patch spreads to (1.2 + splashFoamSpread) R0
-   * and is gone after splashFoamTime (s).
+   * within two or three seconds, thins from its first second on with a time constant of splashFoamTime / 3 and is
+   * gone after splashFoamTime (s).
    */
   rippleWavelength: number;
   rippleAmplitude: number;
@@ -111,6 +112,13 @@ export interface OceanTunables {
    * sea are far from equal: a few flat patches of some centimetres outshine the many small ones, which are the sheen).
    */
   glintFacetSize: number;
+  /**
+   * The large glints (the sun's images on the smooth faces of the short gravity waves): their size (m, the side of
+   * the square of the same area) and the share of the lobe's energy they carry. Counted on their own, so a footprint
+   * of some hundred square metres still shows single ones far above the mean (brdf_water, waterGlintLarge).
+   */
+  glintLargeFacetSize: number;
+  glintLargeShare: number;
   /** Reactive-mask value inside the sun's glitter path (sparkles are new every few frames). */
   glintReactive: number;
   /**
@@ -211,6 +219,8 @@ export function oceanTunables(body: BodyDef): OceanTunables | null {
     gustVariability: need(file, p, 'gustVariability', (v) => v >= 0 && v < 1),
     filamentStrength: need(file, p, 'filamentStrength', fraction),
     glintFacetSize: need(file, p, 'glintFacetSizeM', positive),
+    glintLargeFacetSize: need(file, p, 'glintLargeFacetSizeM', positive),
+    glintLargeShare: need(file, p, 'glintLargeShare', fraction),
     glintReactive: need(file, p, 'glintReactive', fraction),
     taaReactive: need(file, p, 'taaReactive', fraction),
   };

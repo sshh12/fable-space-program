@@ -31,6 +31,15 @@ above it (the perf line at 10 km), oblique glint presets; whitecaps that break a
 implemented and switched off (section 15.1). Section 15 goes through the
 two lists item by item; where a section below was overtaken it has been rewritten, not appended to.
 
+Revision after the third visual critique (wave 2, round 3, 2026-11-12; `docs/qa/wave2/ocean.r2.combined.json`; a
+narrow round of five items, section 16): under cloud the water mirrors the sky that lights it (the blocker: a sea
+1.5 times brighter than the overcast above it), with an energy test of the shading on the CPU; an impact's foam
+ages (thick for a second, lace by three, a film by ten) over aerated water; the seabed's depth far from the vertical
+from two points of the bed (no terraces along the bed mesh's rows); the large glints of a footprint counted on their
+own (a sparkling path at 3 to 5 km) and both passes looking their lattices up from the pixel's ray (the hand-over
+exact); the swell from the vertex stage near the eye, a one-tap sun shadow. The near pass is still over its line
+(0.69 / 0.89 ms against 0.6).
+
 ## 1. Where things are
 
 ```
@@ -44,6 +53,7 @@ src/render/ocean/nearField.ts        near-field uniform, planet-fixed chart, CDL
 src/render/ocean/fft.ts              GPU: spectrum evolution, 2 x 256-point IFFT passes, assembly, mips (5 layers, masked)
 src/render/ocean/fieldModel.ts       the roughness field (wind chart, stream function, slick filaments and fronts, gusts, internal waves): CPU reference of the WGSL
 src/render/ocean/farWaves.ts         the far-wave bank (14 plane waves around the JONSWAP peak) shaded on the far sheet
+src/render/ocean/brdfModel.ts        the energy terms of brdf_water on the CPU (Fresnel, transmission, Rrs, the sky mirrored under cloud): reference of the energy test
 src/render/ocean/foamMap.ts          GPU: whitecaps of the combined surface in 3 camera-centred levels, with history (breaking that holds along a crest)
 src/render/ocean/foamLace.ts         the foam lace texture (uniform T: E[T], E[T^2] and the gradient of T, with mips): density -> foam picture and relief
 src/render/ocean/vessels.ts          damping zones, splash ripples, wake texture, 'ocean.wetness' slots
@@ -56,8 +66,8 @@ src/render/ocean/shaders/fieldWgsl.ts  bake of the roughness field into a mip-ma
 src/render/ocean/shaders/fftWgsl.ts  FFT compute shaders
 data/defs/render/earth.ocean.json    tunables (section 7)
 labs/ocean/                          lab: main.ts (presets, window.__ocean), labSky.ts, labSim.ts, props.ts, ballast.ts
-tests/unit/ocean/                    swellPhases, spectrum, nearField, field (roughness field, far waves, foam lace) (vitest)
-tests/browser/ocean/                 swell, handover, glint, stability, foam, screens, integrated (functional); ocean.perf (perf)
+tests/unit/ocean/                    swellPhases, spectrum, nearField, field (roughness field, far waves, foam lace), brdf (energy, the sky under cloud) (vitest)
+tests/browser/ocean/                 swell, handover, glint, stability, foam, splash, screens, integrated, overcast (functional); ocean.perf (perf)
 ```
 
 ## 2. Public API (exact signatures)
@@ -74,6 +84,8 @@ interface OceanDebug {
   setRefractionScale(scale: number): void;
   setReactiveScale(scale: number): void;                  // x the TAA reactive values (0 = no mask)
   setDirectSpecular(on: boolean): void;                   // re-registers brdf_water without the direct specular
+  setCloudMirror(on: boolean): void;                      // false: the sky reflection as before round 3 (published sky tables as they are, whatever cloud stands over the water)
+  setForwardProbe(on: boolean): void;                     // perf probe: the forward chunk without the evaluated field and the far-wave bank
   setProfileSkip(mask: number): void;                     // near-pass terms switched off (sum of OCEAN_PROFILE_SKIP values; perf profile)
   setFoamSigma(sigma: number | null): void;               // whitecap threshold instead of the data's (calibration sweep of foam.spec)
   readOpaqueDepth(pixels: readonly [number, number][]): Promise<number[]>;   // 'scene.depthOpaque' at render pixels
@@ -128,13 +140,17 @@ share (`cloudLight`) x `sampleSunShadow`, sky irradiance x mix(0.35, 1, beam sha
   (the many faint glints of a real sea: a dense path is bright between its sparkles). k below 1/16 is drawn as 1/16
   (a sparkle is at most 33 times the lobe: far out on the flanks the sparkles fade with the lobe). So: few facets,
   most pixels show the dark water and a few a sparkle; around k = 1-10 a grain; from 3 km up and from orbit a sheen.
+  **Large glints** (round 3, section 16.4): a share `glintLargeShare` of the lobe is counted in glints of
+  `glintLargeFacetSizeM` (the sun's images on the faces of the short gravity waves) with a draw of their own, down
+  to a 64th of one per footprint and blended into a sheen from 0.5 to 2.5 per footprint: single pixels far above
+  the mean up to footprints of some hundred square metres.
   Three things make the two passes agree at the hand-over (a drawn count of facets, tried first in round 2, failed
   it by 3-7 % in single pixels): the factor's logarithm is smooth in k; k is taken about a normal both passes
   SHARE where the sea is flat (the sphere's up tilted by the far waves, not the forward normal or the G-buffer's
-  quantised one; where the near field draws waves, its shading normal); and a cell's random number is CONTINUOUS
-  across the cell's border (within a tenth of a cell it runs into the neighbours', half and half on the border):
-  the two passes place a point centimetres apart, and with cells of constant draw a pixel next to a border took
-  another cell's sparkle in one of them. The draw is weighted by how far the slopes are UNRESOLVED (unresolved
+  quantised one; where the near field draws waves, its shading normal); and both passes look the planet-fixed
+  lattices up from the ray of the PIXEL's centre (`waterPixelRay`; round 3), so a cell is the same cell in both
+  to the bit (round 2 placed the point centimetres apart and blended a cell's draw into its neighbours' near the
+  border instead, which cost 0.04 ms of every near pixel). The draw is weighted by how far the slopes are UNRESOLVED (unresolved
   variance over the capillary remainder `unresolvedSlopeVariance`, from 1.6 to 4): close to the eye, where the
   shading normal carries the ripples, the lobe on that normal is the glint itself, a filled, clipped highlight on
   each ripple. Cells are squares of 2^n / 64 m about as wide as the pixel is on the sea, up to three times wider
@@ -177,7 +193,11 @@ share (`cloudLight`) x `sampleSunShadow`, sky irradiance x mix(0.35, 1, beam sha
   non-zero; mip = sqrt(alpha) x (levels - 1), the lookup kept above the horizon by the filter's reach), else the
   sky-view table (one tap for narrow lobes, a four-tap ring blended in up to 0.08 rad); within 50 km of the
   camera; the local sky irradiance / pi beyond (the core's rule). Directions reflected below the horizon are
-  folded above it (x 0.85). Not dimmed under cloud in either pass (request ocean-cs-2, section 12).
+  folded above it (x 0.85). **Under cloud** (round 3, section 16.1) the water mirrors the sky that lights it: of
+  that published sky the beam share of the cloud light (chunk `cloud_shadow`), plus the cloud base's own luminance
+  (as much light as the deferred pass's `cloudBase`, in the colour of the beam and the sky together, / pi overhead,
+  half of that towards the horizon); exactly the published sky under a clear sky. Both passes: the forward pass
+  hands its cloud light in (`waterCloudIn = waterCloudTerms(...)`), the deferred variant looks it up.
 - **Body colour**: Lee et al. (1998/1999) shallow-water remote-sensing reflectance with per-channel absorption
   and backscatter: rrs = rrs_deep (1 - e^-(1/muW + Du/muV) K H) + (rho_b/pi) e^-(1/muW + Db/muV) K H,
   Rrs = 0.5 rrs / (1 - 1.5 rrs), refracted sun and view cosines, Fresnel transmission. H = decoded depth; the
@@ -269,9 +289,11 @@ share (`cloudLight`) x `sampleSunShadow`, sky irradiance x mix(0.35, 1, beam sha
   the first 0.4 s and its rebound 0.5 R0 s high between 0.4 and 0.9 s; ring waves of `rippleWavelengthM` (5 m) that
   leave R0 (first crest there after 0.3 s) and run out at 0.8 of their phase speed (2.2 m/s), `rippleAmplitudeM`
   (0.12) x R0 x s high at R0, falling as sqrt(R0 / r) and e^(-t / 6 s), gone after `rippleLifetimeS` (15 s). And FOAM
-  in the ocean's own foam (lit, riding the swell, torn by the lace): full inside 1.2 R0 at once, spreading to
-  (1.2 + `splashFoamSpread`) R0 with a time constant of 2.5 s, thinning towards its rim and with age, fresh for the
-  first seconds, gone after `splashFoamTimeS` (26 s). Nothing of it runs while no impact is alive. (The wake
+  in the ocean's own foam (lit, riding the swell, torn by the lace), aged since round 3 (section 16.2): thick and
+  white for the first 0.6 s, spreading to (1.2 + `splashFoamSpread`) R0 with a time constant of 1.2 s and no
+  further, its rim in tongues; from 0.8 s its density falls with e^(-3 (t - 0.8 s) / `splashFoamTimeS`) (lace with
+  holes by 3 s, thin strands at 10 s, which are a film the water shows through), gone before `splashFoamTimeS`
+  (15 s); under and around it aerated water, a pale green that fades. Nothing of it runs while no impact is alive. (The wake
   texture's splash disc is off, `wakeFoamPerSplash` 0: this patch replaces it; the hull's churn ring stays.)
 - **Wake**: the wake texture (vessels.ts) as foam density: fresh only where the hull keeps churning it, lace
   further out.
@@ -377,10 +399,11 @@ divisors, fetch, JONSWAP gamma, high-pass wavelength, longWaveDivisor 5, longWav
 (shoreFoamDepthM 0.35, surfBreakDepthM 2.2, surfPeriodS 9, surfBedSlope 0.04), refractionDistortion 1,
 chromaticOffset 0.012, vesselDampingHullRadii 3, wake and wet-line values (**wakeFoamPerSplash 0**), the impact
 (**rippleWavelengthM 5, rippleAmplitudeM 0.12** (now a fraction of the hull's radius), **rippleLifetimeS 15,
-splashFoamTimeS 26, splashFoamSpread 3.2**), capillaryScale 4.2,
+splashFoamTimeS 15, splashFoamSpread 2.0** (round 3: were 26 and 3.2)), capillaryScale 4.2,
 **unresolvedSlopeVariance 0.0016**, roughness field (windVariability 0.18, slickStrength 0.45 (fronts),
 **gustVariability 0.2**, filamentStrength 0.8), **glintFacetSizeM 0.05** (the patches that carry the bright sun
-images), glintReactive 0.8, taaReactive 0.45. Bold = changed or new in round 2. Every value is validated at load.
+images), glintLargeFacetSizeM 0.6 and glintLargeShare 0.4 (new in round 3: the large glints, section 16.4),
+glintReactive 0.8, taaReactive 0.45. Bold = changed or new in round 2. Every value is validated at load.
 The field's scales (FIELD in `fieldModel.ts`) and the far bank's shape (`farWaves.ts`) are code constants: they
 are the recipe, the data sets its strengths.
 Swell (physics) stays in `data/defs/bodies/earth.json` (lead-owned; eight components since 9d48042, request ocean-5).
@@ -390,7 +413,7 @@ Swell (physics) stays in `data/defs/bodies/earth.json` (lead-owned; eight compon
 ```
 npm run typecheck:paths -- src/render/ocean labs/ocean tests/browser/ocean tests/unit/ocean
 node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/render/ocean tests/unit/ocean tools/dev/boundaries.test.ts
-node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/ocean --project=functional    # 33 tests
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/ocean --project=functional    # 37 tests (round 3)
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/ocean --project=perf          # GPU lock
 ```
 
@@ -648,8 +671,10 @@ every package, 2560 x 1440):
 
 ## 11. Known weaknesses (plainly)
 
-- **Perf: the near pass is still over its line** (section 8.1): 0.71 ms p50 / 1.00 p99 at the splashdown and 0.92 / 1.20 at the coast against 0.6; the ocean's total 0.81 / 1.09 against 0.9 and 1.01 / 1.29 against 0.8. The 10 km and LEO lines hold. The profile in 8.1 says where the rest is.
-- **The hand-over from 500 m** holds its 2 % with little room (worst 1.94 % in one pixel of 350; from 6 km 0.37 %).
+- **Perf: the near pass is still over its line** (section 16.5, the numbers of round 3): 0.69 ms p50 / 0.96 p99 at the splashdown and 0.89 / 1.17 at the coast against 0.6; the ocean's total 0.78 / 1.05 against 0.9 and 0.98 / 1.26 against 0.8. The 10 km and LEO lines hold. Section 16.5 has the profile, the next cut (a lean pipeline for the near patches: 0.04-0.06 ms) and the trade at the coast.
+- **The hand-over** (round 3: both passes look the lattices up from the pixel's ray): worst 0.94 % from 6 km, 0.16 % from 500 m, against 2 %.
+- **Under cloud the mirrored sky is the cloud light of the lighting, not the drawn cloud**: one luminance for the deck over a point (brightest overhead, half at the horizon), no structure of the deck in the reflection, no cloud seen through a gap; under broken cloud a shaded patch of sea mirrors a cloud base whichever way the eye looks.
+- **A shadow on the water has the shadow map's texels for an edge** (one tap, `sampleSunShadowHard`).
 - **An impact's response in the integration lab** is not shown: its FakeSim emits no 'splash' event; the sequence is in the ocean lab (splash.spec).
 - **Whitecaps are small and compact**: at 7 m/s they cover 0.12 % of the sea, and from 150 m they are ragged
   patches of 1-10 m2, not crescents with long streaks. Breaking that holds along a crest is implemented
@@ -686,6 +711,8 @@ every package, 2560 x 1440):
 | `ocean-4` TAA reactive mask | core TAA | resolved 2cc2aea |
 | `ocean-5` eight swell components with directional spread | `data/defs/bodies/earth.json` (lead) | done by the lead (commits 1ccd5e0 decision, 9d48042 data, 2026-11-11 14:11): a NW swell of three components and a wind sea of five, 200-32 m, variance 0.18 m^2, steepness at most 0.0175; mission re-flown |
 | `ocean-6` the same, or permission to draw the long-wave layer's height away from vessels | lead | option 1 (the data) done (9d48042), option 2 (render-only heights) declined. The ocean needed no code change (MAX_SWELL is 8; the long-wave layer and the far-wave bank take the swell's share of the long-wave slopes at start-up; the swell spec compares against whatever the data holds) |
+
+Round 3 (section 16.7): `ocean-8` (vfx: `splash.foamDecal` to 0; open), `ocean-9` (render core: `sampleSunShadowHard`; resolved c74f012, used by the forward pass), `ocean-10` (render core / lead: the display curve keeps every glint under white; open, lead decision: the curve changes after the presentation sweep).
 
 Round 2, continuation: `vfx-9` (the water's answer to a splash: cavity, ring waves, foam patch) resolved (built and verified in the ocean lab; the resolution in the request file says what vfx can switch off and what is left).
 
@@ -880,3 +907,233 @@ The first close-out ended with two red functional specs and a red perf spec. In 
 Final run of the continuation (one batched run of the whole suite, after 72 minutes at the gate): functional 34 of 34 pass; perf: the profile test passes, the budget test fails on the near pass alone. Unit tests 124 of 124 (5 files with boundaries), scoped typecheck clean, stub scan clean. Screenshots in `out/screens/ocean/` are from this run.
 
 Honest score after the continuation: photo about 6.5, artifact about 7. The functional suite is green, the sea carries its whitecaps and answers a splash; what keeps it under 8 is unchanged for the photo lens (no wave faces from 2-3 m, compact whitecaps, the run-up band, a glint that never clips), and the near pass is still over its GPU line.
+
+## 16. Visual close-out, round 3 (narrow: five items of `docs/qa/wave2/ocean.r2.combined.json`)
+
+The round-2 critique (photo 5.5, artifact 6; 1 blocker, 12 majors, 7 minors) was worked in five items only, in this
+order; the other majors (slick line art, whitecap shape, wave faces, surf, foam as a material, the capsule's image,
+shallow-water speckle, square glitter cells at 1 m, near / far texture at 6 km) wait for a later round. Two batched
+GPU runs; every picture named here was looked at beside `out/qa/ref/sea-surface-close` and `earth-orbit-ocean`.
+
+### 16.1 The blocker: the sea under an overcast was brighter than the sky (finding 1)
+
+- **Cause, measured before it was believed** (`tests/browser/ocean/overcast.spec.ts`, integration lab, a place of
+  the coverage map with cover 1.00 over the southern Indian Ocean, the capsule of the chutes scene at the water,
+  linear HDR bands left and right of the capsule; the mirror as it was is `OceanDebug.setCloudMirror(false)`):
+
+  | Sun 35 deg, mirror as before round 3 | sea under the horizon / sky above it | near water / sky |
+  |---|---|---|
+  | the frame | 1.508 | 0.387 |
+  | its sky-reflection term alone (debug view) | 1.513 | 0.535 |
+  | ambient term off | 0.007 | 0.000 |
+  | sun term off | 1.518 | 0.639 |
+  | cloud lookup off | 1.527 | 0.675 |
+
+  So the whole excess is the sky REFLECTION (the critic's first candidate); the sun under the deck adds nothing (the
+  beam share is zero there: the second candidate is ruled out), and the body is 0.9 % of the sky. But the mirror did
+  not ignore the clouds, as the critique read the code: `waterSkyRadiance` took the published sky ('env.probeCube',
+  else 'atmosphere.skyViewLut'), and both of those HOLD a cloud base, of their own model (the table: the coverage
+  map's cover per direction with `(sun x (1 / (1 + k tau) + 0.08) + sky / 2) / pi`, in front of it the air of a
+  CLEAR day, sunlit, which under a deck is in the deck's shadow; the probe: the same table with a second cloud layer
+  of its own on top). That sky is 2.5 to 3 times brighter than the deck the cloud march draws, and warm.
+- **Fix** (`shaders/waterBrdf.ts`: `waterSkyRadiance`, `waterCloudTerms`, `waterCloud`; the forward pass hands its
+  cloud light in, the deferred pass's variant looks it up): the water mirrors the sky that lights it. With the cloud
+  light the deferred pass lights every surface with (chunk `cloud_shadow`: x = beam share, y = share that arrives
+  at all): `mirrored = published sky x + cloud base (0.5 + 0.5 dir.up) / pi`, where the cloud base carries as much
+  light as the deferred pass's `cloudBase` (sun E mu_s (y - x)) in the colour of what falls on the cloud (the beam
+  and the clear sky's irradiance together: near white; with the beam's colour alone the sea came out a warm brown
+  under a grey deck, first run). Exactly the published sky under a clear sky (x = 1, y = 1: times 1, plus 0).
+  Checked against the drawn deck: the mirrored deck's luminance overhead comes out at 0.97 of the sky the cloud
+  march draws above the horizon (from the measured 0.160 with the mean Fresnel 0.30 of the facets seen there).
+- **Energy** (`src/render/ocean/brdfModel.ts`, `tests/unit/ocean/brdf.test.ts`, 21 tests): a light's mirrored share
+  plus the share let in is at most the light, for every pair of directions; the column and the bed return less than
+  0.96 of what enters, whatever the depth, the bed and the tint; under a sky of one luminance the water is never
+  brighter than that sky, with or without foam; the mirrored sky under cloud is never more than the clear sky or the
+  brightest possible deck alone, is the published sky to the bit under a clear sky, and is the deck alone under a
+  closed deck whatever the published sky holds; a deep sea under an overcast stays under 0.45 of the deck overhead
+  and under 0.7 of the sky at the horizon at every view angle. The test also holds the chunk's source to the
+  formulas.
+- **Result** (final run; linear HDR): sea under the horizon 0.159 x the sky at a sun of 35 deg (was 1.51 x), 0.079
+  at 12 deg (was 0.85 x); near water 0.064 / 0.032 x the sky (was 0.40 / 0.22), its colour blue over red at both
+  (rgb 0.0625 / 0.0638 / 0.0685 and 0.0314 / 0.0320 / 0.0362 of the sky's luminance; with the beam's colour for the
+  cloud base, first run, it was 0.0685 / 0.0659 / 0.0625, a warm brown). In the picture of the critique
+  (`integrated-capsule-at-the-water.png`, display-referred as the critic measured it): sky above the horizon
+  (185, 188, 194) Y 0.497, sea under it (114, 112, 111) Y 0.166, 0.33 x the sky (was 1.39 x), near water
+  (66, 67, 71), 0.12 x: a slate-grey sea under a lighter grey deck, as in `rough-sea-nato.jpg` (0.2 x). From above
+  (`integrated-sea-from-above.png`) the water is a dark slate-navy, (13, 17, 23) at the nadir and (33, 35, 40)
+  obliquely (was a neutral warm (37, 36, 35) / (79, 76, 71)). `integrated-chutes.png` likewise.
+  Clear sky, ocean lab `midday`, time standing still: the image with the mirror as it was is the same (band ratios
+  0.277 / 0.066 in all three frames). Fair weather in the integration lab (-12, -100; the density model stands
+  fair-weather cumulus wherever the map is clear): 0.160 / 0.041 against 0.160 / 0.044 with the mirror as it was.
+  Pictures of the A/B: `overcast-sea-sun35.png` / `-before.png`, `overcast-sea-sun12.png` / `-before.png`.
+- **Spec**: `overcast.spec.ts` (3 tests): under the deck the sea under the horizon and the near water are darker
+  than the sky above the horizon, at 35 and 12 deg of sun, the mirror as it was is brighter, the near water is bluer
+  than red at 35 deg; clear sky: no change, the Fresnel ramp stands; fair weather with every package: the sea under
+  the sky. `integrated.spec.ts` asserts the same on its picture, display-referred.
+- **Requests**: none against `src/render/atmosphere/**`: what was needed is published (the cloud light). For the
+  owners' information, not filed as a defect: 'atmosphere.skyViewLut' and 'env.probeCube' under a closed deck are
+  2.5 to 3 times the luminance of the deck the march draws (numbers above), which every OTHER mirror that reads
+  them (standard materials read the probe x 0.35 + cloud base) shows too.
+
+### 16.2 The splash's aftermath (finding 6)
+
+- **Cause**: the patch's density stayed at 0.92 until 9 s and its radius crept on (the vfx decal's numbers, vfx-9).
+- **Done** (`shaders/surfaceWgsl.ts`, the impact loop; `splashFoamSpread` 2.0, `splashFoamTimeS` 15): thick white
+  foam for the first 0.6 s (gone as a layer by 2.5 s); the radius reaches R0 (1.2 + 2.0 (1 - e^(-t / 1.2 s))) and
+  stops (3.0 R0 at 3 s, 3.2 R0 at the end), its rim in tongues (0.64 to 1 of it by direction); from 0.8 s the
+  density falls with e^(-3 (t - 0.8) / lifetime), which is how the whitecaps' old foam goes: the lace tears it into
+  strands and holes; from 2 s what is left turns into a film (no thick cores, half the film's opacity); gone before
+  the lifetime ends. New: aerated water under and around the patch (to 1.3 of the radius), a pale green lift of the
+  body that is strongest at 0.5 s and fades with e^(-3.3 t / lifetime).
+- **Pictures**: `splash-impact-0.2s`, `-1s`, `-3s`, `-10s`: a white ring with tongues on pale green water, a torn
+  lace with holes at 3 s, a few thin streaks at 10 s, the rings gone. **Numbers** (splash.spec, now asserted: foam =
+  coverage x opacity on the water in front of the float, minus what lay there before): 1.3-1.7 hull radii out 0.74 /
+  0.43 / 0.09 at 1 / 3 / 10 s; 2.1-2.9 radii out 0.00 / 0.13 / 0.00.
+- **The vfx crown and `splash.foamDecal`**: request `ocean-8` (open): set it to 0; the foam on the water is the
+  ocean's alone, crown, spray and mist stay; a vfx decal kept for another look should follow the time course above.
+- Not done: the same sequence in the integration lab with the real capsule (its FakeSim emits no 'splash'), bubbles
+  or cells in the foam itself (finding 8, the foam as a material).
+
+### 16.3 Terraces of the water's colour over the shelf (finding 11)
+
+- **Cause** (not the 8-bit depth of `s.param`: with the waves drawn the depth is exact there): the seabed depth
+  straight below a water point was, deeper than 4 m, the PLANE of the bed where the eye ray meets it, carried back
+  to the vertical. That plane is the tangent of one facet of the bed's mesh; where the eye ray crosses to the next
+  facet its slope jumps and the extrapolated depth with it, by the change of slope times the way (the lab's bed:
+  5 m facets on a ripple of 18 m, slopes +-0.09, the way 15-20 m: 1 to 2 m at 9 m depth). The stripes were the bed
+  mesh's rows, alternately lighter and darker, 5 m apart on the bed (measured in `shore.png` and `coast60.png`).
+- **Done** (`oceanBedSecantDepth`): from two points of the bed, the one the pixel shows and the one seen where the
+  vertical itself shows on screen (or where the frame's border cuts the way to it), the line through them carried
+  towards the vertical, the less far the shorter the base (with no base: the depth the pixel shows). Continuous
+  over the facets. The plane stays where the march ends (4-6 m) and for the swash.
+- **Pictures**: `shore.png` (rows 560-720), `coast60.png` (the teal-to-navy transition), contrast raised: no
+  straight edge left, a smooth gradient with the bed's own broad relief.
+- Checked, not changed: the far sheet carries the depth in 8 bits (the terrain's G-buffer write), and the forward
+  surface rounds to it where it hands over (detail 0). A code is 2 sqrt(depth x 200 m) / 255: 0.35 m at 10 m, one
+  to two per cent of the colour between 3 and 30 m. That is on the far sheet only (beyond 15 km, or from above
+  9 km); the terraces of the critique were not these, no picture of this round shows steps there, and none was
+  looked for from altitude over a real shelf. Dithering before the rounding would be the terrain's (not requested:
+  no evidence).
+
+### 16.4 The glint never clips (finding 3)
+
+- **Where the energy goes: nowhere.** The lobe is the Cox-Munk Gaussian with the right peak (1 / (pi sigma^2) = 8.2
+  at 7 m/s); at the presets' geometry (sun 32 deg, incidence 58 deg, Fresnel 0.0425) the mean radiance at the mirror
+  point is E F P / (4 cos) = 0.164 E, about 12,300 cd/m2, HALF of sunlit white paper (0.29 E). No clamp (`writeHdr`
+  only). The far pass integrates the whole variance, which is the mean. What keeps it from white is the display
+  curve: pre-exposed 0.93 (sunlit white at sunny 16) is shown at 193 of 255, 2.93 at 230, 8 at 247; 250 needs
+  about ten times sunlit white. Request `ocean-10`; the lead decided within the round (in the request file): the
+  curve will put sunlit white at about 0.9 of display white with a shoulder, built behind a switch and judged by
+  A/B as the first render-core item after the presentation sweep; nothing changes before it.
+- **What was the ocean's**: the picture held the mean only. Glints of a sea are far from equal; the variance of what
+  a footprint holds is that of its few large ones (the sun's images on the faces of the short gravity waves). They
+  are now counted on their own (`waterGlintLarge`; `glintLargeFacetSizeM`, `glintLargeShare` 0.4): a footprint of
+  some hundred square metres still holds less than one on average, so from 3 km single pixels of the path stand at
+  several times its mean; from about two per footprint on they are a sheen (10 km and up: unchanged). Energy is kept
+  on average, as before.
+- **The hand-over made exact, which this needed**: the two passes placed a point centimetres apart, and round 2 let
+  a cell's draw run into its neighbours' near the border to survive that. Now both look the planet-fixed lattices up
+  from the ray of the PIXEL's centre (`waterPixelRay`: the forward pass hands its uv in, the deferred variant works
+  the same uv out of the surface point): the same cell to the bit. The border blending is gone (0.04 ms of the near
+  pass). Hand-over: from 500 m worst 0.12 % (was 1.94 %), from 6 km worst 0.81 % (was 0.37 %), limit 2 %.
+- **Result** (final run, large glints of 0.6 m, drawn down to a 64th of one per footprint; 0.4 m in the first run
+  gave a maximum of 232 at 3 km): `alt3k` is a path of single bright points on a warm sheen with ragged flanks,
+  maximum 250 of 255 (was 195), 93 pixels at 230 or more; `climb-4796m` (midday sun) 119 pixels at 250 or more and
+  1,372 at 230 or more (0.15 % of the frame; none before); `alt500` 19 pixels at 250 (was 6); glitter path at 2 m:
+  coefficient of variation 7.3 (9.3 in round 2). From 10 km up nothing changed: `alt10k` 215, `alt30k` 225,
+  `alt100k` 204, `leo` 169; there the path is the mean, and the mean is under white by the curve (`ocean-10`).
+  The share of the core that clips at 3 km is far under the critic's 0.5 %: a point needs 11 times the path's mean
+  for 250 of 255.
+- Not done: the LEO glint's level and colour (the mean, the air's veil and the curve: not the water's), slick line
+  art (finding 2).
+
+### 16.5 The near pass and its GPU line (0.6 ms)
+
+**The line is not met.** Final run (2026-11-12, 2560 x 1440, the only run on the GPU; six windows per scene), ms:
+
+| Scene | ocean p99 / p50 | water pass p99 / p50 | FFT p99 | line | result |
+|---|---|---|---|---|---|
+| splashdown (3 m, capsule, wake) | 1.05 / 0.78 | 0.96 / 0.69 | 0.06 | 0.9 (near pass 0.6) | FAILS: near pass 0.09 over at p50 (round 2: 0.71); the ocean's total holds at p50 |
+| coast, 60 m above the shelf | 1.26 / 0.98 | 1.17 / 0.89 | 0.06 | 0.8 (near pass 0.6) | FAILS: near pass 0.29 over at p50 (round 2: 0.92) |
+| 10 km above the sea | 0 / 0 | 0 | 0 | 0.3 | holds |
+| LEO | 0 / 0 | 0 | 0 | 0.1 | holds |
+
+`brdf_water` share of the core's lighting: LEO +0.173 p50 / +0.178 p99, 10 km +0.281 p50 / +0.413 p99 (round 2:
++0.177 / +0.281 p50: the cloud lookup of the mirror and the pixel's ray cost the far sheet nothing measurable).
+
+What was cut: the swell per pixel near the eye (from the vertex stage where neither the pixel's footprint nor the
+mesh's filter touches the shortest component: 0.062 -> 0.012 ms at the splashdown; nothing at the coast, where no
+pixel is that near), the glitter cells' border blending (0.049 -> 0.014 at the splashdown, 0.061 -> 0.012 at the
+coast), the material lookups of the refraction march over the bed, the sun shadow (one comparison tap,
+`sampleSunShadowHard`, request `ocean-9`, resolved by the maintainer within the round: 0.109 -> 0.078 at the coast,
+less than hoped: what is left is the cascade selection, not the taps). What the round added to the pass: the
+second point of the bed for the depth (the coast's seabed depth 0.044 -> 0.066), the large glints, two varyings.
+A mistake of the first run, corrected: the forward chunk held the deferred variant's cloud lookups behind a switch
+that is never taken there; they were paid for (the ambient term 0.076 -> 0.099, the pass 0.74 / 0.98); the forward
+variant now holds no lookup.
+
+The profile of the final run (the water pass's median with one term off; ms; the terms overlap):
+
+| Term switched off | splashdown: the term | coast 60 m: the term |
+|---|---|---|
+| (the pass as shipped) | 0.695 | 0.901 |
+| glitter cells | 0.014 | 0.012 |
+| foam (map, lace, relief, surf, wake, lap) | 0.038 | 0.063 |
+| refraction, bed and caustics | -0.001 | 0.109 |
+| vessel image | 0.018 | 0.001 |
+| seabed depth (march, plane, second point) | 0.007 | 0.066 |
+| wave layers (cascades, capillaries, long waves) | 0.051 | 0.056 |
+| swell in the fragment | 0.012 | 0.070 |
+| sun shadow lookup | 0.007 | 0.078 |
+| cloud lookup | 0.015 | 0.016 |
+| ambient term (sky reflection, body) | 0.085 | 0.097 |
+| direct sun term | 0.075 | 0.092 |
+| seabed depth in the vertex stage | 0.005 | -0.002 |
+| the four lighting terms together | 0.224 | 0.328 |
+| everything after the G-buffer reads (the floor: 0.081 / 0.068) | 0.614 | 0.833 |
+| PROBE: the forward chunk without the evaluated field and the far-wave bank (`setForwardProbe`) | 0.060 | 0.038 |
+
+**How far it is and what the trade is.** Splashdown: 0.09 ms. The probe says where 0.06 of it is: paths of the
+shared chunk that a near pixel with its waves at full strength never takes (the per-pixel roughness field, the
+far-wave bank of fourteen components) cost it 0.04 to 0.06 ms by being in the shader. The cut is two pipelines:
+the patches whose every pixel is inside the detail range drawn with the lean variant, the others with the full one
+(no change of the picture; a second pipeline and a split of the instance list). With it the splashdown stands at
+about 0.63; the last 0.03 would have to come out of the lighting terms (0.22 together). Coast: 0.29 ms, of which
+the same cut gives 0.04. The rest is in terms of 0.06 to 0.11 ms each that all draw something: the refracted bed
+and its caustics (0.11), the sun's shadow on the shelf (0.08), the swell per pixel from 60 m (0.07), the depth of
+the bed (0.07), surf and foam (0.06). To reach 0.6 there three of them would have to go (for instance: no refracted
+image of the bed deeper than a few metres, no shadow on water over the shelf, the bed's depth from one sample), which
+is a visible loss at the one place where the sea meets the land; that is a decision for the lead, not a cut made
+here. The p99 stands 0.27 to 0.28 ms above the p50 in every window (stalls that do not scale with the pass, section 8.1).
+
+### 16.6 Not done, and why
+
+- The line of the near pass (16.5). The budget test is red as it stands; nothing was loosened.
+- The glint's core does not clip from 3 km up, and not from orbit (`ocean-10`: the display curve; the lead's call).
+- The splash in the integration lab with the real capsule, crown and spray (the FakeSim emits no 'splash'; the
+  vfx decal is still on until `ocean-8` is answered: in the game two patches lie on each other until then).
+- Every other finding of the round-2 critique (2, 4, 5, 7, 8, 9, 10, 12, 13 and the minors): out of this round's scope.
+- A shadow's edge on the water is now the shadow map's texels (one tap): looked at in `splash.png` and
+  `perf-splash-1440p.png` (the capsule's shadow lies on waves; no saw-tooth seen at that distance), not measured.
+
+### 16.7 Requests, the final run, the score
+
+- Filed: `ocean-8` (vfx: `splash.foamDecal` to 0; open), `ocean-9` (render core: a one-tap sun-shadow lookup;
+  **resolved** c74f012 during the round and used), `ocean-10` (render core / lead: the display curve and highlights;
+  open with a lead decision: sunlit white to about 0.9 of display white, after the presentation sweep; the glint
+  pictures are to be judged again under that curve).
+- Against the ocean's paths nothing is open but `sky-lighting-11`, whose ocean part was answered in round 2 (it
+  stays open for atmosphere-clouds); looked through `docs/requests/` at the end of the round.
+- Final run (one batched run through the gate, after 45 minutes at the gate; the first run of the round had the
+  same 38 of 39): functional 37 of 37 pass
+  (three new in `overcast.spec.ts`; `splash.spec.ts` and `integrated.spec.ts` assert more); perf: the profile test
+  passes, the budget test fails on the near pass alone. Unit: 145 of 145 in 6 files with boundaries (21 new in
+  `brdf.test.ts`). Scoped typecheck clean, stub scan clean. Hand-over at fadeStart: worst 0.94 % from 6 km (mean
+  0.05 %), 0.16 % from 500 m; band 0.12 %; beyond fadeEnd identical; climb ring 1.37. LEO width ratio 1.082.
+  Whitecaps 0.149 % / 0.130 % (ratios 1.27 / 1.11). Swell agreement, damping zone, stability: as in round 2.
+- Honest score (10 = photograph), with the critics' record of scoring 0.5 to 1 under the fixer in mind: photo
+  about 6.5, artifact about 7. The blocker is gone (the last picture of the mission is a sea), the splash ages, the
+  terraces are gone, the path sparkles at 3 to 5 km. What keeps both under 8 is what this round did not touch: line
+  art of slicks from 3 to 100 km, whitecaps as compact patches, no wave faces from 2 m, the surf, foam as a flat
+  material, the capsule's image, a glint that is cream from 10 km up, and a near pass over its line.
+
