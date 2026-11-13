@@ -794,12 +794,28 @@ Nothing below is a stub in shipped code; these are the seams that make EVA addit
 | Budget | Target |
 |---|---|
 | GPU, sum of pass timestamps at 1440p internal (4K via TAAU) | p99 <= 11 ms |
-| rAF delta with vsync | p99 <= 17.5 ms, no delta >= 33 ms in steady flight |
+| rAF interval with vsync (the frame-interval line, restated below the table) | per phase, against the measured harness clock: median within 1 % of the nominal period; dropped frames (an interval over 1.5 nominal periods) <= 0.5 % of the frames; no delta >= 33 ms in steady flight |
 | CPU main thread per frame | p99 <= 6 ms (sim <= 1.5 ms at 4x physics warp, quadtree + cascades <= 1 ms, uploads <= 2 ms, UI <= 0.5 ms) |
 | Tile generation | 6-12 ms per tile in workers; <= 8 uploads or 2 ms per frame |
 | VRAM | about 3 GB (terrain 1.1, vehicle + materials 0.6, G-buffer/history 0.5, clouds/LUTs 0.2, shadows 0.13, sky 0.15: the full 2048-per-face Milky Way cube, lead decision on sky-lighting-2) |
 | Headless full mission | < 5 min wall-clock (target 90 s) |
 | Baked data on disk | < 20 GB including caches |
+
+**The frame-interval line (restated by the lead on 2026-11-12).** A frame-interval assertion is made against
+the harness clock measured in the same browser (`measureHarnessClock` in `tests/browser/harness.ts`: its
+period is the NOMINAL period, 16.67 ms on a 60 Hz display; a run whose clock is not nominal is not judged),
+per phase of a flight or per checkpoint:
+
+- the MEDIAN rAF interval lies within 1 % of the nominal period;
+- DROPPED FRAMES, intervals longer than 1.5 nominal periods, are at most 0.5 % of the phase's frames;
+- unchanged: no frame of 33 ms or more in steady flight.
+
+This replaces "rAF p95 < 16.7 ms" (18.2) and "p99 <= 17.5 ms" (the table above). Both meant that the app
+presents every display frame and drops almost none, in a form a 60 Hz display cannot meet: its intervals
+scatter around one period, so 95 % of them cannot lie under it. The browser mission of 2026-11-12
+(`docs/qa/mission/browser-mission-2026-11-12.json`: harness clock 59.99-60.00 Hz, 80 phases, 161,004
+frames) measured a p95 of 16.84-17.70 ms in all 80 phases and a p99 above 17.5 ms in 17 of them, with a
+median of 16.61-16.71 ms (16.66 over the phases): within 1 % of the period in every phase.
 
 ### 17.1 GPU budget per checkpoint
 
@@ -886,7 +902,7 @@ Short segments are additionally flown with real key presses to prove the binding
 stage, SAS mode keys, M for the map, a node drag with the mouse - including a Shift-drag on a node handle
 that must leave the throttle at 0). Judged on: the same milestone list and
 gates read from `window.__test.milestones()`; `cheatCounter == 0`; `window.__test.errors` empty for the
-whole flight; per-phase perf (rAF p95 < 16.7 ms, GPU p99 <= 11 ms at checkpoints taken under the GPU
+whole flight; per-phase perf (the frame-interval line of section 17: the median rAF interval within 1 % of the measured harness clock's period, dropped frames at most 0.5 % of the phase's frames, no frame of 33 ms or more; GPU p99 <= 11 ms at checkpoints taken under the GPU
 lock); audio bus levels reacting at ignition, in vacuum and during reentry; screenshots at every
 milestone in all three views saved for visual QA.
 
