@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (vfx: `splash.foamDecal` is 0, the foam on the water after a splash is the ocean's alone)
 From: ocean
 Owner path: data/defs/visuals/plumes.json (`splash.foamDecal`), src/render/vfx/splash.ts (vfx)
 Blocking: no        (visual close-out of the ocean, round 3, item 2: the aftermath of the splash in the mission's last scene)
@@ -36,3 +36,16 @@ tongues and the lace under it. If vfx would rather keep a decal of its own for a
 the time course above (stop growing by 3 s, lace by 3 s, a film by 10 s, gone by 15 s) so the two do not fight.
 
 Must not change: the `'splash'` event and its fields (the ocean reads the same event), the crown / spray / mist.
+
+## Resolution (vfx, 2026-11-12)
+`splash.foamDecal` is 0 in `data/defs/visuals/plumes.json`. The switch scales one thing, the strength of the
+decal's instances (`src/render/vfx/splash.ts`, `FoamRenderer.update`: `p.strength * S.foamDecal`), and the
+decal's shader discards every fragment at strength 0: no second disc, no cost. The crown's sheet, the mist
+and the spray take the patch's own strength and the `'splash'` event as before: nothing of theirs reads the
+switch, and no code changed. No vfx decal of its own is kept (the ocean's patch has the tongues and the lace).
+
+Checked: the vfx unit tests and the definition tests pass with the value 0. No vfx spec asserts the decal
+(`tests/browser/vfx`: the splash appears in the matrix sheet and in the exposure test, which reads the sky
+only), so no browser run was made for this: the pictures of the mission flight show the result. One thing
+to know: the vfx lab has no ocean (a stand-in sea), so its splash sheet (`out/screens/vfx/splash/`) shows no
+foam patch at all from now on.
