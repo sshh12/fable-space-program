@@ -47,16 +47,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, withGpuLock } from '../harness';
 import { spawnSync } from 'node:child_process';
-import { compareWithBaseline, describeBaselineComparison, FRAME_BUDGET_MS, FRAME_VIEWS, judgeRow, oversAgainstBaseline, packageLines, UNBUDGETED_MS, withBaselineRow, type BudgetBaseline } from './budgetTable';
+import { compareWithBaseline, describeBaselineComparison, FRAME_BUDGET_MS, FRAME_VIEWS, judgeRow, LEAD_LINES, oversAgainstBaseline, packageLines, TABLE_CHECKPOINTS, UNBUDGETED_MS, withBaselineRow, type BudgetBaseline, type TableLine } from './budgetTable';
 import { expectClean, openIntegration, PACKAGE_OWNER, record, repoRoot, save, settle, type FeaturePackage, type LabInfo } from './helpers';
 
 test.use({ viewport: { width: 2560, height: 1440 } });
 
-const CHECKPOINTS = ['pad lift-off', 'ascent 10-40 km', 'LEO', 'LEO cockpit', 'lunar descent', 'reentry', 'splashdown'] as const;
+const CHECKPOINTS = TABLE_CHECKPOINTS;
 type Checkpoint = (typeof CHECKPOINTS)[number];
 
-/** ARCHITECTURE 17.1, one row per line, values per checkpoint in the order of CHECKPOINTS (ms, p99). */
-const LINES: { line: string; pkg: FeaturePackage | 'core' | 'ui'; ms: number[] }[] = [
+/**
+ * ARCHITECTURE 29.1 (v1: 17.1), one row per line, values per checkpoint in the order of CHECKPOINTS (ms, p99);
+ * then the lines the lead has added (budgetTable.ts, LEAD_LINES: the cabin seen from outside).
+ */
+const LINES: TableLine[] = [
   { line: 'Core fixed (AO, lighting, TAA, bloom, tonemap, copies)', pkg: 'core', ms: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0] },
   { line: 'Terrain G-buffer incl. far water sheet', pkg: 'terrain', ms: [1.5, 1.5, 1.5, 1.0, 1.8, 1.2, 1.5] },
   { line: 'Terrain shadow casting (amortised)', pkg: 'terrain', ms: [0.5, 0.5, 0.4, 0.3, 0.6, 0.4, 0.4] },
@@ -71,6 +74,7 @@ const LINES: { line: string; pkg: FeaturePackage | 'core' | 'ui'; ms: number[] }
   { line: 'Sky background + probe + flare', pkg: 'sky', ms: [0.2, 0.2, 0.3, 0.3, 0.3, 0.2, 0.2] },
   { line: 'Plumes, smoke, particles, plasma, canopies', pkg: 'vfx', ms: [1.3, 1.0, 0.6, 0.6, 0.9, 1.2, 0.9] },
   { line: 'Navball; map overlay in map view', pkg: 'ui', ms: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1] },
+  ...LEAD_LINES,
 ];
 /** The navball texture (0.008 ms) and the map overlay (0.012 ms), measured by their own specs: added to the frame sum. */
 const UI_MEASURED_MS = 0.02;

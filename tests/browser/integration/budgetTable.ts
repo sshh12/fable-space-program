@@ -14,7 +14,10 @@
  * that spec's own method (one pass, p50 or p99). The table does not re-measure a waived line a second way: at
  * a row where a package has a named waiver, the package over the sum of its lines is REPORTED with the
  * waiver and not asserted here; the frame total is asserted all the same. tools/dev/budget-table.test.ts
- * holds this list equal to what the two specs state.
+ * holds this list equal to what the two specs state. A waiver the lead grants on a line of THIS table
+ * (TABLE_WAIVERS: the pad's terrain) has its ceiling asserted here.
+ *
+ * LEAD LINES. Lines the lead has added to ARCHITECTURE 29.1 (LEAD_LINES: the cabin seen from outside).
  *
  * THE BASELINE. `BUDGET_RECORD="<lead's note>"` makes the spec write each row it measures into
  * tests/browser/budget.baseline.json (tracked; the lead's act, on a quiet machine). The presentation sweep's
@@ -90,6 +93,52 @@ export const NAMED_WAIVERS: readonly NamedWaiver[] = [
 
 export const waiversOf = (row: string, pkg: string): NamedWaiver[] => NAMED_WAIVERS.filter((w) => w.row === row && w.pkg === pkg);
 
+/** The checkpoints of the table, in the order of every line's values (ARCHITECTURE 29.1). */
+export const TABLE_CHECKPOINTS = ['pad lift-off', 'ascent 10-40 km', 'LEO', 'LEO cockpit', 'lunar descent', 'reentry', 'splashdown'] as const;
+
+export interface TableLine {
+  line: string;
+  pkg: BudgetPackage | 'core' | 'ui';
+  /** ms (p99) per checkpoint, in the order of TABLE_CHECKPOINTS. */
+  ms: number[];
+}
+
+/**
+ * Lines the LEAD has added to the table of ARCHITECTURE 29.1 (the spec appends them to the table's own).
+ *
+ * The cabin seen from outside (lead decision of 2026-11-12): a lit cabin behind the capsule's windows is a
+ * feature with a cost, and the table had no line for it: the cockpit package costs 0.07 to 0.11 ms in
+ * every outside view (the recording of 2026-11-12). 0.15 ms where the vessel's cabin is in view, taken from
+ * the frame's unallocated remainder. None at the pad: that column has 0.05 ms unallocated, and the cockpit
+ * stays there under the 0.1 ms that a package without a line may cost (0.077 ms as recorded). None in the
+ * cockpit view, whose own line covers the cabin.
+ */
+export const LEAD_LINES: readonly TableLine[] = [{ line: 'Cabin seen from outside: the lit interior through the windows (lead addition of 2026-11-12)', pkg: 'cockpit', ms: [0, 0.15, 0.15, 0, 0.15, 0.15, 0.15] }];
+
+/**
+ * A waiver the LEAD grants on a line of this table itself (not on a line of a package's own spec): the
+ * package may stand over the sum of its lines at that row, up to `ceiling`, which THIS table asserts,
+ * since no other spec holds it. `budget` is the sum of the lines it was granted on: when the table's line
+ * is another number, the waiver is stale and the row fails.
+ */
+export interface TableWaiver {
+  row: string;
+  pkg: BudgetPackage;
+  until: string;
+  budget: number;
+  ceiling: number;
+  /** When it was granted and on what measurement. */
+  granted: string;
+}
+
+/** The pad's terrain: 2.348 ms against 2.15 in the recording of 2026-11-12; with the terrain's other waivers, until the material cache. */
+export const TABLE_WAIVERS: readonly TableWaiver[] = [
+  { row: 'pad lift-off', pkg: 'terrain', until: MATERIAL_CACHE, budget: 2.15, ceiling: 2.47, granted: 'lead decision of 2026-11-12, on 2.348 ms in the recorded baseline' },
+];
+
+export const tableWaiverOf = (row: string, pkg: string): TableWaiver | undefined => TABLE_WAIVERS.find((w) => w.row === row && w.pkg === pkg);
+const describeTableWaiver = (w: TableWaiver): string => `LEAD WAIVER on this table's line until "${w.until}": ceiling ${w.ceiling} ms p99, asserted here (${w.granted})`;
+
 /** What the judgement and the printing need of a measured row. */
 export interface BudgetRow {
   checkpoint: string;
@@ -132,7 +181,13 @@ export function judgeRow(row: BudgetRow, owner: (pkg: string) => string = (p) =>
       }
       const isOver = limit === 0 ? ms > UNBUDGETED_MS : ms > limit;
       const waivers = waiversOf(row.checkpoint, pkg);
-      if (isOver && waivers.length > 0) verdict.waived.push(`${pkg} (${owner(pkg)}): ${ms.toFixed(3)} ms against ${limit.toFixed(2)} ms; ${waivers.map(describeWaiver).join('; ')}`);
+      const own = tableWaiverOf(row.checkpoint, pkg);
+      if (isOver && own) {
+        // The lead's waiver on a line of this table: its ceiling is asserted here.
+        if (Math.abs(own.budget - limit) > 1e-9) fail(pkg, `${pkg} (${owner(pkg)}): ${ms.toFixed(3)} ms against ${limit.toFixed(2)} ms; the lead's waiver was granted on a line of ${own.budget.toFixed(2)} ms and is stale`);
+        else if (ms > own.ceiling) fail(pkg, `${pkg} (${owner(pkg)}): ${ms.toFixed(3)} ms against the waived ceiling of ${own.ceiling.toFixed(2)} ms (line ${limit.toFixed(2)} ms; ${describeTableWaiver(own)})`);
+        else verdict.waived.push(`${pkg} (${owner(pkg)}): ${ms.toFixed(3)} ms against ${limit.toFixed(2)} ms; ${describeTableWaiver(own)}`);
+      } else if (isOver && waivers.length > 0) verdict.waived.push(`${pkg} (${owner(pkg)}): ${ms.toFixed(3)} ms against ${limit.toFixed(2)} ms; ${waivers.map(describeWaiver).join('; ')}`);
       else if (isOver) fail(pkg, `${pkg} (${owner(pkg)}): ${ms.toFixed(3)} ms against ${limit.toFixed(2)} ms`);
       else if (limit === 0 && ms > 0.005) verdict.unbudgeted.push(`${pkg} (${owner(pkg)}) has no line at this checkpoint and costs ${ms.toFixed(3)} ms`);
     }
@@ -160,8 +215,9 @@ export function packageLines(row: BudgetRow, owner: (pkg: string) => string = (p
     const measured = !present ? 'absent' : `${(ms ?? 0).toFixed(3)} ms`;
     const against = row.kind === 'frame' ? 'reported' : limit === undefined ? 'no line' : `budget ${limit.toFixed(2)} ms`;
     const state = row.kind === 'frame' || limit === undefined || !present ? '' : (limit === 0 ? (ms ?? 0) > UNBUDGETED_MS : (ms ?? 0) > limit) ? ' OVER' : '';
-    const waivers = waiversOf(row.checkpoint, pkg);
-    return `${pkg}${pkg === 'core' ? '' : ` (${owner(pkg)})`}: ${measured} / ${against}${state}${waivers.length > 0 ? ` [${waivers.map(describeWaiver).join('; ')}]` : ''}`;
+    const own = row.kind === 'lines' ? tableWaiverOf(row.checkpoint, pkg) : undefined;
+    const notes = [...waiversOf(row.checkpoint, pkg).map(describeWaiver), ...(own ? [describeTableWaiver(own)] : [])];
+    return `${pkg}${pkg === 'core' ? '' : ` (${owner(pkg)})`}: ${measured} / ${against}${state}${notes.length > 0 ? ` [${notes.join('; ')}]` : ''}`;
   });
   lines.push(`frame: sum of the p99s ${row.frame.sum.toFixed(2)} ms / ${FRAME_BUDGET_MS} ms${row.frame.sum > FRAME_BUDGET_MS ? ' OVER' : ''}; typical ${row.frame.typical.toFixed(2)} ms`);
   return lines;

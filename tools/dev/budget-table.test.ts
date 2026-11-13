@@ -15,10 +15,14 @@ import {
   FRAME_BUDGET_MS,
   FRAME_VIEWS,
   judgeRow,
+  LEAD_LINES,
   NAMED_WAIVERS,
   oversAgainstBaseline,
   packageLines,
   PACKAGES,
+  TABLE_CHECKPOINTS,
+  TABLE_WAIVERS,
+  tableWaiverOf,
   waiversOf,
   withBaselineRow,
   type BudgetBaseline,
@@ -142,7 +146,9 @@ describe('the printed lines of a row', () => {
   it('one line per package: measured, budget, OVER where it is, the named waivers; then the frame', () => {
     const lines = packageLines(row({ checkpoint: 'pad lift-off', measured: { ...row().measured, ocean: 0.95 }, budget: { ...row().budget, ocean: 0.8 } }), (p) => `${p}-owner`);
     expect(lines[0]).toBe('core: 2.600 ms / budget 3.00 ms');
-    expect(lines).toContain('terrain (terrain-owner): 1.200 ms / budget 1.90 ms');
+    expect(lines).toContain('vehicle (vehicle-owner): 0.700 ms / budget 0.90 ms');
+    // The pad's terrain line always names the lead's waiver on the table's own line, over or not.
+    expect(lines.find((l) => l.startsWith('terrain'))!.startsWith('terrain (terrain-owner): 1.200 ms / budget 1.90 ms [LEAD WAIVER on this table\'s line until "terrain material cache": ceiling 2.47 ms p99, asserted here')).toBe(true);
     expect(lines.find((l) => l.startsWith('ocean'))).toMatch(/^ocean \(ocean-owner\): 0\.950 ms \/ budget 0\.80 ms OVER \[LEAD WAIVER until "near-patch pipeline and quality scaling": coast 60 m, near pass, line 0\.6 ms, ceiling 0\.94 ms p50 .*; LEAD WAIVER .*coast 60 m, ocean, line 0\.8 ms, ceiling 1\.03 ms p50 .*\]$/);
     expect(lines[lines.length - 1]).toBe('frame: sum of the p99s 7.15 ms / 11 ms; typical 5.10 ms');
     expect(lines).toHaveLength(1 + PACKAGES.length + 1);
@@ -194,7 +200,7 @@ describe('the recorded baseline and the sweep\'s gate', () => {
 describe('the gate that asks "unchanged" (BUDGET_COMPARE)', () => {
   const meta = { note: 'the lead, before sub-wave 3.2, quiet machine', method: 'p99 per package', at: '2026-11-12T20:00:00.000Z', commit: 'abc1234' };
   // A recorded row in which the terrain is over its line and the cockpit costs 0.104 ms where it has none.
-  const recordedRow = row({ checkpoint: 'pad lift-off', measured: { ...row().measured, terrain: 2.348, cockpit: 0.104 }, budget: { ...row().budget, terrain: 2.15 }, frame: { sum: 6.17, typical: 5.1 } });
+  const recordedRow = row({ checkpoint: 'lunar descent', measured: { ...row().measured, terrain: 2.348, cockpit: 0.104 }, budget: { ...row().budget, terrain: 2.15 }, frame: { sum: 6.17, typical: 5.1 } });
   const baseline = withBaselineRow(null, recordedRow, meta);
 
   it('every failure names what it is about', () => {
@@ -267,6 +273,63 @@ describe('the recorded baseline (tests/browser/budget.baseline.json)', () => {
       const asRow: BudgetRow = { checkpoint: name, kind: r.kind, loaded: r.loaded, measured: r.measured, budget: r.budget, frame: r.frame };
       expect(compareWithBaseline(b, asRow), name).toMatchObject({ change: 0, regressed: false, packages: [] });
       expect(oversAgainstBaseline(b, asRow, judgeRow(asRow)).fresh, name).toEqual([]);
+    }
+  });
+});
+
+describe('the lead\'s additions to the table (decisions of 2026-11-12)', () => {
+  it('the cabin seen from outside has a line of 0.15 ms wherever the cabin is in an outside view, none at the pad and none in the cockpit view', () => {
+    expect(TABLE_CHECKPOINTS).toEqual(['pad lift-off', 'ascent 10-40 km', 'LEO', 'LEO cockpit', 'lunar descent', 'reentry', 'splashdown']);
+    expect(LEAD_LINES).toHaveLength(1);
+    const cabin = LEAD_LINES[0]!;
+    expect(cabin.pkg).toBe('cockpit');
+    expect(cabin.ms).toEqual([0, 0.15, 0.15, 0, 0.15, 0.15, 0.15]);
+    // The spec appends the lead's lines to the table's own.
+    expect(source('tests/browser/integration/budget.perf.spec.ts')).toMatch(/\.\.\.LEAD_LINES,\n\];/);
+    // ARCHITECTURE 29.1 carries the line and the sums that follow from it (the pad's column has 0.05 ms unallocated).
+    const architecture = source('docs/ARCHITECTURE.md');
+    expect(architecture).toMatch(/\| Cabin seen from outside[^\n]*lead addition of 2026-11-12[^\n]*\| 0 \| 0\.15 \| 0\.15 \| 0 \(in the line above\) \| 0\.15 \| 0\.15 \| 0\.15 \|/);
+    expect(architecture).toMatch(/\| \*\*Sum\*\* \(budget 11\.0\) \| \*\*10\.95\*\* \| \*\*10\.25\*\* \| \*\*9\.25\*\* \| \*\*9\.4\*\* \| \*\*7\.95\*\* \(9\.0 cockpit\) \| \*\*9\.05\*\* \(10\.1\) \| \*\*9\.65\*\* \(10\.7\) \|/);
+  });
+
+  it('the pad\'s terrain stands under the lead\'s waiver on the table\'s own line: reported up to 2.47 ms, failed above it, and stale when the line moves', () => {
+    expect(TABLE_WAIVERS).toEqual([{ row: 'pad lift-off', pkg: 'terrain', until: 'terrain material cache', budget: 2.15, ceiling: 2.47, granted: 'lead decision of 2026-11-12, on 2.348 ms in the recorded baseline' }]);
+    // The same condition as the terrain's own waivers: they lapse together.
+    expect(/const MATERIAL_CACHE = '([^']+)'/.exec(source('tests/browser/terrain/terrain.perf.spec.ts'))![1]).toBe(TABLE_WAIVERS[0]!.until);
+    expect(tableWaiverOf('pad lift-off', 'terrain')).toBeDefined();
+    expect(tableWaiverOf('pad lift-off', 'vehicle')).toBeUndefined();
+    expect(tableWaiverOf('LEO', 'terrain')).toBeUndefined();
+    const pad = (terrain: number, line = 2.15): BudgetRow => row({ checkpoint: 'pad lift-off', measured: { ...row().measured, terrain }, budget: { ...row().budget, terrain: line }, frame: { sum: 6.2, typical: 5.1 } });
+    expect(judgeRow(pad(2.1))).toEqual({ over: [], overOf: [], waived: [], unbudgeted: [] });
+    const waived = judgeRow(pad(2.348));
+    expect(waived.over).toEqual([]);
+    expect(waived.waived).toEqual(['terrain (terrain): 2.348 ms against 2.15 ms; LEAD WAIVER on this table\'s line until "terrain material cache": ceiling 2.47 ms p99, asserted here (lead decision of 2026-11-12, on 2.348 ms in the recorded baseline)']);
+    expect(judgeRow(pad(2.47)).over).toEqual([]);
+    const above = judgeRow(pad(2.48));
+    expect(above.overOf).toEqual(['terrain']);
+    expect(above.over[0]).toMatch(/^terrain \(terrain\): 2\.480 ms against the waived ceiling of 2\.47 ms \(line 2\.15 ms; LEAD WAIVER on this table's line/);
+    expect(judgeRow(pad(2.3, 2.0)).over).toEqual(['terrain (terrain): 2.300 ms against 2.00 ms; the lead\'s waiver was granted on a line of 2.15 ms and is stale']);
+    // The same excess at another row is over, and the printed line names the waiver.
+    expect(judgeRow(row({ measured: { ...row().measured, terrain: 2.3 }, budget: { ...row().budget, terrain: 2.15 } })).over).toHaveLength(1);
+    expect(packageLines(pad(2.348)).find((l) => l.startsWith('terrain'))).toBe('terrain (terrain): 2.348 ms / budget 2.15 ms OVER [LEAD WAIVER on this table\'s line until "terrain material cache": ceiling 2.47 ms p99, asserted here (lead decision of 2026-11-12, on 2.348 ms in the recorded baseline)]');
+  });
+
+  const file = path.join(repoRoot, 'tests', 'browser', 'budget.baseline.json');
+  const recorded = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as BudgetBaseline) : null;
+  it.skipIf(recorded === null)('with them, every row of the recorded baseline is within the table as it now stands', () => {
+    for (const [name, r] of Object.entries(recorded!.rows)) {
+      // A row recorded before the lead's lines carries the budgets of that hour: add the lead's lines it lacks.
+      const at = (TABLE_CHECKPOINTS as readonly string[]).indexOf(name);
+      const budget = { ...r.budget };
+      if (r.kind === 'lines') {
+        const linesOfThen = r.budget['cockpit'] ?? 0;
+        const cabin = LEAD_LINES[0]!.ms[at]!;
+        const linesNow = (name === 'LEO cockpit' ? 1.2 : 0) + cabin;
+        expect([name === 'LEO cockpit' ? 1.2 : 0, linesNow], `${name}: the cockpit's recorded budget`).toContain(linesOfThen);
+        budget['cockpit'] = linesNow;
+      }
+      const verdict = judgeRow({ checkpoint: name, kind: r.kind, loaded: r.loaded, measured: r.measured, budget, frame: r.frame });
+      expect(verdict.over, name).toEqual([]);
     }
   });
 });

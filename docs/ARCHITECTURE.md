@@ -3630,18 +3630,33 @@ GPU lock in its lab; the lead enforces the sums in the integrated app from `Perf
 | Vehicle shadows (vehicle-pad) | 0.4 | 0.4 | 0.3 | 0.3 | 0.3 | 0.2 | 0.2 |
 | Site structures, G-buffer + shadow (vehicle-pad) | 0.5 | 0.1 | 0 | 0 | 0 | 0 | 0 |
 | Cockpit interior G-buffer + shadow + glass + display upload (cockpit) | 0 | 0 | 0 | 1.2 | 0 (1.2 in cockpit view) | 0 (1.2) | 0 (1.2) |
+| Cabin seen from outside: the lit interior through the capsule's windows (cockpit; lead addition of 2026-11-12, see below) | 0 | 0.15 | 0.15 | 0 (in the line above) | 0.15 | 0.15 | 0.15 |
 | Atmosphere LUTs + march + composite + aerial volume (atmosphere-clouds) | 0.8 | 0.9 | 0.9 | 0.9 | 0 | 0.9 | 0.8 |
 | Clouds (atmosphere-clouds) | 0.9 (governed) | 1.3 | 1.3 | 1.3 | 0 | 1.3 | 1.2 |
 | Ocean FFT + near field (ocean) | 0.8 | 0.3 | 0.1 | 0.1 | 0 | 0.1 | 0.9 |
 | Sky background + probe + flare (sky-lighting) | 0.2 | 0.2 | 0.3 | 0.3 | 0.3 | 0.2 | 0.2 |
 | Plumes, smoke, particles, plasma, canopies (vfx) | 1.3 | 1.0 | 0.6 | 0.6 | 0.9 | 1.2 | 0.9 |
 | Navball 0.05 (flight-ui); map overlay up to 0.1, drawn only in map view (map-view) | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 | 0.1 |
-| **Sum** (budget 11.0) | **10.95** | **10.1** | **9.1** | **9.4** | **7.8** (9.0 cockpit) | **8.9** (10.1) | **9.5** (10.7) |
+| **Sum** (budget 11.0) | **10.95** | **10.25** | **9.25** | **9.4** | **7.95** (9.0 cockpit) | **9.05** (10.1) | **9.65** (10.7) |
 
 "Governed" = at pad lift-off the plume and smoke volumes push the frame to its limit; the cloud march may
 run at `qualityScale` down to 0.7 there (0.9 ms), which is invisible behind the smoke. Nothing else relies
 on the governor to meet its line. The governor and dynamic resolution hold 60 fps if a checkpoint exceeds
 its budget on a slower machine, but budgets are measured at the stated internal resolution.
+
+**Lead additions of 2026-11-12**, from the recording of the table as the baseline of the presentation
+sweep (`tests/browser/budget.baseline.json`; every frame 3.0 to 6.7 ms):
+
+- **The cabin seen from outside.** A lit cabin behind the capsule's windows is a feature with a cost, and
+  the table had no line for it: the cockpit package costs 0.07 to 0.11 ms in every outside view. It gets
+  0.15 ms wherever the vessel's cabin is in an outside view, taken from the frame's unallocated remainder
+  (0.9 to 3.2 ms in those columns). None at the pad lift-off: that column has 0.05 ms unallocated, and the
+  cockpit stays there under the 0.1 ms that a package without a line may cost (0.077 ms recorded). None in
+  the cockpit view, whose own line covers the cabin.
+- **The pad's terrain.** The three terrain lines sum to 2.15 ms at the pad lift-off; the recording measured
+  2.348 ms. It stands under a named lead waiver with the terrain's other waivers, until the terrain
+  material cache: ceiling 2.47 ms, asserted by the table itself (`TABLE_WAIVERS` in
+  `tests/browser/integration/budgetTable.ts`).
 
 **v2 checkpoints.** The table above is the single-vehicle flight. The scenes v2 adds have their own
 columns, with the same owners and the same 11.0 ms budget at the **Ultra default**. Where several craft
