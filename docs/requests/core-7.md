@@ -71,3 +71,22 @@ enough, and comes back to this request.
 
 When the sky reports busy until its probe has converged, the lead-in can go; the requirement of two
 identical captures stays.
+
+## Lead note (2026-11-12, after the recording): how large the lead-in difference is, checkpoint by checkpoint
+
+Pixels (of 921,600) in which the discarded lead-in capture differed from the capture used, for each of the
+three loads of the recording (`recorded.leadInDifferingPixels` in `tests/browser/baselines.manifest.json`):
+
+| Checkpoints | Lead-in difference |
+|---|---|
+| 22 lab checkpoints whose page is frozen from its first frame and never stepped (pads, orbit and nadir views, the Earth and the Moon from afar, the ocean stations, the shoreline, the descent under canopies, the flight HUD, the map, lunar orbit) | 0, 0, 0 |
+| `lunar-touchdown` (the FakeSim stepped for 3 s, the lander in full sun) and `sweep-rails-warp` (the real simulation stepped through 120 frames at 1,000x, the vessel all but unlit) | 0, 0, 0 |
+| `leo-night` (frozen from its first frame; the night side, one lit point of the cabin in view) | 2, 2, 1 |
+| `sweep-separation-debris` (the real simulation stepped for 3 s, then frozen) | 4, 5, 3 |
+| `ascent-40km`, `ascent-10km`, `ascent-cloud-deck` (the FakeSim stepped for 3 s so that its engines burn, then frozen) | 62, 62, 61; 51, 51, 158; 76, 71, 57 |
+| `sweep-app-pad` (the app, running from its reveal until the test hooks freeze it) | 413, 624, 367 |
+
+So, the cabin's light in `leo-night` apart (request lead-5), the first capture differs only where the
+simulation has MOVED before the capture: a page that was frozen from its first frame gives the same picture
+in its first capture as in every later one, and of the seven pages that were stepped or ran, two do as well.
+The two captures after the lead-in were identical in every one of these loads.

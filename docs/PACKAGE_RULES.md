@@ -162,7 +162,10 @@ VIDEO_SCHEDULER_INTERNAL_ERROR, in the GPU driver): at 15:35 with four WebGPU Ch
      that must be identical to the bit (request core-7): a `NotFrameExactError` means your page still
      changes when every feature reports idle, which is a finding, not a tolerance to raise. They were
      recorded before sub-wave 3.2 on the tree as it stood: a change that is MEANT to move pixels says which
-     checkpoints it moves and asks the lead to re-record them.
+     checkpoints it moves and asks the lead to re-record them. To find WHAT moves in a page that is not
+     frame-exact: `BASELINE_EXACT_PROBE=<checkpoint>` with `tests/browser/shell/baseline-exact-probe.spec.ts`
+     (several captures, where each pair differs, a picture with the pixels marked). A feature with a clock,
+     a history or a phase of its own restarts it in `resetTemporal()` (RENDER_API section 13).
 15b. Frame pacing: perf numbers are taken inside `withGpuLock`, which also keeps the display awake (Chrome
      paces frames at about 57.5 Hz while the monitor sleeps). A spec that asserts a requestAnimationFrame
      line measures the harness clock (`measureHarnessClock`) and asserts on a nominal one

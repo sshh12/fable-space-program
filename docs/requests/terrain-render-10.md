@@ -1,4 +1,4 @@
-Status: resolved in code (lead, 77063e5: three whole-frame rows in the budget table; first measured in the lead's recording run of the table before sub-wave 3.2)
+Status: resolved (lead, 77063e5: three whole-frame rows in the budget table; measured and recorded on 2026-11-12: 6.26, 5.60 and 6.65 ms, all under 11 ms)
 From: terrain-render (on the lead's decision of 2026-11-12)
 Owner path: tests/browser/integration/budget.perf.spec.ts (the summed GPU budget of ARCHITECTURE 17.1; the maintainer's)
 Blocking: no
@@ -74,8 +74,9 @@ terrain's own line by the terrain's spec, and nothing measures the whole frame t
   (`NAMED_WAIVERS`; a unit test reads them out of the two specs' sources, so a changed ceiling or a removed
   waiver fails the unit suite until the list follows) and prints them beside the terrain's line at these
   rows.
-- **Not yet measured**: nothing has run in a browser. The first numbers come with the lead's recording run
-  of the table (`BUDGET_RECORD`), which also becomes the pre-sweep baseline in
-  `tests/browser/budget.baseline.json`.
+- **Measured in the lead's recording run of 2026-11-12** (`tests/browser/budget.baseline.json`, a quiet
+  machine, tree at 9a873e0): the frame is 6.26 ms at the stony ground, 5.60 ms among the kiawe and
+  6.65 ms at the thickets from 120 m (the sum of the packages' p99s; the terrain's share 3.58, 2.62 and
+  3.74 ms): all three pass, with more than 4 ms to spare.
 - When the material cache has landed and the waivers are gone from the terrain's spec, remove their entries
   from `NAMED_WAIVERS` (the unit test will ask for it); the rows can stay as ordinary whole-frame rows.

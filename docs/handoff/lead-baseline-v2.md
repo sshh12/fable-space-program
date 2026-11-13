@@ -936,3 +936,145 @@ with the BASELINE_RECORD note; Read every PNG and list any that shows a fault, w
 manifest; then the budget table in one run on a quiet machine with BUDGET_RECORD, committed as the pre-sweep
 baseline. After it, the lead step of sub-wave 3.2 (union joins, `setTarget(TargetRef)`, `'ui.scrimRects'`,
 `TilePackIndex` and `PackList` into the terrain contract).
+
+## 22. Lead step before sub-wave 3.2, phase 2: the reference images and the budget baseline recorded (2026-11-12, 16:35-19:00)
+
+**Result.** 30 of the 33 checkpoints are recorded (`data/baselines`, 30 PNGs, 20 MB, git-ignored;
+`tests/browser/baselines.manifest.json`). The three cockpit views are NOT recorded: the cockpit package does
+not take part in the frame-exact capture (request lead-5). The gate the sweep will run (the record spec
+without BASELINE_RECORD) compared all 30 against their references from a fresh load: clean. The budget table
+is recorded as the pre-sweep baseline (`tests/browser/budget.baseline.json`).
+
+**The runs** (every one through the gate, one at a time; the tree was quiet throughout: the only source
+files that changed after the first run began are the app shell's `src/app/framing.ts` and `testHooks.ts`
+at 17:02, while a lab page that does not import them was being captured, 33 minutes before the app's
+checkpoints):
+
+| Run | What | Result |
+|---|---|---|
+| record 1, 16:58-17:37 (after 22 minutes behind the browser mission) | all 33 checkpoints, three loads each | 28 recorded, 5 NOT FRAME-EXACT |
+| probes | the five that failed; the framings to be corrected, looked at before they count | what moves and where (below); nine framings corrected |
+| record 2 | the eleven corrected checkpoints (BASELINE_ONLY) | 11 recorded |
+| self-check 1 | all 30 recorded, each from a fresh load | 30 clean; `ascent-cloud-deck` at the edge (1.72 % of its pixels differed) |
+| probe, record 3, self-check 2 | `ascent-cloud-deck`: four loads; framed without the sea; recorded; compared | four loads identical; recorded; clean |
+| budget table | ten rows, BUDGET_RECORD, every gate slot free | all ten rows recorded; every frame under 11 ms (3.0 to 6.7 ms); four rows fail lines of their own (below) |
+
+**Framings corrected before their recording counted** (each back to `pending`, re-recorded in one batch):
+
+| Checkpoint | What the first recording showed | Now |
+|---|---|---|
+| `ascent-cloud-deck`, `ascent-10km`, `ascent-40km` | the vehicle with dark engines: with `paused=1` in the query the FakeSim never steps, and its engines light only while it steps | started 1,050 m lower, then exactly 180 frames of 1/60 s stepped with the loop stopped, then frozen: the plume is in the picture |
+| `ascent-cloud-deck`, a second time | with the simulation stepped, the near sea at the bottom of the frame came out in two or three different states from load to load (37,000 to 54,000 pixels; request lead-7, ocean) | a ground camera 1.2 km north of the pad looking up at the vehicle: sky, clouds, vehicle and plume; four loads identical |
+| `lunar-touchdown` | the lander hovering at 12 m with a dark engine | 180 frames stepped: the dust sheet lies on the ground (the engine's own plume cannot be seen: see the faults) |
+| `translunar-earth` | a black frame with the vessel 35 pixels long and no Earth | the Earth at 50 degrees of phase from the vessel's distance, 10 degree field of view |
+| `lunar-orbit-low-sun` | the scene's own high sun: no relief | the sun pinned 8 degrees above the horizon ahead of the vessel |
+| `parachute-descent` | a uniform grey: at 2,500 m the capsule is inside the overcast | 900 m, below the cloud base |
+| `ocean-climb-2m`, `ocean-climb-200m` | a nearly black sea: the two low stations lie under an overcast and were pinned to the ev 14 of the upper two | the core's meter |
+| `leo-night`, `reentry-peak-heating` | not frame-exact: the capsule's cabin windows change by a level (below) | framed from a side without a cabin window (orbit yaw 210; yaw 20) |
+
+**Not frame-exact: what moves, and whose it is.** No DOM element moved: the flight HUD, the map with its
+labels and the app's HUD are identical to the bit between captures. All five failures are the cabin's
+interior, drawn by the cockpit package (`src/render/cockpit`), which has no `resetTemporal`, runs a clock of
+its own on `frame.realDt` (lamps, vibration, plasma, display pacing) and lets its interior probe converge
+while it reports idle (request **lead-5**, with the numbers and the code lines):
+
+| Checkpoint | Consecutive captures differ in | State |
+|---|---|---|
+| `lunar-surface-cockpit` | 11,500 to 11,700 pixels, up to 21 levels, scattered over every interior surface | pending |
+| `sweep-cockpit-leo` | 16,000 to 18,000 pixels, up to 57 levels: the caution and warning lamps, the panel's surfaces | pending |
+| `sweep-app-cockpit` | 771,000 falling to 76,000 pixels over twelve captures; and the picture moves by about 9 and 6 pixels after the first capture (request **lead-6**, the app shell) | pending |
+| `leo-night` (orbit yaw 30) | 1 to 11 pixels by one or two levels, all in the lit cabin windows | re-framed, recorded |
+| `reentry-peak-heating` (orbit yaw 160) | 4 to 10 pixels by one level, all in the cabin window that faces the camera | re-framed, recorded |
+
+So the sweep has NO reference image of a cockpit view. The fix asked of the cockpit is small and does not
+change the running picture; when it is in, the lead records the three (one gate run of a few minutes).
+
+**The lead-in** (request core-7; the numbers are in that request and in the manifest): 0 pixels in all
+three loads for 24 checkpoints (the 22 lab pages that are frozen from their first frame and never stepped,
+and two of the stepped ones, `lunar-touchdown` and `sweep-rails-warp`); 2, 2, 1 for `leo-night`
+(a lit point of the cabin, request lead-5); 4, 5, 3 for the separation; 51 to 158 for the three stepped ascents;
+413, 624, 367 for the app on the pad. The cabin's light apart, the first capture differs only where the
+simulation has moved before it.
+
+**Tolerances.** 25 of the 30 recordings are the same picture to the bit in all three loads
+(`selfDifference.meanAbs` is exactly 0 in the manifest) and stand at the floor (mean 0.02, 99.9th
+percentile 1). Five are not: `leo-terminator` and `sweep-lunar-orbit` differ between loads by one and by
+five channel levels in single pixels (the floor); `shoreline` and `lunar-touchdown` by a 99.9th percentile
+of one level (tolerance 3; about 0.2 % of the pixels by up to 3 and 8 levels in the self-checks);
+`sweep-app-pad` in about 100,000 pixels by up to 31 levels, because the app runs from its reveal until the
+test hooks freeze it (tolerance mean 0.253, 99.9th percentile 21; request **lead-6** asks the app for a
+frozen start).
+
+**For the lead to decide: the floor is loose for "must not move a pixel".** The pass rule is mean and
+99.9th percentile, as it was. A change confined to fewer than 0.1 % of the pixels (about 920: a small
+vessel, a marker, a HUD digit) passes the floor however large it is. The gate prints, for every
+checkpoint, the share of pixels that differ and the largest difference; the 25 checkpoints whose loads
+are identical print "0.000 % of pixels differ, max 0" on the tree as recorded. The sweep can be held to that
+line on those 25 without any change to the harness; an `exact` flag in the manifest would make it an
+assertion.
+
+**Tools added in this phase** (`tests/browser`): `exactProbe.ts` (where two captures differ: box, grid
+cells, sample pixels; a picture with the differing pixels marked; `tools/dev/exact-probe.test.ts`, 6 tests)
+and `shell/baseline-exact-probe.spec.ts` (BASELINE_EXACT_PROBE: several captures and several loads of a
+checkpoint, which pair differs where; also the way to look at a framing before it is recorded). The
+self-check of `shell/baselines.record.spec.ts` now compares every recorded checkpoint whatever the one
+before it did, fails at the end with the whole list, and honours BASELINE_ONLY.
+
+**The budget table, as recorded** (`tests/browser/budget.baseline.json`; p99 GPU ms per package, the frame
+is the sum of the packages' p99s; 2560 x 1440 internal, ballast to about 9 ms):
+
+| Row | core | terrain | vehicle | cockpit | atmosphere | ocean | sky | vfx | Sum of the p99s (11) | Median frame |
+|---|---|---|---|---|---|---|---|---|---|---|
+| pad lift-off | 0.863 / 3.00 | **2.348** / 2.15 | 0.113 / 1.70 | 0.077 / 0.00 | 1.519 / 1.70 | 0.362 / 0.80 | 0.045 / 0.20 | 0.829 / 1.30 | **6.17** | 5.14 |
+| ascent 10-40 km | 0.524 / 3.00 | 0.811 / 2.00 | 0.009 / 1.30 | 0.071 / 0.00 | 1.634 / 2.20 | 0.000 / 0.30 | 0.047 / 0.20 | 0.288 / 1.00 | **3.40** | 2.86 |
+| LEO | 0.683 / 3.00 | 0.671 / 1.90 | 0.014 / 0.90 | 0.097 / 0.00 | 1.505 / 2.20 | 0.000 / 0.10 | 0.040 / 0.30 | 0.005 / 0.60 | **3.04** | 2.44 |
+| LEO cockpit | 1.024 / 3.00 | 1.056 / 1.30 | 0.035 / 0.60 | 0.644 / 1.20 | 0.759 / 2.20 | 0.000 / 0.10 | 0.031 / 0.30 | 0.005 / 0.60 | **3.57** | 2.73 |
+| lunar descent | 0.870 / 3.00 | 2.148 / 2.70 | 0.015 / 0.80 | **0.104** / 0.00 | 0.000 / 0.00 | 0.000 / 0.00 | 0.037 / 0.30 | 0.228 / 0.90 | **3.42** | 2.84 |
+| reentry | 0.863 / 3.00 | 0.276 / 1.60 | 0.006 / 0.50 | **0.108** / 0.00 | 1.425 / 2.20 | 0.000 / 0.10 | 0.040 / 0.20 | 0.284 / 1.20 | **3.02** | 2.40 |
+| splashdown | 0.888 / 3.00 | 1.639 / 1.90 | 0.003 / 0.50 | **0.101** / 0.00 | 1.397 / 2.00 | **1.309** / 0.90 | 0.045 / 0.20 | 0.259 / 0.90 | **5.66** | 4.34 |
+| stony ground (whole frame) | 0.850 | 3.580 | 0.005 | 0.074 | 1.515 | 0.162 | 0.046 | 0.005 | **6.26** | 5.25 |
+| among kiawe (whole frame) | 0.729 | 2.616 | 0.005 | 0.069 | 1.814 | 0.262 | 0.078 | 0.005 | **5.60** | 4.61 |
+| thickets from 120 m (whole frame) | 0.967 | 3.737 | 0.008 | 0.074 | 1.607 | 0.189 | 0.040 | 0.005 | **6.65** | 5.59 |
+
+Measured / budget (the sum of the package's lines at that checkpoint); bold: over. Recorded 18:42-18:53 on
+the tree at 9a873e0, every gate slot free. What it says:
+
+- **Every frame is far under 11 ms**: 3.0 to 6.2 ms at the seven checkpoints, 5.6 to 6.7 ms at the three
+  ground views of request terrain-render-10, which had never been measured as whole frames.
+- **Four rows fail their own lines** (the table without BUDGET_COMPARE is as strict as it was):
+  the pad's terrain at 2.348 ms against 2.15 (terrain-render); and the cockpit package at 0.104, 0.108 and
+  0.101 ms at the lunar descent, the reentry and the splashdown, where it has no line and may cost 0.1 ms
+  (cockpit: it costs 0.07 to 0.11 ms in every outside view). Both are for the lead to decide: a line, a
+  waiver, or a fix.
+- **The ocean at the splashdown** is over the sum of its lines (1.309 ms against 0.90) and is reported with
+  its two named waivers, as agreed; at the pad it is within them (0.362 against 0.80).
+- **The sweep's gate** is the same spec with BUDGET_COMPARE=1: no row's sum more than 3 % above these, and
+  no line over that was not over, at the same cost, in this recording (a package's time counts as unchanged
+  within 3 % or 0.02 ms). Without that rule the gate would be red on the four rows above before the sweep
+  had changed a line.
+
+**Visible faults in the recorded pictures** (recorded as they are: the gate is "unchanged", not "good"):
+
+| Picture | What shows | Package |
+|---|---|---|
+| `pad-noon`, `pad-sunset` | the stone row along the access road is a chain of dark dots (the app shell saw the same in its frame-exact pad capture) | terrain-render |
+| `leo-nadir-day`, `leo-nadir-night` | a closed cloud sheet lies over all the land of Lower Egypt and follows the coastline; the sea, the Gulf of Suez and the lakes are clear and the sand shows at the shore under its edge. It hides the Nile delta by day and its lights by night (only coastal lights show) | atmosphere-clouds (the cloud coverage over bright land) |
+| `translunar-moon`, `lunar-terminator-20000km`, `lunar-terminator-5000km` | the Moon's terminator is a hard straight cut with black, blobby teeth where crater shadows run together; the lit side does not darken towards it | terrain-render (the Moon from afar) |
+| `shoreline` | concentric arcs and a diagonal streak on the sea beyond the shore, a dark smear band at the left | ocean |
+| `ocean-climb-200m` | two long curved bands across the sea to the horizon (the ring that ARCHITECTURE 31.3 says must not show); whitecaps as stark white blobs | ocean |
+| `ocean-climb-20km`, `reentry-peak-heating` | thin concentric arcs on the sea in the cloud gaps and in the sun's glitter | ocean |
+| `leo-night` | a green cast over the whole night side and a thick green band at the limb | atmosphere-clouds (airglow) |
+| `lunar-touchdown` | with the descent engine burning 12 m up, no plume shows at the engine; the dust is a faint sheet | vfx (to be judged: a vacuum plume may be this faint) |
+| `leo-day`, `sweep-hud-leo`, `ocean-climb-400km` | the cloud field from orbit is an even scatter of blobs (LEO) and soft at 400 km | atmosphere-clouds (minor) |
+| `sweep-map-translunar` | the map shows neither the stage list nor the resources panel of the flight HUD | flight-ui / map-view (a question: by design?) |
+| not recorded: `sweep-app-cockpit` | the text of the display pages is smeared in the app's cockpit view | cockpit / the app shell |
+| not recorded: `lunar-surface-cockpit` | `sitAtWindowBelow` shows the cabin on its side and a window with no lunar surface in it | cockpit / the lab |
+
+**Open.**
+- Requests lead-5 (cockpit, blocking for the cockpit checkpoints), lead-6 (app shell), lead-7 (ocean);
+  core-7 stays open with the measured lead-ins.
+- `data/baselines` is the only copy of the 30 PNGs on this machine. The record spec asks for a copy
+  outside the working tree; where it should live is the lead's to say (nothing was written outside the
+  repository).
+- The app shell's two files of 17:02 did not disturb a capture. If a later fix of the app changes a
+  recorded picture, the lead names the checkpoints and they are re-recorded with BASELINE_ONLY.
