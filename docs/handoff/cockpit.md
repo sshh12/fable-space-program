@@ -6,7 +6,7 @@ the physical attitude indicator, the window glass, the cabin light and the crew-
 Owned paths: `src/render/cockpit/**`, `data/defs/visuals/cockpits/**`, `labs/cockpit/**`,
 `tests/browser/cockpit/**`, `tests/unit/cockpit/**`, `tools/cockpit/**`, `public/assets/cockpit/**`, this file.
 
-State: built, reviewed, fixed, reworked in visual rounds 1 to 6 (sections 7 to 12: what the critics and the user
+State: built, reviewed, fixed, reworked in visual rounds 1 to 6 and made frame-exact (section 13) (sections 7 to 12: what the critics and the user
 listed and what was done about each item, what is still open). Sections 1-6 describe the package as it is now.
 
 ## 1. API
@@ -1044,3 +1044,61 @@ Photo 6.5, artifact 7. What still caps the photo lens is mostly in the panes and
 Earth, flat re-entry panes, well grain), plus the cockpit's own: a clean, sparse set (the parked items are
 small), a hatch area still built of plain parts, a night cabin that is graded but not pooled, lockers at odd
 angles, a stiff cue card.
+
+## 13. Frame-exact capture (request lead-5, 2026-11-12)
+
+The cabin takes part in `renderExact` (RENDER_API section 13): after `resetTemporal()` the picture after N
+frames depends on the scene and N alone.
+
+- `CockpitFeature.resetTemporal()` (feature.ts): the clock to 0; the far level's light interval; the smoothed g
+  snapped at the next frame; the vibration's previous offset; the displays' pacing back to "nothing painted"
+  (`DisplayPacer.reset()`: all dirty, slots staggered from 0, measured costs forgotten); the lamps' and the
+  sun's shadow maps rendered again in the next frame; the probe restarted (`CabinProbe.restart()`: its bounce
+  coefficients zeroed in the ambient buffer, then eight rounds of all six faces and the filter in the one next
+  frame, so no frame shows a cabin whose bounce light is still building up).
+- The cabin's clock (blinking lamps, the plasma's wander, the displays' slots) is wall time while the picture
+  animates and `coreOf(ctx).sequenceIndex() / 60` while time is frozen (`frame.animate` false).
+- Displays with frozen time (`MfdDisplays.update(..., exact)`): a page is painted until another paint changes
+  nothing (a half-size digest of the canvas; the ORB page's body graphic is shaded over several paints against
+  a wall-clock budget in src/ui/mfd), and the pacing takes no measured cost. The running game paints as before.
+- `isIdle()`: busy while a readable display is not painted yet, while the lamp maps are being rendered again,
+  and until the probe has had its frames (24 after a cabin comes into view; at once after a restart).
+- The sunlit shoulder (`sunShoulder`, section 12.2) no longer reads the frame's exposure: a luminance that
+  depends on the exposure feeds the meter its own result. Its reference is the cabin's own white, a white card
+  under the cabin's mean illuminance (the ambient pass, `cabinAmb[0].y`) times `SUN_SHOULDER_KEY` 0.75, set
+  against the reviewed pictures (`world-leo-pilot-seat.png`: screen in the patch 189 against 186-190, bezel
+  196 against 192-197).
+
+Proof (the lead's probe at 327a9a4, which is the code of this section but for the value of SUN_SHOULDER_KEY,
+0.45 then; the cockpit's own spec again on the final code, in the functional suite's run):
+- The lead's probe, `BASELINE_EXACT_PROBE=lunar-surface-cockpit,sweep-cockpit-leo,sweep-app-cockpit` on
+  `tests/browser/shell/baseline-exact-probe.spec.ts`: `lunar-surface-cockpit` and `sweep-cockpit-leo` identical
+  in all five pairs of six captures (0 pixels against the last capture as well).
+- `sweep-app-cockpit` is NOT identical: 770,062 / 619,924 / 682,165 / 395,546 / 251,185 of 921,600 pixels in
+  the five pairs, over the whole 3D picture. The numbers are those of before the cabin's fix: what moves is
+  the eye. The cockpit rig's head sway (src/camera/cockpitRig.ts `stepSway`) is integrated over frames and
+  nothing restarts it; request `cockpit-22` (shared-code maintainer) with the evidence.
+- `tests/browser/cockpit/exact.spec.ts` (five views of the cockpit lab: seat in the sun, seat at night, seat
+  in the entry plasma, a lit cabin window from outside near and far): second and third capture, a capture
+  after 53 animated frames, and two fresh loads: 0 differing pixels in every view.
+- Open, and said in the spec's header: in the three seat views the very FIRST capture of a cold browser
+  context differs from every later one (0.97 / 2.78 / 1.29 % of pixels, up to 30 / 24 / 10 levels, on edges of
+  lamp and sun shadows and highlights). The first capture of the second load is identical to the rest, the
+  outside views and the integration lab's checkpoints show no such difference, and it is gone when lamp
+  shadows, reflections, detail maps, sources or screens are switched off. Cause not found. The recorder throws
+  the first capture of a load away, and so does the spec (it logs the difference).
+
+Performance after the change (6 runs of the perf spec on the final code): the vessel still 0.46-0.70 ms
+interior p99 in all six; turning (sun map every frame) 0.49 / 0.50 / 0.74 / 0.75 in four runs and 0.94 / 0.97
+in two, where the sun map's p99 was 0.26 ms against a median of 0.036 ms (in the three runs that logged it;
+p99 0.038 there). The line (0.8 ms) is asserted and failed in those two runs; the spikes did not come back in
+the three runs after them, and their cause is not established (the G-buffer pass has had single slow frames
+since round 5; 32 Chrome processes were on the machine).
+
+The two faults the recorder saw: the soft, doubled display text in the app's cockpit view was captured while
+the eye was moving (cockpit-22; to be looked at again in the first identical capture). `sitAtWindowBelow` is
+the integration lab's helper (labs/integration/main.ts, shared-code maintainer), not the cockpit's: on the
+lunar surface every cabin window looks above the horizon (the cone leans inward), so the window it picks
+shows sky; the cockpit's own picture of the Moon through a window places the eye at the pane and looks down
+along the well (`world-moon-horizon` in tests/browser/cockpit/world.ts: eye (-0.84, 1.13, 0.0), look at
+(-11, -0.45, 0.6) in the part frame).

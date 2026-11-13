@@ -1018,7 +1018,9 @@ fn cabinSunIlluminance(amb: CabinAmbient) -> vec3f {
 /// pad, sun in the cabin, drifted over twelve captures).
 const SUN_SHOULDER_KNEE = 0.7;
 const SUN_SHOULDER_GAIN = 0.4;
-const SUN_SHOULDER_KEY = 0.45;
+/// (0.75: set against the pictures taken with the exposure-referenced shoulder, the bezel and the screen in the
+/// patch of the low-orbit seat view within a few levels of them.)
+const SUN_SHOULDER_KEY = 0.75;
 fn sunShoulder(L: vec3f) -> vec3f {
   let x = luminance(L) * SUN_SHOULDER_KEY * PI / max(cabinAmb[0].y, 1e-3);
   if (x <= SUN_SHOULDER_KNEE) { return L; }

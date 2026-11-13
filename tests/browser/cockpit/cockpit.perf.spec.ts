@@ -108,6 +108,7 @@ test('cockpit interior, glass and displays within their budget at 1440p', async 
     console.log(
       `turning (sun map every frame) GPU (ms): interior p99 ${fmt(t.interior)} (gbuffer ${fmt(t.gbuffer)}, shadow p99 ${fmt(t.shadowP99)}, ambient ${fmt(t.ambient)}, sun map ${fmt(t.sunMap)}, probe ${fmt(t.probe)}), glass p99 ${fmt(t.glass)}, uploads mean ${fmt(t.uploadMean)}, total ${fmt(t.total)}`,
     );
+    for (const k of ['cockpit.sunMap', 'cockpit.gbuffer']) console.log(`  turning ${k}: p50 ${fmt(turning.gpu[k]?.p50 ?? 0)} p99 ${fmt(turning.gpu[k]?.p99 ?? 0)} mean ${fmt(turning.gpu[k]?.mean ?? 0)}`);
     await page.evaluate(() => window.__cockpit!.setAblation(0));
     expect(t.sunMap, 'the sun map is rendered while turning').toBeGreaterThan(0);
     expect(t.interior, 'interior p99 with the vessel turning').toBeLessThan(0.8);

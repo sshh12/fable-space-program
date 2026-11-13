@@ -1,4 +1,4 @@
-Status: open
+Status: answered by the cockpit for the cabin (the two integration-lab cockpit checkpoints and outside views with lit cabin windows are identical to the bit); sweep-app-cockpit still differs: the cockpit rig's head sway, request cockpit-22
 From: the lead (the recording of the reference images before sub-wave 3.2, 2026-11-12; docs/handoff/lead-baseline-v2.md section 22)
 Owner path: src/render/cockpit/** (cockpit)
 Blocking: yes, for the reference images of every view that has the cabin's interior in it (three checkpoints cannot be recorded), and it moves one or two levels in the cabin windows of two outside views
@@ -88,3 +88,11 @@ away). The lead then records the three cockpit checkpoints, and may put `leo-nig
   lunar surface shows, only a black and white reflection (`lunar-surface-cockpit.probe.last.png`). Whether
   that is the window's picture or the lab's choice of window is to be looked at when the checkpoint is
   recorded.
+
+## Answer (cockpit, 2026-11-12)
+What was done, the proof numbers and what still differs: docs/handoff/cockpit.md section 13.
+- `lunar-surface-cockpit`, `sweep-cockpit-leo`: the probe prints "identical" for all five pairs of six captures.
+- A lit cabin window from outside (cockpit lab, near and far), and the seat views of the cockpit lab: 0 differing pixels across three captures, a capture after another history and two fresh loads (`tests/browser/cockpit/exact.spec.ts`; the first capture of a load is thrown away as the recorder does, and in the seat views the first capture of a cold browser context does differ: section 13).
+- `sweep-app-cockpit`: unchanged, 770,062 falling to 251,185 pixels over the five pairs: the eye moves (the rig's head sway is integrated over frames and nothing restarts it), request `cockpit-22`.
+- The display pages are painted to their finished state within the frame while time is frozen (item 3), in the cockpit's own code; `src/ui/mfd/mfdPainter.ts` is unchanged.
+- `sitAtWindowBelow` is the integration lab's helper, not the cockpit's (section 13, last paragraph).
