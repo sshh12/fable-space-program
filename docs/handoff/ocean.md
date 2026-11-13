@@ -75,7 +75,7 @@ tests/browser/ocean/                 swell, handover, glint, stability, foam, sp
 ```ts
 // '@/render/ocean'
 createOceanFeature(options?: { id?: string; order?: number }): OceanFeature   // id 'ocean', requires ['scene.colorCopy', 'post.reactive']
-type OceanFeature = RenderFeature & { readonly debug: OceanDebug };
+type OceanFeature = RenderFeature & TemporalFeature & { readonly debug: OceanDebug };   // resetTemporal(): section 16.8
 interface OceanDebug {
   nearField(): OceanNearFieldValue;                       // what 'ocean.nearField' holds this frame
   forceNearFieldOff(off: boolean): void;                  // deferred water only (A/B checks)
@@ -86,6 +86,7 @@ interface OceanDebug {
   setDirectSpecular(on: boolean): void;                   // re-registers brdf_water without the direct specular
   setCloudMirror(on: boolean): void;                      // false: the sky reflection as before round 3 (published sky tables as they are, whatever cloud stands over the water)
   setForwardProbe(on: boolean): void;                     // perf probe: the forward chunk without the evaluated field and the far-wave bank
+  setTemporalReset(on: boolean): void;                    // false: resetTemporal does nothing (A/B of exact.spec)
   setProfileSkip(mask: number): void;                     // near-pass terms switched off (sum of OCEAN_PROFILE_SKIP values; perf profile)
   setFoamSigma(sigma: number | null): void;               // whitecap threshold instead of the data's (calibration sweep of foam.spec)
   readOpaqueDepth(pixels: readonly [number, number][]): Promise<number[]>;   // 'scene.depthOpaque' at render pixels
@@ -712,6 +713,8 @@ every package, 2560 x 1440):
 | `ocean-5` eight swell components with directional spread | `data/defs/bodies/earth.json` (lead) | done by the lead (commits 1ccd5e0 decision, 9d48042 data, 2026-11-11 14:11): a NW swell of three components and a wind sea of five, 200-32 m, variance 0.18 m^2, steepness at most 0.0175; mission re-flown |
 | `ocean-6` the same, or permission to draw the long-wave layer's height away from vessels | lead | option 1 (the data) done (9d48042), option 2 (render-only heights) declined. The ocean needed no code change (MAX_SWELL is 8; the long-wave layer and the far-wave bank take the swell's share of the long-wave slopes at start-up; the swell spec compares against whatever the data holds) |
 
+After round 3 (section 16.8): `lead-7` (against the ocean: `resetTemporal`; resolved for the ocean, 39dacd5), `ocean-11` (render core: a simulation clock in the frame uniforms, for the far-wave bank and the glitter redraw; open), `ocean-12` (atmosphere-clouds: its state after a stepped simulation differs from load to load; open).
+
 Round 3 (section 16.7): `ocean-8` (vfx: `splash.foamDecal` to 0; open), `ocean-9` (render core: `sampleSunShadowHard`; resolved c74f012, used by the forward pass), `ocean-10` (render core / lead: the display curve keeps every glint under white; open, lead decision: the curve changes after the presentation sweep).
 
 Round 2, continuation: `vfx-9` (the water's answer to a splash: cavity, ring waves, foam patch) resolved (built and verified in the ocean lab; the resolution in the request file says what vfx can switch off and what is left).
@@ -1152,9 +1155,38 @@ the budget test is green on those numbers and fails again from 5 % above them.
   `brdf.test.ts`). Scoped typecheck clean, stub scan clean. Hand-over at fadeStart: worst 0.94 % from 6 km (mean
   0.05 %), 0.16 % from 500 m; band 0.12 %; beyond fadeEnd identical; climb ring 1.37. LEO width ratio 1.082.
   Whitecaps 0.149 % / 0.130 % (ratios 1.27 / 1.11). Swell agreement, damping zone, stability: as in round 2.
+- After that run (16.8): `exact.spec.ts` added, 41 functional tests.
 - Honest score (10 = photograph), with the critics' record of scoring 0.5 to 1 under the fixer in mind: photo
   about 6.5, artifact about 7. The blocker is gone (the last picture of the mission is a sea), the splash ages, the
   terraces are gone, the path sparkles at 3 to 5 km. What keeps both under 8 is what this round did not touch: line
   art of slicks from 3 to 100 km, whitecaps as compact patches, no wave faces from 2 m, the surf, foam as a flat
   material, the capsule's image, a glint that is cream from 10 km up, and a near pass over its line.
 
+
+### 16.8 Frame-exact captures: `resetTemporal` (request `lead-7`, 2026-11-12, after the round)
+
+`OceanFeature.resetTemporal()` (RENDER_API section 13): after it the sea of the next frames is a function of the
+snapshot, the camera and the count of frames alone. Dropped: the foam map's history (the next frame starts it from
+the wave field of the snapshot, as a level that comes into view does), the FFT's previous frame, the impacts
+gathered from earlier snapshots, the wet lines and the wake's foam (`OceanVessels.resetTemporal`), the chart's
+anchor (`ChartKeeper.reset`: it is kept by hysteresis while the camera moves) and with it the baked roughness
+field's centre. Everything is rebuilt by the next frame; `isIdle()` is false from the reset until that frame. An
+impact is now taken once however often its snapshot is drawn (a frozen snapshot with a 'splash' in it filled the
+list with up to eight copies). The running game is unchanged.
+
+Clocks: the swell, the FFT, the surf, an impact's rings and foam and the foam map's ageing are on the snapshot's
+time. The far-wave bank's phase and the glitter cells' redraw (the shared chunk, both passes) are on
+`frame.time.x` (realTime; 0 in a capture): the frame uniforms hold no simulation time, request `ocean-11` (open).
+
+Proof, `tests/browser/ocean/exact.spec.ts` (integration lab, 1280 x 720, 64 frames; three loads x three captures
+and one capture after another history; differing pixels): `near-sea-stepped` and `splashdown-stepped` without the
+atmosphere package 0 in every pair (with the reset switched off: 5 px and 721 px by up to 40 after another
+history); `splashdown` with every package 0; `shoreline` with every package 0 within a load and after another
+history, and from load to load 0 or the same 1,002 px by up to 3 levels in the far sea under the horizon (two loads
+of nine; with and without the reset; not attributed; held in the spec as a named, bounded difference). With every
+package the stepped views are not exact, and that is the atmosphere's state after a stepped simulation (request
+`ocean-12`, open, with the table: without the atmosphere 0 px, without the ocean 37,000 to 53,000 px from load to
+load): the spec captures and prints those lines without asserting them. Final run of the functional suite with
+this: 40 of 41 pass, the one failure being `shoreline`'s second state before it was held as the bounded difference
+(not re-run after that edit: the typecheck covers it and its numbers, 1,002 px by up to 3, are inside the bound of
+1,100 and 3).

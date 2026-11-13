@@ -82,7 +82,7 @@ const VIEWS: View[] = [
     page: '/labs/integration/?scene=lowOrbit&body=earth&lat=18.987556&lon=-155.603239&alt=350&heading=120&pitch=-18&sun=150,45&sunsite=earth,18.987556,-155.603239&ev=14&hud=0&governor=off&deterministic=1&paused=1',
     setup: [],
     stepped: false,
-    // Seen in one load of three in two runs of four, the same 1,002 pixels by up to 3 levels each time, in the far sea
+    // Seen in one load of three in two runs of three, the same 1,002 pixels by up to 3 levels each time, in the far sea
     // just under the horizon (x 585-819, y 166-217), with and without the ocean's reset: two states of something that
     // is there or not when the page goes idle. Not attributed (the reference manifest's tolerance for this checkpoint,
     // a 99.9th percentile of one level, is the same thing).
