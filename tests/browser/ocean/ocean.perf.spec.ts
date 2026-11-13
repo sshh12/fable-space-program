@@ -5,7 +5,9 @@
  * runs at the clock of a real frame (render-core hand-off 4.1).
  *
  * Every scene is asserted against its own line. Each runs six windows of 240 frames and reports the MEDIAN of
- * the windows' p99 (and p50), so one quiet or one disturbed window decides nothing.
+ * the windows' p99 (and p50), so one quiet or one disturbed window decides nothing. The near pass and the ocean's
+ * total at the splashdown and at the coast do not meet their lines; they carry a bounded LEAD WAIVER (BudgetLine,
+ * below), printed in every run beside the unchanged line.
  *
  * The far sheet is shaded by the core's deferred lighting through this package's brdf_water override; that
  * share is not a pass of the ocean. It is measured here as the difference of 'core.lighting' with and without
@@ -30,6 +32,27 @@ interface Row {
   frameP99: number;
   ballast: number;
 }
+
+/**
+ * A line of the budget and, where the lead has granted one, its waiver (lead decision of 2026-11-12, hand-off
+ * docs/handoff/ocean.md section 16.5). The line is NOT changed by a waiver: every run reports the scene against it.
+ * While a waived line is not met, the test prints the waiver and holds the MEDIAN of the same number under the
+ * waiver's ceiling instead (the numbers of the round-3 run plus 5 %; for the splashdown's whole ocean the line
+ * itself, which its median meets: what stands above it there is the p99's stalls), so that a regression still
+ * fails. The waivers end with the pipeline for the near patches and the quality scaling of the near pass; the
+ * refracted bed and the shadow on the shelf are not to be dropped to meet the line (the same decision).
+ */
+interface BudgetLine {
+  what: string;
+  p99: number;
+  p50: number;
+  /** The line, ms (ARCHITECTURE_V1 17.1 and the brief). */
+  line: number;
+  /** The near pass's line is "under", the others "at most". */
+  strict?: boolean;
+  leadWaiver?: { until: string; ceiling: number };
+}
+const WAIVER_UNTIL = 'near-patch pipeline and quality scaling';
 
 const median = (xs: number[]): number => {
   const s = [...xs].sort((a, b) => a - b);
@@ -209,17 +232,34 @@ test('ocean GPU budget at 1440p: splashdown, pad-like coast, ascent at 10 km, LE
     );
 
     expect(splash.ballast).toBeGreaterThan(5);
-    // Splashdown (0.9) and the pad (0.8): the whole ocean, the FFT and the near pass.
     expect(splash.fftP99).toBeLessThan(0.3);
-    expect(splash.waterP99).toBeLessThan(0.6);
-    expect(splash.oceanP99).toBeLessThanOrEqual(0.9);
     expect(coast.fftP99).toBeLessThan(0.3);
-    expect(coast.waterP99).toBeLessThan(0.6);
-    expect(coast.oceanP99).toBeLessThanOrEqual(0.8);
-    // Ascent, 10-40 km: 0.3.
-    expect(high.oceanP99).toBeLessThanOrEqual(0.3);
-    // LEO, near field inactive: no compute, no draw.
-    expect(leo.oceanP99).toBeLessThanOrEqual(0.1);
+    // The lines (unchanged): splashdown 0.9 and the pad 0.8 for the whole ocean, 0.6 for the near pass; the ascent at
+    // 10-40 km 0.3; LEO 0.1 (near field inactive: no compute, no draw). Four of them carry a lead waiver.
+    const lines: BudgetLine[] = [
+      { what: 'splashdown, near pass', p99: splash.waterP99, p50: splash.waterP50, line: 0.6, strict: true, leadWaiver: { until: WAIVER_UNTIL, ceiling: 0.73 } },
+      { what: 'splashdown, ocean', p99: splash.oceanP99, p50: splash.oceanP50, line: 0.9, leadWaiver: { until: WAIVER_UNTIL, ceiling: 0.9 } },
+      { what: 'coast 60 m, near pass', p99: coast.waterP99, p50: coast.waterP50, line: 0.6, strict: true, leadWaiver: { until: WAIVER_UNTIL, ceiling: 0.94 } },
+      { what: 'coast 60 m, ocean', p99: coast.oceanP99, p50: coast.oceanP50, line: 0.8, leadWaiver: { until: WAIVER_UNTIL, ceiling: 1.03 } },
+      { what: '10 km, ocean', p99: high.oceanP99, p50: high.oceanP50, line: 0.3 },
+      { what: 'LEO, ocean', p99: leo.oceanP99, p50: leo.oceanP50, line: 0.1 },
+    ];
+    for (const l of lines) {
+      const met = l.strict ? l.p99 < l.line : l.p99 <= l.line;
+      if (met) {
+        console.log(`line ${l.what}: ${l.p99.toFixed(3)} ms p99 against ${l.line} ms: met${l.leadWaiver ? ' (its lead waiver is not needed)' : ''}`);
+        continue;
+      }
+      if (!l.leadWaiver) {
+        expect(l.p99, `${l.what}: p99 against its line`).toBeLessThanOrEqual(l.line);
+        continue;
+      }
+      console.log(
+        `LEAD WAIVER (until: ${l.leadWaiver.until}) ${l.what}: the line of ${l.line} ms is NOT met (${l.p99.toFixed(3)} ms p99, ${l.p50.toFixed(3)} ms p50); ` +
+          `waived while the p50 is at most ${l.leadWaiver.ceiling} ms`,
+      );
+      expect(l.p50, `${l.what}: the line of ${l.line} ms is not met; p50 against the ceiling of its lead waiver`).toBeLessThanOrEqual(l.leadWaiver.ceiling);
+    }
     await expectNoErrors(page, pageLog);
   });
 });
