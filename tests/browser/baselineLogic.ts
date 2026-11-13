@@ -55,6 +55,18 @@ export interface BaselineCheckpoint {
   /** Largest difference between any two of the recording's loads, which the tolerance was derived from, and how many loads there were. */
   selfDifference?: BaselineTolerance;
   loads?: number;
+  /**
+   * True when the recording's loads were the same picture to the bit (lead decision of 2026-11-12). A
+   * comparison of an exact checkpoint passes only when NO pixel differs: "must not move a pixel" is an
+   * assertion, and the tolerance is not consulted.
+   */
+  exact?: boolean;
+  /**
+   * A recorded checkpoint that is not exact: why its loads differ, in one line, and the request to the
+   * owner whose fix would make it exact (the name of the file in docs/requests, without ".md"). It is
+   * compared within its tolerance until then. The lead writes this; the recorder keeps it.
+   */
+  notExact?: { reason: string; request: string };
   recorded?: {
     at: string;
     commit: string;
@@ -226,6 +238,19 @@ export function manifestProblems(m: BaselineManifest): string[] {
         if (c.tolerance.meanAbs < 3 * c.selfDifference.meanAbs || c.tolerance.p999 < 3 * c.selfDifference.p999) bad('its tolerance is under three times the largest difference between its loads');
       }
       if (!c.recorded || c.recorded.note.trim().length < 8) bad('recorded without the lead\'s note');
+      // Exact, or not exact with the reason and the owner's request: one of the two, never neither.
+      if (c.exact === true && c.notExact !== undefined) bad('it is marked exact and carries a reason for not being exact');
+      else if (c.exact === true) {
+        if (c.selfDifference && (c.selfDifference.meanAbs !== 0 || c.selfDifference.p999 !== 0)) bad('it is marked exact, but the loads of its recording differ');
+      } else if (c.exact !== undefined) bad('"exact" is true or absent');
+      else if (!c.notExact) bad('recorded and not marked exact: it needs "notExact" with the reason its loads differ and the request to the owner');
+      else {
+        if (typeof c.notExact.reason !== 'string' || c.notExact.reason.trim().length < 20) bad('"notExact.reason" must say in one line why the loads differ');
+        if (typeof c.notExact.request !== 'string' || !/^[a-z][a-z0-9]*(-[a-z0-9]+)*-\d+$/.test(c.notExact.request)) bad('"notExact.request" names the request to the owner, as its file in docs/requests is called (for example "lead-6")');
+        if (c.selfDifference && c.selfDifference.meanAbs === 0 && c.selfDifference.p999 === 0) bad('the loads of its recording are identical: it is exact, not "notExact"');
+      }
+    } else if (c.exact !== undefined || c.notExact !== undefined) {
+      bad('"exact" and "notExact" belong to a recorded checkpoint');
     }
   }
   return out;

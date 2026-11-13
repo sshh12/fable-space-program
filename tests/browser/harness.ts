@@ -472,6 +472,8 @@ export interface ImageDifference {
 export interface BaselineComparison extends ImageDifference {
   name: string;
   tolerance: BaselineTolerance;
+  /** The checkpoint is marked exact in the manifest: it passes only when no pixel differs (the tolerance is not consulted). */
+  exact: boolean;
   pass: boolean;
   /** Tile sets whose content hash differs from the recording's ("earth ab20... -> 77c1..."); empty when the data is the recorded snapshot. */
   dataChanged: string[];
@@ -672,7 +674,9 @@ export async function compareToBaseline(page: Page, name: string, opts: Baseline
   const taken = opts.capture ? null : await captureReference(page, entry.frames, `checkpoint "${name}"`);
   const actual = opts.capture ?? taken!.image;
   const d = imageDifference(reference, actual);
-  const pass = d.meanAbs <= entry.tolerance.meanAbs && d.p999 <= entry.tolerance.p999;
+  // An exact checkpoint (its recording's loads were one picture) must not move a pixel; the others are held to their tolerance.
+  const exact = entry.exact === true;
+  const pass = exact ? d.maxAbs === 0 : d.meanAbs <= entry.tolerance.meanAbs && d.p999 <= entry.tolerance.p999;
   const now = tileSnapshot();
   const then = entry.recorded?.tiles ?? {};
   const dataChanged = Object.keys({ ...then, ...now })
@@ -693,14 +697,16 @@ export async function compareToBaseline(page: Page, name: string, opts: Baseline
     fs.writeFileSync(actualFile, actual);
     fs.writeFileSync(diffFile, d.diff);
   }
-  return { name, meanAbs: d.meanAbs, p999: d.p999, maxAbs: d.maxAbs, differingFraction: d.differingFraction, width: d.width, height: d.height, tolerance: entry.tolerance, pass, dataChanged, environmentChanged, actualFile, diffFile, leadIn: taken?.leadIn ?? null };
+  return { name, meanAbs: d.meanAbs, p999: d.p999, maxAbs: d.maxAbs, differingFraction: d.differingFraction, width: d.width, height: d.height, tolerance: entry.tolerance, exact, pass, dataChanged, environmentChanged, actualFile, diffFile, leadIn: taken?.leadIn ?? null };
 }
 
 /** One line for logs and failure messages. */
 export function describeComparison(c: BaselineComparison): string {
   return (
-    `${c.name}: mean |diff| ${c.meanAbs.toFixed(4)} (tolerance ${c.tolerance.meanAbs.toFixed(4)}), 99.9th percentile ${c.p999} (tolerance ${c.tolerance.p999}), ` +
-    `max ${c.maxAbs}, ${(c.differingFraction * 100).toFixed(3)} % of pixels differ` +
+    (c.exact
+      ? `${c.name}: EXACT (no pixel may differ): ${Math.round(c.differingFraction * c.width * c.height)} pixels differ, by up to ${c.maxAbs} level(s) (mean |diff| ${c.meanAbs.toFixed(4)}, 99.9th percentile ${c.p999})`
+      : `${c.name}: mean |diff| ${c.meanAbs.toFixed(4)} (tolerance ${c.tolerance.meanAbs.toFixed(4)}), 99.9th percentile ${c.p999} (tolerance ${c.tolerance.p999}), ` +
+        `max ${c.maxAbs}, ${(c.differingFraction * 100).toFixed(3)} % of pixels differ`) +
     (c.dataChanged.length > 0 ? `; SITE DATA CHANGED since the recording: ${c.dataChanged.join(', ')}` : '') +
     (c.environmentChanged.length > 0 ? `; ENVIRONMENT CHANGED since the recording: ${c.environmentChanged.join(', ')}` : '') +
     (c.leadIn && !c.leadIn.identical ? `; the discarded lead-in capture differed in ${c.leadIn.differingPixels} pixels (request core-7)` : '') +
@@ -769,8 +775,14 @@ export async function recordBaseline(
   fs.writeFileSync(path.join(dir, file), first);
   const env = await environmentOf(page);
   const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' });
+  // Exact when the loads are one picture; otherwise the entry keeps the lead's reason, or gets an empty one
+  // that the manifest's validation rejects until the lead has written it.
+  const identical = self.maxAbs === 0;
+  const { exact: _wasExact, notExact: reasonBefore, ...kept } = entry;
+  void _wasExact;
   const recorded: BaselineCheckpoint = {
-    ...entry,
+    ...kept,
+    ...(identical ? { exact: true } : { notExact: reasonBefore ?? { reason: '', request: '' } }),
     status: 'recorded',
     file,
     sha256: sha256(first),

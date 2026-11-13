@@ -31,6 +31,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T00:59:59.586Z",
     "commit": "23721cb",
@@ -94,6 +95,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:01:22.323Z",
     "commit": "23721cb",
@@ -204,6 +206,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:39:00.904Z",
     "commit": "9a873e0",
@@ -303,6 +306,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:02:56.358Z",
     "commit": "9a873e0",
@@ -402,6 +406,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:04:14.291Z",
     "commit": "9a873e0",
@@ -465,6 +470,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:05:34.905Z",
     "commit": "f1f58b4",
@@ -543,6 +549,10 @@
     "p999": 0
    },
    "loads": 3,
+   "notExact": {
+    "reason": "one pixel on the capsule's hull differs by one level in one load of four (the vessel's light from the sky's environment probe, as request core-7 describes)",
+    "request": "core-7"
+   },
    "recorded": {
     "at": "2026-11-13T01:06:41.333Z",
     "commit": "f1f58b4",
@@ -621,6 +631,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:05:26.822Z",
     "commit": "9a873e0",
@@ -684,6 +695,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:08:17.317Z",
     "commit": "f1f58b4",
@@ -747,6 +759,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:09:29.984Z",
     "commit": "f1f58b4",
@@ -823,6 +836,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:06:34.649Z",
     "commit": "9a873e0",
@@ -899,6 +913,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:11:41.289Z",
     "commit": "9a873e0",
@@ -975,6 +990,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:12:50.443Z",
     "commit": "9a873e0",
@@ -1051,6 +1067,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:14:00.533Z",
     "commit": "9a873e0",
@@ -1129,6 +1146,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:07:45.186Z",
     "commit": "9a873e0",
@@ -1228,6 +1246,10 @@
     "p999": 1
    },
    "loads": 3,
+   "notExact": {
+    "reason": "the dust particles thrown out under the burning descent engine fall differently from load to load (about 0.2 % of the pixels, up to 8 levels)",
+    "request": "lead-8"
+   },
    "recorded": {
     "at": "2026-11-13T02:09:11.063Z",
     "commit": "9a873e0",
@@ -1308,6 +1330,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:10:27.093Z",
     "commit": "9a873e0",
@@ -1371,6 +1394,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:12:02.592Z",
     "commit": "9a873e0",
@@ -1434,6 +1458,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:20:34.377Z",
     "commit": "9a873e0",
@@ -1497,6 +1522,10 @@
     "p999": 1
    },
    "loads": 3,
+   "notExact": {
+    "reason": "the near sea and the surf differ from load to load in about 0.2 % of the pixels by up to 3 levels (the ocean keeps a history that a capture does not restart)",
+    "request": "lead-7"
+   },
    "recorded": {
     "at": "2026-11-13T01:22:15.809Z",
     "commit": "9a873e0",
@@ -1560,6 +1589,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:13:38.782Z",
     "commit": "9a873e0",
@@ -1623,6 +1653,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T02:15:16.678Z",
     "commit": "9a873e0",
@@ -1686,6 +1717,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:26:42.493Z",
     "commit": "9a873e0",
@@ -1749,6 +1781,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:27:54.938Z",
     "commit": "9a873e0",
@@ -1812,6 +1845,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:29:06.720Z",
     "commit": "9a873e0",
@@ -1889,6 +1923,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:30:17.025Z",
     "commit": "9a873e0",
@@ -2012,6 +2047,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:31:57.393Z",
     "commit": "9a873e0",
@@ -2075,6 +2111,10 @@
     "p999": 0
    },
    "loads": 3,
+   "notExact": {
+    "reason": "two pixels on the vessel's hull differ by one level in two loads of four (the vessel's light from the sky's environment probe, as request core-7 describes)",
+    "request": "core-7"
+   },
    "recorded": {
     "at": "2026-11-13T01:33:08.190Z",
     "commit": "9a873e0",
@@ -2193,6 +2233,7 @@
     "p999": 0
    },
    "loads": 3,
+   "exact": true,
    "recorded": {
     "at": "2026-11-13T01:34:19.177Z",
     "commit": "9a873e0",
@@ -2273,6 +2314,10 @@
     "p999": 7
    },
    "loads": 3,
+   "notExact": {
+    "reason": "the app runs from its reveal until the test hooks freeze it, so its scene differs from load to load in about 100,000 pixels by up to 31 levels",
+    "request": "lead-6"
+   },
    "recorded": {
     "at": "2026-11-13T01:36:16.029Z",
     "commit": "9a873e0",

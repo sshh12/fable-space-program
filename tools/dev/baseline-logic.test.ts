@@ -163,14 +163,43 @@ describe('a manifest in which every checkpoint is framed and can be captured fra
   it('a recorded checkpoint has its file, hash, tolerance from three or more loads, and the lead\'s note', () => {
     const recorded: BaselineCheckpoint = {
       ...framed, status: 'recorded', file: 'view.png', sha256: 'a'.repeat(64), width: 1280, height: 720, tolerance: { meanAbs: 0.04, p999: 3 }, selfDifference: { meanAbs: 0.01, p999: 1 }, loads: 3,
+      notExact: { reason: 'the surf at the shore differs a little from load to load', request: 'lead-7' },
       recorded: { at: '2026-11-12T00:00:00.000Z', commit: 'abc1234', chrome: '157', adapter: 'nvidia', tiles: {}, note: 'the lead, before sub-wave 3.2', leadInDifferingPixels: [261, 0, 0] },
     };
     expect(manifestProblems(manifest({ view: recorded }))).toEqual([]);
     expect(manifestProblems(manifest({ view: { ...recorded, tolerance: { meanAbs: 0.02, p999: 1 } } }))).toEqual(['view: its tolerance is under three times the largest difference between its loads']);
-    expect(manifestProblems(manifest({ view: { ...recorded, tolerance: { meanAbs: 0.01, p999: 1 }, selfDifference: { meanAbs: 0, p999: 0 } } }))).toEqual(['view: its tolerance is under the floor']);
+    const { notExact: _reason, ...withoutReason } = recorded;
+    void _reason;
+    expect(manifestProblems(manifest({ view: { ...withoutReason, exact: true, tolerance: { meanAbs: 0.01, p999: 1 }, selfDifference: { meanAbs: 0, p999: 0 } } }))).toEqual(['view: its tolerance is under the floor']);
     expect(manifestProblems(manifest({ view: { ...recorded, loads: 2 } }))[0]).toMatch(/three or more/);
     expect(manifestProblems(manifest({ view: { ...recorded, sha256: 'abc' } }))[0]).toMatch(/file, sha256 or size is missing/);
     expect(manifestProblems(manifest({ view: { ...recorded, recorded: { ...recorded.recorded!, note: 'x' } } }))[0]).toMatch(/without the lead's note/);
+  });
+
+  it('a recorded checkpoint is exact (its loads were one picture) or says why not, with the request to the owner', () => {
+    const base: BaselineCheckpoint = {
+      ...framed, status: 'recorded', file: 'view.png', sha256: 'a'.repeat(64), width: 1280, height: 720, tolerance: { meanAbs: 0.02, p999: 1 }, selfDifference: { meanAbs: 0, p999: 0 }, loads: 3,
+      recorded: { at: '2026-11-12T00:00:00.000Z', commit: 'abc1234', chrome: '157', adapter: 'nvidia', tiles: {}, note: 'the lead, before sub-wave 3.2', leadInDifferingPixels: [0, 0, 0] },
+    };
+    const differing = { tolerance: { meanAbs: 0.02, p999: 3 }, selfDifference: { meanAbs: 0.001, p999: 1 } };
+    const reason = { reason: 'the dust sheet under the lander differs from load to load', request: 'lead-8' };
+    const one = (c: BaselineCheckpoint): string[] => manifestProblems(manifest({ view: c }));
+    expect(one({ ...base, exact: true })).toEqual([]);
+    expect(one({ ...base, ...differing, notExact: reason })).toEqual([]);
+    // Neither: the recording is not finished until the lead has said which.
+    expect(one(base)).toEqual(['view: recorded and not marked exact: it needs "notExact" with the reason its loads differ and the request to the owner']);
+    expect(one({ ...base, ...differing })).toHaveLength(1);
+    // Both, or the wrong one for what the loads did.
+    expect(one({ ...base, exact: true, notExact: reason })).toEqual(['view: it is marked exact and carries a reason for not being exact']);
+    expect(one({ ...base, ...differing, exact: true })).toEqual(['view: it is marked exact, but the loads of its recording differ']);
+    expect(one({ ...base, notExact: reason })).toEqual(['view: the loads of its recording are identical: it is exact, not "notExact"']);
+    expect(one({ ...base, exact: false as unknown as true })).toEqual(['view: "exact" is true or absent']);
+    // The reason is a sentence and the request is a file of docs/requests.
+    expect(one({ ...base, ...differing, notExact: { reason: 'noise', request: 'lead-8' } })).toEqual(['view: "notExact.reason" must say in one line why the loads differ']);
+    expect(one({ ...base, ...differing, notExact: { ...reason, request: 'ask the ocean' } })[0]).toMatch(/"notExact.request" names the request to the owner/);
+    expect(one({ ...base, ...differing, notExact: { reason: '', request: '' } })).toHaveLength(2);
+    // And neither belongs to a checkpoint that is not recorded.
+    expect(problems({ exact: true })).toEqual(['view: "exact" and "notExact" belong to a recorded checkpoint']);
   });
 });
 
@@ -188,6 +217,22 @@ describe('the tracked manifest, tests/browser/baselines.manifest.json', () => {
     expect(Object.values(tracked.checkpoints).filter((c) => c.page === null)).toEqual([]);
     expect(tracked.viewport).toEqual([1280, 720]);
     expect(tracked.dir).toBe('data/baselines');
+  });
+
+  it('every recorded checkpoint is exact, or names why not and a request that exists', () => {
+    const recorded = Object.entries(tracked.checkpoints).filter(([, c]) => c.status === 'recorded');
+    for (const [name, c] of recorded) {
+      if (c.exact) {
+        expect(c.selfDifference, name).toEqual({ meanAbs: 0, p999: 0 });
+        expect(c.notExact, name).toBeUndefined();
+      } else {
+        expect(c.notExact!.reason.length, name).toBeGreaterThan(20);
+        expect(c.notExact!.reason, `${name}: one line`).not.toMatch(/\n/);
+        expect(fs.existsSync(path.join(repoRoot, 'docs', 'requests', `${c.notExact!.request}.md`)), `${name}: docs/requests/${c.notExact!.request}.md`).toBe(true);
+      }
+    }
+    // The gate of a refactor that must not move a pixel is an assertion on most of the set.
+    expect(recorded.filter(([, c]) => c.exact).length).toBeGreaterThanOrEqual(recorded.length - 6);
   });
 
   it('lists the 25 checkpoints of ARCHITECTURE 31.3 and the eight views the presentation sweep can break', () => {

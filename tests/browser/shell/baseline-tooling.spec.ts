@@ -109,7 +109,7 @@ test.describe('reference images: the difference measure', () => {
 
   test('a comparison names what changed around it: tile sets, the Chrome version, the adapter', () => {
     const c: BaselineComparison = {
-      name: 'leo-day', meanAbs: 0.5, p999: 9, maxAbs: 40, differingFraction: 0.2, width: W, height: H, tolerance: { meanAbs: 0.02, p999: 1 }, pass: false,
+      name: 'leo-day', meanAbs: 0.5, p999: 9, maxAbs: 40, differingFraction: 0.2, width: W, height: H, tolerance: { meanAbs: 0.02, p999: 1 }, exact: false, pass: false,
       dataChanged: ['moon d250015b4e1a23f8 -> 597c5d666b132450'],
       environmentChanged: ['chrome 157.0.8103.78 -> 158.0.8200.10', 'adapter nvidia RTX 5090 -> nvidia RTX 5090 (driver 620.10)'],
       actualFile: null, diffFile: null, leadIn: null,
@@ -118,6 +118,9 @@ test.describe('reference images: the difference measure', () => {
     expect(text).toContain('SITE DATA CHANGED since the recording: moon d250015b4e1a23f8 -> 597c5d666b132450');
     expect(text).toContain('ENVIRONMENT CHANGED since the recording: chrome 157.0.8103.78 -> 158.0.8200.10, adapter nvidia RTX 5090 -> nvidia RTX 5090 (driver 620.10)');
     expect(describeComparison({ ...c, dataChanged: [], environmentChanged: [] })).not.toMatch(/CHANGED/);
+    // An exact checkpoint is described by the count of pixels that moved, not by a tolerance.
+    expect(describeComparison({ ...c, exact: true })).toContain(`leo-day: EXACT (no pixel may differ): ${Math.round(0.2 * W * H)} pixels differ, by up to 40 level(s)`);
+    expect(describeComparison({ ...c, exact: true })).not.toMatch(/tolerance/);
   });
 
   test('the tracked manifest lists the checkpoints of ARCHITECTURE 31.3 and is well formed', () => {

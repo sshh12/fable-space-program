@@ -18,8 +18,12 @@
  * thrown away, then two that must be identical to the bit; the second is the load's capture. A checkpoint
  * that is not frame-exact FAILS as such, with the number of differing pixels, and nothing is recorded for
  * it. The first load's capture goes into data/baselines/<name>.png, the tolerance is three times the largest
- * difference between any two loads (at least the manifest's floor), the note goes into the manifest. The
- * lead then LOOKS at every PNG (a baseline of a broken picture is worthless), commits the manifest and
+ * difference between any two loads (at least the manifest's floor), the note goes into the manifest. A
+ * checkpoint whose loads are one picture to the bit is marked `exact` (lead decision of 2026-11-12): a
+ * comparison of it passes only when NO pixel differs. One whose loads differ is compared within its
+ * tolerance and must carry `notExact` in the manifest: the reason in one line and the request to the owner
+ * (the lead writes it; tools/dev/baseline-logic.test.ts fails on the tracked manifest until it is there).
+ * The lead then LOOKS at every PNG (a baseline of a broken picture is worthless), commits the manifest and
  * keeps a copy of data/baselines outside the working tree.
  *
  * SELF-CHECK, which is also THE GATE of a refactor that must not move a pixel (without BASELINE_RECORD;
@@ -58,6 +62,11 @@ test.describe('reference images: record', () => {
       );
       console.log(`[baseline] ${name}: the discarded lead-in capture of each load differed from the capture used in ${leadInDifferingPixels.join(', ')} pixels (request core-7)`);
       console.log(`[baseline] ${name}: recorded ${entry.file} (${entry.width} x ${entry.height}, sha256 ${entry.sha256!.slice(0, 16)}); ${loads} loads differ by at most mean ${selfDifference.meanAbs.toFixed(5)}, p99.9 ${selfDifference.p999}; tolerance mean ${entry.tolerance!.meanAbs.toFixed(5)}, p99.9 ${entry.tolerance!.p999}`);
+      if (entry.exact) console.log(`[baseline] ${name}: EXACT: the ${loads} loads are one picture; a comparison passes only when no pixel differs`);
+      else {
+        const why = entry.notExact?.reason.trim() ? `"${entry.notExact.reason}" (request ${entry.notExact.request})` : 'NO REASON IS WRITTEN YET: the lead names the element and its owner\'s request in the manifest ("notExact") before the manifest is committed';
+        console.log(`[baseline] ${name}: NOT EXACT: the loads differ by up to ${selfDifference.maxAbs} level(s) in ${(selfDifference.differingFraction * 100).toFixed(3)} % of the pixels; compared within its tolerance; ${why}`);
+      }
     });
   }
 });
