@@ -36,7 +36,10 @@
  * THE BASELINE (the lead's act, on a quiet machine): BUDGET_RECORD="<who, when, why>" writes every row of
  * the run into tests/browser/budget.baseline.json (tracked). A run without it prints each row against that
  * file; BUDGET_COMPARE=1 also ASSERTS that no row's summed GPU time rose by more than 3 % (the gate of the
- * presentation sweep, to be run on a machine as quiet as the recording's).
+ * presentation sweep, to be run on a machine as quiet as the recording's). In that mode a line that is over
+ * while its package costs what it cost when the baseline was recorded is reported, not failed: the gate
+ * asks "unchanged", and the recorded baseline holds such rows (the pad's terrain; the cockpit where it has
+ * no line). Without BUDGET_COMPARE every line is asserted as before.
  *
  *   node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/integration/budget.perf.spec.ts --project=perf
  */
@@ -44,7 +47,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, withGpuLock } from '../harness';
 import { spawnSync } from 'node:child_process';
-import { compareWithBaseline, describeBaselineComparison, FRAME_BUDGET_MS, FRAME_VIEWS, judgeRow, packageLines, UNBUDGETED_MS, withBaselineRow, type BudgetBaseline } from './budgetTable';
+import { compareWithBaseline, describeBaselineComparison, FRAME_BUDGET_MS, FRAME_VIEWS, judgeRow, oversAgainstBaseline, packageLines, UNBUDGETED_MS, withBaselineRow, type BudgetBaseline } from './budgetTable';
 import { expectClean, openIntegration, PACKAGE_OWNER, record, repoRoot, save, settle, type FeaturePackage, type LabInfo } from './helpers';
 
 test.use({ viewport: { width: 2560, height: 1440 } });
@@ -288,8 +291,14 @@ for (const { checkpoint, kind, scene, index } of ROWS) {
       if (compared) console.log(`  [budget baseline] ${describeBaselineComparison(compared)}`);
       else console.log(`  [budget baseline] no recorded row to compare ${checkpoint} with (${baseline ? 'not recorded, or recorded with other packages loaded' : 'tests/browser/budget.baseline.json is not recorded yet'})`);
       if (process.env.BUDGET_COMPARE) {
+        // The sweep's gate asks "unchanged": the sum within 3 % of the recorded row, and no line over that
+        // was not over, at the same cost, when the baseline was recorded.
         expect(compared, `${checkpoint}: BUDGET_COMPARE needs a recorded baseline row with the same packages loaded`).not.toBeNull();
         expect(compared!.regressed, describeBaselineComparison(compared!)).toBe(false);
+        const split = oversAgainstBaseline(baseline, row, verdict);
+        for (const o of split.asRecorded) console.log(`  over its line as in the recorded baseline (the package's finding, not this run's): ${o}`);
+        expect(split.fresh, `${checkpoint}: over budget, and not as the baseline recorded it`).toEqual([]);
+        return;
       }
     }
     expect(verdict.over, `${checkpoint}: over budget`).toEqual([]);

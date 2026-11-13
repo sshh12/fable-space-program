@@ -19,6 +19,10 @@
  * THE BASELINE. `BUDGET_RECORD="<lead's note>"` makes the spec write each row it measures into
  * tests/browser/budget.baseline.json (tracked; the lead's act, on a quiet machine). The presentation sweep's
  * gate "summed GPU budget unchanged within 3 %" is compareWithBaseline of a later run against that file.
+ * In that gate (BUDGET_COMPARE=1) the question is "unchanged", so a line that is over AS IT WAS when the
+ * baseline was recorded is reported and not failed (oversAgainstBaseline): the baseline itself holds rows
+ * in which a package is over its line, and those are findings against that package, not against a refactor
+ * that left its cost where it was. Without BUDGET_COMPARE the table is as strict as it ever was.
  */
 
 export const FRAME_BUDGET_MS = 11;
@@ -101,6 +105,8 @@ export interface BudgetRow {
 export interface RowVerdict {
   /** What fails the row. */
   over: string[];
+  /** What each entry of `over` is about: a package, 'frame', or 'loaded' (a whole-frame view without every package). */
+  overOf: string[];
   /** Packages over the sum of their lines under a named lead waiver: reported, held by their own specs. */
   waived: string[];
   /** Packages that cost something where the table has no line for them (under UNBUDGETED_MS). */
@@ -112,26 +118,30 @@ const describeWaiver = (w: NamedWaiver): string => `LEAD WAIVER until "${w.until
 
 /** Judge a measured row; `owner` names the package's owner in the messages. */
 export function judgeRow(row: BudgetRow, owner: (pkg: string) => string = (p) => p): RowVerdict {
-  const verdict: RowVerdict = { over: [], waived: [], unbudgeted: [] };
+  const verdict: RowVerdict = { over: [], overOf: [], waived: [], unbudgeted: [] };
+  const fail = (about: string, message: string): void => {
+    verdict.over.push(message);
+    verdict.overOf.push(about);
+  };
   if (row.kind === 'lines') {
     for (const [pkg, ms] of Object.entries(row.measured)) {
       const limit = row.budget[pkg];
       if (limit === undefined) {
-        verdict.over.push(`${pkg}: ${ms.toFixed(3)} ms has no line in the table`);
+        fail(pkg, `${pkg}: ${ms.toFixed(3)} ms has no line in the table`);
         continue;
       }
       const isOver = limit === 0 ? ms > UNBUDGETED_MS : ms > limit;
       const waivers = waiversOf(row.checkpoint, pkg);
       if (isOver && waivers.length > 0) verdict.waived.push(`${pkg} (${owner(pkg)}): ${ms.toFixed(3)} ms against ${limit.toFixed(2)} ms; ${waivers.map(describeWaiver).join('; ')}`);
-      else if (isOver) verdict.over.push(`${pkg} (${owner(pkg)}): ${ms.toFixed(3)} ms against ${limit.toFixed(2)} ms`);
+      else if (isOver) fail(pkg, `${pkg} (${owner(pkg)}): ${ms.toFixed(3)} ms against ${limit.toFixed(2)} ms`);
       else if (limit === 0 && ms > 0.005) verdict.unbudgeted.push(`${pkg} (${owner(pkg)}) has no line at this checkpoint and costs ${ms.toFixed(3)} ms`);
     }
-    if (allLoaded(row) && row.frame.sum > FRAME_BUDGET_MS) verdict.over.push(`frame: ${row.frame.sum.toFixed(2)} ms against ${FRAME_BUDGET_MS} ms`);
+    if (allLoaded(row) && row.frame.sum > FRAME_BUDGET_MS) fail('frame', `frame: ${row.frame.sum.toFixed(2)} ms against ${FRAME_BUDGET_MS} ms`);
   } else {
     // A whole-frame view asserts the frame, and only with every package in it: a frame that lacks one proves nothing.
     const missing = PACKAGES.filter((p) => !row.loaded.includes(p));
-    if (missing.length > 0) verdict.over.push(`the whole-frame assertion needs every render package loaded; missing: ${missing.join(', ')}`);
-    if (row.frame.sum > FRAME_BUDGET_MS) verdict.over.push(`frame: ${row.frame.sum.toFixed(2)} ms against ${FRAME_BUDGET_MS} ms`);
+    if (missing.length > 0) fail('loaded', `the whole-frame assertion needs every render package loaded; missing: ${missing.join(', ')}`);
+    if (row.frame.sum > FRAME_BUDGET_MS) fail('frame', `frame: ${row.frame.sum.toFixed(2)} ms against ${FRAME_BUDGET_MS} ms`);
     for (const pkg of Object.keys(row.measured)) {
       const waivers = waiversOf(row.checkpoint, pkg);
       if (waivers.length > 0) verdict.waived.push(`${pkg} (${owner(pkg)}): ${row.measured[pkg]!.toFixed(3)} ms in this frame; ${waivers.map(describeWaiver).join('; ')}`);
@@ -214,6 +224,33 @@ export function compareWithBaseline(baseline: BudgetBaseline, row: BudgetRow, to
     if (Math.abs(b - a) > 0.02 && Math.abs(b - a) > tolerance * Math.max(a, 1e-9)) packages.push(`${pkg} ${a.toFixed(3)} -> ${b.toFixed(3)} ms`);
   }
   return { row: row.checkpoint, baseline: then.frame.sum, now: row.frame.sum, change, regressed: change > tolerance, packages };
+}
+
+/** A package's time counts as unchanged against the baseline within the tolerance or this many ms, whichever is more. */
+export const PACKAGE_NOISE_MS = 0.02;
+
+/**
+ * The verdict's failures, split for the gate that asks "unchanged": `asRecorded` are the lines that are
+ * over while their package's time (or the frame's sum) has not risen against the recorded row by more than
+ * the tolerance (for a package: or by PACKAGE_NOISE_MS); `fresh` is everything else, and all of them when
+ * the baseline has no comparable row.
+ */
+export function oversAgainstBaseline(baseline: BudgetBaseline | null, row: BudgetRow, verdict: RowVerdict, tolerance = BASELINE_TOLERANCE): { fresh: string[]; asRecorded: string[] } {
+  const then = baseline?.rows[row.checkpoint];
+  const comparable = then !== undefined && [...then.loaded].sort().join() === [...row.loaded].sort().join();
+  const out = { fresh: [] as string[], asRecorded: [] as string[] };
+  verdict.over.forEach((message, i) => {
+    const about = verdict.overOf[i]!;
+    let unchanged = false;
+    if (comparable && about === 'frame') unchanged = row.frame.sum - then.frame.sum <= tolerance * then.frame.sum;
+    else if (comparable && about !== 'loaded') {
+      const a = then.measured[about];
+      const b = row.measured[about];
+      unchanged = a !== undefined && b !== undefined && b - a <= Math.max(PACKAGE_NOISE_MS, tolerance * a);
+    }
+    (unchanged ? out.asRecorded : out.fresh).push(message);
+  });
+  return out;
 }
 
 export function describeBaselineComparison(c: BaselineComparison): string {

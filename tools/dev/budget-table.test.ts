@@ -16,10 +16,12 @@ import {
   FRAME_VIEWS,
   judgeRow,
   NAMED_WAIVERS,
+  oversAgainstBaseline,
   packageLines,
   PACKAGES,
   waiversOf,
   withBaselineRow,
+  type BudgetBaseline,
   type BudgetRow,
 } from '../../tests/browser/integration/budgetTable';
 
@@ -101,7 +103,7 @@ describe('the named lead waivers', () => {
 
 describe('the judgement of a row', () => {
   it('a checkpoint within every line and under 11 ms passes; a package over its line fails; the frame over 11 ms fails', () => {
-    expect(judgeRow(row())).toEqual({ over: [], waived: [], unbudgeted: [] });
+    expect(judgeRow(row())).toEqual({ over: [], overOf: [], waived: [], unbudgeted: [] });
     expect(judgeRow(row({ measured: { ...row().measured, vehicle: 0.95 } })).over).toEqual(['vehicle (vehicle): 0.950 ms against 0.90 ms']);
     expect(judgeRow(row({ frame: { sum: 11.2, typical: 9 } })).over).toEqual([`frame: 11.20 ms against ${FRAME_BUDGET_MS} ms`]);
     // The frame is asserted only with every package loaded: a partial frame is not the game's frame.
@@ -110,7 +112,7 @@ describe('the judgement of a row', () => {
   });
 
   it('a package without a line may cost up to 0.1 ms, reported; more is over', () => {
-    expect(judgeRow(row({ measured: { ...row().measured, cockpit: 0.04 } }))).toEqual({ over: [], waived: [], unbudgeted: ['cockpit (cockpit) has no line at this checkpoint and costs 0.040 ms'] });
+    expect(judgeRow(row({ measured: { ...row().measured, cockpit: 0.04 } }))).toEqual({ over: [], overOf: [], waived: [], unbudgeted: ['cockpit (cockpit) has no line at this checkpoint and costs 0.040 ms'] });
     expect(judgeRow(row({ measured: { ...row().measured, cockpit: 0.12 } })).over).toEqual(['cockpit (cockpit): 0.120 ms against 0.00 ms']);
   });
 
@@ -186,5 +188,85 @@ describe('the recorded baseline and the sweep\'s gate', () => {
     const baseline = withBaselineRow(null, row(), meta);
     expect(compareWithBaseline(baseline, row({ checkpoint: 'splashdown' }))).toBeNull();
     expect(compareWithBaseline(baseline, row({ loaded: ALL.filter((p) => p !== 'vfx') }))).toBeNull();
+  });
+});
+
+describe('the gate that asks "unchanged" (BUDGET_COMPARE)', () => {
+  const meta = { note: 'the lead, before sub-wave 3.2, quiet machine', method: 'p99 per package', at: '2026-11-12T20:00:00.000Z', commit: 'abc1234' };
+  // A recorded row in which the terrain is over its line and the cockpit costs 0.104 ms where it has none.
+  const recordedRow = row({ checkpoint: 'pad lift-off', measured: { ...row().measured, terrain: 2.348, cockpit: 0.104 }, budget: { ...row().budget, terrain: 2.15 }, frame: { sum: 6.17, typical: 5.1 } });
+  const baseline = withBaselineRow(null, recordedRow, meta);
+
+  it('every failure names what it is about', () => {
+    const v = judgeRow({ ...recordedRow, frame: { sum: 11.4, typical: 9 } });
+    expect(v.over).toHaveLength(3);
+    expect(v.overOf.sort()).toEqual(['cockpit', 'frame', 'terrain']);
+    const view = judgeRow(row({ checkpoint: 'stony ground', kind: 'frame', budget: {}, loaded: ALL.filter((p) => p !== 'vfx') }));
+    expect(view.overOf).toEqual(['loaded']);
+  });
+
+  it('a line that is over as it was recorded is reported, not failed; a line that went over, or rose, fails', () => {
+    // The same numbers again: both overs are the baseline's.
+    const same = oversAgainstBaseline(baseline, recordedRow, judgeRow(recordedRow));
+    expect(same.fresh).toEqual([]);
+    expect(same.asRecorded).toHaveLength(2);
+    // Within the noise of a package (0.02 ms, or 3 %): still as recorded.
+    const near = { ...recordedRow, measured: { ...recordedRow.measured, terrain: 2.41, cockpit: 0.12 } };
+    expect(oversAgainstBaseline(baseline, near, judgeRow(near)).fresh).toEqual([]);
+    // The terrain 5 % up: its line is this run's finding.
+    const risen = { ...recordedRow, measured: { ...recordedRow.measured, terrain: 2.47 } };
+    const split = oversAgainstBaseline(baseline, risen, judgeRow(risen));
+    expect(split.fresh).toEqual(['terrain (terrain): 2.470 ms against 2.15 ms']);
+    expect(split.asRecorded).toEqual(['cockpit (cockpit): 0.104 ms against 0.00 ms']);
+    // A package that was within its line and is over it now, by more than the noise.
+    const vehicle = { ...recordedRow, measured: { ...recordedRow.measured, vehicle: 0.95 } };
+    expect(oversAgainstBaseline(baseline, vehicle, judgeRow(vehicle)).fresh).toEqual(['vehicle (vehicle): 0.950 ms against 0.90 ms']);
+    // A package that sat just under the 0.1 ms of a place without a line and reads just over it: noise, not a finding.
+    const under = withBaselineRow(null, row({ measured: { ...row().measured, cockpit: 0.097 } }), meta);
+    const over = row({ measured: { ...row().measured, cockpit: 0.103 } });
+    expect(judgeRow(over).over).toHaveLength(1);
+    expect(oversAgainstBaseline(under, over, judgeRow(over))).toEqual({ fresh: [], asRecorded: ['cockpit (cockpit): 0.103 ms against 0.00 ms'] });
+  });
+
+  it('the frame over 11 ms is excused only if it was recorded so and has not risen; nothing is excused without a comparable row', () => {
+    const heavy = withBaselineRow(null, row({ frame: { sum: 11.3, typical: 9.4 } }), meta);
+    const again = row({ frame: { sum: 11.4, typical: 9.5 } });
+    expect(oversAgainstBaseline(heavy, again, judgeRow(again))).toEqual({ fresh: [], asRecorded: ['frame: 11.40 ms against 11 ms'] });
+    const worse = row({ frame: { sum: 11.8, typical: 9.9 } });
+    expect(oversAgainstBaseline(heavy, worse, judgeRow(worse)).fresh).toEqual(['frame: 11.80 ms against 11 ms']);
+    expect(oversAgainstBaseline(null, recordedRow, judgeRow(recordedRow)).fresh).toHaveLength(2);
+    const other = { ...recordedRow, loaded: ALL.filter((p) => p !== 'vfx') };
+    expect(oversAgainstBaseline(baseline, other, judgeRow(other)).asRecorded).toEqual([]);
+    const missing = row({ checkpoint: 'stony ground', kind: 'frame', budget: {}, loaded: ALL.filter((p) => p !== 'vfx') });
+    expect(oversAgainstBaseline(withBaselineRow(null, missing, meta), missing, judgeRow(missing)).fresh).toHaveLength(1);
+  });
+});
+
+describe('the recorded baseline (tests/browser/budget.baseline.json)', () => {
+  const file = path.join(repoRoot, 'tests', 'browser', 'budget.baseline.json');
+  const recorded = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as BudgetBaseline) : null;
+
+  it.skipIf(recorded === null)('holds the seven checkpoints and the three whole-frame views, every one with all packages and under 11 ms', () => {
+    const b = recorded!;
+    expect(b.version).toBe(1);
+    expect(b.note.length).toBeGreaterThan(8);
+    expect(Object.keys(b.rows)).toEqual(['pad lift-off', 'ascent 10-40 km', 'LEO', 'LEO cockpit', 'lunar descent', 'reentry', 'splashdown', ...FRAME_VIEWS.map((v) => v.name)]);
+    for (const [name, r] of Object.entries(b.rows)) {
+      expect([...r.loaded].sort(), name).toEqual([...PACKAGES].sort());
+      expect(r.kind, name).toBe(FRAME_VIEWS.some((v) => v.name === name) ? 'frame' : 'lines');
+      expect(r.frame.sum, name).toBeGreaterThan(1);
+      expect(r.frame.sum, name).toBeLessThan(FRAME_BUDGET_MS);
+      // The sum is the sum of what was measured.
+      expect(Object.values(r.measured).reduce((s, x) => s + x, 0), name).toBeCloseTo(r.frame.sum, 1);
+    }
+  });
+
+  it.skipIf(recorded === null)('compared with itself: unchanged, and every line that is over in it is over as recorded', () => {
+    const b = recorded!;
+    for (const [name, r] of Object.entries(b.rows)) {
+      const asRow: BudgetRow = { checkpoint: name, kind: r.kind, loaded: r.loaded, measured: r.measured, budget: r.budget, frame: r.frame };
+      expect(compareWithBaseline(b, asRow), name).toMatchObject({ change: 0, regressed: false, packages: [] });
+      expect(oversAgainstBaseline(b, asRow, judgeRow(asRow)).fresh, name).toEqual([]);
+    }
   });
 });
