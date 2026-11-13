@@ -7,7 +7,7 @@
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import { oceanSwellHeight } from '@/core/geo/oceanSwell';
 import { quat, v3, type Vec3 } from '@/core/math';
-import { coreOf, createSceneBindings, f32ToF16, MAX_BODIES, type SceneBindings, type Tracked } from '@/render/core';
+import { coreOf, createSceneBindings, f32ToF16, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
 import { buildCascades, type OceanCascadeSet } from './cascades';
 import { buildFarWaves } from './farWaves';
 import { OceanFft } from './fft';
@@ -120,6 +120,8 @@ export interface OceanDebug {
    * presence costs (ocean.perf.spec.ts, profile). The picture towards fadeStart is wrong while it is on.
    */
   setForwardProbe(on: boolean): void;
+  /** false: resetTemporal does nothing (the histories are kept through a frame-exact capture). For the A/B of tests/browser/ocean/exact.spec.ts. */
+  setTemporalReset(on: boolean): void;
 
   /** Reversed-Z values of 'scene.depthOpaque' (this frame's opaque depth: the seabed inside fadeStart) at render pixels. */
   readOpaqueDepth(pixels: readonly [number, number][]): Promise<number[]>;
@@ -148,7 +150,7 @@ export interface OceanDebug {
   };
 }
 
-export type OceanFeature = RenderFeature & { readonly debug: OceanDebug };
+export type OceanFeature = RenderFeature & TemporalFeature & { readonly debug: OceanDebug };
 
 interface BodyOcean {
   tunables: OceanTunables;
@@ -184,6 +186,9 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   let directSpecular = true;
   let cloudMirror = true;
   let forwardProbe = false;
+  // Between resetTemporal and the frame that rebuilds what it dropped.
+  let rebuilding = false;
+  let temporalReset = true;
   let lastFrame: FrameContext | null = null;
   let depthReadLayout: GPUBindGroupLayout;
   let depthReadPipeline: GPUComputePipeline;
@@ -331,6 +336,9 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       cloudMirror = on;
       brdfKey = '';
       registerBrdf(lastFrame);
+    },
+    setTemporalReset(on) {
+      temporalReset = on;
     },
     setForwardProbe(on) {
       forwardProbe = on;
@@ -702,6 +710,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
 
     prepare(frame) {
       if (disposed) return;
+      // (This frame rebuilds whatever a restart dropped: the chart, the field, the FFT's and the foam's history.)
+      rebuilding = false;
       coreOfFrame.frameBindGroup = frame.frameBindGroup;
       lastFrame = frame;
       registerBrdf(frame);
@@ -998,7 +1008,30 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       pass.end();
     },
 
-    isIdle: () => coreOf(ctx).shaders.pendingCompilations() === 0,
+    /**
+     * Every temporal sequence starts again (RENDER_API section 13, frame-exact capture; request lead-7): after this
+     * the sea of the next frames is a function of the snapshot, the camera and the count of frames alone. Dropped:
+     * the foam map's history (whitecaps and what they left: the next frame starts it from the wave field of the
+     * snapshot, as a level that comes into view does), the FFT's previous frame, the impacts gathered from earlier
+     * snapshots, the wet lines and the wake's foam, the chart's anchor (kept by hysteresis while the camera moves:
+     * re-anchored where the nadir is) and with it the baked roughness field's centre. The waves themselves need
+     * nothing: the swell, the FFT, the ripples and the surf are functions of the snapshot's time. All of it is
+     * rebuilt by the next frame; until that frame the feature reports busy.
+     */
+    resetTemporal() {
+      if (!temporalReset) return;
+      for (const b of bodies.values()) {
+        b.fft?.reset();
+        b.foam?.reset();
+      }
+      vessels.resetTemporal();
+      keeper.reset();
+      field.chart = null;
+      wasNear = false;
+      rebuilding = true;
+    },
+
+    isIdle: () => !rebuilding && coreOf(ctx).shaders.pendingCompilations() === 0,
 
     dispose() {
       disposed = true;

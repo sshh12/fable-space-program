@@ -24,6 +24,8 @@ interface Ripple {
   x: number;
   y: number;
   ut0: number;
+  /** The vessel that entered the water (an event is taken once per vessel and time). */
+  vesselId: string;
   amplitude: number;
 }
 
@@ -178,7 +180,10 @@ export class OceanVessels {
         // What the shaders need of an impact, in one number: the hull's radius R0 to the centimetre, and above it
         // (in the third and fourth decimal) the strength of the impact, entry speed / 6 m/s up to 1 (request vfx-9).
         const r0 = Math.round(Math.max(v.boundingRadius, 0.5) * 100) / 100;
-        this.ripples.push({ x: xy.x, y: xy.y, ut0: e.ut, amplitude: r0 + 0.0099 * Math.min(1, Math.max(0, speed / 6)) });
+        // Once: a snapshot that is drawn for several frames (time standing still) brings its events every frame.
+        if (!this.ripples.some((r) => r.ut0 === e.ut && r.vesselId === e.vesselId)) {
+          this.ripples.push({ x: xy.x, y: xy.y, ut0: e.ut, vesselId: e.vesselId, amplitude: r0 + 0.0099 * Math.min(1, Math.max(0, speed / 6)) });
+        }
         const w = this.wet.get(v.id) ?? { maxLevel: -Infinity, lastSplashUt: e.ut };
         w.lastSplashUt = e.ut;
         w.maxLevel = Math.max(w.maxLevel, v.boundingRadius);
@@ -281,6 +286,17 @@ export class OceanVessels {
       this.wakeOrigin = null;
     }
     return out;
+  }
+
+  /**
+   * Drop what was gathered over the frames before (RenderFeature.resetTemporal): the impacts seen so far (those of
+   * the snapshot in force are read again with the next frame), the wet lines the hulls have reached (the next frame
+   * starts them at the water's level now) and the wake's foam (the next update starts an empty texture).
+   */
+  resetTemporal(): void {
+    this.ripples = [];
+    this.wet.clear();
+    this.wakeOrigin = null;
   }
 
   /** No ocean body near the camera: no wet slots. */

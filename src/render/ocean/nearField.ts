@@ -125,6 +125,15 @@ export class ChartKeeper {
     return this.chart!;
   }
 
+  /**
+   * Forget the chart: the next update anchors it where the nadir then is. (Which tile anchors the chart otherwise
+   * depends on where the camera has been: a frame-exact capture must not.)
+   */
+  reset(): void {
+    this.chart = null;
+    this.bodyId = null;
+  }
+
   private drift(n: Vec3): number {
     const c = this.chart!;
     return c.radius * Math.acos(Math.min(1, Math.max(-1, v3.dot(n, c.a))));
