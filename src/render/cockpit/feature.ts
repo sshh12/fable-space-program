@@ -21,7 +21,7 @@ import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeatu
 import type { PartSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { CockpitControls, MfdPainter, NavballRenderer } from '@/core/contracts/ui';
 import { mat3, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';
-import { coreOf, createSceneBindings, MAX_BODIES, mipCount, nearestBody, sunVisibilityAt, type SceneBindings, type Tracked } from '@/render/core';
+import { coreOf, createSceneBindings, MAX_BODIES, mipCount, nearestBody, sunVisibilityAt, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
 import { BALL_RADIUS_FRACTION } from '@/ui';
 import { paintLabelAtlas } from './atlas';
 import { buildCockpitModel, displayVertices, meshBvh, meshPositions, sunRange, type CockpitModel, type LodName } from './build';
@@ -96,7 +96,7 @@ export interface CockpitFrameStats {
   prepareMs: number;
 }
 
-export interface CockpitFeature extends RenderFeature {
+export interface CockpitFeature extends RenderFeature, TemporalFeature {
   /** Built interiors by layout id (available after init). */
   model(layout: string): CockpitModel | undefined;
   /** What the last prepared frame drew. */
@@ -226,6 +226,8 @@ interface DetailTextures {
 const PANE_FLOATS = 10;
 /** The cabin's light passes (sun map, ambient, probe) run every this many frames while the cabin is drawn at a far detail level. */
 const FAR_LIGHT_INTERVAL = 8;
+/** Seconds of the cabin's clock per frame while time is frozen (deterministic screenshots, frame-exact captures). */
+const EXACT_STEP = 1 / 60;
 
 export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOptions): { feature: CockpitFeature; controls: CockpitControls } {
   const defs = ctx0.defs;
@@ -281,6 +283,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   /** Frames since the cabin's light passes last ran while the cabin is drawn at a far detail level. */
   let farFrames = 0;
   let gFiltered = 1;
+  /** The next frame takes every smoothed value at its target (after resetTemporal). */
+  let snapSmoothed = false;
   let tunnel = 0;
   let prevVib: Vec3 = v3.zero();
   let lastLod: LodName | null = null;
@@ -331,7 +335,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       core.shaders.register('cockpit_cabin', CABIN_CHUNK);
       scene = createSceneBindings(c, 1, CABIN_SCENE_BINDING, ['env', 'atmosphereLuts', 'transparency', 'plasmaWindow']);
       ambientScene = createSceneBindings(c, 1, AMBIENT_SCENE_BINDING, ['env', 'atmosphereLuts', 'cloudShadow', 'plasmaWindow']);
-      ambientBuf = device.createBuffer({ label: 'cockpit.ambient', size: AMBIENT_VEC4S * 16, usage: GPUBufferUsage.STORAGE });
+      // (COPY_DST: resetTemporal zeroes the probe's bounce coefficients in it.)
+      ambientBuf = device.createBuffer({ label: 'cockpit.ambient', size: AMBIENT_VEC4S * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       ambientLayout = device.createBindGroupLayout({
         label: 'cockpit.ambient',
         entries: [
@@ -529,7 +534,10 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const t0 = performance.now();
       active = null;
       st.active = false;
-      clock += frame.realDt;
+      // The cabin's clock (lamps that blink, the plasma's wander, the displays' slots): wall time while the
+      // picture animates; with frozen time (a deterministic screenshot, a frame-exact capture) the frames since
+      // the sequences last started at the fixed step, so the picture after N frames depends on the scene and N.
+      clock = frame.animate ? clock + frame.realDt : coreOf(ctx).sequenceIndex() * EXACT_STEP;
       const p = pick(frame);
       if (!p) {
         st.layout = null;
@@ -572,6 +580,8 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const tn = exp.tunnel;
       // The g the crew of THIS vessel feels: the HUD's value when it is the active vessel.
       const g = src.active ? frame.snapshot.readouts.gLoad : vessel.gLoad;
+      if (snapSmoothed) gFiltered = g;
+      snapSmoothed = false;
       gFiltered += (g - gFiltered) * Math.min(1, frame.realDt / Math.max(tn.tau, 1e-3));
       const target = interiorView ? Math.max(0, Math.min(1, (gFiltered - tn.onsetG) / Math.max(tn.fullG - tn.onsetG, 1e-3))) : 0;
       tunnel = interiorView ? target * target * (3 - 2 * target) : 0;
@@ -760,7 +770,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       const t0 = performance.now();
       // The screens are painted only while a camera can see them: from inside, or close enough outside for
       // the full detail level (request app-integration-12: not in the chase view, not in the map).
-      displays.update(clock, frame.snapshot, (i) => controls.page(Math.min(i, controls.displayCount - 1)), encoder, active.lod === 'lod0' && frame.camera.kind !== 'map' && (ablation & ABLATE.displayPaint) === 0);
+      displays.update(clock, frame.snapshot, (i) => controls.page(Math.min(i, controls.displayCount - 1)), encoder, active.lod === 'lod0' && frame.camera.kind !== 'map' && (ablation & ABLATE.displayPaint) === 0, !frame.animate);
       const gm = active.gm;
       // The flood lights' shadow maps: every layer when this model's lamps are not the ones in the maps (the
       // first frame), then one layer a frame while a lever, a guard or a hand controller has moved.
@@ -910,7 +920,36 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
       pass.draw(3);
     },
 
-    isIdle: () => true,
+    /**
+     * Frame-exact capture (RENDER_API section 13, request lead-5): everything the cabin integrates over frames
+     * starts over, so the picture after N frames depends on the scene and N alone. The clock (it runs on the
+     * sequence index while time is frozen), the far level's light interval, the smoothed g, the vibration's
+     * previous offset; the displays' pacing back to "nothing painted"; the lamps' shadow maps rendered again in
+     * whole; the probe built from nothing in the next frame (its bounce coefficients zeroed here).
+     */
+    resetTemporal() {
+      clock = 0;
+      farFrames = 0;
+      snapSmoothed = true;
+      prevVib = v3.zero();
+      displays?.resetTemporal();
+      // (The shadow maps of the lamps and of the sun are rendered again in the next frame, from the scene as it
+      // is: a map kept from the frames before is a history, even where its key says it still fits.)
+      lampModel = null;
+      sunMapModel = null;
+      probe?.restart();
+      if (ambientBuf) ctx.device.queue.writeBuffer(ambientBuf, (2 + MAX_CABIN_POLYS) * 16, new Float32Array(9 * 4));
+    },
+
+    // Busy while a camera can read the screens and one is not painted yet, while the lamps' shadow maps are
+    // being rendered again, and until the probe's inter-reflection has had its frames.
+    isIdle: () => {
+      if (!active) return true;
+      const gm = active.gm;
+      if (displays?.pending()) return false;
+      if (lampModel !== gm || gm.lampStale > 0) return false;
+      return !(gm.probeGroup && gm.shGroup) || probe.settled;
+    },
 
     dispose() {
       for (const gm of models.values()) {

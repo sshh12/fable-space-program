@@ -135,3 +135,31 @@ describe('cockpit display pacing', () => {
     expect(pacer.due(t, pageOf)[0]).toBe(2);
   });
 });
+
+describe('reset (the frame-exact capture restarts the pacing)', () => {
+  it('goes back to "nothing painted": the same paints in the same frames as from construction, whatever was measured before', () => {
+    const rule = { rateHz: 15, fastPages: ['flight'], cpuBudget: 21.6, slowMinHz: 2 };
+    const pageOf = (i: number): string => ['flight', 'orbit', 'systems'][i]!;
+    const run = (p: DisplayPacer): string => {
+      const log: string[] = [];
+      for (let f = 0; f < 64; f++) {
+        const t = f / 60;
+        for (const i of p.due(t, pageOf)) {
+          log.push(`${f}:${i}`);
+          p.painted(i, t, pageOf(i), 0, pageOf);
+        }
+      }
+      return log.join(' ');
+    };
+    const fresh = run(new DisplayPacer(3, rule));
+    const used = new DisplayPacer(3, rule);
+    // A history: wall-clock times and costs that make the slow pages slow.
+    for (let f = 0; f < 200; f++) for (const i of used.due(100 + f * 0.0171, pageOf)) used.painted(i, 100 + f * 0.0171, pageOf(i), 9 + (f % 5), pageOf);
+    expect(used.hasDirty()).toBe(false);
+    used.reset();
+    expect(used.hasDirty()).toBe(true);
+    expect(run(used)).toBe(fresh);
+    // The three displays are painted in the first three frames, one a frame.
+    expect(fresh.startsWith('0:0 1:1 2:2')).toBe(true);
+  });
+});

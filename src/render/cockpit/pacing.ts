@@ -64,6 +64,26 @@ export class DisplayPacer {
     this.dirty.add(display);
   }
 
+  /** Whether a display still waits for its first paint of what it shows now. */
+  hasDirty(): boolean {
+    return this.dirty.size > 0;
+  }
+
+  /**
+   * Back to "nothing painted" (the frame-exact capture's restart, RENDER_API section 13): every display is
+   * dirty, the slots are staggered from time 0 as at construction, and the measured costs are forgotten (they
+   * are wall-clock knowledge: a slow page's interval follows them). What is painted in which frame after this
+   * is a function of the times and pages given from here on.
+   */
+  reset(): void {
+    this.lastTime = -Infinity;
+    for (let i = 0; i < this.count; i++) {
+      this.next[i] = (i / this.count) * this.period;
+      this.costs[i]!.length = 0;
+      this.dirty.add(i);
+    }
+  }
+
   /** No camera can read the screens this frame: every display is repainted when one can again. */
   hidden(): void {
     for (let i = 0; i < this.count; i++) this.dirty.add(i);

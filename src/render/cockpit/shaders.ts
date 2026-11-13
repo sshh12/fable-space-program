@@ -218,7 +218,9 @@ var<workgroup> wShared: vec4f;
     for (var k = 0u; k < ${MAX_CABIN_POLYS}u; k++) { total += wFlux[k]; }
     // x = the lamps' share of the flux that enters the cabin: their first bounce is taken at the lamps' own
     // pools (cabinVertexLight), and the probe's bounce light is lowered by as much (INTERIOR_WGSL shade).
-    outAmb[0] = vec4f(cabin.bounce.z / max(luminance(total), 1e-3), 0.0, 0.0, brightness);
+    // y = the cabin's mean illuminance from everything that enters it (lux): the reference of the sunlit
+    // surfaces' shoulder (sunShoulder).
+    outAmb[0] = vec4f(cabin.bounce.z / max(luminance(total), 1e-3), luminance(total) * cabin.bounce.x / max(cabin.bounce.w, 1e-3), 0.0, brightness);
   }
 }
 `;
@@ -1005,14 +1007,20 @@ fn cabinSunIlluminance(amb: CabinAmbient) -> vec3f {
 
 /// The latitude of the cabin's sunlit surfaces. A sun patch stands three to seven stops over a cabin lit
 /// by the Earth and its lamps; written as it is, black anodise and white cloth in the patch are one paper
-/// white. Above SUN_SHOULDER_KNEE of the frame's exposed white the sunlit luminance (cd/m^2, L) is laid on a
+/// white. Above SUN_SHOULDER_KNEE of the cabin's own white the sunlit luminance (cd/m^2, L) is laid on a
 /// logarithmic shoulder, as a negative does: each stop adds SUN_SHOULDER_GAIN x ln 2 of the knee, so the patch
 /// stays the brightest thing in the cabin and what it falls on keeps its tones and its texture. (Not applied
 /// in the cabin probe: the light a patch throws back into the cabin is its true light.)
+/// The cabin's white is a white card under the cabin's mean illuminance (the ambient pass, cabinAmb[0].y)
+/// times SUN_SHOULDER_KEY, the share of it an interior exposure puts at display white. NOT the frame's
+/// exposure: a luminance that depends on the exposure feeds the meter its own result, and the exposure of a
+/// frame-exact capture then depends on the exposure before it (request lead-5: the app's cockpit view on the
+/// pad, sun in the cabin, drifted over twelve captures).
 const SUN_SHOULDER_KNEE = 0.7;
 const SUN_SHOULDER_GAIN = 0.4;
+const SUN_SHOULDER_KEY = 0.45;
 fn sunShoulder(L: vec3f) -> vec3f {
-  let x = luminance(L) * frame.exposure.x;
+  let x = luminance(L) * SUN_SHOULDER_KEY * PI / max(cabinAmb[0].y, 1e-3);
   if (x <= SUN_SHOULDER_KNEE) { return L; }
   return L * (SUN_SHOULDER_KNEE * (1.0 + SUN_SHOULDER_GAIN * log(x / SUN_SHOULDER_KNEE)) / x);
 }

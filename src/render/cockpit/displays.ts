@@ -64,6 +64,9 @@ export interface DisplayStats {
  */
 export const DISPLAY_CPU_BUDGET = 21.6;
 
+/** Most paints of one display in one frame with frozen time, until a paint changes nothing. */
+const EXACT_SETTLE_PAINTS = 600;
+
 export class MfdDisplays {
   readonly texture: GPUTexture;
   readonly view: GPUTextureView;
@@ -152,6 +155,30 @@ export class MfdDisplays {
     this.pacer.markDirty(display);
   }
 
+  /** The pacing back to "nothing painted" (CockpitFeature.resetTemporal). */
+  resetTemporal(): void {
+    this.pacer.reset();
+  }
+
+  /** A camera can read the screens and one of them still waits for the paint of what it shows now. */
+  pending(): boolean {
+    return this.readable && this.pacer.hasDirty();
+  }
+
+  private readable = false;
+  private scratch: OffscreenCanvasRenderingContext2D | null = null;
+
+  /** A digest of display i's canvas at half size (exact mode: whether another paint changed the page). */
+  private digest(i: number): number {
+    if (!this.scratch) this.scratch = new OffscreenCanvas(this.width >> 1, this.height >> 1).getContext('2d', { willReadFrequently: true })!;
+    const s = this.scratch;
+    s.drawImage(this.contexts[i]!.canvas, 0, 0, s.canvas.width, s.canvas.height);
+    const d = s.getImageData(0, 0, s.canvas.width, s.canvas.height).data;
+    let h = 2166136261;
+    for (let k = 0; k < d.length; k += 4) h = Math.imul(Math.imul(Math.imul(h ^ d[k]!, 16777619) ^ d[k + 1]!, 16777619) ^ d[k + 2]!, 16777619);
+    return h >>> 0;
+  }
+
   /**
    * Paint what the pacing rule (pacing.ts) says is due this frame: one display, a dirty one first (a page
    * change, the first frame, a cabin that comes back into view), else the one whose slot has come; a display
@@ -161,8 +188,13 @@ export class MfdDisplays {
    * `visible` false (no camera can read the screens: the cabin is drawn at a far detail level, or not at
    * all, or the view is the map): nothing is painted; every display is repainted within three frames of the
    * cabin coming back into view (request app-integration-12).
+   *
+   * `exact` (the frame is rendered with frozen time: a deterministic screenshot, a frame-exact capture): the
+   * page is painted to its finished state within the frame and the pacing ignores what the paint cost, so
+   * which display shows what after N frames is a function of the snapshot and N.
    */
-  update(time: number, snapshot: SimSnapshot, pageOf: (display: number) => MfdPage, encoder: GPUCommandEncoder, visible = true): void {
+  update(time: number, snapshot: SimSnapshot, pageOf: (display: number) => MfdPage, encoder: GPUCommandEncoder, visible = true, exact = false): void {
+    this.readable = visible;
     this.stats.frames++;
     for (const f of this.frames) f.close();
     this.frames = [];
@@ -177,6 +209,18 @@ export class MfdDisplays {
       const page = pageOf(i);
       const a = performance.now();
       this.painter.paint(this.contexts[i]!, this.width, this.height, page, snapshot, this.defs);
+      if (exact) {
+        // A page may be built over several paints against a wall-clock budget (the ORB page's body graphic):
+        // how far it is at a given frame is then not a function of the frames. With frozen time the page is
+        // painted until another paint changes nothing, so what is uploaded is the finished page.
+        let h = this.digest(i);
+        for (let n = 0; n < EXACT_SETTLE_PAINTS; n++) {
+          this.painter.paint(this.contexts[i]!, this.width, this.height, page, snapshot, this.defs);
+          const again = this.digest(i);
+          if (again === h) break;
+          h = again;
+        }
+      }
       const b = performance.now();
       this.encodeUpload(i, encoder);
       const c = performance.now();
@@ -187,7 +231,8 @@ export class MfdDisplays {
       this.painted[i] = { page, tick: snapshot.tick, at: time };
       this.stats.paints++;
       this.stats.perDisplay[i] = (this.stats.perDisplay[i] ?? 0) + 1;
-      this.pacer.painted(i, time, page, performance.now() - a, pageOf);
+      // (Frozen time: the pacing takes no measured cost, every page is at the plain rate.)
+      this.pacer.painted(i, time, page, exact ? 0 : performance.now() - a, pageOf);
     }
     this.stats.cpuMs += performance.now() - t0;
   }

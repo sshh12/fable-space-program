@@ -96,6 +96,11 @@ export interface ProbeDraw {
   timestamps?: { render?: GPURenderPassTimestampWrites; filter?: GPUComputePassTimestampWrites };
 }
 
+/** Rounds of the whole probe in the one frame after a restart: what is left of the bounce light is under 1 %. */
+const PROBE_BURST = 8;
+/** Frames after which the probe's inter-reflection counts as built (the feature reports busy until then). */
+const PROBE_SETTLE = 24;
+
 export class CabinProbe {
   readonly size: number;
   readonly levels: number;
@@ -219,6 +224,25 @@ export class CabinProbe {
     this.warm = 0;
   }
 
+  /**
+   * Restart for a frame-exact capture (RENDER_API section 13): the next render builds the inter-reflection
+   * from nothing in that one frame (PROBE_BURST rounds of all six faces and the filter; the caller has zeroed
+   * the bounce coefficients), and the alternation of the halves starts over. The frames after it depend on
+   * the scene and their count alone, and none of them shows a cabin whose bounce light is still building up.
+   */
+  restart(): void {
+    this.warm = 0;
+    this.half = 1;
+    this.burst = true;
+  }
+
+  /** The inter-reflection has had its frames (PROBE_SETTLE since the last reset, or a burst). */
+  get settled(): boolean {
+    return this.warm >= PROBE_SETTLE;
+  }
+
+  private burst = false;
+
   /** Which half of the faces the last frame rendered (0: faces 0..2, 1: faces 3..5). */
   private half = 1;
 
@@ -229,7 +253,6 @@ export class CabinProbe {
    * so the other half is simply kept). The filter runs every frame over the whole cube.
    */
   render(encoder: GPUCommandEncoder, d: ProbeDraw): void {
-    const S = this.size;
     if (!this.centre || v3.dist(this.centre, d.centre) > 1e-6) {
       this.centre = d.centre;
       const data = new Float32Array(6 * 64);
@@ -240,7 +263,18 @@ export class CabinProbe {
     // The coefficients feed the next frame's probe: the first frames take the new value outright (the
     // inter-reflection builds up bounce by bounce), later ones are filtered a little against flicker.
     this.device.queue.writeBuffer(this.params, 0, new Float32Array([1 / PROBE_SCALE, this.warm < 12 ? 1 : 0.5, 0, 0]));
-    const all = this.warm < 2;
+    const rounds = this.burst ? PROBE_BURST : 1;
+    for (let round = 0; round < rounds; round++) this.pass(encoder, d, round === rounds - 1);
+    if (this.burst) {
+      this.burst = false;
+      this.warm = PROBE_SETTLE;
+      this.half = 1;
+    }
+  }
+
+  private pass(encoder: GPUCommandEncoder, d: ProbeDraw, timed: boolean): void {
+    const S = this.size;
+    const all = this.burst || this.warm < 2;
     this.warm++;
     this.half = all ? 1 : 1 - this.half;
     const firstFace = all ? 0 : this.half * 3;
@@ -249,7 +283,7 @@ export class CabinProbe {
       label: 'cockpit.probe',
       colorAttachments: [{ view: this.atlasView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: all ? 'clear' : 'load', storeOp: 'store' }],
       depthStencilAttachment: { view: this.depthView, depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'discard' },
-      ...(d.timestamps?.render ? { timestampWrites: d.timestamps.render } : {}),
+      ...(timed && d.timestamps?.render ? { timestampWrites: d.timestamps.render } : {}),
     });
     pass.setBindGroup(0, d.frameGroup);
     pass.setBindGroup(1, d.cabinGroup);
@@ -260,7 +294,7 @@ export class CabinProbe {
       d.draw(pass);
     }
     pass.end();
-    const filter = encoder.beginComputePass({ label: 'cockpit.probeFilter', ...(d.timestamps?.filter ? { timestampWrites: d.timestamps.filter } : {}) });
+    const filter = encoder.beginComputePass({ label: 'cockpit.probeFilter', ...(timed && d.timestamps?.filter ? { timestampWrites: d.timestamps.filter } : {}) });
     filter.setPipeline(this.copyPipe);
     filter.setBindGroup(0, this.copyGroup);
     filter.dispatchWorkgroups(Math.ceil(S / 8), Math.ceil(S / 8), 6);
