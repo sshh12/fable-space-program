@@ -13,15 +13,19 @@
  *    residency on every tick of the final descent - have no browser counterpart and stay with the headless suite);
  *  - cheatCounter 0, pad start, crew alive, no incomplete terrain query, window.__test.errors empty for the whole
  *    flight, no console error;
- *  - frame time per pilot phase against ARCHITECTURE 17 (GPU p99 <= 11 ms at 1440p internal, rAF p99 <= 17.5 ms and
- *    no delta >= 33 ms, main-thread frame p99 <= 6 ms) and 18.2 (rAF p95 < 16.7 ms), measured under the GPU lock at
- *    2560 x 1440, render scale 1, governor off. Each phase's number is the median over its windows (up to 240
- *    frames each, reset at every phase change and around every screenshot) of the window's percentile, as in
+ *  - frame time per pilot phase against ARCHITECTURE 17 / 29 (GPU p99 <= 11 ms at 1440p internal, main-thread
+ *    frame p99 <= 6 ms, and the frame-interval line), measured under the GPU lock at 2560 x 1440, render scale 1,
+ *    governor off. GPU and main thread: each phase's number is the median over its windows (up to 240 frames
+ *    each, reset at every phase change and around every screenshot) of the window's percentile, as in
  *    tests/browser/app/app.perf.spec.ts. Asserted softly so the flight goes on: a miss is a finding, never a
  *    loosened line;
- *    The requestAnimationFrame lines are judged only when the harness clock (measured before and after the
- *    flight, tests/browser/harness.ts) is the nominal 60 Hz: with the monitor asleep Chrome paces frames at
- *    57.5 Hz and the lines cannot be judged (request app-integration-8); the spec then fails saying so;
+ *    The frame-interval line (ARCHITECTURE 29 as restated on 2026-11-12; v1 17 / 18.2), on all the display's
+ *    frame intervals of a phase (the requestAnimationFrame time stamps the app records, src/app/frameIntervals.ts):
+ *    the median within 1 % of the nominal period, dropped frames (an interval over 1.5 periods) at most 0.5 % of
+ *    the phase's frames, no frame of 33 ms or more. The nominal period is that of the harness clock, measured
+ *    before and after the flight (tests/browser/harness.ts), and the line is judged only when that clock is the
+ *    nominal 60 Hz: with the monitor asleep Chrome paces frames at 57.5 Hz and the line cannot be judged
+ *    (request app-integration-8); the spec then fails saying so;
  *  - a screenshot at every milestone in the chase view (and the cockpit at the parking orbit and on the lunar
  *    surface, ARCHITECTURE 17.1 / 18.3), each with an image-statistics assertion and the HDR target free of NaN.
  *    A picture in a view just switched to waits for the exposure to reach its target (request cockpit-15, read
@@ -40,6 +44,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
+import { judgeIntervals, type IntervalVerdict } from '../../../src/app/frameIntervals';
 import type { PictureStop, PictureStopHit } from '../../../src/app/pictureStops';
 import type { AppBrief } from '../../../src/app/testHooks';
 import type { FrameBreakdown } from '../../../src/app/timing';
@@ -110,7 +115,10 @@ interface PerfWindow {
   view: string;
   warp: number;
   frames: number;
+  /** The render core's statistics of its frame-to-frame times (taken where the frame is drawn). */
   raf: { p50: number; p95: number; p99: number; max: number; over33ms: number };
+  /** The display's frame intervals of the window: requestAnimationFrame time stamps, ms, to a tenth. */
+  intervals: number[];
   gpu: { p50: number; p95: number; p99: number };
   appCpu: { p50: number; p99: number; max: number };
   coreCpuP99: number;
@@ -133,6 +141,9 @@ interface PhaseRow {
   frames: number;
   windows: number;
   warp: string;
+  /** The frame-interval line on all intervals of the phase's windows (src/app/frameIntervals.ts). */
+  interval: IntervalVerdict;
+  /** The render core's frame-to-frame statistics, for comparison with earlier records: medians over the windows. */
   rafP50: number;
   rafP95: number;
   rafP99: number;
@@ -205,6 +216,7 @@ const closeWindow = (page: Page, phase: string): Promise<PerfWindow> =>
       warp: b.warpFactor,
       frames: p.raf.count,
       raf: { p50: p.raf.p50, p95: p.raf.p95, p99: p.raf.p99, max: p.raf.max, over33ms: p.raf.over33ms },
+      intervals: window.__app!.rafIntervals().map((x) => Math.round(x * 10) / 10),
       gpu: { p50: p.gpu.p50, p95: p.gpu.p95, p99: p.gpu.p99 },
       appCpu: { p50: c.frame.p50, p99: c.frame.p99, max: c.frame.max },
       coreCpuP99: p.cpu.p99,
@@ -268,7 +280,7 @@ async function exposureSettled(page: Page, what: string): Promise<void> {
   await page.evaluate(() => window.__test!.waitFrames(4));
 }
 
-function aggregate(windows: PerfWindow[], phaseLog: { phase: string; wallMs: number }[], endMs: number): PhaseRow[] {
+function aggregate(windows: PerfWindow[], phaseLog: { phase: string; wallMs: number }[], endMs: number, period: number): PhaseRow[] {
   const order: string[] = [];
   for (const w of windows) if (!order.includes(w.phase)) order.push(w.phase);
   const realMs = new Map<string, number>();
@@ -295,6 +307,7 @@ function aggregate(windows: PerfWindow[], phaseLog: { phase: string; wallMs: num
       frames: ws.reduce((n, w) => n + w.frames, 0),
       windows: ws.length,
       warp: warps.length > 2 ? `${warps[0]}-${warps[warps.length - 1]}` : warps.join(', '),
+      interval: judgeIntervals(ws.flatMap((w) => w.intervals), period),
       rafP50: median(ws.map((w) => w.raf.p50)),
       rafP95: median(ws.map((w) => w.raf.p95)),
       rafP99: median(ws.map((w) => w.raf.p99)),
@@ -329,10 +342,13 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
     const dir = path.join(repoRoot, 'out', 'mission');
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'browser-mission.json');
-    const rows = windows.length > 0 ? aggregate(windows, phaseLog, flightEndMs || Date.now()) : [];
+    const rows = windows.length > 0 ? aggregate(windows, phaseLog, flightEndMs || Date.now(), period()) : [];
     fs.writeFileSync(file, JSON.stringify({ when: new Date().toISOString(), realMinutes: ((flightEndMs || Date.now()) - t0) / 60_000, heldAtPictureStopsMinutes: heldMs / 60_000, clock, ...record, phases: rows, atMilestone, shots, errors: [...errorsSeen], console: pageLog.messages.slice(0, 50), phaseLog, windows }, null, 2));
     return file;
   };
+
+  /** The nominal period the frame intervals are judged against: the measured harness clock's (60 Hz until it is measured). */
+  const period = (): number => clock.end?.mean ?? clock.start?.mean ?? 1000 / 60;
 
   /** Every stop of the flight by its id: one per milestone, and the extra ones. */
   const stops = new Map<string, StopSpec>();
@@ -521,7 +537,7 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   console.log(`picture stops: ${reached.size} of ${stops.size} reached; the simulation was held for ${(heldMs / 1000).toFixed(0)} s of real time in all`);
   const milestones: MilestoneRecord[] = await page.evaluate(() => window.__test!.milestones());
   const last = await stateFacts(page);
-  const rows = aggregate(windows, phaseLog, flightEndMs);
+  const rows = aggregate(windows, phaseLog, flightEndMs, period());
   const realMinutes = (flightEndMs - t0) / 60_000;
   const gates: { milestone: string; measured: string; gate: string }[] = [];
   const note = (id: string, measured: string, gate: string): void => {
@@ -660,10 +676,11 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   const file = writeRecord();
   console.log(`\nBrowser mission (${file}), ${realMinutes.toFixed(1)} min:`);
   for (const g of gates) console.log(`  ${g.milestone.padEnd(22)} ${g.measured}   [gate: ${g.gate}]`);
-  console.log('\n  phase                          min  frames  warp      rAF p50/p95/p99 (worst)   >=33  GPU p50/p99 (worst)   CPU p50/p99   stages p99 | GPU features p99 | CPU features p99');
+  console.log(`\n  frame intervals judged against a period of ${period().toFixed(3)} ms (the harness clock)`);
+  console.log('  phase                          min  frames  warp      interval median (off %)  dropped (%)  >=33  longest   GPU p50/p99 (worst)   CPU p50/p99   stages p99 | GPU features p99 | CPU features p99');
   for (const r of rows)
     console.log(
-      `  ${r.phase.padEnd(30)} ${r.realMinutes.toFixed(1).padStart(4)} ${String(r.frames).padStart(7)}  ${r.warp.padEnd(9)} ${f2(r.rafP50)}/${f2(r.rafP95)}/${f2(r.rafP99)} (${f2(r.rafWorstP99)})  ${String(r.over33ms).padStart(4)}  ${f2(r.gpuP50)}/${f2(r.gpuP99)} (${f2(r.gpuWorstP99)})  ${f2(r.cpuP50)}/${f2(r.cpuP99)}  ${r.topStages} | ${r.topFeatures} | ${r.topFeaturesCpu}`,
+      `  ${r.phase.padEnd(30)} ${r.realMinutes.toFixed(1).padStart(4)} ${String(r.frames).padStart(7)}  ${r.warp.padEnd(9)} ${r.interval.median.toFixed(3)} (${(r.interval.medianDeviation * 100).toFixed(2)})  ${String(r.interval.dropped).padStart(4)} (${(r.interval.droppedShare * 100).toFixed(2)})  ${String(r.interval.longFrames).padStart(4)}  ${r.interval.max.toFixed(1).padStart(6)}   ${f2(r.gpuP50)}/${f2(r.gpuP99)} (${f2(r.gpuWorstP99)})  ${f2(r.cpuP50)}/${f2(r.cpuP99)}  ${r.topStages} | ${r.topFeatures} | ${r.topFeaturesCpu}`,
     );
 
   // ------------------------------------------------------------------------------------- frame time (17, 18.2)
@@ -671,7 +688,7 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
     expect.soft(r.gpuP99, `${r.phase}: GPU p99 (17: <= 11 ms)`).toBeLessThanOrEqual(11);
     expect.soft(r.cpuP99, `${r.phase}: main-thread frame p99 (17: <= 6 ms)`).toBeLessThanOrEqual(6);
   }
-  // The requestAnimationFrame lines: on the nominal 60 Hz clock, or not at all (and then the spec says why).
+  // The frame-interval line (29, restated 2026-11-12): on the nominal 60 Hz clock, or not at all (and then the spec says why).
   let nominal = true;
   try {
     if (!clock.start || !clock.end) throw new Error('the harness clock was not measured');
@@ -679,13 +696,11 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
     expectNominalClock(clock.end, 'harness clock after the flight');
   } catch (e) {
     nominal = false;
-    expect.soft(e instanceof Error ? e.message : String(e), 'the requestAnimationFrame lines were not judged').toBe('a nominal 60 Hz harness clock');
+    expect.soft(e instanceof Error ? e.message : String(e), 'the frame-interval line was not judged').toBe('a nominal 60 Hz harness clock');
   }
   if (nominal) {
     for (const r of rows) {
-      expect.soft(r.rafP99, `${r.phase}: rAF p99 (17: <= 17.5 ms)`).toBeLessThanOrEqual(17.5);
-      expect.soft(r.over33ms, `${r.phase}: rAF deltas >= 33 ms (17: none in steady flight)`).toBe(0);
-      expect.soft(r.rafP95, `${r.phase}: rAF p95 (18.2: < 16.7 ms)`).toBeLessThan(16.7);
+      expect.soft(r.interval.failures, `${r.phase}: the frame-interval line (median within 1 % of the period, dropped frames at most 0.5 % of the phase's ${r.interval.frames}, no frame of 33 ms or more)`).toEqual([]);
     }
   }
   await expectNoErrors(page, pageLog);

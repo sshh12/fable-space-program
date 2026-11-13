@@ -744,6 +744,61 @@ test('in low orbit: the map takes the pointer, a node is added and Shift-dragged
   await expectNoErrors(page, pageLog);
 });
 
+/**
+ * The frozen start for reference captures (request lead-6): `?deterministic=1&paused=1`, as the lab pages have it.
+ * The simulation never leaves the scenario's first instant, the camera stands in its final pose from the first
+ * frame, and a frame-exact capture is the same picture on a second load, to the bit (the lead's probe,
+ * tests/browser/shell/baseline-exact-probe.spec.ts, shows the same for three loads of both app checkpoints).
+ */
+test('frozen start (?deterministic=1&paused=1): the simulation stands at its first instant, the camera is at rest, a second load gives the same picture', async ({ page, pageLog }) => {
+  test.setTimeout(15 * 60_000);
+  const frozenState = (): Promise<{ ut: number; met: number; paused: boolean; rest: { frozen: boolean; atRest: boolean; steps: number }; idle: boolean }> =>
+    page.evaluate(() => {
+      const b = window.__app!.brief();
+      return { ut: b.ut, met: b.met, paused: window.__app!.paused(), rest: window.__app!.cameraRest(), idle: window.__test!.isIdle() };
+    });
+  const firstInstant: number[] = [];
+  for (const view of ['chase', 'cockpit'] as const) {
+    const url = `/?scenario=lunar-direct${view === 'cockpit' ? '&view=cockpit' : ''}&governor=off&mute=1&capturepill=0&deterministic=1&paused=1`;
+    const shots: Buffer[] = [];
+    // The pad twice (the same picture on another load); the cockpit once (its first capture against its second).
+    for (let load = 1; load <= (view === 'chase' ? 2 : 1); load++) {
+      if (load > 1) await page.goto('about:blank');
+      await openWithin(page, url, BOOT_MS);
+      const a = await frozenState();
+      expect(a.paused, 'paused from the first frame').toBe(true);
+      expect(a.met, 'mission time at the first instant').toBe(0);
+      expect(a.rest, `${view}: the camera stands (one rig step leaves it where it is)`).toEqual({ frozen: true, atRest: true, steps: 1 });
+      await page.evaluate(() => window.__test!.waitFrames(90));
+      const b = await frozenState();
+      expect(b.ut, 'the simulation does not advance').toBe(a.ut);
+      expect(b.rest).toEqual({ frozen: true, atRest: true, steps: 1 });
+      firstInstant.push(a.ut);
+      const first = await captureDeterministic(page, 64);
+      const second = await captureDeterministic(page, 64);
+      const within = pngDiff(first, second);
+      expect(within.maxAbsDiff, `${view}, load ${load}: the first capture and the second are the same picture (the cockpit view used to move by 9 and 6 pixels after the first)`).toBe(0);
+      shots.push(second);
+      expect((await frozenState()).ut, 'still at the first instant after the captures').toBe(a.ut);
+    }
+    if (shots.length === 2) {
+      const across = pngDiff(shots[0]!, shots[1]!);
+      console.log(`frozen start, ${view}: load 1 against load 2: max ${across.maxAbsDiff} of 255, ${(across.differingFraction * 100).toFixed(3)} % of the values differ`);
+      expect(across.maxAbsDiff, `${view}: the same picture on a second load`).toBe(0);
+    }
+  }
+  expect(new Set(firstInstant).size, 'the same first instant on every load').toBe(1);
+
+  // Leaving it through the test API: the game runs on from the first instant, the camera follows the flight again.
+  await page.evaluate(() => {
+    window.__test!.setDeterministic(false);
+    window.__test!.setPaused(false);
+  });
+  await page.waitForFunction((ut) => window.__app!.brief().ut > ut, firstInstant[0]!, { polling: 100, timeout: 10_000 });
+  expect((await frozenState()).rest).toEqual({ frozen: false, atRest: true, steps: 0 });
+  await expectNoErrors(page, pageLog);
+});
+
 test('frame-exact capture: renderExact renders the frames asked for and holds the last (request lead-3)', async ({ page, pageLog }) => {
   // No HUD: its clock and read-outs are not part of a reference image of the scene.
   await openGame(page, '?hud=0');

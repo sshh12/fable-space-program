@@ -92,10 +92,20 @@ export interface FrameTimings {
   stats(): { frame: WindowStats; stages: Record<FrameStage, WindowStats>; features: Record<string, WindowStats> };
   /** The slowest frames since the last reset, slowest first. */
   slowest(): FrameBreakdown[];
+  /**
+   * The display's frame intervals: `ms` between this frame's requestAnimationFrame time and the one before
+   * (the callback's own time stamp, which steps by whole display periods: an interval of two periods IS a
+   * frame the display showed twice). Kept since the last reset, the last 8192 at most.
+   */
+  interval(ms: number): void;
+  intervals(): number[];
   /** Record every frame from now on (at most `frames`, 4000 at most) until `takeTrace`. */
   startTrace(frames: number): void;
   takeTrace(): FrameTrace | null;
 }
+
+/** Frame intervals kept since the last reset (at 60 Hz: the last 2.3 minutes). */
+const INTERVALS = 8192;
 
 export function createFrameTimings(): FrameTimings {
   const frame = new RollingWindow();
@@ -105,6 +115,10 @@ export function createFrameTimings(): FrameTimings {
   const hooks = new Map<string, number>();
   const perFeature = new Map<string, number>();
   let slow: FrameBreakdown[] = [];
+  // The display's frame intervals since the last reset: a ring of the last INTERVALS.
+  const intervalRing = new Float64Array(INTERVALS);
+  let intervalCount = 0;
+  let intervalNext = 0;
   let trace: (FrameTrace & { limit: number }) | null = null;
   let t0 = 0;
   let tLast = 0;
@@ -184,6 +198,19 @@ export function createFrameTimings(): FrameTimings {
       for (const s of FRAME_STAGES) stages[s].clear();
       for (const w of features.values()) w.clear();
       slow = [];
+      intervalCount = 0;
+      intervalNext = 0;
+    },
+    interval(ms) {
+      intervalRing[intervalNext] = ms;
+      intervalNext = (intervalNext + 1) % INTERVALS;
+      if (intervalCount < INTERVALS) intervalCount++;
+    },
+    intervals() {
+      const out: number[] = [];
+      const first = (intervalNext - intervalCount + INTERVALS) % INTERVALS;
+      for (let i = 0; i < intervalCount; i++) out.push(intervalRing[(first + i) % INTERVALS]!);
+      return out;
     },
     stats() {
       return {

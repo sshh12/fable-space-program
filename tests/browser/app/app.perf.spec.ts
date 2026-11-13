@@ -1,6 +1,9 @@
 /**
  * Frame time of the game at the pad and in the climb, against ARCHITECTURE 17 (RTX 5090, 60 fps): GPU p99 <= 11 ms
- * (sum of pass timestamps at 1440p internal), rAF p99 <= 17.5 ms with no delta >= 33 ms in steady flight, CPU
+ * (sum of pass timestamps at 1440p internal), the frame-interval line (ARCHITECTURE 29 as restated on 2026-11-12:
+ * against the measured harness clock, a checkpoint's median frame interval within 1 % of the nominal period,
+ * dropped frames - intervals over 1.5 periods - at most 0.5 % of its frames, no frame of 33 ms or more;
+ * src/app/frameIntervals.ts, on the requestAnimationFrame time stamps the app records), CPU
  * main thread per frame p99 <= 6 ms. Recorded, never loosened: a miss is a finding for the hand-off.
  *
  *   node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/app/app.perf.spec.ts --project=perf
@@ -24,6 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
 import type { AppBrief } from '../../../src/app/testHooks';
+import { judgeIntervals, type IntervalVerdict } from '../../../src/app/frameIntervals';
 import type { FrameBreakdown, FrameTrace } from '../../../src/app/timing';
 import { assertDiscreteGpu, expect, expectNominalClock, measureHarnessClock, openPage, test, waitIdle, withGpuLock, type FrameClockStats } from '../harness';
 
@@ -33,7 +37,10 @@ const WINDOWS = 3;
 const WINDOW_FRAMES = 240;
 
 interface WindowSample {
+  /** The render core's statistics of its frame-to-frame times (taken where the frame is drawn). */
   raf: { p50: number; p95: number; p99: number; max: number; over33ms: number };
+  /** The display's frame intervals of the window (requestAnimationFrame time stamps, ms); emptied once judged. */
+  intervals: number[];
   gpu: { p50: number; p99: number };
   coreCpu: { p99: number };
   appCpu: { p50: number; p99: number; max: number };
@@ -53,6 +60,8 @@ interface Checkpoint {
   altitudeStart: number;
   altitudeEnd: number;
   windows: WindowSample[];
+  /** The frame-interval line on all intervals of the checkpoint's windows (set once the harness clock is measured). */
+  interval: IntervalVerdict | null;
   median: {
     rafP99: number;
     rafMax: number;
@@ -124,6 +133,7 @@ async function measure(page: Page, name: string): Promise<Checkpoint> {
         const cpu = window.__app!.cpu();
         return {
           raf: { p50: p.raf.p50, p95: p.raf.p95, p99: p.raf.p99, max: p.raf.max, over33ms: p.raf.over33ms },
+          intervals: window.__app!.rafIntervals(),
           gpu: { p50: p.gpu.p50, p99: p.gpu.p99 },
           coreCpu: { p99: p.cpu.p99 },
           appCpu: { p50: cpu.frame.p50, p99: cpu.frame.p99, max: cpu.frame.max },
@@ -147,6 +157,7 @@ async function measure(page: Page, name: string): Promise<Checkpoint> {
     altitudeStart,
     altitudeEnd,
     windows,
+    interval: null,
     median: {
       rafP99: median(windows.map((w) => w.raf.p99)),
       rafMax: Math.max(...windows.map((w) => w.raf.max)),
@@ -312,19 +323,31 @@ async function harnessClock(page: Page, label: string): Promise<FrameClockStats>
 }
 
 /**
- * The requestAnimationFrame lines of the checkpoints, judged on a nominal clock only; on any other the test
- * fails with the reason (they are never judged against a slower clock, and never passed unjudged).
+ * The frame-interval line for every checkpoint, against the measured harness clock's period: computed from the
+ * windows' intervals (which are then dropped: the numbers stay in `interval`), printed, kept for the JSON.
+ */
+function judgePacing(clock: FrameClockStats, checkpoints: Checkpoint[]): void {
+  for (const cp of checkpoints) {
+    const v = judgeIntervals(cp.windows.flatMap((w) => w.intervals), clock.mean);
+    cp.interval = v;
+    for (const w of cp.windows) w.intervals = [];
+    console.log(`${cp.name}: frame intervals: ${v.frames} frames, median ${v.median.toFixed(3)} ms (${(v.medianDeviation * 100).toFixed(2)} % off the clock's ${v.period.toFixed(3)} ms), dropped ${v.dropped} (${(v.droppedShare * 100).toFixed(2)} %), of 33 ms or more ${v.longFrames}, longest ${v.max.toFixed(1)} ms${v.failures.length ? `: MISSED: ${v.failures.join('; ')}` : ''}`);
+  }
+}
+
+/**
+ * The frame-interval line of the checkpoints (ARCHITECTURE 29), judged on a nominal clock only; on any other
+ * the test fails with the reason (it is never judged against a slower clock, and never passed unjudged).
  */
 function expectPacing(clock: FrameClockStats, checkpoints: Checkpoint[]): void {
   try {
     expectNominalClock(clock);
   } catch (e) {
-    expect.soft(e instanceof Error ? e.message : String(e), 'the requestAnimationFrame lines were not judged').toBe('a nominal 60 Hz harness clock');
+    expect.soft(e instanceof Error ? e.message : String(e), 'the frame-interval line was not judged').toBe('a nominal 60 Hz harness clock');
     return;
   }
   for (const cp of checkpoints) {
-    expect.soft(cp.median.rafP99, `${cp.name}: rAF p99 (budget 17.5 ms)`).toBeLessThanOrEqual(17.5);
-    expect.soft(cp.median.over33ms, `${cp.name}: frames of 33 ms or more`).toBe(0);
+    expect.soft(cp.interval?.failures ?? ['the frame intervals were not judged'], `${cp.name}: the frame-interval line (median within 1 % of the period, dropped frames at most 0.5 %, no frame of 33 ms or more)`).toEqual([]);
   }
 }
 
@@ -352,6 +375,7 @@ async function padAndClimb(
     checkpoints.push(await measure(page, `${label} climb`));
     terrain.climb = await terrainParts(page, `${label} climb`);
     const clock = await harnessClock(page, label);
+    judgePacing(clock, checkpoints);
     return { padStreaming, checkpoints, ignition, terrain, clock };
   });
   const dir = path.join(process.cwd(), 'out', 'app');
@@ -442,7 +466,9 @@ test.describe('an engine burn away from terrain (1440p): what the slow main-thre
       const after = await measure(page, 'orbit after the burn');
       displays.push(await mfd('orbit after the burn'));
       const clock = await harnessClock(page, 'orbit');
-      return { streaming, checkpoints: [coast, burn, burnNoOrbit, after], trace, displays, clock };
+      const checkpoints = [coast, burn, burnNoOrbit, after];
+      judgePacing(clock, checkpoints);
+      return { streaming, checkpoints, trace, displays, clock };
     });
     const dir = path.join(process.cwd(), 'out', 'app');
     fs.mkdirSync(dir, { recursive: true });

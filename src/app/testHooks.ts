@@ -56,6 +56,10 @@ export interface AppDebug {
   groundSamples(distances: number[], bearings: number): Promise<{ distance: number; bearingDeg: number; kind: string; heightAboveSea: number | null; x: number | null; y: number | null }[]>;
   /** Wall time of `renderer.warm()` before the first frame, ms. */
   warmMs(): number;
+  /** The camera at a frozen start (`?deterministic=1&paused=1`): frozen now, at rest, rig steps of the last frame. */
+  cameraRest(): { frozen: boolean; atRest: boolean; steps: number };
+  /** The display's frame intervals (requestAnimationFrame time stamps) since the last `resetPerf` / `resetCpu`, ms. */
+  rafIntervals(): number[];
   /** Of the last frame-exact capture: who was busy before and after its frames, and how many meterings its lead-in took. */
   exactInfo(): { busyBefore: string[]; busyAfter: string[]; rounds: number; busyLeadIn: string[] } | null;
   /**
@@ -171,7 +175,8 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     page: { kind: 'app', name: 'main', scenarioId: game.scenarioId },
     state: () => structuredClone(game.snapshot()),
     milestones: () => structuredClone(game.snapshot().milestones),
-    isIdle: () => game.renderer.isIdle(),
+    // Idle: nothing of the renderer's is under way, and at a frozen start the camera stands (request lead-6).
+    isIdle: () => game.renderer.isIdle() && game.cameraRest().atRest,
     perf: () => game.renderer.perfSnapshot(),
     resetPerf: () => {
       game.renderer.resetPerf();
@@ -213,6 +218,8 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     resumeFromPictureStop: () => game.resumeFromPictureStop(),
     pictureStopsFired: () => game.pictureStopsFired(),
     warmMs: () => game.warmMs,
+    cameraRest: () => game.cameraRest(),
+    rafIntervals: () => game.timings.intervals(),
     exactInfo: () => {
       const e = game.renderer.exactInfo();
       return e ? { busyBefore: [...e.busyBefore], busyAfter: [...e.busyAfter], rounds: e.rounds, busyLeadIn: [...e.busyLeadIn] } : null;

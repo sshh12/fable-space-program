@@ -45,6 +45,7 @@ import { createSim, type SimWorld } from '@/sim';
 import { DEFAULT_STREAMER_OPTIONS } from '@/render/terrain';
 import { createFetchTileSource, createTerrainProvider, type TerrainAuthority } from '@/terrain';
 import { createHud, createMfdPainter, createNavballRenderer, HUD_OBSTACLE_SELECTOR, type HudImpl, type NavballRendererImpl } from '@/ui';
+import { runToRest } from './cameraRest';
 import { timedFeature } from './featureTiming';
 import { createGameFeatures, type GameFeatures } from './features';
 import type { LoadingReport, LoadingScreen, StepProgress } from './loading';
@@ -62,6 +63,14 @@ const OBSTACLE_INTERVAL = 10;
 
 /** Consecutive frames with nothing pending before the loading screen fades (a stable picture, not one lucky frame). */
 export const SETTLE_FRAMES = 12;
+/**
+ * A frozen start (`?deterministic=1&paused=1`): the rig steps of CAMERA_REST_STEP seconds the camera is given
+ * within one frame to come to rest (4000 steps are 67 s of the rigs' time; the chase rig's approach and the
+ * couch's sway need a few hundred), and the input it gets meanwhile.
+ */
+const CAMERA_REST_STEPS = 4000;
+const CAMERA_REST_STEP = 1 / 60;
+const NEUTRAL_CAMERA_INPUT = { yaw: 0, pitch: 0, zoom: 1 };
 /** The exposure counts as settled within this many EV of the meter's target... */
 const EXPOSURE_SETTLED_EV = 0.25;
 /**
@@ -139,6 +148,12 @@ export interface Game {
   readonly featureInitMs: Readonly<Record<string, number>>;
   /** Wall time of `renderer.warm()` after the last feature's start-up, ms. */
   readonly warmMs: number;
+  /**
+   * The camera at a frozen start (`?deterministic=1&paused=1`, request lead-6): whether the page is frozen
+   * that way now, whether the camera stood still at the end of the last frame, and the rig steps the last frame
+   * took to get it there (1 = it was at rest). Not frozen: always at rest (the camera follows the flight).
+   */
+  cameraRest(): { frozen: boolean; atRest: boolean; steps: number };
   /**
    * Frame-exact capture (TestApi.renderExact, RENDER_API section 13): the render core restarts its temporal
    * sequences, renders exactly `frames` of this game's frames at the fixed 1/60 s step and holds the last one.
@@ -293,8 +308,25 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   const pilot = createPilotDriver(defs, sim);
   let snapshot = sim.snapshot();
   let view: ViewFrame = views.update(snapshot, { yaw: 0, pitch: 0, zoom: 1 }, 0);
-  let paused = false;
-  let deterministic = false;
+  // `?deterministic=1` / `?paused=1`: from the first frame (settings.ts). The simulation then never leaves the
+  // scenario's first instant, and every frame, the ones under the loading screen too, is a fixed step.
+  let paused = settings.paused;
+  let deterministic = settings.deterministic;
+  if (deterministic) renderer.setDeterministic(true);
+  /**
+   * The frozen start for reference captures (both switches, and nobody has unfrozen the page since): the camera
+   * is run to its rest within every frame (cameraRest.ts), so it stands in its final pose from the first frame
+   * on. `cameraAtRest` is false when CAMERA_REST_STEPS did not get it there: the page is then busy.
+   */
+  const frozen = (): boolean => settings.deterministic && settings.paused && deterministic && paused;
+  let cameraAtRest = true;
+  let cameraRestSteps = 0;
+  const cameraKey = (v: ViewFrame): string => {
+    const c = v.camera;
+    const p = c.positionRoot;
+    const q = c.qViewToRoot;
+    return [c.mode, c.kind, p.x, p.y, p.z, q.x, q.y, q.z, q.w, c.fovY, c.exposureCompensation, c.minEv100, c.fillLight, views.blending].join('|');
+  };
   /** Picture stops: the list, and the stop the simulation is held at for the spec's pictures (null = running). */
   const pictureStops = createPictureStops();
   let pictureStop: PictureStopHit | null = null;
@@ -402,6 +434,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     if (idle(features.terrain)) loading.finish('terrain');
     else out.push('terrain');
     if (sim.terrainPending() !== null) out.push('simulation terrain');
+    if (!cameraAtRest) out.push('camera');
 
     // Anything a step above does not name (effects, map) and anything that became busy again after its step.
     for (const f of features.list) {
@@ -451,6 +484,9 @@ export async function createGame(deps: GameDeps): Promise<Game> {
 
   const frame = (now: number): void => {
     const realDt = deterministic ? 1 / 60 : Math.min(MAX_FRAME_SECONDS, Math.max(0, (now - last) / 1000));
+    // The display's frame interval, for the frame-interval line (ARCHITECTURE 29); not the frames the render
+    // core draws in one task for a frame-exact capture.
+    if (!renderer.holding) timings.interval(now - last);
     last = now;
     // The whole frame function is the CPU line of ARCHITECTURE 17 (window.__perf.cpu, request app-integration-1).
     ctx.perf.cpuBegin('frame');
@@ -507,6 +543,16 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     timings.mark('sim');
 
     view = views.update(snapshot, mapper.map(f, realDt, { pointerConsumed: map.consumed, ...(map.focus ? { focus: map.focus } : {}) }), realDt, f.pressed);
+    if (frozen()) {
+      // The simulation stands; what still moves the camera is the rigs' own motion. It is run to its end here.
+      const rest = runToRest(view, () => views.update(snapshot, NEUTRAL_CAMERA_INPUT, CAMERA_REST_STEP), cameraKey, CAMERA_REST_STEPS);
+      view = rest.value;
+      cameraAtRest = rest.atRest;
+      cameraRestSteps = rest.steps;
+    } else {
+      cameraAtRest = true;
+      cameraRestSteps = 0;
+    }
     timings.mark('views');
     hud.update(snapshot, view.camera, realDt);
     status.update({ paused, pilotPhase: pilot.engaged ? (pilot.pilot?.phase ?? null) : null, hudVisible: hud.visible });
@@ -605,6 +651,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
     loadingReport: () => loading.report(),
     featureInitMs,
     warmMs,
+    cameraRest: () => ({ frozen: frozen(), atRest: cameraAtRest, steps: cameraRestSteps }),
     renderExact(frames) {
       if (loading.active) return Promise.reject(new Error('renderExact: the loading screen is still up (wait for window.__test.ready)'));
       return renderer.renderExact(frames, () => frame(performance.now()));

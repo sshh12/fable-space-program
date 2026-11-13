@@ -80,3 +80,22 @@ describe('frame timings', () => {
     expect(t.takeTrace()).toBeNull();
   });
 });
+
+describe('frame intervals', () => {
+  it('keeps the intervals since the last reset in order, the last 8192 at most', () => {
+    const t = createFrameTimings();
+    expect(t.intervals()).toEqual([]);
+    for (const x of [16.7, 16.6, 33.4]) t.interval(x);
+    expect(t.intervals()).toEqual([16.7, 16.6, 33.4]);
+    t.reset();
+    expect(t.intervals()).toEqual([]);
+    for (let i = 0; i < 8192 + 5; i++) t.interval(i);
+    const kept = t.intervals();
+    expect(kept).toHaveLength(8192);
+    expect(kept[0]).toBe(5);
+    expect(kept[kept.length - 1]).toBe(8192 + 4);
+    t.reset();
+    t.interval(1);
+    expect(t.intervals()).toEqual([1]);
+  });
+});

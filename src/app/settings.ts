@@ -17,6 +17,13 @@
  *   &governor=off         pin the quality governor at 1
  *   &hud=0                start with the HUD hidden (F2 shows it)
  *   &mute=1               master volume 0
+ *   &deterministic=1      fixed 1/60 s frame steps and the renderer's deterministic mode from the first frame
+ *   &paused=1             the simulation paused from the first frame, as the pause key does: it stays at the
+ *                         scenario's first instant
+ *                         Both together are the FROZEN START for reference captures, as the lab pages have it
+ *                         (request lead-6): the camera also stands in its final pose from the first frame
+ *                         (no opening swing, no blend, the head's sway settled), so that
+ *                         `window.__test.renderExact` gives the same picture on every load.
  */
 import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
 
@@ -35,6 +42,10 @@ export interface AppSettings {
   governorOff: boolean;
   hud: boolean;
   mute: boolean;
+  /** Fixed frame steps and the renderer's deterministic mode from the first frame (default false). */
+  deterministic: boolean;
+  /** The simulation paused from the first frame (default false). */
+  paused: boolean;
 }
 
 export function readSettings(query: URLSearchParams): AppSettings {
@@ -51,6 +62,8 @@ export function readSettings(query: URLSearchParams): AppSettings {
     governorOff: query.get('governor') === 'off',
     hud: query.get('hud') !== '0',
     mute: query.get('mute') === '1',
+    deterministic: query.get('deterministic') === '1',
+    paused: query.get('paused') === '1',
   };
 }
 
