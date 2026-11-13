@@ -1,0 +1,2390 @@
+{
+ "version": 1,
+ "dir": "data/baselines",
+ "viewport": [
+  1280,
+  720
+ ],
+ "floor": {
+  "meanAbs": 0.02,
+  "p999": 1
+ },
+ "checkpoints": {
+  "pad-noon": {
+   "what": "The stack on the pad at local noon, from the ground beside it",
+   "page": "/labs/integration/?scene=pad&sun=180,65&sunsite=earth,18.987556,-155.603239&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim pad: the real stack on the launch mount of LC-1, on the real terrain; the sun pinned 65 degrees up in the south",
+   "camera": "the lab's orbit of the active vessel at three bounding radii (yaw 30, pitch 15)",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "pad-noon.png",
+   "sha256": "c08c88f300713c388ceadd9ed76a0de8143eea069872fa2a6fae502b414782ad",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T00:59:59.586Z",
+    "commit": "23721cb",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "pad-sunset": {
+   "what": "The same view at sunset (the sun 3 degrees up in the west)",
+   "page": "/labs/integration/?scene=pad&sun=270,3&sunsite=earth,18.987556,-155.603239&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim pad; the sun pinned 3 degrees up in the west",
+   "camera": "the lab's orbit of the active vessel at three bounding radii (yaw 30, pitch 15)",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "pad-sunset.png",
+   "sha256": "d4719a6473c6398e994cf738bb2a4f3b2c1eaf7c3e9d8e67d526ba71aec2fb74",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:01:22.323Z",
+    "commit": "23721cb",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "ascent-cloud-deck": {
+   "what": "The ascent through a cloud deck, seen from the pad",
+   "page": "/labs/integration/?scene=ascent&start=450&throttle=1&sun=330,45&sunsite=earth,18.987556,-155.603239&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim ascent over LC-1 with the engines burning: started at 450 m, then exactly 180 frames of 1/60 s stepped with the loop stopped (the engines light, the vehicle climbs at 350 m/s to 1,500 m), then frozen; under the cloud map as the lab's frozen cloud clock places it; the sun pinned in the north-north-west, 45 degrees up, behind the camera",
+   "camera": "a ground camera 1.2 km north of the pad, 120 m above the datum, looking up at the vehicle (about 50 degrees): sky, clouds, the vehicle and its plume, and neither the horizon nor the sea (the near sea of the first framing came out differently from load to load once the simulation had been stepped)",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.watchVesselFrom",
+     "args": [
+      {
+       "bodyId": "earth",
+       "latDeg": 18.998356,
+       "lonDeg": -155.603239,
+       "alt": 120
+      }
+     ]
+    },
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 180
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "ascent-cloud-deck.png",
+   "sha256": "af5dde1748c69e6941cf59cd9abffaf0874a71d133175626a89072c3929b4c72",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:39:00.904Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framed without the sea after the first framing differed from load to load",
+    "leadInDifferingPixels": [
+     76,
+     71,
+     57
+    ]
+   }
+  },
+  "ascent-10km": {
+   "what": "The stack and its plume at 10 km",
+   "page": "/labs/integration/?scene=ascent&start=8950&throttle=1&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim ascent with the engines burning: started at 8,950 m, then exactly 180 frames of 1/60 s stepped with the loop stopped (the engines light, the vehicle climbs to 10 km), then frozen",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 180
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "ascent-10km.png",
+   "sha256": "eac77e2eac8d9abb80fbfb55f17a3271f6409ff7d2e782f2046aa440e977ed9e",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:02:56.358Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     51,
+     51,
+     158
+    ]
+   }
+  },
+  "ascent-40km": {
+   "what": "The stack and its plume at 40 km",
+   "page": "/labs/integration/?scene=ascent&start=38950&throttle=1&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim ascent with the engines burning: started at 38,950 m, then exactly 180 frames of 1/60 s stepped with the loop stopped (the engines light, the vehicle climbs to 40 km), then frozen",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 180
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "ascent-40km.png",
+   "sha256": "936db59c9dcee1d1704a32e26ed157913ec1dbc858816b4c53905b8e578be0b5",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:04:14.291Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     62,
+     62,
+     61
+    ]
+   }
+  },
+  "leo-day": {
+   "what": "Low Earth orbit over the day side, the limb in frame",
+   "page": "/labs/integration/?scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim low orbit, the sun as the scene has it",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 60 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "leo-day.png",
+   "sha256": "e5bfd461ef0ff30d43d134c4e681d50e6f7fdd751896abedf9da3eefe991a7be",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:05:34.905Z",
+    "commit": "f1f58b4",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "leo-terminator": {
+   "what": "Low Earth orbit across the terminator",
+   "page": "/labs/integration/?scene=lowOrbit&orbit=120,20,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim low orbit; the sun pinned along the vessel's nose, on the local horizon, so the ground below is on the terminator",
+   "camera": "the lab's orbit of the active vessel: yaw 120, pitch 20, 60 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.setSunInVesselFrame",
+     "args": [
+      {
+       "x": 0,
+       "y": 1,
+       "z": 0
+      }
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "leo-terminator.png",
+   "sha256": "3a1182c1219f0d54384e379192a2546af816dc8c847399e82e7a4d8c630b3288",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 3.616898148148148e-7,
+    "p999": 0
+   },
+   "loads": 3,
+   "notExact": {
+    "reason": "one pixel on the capsule's hull differs by one level in one load of four (the vessel's light from the sky's environment probe, as request core-7 describes)",
+    "request": "core-7"
+   },
+   "recorded": {
+    "at": "2026-11-13T01:06:41.333Z",
+    "commit": "f1f58b4",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "leo-night": {
+   "what": "Low Earth orbit over the night side, with city lights and stars",
+   "page": "/labs/integration/?scene=lowOrbit&orbit=210,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim low orbit; the sun pinned straight below the vessel, behind the Earth",
+   "camera": "the lab's orbit of the active vessel: yaw 210, pitch 15, 60 m: from the side on which the capsule's lit cabin windows face away (seen from yaw 30 they change by a level between captures: request lead-5)",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.setSunInVesselFrame",
+     "args": [
+      {
+       "x": 0,
+       "y": 0,
+       "z": -1
+      }
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "leo-night.png",
+   "sha256": "e8bc7e2e5fbad836a25db606e2e1ffb9d766eff79c63ea87637c9443d925e38c",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:05:26.822Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     2,
+     2,
+     1
+    ]
+   }
+  },
+  "leo-nadir-day": {
+   "what": "Low Earth orbit looking straight down at a continent by day",
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=30.2&lon=31.3&alt=300000&pitch=-90&sun=150,55&sunsite=earth,30.2,31.3&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the Nile delta, Cairo and the Sinai; the sun pinned 55 degrees up there",
+   "camera": "a surface camera 300 km above 30.2 N 31.3 E, looking straight down",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "leo-nadir-day.png",
+   "sha256": "d813b80e6f714f221727045ae382080cff3ff451a02a55c899db5aae37564ec3",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:08:17.317Z",
+    "commit": "f1f58b4",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "leo-nadir-night": {
+   "what": "Low Earth orbit looking straight down at a continent by night",
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=30.2&lon=31.3&alt=300000&pitch=-90&sun=150,-40&sunsite=earth,30.2,31.3&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the same ground at night (the sun pinned 40 degrees below the horizon there): the lights of the delta and of Cairo",
+   "camera": "a surface camera 300 km above 30.2 N 31.3 E, looking straight down",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "leo-nadir-night.png",
+   "sha256": "a03d94c71d77a4e462cb06c618a0c25e1c7038b612243c6e33069dc1add33662",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:09:29.984Z",
+    "commit": "f1f58b4",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "translunar-earth": {
+   "what": "Translunar coast, the Earth in frame",
+   "page": "/labs/integration/?scene=translunar&fov=10&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim translunar coast, 180,000 km above the Earth",
+   "camera": "186,371 km from the Earth's centre (the vessel's distance) at 50 degrees of phase, looking at the Earth; 10 degree field of view",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.viewBodyAtPhase",
+     "args": [
+      "earth",
+      50,
+      186371000
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "translunar-earth.png",
+   "sha256": "73525eb293f8646915c77322d594270d20adc919ff640586cf5bae73aadc5236",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:06:34.649Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "translunar-moon": {
+   "what": "Translunar coast, the Moon in frame",
+   "page": "/labs/integration/?scene=translunar&fov=12&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim translunar coast; the Moon 60 degrees from full",
+   "camera": "a free camera 40,000 km from the Moon's centre, 60 degrees off the Moon-sun line, looking at it; 12 degrees of field",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.viewBodyAtPhase",
+     "args": [
+      "moon",
+      60,
+      40000000
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "translunar-moon.png",
+   "sha256": "71ef9b2c2970d0e7ea8a35b445e2fbe126e67549d4f9300e6e0f6e270779053f",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:11:41.289Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "lunar-terminator-20000km": {
+   "what": "The lunar terminator from 20,000 km",
+   "page": "/labs/integration/?scene=lunarOrbit&fov=20&ev=13&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the Moon at half phase",
+   "camera": "a free camera 20,000 km above the surface, 90 degrees off the Moon-sun line, looking at the centre; 20 degrees of field",
+   "exposure": "ev 13 (pinned, as the terrain's terminator specs)",
+   "setup": [
+    {
+     "call": "__integration.viewBodyAtPhase",
+     "args": [
+      "moon",
+      90,
+      21737400
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "lunar-terminator-20000km.png",
+   "sha256": "96d6d44d014092b079a5eaa9817a35b98c5ae47be944aa3773009a98fc3d17ad",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:12:50.443Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "lunar-terminator-5000km": {
+   "what": "The lunar terminator from 5,000 km",
+   "page": "/labs/integration/?scene=lunarOrbit&fov=40&ev=13&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the Moon at half phase",
+   "camera": "a free camera 5,000 km above the surface, 90 degrees off the Moon-sun line, looking at the centre; 40 degrees of field",
+   "exposure": "ev 13 (pinned)",
+   "setup": [
+    {
+     "call": "__integration.viewBodyAtPhase",
+     "args": [
+      "moon",
+      90,
+      6737400
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "lunar-terminator-5000km.png",
+   "sha256": "a244f746531700e605070f9c609decb45aee540eb4cdf2f7e9c65c03d9f1efed",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:14:00.533Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "lunar-orbit-low-sun": {
+   "what": "Low lunar orbit at low sun",
+   "page": "/labs/integration/?scene=lunarOrbit&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim low lunar orbit (100 km); the sun pinned 8 degrees above the local horizon ahead of the vessel (in the vessel's frame +Y is prograde and +Z the local vertical)",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.setSunInVesselFrame",
+     "args": [
+      {
+       "x": 0,
+       "y": 0.99,
+       "z": 0.139
+      }
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "lunar-orbit-low-sun.png",
+   "sha256": "20334dcf6b147997fe7b15b71e6b98b20d51cfdef5933b7e1f2bc8854ea996a9",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:07:45.186Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "lunar-touchdown": {
+   "what": "The lander 12 m above the landing target on its descent engine, the sun 15 degrees up",
+   "page": "/labs/integration/?scene=lunarSurface&throttle=0.4&hover=12&sun=100,15&sunsite=moon,0.661471,23.435999&orbit=40,12,45&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim lunar surface: the lander hovering 12 m over the landing target; exactly 180 frames of 1/60 s stepped with the loop stopped so that the descent engine burns, then frozen",
+   "camera": "the lab's orbit of the active vessel: yaw 40, pitch 12, 45 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 180
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "lunar-touchdown.png",
+   "sha256": "ad1723b24ed9b3698a3271b28d0a66361dfce6cf19c055330360123fda23493a",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 3
+   },
+   "selfDifference": {
+    "meanAbs": 0.0011867042824074074,
+    "p999": 1
+   },
+   "loads": 3,
+   "notExact": {
+    "reason": "the dust particles thrown out under the burning descent engine fall differently from load to load (about 0.2 % of the pixels, up to 8 levels)",
+    "request": "lead-8"
+   },
+   "recorded": {
+    "at": "2026-11-13T02:09:11.063Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "lunar-surface-cockpit": {
+   "what": "The lunar surface from the cockpit",
+   "page": "/labs/integration/?scene=lunarSurface&sun=100,15&sunsite=moon,0.661471,23.435999&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim lunar surface: the lander standing on its pads at the landing target, the sun 15 degrees up",
+   "camera": "the cockpit seat of the vehicle, aimed at the cabin window through which the ground shows most",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.sitAtWindowBelow"
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "pending"
+  },
+  "reentry-peak-heating": {
+   "what": "The capsule in the plasma sheath at peak heating",
+   "page": "/labs/integration/?scene=reentry&orbit=20,10,30&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim entry at peak heating",
+   "camera": "the lab's orbit of the active vessel: yaw 20, pitch 10, 30 m: from ahead of the heat shield, no cabin window facing the camera (seen from yaw 160 the window flickers by a level between captures: request lead-5)",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "reentry-peak-heating.png",
+   "sha256": "1c18c646176c20191dab81b840e659ed053399377e747cf1102034955f8b202c",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:10:27.093Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "parachute-descent": {
+   "what": "The capsule under its main canopies at 900 m, below the cloud base",
+   "page": "/labs/integration/?scene=chutes&start=900&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim descent under the mains at 900 m over the recovery zone (at 2,500 m the capsule is inside the overcast and nothing shows)",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "parachute-descent.png",
+   "sha256": "5fe24620304123a7ef04c55257f73e597d83c355b509b4ddddac383aa32ef84c",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:12:02.592Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "splashdown": {
+   "what": "The capsule at the water under its canopies",
+   "page": "/labs/integration/?scene=chutes&start=120&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim descent under the mains, 120 m over the sea",
+   "camera": "the lab's orbit of the active vessel at three bounding radii",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "splashdown.png",
+   "sha256": "694961bc5610c50c2bbf0eda39996f944ae56397e09cbbd3bf6fbb7b0c096e7a",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:20:34.377Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "shoreline": {
+   "what": "A shoreline: land, surf and near ocean in one frame",
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=18.987556&lon=-155.603239&alt=350&heading=120&pitch=-18&sun=150,45&sunsite=earth,18.987556,-155.603239&ev=14&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the coast of Ka Lae east-south-east of LC-1; the sun pinned 45 degrees up",
+   "camera": "a surface camera 350 m above the datum over LC-1, heading 120, pitched 18 degrees down",
+   "exposure": "ev 14 (pinned, as the water specs)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "shoreline.png",
+   "sha256": "e3b1d4bf4cc3536edd42d936893e92a3e90a23c7634269f4855bf7b803016da3",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 3
+   },
+   "selfDifference": {
+    "meanAbs": 0.0009718605324074074,
+    "p999": 1
+   },
+   "loads": 3,
+   "notExact": {
+    "reason": "the near sea and the surf differ from load to load in about 0.2 % of the pixels by up to 3 levels (the ocean keeps a history that a capture does not restart)",
+    "request": "lead-7"
+   },
+   "recorded": {
+    "at": "2026-11-13T01:22:15.809Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "ocean-climb-2m": {
+   "what": "Open ocean from 2 m (the climb to 400 km must show no ring at any of its four stations)",
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=8&lon=-140&alt=2&heading=120&pitch=-20&sun=120,40&sunsite=earth,8,-140&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "open Pacific at 8 N 140 W; the sun pinned 40 degrees up",
+   "camera": "a surface camera 2 m above the sea, heading 120, pitched 20 degrees down",
+   "exposure": "auto (the core's meter, restarted with the capture's frames); this station lies under an overcast, where the ev 14 of the two upper stations leaves the sea nearly black",
+   "frames": 64,
+   "status": "recorded",
+   "file": "ocean-climb-2m.png",
+   "sha256": "9284aeee9f78ffc6c95226477439dda6406d270e488b40fc32040072bf5784e0",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:13:38.782Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "ocean-climb-200m": {
+   "what": "Open ocean from 200 m",
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=8&lon=-140&alt=200&heading=120&pitch=-20&sun=120,40&sunsite=earth,8,-140&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "open Pacific at 8 N 140 W; the sun pinned 40 degrees up",
+   "camera": "a surface camera 200 m above the sea, heading 120, pitched 20 degrees down",
+   "exposure": "auto (the core's meter, restarted with the capture's frames); this station lies under an overcast, where the ev 14 of the two upper stations leaves the sea nearly black",
+   "frames": 64,
+   "status": "recorded",
+   "file": "ocean-climb-200m.png",
+   "sha256": "dc318c0e03cc43bf657d4b4e262eb1d530f0e832e8b8089d72058a935bfb1bc5",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T02:15:16.678Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "ocean-climb-20km": {
+   "what": "Open ocean from 20 km",
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=8&lon=-140&alt=20000&heading=120&pitch=-20&sun=120,40&sunsite=earth,8,-140&ev=14&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "open Pacific at 8 N 140 W; the sun pinned 40 degrees up",
+   "camera": "a surface camera 20 km above the sea, heading 120, pitched 20 degrees down",
+   "exposure": "ev 14 (pinned)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "ocean-climb-20km.png",
+   "sha256": "46b0d1ea8bf646571156610c163cadad3296a653e064a5cbb15869aeaa991ff0",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:26:42.493Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "ocean-climb-400km": {
+   "what": "Open ocean from 400 km",
+   "page": "/labs/integration/?scene=lowOrbit&body=earth&lat=8&lon=-140&alt=400000&heading=120&pitch=-20&sun=120,40&sunsite=earth,8,-140&ev=14&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "open Pacific at 8 N 140 W; the sun pinned 40 degrees up",
+   "camera": "a surface camera 400 km above the sea, heading 120, pitched 20 degrees down",
+   "exposure": "ev 14 (pinned)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "ocean-climb-400km.png",
+   "sha256": "d84b83c37fbe6068eb2740a4394df36e8374235970c161a6f8d8b02e0efd4e47",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:27:54.938Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "sweep-hud-leo": {
+   "what": "SWEEP: the flight HUD in the parking orbit: resources, staging, read-outs and the navball over the chase view",
+   "page": "/labs/integration/?sim=real&scenario=qa-leo&flighthud=1&orbit=30,15,80&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at the scenario qa-leo (third stage and lander stack in the parking orbit), frozen from the first frame",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 80 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "sweep-hud-leo.png",
+   "sha256": "016edebcadbc332f66b9d4aa12afbff2b297f1e2114d141ccee3d8ab6311f5b0",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:29:06.720Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "sweep-map-translunar": {
+   "what": "SWEEP: the map view on the translunar coast: conic patches across the change of sphere of influence, their markers, the bodies, the HUD beside it",
+   "page": "/labs/integration/?sim=real&scenario=qa-translunar&map=1&flighthud=1&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at the scenario qa-translunar, frozen",
+   "camera": "the map camera 1,000,000 km from the Earth's centre, yaw 30, pitch 60, looking at it",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.mapCamera",
+     "args": [
+      "earth",
+      30,
+      60,
+      1000000000
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "sweep-map-translunar.png",
+   "sha256": "2289768fdb9ec056e0ef1a8bb62a2a6bc3fa9a4631321cf8b01dcc67e6eb6364",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:30:17.025Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "sweep-cockpit-leo": {
+   "what": "SWEEP: the cockpit in the parking orbit: the cabin from the vehicle's cockpit seat with its three displays painted from the snapshot",
+   "page": "/labs/integration/?sim=real&scenario=qa-leo&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at the scenario qa-leo, frozen",
+   "camera": "the cockpit seat the vehicle names, looking along the seat's own direction",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__integration.sitInCockpit",
+     "args": [
+      0,
+      0
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "pending"
+  },
+  "sweep-separation-debris": {
+   "what": "SWEEP: a separation with debris: the third stage three seconds after it left the lander stack, both in frame, with the HUD's staging after the event",
+   "page": "/labs/integration/?sim=real&scenario=qa-leo&flighthud=1&orbit=60,10,120&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at qa-leo; the next stage (M-3 separation) fired, then exactly 180 frames of 1/60 s stepped with the loop stopped, then frozen again",
+   "camera": "the lab's orbit of the active vessel: yaw 60, pitch 10, 120 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__test.commands.stage"
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 180
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "sweep-separation-debris.png",
+   "sha256": "69e278d83291a570a94f8c3ff73ca94702202b9ed9a126fc2bc07dcc58ef3c32",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:31:57.393Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     4,
+     5,
+     3
+    ]
+   }
+  },
+  "sweep-lunar-orbit": {
+   "what": "SWEEP: lunar orbit with the render frame's origin at the Moon: the lander stack, the Moon below, the HUD's orbit read-outs about the Moon",
+   "page": "/labs/integration/?sim=real&scenario=qa-lunar-orbit&flighthud=1&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at the scenario qa-lunar-orbit (100 km lunar orbit), frozen",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 60 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "file": "sweep-lunar-orbit.png",
+   "sha256": "a16d547cb2bf70c0a36997b438d9ec594375e9f210317dc358d47e1b87428d94",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0.0000018084490740740741,
+    "p999": 0
+   },
+   "loads": 3,
+   "notExact": {
+    "reason": "two pixels on the vessel's hull differ by one level in two loads of four (the vessel's light from the sky's environment probe, as request core-7 describes)",
+    "request": "core-7"
+   },
+   "recorded": {
+    "at": "2026-11-13T01:33:08.190Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "sweep-rails-warp": {
+   "what": "SWEEP: after a rails warp: the translunar coast 2,000 s further on (120 frames at 1,000x), back at 1x, with the HUD's clock and warp read-out",
+   "page": "/labs/integration/?sim=real&scenario=qa-translunar&flighthud=1&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "the real simulation at qa-translunar; warp level 8 (1,000x) for exactly 120 frames of 1/60 s with the loop stopped, then level 0 for 4 frames, then frozen again",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 60 m",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      false
+     ]
+    },
+    {
+     "call": "__test.commands.setWarpLevel",
+     "args": [
+      8
+     ]
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 120
+    },
+    {
+     "call": "__test.commands.setWarpLevel",
+     "args": [
+      0
+     ]
+    },
+    {
+     "call": "__lab.renderFrame",
+     "args": [
+      0.016666666666666666
+     ],
+     "repeat": 4
+    },
+    {
+     "call": "__lab.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__lab.setLoop",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "sweep-rails-warp.png",
+   "sha256": "80f9ce0032fbdc8ab7d38f9000cfb90bdef6af5553ef7163f38ca23c5b481220",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "exact": true,
+   "recorded": {
+    "at": "2026-11-13T01:34:19.177Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "sweep-app-pad": {
+   "what": "SWEEP: the game itself on the pad: the stack with the site's structures in the chase view, the HUD as the app shell mounts it",
+   "page": "/?scenario=lunar-direct&governor=off&mute=1&capturepill=0",
+   "scene": "the app at the mission scenario, on the pad before the first stage; frozen by its setup",
+   "camera": "the app's chase rig at its default distance",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__test.setDeterministic",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__test.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "recorded",
+   "file": "sweep-app-pad.png",
+   "sha256": "3678d9aab1ecc7f44de28b992fc3017c3d916538a4d61d3584063d365835bce2",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.25336154513888887,
+    "p999": 21
+   },
+   "selfDifference": {
+    "meanAbs": 0.08445384837962963,
+    "p999": 7
+   },
+   "loads": 3,
+   "notExact": {
+    "reason": "the app runs from its reveal until the test hooks freeze it, so its scene differs from load to load in about 100,000 pixels by up to 31 levels",
+    "request": "lead-6"
+   },
+   "recorded": {
+    "at": "2026-11-13T01:36:16.029Z",
+    "commit": "9a873e0",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "leadInDifferingPixels": [
+     413,
+     624,
+     367
+    ]
+   }
+  },
+  "sweep-app-cockpit": {
+   "what": "SWEEP: the game itself on the pad, in the cockpit view: the app's cockpit rig and the displays as the app shell paints them",
+   "page": "/?scenario=lunar-direct&view=cockpit&governor=off&mute=1&capturepill=0",
+   "scene": "the app at the mission scenario, on the pad; frozen by its setup",
+   "camera": "the app's cockpit rig in the vehicle's cockpit seat",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "setup": [
+    {
+     "call": "__test.setDeterministic",
+     "args": [
+      true
+     ]
+    },
+    {
+     "call": "__test.setPaused",
+     "args": [
+      true
+     ]
+    },
+    {
+     "waitIdle": true
+    }
+   ],
+   "frames": 64,
+   "status": "pending"
+  }
+ }
+}
