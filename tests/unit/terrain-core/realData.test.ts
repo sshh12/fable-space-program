@@ -8,7 +8,7 @@ import path from 'node:path';
 import { constants as zlibConstants, inflateSync } from 'node:zlib';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '../../../src/core/contracts/defs';
-import type { TileManifest } from '../../../src/core/contracts/terrain';
+import type { TileLayerManifest, TileManifest } from '../../../src/core/contracts/terrain';
 import { layerHasTile } from '../../../src/core/contracts/terrain';
 import { dirToTile, latLonToDir, tilePath, tileUvToDir, type FaceId, type TileKey } from '../../../src/core/geo/cubeSphere';
 import { DEG } from '../../../src/core/math/scalar';
@@ -236,28 +236,46 @@ function coverageSuite(body: string, R: () => number, defsP: () => DefLibrary): 
       .map(Number)
       .sort((a, b) => a - b);
     expect(levels.length).toBeGreaterThan(0);
-    const amp = await createTerrainProvider(defs, src, { bodies: [body] });
-    const none = await createTerrainProvider(withModel(defs, body, 'none'), src, { bodies: [body] });
-    for (const L of levels) {
-      const pts = boundaryPoints(layer, L, POINTS, prng(500 + L));
-      const tsrc = truncatedSource(src, L);
-      const pa = await createTerrainProvider(defs, tsrc, { bodies: [body] });
-      const pn = await createTerrainProvider(withModel(defs, body, 'none'), tsrc, { bodies: [body] });
-      const dirs = pts.map((q) => q.p);
-      await Promise.all([loadAround(amp, body, dirs, 2, `L${L}-`), loadAround(none, body, dirs, 2, `L${L}-`), loadAround(pa, body, dirs, 2, 'p'), loadAround(pn, body, dirs, 2, 'p')]);
-      const lamC = (Math.PI * R()) / 2 / 2 ** defs.bodies[body]!.terrain!.maxRenderLevel / 32;
-      const sNone = edgeStats(none, pn, body, R(), pts, lamC, lamC);
-      const sAmp = edgeStats(amp, pa, body, R(), pts, lamC, lamC);
-      console.log(`[real ${body} coverage L${L}] data only ${JSON.stringify(sNone)}`);
-      console.log(`[real ${body} coverage L${L}] amplified ${JSON.stringify(sAmp)}`);
-      expect(sNone.maxExcess, `L${L}`).toBeLessThan(1e-3);
-      expect(sNone.maxParentDiff, `L${L}`).toBeLessThan(1e-6);
-      expect(sNone.deltaSlopeChange, `L${L}`).toBeLessThan(0.005);
-      expect(sAmp.deltaJump, `L${L}`).toBeLessThan(1e-3);
-      expect(sAmp.deltaSlopeChange, `L${L}`).toBeLessThan(0.005);
-      expect(sAmp.maxParentDiff, `L${L}`).toBeLessThan(1e-6);
-      expect(sAmp.maxEJump, `L${L}`).toBeLessThan(1e-6);
+    // The regions of the tile set, one at a time: the coverage rectangles of one cube face (the Earth's two
+    // regional pyramids, Ka Lae on face 1 and Madrakah on face 2, lie on different faces). Each region has
+    // its own pair of providers, dropped when its levels are done, and within a region the points of a
+    // level take the slots of the level before. So what is pinned is one level of one region; before, one
+    // provider kept the boundary tiles of every level of every region, which the two regions' no longer
+    // fit into its cache budget (request site-bake-2). The points: POINTS per level and region, where it
+    // was POINTS per level over all regions; the first region's are the ones drawn before.
+    const faces = [...new Set(levels.flatMap((L) => layer.coverage[String(L)]!.map((r) => r.face)))].sort((a, b) => a - b);
+    let checked = 0;
+    for (const [nth, face] of faces.entries()) {
+      const region: TileLayerManifest = { ...layer, coverage: Object.fromEntries(Object.entries(layer.coverage).map(([k, rects]) => [k, rects.filter((r) => r.face === face)])) };
+      const amp = await createTerrainProvider(defs, src, { bodies: [body] });
+      const none = await createTerrainProvider(withModel(defs, body, 'none'), src, { bodies: [body] });
+      for (const L of levels) {
+        if (region.coverage[String(L)]!.length === 0) continue;
+        const at = `face ${face} L${L}`;
+        const pts = boundaryPoints(region, L, POINTS, prng(500 + L + 1000 * nth));
+        expect(pts.length, `${at}: points on the coverage edge`).toBe(POINTS);
+        const tsrc = truncatedSource(src, L);
+        const pa = await createTerrainProvider(defs, tsrc, { bodies: [body] });
+        const pn = await createTerrainProvider(withModel(defs, body, 'none'), tsrc, { bodies: [body] });
+        const dirs = pts.map((q) => q.p);
+        await Promise.all([loadAround(amp, body, dirs, 2, 'e'), loadAround(none, body, dirs, 2, 'e'), loadAround(pa, body, dirs, 2, 'p'), loadAround(pn, body, dirs, 2, 'p')]);
+        const lamC = (Math.PI * R()) / 2 / 2 ** defs.bodies[body]!.terrain!.maxRenderLevel / 32;
+        const sNone = edgeStats(none, pn, body, R(), pts, lamC, lamC);
+        const sAmp = edgeStats(amp, pa, body, R(), pts, lamC, lamC);
+        console.log(`[real ${body} coverage ${at}] data only ${JSON.stringify(sNone)}`);
+        console.log(`[real ${body} coverage ${at}] amplified ${JSON.stringify(sAmp)}`);
+        expect(sNone.maxExcess, at).toBeLessThan(1e-3);
+        expect(sNone.maxParentDiff, at).toBeLessThan(1e-6);
+        expect(sNone.deltaSlopeChange, at).toBeLessThan(0.005);
+        expect(sAmp.deltaJump, at).toBeLessThan(1e-3);
+        expect(sAmp.deltaSlopeChange, at).toBeLessThan(0.005);
+        expect(sAmp.maxParentDiff, at).toBeLessThan(1e-6);
+        expect(sAmp.maxEJump, at).toBeLessThan(1e-6);
+        checked++;
+      }
     }
+    // Every regional level of every region was checked.
+    expect(checked).toBe(levels.reduce((n, L) => n + new Set(layer.coverage[String(L)]!.map((r) => r.face)).size, 0));
   }, 900_000);
 }
 
