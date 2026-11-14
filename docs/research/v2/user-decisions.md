@@ -111,3 +111,22 @@ allowed. Choose per purpose between real services in containers (real Postgres, 
 highest fidelity to production) and plain Node processes with an embedded or file-backed store (nothing to
 start, less memory). State the default form of the one-command local stack and why, cap the Docker VM's
 memory, and say which tests need which.
+
+## Elevation data and the full lobby (2026-11-13, at the checkpoint)
+
+Verbatim: "lets not take on any more elevation datasets and do procurural where we need more."
+
+- **No new elevation datasets.** The ones already baked stay as they are (the Earth and its two regions, the
+  Moon, and the bodies of `planet-bake`, the DLR/ESA Phobos DEM and the Enceladus shape model among them: the
+  lead's reading of "any more"; if the user meant Phobos to go back to an ellipsoid, it is the `dem` source in
+  `phobos.json`). Wherever more relief is needed - a body without a DEM, finer detail than a DEM holds, a new
+  site - it is PROCEDURAL (the terrain amplification and the procedural bodies' crater fields), never another
+  download. This binds `planet-render`, `bodies-activation`, `fleet-data` and any later site work.
+
+Verbatim: "yes lets to visible queue for the lobby if full at launch time."
+
+- **A full launch complex shows a visible queue.** When every pad slot a player's vehicle class can use is
+  taken at the time they want to launch, the lobby shows them a queue (their place and an honest wait), not a
+  refusal and not a silent move to a private clock. This settles lead item L1 of OPEN_QUESTIONS_V2 for
+  `shell-menu` (the spawn flow) and `universe-directory` (the cohort scheduler); the lead's other levers
+  (cohort horizon, launches per hour shown per class) remain rules data.

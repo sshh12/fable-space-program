@@ -90,10 +90,9 @@ file differs from it, the section below is right.**
 5. Hosting, later: the bucket measurement redone by `deploy-loadtest` (the first one was inconclusive); the
    Docker compose suites once the user has written `C:\Users\Shriv\.wslconfig`; the stale `assets` pack set.
 
-**Waiting on the user**: `.wslconfig` (6 GB cap) and `wsl --shutdown`; the empty bucket
-`packs-orphan-undeployed` (Railway dashboard); a say on whether the DLR/ESA Phobos DEM's licence class is
-acceptable (accepted by the lead, credited); the front-page overflow question (L1) if they want a visible
-queue instead of the lead's leaning.
+**Waiting on the user**: run the one-liner that writes `C:UsersShriv.wslconfig` (6 GB cap) and shuts WSL down (given to them on 2026-11-13) before any Docker compose suite.
+**Decided by the user on 2026-11-13** (verbatim in `docs/research/v2/user-decisions.md`): no new elevation datasets - procedural wherever more relief is needed; a VISIBLE QUEUE in the lobby when the pads are full at launch time (settles L1).
+**The empty bucket `packs-orphan-undeployed`** (id 4dad6994-31d6-47e2-865c-1521299558d6) is still there: it is in no environment, so the dashboard does not show it, `railway bucket delete` refuses it, and Railway's API has no bucket-delete mutation (deletion is an environment change). It is empty and costs nothing; removing it would mean attaching it to production through an undocumented environment patch first, which the lead did not do without the user's word.
 
 ## Where the project is
 
