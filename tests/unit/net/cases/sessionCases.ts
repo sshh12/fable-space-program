@@ -8,6 +8,8 @@ import { roundTripProfile } from '@/net/injector/model';
 import { parseTranscript, runTranscript, type Transcript } from '@/net/testing/transcripts';
 import handshake from '../transcripts/handshake-spawn-inputs.json';
 import malformed from '../transcripts/malformed-and-out-of-order.json';
+import outage from '../transcripts/outage-beyond-grace.json';
+import stall from '../transcripts/stall-and-declared-loss.json';
 import resumeInputs from '../transcripts/resume-inputs-in-flight.json';
 import resumeHandshake from '../transcripts/resume-mid-handshake.json';
 import resumeSubscription from '../transcripts/resume-mid-subscription.json';
@@ -15,7 +17,7 @@ import takenOver from '../transcripts/taken-over.json';
 import versionMismatch from '../transcripts/version-mismatch.json';
 import { diff, ok, type NetCase } from './assert';
 
-export const TRANSCRIPTS: Transcript[] = [handshake, resumeHandshake, resumeSubscription, resumeInputs, takenOver, malformed, versionMismatch].map(parseTranscript);
+export const TRANSCRIPTS: Transcript[] = [handshake, resumeHandshake, resumeSubscription, resumeInputs, takenOver, malformed, versionMismatch, stall, outage].map(parseTranscript);
 
 /** The latency profile of the acceptance line: 300 ms round trip with stalls. */
 export const STALLY_300 = (seed: number) => roundTripProfile(300, { jitterMs: 20, stallChance: 0.05, stallMs: 200, seed });

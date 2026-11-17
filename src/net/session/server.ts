@@ -223,6 +223,8 @@ export class ServerSession {
       return;
     }
     this.resumeAfterSeq = r.seat.lastInputSeq;
+    // The resumed client sends the inputs the outage swallowed once: admit them beyond the rate limit.
+    this.inputs.grantBurst(Math.ceil((this.cfg.rules.limits.inputsPerSecond * WIRE_CONSTANTS.inputBufferMs) / 1000));
     this.welcome(r.accountId, r.callsign, r.session, r.liveClock, r.serverMs, r.upMs, r.seat);
   }
 

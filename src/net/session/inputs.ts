@@ -50,9 +50,15 @@ export class InputWindow {
     return { type: 'input', samples };
   }
 
-  /** Every unacknowledged sample, in messages of at most 64 (sent again after a resume). */
+  /**
+   * Every unacknowledged sample within the gateway's buffer span of the newest, in messages of at most 64 (sent
+   * again after a resume; the resumed gateway admits this catch-up once beyond its rate limit).
+   */
   resendMessages(): InputMessage[] {
     const out: InputMessage[] = [];
+    if (this.unacked.length === 0) return out;
+    const from = this.unacked[this.unacked.length - 1]!.applyTick - BUFFER_TICKS;
+    this.unacked = this.unacked.filter((s) => s.applyTick >= from);
     for (let i = 0; i < this.unacked.length; i += 64) out.push({ type: 'input', samples: this.unacked.slice(i, i + 64) });
     return out;
   }
@@ -116,8 +122,15 @@ export class InputBuffer {
     this.rate = new RateWindow(inputsPerSecond, 1000);
   }
 
-  setRate(inputsPerSecond: number): void {
-    this.rate.max = inputsPerSecond;
+  /** Samples that may still be admitted beyond the rate limit (the catch-up of a resume). */
+  private burst = 0;
+
+  /**
+   * Admit up to `samples` inputs beyond the rate limit: the catch-up a resumed client sends once (at most the
+   * buffer span's worth at the rate limit).
+   */
+  grantBurst(samples: number): void {
+    this.burst = samples;
   }
 
   /**
@@ -138,9 +151,12 @@ export class InputBuffer {
         continue;
       }
       if (!this.rate.admit(nowMs)) {
-        this.stats.dropped.rate++;
-        this.lastSeq = s.seq;
-        continue;
+        if (this.burst > 0) this.burst--;
+        else {
+          this.stats.dropped.rate++;
+          this.lastSeq = s.seq;
+          continue;
+        }
       }
       this.lastSeq = s.seq;
       this.stats.accepted++;

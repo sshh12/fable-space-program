@@ -457,7 +457,7 @@ export class ClientSession {
       case 'resume':
         // The session is gone: start a new one at once.
         this.session = null;
-        this.failPending('the session ended', true);
+        this.failPending('the session ended; what it was waiting for is not known', true);
         this.inputs.retireThrough(this.inputs.next - 1);
         this.beginBackoff(0);
         break;

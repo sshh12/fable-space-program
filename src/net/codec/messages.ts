@@ -330,7 +330,8 @@ add('spawn', 3, 'client', 'reliable', fieldsOf('spawn', { reqId: uint, request: 
 add('attach', 4, 'client', 'reliable', fieldsOf('attach', { reqId: uint, vesselId: id, clockId: nullable(id) }));
 add('detach', 5, 'client', 'reliable', fieldsOf('detach', { reqId: uint }));
 add('spawnCancel', 6, 'client', 'reliable', fieldsOf('spawnCancel', { reqId: uint }));
-add('input', 7, 'client', 'latest', inputCodec, inputCodec);
+// Reliable: each input message carries samples the next may not repeat (a resume sends its catch-up in several).
+add('input', 7, 'client', 'reliable', inputCodec, inputCodec);
 add('command', 8, 'client', 'reliable', fieldsOf('command', { cmdId: uint, tick, command: wireCommand }));
 add('time', 9, 'client', 'reliable', fieldsOf('time', { cmdId: uint, tick, request: timeRequest }));
 add('target', 10, 'client', 'reliable', fieldsOf('target', { ref: nullable(targetRef) }));
@@ -450,7 +451,6 @@ export function supersedeKey(m: WireMessage): string | null {
       return `${m.type}:${m.island}`;
     case 'near':
     case 'durable':
-    case 'input':
       return m.type;
     default:
       return null;

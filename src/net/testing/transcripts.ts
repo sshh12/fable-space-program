@@ -71,6 +71,8 @@ export type TranscriptStep = { atMs: number } & (
   | { do: 'drop'; client: string }
   /** A TCP-style stall of both directions of the client's link (injector links only; nothing on the plain loopback). */
   | { do: 'stall'; client: string; ms: number }
+  /** The client's link fails and no connection succeeds for `ms` (each attempt fails at once). */
+  | { do: 'outage'; client: string; ms: number }
   /** Raw bytes from the client to the server (a malformed frame). */
   | { do: 'garbage'; client: string; hex: string }
   /** A message from the client that its session would not send now (out of order), as its own frame. */
@@ -498,6 +500,7 @@ export function runTranscript(t: Transcript, opts: RunOptions): RunResult {
   const links = new Map<string, { client: Transport; loop: LoopbackTransport; serverEnd: LoopbackTransport; injected: InjectedTransport | null; conn: number }>();
   const halves = new Map<string, TranscriptClientHalf>();
 
+  const outageUntil = new Map<string, number>();
   for (const c of t.clients) {
     recorded[c.id] = [];
     let conn = -1;
@@ -508,6 +511,8 @@ export function runTranscript(t: Transcript, opts: RunOptions): RunResult {
         conn++;
         const myConn = conn;
         const [clientEnd, serverEnd] = createLoopbackPair(scheduler);
+        // During an outage the connection fails at once.
+        if (scheduler.now() < (outageUntil.get(c.id) ?? -Infinity)) scheduler.setTimer(0, () => clientEnd.fail());
         const injected = opts.link.kind === 'injector' ? injectTransport(clientEnd, opts.link.profile!, scheduler) : null;
         const base: Transport = injected ?? clientEnd;
         // Record what the client sends and receives on this connection.
@@ -568,6 +573,11 @@ export function runTranscript(t: Transcript, opts: RunOptions): RunResult {
         return;
       case 'stall':
         link?.injected?.stall('both', step.ms);
+        return;
+      case 'outage':
+        outageUntil.set(step.client, scheduler.now() + step.ms);
+        if (link?.injected) link.injected.disconnect();
+        else link?.loop.fail();
         return;
       case 'garbage':
         link?.loop.send(fromHex(step.hex));
