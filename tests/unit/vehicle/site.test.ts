@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
+import { padsOf } from '@/core/defs/sites';
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import { checkMesh } from '@/render/vehicle/geom/validate';
 import { isMatId } from '@/render/vehicle/materials';
@@ -19,8 +20,9 @@ const visuals: { site: string; index: number; model: string; offset: Vec3Tuple; 
 
 beforeAll(async () => {
   defs = await loadDefs(fsDefSource());
+  // (The structures of a site's first pad: the pad the ground survey of today's library describes.)
   for (const site of Object.values(defs.sites)) {
-    site.structures.forEach((s, index) => {
+    padsOf(site)[0]!.structures.forEach((s, index) => {
       visuals.push({ site: site.id, index, model: s.model, offset: [s.offsetEnu[0], s.offsetEnu[1], s.offsetEnu[2]], visual: generateStructure(defs, site, s.model, s.params ?? {}, s) });
     });
   }
@@ -146,7 +148,7 @@ describe('launch complex structures', () => {
       // The survey bounds the terrain: it is not level, and its bounds are ordered.
       expect(Math.max(...survey.hiCm) - Math.min(...survey.loCm)).toBeGreaterThan(50);
       for (let k = 0; k < survey.hiCm.length; k++) expect(survey.hiCm[k]!).toBeGreaterThanOrEqual(survey.loCm[k]!);
-      site.structures.forEach((s, index) => {
+      padsOf(site)[0]!.structures.forEach((s, index) => {
         if (s.model !== 'pad.groundworks' && s.model !== 'pad.fence' && s.model !== 'pad.pipeRun') return;
         const ground = structureGround(siteGround(defs, site), s.offsetEnu, s.headingDeg);
         const v = visuals.find((x) => x.site === site.id && x.index === index)!.visual;
@@ -199,7 +201,8 @@ describe('launch complex structures', () => {
 
   it('a site with structures and no ground survey does not load; level ground has to be asked for', () => {
     for (const site of Object.values(defs.sites)) {
-      const s = site.structures[0];
+      const first = padsOf(site)[0]!;
+      const s = first.structures[0];
       if (!s) continue;
       const bare: DefLibrary = { ...defs, sections: Object.fromEntries(Object.entries(defs.sections).filter(([key]) => key !== surveySectionOf(site.id))) };
       expect(() => siteGround(bare, site)).toThrow(/no ground survey/);
@@ -207,7 +210,13 @@ describe('launch complex structures', () => {
       // A caller that draws the site on a level stand-in surface says so.
       expect(Object.keys(generateStructure(bare, site, s.model, s.params ?? {}, s, LEVEL_GROUND).models).length).toBeGreaterThan(0);
       // A site without structures has nothing to build and needs no survey.
-      expect(siteGround(bare, { ...site, structures: [] }).surveyed).toBe(false);
+      expect(siteGround(bare, site, { ...first, structures: [] }).surveyed).toBe(false);
+      // Another pad of the site has a survey of its own or none: the first pad's is never taken for it.
+      const second = { ...first, id: `${first.id}-second` };
+      const twoPads = { ...site, pads: [first, second] };
+      expect(siteGround(defs, twoPads, first).surveyed).toBe(true);
+      expect(() => siteGround(defs, twoPads, second)).toThrow(/no ground survey/);
+      expect(siteGround(defs, twoPads, { ...second, structures: [] }).surveyed).toBe(false);
     }
   });
 

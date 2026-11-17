@@ -14,6 +14,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { ModuleState } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
+import { padsOf } from '@/core/defs/sites';
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import { DECAL_SECTION, decalSheetOf } from '@/render/vehicle/decals';
 import { generatePart, type PartVisual, type PoseOpts } from '@/render/vehicle/parts';
@@ -105,7 +106,7 @@ describe('content lives in the definition library', () => {
   it('every structure of every site names its markings itself (a site without names has none)', async () => {
     const { generateStructure } = await import('@/render/vehicle/site');
     for (const site of Object.values(defs.sites)) {
-      for (const s of site.structures) {
+      for (const s of padsOf(site)[0]!.structures) {
         // Strip every parameter that names a decal: the structure must still build, without the 'decal' materials.
         const params = Object.fromEntries(Object.entries(s.params ?? {}).filter(([k]) => !/decal|sign|label/i.test(k)));
         const v = generateStructure(defs, site, s.model, params, s);

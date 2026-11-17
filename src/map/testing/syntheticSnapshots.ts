@@ -22,6 +22,7 @@
  */
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import type { BodyDef, DefLibrary, KeplerOrbitDef } from '@/core/contracts/defs';
+import { padOf } from '@/core/defs/sites';
 import type { BodySnapshot, ManeuverNode, Marker, Patch, Readouts, SimSnapshot, SurfaceTarget, VesselSnapshot } from '@/core/contracts/sim';
 import { dirToLatLon, latLonToDir } from '@/core/geo/cubeSphere';
 import {
@@ -566,7 +567,7 @@ export function createSyntheticFixture(defs: DefLibrary, opts: SyntheticOptions 
   const targets: SurfaceTarget[] = [landing];
   const site = Object.values(defs.sites)[0];
   if (site) {
-    targets.push({ id: `site:${site.id}`, name: site.name, bodyId: site.bodyId, kind: 'site', latitude: site.location.latDeg * DEG, longitude: site.location.lonDeg * DEG, radius: site.pad.flatRadius });
+    targets.push({ id: `site:${site.id}`, name: site.name, bodyId: site.bodyId, kind: 'site', latitude: site.location.latDeg * DEG, longitude: site.location.lonDeg * DEG, radius: padOf(site).flatRadius });
     site.recoveryZones.forEach((z, i) =>
       targets.push({ id: `recovery:${i}`, name: z.name, bodyId: site.bodyId, kind: 'recovery', latitude: z.latDeg * DEG, longitude: z.lonDeg * DEG, radius: z.radiusKm * 1000 }),
     );

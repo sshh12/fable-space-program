@@ -1,7 +1,8 @@
 /**
- * createSiteFeature: the launch complexes of the definition library. Every structure of
- * `LaunchSiteDef.structures` is generated once (generator registry in ./site) and placed in the site's
- * east / north / up frame on the pad surface of its body.
+ * createSiteFeature: the launch complexes of the definition library. Every structure of every pad of a site
+ * (`padsOf`: the pad list, or the single pad as a list of one) is generated once (generator registry in
+ * ./site) and placed in ITS PAD's east / north / up frame on that pad's surface. A pad is a complex of its
+ * own: its frame stands at the pad's resolved coordinates, and its arms follow the vessel on that pad.
  *
  *  - Structures are BODY-FIXED shadow casters (drawn into every cascade of their body). An articulated arm
  *    is submitted as a MOVING caster while it swings, so a staggered cascade never holds a stale arm.
@@ -15,9 +16,10 @@
  *    when no vessel stands there); the crew access arm follows the same rule.
  *  - At night the lamp lenses glow and the nearest lamps are registered as local lights.
  */
-import type { DefLibrary, LaunchSiteDef } from '@/core/contracts/defs';
+import type { DefLibrary, LaunchSiteDef, PadDef } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
+import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle, type TemporalFeature } from '@/render/core';
@@ -28,17 +30,17 @@ import { FINE_SHADOW_TEXEL, NEAR_SHADOW_TEXEL, generateStructure, type SiteState
 
 export interface SiteFeatureOptions {
   /**
-   * Pad surface height above the reference radius (default: `location.padElevation` when it is a number;
-   * a site whose elevation is 'terrain' needs this resolver, e.g. from the terrain provider).
+   * Surface height of a pad above the reference radius (default: the pad's resolved `padElevation` when it
+   * is a number; a pad whose elevation is 'terrain' needs this resolver, e.g. from the terrain provider).
    */
-  padElevation?: (site: LaunchSiteDef) => number;
+  padElevation?: (site: LaunchSiteDef, pad: PadDef) => number;
   /**
-   * Ground height above the reference radius at a point `east`, `north` metres from a site's pad centre
-   * (e.g. from the terrain provider). With it every structure stands at the height of the ground under its
-   * own origin; without it all stand on the pad plane, which is right wherever the terrain is flattened to
-   * the pad's elevation across the site (`LaunchSiteDef.pad.flatRadius`).
+   * Ground height above the reference radius at a point `east`, `north` metres from the centre of the pad
+   * `pad` (e.g. from the terrain provider). With it every structure stands at the height of the ground under
+   * its own origin; without it all stand on the pad plane, which is right wherever the terrain is flattened
+   * to the pad's elevation across the complex (`PadDef.flatRadius`).
    */
-  groundHeight?: (site: LaunchSiteDef, east: number, north: number) => number;
+  groundHeight?: (site: LaunchSiteDef, east: number, north: number, pad: PadDef) => number;
   /**
    * Build the earthworks on level ground instead of the site's ground survey (default false): for a caller
    * that draws the site on a level stand-in surface (the vehicle lab's reference sphere), where the real
@@ -52,7 +54,9 @@ export interface SiteFeatureOptions {
 }
 
 export interface SiteStats {
+  /** Sites with at least one pad drawn in the last frame, and the pads drawn. */
   sites: number;
+  pads: number;
   instances: number;
   triangles: number;
   shadowTriangles: number;
@@ -68,10 +72,12 @@ export interface SiteFeature extends RenderFeature, TemporalFeature {
   readonly stats: SiteStats;
   /** Ids of the sites of the definition library this feature draws (empty before init). */
   siteIds(): string[];
-  /** Presentation state of a site (night, arm positions). */
-  state(siteId: string): SiteState | undefined;
-  /** Pin parts of a site's state (labs and tests); null releases it to the automatic rules. */
-  override(siteId: string, patch: Partial<SiteState> | null): void;
+  /** Ids of the pads of a site, first pad first (empty for an unknown site and before init). */
+  padIds(siteId: string): string[];
+  /** Presentation state of a pad of a site (night, arm positions); `padId` absent = the site's first pad. */
+  state(siteId: string, padId?: string): SiteState | undefined;
+  /** Pin parts of the state of a pad (labs and tests), `padId` absent = of every pad of the site; null releases it to the automatic rules. */
+  override(siteId: string, patch: Partial<SiteState> | null, padId?: string): void;
 }
 
 /** The models of one structure visual: every LOD as a single-LOD model, and the switch sizes. */
@@ -91,8 +97,10 @@ interface Placed {
   q: Quat;
 }
 
+/** One pad of a site: its frame on the body, its structures and its own arm state. */
 interface SiteRuntime {
   site: LaunchSiteDef;
+  pad: PadDef;
   centre: Vec3;
   up: Vec3;
   east: Vec3;
@@ -124,31 +132,33 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
   const sites: SiteRuntime[] = [];
   let lastUt = Number.NaN;
   const lodSelector = new LodSelector();
-  const stats: SiteStats = { sites: 0, instances: 0, triangles: 0, shadowTriangles: 0, fading: 0, movingInstances: 0, lights: 0, updateMs: 0 };
+  const stats: SiteStats = { sites: 0, pads: 0, instances: 0, triangles: 0, shadowTriangles: 0, fading: 0, movingInstances: 0, lights: 0, updateMs: 0 };
 
-  const elevationOf = (site: LaunchSiteDef): number => {
-    if (options.padElevation) return options.padElevation(site);
-    if (typeof site.location.padElevation === 'number') return site.location.padElevation;
-    throw new Error(`site "${site.id}": padElevation is 'terrain'; pass SiteFeatureOptions.padElevation to resolve it`);
+  const elevationOf = (site: LaunchSiteDef, pad: PadDef): number => {
+    if (options.padElevation) return options.padElevation(site, pad);
+    const stated = padLocationOf(site, pad.id).padElevation;
+    if (typeof stated === 'number') return stated;
+    throw new Error(`site "${site.id}", pad "${pad.id}": padElevation is 'terrain'; pass SiteFeatureOptions.padElevation to resolve it`);
   };
 
-  const buildSite = (site: LaunchSiteDef): SiteRuntime => {
+  const buildPad = (site: LaunchSiteDef, pad: PadDef): SiteRuntime => {
     const body = defs.bodies[site.bodyId];
     if (!body) throw new Error(`site "${site.id}": unknown body "${site.bodyId}"`);
-    const up = latLonToDir(site.location.latDeg * DEG, site.location.lonDeg * DEG);
+    const at = padLocationOf(site, pad.id);
+    const up = latLonToDir(at.latDeg * DEG, at.lonDeg * DEG);
     let east = v3.cross({ x: 0, y: 0, z: 1 }, up);
     east = v3.lenSq(east) < 1e-12 ? { x: 0, y: 1, z: 0 } : v3.normalize(east);
     const north = v3.cross(up, east);
-    const padHeight = elevationOf(site);
+    const padHeight = elevationOf(site, pad);
     const centre = v3.scale(up, body.radius + padHeight);
     const meshes = coreOf(ctx).meshes;
     const cache = new Map<string, StructureModels>();
-    const placed: Placed[] = site.structures.map((s) => {
+    const placed: Placed[] = pad.structures.map((s) => {
       // (A structure is built on the ground where it stands: the placement is part of what it is.)
       const key = `${s.model}|${JSON.stringify(s.params ?? {})}|${s.offsetEnu.join(',')}|${s.headingDeg}`;
       let entry = cache.get(key);
       if (!entry) {
-        const visual = generateStructure(defs, site, s.model, s.params ?? {}, s, options.levelGround ? LEVEL_GROUND : undefined);
+        const visual = generateStructure(defs, site, s.model, s.params ?? {}, s, options.levelGround ? LEVEL_GROUND : undefined, pad);
         const lods: Record<string, ModelHandle[]> = {};
         const lodPixels: Record<string, readonly number[]> = {};
         for (const [name, model] of Object.entries(visual.models)) {
@@ -163,11 +173,11 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       const x = v3.sub(v3.scale(east, Math.cos(h)), v3.scale(north, Math.sin(h)));
       const z = v3.neg(v3.add(v3.scale(east, Math.sin(h)), v3.scale(north, Math.cos(h))));
       // On the ground under its own origin (structures on the pad's hardstand share the pad plane).
-      const lift = options.groundHeight ? options.groundHeight(site, s.offsetEnu[0], s.offsetEnu[1]) - padHeight : 0;
+      const lift = options.groundHeight ? options.groundHeight(site, s.offsetEnu[0], s.offsetEnu[1], pad) - padHeight : 0;
       const origin = v3.add(v3.add(v3.add(centre, v3.scale(east, s.offsetEnu[0])), v3.scale(north, s.offsetEnu[1])), v3.scale(up, s.offsetEnu[2] + lift));
       return { visual: entry.visual, models: entry, lodStates: [], origin, q: quat.fromBasis(x, up, z) };
     });
-    return { site, centre, up, east, north, placed, state: { night: 0, arms: 1, crewArm: 1 }, target: { arms: 1, crewArm: 1 }, seen: false, override: null };
+    return { site, pad, centre, up, east, north, placed, state: { night: 0, arms: 1, crewArm: 1 }, target: { arms: 1, crewArm: 1 }, seen: false, override: null };
   };
 
   /** Is a vessel standing on this pad, and is it firing? */
@@ -181,7 +191,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       const rel = quat.rotateInv(body.qFixedToRoot, v3.sub(v.rRoot, body.rRoot));
       const d = v3.sub(rel, rt.centre);
       const height = v3.dot(d, rt.up);
-      if (v3.len(v3.addScaled(d, rt.up, -height)) > rt.site.pad.flatRadius * 0.25) continue;
+      if (v3.len(v3.addScaled(d, rt.up, -height)) > rt.pad.flatRadius * 0.25) continue;
       occupied = true;
       for (const p of v.parts) for (const m of p.modules) if (m.type === 'engine' && (m.thrust > 0 || (m.active && m.throttleActual > 0.01))) firing = true;
     }
@@ -192,12 +202,13 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
     id: 'site',
     order: 0,
     stats,
-    siteIds: () => sites.map((s) => s.site.id),
-    state: (id) => sites.find((s) => s.site.id === id)?.state,
-    override(id, patch) {
-      const rt = sites.find((s) => s.site.id === id);
-      if (!rt) throw new Error(`site feature: unknown site "${id}"`);
-      rt.override = patch;
+    siteIds: () => [...new Set(sites.map((s) => s.site.id))],
+    padIds: (id) => sites.filter((s) => s.site.id === id).map((s) => s.pad.id),
+    state: (id, padId) => sites.find((s) => s.site.id === id && (padId === undefined || s.pad.id === padId))?.state,
+    override(id, patch, padId) {
+      const pads = sites.filter((s) => s.site.id === id && (padId === undefined || s.pad.id === padId));
+      if (pads.length === 0) throw new Error(padId === undefined ? `site feature: unknown site "${id}"` : `site feature: unknown pad "${padId}" of site "${id}"`);
+      for (const rt of pads) rt.override = patch;
     },
 
     init(c) {
@@ -210,7 +221,7 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       proxyBatch = coreOf(c).meshes.createBatch('site-shadow-proxies');
       proxyNearBatch = coreOf(c).meshes.createBatch('site-shadow-proxies-near');
       fineCasterBatch = coreOf(c).meshes.createBatch('site-casters-fine');
-      for (const site of Object.values(defs.sites)) sites.push(buildSite(site));
+      for (const site of Object.values(defs.sites)) for (const pad of padsOf(site)) sites.push(buildPad(site, pad));
     },
 
     prepare(frame: FrameContext) {
@@ -228,7 +239,10 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
       proxyNearBatch.begin(frame);
       fineCasterBatch.begin(frame);
       stats.sites = 0;
+      stats.pads = 0;
       stats.instances = 0;
+      // (The pads of one site follow each other in the list.)
+      let lastSite: LaunchSiteDef | null = null;
       stats.fading = 0;
       stats.movingInstances = 0;
       const lamps: { pos: Vec3; end: Vec3 | null; dir: Vec3 | null; cone: [number, number] | null; radius: number; castShadow: boolean; intensity: [number, number, number]; range: number; d: number }[] = [];
@@ -236,7 +250,9 @@ export function createSiteFeature(options: SiteFeatureOptions = {}): SiteFeature
         const pose = frame.bodies.find((b) => b.id === rt.site.bodyId);
         if (!pose) continue;
         if (v3.dist(pose.cameraFixed, rt.centre) > drawDistance) continue;
-        stats.sites++;
+        stats.pads++;
+        if (rt.site !== lastSite) stats.sites++;
+        lastSite = rt.site;
         // ---- state
         const sunEl = Math.asin(Math.max(-1, Math.min(1, v3.dot(quat.rotate(pose.qFixedToRoot, rt.up), pose.sunDir)))) / DEG;
         const act = padActivity(rt, snapshot);

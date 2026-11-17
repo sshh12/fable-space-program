@@ -46,6 +46,7 @@ import type { DefLibrary, SiteStructureDef } from '@/core/contracts/defs';
 import type { CameraInput, CameraState } from '@/core/contracts/render';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
+import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
@@ -159,14 +160,11 @@ export function chaseTrenchHeading(defs: DefLibrary, s: SimSnapshot, v: VesselSn
   let best: { d: number; structures: readonly SiteStructureDef[] } | null = null;
   for (const site of Object.values(defs.sites)) {
     if (site.bodyId !== v.bodyId) continue;
-    const pads =
-      site.pads && site.pads.length > 0
-        ? site.pads.map((p) => ({ at: site.location.pads?.[p.id] ?? site.location, structures: p.structures }))
-        : [{ at: site.location, structures: site.structures }];
-    for (const p of pads) {
-      const elevation = typeof p.at.padElevation === 'number' ? p.at.padElevation : 0;
-      const d = v3.dist(fixed, v3.scale(latLonToDir(p.at.latDeg * DEG, p.at.lonDeg * DEG), radius + elevation));
-      if (d < CHASE_PAD_RANGE && (!best || d < best.d)) best = { d, structures: p.structures };
+    for (const pad of padsOf(site)) {
+      const at = padLocationOf(site, pad.id);
+      const elevation = typeof at.padElevation === 'number' ? at.padElevation : 0;
+      const d = v3.dist(fixed, v3.scale(latLonToDir(at.latDeg * DEG, at.lonDeg * DEG), radius + elevation));
+      if (d < CHASE_PAD_RANGE && (!best || d < best.d)) best = { d, structures: pad.structures };
     }
   }
   const trench = best?.structures.find((x) => CHASE_TRENCH_MODELS.includes(x.model));

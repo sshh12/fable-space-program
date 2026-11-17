@@ -66,8 +66,8 @@ export function createGameFeatures(deps: FeatureDeps): GameFeatures {
   // The cockpit shows its interior through its own transparent glazing, also from outside: the vehicle must not
   // close the capsule's windows with its opaque outer panes (request cockpit-8).
   const vessels = createVesselVisualFeature({ exteriorGlass: false });
-  // The pad is flattened to its elevation across the site (LaunchSiteDef.pad.flatRadius): every structure stands
-  // on the pad plane, the factory's default (docs/handoff/vehicle-pad.md, "Integration").
+  // A pad is flattened to its elevation across its complex (PadDef.flatRadius): every structure stands on its
+  // pad's plane, the factory's default (docs/handoff/vehicle-pad.md, "Integration").
   const site = createSiteFeature();
   const ocean = createOceanFeature();
   const sky = createSkyFeature({ milkyWayFaceSize: MILKY_WAY_FACE_SIZE });

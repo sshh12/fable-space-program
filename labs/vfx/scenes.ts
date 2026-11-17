@@ -3,6 +3,7 @@
  * real assembled parts and drives their module states with a script. Selected with ?scene=<name>.
  */
 import type { DefLibrary, ModuleDef } from '@/core/contracts/defs';
+import { padOf } from '@/core/defs/sites';
 import type { PartSnapshot } from '@/core/contracts/sim';
 import { DEG, quat, v3, type Vec3 } from '@/core/math';
 import { assembleVessel, splitForStage, vesselPartSnapshots, type Vessel } from '@/sim/vessel/public';
@@ -45,9 +46,10 @@ const num = (q: URLSearchParams, key: string, fallback: number): number => {
 
 function earthSite(defs: DefLibrary): { bodyId: string; latDeg: number; lonDeg: number; padElevation: number; clampHeight: number; padRadius: number; trenchHeadingDeg: number } {
   const site = Object.values(defs.sites)[0]!;
+  const pad = padOf(site);
   const pe = site.location.padElevation;
-  const trench = site.structures.find((s) => /trench/i.test(s.model));
-  return { bodyId: site.bodyId, latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, padElevation: typeof pe === 'number' ? pe : 20, clampHeight: site.pad.clampHeight, padRadius: site.pad.flatRadius, trenchHeadingDeg: trench?.headingDeg ?? 90 };
+  const trench = pad.structures.find((s) => /trench/i.test(s.model));
+  return { bodyId: site.bodyId, latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, padElevation: typeof pe === 'number' ? pe : 20, clampHeight: pad.mountHeight, padRadius: pad.flatRadius, trenchHeadingDeg: trench?.headingDeg ?? 90 };
 }
 
 const moonId = (defs: DefLibrary): string => Object.values(defs.bodies).find((b) => b.parent === defs.rootBodyId && b.gravityRole === 'attractor')?.id ?? defs.rootBodyId;

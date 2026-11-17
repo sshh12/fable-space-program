@@ -6,6 +6,7 @@
 import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext } from '@/core/contracts/render';
 import type { PartSnapshot, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, hashToUnit, hashU32, quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import type { VfxData } from './data';
@@ -138,18 +139,21 @@ export class EffectDirector {
             const upVes = quat.rotateInv(focus.q, quat.rotate(dom.q, up));
             out.ground = v3.dot(up, fd.pos) + lowestPoint(this.defs, focus, upVes) - radar;
           }
-          // The flat pad of a launch site is exact: prefer it while the vessel is over it.
+          // The flat disc of a launch pad is exact: prefer it while the vessel is over it.
           for (const site of Object.values(this.defs.sites)) {
             if (site.bodyId !== dom.state.bodyId) continue;
-            const pe = site.location.padElevation;
-            if (typeof pe !== 'number') continue;
-            const dirFixed = latLonToDir(site.location.latDeg * DEG, site.location.lonDeg * DEG);
-            const pFixed = v3.scale(dirFixed, bodyDef.radius + pe);
-            const rel = v3.sub(pFixed, dom.state.origin);
-            const horizontal = v3.len(v3.reject(v3.sub(fd.pos, rel), up));
-            if (horizontal < site.pad.flatRadius) {
-              out.ground = v3.dot(up, rel);
-              out.onPad = true;
+            for (const pad of padsOf(site)) {
+              const at = padLocationOf(site, pad.id);
+              const pe = at.padElevation;
+              if (typeof pe !== 'number') continue;
+              const dirFixed = latLonToDir(at.latDeg * DEG, at.lonDeg * DEG);
+              const pFixed = v3.scale(dirFixed, bodyDef.radius + pe);
+              const rel = v3.sub(pFixed, dom.state.origin);
+              const horizontal = v3.len(v3.reject(v3.sub(fd.pos, rel), up));
+              if (horizontal < pad.flatRadius) {
+                out.ground = v3.dot(up, rel);
+                out.onPad = true;
+              }
             }
           }
         }

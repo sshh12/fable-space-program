@@ -1,5 +1,5 @@
 /**
- * Pad smoke and steam: a density volume anchored to a launch site, advected in compute through an analytic
+ * Pad smoke and steam: a density volume anchored to a launch pad, advected in compute through an analytic
  * flow, lit by the sun (a light volume holds the transmittance towards it) and by the plume, eroded with
  * detail noise in the march.
  *
@@ -22,7 +22,8 @@
  * quarter-resolution ray keeps two results, cut at the nearest and at the farthest scene depth of its 2 x 2
  * block of half-resolution pixels, so a mast or a hull edge in front of the cloud is not painted over.
  */
-import type { LaunchSiteDef } from '@/core/contracts/defs';
+import type { LaunchSiteDef, PadDef } from '@/core/contracts/defs';
+import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { RENDER_FORMATS, type FrameContext, type RenderContext } from '@/core/contracts/render';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
@@ -696,7 +697,9 @@ export class SmokeSystem implements VolumeCombiner {
   private readonly dims: Vec3Tuple;
   /** Index of the density texture that holds the current state. */
   private cur = 0;
+  /** The pad the volume is anchored to, and its site. */
   private site: LaunchSiteDef | null = null;
+  private pad: PadDef | null = null;
   private lastSource = -1e9;
   private firstSource = -1e9;
   private isActive = false;
@@ -822,24 +825,29 @@ export class SmokeSystem implements VolumeCombiner {
     this.rect = null;
     this.hint = null;
 
-    // Nearest site to anything that burns, on a body of this frame.
-    let best: { site: LaunchSiteDef; origin: Vec3; east: Vec3; north: Vec3; up: Vec3 } | null = null;
+    // Nearest pad to anything that burns, on a body of this frame (the pad the volume stands on while it is active).
+    let best: { site: LaunchSiteDef; pad: PadDef; origin: Vec3; east: Vec3; north: Vec3; up: Vec3 } | null = null;
     let bestDist = Infinity;
-    const candidates = this.isActive && this.site ? [this.site] : Object.values(defs.sites);
+    const anchored = this.isActive && this.site && this.pad;
+    const candidates = anchored ? [this.site!] : Object.values(defs.sites);
     for (const site of candidates) {
-      const pe = site.location.padElevation;
-      if (typeof pe !== 'number' || !snap.bodies.some((b) => b.id === site.bodyId)) continue;
+      if (!snap.bodies.some((b) => b.id === site.bodyId)) continue;
       const pose = frame.bodyPose(site.bodyId);
-      const dir = latLonToDir(site.location.latDeg * DEG, site.location.lonDeg * DEG);
-      const origin = v3.add(pose.centerRelCam, quat.rotate(pose.qFixedToRoot, v3.scale(dir, defs.bodies[site.bodyId]!.radius + pe)));
-      let d = this.isActive ? 0 : Infinity;
-      for (const pc of clusters) if (pc.cluster.kind === 'engine' && pc.cluster.look.ground.smoke > 0) d = Math.min(d, v3.dist(pc.originRelCam, origin));
-      if (d < bestDist) {
-        let e = v3.cross(v3.unitZ(), dir);
-        e = v3.lenSq(e) < 1e-12 ? v3.unitY() : v3.normalize(e);
-        const n = v3.cross(dir, e);
-        bestDist = d;
-        best = { site, origin, east: quat.rotate(pose.qFixedToRoot, e), north: quat.rotate(pose.qFixedToRoot, n), up: quat.rotate(pose.qFixedToRoot, dir) };
+      for (const pad of anchored ? [this.pad!] : padsOf(site)) {
+        const at = padLocationOf(site, pad.id);
+        const pe = at.padElevation;
+        if (typeof pe !== 'number') continue;
+        const dir = latLonToDir(at.latDeg * DEG, at.lonDeg * DEG);
+        const origin = v3.add(pose.centerRelCam, quat.rotate(pose.qFixedToRoot, v3.scale(dir, defs.bodies[site.bodyId]!.radius + pe)));
+        let d = this.isActive ? 0 : Infinity;
+        for (const pc of clusters) if (pc.cluster.kind === 'engine' && pc.cluster.look.ground.smoke > 0) d = Math.min(d, v3.dist(pc.originRelCam, origin));
+        if (d < bestDist) {
+          let e = v3.cross(v3.unitZ(), dir);
+          e = v3.lenSq(e) < 1e-12 ? v3.unitY() : v3.normalize(e);
+          const n = v3.cross(dir, e);
+          bestDist = d;
+          best = { site, pad, origin, east: quat.rotate(pose.qFixedToRoot, e), north: quat.rotate(pose.qFixedToRoot, n), up: quat.rotate(pose.qFixedToRoot, dir) };
+        }
       }
     }
     if (!best || (!this.isActive && bestDist > S.activationRange)) {
@@ -913,17 +921,18 @@ export class SmokeSystem implements VolumeCombiner {
       this.needsClear = true;
       return null;
     }
-    if (!this.isActive || this.site !== best.site) this.needsClear = true;
+    if (!this.isActive || this.pad !== best.pad) this.needsClear = true;
     this.isActive = true;
     this.site = best.site;
+    this.pad = best.pad;
 
-    // The trench of this site, from its structures; the focus fades as the vehicle climbs and its jet hits the open pad.
-    const trench = best.site.structures.find((s) => S.trenchModels.includes(s.model));
+    // The trench of this pad, from its structures; the focus fades as the vehicle climbs and its jet hits the open pad.
+    const trench = best.pad.structures.find((s) => S.trenchModels.includes(s.model));
     const th = (trench?.headingDeg ?? 0) * DEG;
     // (Slowly: the jet still goes down the flame hole when the vehicle is a hundred metres up. Faded within
     // forty metres, the exhaust of the first seconds was left standing round the pad as a ring that rose
     // into an arch behind the vehicle.)
-    const focus = trench ? S.trenchFocus * Math.exp(-Math.max(0, nozzleHeight - best.site.pad.clampHeight * 1.5) / 150) : 0;
+    const focus = trench ? S.trenchFocus * Math.exp(-Math.max(0, nozzleHeight - best.pad.mountHeight * 1.5) / 150) : 0;
     const deluge = Math.min(1, (effectTime - this.firstSource) / S.deluge.ramp) * (effectTime - this.firstSource < S.deluge.duration ? 1 : Math.exp(-(effectTime - this.firstSource - S.deluge.duration) / 2));
     const wh = S.wind.headingDeg * DEG;
     const horizontalScale = (S.centerCell * S.grid[0]) / 2;

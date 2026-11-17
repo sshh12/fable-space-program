@@ -55,6 +55,7 @@ import { MAX_PHYSICS_WARP_INDEX, WARP_LEVELS, type DefLibrary, type ParachuteEnv
 import type { TerrainProvider, TileManifest } from '@/core/contracts/terrain';
 import type { MfdPage } from '@/core/contracts/ui';
 import { fetchDefSource } from '@/core/defs/fetchSource';
+import { padOf } from '@/core/defs/sites';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { bodyTarget } from '@/core/access/snapshotAccess';
@@ -333,7 +334,8 @@ async function boot(): Promise<void> {
   const hover = Math.max(0, numParam('hover') ?? 0);
   const start = numParam('start');
   // A standing scene's lowest point sits on the ground (the pad: on the launch mount, at its clamp height).
-  const clampHeight = Object.values(defs.sites)[0]?.pad.clampHeight ?? 0;
+  const firstSite = Object.values(defs.sites)[0];
+  const clampHeight = firstSite ? padOf(firstSite).mountHeight : 0;
   const sim = createFakeSim(defs, {
     scene,
     parts,

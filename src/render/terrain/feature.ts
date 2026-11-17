@@ -7,6 +7,7 @@
 import type { BodyDef, DefLibrary } from '@/core/contracts/defs';
 import { MATERIAL_ID, RENDER_FORMATS, type BodyPose, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
 import { TILE_LAYER, type TileManifest } from '@/core/contracts/terrain';
+import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { dirToTile, latLonToDir, type TileKey } from '@/core/geo/cubeSphere';
 import { DEG, mat3, quat, v3, type Mat3, type Vec3 } from '@/core/math';
 import { coreOf, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
@@ -391,17 +392,23 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const pads: SiteDisc[] = [];
     const sitePlans: SiteGroundPlan[] = [];
     const sites: CoverSite[] = [];
+    // One ground plan per pad, in the pad's own frame; the material uniform holds MAX_SITES of them, so the
+    // pads beyond that (in the order of the library: site by site, first pad first) are drawn without a plan.
     for (const site of Object.values(ctx.defs.sites)) {
-      if (site.bodyId !== def.id || params.apronRadiusM <= 0 || pads.length >= MAX_SITES) continue;
-      const dir = latLonToDir(site.location.latDeg * DEG, site.location.lonDeg * DEG);
-      // The site's ground plan lies on the flattened pad disc; its height is the pad's (flat within flatRadius).
-      const h = typeof site.location.padElevation === 'number' ? site.location.padElevation : provider.heightAt(def.id, dir);
-      const plan = buildSitePlan(site, params);
-      const east = v3.normalize(v3.cross({ x: 0, y: 0, z: 1 }, dir));
-      const north = v3.cross(dir, east);
-      pads.push({ centre: v3.scale(dir, def.radius + h), radius: plan.reach, index: pads.length });
-      sitePlans.push({ plan, east: [east.x, east.y, east.z], north: [north.x, north.y, north.z] });
-      sites.push({ centre: v3.scale(dir, def.radius + h), east, north, plan });
+      if (site.bodyId !== def.id || params.apronRadiusM <= 0) continue;
+      for (const pad of padsOf(site)) {
+        if (pads.length >= MAX_SITES) break;
+        const at = padLocationOf(site, pad.id);
+        const dir = latLonToDir(at.latDeg * DEG, at.lonDeg * DEG);
+        // The pad's ground plan lies on its flattened disc; its height is the pad's (flat within flatRadius).
+        const h = typeof at.padElevation === 'number' ? at.padElevation : provider.heightAt(def.id, dir);
+        const plan = buildSitePlan(pad, params);
+        const east = v3.normalize(v3.cross({ x: 0, y: 0, z: 1 }, dir));
+        const north = v3.cross(dir, east);
+        pads.push({ centre: v3.scale(dir, def.radius + h), radius: plan.reach, index: pads.length });
+        sitePlans.push({ plan, east: [east.x, east.y, east.z], north: [north.x, north.y, north.z] });
+        sites.push({ centre: v3.scale(dir, def.radius + h), east, north, plan });
+      }
     }
     // Night lights are read `nightMinMip` levels above the layer's deepest level: its source cells are
     // coarser than its texels (the layer is baked at the imagery's resolution), and sampling whole tiles of

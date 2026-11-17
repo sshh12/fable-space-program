@@ -1,11 +1,12 @@
 /**
- * Launch-complex structures: generator registry keyed by `LaunchSiteDef.structures[].model`.
+ * Launch-complex structures: generator registry keyed by the model of a pad's structure (`PadDef.structures[].model`).
  *
  * Model frame of every structure: +Y up, +X east and +Z south at heading 0 (so -Z is the structure's
  * "north"); the site feature rotates it clockwise by `headingDeg` about the vertical and puts its origin at
  * `offsetEnu` from the pad centre, on the pad surface. Geometry starts a little below y = 0 so nothing floats.
  */
-import type { DefLibrary, LaunchSiteDef } from '@/core/contracts/defs';
+import type { DefLibrary, LaunchSiteDef, PadDef } from '@/core/contracts/defs';
+import { padOf } from '@/core/defs/sites';
 import type { QuatTuple, Vec3Tuple } from '@/core/math';
 import type { PartLight, PartModel } from '../parts/types';
 import { siteGround, structureGround, type GroundField } from './survey';
@@ -15,6 +16,8 @@ export type StructureParams = Record<string, number | string>;
 export interface SiteGenContext {
   params: StructureParams;
   site: LaunchSiteDef;
+  /** The pad the structure belongs to (its mount height, its disc). */
+  pad: PadDef;
   defs: DefLibrary;
   /**
    * Bounds of the real terrain in the structure's model frame, m above the plane its origin stands on (the
@@ -98,14 +101,22 @@ export function siteGeneratorIds(): string[] {
 }
 
 /**
- * Generate a structure where it stands. `ground` is the site's ground in the site frame (default: the
- * site's survey; a site without one throws); a caller that draws the site on a level stand-in surface
- * passes `LEVEL_GROUND`.
+ * Generate a structure of the pad `pad` of a site (absent = the site's first pad) where it stands. `ground`
+ * is the pad's ground in the pad's east / north frame (default: the pad's survey; a pad with structures and
+ * without one throws); a caller that draws the site on a level stand-in surface passes `LEVEL_GROUND`.
  */
-export function generateStructure(defs: DefLibrary, site: LaunchSiteDef, model: string, params: StructureParams, placement: StructurePlacement = { offsetEnu: [0, 0, 0], headingDeg: 0 }, ground: GroundField = siteGround(defs, site)): SiteVisual {
+export function generateStructure(
+  defs: DefLibrary,
+  site: LaunchSiteDef,
+  model: string,
+  params: StructureParams,
+  placement: StructurePlacement = { offsetEnu: [0, 0, 0], headingDeg: 0 },
+  ground?: GroundField,
+  pad: PadDef = padOf(site),
+): SiteVisual {
   const g = generators.get(model);
   if (!g) throw new Error(`site "${site.id}": unknown structure model "${model}"`);
-  return g({ params, site, defs, ground: structureGround(ground, placement.offsetEnu, placement.headingDeg) });
+  return g({ params, site, pad, defs, ground: structureGround(ground ?? siteGround(defs, site, pad), placement.offsetEnu, placement.headingDeg) });
 }
 
 /** Numeric structure parameter with a default. */

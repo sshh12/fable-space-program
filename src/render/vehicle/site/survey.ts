@@ -1,5 +1,5 @@
 /**
- * The surveyed ground of a launch site. A site's terrain is level only where its pad shape says so (the
+ * The surveyed ground of a launch pad. A site's terrain is level only where a pad's shape says so (the
  * hardstand and a few areas); between them a share of the natural relief is kept, so a road, a berm, a fence
  * or a pipe support that assumed the pad plane would be buried in one place and hang in the air in another.
  * Earthworks are therefore designed on a survey, as real ones are: the section `visuals/sites/<siteId>` holds
@@ -11,12 +11,16 @@
  * nodes that each carry the extreme of their whole neighbourhood): what is built above `hi` is never buried,
  * and a skirt that reaches below `lo` never shows a gap.
  *
- * A site that has structures and no survey does not load: `siteGround` throws. Level ground is never assumed
+ * A pad that has structures and no survey does not load: `siteGround` throws. Level ground is never assumed
  * (that assumption is what buried the roads); a caller that really draws the site on a level stand-in
  * surface (the vehicle lab's reference sphere, the survey tool measuring the extent of the structures) says
  * so by passing `LEVEL_GROUND`.
+ *
+ * One survey per pad, each in its own pad's frame: the first pad's is `survey` of the section (the form the
+ * section had when a site was one pad), every other pad's is `pads[<pad id>].survey` of the same section.
  */
-import type { DefLibrary, LaunchSiteDef } from '@/core/contracts/defs';
+import type { DefLibrary, LaunchSiteDef, PadDef } from '@/core/contracts/defs';
+import { padOf, padsOf } from '@/core/defs/sites';
 
 export interface SiteSurveyDef {
   /** Where the heights come from (for a person: tile set, date). */
@@ -47,11 +51,12 @@ export const LEVEL_GROUND: GroundField = { hi: () => 0, lo: () => 0, surveyed: f
 /** Section key of a site's ground survey. */
 export const surveySectionOf = (siteId: string): string => `visuals/sites/${siteId}`;
 
-export function siteSurvey(defs: DefLibrary, site: LaunchSiteDef): SiteSurveyDef | null {
-  const section = defs.sections[surveySectionOf(site.id)] as { survey?: SiteSurveyDef } | undefined;
-  const s = section?.survey;
+/** The survey of the pad `pad` of a site (absent = the site's first pad), or null where the section holds none for it. */
+export function siteSurvey(defs: DefLibrary, site: LaunchSiteDef, pad: PadDef = padOf(site)): SiteSurveyDef | null {
+  const section = defs.sections[surveySectionOf(site.id)] as { survey?: SiteSurveyDef; pads?: Record<string, { survey?: SiteSurveyDef } | undefined> } | undefined;
+  const s = pad.id === padsOf(site)[0]!.id ? section?.survey : section?.pads?.[pad.id]?.survey;
   if (!s) return null;
-  if (!(s.step > 0) || s.nx < 2 || s.ny < 2 || s.hiCm.length !== s.nx * s.ny || s.loCm.length !== s.nx * s.ny) throw new Error(`site "${site.id}": malformed ground survey`);
+  if (!(s.step > 0) || s.nx < 2 || s.ny < 2 || s.hiCm.length !== s.nx * s.ny || s.loCm.length !== s.nx * s.ny) throw new Error(`site "${site.id}", pad "${pad.id}": malformed ground survey`);
   return s;
 }
 
@@ -67,14 +72,15 @@ function sample(s: SiteSurveyDef, grid: number[], east: number, north: number): 
 }
 
 /**
- * The site's ground in its own frame: x = east, z = SOUTH of the pad centre (a structure frame at heading 0).
- * Throws for a site with structures and no survey (run `tools/vehicle/site-ground.ts survey`).
+ * The ground of the pad `pad` of a site (absent = the site's first pad) in the pad's own frame: x = east,
+ * z = SOUTH of the pad centre (a structure frame at heading 0). Throws for a pad with structures and no
+ * survey (run `tools/vehicle/site-ground.ts survey`): every pad that carries structures needs its own.
  */
-export function siteGround(defs: DefLibrary, site: LaunchSiteDef): GroundField {
-  const s = siteSurvey(defs, site);
+export function siteGround(defs: DefLibrary, site: LaunchSiteDef, pad: PadDef = padOf(site)): GroundField {
+  const s = siteSurvey(defs, site, pad);
   if (!s) {
-    if (site.structures.length === 0) return LEVEL_GROUND;
-    throw new Error(`site "${site.id}": no ground survey (section ${surveySectionOf(site.id)}); its structures cannot be built on the terrain. Run tools/vehicle/site-ground.ts survey`);
+    if (pad.structures.length === 0) return LEVEL_GROUND;
+    throw new Error(`site "${site.id}", pad "${pad.id}": no ground survey (section ${surveySectionOf(site.id)}); its structures cannot be built on the terrain. Run tools/vehicle/site-ground.ts survey`);
   }
   return { hi: (x, z) => sample(s, s.hiCm, x, -z), lo: (x, z) => sample(s, s.loCm, x, -z), surveyed: true };
 }

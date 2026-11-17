@@ -33,6 +33,7 @@
  * Specs drive the page through window.__lab (the LabApp) and window.__integration (this file's handle).
  */
 import type { DefLibrary } from '@/core/contracts/defs';
+import { padOf } from '@/core/defs/sites';
 import { RENDER_FORMATS, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import type { PartSnapshot, Sim, SimSnapshot } from '@/core/contracts/sim';
 import type { PointerState } from '@/core/contracts/controls';
@@ -233,7 +234,7 @@ async function surfacePlace(
   const zone = site?.recoveryZones[0];
   const root = defs.rootBodyId;
   const places: Partial<Record<FakeScene, { bodyId: string; latDeg: number; lonDeg: number; clearance: number } | undefined>> = {
-    pad: site && { bodyId: site.bodyId, latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, clearance: site.pad.clampHeight },
+    pad: site && { bodyId: site.bodyId, latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, clearance: padOf(site).mountHeight },
     ascent: site && { bodyId: site.bodyId, latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, clearance: 0 },
     lunarSurface: landing ? { bodyId: landing.bodyId, latDeg: landing.latDeg, lonDeg: landing.lonDeg, clearance: Math.max(0, Number(query.get('hover') ?? 0)) } : undefined,
     chutes: zone && { bodyId: site?.bodyId ?? root, latDeg: zone.latDeg, lonDeg: zone.lonDeg, clearance: 0 },

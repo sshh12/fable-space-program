@@ -391,8 +391,8 @@ export const padFlameTrench: SiteGenerator = ({ params }) => {
 
 // -------------------------------------------------------------------------------------- launch mount
 
-export const padLaunchMount: SiteGenerator = ({ params, site }) => {
-  const top = site.pad.clampHeight;
+export const padLaunchMount: SiteGenerator = ({ params, pad }) => {
+  const top = pad.mountHeight;
   const thick = numParam(params, 'deckThickness', 4.6);
   const half = numParam(params, 'half', 11);
   const holeR = numParam(params, 'openingRadius', 4.78);

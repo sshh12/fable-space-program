@@ -7,7 +7,7 @@ const TUNABLES = { apronRadiusM: 140, apronMarginM: 6, apronShoulderM: 14 };
 describe('site ground plan', () => {
   const structure = (offsetEnu: [number, number, number], headingDeg: number, params: Record<string, number | string>) => ({ model: 'structure', offsetEnu, headingDeg, params });
   const site = {
-    pad: { flatRadius: 450, blendRadius: 900, clampHeight: 18 },
+    flatRadius: 450,
     structures: [
       structure([0, 0, 0], 0, { halfX: 62, halfZ: 62 }),
       structure([-260, -190, 0], 30, { halfX: 34, halfZ: 26 }),
@@ -49,7 +49,7 @@ describe('site ground plan', () => {
   });
 
   it('gives a site without slabs one square hardstand, and a body without aprons nothing', () => {
-    const bare = buildSitePlan({ pad: site.pad, structures: [] }, TUNABLES);
+    const bare = buildSitePlan({ flatRadius: site.flatRadius, structures: [] }, TUNABLES);
     expect(bare.shapes).toHaveLength(1);
     expect(bare.shapes[0]).toMatchObject({ kind: SHAPE_SLAB, halfX: 140, halfZ: 140 });
     expect(buildSitePlan(site, { ...TUNABLES, apronRadiusM: 0 }).shapes).toHaveLength(0);

@@ -177,7 +177,10 @@ test.describe('vehicle and launch complex in the integrated game', () => {
         const body = lab.app.defs.bodies[site.bodyId]!;
         const rad = Math.PI / 180;
         const padAlt = typeof site.location.padElevation === 'number' ? site.location.padElevation : await lab.groundHeight(site.bodyId, site.location.latDeg, site.location.lonDeg);
-        for (const s of site.structures) {
+        // (The first pad: it stands at the site's reference point, where `padAlt` is taken.)
+        const first = site.pads && site.pads.length > 0 ? site.pads[0]! : null;
+        if (!first) throw new Error(`site ${site.id}: the loaded library states no pad list`);
+        for (const s of first.structures) {
           if (onSurvey.includes(s.model)) continue;
           const lat = site.location.latDeg + s.offsetEnu[1] / (body.radius * rad);
           const lon = site.location.lonDeg + s.offsetEnu[0] / (body.radius * rad * Math.cos(site.location.latDeg * rad));

@@ -7,6 +7,7 @@
  */
 import type { PlayerCommands } from '@/core/contracts/controls';
 import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
+import { padOf } from '@/core/defs/sites';
 import type { CraftSnapshot, ModuleState, PartSnapshot, Sim, SimDebug, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
@@ -303,8 +304,8 @@ export class VehicleLabSim implements Sim {
     const body = snap.bodies.find((b) => b.id === bodyId)!;
     const { east, north, up } = enuAt(body.qFixedToRoot, latLonToDir(lat * DEG, lon * DEG));
     const radius = this.defs.bodies[bodyId]!.radius;
-    const baseHeight = place.kind === 'pad' ? place.padElevation + site!.pad.clampHeight : place.height;
-    const az = (place.kind === 'pad' ? site!.padAzimuthDeg : place.headingDeg) * DEG;
+    const baseHeight = place.kind === 'pad' ? place.padElevation + padOf(site!).mountHeight : place.height;
+    const az = (place.kind === 'pad' ? padOf(site!).azimuthDeg : place.headingDeg) * DEG;
     // Ventral side (-Z) faces the pad azimuth; +Y up.
     const z = v3.neg(v3.add(v3.scale(east, Math.sin(az)), v3.scale(north, Math.cos(az))));
     const x = v3.cross(up, z);

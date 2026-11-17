@@ -1,10 +1,10 @@
 /**
- * The ground plan of a launch site as the terrain draws it: concrete hardstands under the structures that
+ * The ground plan of a launch pad as the terrain draws it: concrete hardstands under the structures that
  * stand on slabs, gravel beds under lanes, a compacted shoulder around the concrete. Pure geometry, shared
  * by the surface shader (through the material uniform, `siteGround` in shaders/surface.ts is its twin) and by
  * the ground cover (nothing grows on the plan).
  *
- * The plan is derived from `LaunchSiteDef.structures` by the names of their footprint parameters, never by
+ * The plan is derived from the pad's structures (`PadDef.structures`) by the names of their footprint parameters, never by
  * model id: `halfX` / `halfZ` (a slab), `sizeX` / `sizeZ` (a building on its pad), `length` with
  * `trackWidth` (a lane bed, centred on the structure's origin, running along its z axis). A site without
  * any slab gets one square hardstand of the body's `apronRadiusM`.
@@ -12,7 +12,7 @@
  * Frame of a structure (src/render/vehicle/site/types.ts): +X east and +Z south at heading 0, turned
  * clockwise by the heading; `offsetEnu` is east, north, up from the pad centre.
  */
-import type { LaunchSiteDef } from '@/core/contracts/defs';
+import type { PadDef } from '@/core/contracts/defs';
 import { DEG } from '@/core/math';
 
 export const MAX_SITES = 4;
@@ -55,11 +55,11 @@ const num = (p: Record<string, number | string> | undefined, key: string): numbe
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 };
 
-export function buildSitePlan(site: Pick<LaunchSiteDef, 'structures' | 'pad'>, t: SitePlanTunables): SitePlan {
+export function buildSitePlan(pad: Pick<PadDef, 'structures' | 'flatRadius'>, t: SitePlanTunables): SitePlan {
   const shapes: SiteShape[] = [];
   if (t.apronRadiusM <= 0) return { shapes, reach: 0, shoulder: 0 };
-  const limit = site.pad.flatRadius;
-  for (const s of site.structures) {
+  const limit = pad.flatRadius;
+  for (const s of pad.structures) {
     const p = s.params;
     const heading = s.headingDeg * DEG;
     const [e, n] = s.offsetEnu;
