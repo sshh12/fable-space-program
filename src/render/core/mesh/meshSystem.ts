@@ -9,6 +9,7 @@
  */
 import { MATERIAL_ID, OCEAN_WETNESS_SLOTS, RENDER_FORMATS, type FrameContext, type MeshData, type ModelData, type PbrMaterialDef, type ShadowCascadeView, type SharedResources } from '@/core/contracts/render';
 import { mat3, quat, v3, type Mat4, type Quat, type Vec3, type Vec3Tuple } from '@/core/math';
+import { frustumTangents, lensShiftOf } from '../frame/math';
 import type { CoreShaderLibrary, Tracked } from '../shaders/library';
 import { createBufferChecked, f32ToF16 } from '../util/gpu';
 import type { ProceduralTexture, TextureManager, TextureRef } from './textures';
@@ -700,6 +701,8 @@ export function createMeshSystem(args: {
       let pxScale = 1;
       let tanX = 1;
       let tanY = 1;
+      // The side planes of the camera's frustum (off-centre under a lens shift).
+      let side = frustumTangents(1, 1, [0, 0]);
       const stats = { instances: 0, triangles: 0, shadowTriangles: 0 };
 
       const groupOf = (model: ModelImpl, lod: number, bodyFixed: boolean): Group => {
@@ -759,6 +762,7 @@ export function createMeshSystem(args: {
           stats.shadowTriangles = 0;
           tanX = 1 / f.projUnjittered[0]!;
           tanY = 1 / f.projUnjittered[5]!;
+          side = frustumTangents(tanX, tanY, lensShiftOf(f.camera));
           pxScale = f.renderSize[1] / tanY;
         },
 
@@ -781,7 +785,12 @@ export function createMeshSystem(args: {
           const vx = m[0]! * cx + m[4]! * cy + m[8]! * cz;
           const vy = m[1]! * cx + m[5]! * cy + m[9]! * cz;
           const depth = -(m[2]! * cx + m[6]! * cy + m[10]! * cz);
-          const inView = depth > -radius && Math.abs(vx) < depth * tanX + radius * Math.hypot(1, tanX) && Math.abs(vy) < depth * tanY + radius * Math.hypot(1, tanY);
+          const inView =
+            depth > -radius &&
+            vx < depth * side.right + radius * Math.hypot(1, side.right) &&
+            -vx < depth * side.left + radius * Math.hypot(1, side.left) &&
+            vy < depth * side.top + radius * Math.hypot(1, side.top) &&
+            -vy < depth * side.bottom + radius * Math.hypot(1, side.bottom);
           const dist = Math.max(Math.hypot(cx, cy, cz), 1e-3);
           const sizePx = (radius / dist) * pxScale;
           const sphere: [number, number, number, number] = [cx, cy, cz, radius];

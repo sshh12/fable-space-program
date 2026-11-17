@@ -156,6 +156,7 @@ struct FrameUniforms {
   renderSize: vec4f,           // w, h, 1/w, 1/h (internal resolution)
   displaySize: vec4f,          // w, h, 1/w, 1/h (canvas)
   jitter: vec4f,               // xy = jitter in render px, zw = in NDC (already inside proj)
+  lensShift: vec4f,            // xy = CameraState.lensShift in NDC (already inside proj and projUnjittered), zw = 0; section 19.5
   time: vec4f,                 // realTime (s), realDt (s), frameIndex, animate (1 / 0)
   exposure: vec4f,             // exposure, ev100, qualityScale, renderScale
   sunDir: vec4f,               // xyz = unit direction to the star at the camera, w = angular radius (rad)
@@ -1624,3 +1625,259 @@ Additive unless a migration is stated. Requests: `docs/requests/<id>.md`.
 | `SharedResourceMap` key `'ocean.wetness'` (uniform, `OCEAN_WETNESS_BYTES` = 400: water plane, influence radius and wet line per vessel at the water; layout in the contract comment), binding set `oceanWetness`; the mesh system applies it as a wet line on `standard` / `terrain` surfaces (section 10) | `ocean-3` | ocean (publishes), vehicle-pad (hulls get the line without a change) | None; the default (count 0) leaves every mesh pixel unchanged |
 | LabPlanet: inside `'ocean.nearField'.fadeStart` the seabed follows the sheet (`seabedDepth: 'sheet'`, new default): sheet depth and map colour instead of a 30 m sand floor | `ocean-2` | ocean lab and specs; any lab that publishes a near field over the LabPlanet | A lab that relied on the fixed floor passes `seabedDepth: 30` |
 | `SharedResourceMap` keys `'gbuffer.albedo'`, `'gbuffer.normal'`, `'gbuffer.material'` (live RT0 / RT1 / RT2, readable from `drawWater` on) and binding set `gbuffer` (section 6, section 11) | `ocean-1` | ocean (band between `fadeStart` and `fadeEnd`); anyone who wants the material under a pixel after lighting | None. Do not put the set into a bind group that is set inside `drawGBuffer` |
+
+---
+
+## 19. Additions of sub-wave 3.2 (the presentation sweep)
+
+What the sweep added to the core and to the terrain feature. Everything is additive: a page that publishes no
+rectangle, states no hint and no shift, and gives the terrain no source draws what it drew before, to the
+bit (the reference images of `tests/browser/baselines.manifest.json` are the proof: 30 exact checkpoints at
+0 differing pixels).
+
+### 19.1 The frame rebase: what a holder of ROOT positions must do
+
+ROOT positions (`BodySnapshot.rRoot`, `VesselSnapshot.rRoot`, `CameraState.positionRoot`, an explosion's
+`posRoot`) are relative to the origin of `snapshot.frame` (`SnapshotFrame { epoch, origin, rebase, previous }`,
+ARCHITECTURE section 3). A session REPLACES that origin, at a change of the sphere of influence of the
+focus or when `setRenderRoot` is called: `epoch` goes up by one, and every ROOT position of the new snapshot
+is stated about the new origin (in lunar orbit about the Moon, not 384,000 km from it). Nothing in the
+renderer depends on where the origin is: the same frame handed to it about another origin is the same
+picture to the bit (`tests/browser/integration/origin.spec.ts`).
+
+**Inside one frame nothing is to be done.** The snapshot and the camera of a `render` call are of one epoch,
+and everything `FrameContext` hands a feature is camera-relative (`bodies[i].centerRelCam`, `vessels[i]`,
+`lights`, `sun`). Positions relative to a body or a vessel (body-fixed coordinates, a part frame, the effect
+domain of vfx, the anchor of a shadow cascade) never need a rebase: keep state in those where you can.
+
+**What the core does for you.** It holds the previous frame's snapshot and camera. When the epoch of
+`snapshot.frame` is another than the one it last saw, it reads both in the new frame, each as of its own
+time, before anything is formed from them. So `frame.prevSnapshot`, `frame.prevCamera`, `frame.prevEyeOffset`
+(`prevEyeOffset` uniform), `BodyPose.prevCenterRelCam` and `VesselPose.prevOriginRelCam` are what they would
+be had the origin always been the new one: no step in the picture, no motion-vector spike, no history reset.
+A frame that cannot be reached from the last one drawn (the epoch went backwards or the history no longer
+names the held epoch: another session) is the first frame of a new history (`historyReset`).
+
+**What YOU must do if you keep a ROOT position or velocity from one frame to a later one** (a ghost of a
+vessel that left the snapshot, a trail anchored in ROOT, a remembered camera, a cached world position):
+
+```ts
+import { observeFrame, rebaseHeldAt } from '@/core/access/frameAccess';
+import { FrameEpochTracker, rebasePoint, rebaseVelocity } from '@/core/math/frame';
+
+const epochs = new FrameEpochTracker();          // one per holder
+// ... once per frame, before the held values are used:
+const change = observeFrame(epochs, frame.snapshot.frame);     // never throws
+if (change.kind === 'drop') held = null;                        // a new history: forget, as on a new session
+else if (change.kind === 'rebase') {
+  // A rebase is the OLD origin's position and velocity in the NEW frame at the time of THIS snapshot. What you
+  // hold was taken `age` seconds of simulation time earlier, and the two origins move against each other
+  // (the Moon about the Earth at 1 km/s: 16 m a frame): move it with the offset as it was then.
+  const at = rebaseHeldAt(change.rebase, frame.snapshot.ut - held.ut);
+  held.rRoot = rebasePoint(held.rRoot, at);
+  held.vRoot = rebaseVelocity(held.vRoot, at);
+}
+```
+
+- `observeFrame(tracker, frame): FrameChange` = `{ kind: 'same' } | { kind: 'rebase'; rebase } | { kind: 'drop' }`.
+  The tracker works from the epoch the holder last observed (`SnapshotFrame.previous` lists the origins of
+  the last `FRAME_HISTORY_EPOCHS` = 8 epochs in the current frame), so a holder need not see every snapshot.
+- `rebaseHeldAt(rebase, age)`: `offset - velocity * age`, the same velocity. `age` 0 returns the rebase itself.
+- `rebaseSnapshot(snapshot, rebase)`: a whole snapshot (bodies, vessels, explosion events) in the new frame.
+- In `resetTemporal()` (a frame-exact capture) reset the tracker (`epochs.reset()`) with the rest of your history.
+- Holders in the tree today: the core (previous snapshot and camera), the vessel feature (ghosts of vessels
+  that left the snapshot), the view manager (the presented camera a blend starts from). Looked at and holding
+  nothing in ROOT across frames: terrain, ocean, atmosphere, sky, shadows, effects (the effect domain is
+  body-relative), the chase, cockpit and map rigs, the map scene.
+
+**To test a holder.** Lab query `&frameorigin=<body id>` (every `createLabApp` page; `translateFrame` of
+`@/render/core/lab`) hands the renderer the same frame about that body's centre: a feature that depends on
+the origin shows a different picture. The integration lab has `&origin=root|focus` (the fake session's render
+root) and `window.__integration.setRenderRoot(bodyId)` (a replacement between two frames). Unit tests of the
+arithmetic: `tests/unit/fakes/frameAccess.test.ts`.
+
+### 19.2 `CoreRenderer.readVelocity()`
+
+```ts
+readVelocity(): Promise<{ width: number; height: number; data: Float32Array }>
+```
+
+The velocity target (RT3, rg16float) of the frame last rendered, at the internal resolution: two floats per
+pixel, row 0 = top, UV-space velocity `current - previous` (x right, y down; what a pixel moved since the
+previous frame, as TAA reads it; 0 where nothing wrote a velocity). A readback that waits for the GPU: for
+tests (the origin test compares it across a replacement of the origin), never per frame.
+
+### 19.3 The UI scrim step
+
+Menu panels are DOM over the canvas; their blurred backdrop is drawn by the core (CSS `backdrop-filter`
+over the canvas is banned, ARCHITECTURE 18.8). Whoever owns the panels publishes their rectangles:
+
+```ts
+import { UI_SCRIM_BYTES } from '@/core/contracts/render';
+import { packScrimRects, type UiScrimRect } from '@/render/core';
+
+const buffer = device.createBuffer({ label: 'menu.scrimRects', size: UI_SCRIM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+renderer.resources.publish('ui.scrimRects', buffer);            // once
+// whenever a panel moves, fades or closes (also every frame of an animation):
+device.queue.writeBuffer(buffer, 0, packScrimRects(rects));     // rects: readonly UiScrimRect[], at most UI_SCRIM_SLOTS = 8
+```
+
+`UiScrimRect { x0, y0, x1, y1, cornerRadius, blur, dim, opacity }`: the rectangle in DEVICE pixels of the
+canvas, origin top-left (CSS pixels times the canvas's device pixel ratio); `cornerRadius` in device pixels
+(clamped to half the shorter side); `blur` 0..1; `dim` 0..1 multiplies the backdrop's luminance; `opacity`
+0..1 cross-fades the scrim over the sharp scene (fade a panel in with it: at 0 the rectangle changes
+nothing). The edge is one pixel of coverage wide (anti-aliased, rounded corners included). Rectangles may
+overlap; a later one is laid over an earlier one. A rectangle without an area covers nothing. More than eight
+is an error in `packScrimRects` (a ninth panel would silently have no backdrop). The layout of the buffer is
+the contract's (`UI_SCRIM_SLOTS`, `UI_SCRIM_BYTES` in `src/core/contracts/render.ts`).
+
+**Where it happens.** In the tonemap pass (`core.tonemap`, `src/render/core/post/tonemap.ts`), on the
+scene-linear, pre-exposed image after sharpening and the bloom mix and BEFORE the display transform, so a
+backdrop is toned, dithered and exposed like the scene around it; overlays (`drawOverlay`) are drawn after
+it and are not blurred. `c = mix(c, backdrop(uv, blur) * dim, coverage * opacity)` per rectangle.
+
+**What `blur` is.** The backdrop is read from the DOWN chain of the bloom, which the frame builds anyway
+(level `l` = the resolved image at `1 / 2^(l + 1)` of the display size, each a 13-tap average of the one
+before). The scrim binds `SCRIM_LEVELS` = 6 of them, the widest six of the chain (`scrimLevelIndices`), and
+`blur * 5` is a fractional index into them: the two nearest are mixed, each read through a four-tap tent so
+that the texel grid of a small level does not show. The chain is counted from the frame height
+(`bloomLevelCount`), so a `blur` is as wide RELATIVE TO THE FRAME at every resolution: at `blur` 0 a texel of
+the level is 1/360 of the frame height (the image softened by two pixels at 720p, four at 1440p), at 0.6
+1/45 of it (frosted glass), at 1 it is 1/11 of it (shapes and colours only).
+
+**Cost** (`tests/browser/render-core/scrim.perf.spec.ts`, 2560 x 1440, RTX 5090, GPU at the load of a real
+frame; the line of ARCHITECTURE is 0.1 ms with four rectangles). No rectangle (a zero header: the default of
+the key, or `packScrimRects([])`): one branch on a uniform; `core.tonemap` takes 0.032 ms, the same in two
+alternating series; the reference images do not move and the budget table's rows are unchanged. Four
+rectangles covering 57 % of the frame: 0.109 ms, so the scrim costs **0.077 ms**. One rectangle WITHOUT AN
+AREA: 0.104 ms. The cost is therefore that of having ANY rectangle, not of the area covered or of their
+number: once the header is not zero the compiled shader evaluates the taps of all eight slots for every
+pixel (the conditions inside the loop are flattened by the shader compiler; only the branch on the header is
+a real one). It scales with the display's pixels (about 0.17 ms at 4K). A menu that fades its last panel out
+should publish an empty list (or reset the key) when the fade is done, not leave rectangles of opacity 0.
+
+**Lab.** `window.__lab.setScrim(rects | null)` on every `createLabApp` page publishes rectangles as a menu
+will. Spec and pictures over the live pad scene: `tests/browser/integration/menu-core.spec.ts`
+(`out/screens/presentation-sweep/menu-core/scrim-*.png`). Unit tests of the layout, the levels and the
+coverage: `tests/unit/render-core/scrim.test.ts`.
+
+### 19.4 `CameraState.exposureHint`
+
+```ts
+exposureHint?: { targetEv100: number; rateEvPerS: number } | null
+```
+
+A rig that knows where the picture is going (the menu-to-pad transit) states the exposure to head for.
+While a camera carries a hint, the exposure moves towards `targetEv100` by at most `rateEvPerS` times the
+frame's time (linearly in EV: the rig states the rate; the frame's time is capped at 0.1 s as everywhere in
+the meter) and lands exactly on it; the meter keeps reading the scene but its target is not followed, and
+`exposureCompensation` and `minEv100` do not apply (the hint IS the exposure asked for). `rateEvPerS` 0 holds
+the exposure where it is; `Infinity` is a cut to the target. When the hint ends (absent or null) the
+exposure adapts from where it is to the metered target as it always does. In the first frame of a renderer
+(nothing to move from) the exposure is on the hint's target at once.
+
+- Not a hint (the scene is metered): absent, null, a target that is not a finite number, a rate that is
+  negative or not a number (`exposureHintOf`).
+- Precedence: `setExposureOverride` (the labs' `ev=`) > the hold of a frame-exact capture > the hint > the
+  meter. A frame-exact capture (`renderExact`) with a hint holds the hint's target.
+- `exposureInfo().hint` is the hint the last frame followed, or null; `targetEv100` there stays the meter's.
+- The view manager hands on the hint of the view a blend goes TO for the whole blend.
+- Pure functions: `exposureHintOf(camera)`, `followExposureHint(current, targetEv100, rateEvPerS, dt)` (exported).
+- Lab: `&evhint=<EV100>,<EV per second>` or `__lab.camera.settings.exposureHint = { ... }`.
+
+### 19.5 `CameraState.lensShift`
+
+```ts
+lensShift?: [number, number]      // fraction of the half viewport, x right, y up; absent = [0, 0]
+```
+
+A shift lens: the whole picture moves by that fraction of the half viewport, so a rig can stand its subject
+beside a menu panel without turning the camera. `[0.25, 0]` puts what was in the centre a quarter of the
+half width (an eighth of the width) to the right. The view axis, the field of view, the perspective and the
+depth are unchanged; the frame simply shows another window of the same image plane. The core holds each
+component within -1..1 (the view axis stays inside the frame) and ignores a shift that is not two finite
+numbers (`lensShiftOf(camera)`).
+
+**In the core.** `proj` and `projUnjittered` carry the shift the way the jitter is carried (`clip.xy += shift
+* clip.w`; `buildProjection(fovY, w, h, jitterPx, lensShift)`), so everything that is rasterised or
+projected with `frame.viewProj`, `frame.viewProjUnjittered` or `frame.prevViewProj` follows by itself,
+motion vectors included (a shift that changes from one frame to the next is motion of the whole picture).
+`frame.lensShift.xy` (new member of `FrameUniforms`, after `jitter`) is the shift in NDC units. Rays: `viewRay(uv)`
+and the new `ndcRay(ndc)` of the frame chunk subtract it; `cameraRight.w` / `cameraUp.w` are still the
+tangents of half the field of view (the size of a pixel does not change) and `cameraForward` is still the
+view axis (view depth = `dot(p, cameraForward.xyz)`).
+
+**Rules for a feature.**
+- A ray from a screen position: `viewRay(uv)` or `ndcRay(ndc)`, never `cameraForward + right * ndc.x * tan
+  + ...` by hand (three shaders did; they call `ndcRay` now).
+- A screen position from a view-space point: the matrices, or `ndc = tangent / tanHalf + shift` (CPU:
+  `(m[0] * x + m[8] * z) / -z` with `m = frame.projUnjittered`; `m[8]`, `m[9]` are minus the shift).
+- Culling against the camera's frustum: the frustum is NOT symmetric about the view axis under a shift.
+  `frustumTangents(tanX, tanY, lensShiftOf(frame.camera))` gives the four sides (`-left * depth <= x <= right
+  * depth`, `-bottom * depth <= y <= top * depth`); without a shift left = right = tanX, to the bit.
+
+**Who honours it (each looked at):** the core (projection, uniforms, TAA's sky reprojection, mesh culling of
+every `MeshBatch`, the meter's "lit object in view" and "sun in frame"); terrain (the frustum of the
+selection, and with it the cover and the rocks); ocean (patch culling); atmosphere (the screen bounds of the
+march and of the clouds, the cloud rays and their reprojection); sky (stars, bodies, sun disc: through the
+matrices and `viewRay`; the lens flare places its ghosts about the centre of the FRAME, as without a shift,
+and their bounds follow the shift); vfx (the smoke's screen rectangle, the emitter hints; particles, plumes
+and trails are rasterised with the matrices); vehicle, site structures and cockpit (mesh batches and the
+matrices); shadows (cascades are anchored on bodies and vessels, not fitted to the frustum); the map's 2D
+projection (`MapProjection`: principal point and matrix), so markers and labels stay on their objects.
+**Not done:** `src/app/framing.ts` (the test hooks `bodiesInFrame` / `groundSamples` of the app) assumes no
+shift; the HUD's navball and the cockpit displays are screen-fixed and do not move with it (by design).
+
+Proof: `tests/browser/integration/menu-core.spec.ts`, the pad at noon shifted by 128 x 64 pixels against the
+unshifted frame, where both show the scene (755,056 pixels). The GEOMETRY is the unshifted frame's moved by
+128 x 64 pixels: the depth buffers differ by more than a thousandth in 4 pixels (0.001 %; 9.4 % would against
+the pixel beside the right one). The PICTURE is the same to the bit in 51.4 % of those pixels and differs by
+1.10 levels in the mean (6.01 for a shift one pixel off), by more than 8 levels in 2.4 %: all on thin things
+(lattice members, the fence, bushes, cloud edges; the open ground is the same). There the lit scene already
+differs before the temporal resolve (more than a twentieth in 5.3 % of the pixels) although the depth is the
+same, so it is the lighting of fine detail, not its place: the most likely cause, not followed further, is
+the per-pixel stochastic sampling (shadow kernels, march offsets), which is tied to the pixel of the frame,
+not to the point of the scene. The strips the shift brings into the frame (terrain, sea, sky, the pad's
+structures) are drawn: no black pixel. Unit tests: `tests/unit/render-core/frameMath.test.ts` ("lens shift").
+Lab: `&lensshift=<x>,<y>` or `__lab.camera.settings.lensShift = [x, y]`. The view manager blends the shift
+between two views.
+
+### 19.6 The terrain feature's tile source
+
+```ts
+createTerrainFeature(ctx, terrainProviderFactory, { tileSource?: TileSourceSpec, ... })
+```
+
+Where the terrain reads its tiles is plain data (`TileSourceSpec` of `src/core/contracts/terrain.ts`,
+ARCHITECTURE 10.2): `{ kind: 'fetch', baseUrl }` (plain files; the default is `ctx.tilesUrl`, so a page that
+passes nothing asks for the same URLs as before) or `{ kind: 'pack', packListUrl, cache? }` (packs from the
+mirrors of a pack list, with the OPFS cache in front when asked for). The feature turns the one spec into a
+`TileSource` (`createTileSource` of `src/terrain/tileSource.ts`) on the main thread, for what it reads
+itself (manifests, the low-resolution colour map as a file of the set, the land cover of the ground cover),
+and hands it to every tile worker in its init message (`WorkerInit.source`, URLs made absolute), which does
+the same. A tile job asks for all of its reads in one turn (heights, albedo, water mask, land cover, the
+tile's night image), because a pack source collects what is asked together into one ranged request. The
+sets a source serves are listed by it (`listTileSets`: the dev server's `<baseUrl>/index.json`, or the sets
+of the pack list). Give the height authority of `terrainProviderFactory` a source of the same spec.
+
+Proof: `tests/browser/terrain/source.spec.ts`, inside the local stack: seven views of Earth and the Moon
+through a `fetch` spec and through a `pack` spec are the same frames to the bit, and the pack page asks the
+page's server for no tile file. Terrain lab: `&source=pack&packs=<pack list URL>[&opfs=<bytes>]`.
+
+Not through the seam (they read `ctx.tilesUrl` themselves, files of a tile set, not tiles): the clouds'
+coverage map (`src/render/atmosphere/clouds.ts`), the sky probe's low-resolution albedo
+(`src/render/sky/probe.ts`) and the LabPlanet (`src/render/core/lab/labPlanet.ts`). A page that has only
+packs needs them moved to `TileSource.file(set, path)`; `RenderContext` has no tile source to give them
+(request `presentation-sweep-7`).
+
+### 19.7 Changes of sub-wave 3.2
+
+| Change | Affects | Migration |
+|---|---|---|
+| The previous frame's snapshot and camera are rebased at a new frame epoch (19.1) | every feature that reads `frame.prevSnapshot` / `prevEyeOffset`; holders of ROOT positions | A holder rebases with `observeFrame` / `rebaseHeldAt` |
+| `CoreRenderer.readVelocity()` (19.2) | tests | None |
+| UI scrim step in `core.tonemap`; `packScrimRects`, `UiScrimRect`, `SCRIM_LEVELS`, `scrimLevelIndices`, `scrimLevelOf`, `scrimCoverage`; `LabApp.setScrim` (19.3) | the menu and settings packages | None without rectangles |
+| `CameraState.exposureHint` honoured; `exposureHintOf`, `followExposureHint`; `ExposureInfo.hint` (19.4) | camera rigs | None without a hint |
+| `CameraState.lensShift` honoured; `FrameUniforms.lensShift` (the struct grew by one vec4: `OFFSET.bodies` 164 -> 168, 3024 -> 3040 bytes); chunk function `ndcRay(ndc)`; `lensShiftOf`, `frustumTangents`; `buildProjection(..., lensShift)`, `Projection.lensShift` (19.5) | every feature that forms rays or culls by hand | Rays through `viewRay` / `ndcRay`; culling through `frustumTangents` |
+| `TerrainFeatureOptions.tileSource`; `WorkerInit.source` replaces `tilesUrl`; `TileStreamer(ctx, defs, bodyIds, options, source?)`; `loadLowResAlbedo(source, manifest, meanColor)` (was `tilesUrl`); `TileResult.bakeMs` / `imageMs` are the job's time until the bake is done and what the images took beyond it (19.6) | the app shell, the terrain lab | None for the default |
+| Lab camera: `&lensshift=`, `&evhint=`, `LabCameraSettings.lensShift` / `exposureHint`; lab app: `&frameorigin=` | labs | None |

@@ -31,6 +31,13 @@ import { buildAudioListener, buildLodObservers } from './listener';
 
 export const VIEW_BLEND_SECONDS = 0.6;
 
+/** A lens shift between two views (absent = none), a share `k` of the way from the first to the second. */
+function blendShift(from: readonly [number, number] | undefined, to: readonly [number, number] | undefined, k: number): [number, number] {
+  const a = from ?? [0, 0];
+  const b = to ?? [0, 0];
+  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+}
+
 export interface ViewManagerOptions {
   defs: DefLibrary;
   /** Mode presented first (default: the first rig). */
@@ -207,6 +214,10 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
       exposureCompensation: fs.exposureCompensation + (to.exposureCompensation - fs.exposureCompensation) * k,
       minEv100: fs.minEv100 !== null && to.minEv100 !== null ? fs.minEv100 + (to.minEv100 - fs.minEv100) * k : second.minEv100,
       fillLight: fs.fillLight + (to.fillLight - fs.fillLight) * k,
+      // The lens shift moves with the blend; the exposure hint is the one of the view blended to (its rig
+      // drives the exposure along the way). Neither is stated when neither view states it.
+      ...(fs.lensShift || to.lensShift ? { lensShift: blendShift(fs.lensShift, to.lensShift, k) } : {}),
+      ...(to.exposureHint !== undefined ? { exposureHint: to.exposureHint } : {}),
     };
   };
 

@@ -71,8 +71,7 @@ fn cloudNoiseVec(bi: u32, v: vec3f) -> vec3f {
 /// Camera-relative ray through the centre of the pixel at 'uv' WITHOUT the sub-pixel TAA jitter (unit
 /// component along the view axis). The cloud buffers are rendered and reprojected on this fixed lattice.
 fn cloudViewRay(uv: vec2f) -> vec3f {
-  let ndc = vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-  return frame.cameraForward.xyz + frame.cameraRight.xyz * (ndc.x * frame.cameraRight.w) + frame.cameraUp.xyz * (ndc.y * frame.cameraUp.w);
+  return ndcRay(vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0));
 }
 
 /// Share of the shape-noise amplitude that the mip level 'lod' has averaged away (0 = none, 1 = all).
@@ -1174,7 +1173,7 @@ const NO_CLOUD = vec3f(3.0e38, 3.0e38, 3.0e38);
     // the previous eye. Where there is no cloud the direction alone is reprojected (a far point). The cloud
     // buffers live on the unjittered pixel lattice, so the previous position is a history texel position.
     let ndc = vec2f((f32(hp.x) + 0.5) * atmo.halfSize.z * 2.0 - 1.0, 1.0 - (f32(hp.y) + 0.5) * atmo.halfSize.w * 2.0);
-    let ray = frame.cameraForward.xyz + frame.cameraRight.xyz * (ndc.x * frame.cameraRight.w) + frame.cameraUp.xyz * (ndc.y * frame.cameraUp.w);
+    let ray = ndcRay(ndc);
     let p = normalize(ray) * min(geomNow.b, 2.0e7);
     let prev = p + vec3f(dot(atmo.reproj0.xyz, p), dot(atmo.reproj1.xyz, p), dot(atmo.reproj2.xyz, p)) + atmo.reprojT.xyz;
     let clip = frame.prevViewProj * vec4f(prev, 1.0);

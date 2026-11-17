@@ -7,7 +7,7 @@
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import { oceanSwellHeight } from '@/core/geo/oceanSwell';
 import { quat, v3, type Vec3 } from '@/core/math';
-import { coreOf, createSceneBindings, f32ToF16, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
+import { coreOf, createSceneBindings, f32ToF16, lensShiftOf, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
 import { buildCascades, type OceanCascadeSet } from './cascades';
 import { buildFarWaves } from './farWaves';
 import { OceanFft } from './fft';
@@ -465,6 +465,7 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
   /** Frustum test of a patch box (chart corner relative to the anchor, size) in camera-relative ROOT space. */
   const makeVisible = (frame: FrameContext, chart: OceanChart, ref: ChartReference, q: (v: Vec3) => Vec3, refRel: Vec3): ((x0: number, y0: number, size: number, zMin: number, zMax: number) => boolean) => {
     const scales = [frame.projUnjittered[0]!, frame.projUnjittered[5]!];
+    const shift = lensShiftOf(frame.camera);
     const view = frame.view;
     return (x0, y0, size, _zMin, zMax) => {
       const off = sphereOffset(chart, ref, x0 + size / 2 - ref.x, y0 + size / 2 - ref.y);
@@ -476,12 +477,14 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       const radius = size * 0.7072 + zMax + (size * size) / (8 * chart.radius) + 1;
       const depth = -vz;
       if (depth < -radius) return false;
-      // Side planes of the symmetric frustum (|x| s <= depth), distances normalised.
+      // Side planes of the frustum (-(1 + shift) depth <= x s <= (1 - shift) depth: symmetric without a lens
+      // shift), distances normalised.
       for (let k = 0; k < 2; k++) {
         const s = scales[k]!;
         const coord = k === 0 ? vx : vy;
-        const nrm = Math.hypot(1, s);
-        if ((s * coord - depth) / nrm > radius || (-s * coord - depth) / nrm > radius) return false;
+        const far = 1 - shift[k]!;
+        const near = 1 + shift[k]!;
+        if ((s * coord - depth * far) / Math.hypot(far, s) > radius || (-s * coord - depth * near) / Math.hypot(near, s) > radius) return false;
       }
       return true;
     };

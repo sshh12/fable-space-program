@@ -50,6 +50,10 @@ export interface LabCameraSettings {
   exposureCompensation: number;
   minEv100: number | null;
   fillLight: number;
+  /** CameraState.lensShift (a fraction of the half viewport, x right, y up); null = not stated. */
+  lensShift: [number, number] | null;
+  /** CameraState.exposureHint; null = not stated (the scene is metered). */
+  exposureHint: { targetEv100: number; rateEvPerS: number } | null;
 }
 
 /** View orientation from a forward direction and an approximate up, both in ROOT axes. */
@@ -81,7 +85,7 @@ export class LabCamera {
     private readonly defs: DefLibrary,
   ) {
     this.spec = spec;
-    this.settings = { fovY: 60 * DEG, kind: 'external', exposureCompensation: 0, minEv100: null, fillLight: 0, ...settings };
+    this.settings = { fovY: 60 * DEG, kind: 'external', exposureCompensation: 0, minEv100: null, fillLight: 0, lensShift: null, exposureHint: null, ...settings };
   }
 
   /** window.__test.setCameraOrbit: orbit the current target (the active vessel unless the camera already orbits something). */
@@ -189,10 +193,21 @@ export class LabCamera {
       exposureCompensation: this.settings.exposureCompensation,
       minEv100: this.settings.minEv100,
       fillLight: this.settings.fillLight,
+      ...(this.settings.lensShift ? { lensShift: this.settings.lensShift } : {}),
+      ...(this.settings.exposureHint ? { exposureHint: this.settings.exposureHint } : {}),
     };
   }
 }
 
+/** Two numbers of a query parameter (`a,b`), or null when it is absent or is not two numbers. */
+const pairOf = (p: URLSearchParams, key: string): [number, number] | null => {
+  const v = p.get(key)?.split(',').map(Number);
+  return v && v.length === 2 && v.every(Number.isFinite) ? [v[0]!, v[1]!] : null;
+};
+const hintOf = (p: URLSearchParams): { targetEv100: number; rateEvPerS: number } | null => {
+  const v = pairOf(p, 'evhint');
+  return v ? { targetEv100: v[0], rateEvPerS: v[1] } : null;
+};
 const num = (p: URLSearchParams, key: string, fallback: number): number => {
   const v = p.get(key);
   if (v === null || v === '') return fallback;
@@ -210,7 +225,8 @@ const tuple = (v: string | null, fallback: Vec3Tuple): Vec3Tuple => {
  *   body=<id>&lat=&lon=&alt=&heading=&pitch=          on a body surface (degrees, metres)
  *   vessel=<id|active>&offset=x,y,z[&look=x,y,z]      relative to a vessel, VES frame
  *   orbit=yawDeg,pitchDeg,distance[&target=vessel:<id>|body:<id>|site:<body>,<lat>,<lon>,<alt>]
- * plus fov=<deg>, kind=interior|external|map, ec=<EV>, minev=<EV100>, fill=<fraction>.
+ * plus fov=<deg>, kind=interior|external|map, ec=<EV>, minev=<EV100>, fill=<fraction>,
+ * lensshift=<x>,<y> (CameraState.lensShift) and evhint=<EV100>,<EV per second> (CameraState.exposureHint).
  * Without any of them: orbit the active vessel at 3 bounding radii.
  */
 export function labCameraFromQuery(params: URLSearchParams, snapshot: SimSnapshot, defs: DefLibrary): LabCamera {
@@ -220,6 +236,8 @@ export function labCameraFromQuery(params: URLSearchParams, snapshot: SimSnapsho
     exposureCompensation: num(params, 'ec', 0),
     minEv100: params.has('minev') ? num(params, 'minev', 0) : null,
     fillLight: num(params, 'fill', 0),
+    lensShift: pairOf(params, 'lensshift'),
+    exposureHint: hintOf(params),
   };
   let spec: LabCameraSpec;
   if (params.has('body')) {

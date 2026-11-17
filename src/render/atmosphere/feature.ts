@@ -13,7 +13,7 @@
  */
 import type { BodyDef } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
-import { cameraBasis, coreOf, f16ToF32, MAX_BODIES, readTexturePixels, type CoreApi, type ManagedTarget, type TemporalFeature, type Tracked } from '@/render/core';
+import { cameraBasis, coreOf, f16ToF32, lensShiftOf, MAX_BODIES, readTexturePixels, type CoreApi, type ManagedTarget, type TemporalFeature, type Tracked } from '@/render/core';
 import { airglowShows, resolveAirglow, type AirglowLayer } from './airglow';
 import { CloudSystem, type CoverageImage } from './clouds';
 import { AERIAL_SIZE, MULTISCATTER_LUT_SIZE, SKY_IRRADIANCE_LUT_SIZE, SKY_VIEW_LUT_SIZE, TRANSMITTANCE_LUT_SIZE } from './math';
@@ -357,7 +357,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       const basis = cameraBasis(frame.camera);
       const [rw, rh] = frame.renderSize;
       const tanY = Math.tan(frame.camera.fovY / 2);
-      selection = selectMarchBodies(layers, frame.bodies, ctx.defs, { ...basis, tanHalfFovX: (tanY * rw) / rh, tanHalfFovY: tanY }, {
+      selection = selectMarchBodies(layers, frame.bodies, ctx.defs, { ...basis, tanHalfFovX: (tanY * rw) / rh, tanHalfFovY: tanY, lensShift: lensShiftOf(frame.camera) }, {
         baseSteps: ctx.quality.atmosphereSteps,
         qualityScale: frame.qualityScale,
         renderHeight: rh,

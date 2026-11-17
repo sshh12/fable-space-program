@@ -28,6 +28,7 @@ import type { CoreApi } from '../coreApi';
 import type { Perf } from '../perf';
 import type { CoreShaderLibrary, Tracked } from '../shaders/library';
 import { createTextureChecked } from '../util/gpu';
+import { scrimLevelIndices } from './scrim';
 
 export interface PostInputs {
   hdr: GPUTextureView;
@@ -45,6 +46,8 @@ export interface PostInputs {
 export interface PostOutputs {
   color: GPUTextureView;
   bloom: GPUTextureView;
+  /** The levels of the bloom's down chain the UI scrim reads, finest first (scrim.ts: SCRIM_LEVELS of them). */
+  scrimLevels: readonly GPUTextureView[];
   bloomMix: number;
   sharpness: number;
 }
@@ -183,7 +186,7 @@ fn historyCatmullRom(uv: vec2f) -> vec3f {
   if (closest == 0.0) {
     // Sky: no geometry wrote a velocity; reproject the view direction (camera rotation only).
     let ndc = vec2f(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0);
-    let dir = frame.cameraForward.xyz + frame.cameraRight.xyz * (ndc.x * frame.cameraRight.w) + frame.cameraUp.xyz * (ndc.y * frame.cameraUp.w);
+    let dir = ndcRay(ndc);
     let prev = frame.prevViewProj * vec4f(dir, 0.0);
     velocity = select(vec2f(0.0), (ndc - prev.xy / prev.w) * vec2f(0.5, -0.5), prev.w > 1e-6);
   }
@@ -283,6 +286,7 @@ export class PostProcess {
   private up: GPUTexture[] = [];
   private downViews: GPUTextureView[] = [];
   private upViews: GPUTextureView[] = [];
+  private scrimViews: GPUTextureView[] = [];
   private downGroups: GPUBindGroup[] = [];
   private upGroups: GPUBindGroup[] = [];
   private upUniforms: GPUBuffer[] = [];
@@ -346,6 +350,7 @@ export class PostProcess {
     }
     this.downViews = this.down.map((t) => t.createView());
     this.upViews = this.up.map((t) => t.createView());
+    this.scrimViews = scrimLevelIndices(this.levels).map((l) => this.downViews[l]!);
     this.downGroups = [];
     this.upGroups = [];
     this.taaGroups = [null, null];
@@ -424,6 +429,6 @@ export class PostProcess {
       pass.draw(3);
       pass.end();
     }
-    return { color: resolved, bloom: this.upViews[0]!, bloomMix: BLOOM_MIX, sharpness: RCAS_SHARPNESS };
+    return { color: resolved, bloom: this.upViews[0]!, scrimLevels: this.scrimViews, bloomMix: BLOOM_MIX, sharpness: RCAS_SHARPNESS };
   }
 }

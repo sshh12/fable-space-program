@@ -2,9 +2,15 @@
  * Final pass to the canvas: RCAS sharpening of the resolved image, bloom mix, AgX tonemap with a mild
  * "punchy" look and a linear, hue-preserving toe, sRGB OETF and triangular blue-noise dither. The LDR overlay
  * hooks draw into the same canvas attachment afterwards.
+ *
+ * The UI scrim step (scrim.ts; ARCHITECTURE 18.8) is part of this pass: inside the rectangles of
+ * 'ui.scrimRects' the scene, before the display transform, is cross-faded to a blurred and dimmed copy of
+ * itself read from the bloom's down chain. With no rectangle (a zero header, the default) the pass takes one
+ * branch on a uniform and does the arithmetic it always did.
  */
-import type { RenderContext } from '@/core/contracts/render';
+import { UI_SCRIM_BYTES, UI_SCRIM_SLOTS, type RenderContext } from '@/core/contracts/render';
 import type { CoreShaderLibrary, Tracked } from '../shaders/library';
+import { SCRIM_LEVELS } from './scrim';
 
 // --------------------------------------------------------------------------- the display transform on the CPU
 // The same arithmetic as the WGSL below, for the unit tests and for the constant of the toe.
@@ -75,7 +81,11 @@ export function displayLinear(c: Rgb): [number, number, number] {
 /** sRGB OETF of one channel, 0..1. */
 export const srgbEncode = (x: number): number => (x <= 0.0031308 ? x * 12.92 : 1.055 * x ** (1 / 2.4) - 0.055);
 
-const TONEMAP_FS = /* wgsl */ `
+/** Bindings of the scrim's levels in group 1: SCRIM_LEVEL_BINDING + i for scrim level i. */
+const SCRIM_LEVEL_BINDING = 4;
+const scrimLevels = Array.from({ length: SCRIM_LEVELS }, (_, i) => i);
+
+export const TONEMAP_WGSL = /* wgsl */ `
 #include "frame"
 #include "fullscreen"
 struct TonemapUniforms {
@@ -85,6 +95,15 @@ struct TonemapUniforms {
 @group(1) @binding(0) var<uniform> tm: TonemapUniforms;
 @group(1) @binding(1) var sceneTex: texture_2d<f32>;
 @group(1) @binding(2) var bloomTex: texture_2d<f32>;
+// The UI scrim ('ui.scrimRects', layout in the render contract): rect = x0, y0, x1, y1 in device pixels of the
+// canvas (origin top-left); look = corner radius (px), blur 0..1, dim 0..1, opacity 0..1.
+struct ScrimRect { rect: vec4f, look: vec4f }
+struct ScrimUniforms {
+  header: vec4f,   // x = rectangles in use
+  rects: array<ScrimRect, ${UI_SCRIM_SLOTS}>,
+}
+@group(1) @binding(3) var<uniform> scrim: ScrimUniforms;
+${scrimLevels.map((i) => `@group(1) @binding(${SCRIM_LEVEL_BINDING + i}) var scrimLevel${i}: texture_2d<f32>;`).join('\n')}
 
 fn agxContrast(x: vec3f) -> vec3f {
   let x2 = x * x;
@@ -126,6 +145,41 @@ fn srgbOetf(c: vec3f) -> vec3f {
 fn compress(c: vec3f) -> vec3f { return c / (1.0 + max(c.r, max(c.g, c.b))); }
 fn expand(c: vec3f) -> vec3f { return c / max(1.0 - max(c.r, max(c.g, c.b)), 1e-4); }
 
+/// One level of the bloom's down chain at 'uv' through a four-tap tent (half a texel each way): the texel
+/// grid of a level a few dozen texels across does not show in the backdrop.
+fn scrimTent(level: texture_2d<f32>, uv: vec2f) -> vec3f {
+  let o = 0.5 / vec2f(textureDimensions(level));
+  return 0.25 * (textureSampleLevel(level, linearClamp, uv + vec2f(-o.x, -o.y), 0.0).rgb + textureSampleLevel(level, linearClamp, uv + vec2f(o.x, -o.y), 0.0).rgb
+    + textureSampleLevel(level, linearClamp, uv + vec2f(-o.x, o.y), 0.0).rgb + textureSampleLevel(level, linearClamp, uv + vec2f(o.x, o.y), 0.0).rgb);
+}
+fn scrimTap(level: i32, uv: vec2f) -> vec3f {
+  switch level {
+${scrimLevels.slice(0, -1).map((i) => `    case ${i} { return scrimTent(scrimLevel${i}, uv); }`).join('\n')}
+    default { return scrimTent(scrimLevel${SCRIM_LEVELS - 1}, uv); }
+  }
+}
+/// The scene blurred as wide as 'blur' asks (0 = the finest scrim level, 1 = the widest level of the bloom
+/// chain): the two nearest levels, mixed.
+fn scrimBackdrop(uv: vec2f, blur: f32) -> vec3f {
+  let l = clamp(blur, 0.0, 1.0) * ${(SCRIM_LEVELS - 1).toFixed(1)};
+  let lo = min(i32(l), ${SCRIM_LEVELS - 1});
+  let f = l - f32(lo);
+  let a = scrimTap(lo, uv);
+  if (f <= 0.0) { return a; }
+  return mix(a, scrimTap(min(lo + 1, ${SCRIM_LEVELS - 1}), uv), f);
+}
+/// Share of the pixel centred at 'px' that a rectangle's scrim covers (scrim.ts scrimCoverage): one inside,
+/// a one-pixel ramp across the edge of the rounded rectangle.
+fn scrimCover(r: ScrimRect, px: vec2f) -> f32 {
+  let half = 0.5 * (r.rect.zw - r.rect.xy);
+  // A rectangle without an area covers nothing (not a hairline along its edge).
+  if (min(half.x, half.y) <= 0.0) { return 0.0; }
+  let radius = min(max(r.look.x, 0.0), min(half.x, half.y));
+  let q = abs(px - 0.5 * (r.rect.xy + r.rect.zw)) - half + vec2f(radius);
+  let sd = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+  return clamp(0.5 - sd, 0.0, 1.0);
+}
+
 @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
   let size = vec2i(textureDimensions(sceneTex));
   let ip = clamp(vec2i(in.uv * vec2f(size)), vec2i(0), size - 1);
@@ -147,6 +201,17 @@ fn expand(c: vec3f) -> vec3f { return c / max(1.0 - max(c.r, max(c.g, c.b)), 1e-
   }
   let bloom = textureSampleLevel(bloomTex, linearClamp, in.uv, 0.0).rgb;
   c = mix(c, bloom, tm.params.x);
+  // The UI scrim: scene-linear, before the display transform, so a panel's backdrop is toned like the scene.
+  let scrimCount = min(u32(scrim.header.x), ${UI_SCRIM_SLOTS}u);
+  if (scrimCount > 0u) {
+    for (var i = 0u; i < scrimCount; i++) {
+      let r = scrim.rects[i];
+      let cover = scrimCover(r, in.position.xy) * clamp(r.look.w, 0.0, 1.0);
+      if (cover > 0.0) {
+        c = mix(c, scrimBackdrop(in.uv, r.look.y) * clamp(r.look.z, 0.0, 1.0), cover);
+      }
+    }
+  }
   var o = srgbOetf(displayTransform(c));
   let n = blueNoise(vec2u(in.position.xy));
   o += vec3f((n.x + n.y - 1.0) * tm.params.z / 255.0);
@@ -161,6 +226,8 @@ export class Tonemap {
   private group: GPUBindGroup | null = null;
   private scene: GPUTextureView | null = null;
   private bloom: GPUTextureView | null = null;
+  private scrimRects: GPUBuffer | null = null;
+  private scrimViews: readonly GPUTextureView[] = [];
 
   constructor(
     private readonly ctx: RenderContext,
@@ -173,11 +240,13 @@ export class Tonemap {
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: UI_SCRIM_BYTES } },
+        ...scrimLevels.map((i): GPUBindGroupLayoutEntry => ({ binding: SCRIM_LEVEL_BINDING + i, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } })),
       ],
     });
     this.uniform = device.createBuffer({ label: 'tonemap', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.pipeline = shaders.tracked(() => {
-      const module = shaders.createModule('core.tonemap', TONEMAP_FS);
+      const module = shaders.createModule('core.tonemap', TONEMAP_WGSL);
       return device.createRenderPipeline({
         label: 'core.tonemap',
         layout: device.createPipelineLayout({ bindGroupLayouts: [ctx.frameBindGroupLayout, this.layout] }),
@@ -192,13 +261,26 @@ export class Tonemap {
     return [this.pipeline];
   }
 
-  /** `scene`: pre-exposed linear image at any resolution; `bloom`: blurred image to mix in (or a black texture). */
-  draw(pass: GPURenderPassEncoder, scene: GPUTextureView, bloom: GPUTextureView, params: { bloomMix: number; sharpness: number; dither: number }): void {
+  /**
+   * `scene`: pre-exposed linear image at any resolution; `bloom`: blurred image to mix in (or a black texture);
+   * `scrim`: the buffer published as 'ui.scrimRects' and the SCRIM_LEVELS levels of the bloom's down chain the
+   * scrim reads, finest first (PostOutputs.scrimLevels).
+   */
+  draw(
+    pass: GPURenderPassEncoder,
+    scene: GPUTextureView,
+    bloom: GPUTextureView,
+    params: { bloomMix: number; sharpness: number; dither: number },
+    scrim: { rects: GPUBuffer; levels: readonly GPUTextureView[] },
+  ): void {
     const device = this.ctx.device;
+    if (scrim.levels.length !== SCRIM_LEVELS) throw new Error(`tonemap: ${scrim.levels.length} scrim levels, the pass binds ${SCRIM_LEVELS}`);
     device.queue.writeBuffer(this.uniform, 0, new Float32Array([params.bloomMix, params.sharpness, params.dither, 0]));
-    if (!this.group || this.scene !== scene || this.bloom !== bloom) {
+    if (!this.group || this.scene !== scene || this.bloom !== bloom || this.scrimRects !== scrim.rects || scrim.levels.some((v, i) => v !== this.scrimViews[i])) {
       this.scene = scene;
       this.bloom = bloom;
+      this.scrimRects = scrim.rects;
+      this.scrimViews = [...scrim.levels];
       this.group = device.createBindGroup({
         label: 'tonemap',
         layout: this.layout,
@@ -206,6 +288,8 @@ export class Tonemap {
           { binding: 0, resource: { buffer: this.uniform } },
           { binding: 1, resource: scene },
           { binding: 2, resource: bloom },
+          { binding: 3, resource: { buffer: scrim.rects } },
+          ...scrim.levels.map((view, i): GPUBindGroupEntry => ({ binding: SCRIM_LEVEL_BINDING + i, resource: view })),
         ],
       });
     }

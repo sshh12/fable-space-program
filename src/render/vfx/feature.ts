@@ -204,7 +204,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
     const vz = vw[2]! * h.rel.x + vw[6]! * h.rel.y + vw[10]! * h.rel.z;
     const m = frame.projUnjittered;
     const size = Math.max(h.a, h.b) / d;
-    if (vz >= 0 || Math.abs((m[0]! * vx) / -vz) > 1 + m[0]! * size || Math.abs((m[5]! * vy) / -vz) > 1 + m[5]! * size) return;
+    // In the frame (clip x and y with the z column: the lens shift of the projection, zero without one).
+    if (vz >= 0 || Math.abs((m[0]! * vx + m[8]! * vz) / -vz) > 1 + m[0]! * size || Math.abs((m[5]! * vy + m[9]! * vz) / -vz) > 1 + m[5]! * size) return;
     // As the image shows it: a streak thinner than a pixel is drawn a pixel wide and that much dimmer, and
     // the glare of a small bright thing spreads over a few pixels around it; nothing is wider than the frame.
     const px = (2 * d) / (m[5]! * frame.renderSize[1]);

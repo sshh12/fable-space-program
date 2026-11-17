@@ -10,7 +10,7 @@ import { TILE_LAYER, type TileManifest, type TileSource, type TileSourceSpec } f
 import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { dirToTile, latLonToDir, type TileKey } from '@/core/geo/cubeSphere';
 import { DEG, mat3, quat, v3, type Mat3, type Vec3 } from '@/core/math';
-import { coreOf, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
+import { coreOf, frustumTangents, lensShiftOf, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
 import type { TerrainAuthority } from '@/terrain';
 import { createTileSource } from '@/terrain/tileSource';
 import { createGridMesh, GRID_VERTEX_LAYOUT, type GridMesh } from './gridMesh';
@@ -528,7 +528,9 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const tanY = Math.tan(frame.camera.fovY / 2);
     const tanX = (tanY * frame.renderSize[0]) / frame.renderSize[1];
     const plane = (a: Vec3, t: number, sign: number): Vec3 => quat.rotateInv(pose.qFixedToRoot, v3.normalize(v3.addScaled(v3.scale(f, t), a, sign)));
-    return { eye: pose.cameraFixed, planes: [plane(r, tanX, -1), plane(r, tanX, 1), plane(u, tanY, -1), plane(u, tanY, 1)] };
+    // The four side planes; under a lens shift the view axis is off the centre of the frame and they differ.
+    const side = frustumTangents(tanX, tanY, lensShiftOf(frame.camera));
+    return { eye: pose.cameraFixed, planes: [plane(r, side.right, -1), plane(r, side.left, 1), plane(u, side.top, -1), plane(u, side.bottom, 1)] };
   };
 
   const selectBody = (b: BodyState, frame: FrameContext, pose: BodyPose): void => {

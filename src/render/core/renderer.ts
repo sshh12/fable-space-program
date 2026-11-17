@@ -24,7 +24,7 @@ import type { GpuHandle } from '@/core/gpu/device';
 import { FrameEpochTracker, rebasePoint } from '@/core/math/frame';
 import { HASH_WGSL, mat4, v3, type Mat4 } from '@/core/math';
 import { registerCore, type CoreApi, type FullscreenPipelineDesc, type ManagedTarget, type TemporalFeature } from './coreApi';
-import { atmosphereTransmittanceAlong, buildBodyPoses, buildProjection, buildVesselPoses, cameraBasis, jitterSequenceLength, nearestBody, planetshineAt, sunAt, sunVisibilityAt, taaJitter, type ShineLight } from './frame/math';
+import { atmosphereTransmittanceAlong, buildBodyPoses, buildProjection, buildVesselPoses, cameraBasis, frustumTangents, jitterSequenceLength, lensShiftOf, nearestBody, planetshineAt, sunAt, sunVisibilityAt, taaJitter, type ShineLight } from './frame/math';
 import { FRAME_UNIFORM_FLOATS, packFrameUniforms, type CloudShadowParams } from './frame/uniforms';
 import { AmbientOcclusion, type ContactShader, type ContactShadowParams } from './lighting/ao';
 import { DeferredLighting } from './lighting/deferred';
@@ -33,7 +33,7 @@ import { TextureManager } from './mesh/textures';
 import { Perf } from './perf';
 import { ExposureMeter } from './post/exposureMeter';
 import { FarExposure } from './post/farExposure';
-import { CUT_ADAPT_SECONDS, CUT_ADAPT_TAU, EV_DARK_FLOOR, exposureFromEv100, interiorFarGain, sunThroughAir, type EmissiveHint } from './post/exposure';
+import { CUT_ADAPT_SECONDS, CUT_ADAPT_TAU, EV_DARK_FLOOR, exposureFromEv100, exposureHintOf, followExposureHint, interiorFarGain, sunThroughAir, type EmissiveHint } from './post/exposure';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorConfig, type GovernorState } from './post/governor';
 import { PostProcess } from './post/postProcess';
 import { Tonemap } from './post/tonemap';
@@ -133,6 +133,8 @@ export interface ExposureInfo {
   farWeight: number;
   sunVisibility: number;
   override: number | null;
+  /** The camera's exposure hint the last frame followed (CameraState.exposureHint), or null when it metered the scene. */
+  hint: { targetEv100: number; rateEvPerS: number } | null;
 }
 
 /** The Renderer contract plus what labs, tests and the app shell need from the core. */
@@ -612,6 +614,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   let meteredKind: string | null = null;
   let cutAdapt = 0;
   let evOverride: number | null = null;
+  /** The exposure hint the last frame followed (exposureInfo). */
+  let evHint: { targetEv100: number; rateEvPerS: number } | null = null;
   let disposed = false;
   let historyReset = true;
   let jitterEnabled = true;
@@ -678,13 +682,19 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   const litObjectInView = (snapshot: SimSnapshot, camera: CameraState, bodies: BodyPose[], vessels: VesselPose[], renderH: number, aspect: number): boolean => {
     const basis = cameraBasis(camera);
     const tanY = Math.tan(camera.fovY / 2);
-    const tanX = tanY * aspect;
+    const side = frustumTangents(tanY * aspect, tanY, lensShiftOf(camera));
     const pxPerRad = renderH / camera.fovY;
     const inFrustum = (c: { x: number; y: number; z: number }, r: number): boolean => {
       const z = v3.dot(c, basis.forward);
       const x = v3.dot(c, basis.right);
       const y = v3.dot(c, basis.up);
-      return z > -r && Math.abs(x) < z * tanX + r * Math.hypot(1, tanX) && Math.abs(y) < z * tanY + r * Math.hypot(1, tanY);
+      return (
+        z > -r &&
+        x < z * side.right + r * Math.hypot(1, side.right) &&
+        -x < z * side.left + r * Math.hypot(1, side.left) &&
+        y < z * side.top + r * Math.hypot(1, side.top) &&
+        -y < z * side.bottom + r * Math.hypot(1, side.bottom)
+      );
     };
     for (const b of bodies) {
       if (b.id === snapshot.starId) continue;
@@ -739,8 +749,11 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     const z = v3.dot(dir, basis.forward);
     if (z <= 0) return false;
     const tanY = Math.tan(camera.fovY / 2);
+    const side = frustumTangents(tanY * aspect, tanY, lensShiftOf(camera));
     const m = Math.tan(angularRadius);
-    return Math.abs(v3.dot(dir, basis.right)) / z < tanY * aspect + m && Math.abs(v3.dot(dir, basis.up)) / z < tanY + m;
+    const x = v3.dot(dir, basis.right) / z;
+    const y = v3.dot(dir, basis.up) / z;
+    return x < side.right + m && -x < side.left + m && y < side.top + m && -y < side.bottom + m;
   };
 
   /**
@@ -822,7 +835,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     const animate = !deterministic;
     if (animate) realTime += realDt;
     const jitterPx: [number, number] = post.temporal && jitterEnabled ? taaJitter(jitterIndex, jitterSequenceLength(rw / displayW)) : [0, 0];
-    const projection = buildProjection(camera.fovY, rw, rh, jitterPx);
+    const projection = buildProjection(camera.fovY, rw, rh, jitterPx, lensShiftOf(camera));
     const view = mat4.viewRotation(camera.qViewToRoot);
     const basis = cameraBasis(camera);
     const prevEyeOffset = v3.sub(prevCamera.positionRoot, camera.positionRoot);
@@ -866,13 +879,19 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     const stepDt = Math.min(realDt, 0.1);
     if (meteredKind !== null && meteredKind !== camera.kind) cutAdapt = CUT_ADAPT_SECONDS;
     meteredKind = camera.kind;
-    // A frame-exact capture holds what its lead-in frames metered (renderExact).
+    // A rig's exposure hint (CameraState.exposureHint) takes the place of the meter's target: the exposure
+    // heads for the hint's target at the hint's rate, linearly in EV, and the meter keeps reading (its target
+    // is where the exposure goes from when the hint ends). In the first frame it is on the hint's target.
+    const hint = exposureHintOf(camera);
+    evHint = hint;
+    // A frame-exact capture holds what its lead-in frames metered (renderExact), or the hint's target.
     if (holdNext) {
       holdNext = false;
-      evHeld = metering.targetEv100;
+      evHeld = hint ? hint.targetEv100 : metering.targetEv100;
     }
     if (evOverride !== null) ev100 = evOverride;
     else if (evHeld !== null) ev100 = evHeld;
+    else if (hint) ev100 = evInitialised ? followExposureHint(ev100, hint.targetEv100, hint.rateEvPerS, stepDt) : hint.targetEv100;
     else if (!evInitialised) ev100 = metering.targetEv100;
     else if (cutAdapt > 0) ev100 = meter.adaptAfterCut(ev100, metering.targetEv100, stepDt);
     else ev100 = meter.adapt(ev100, metering.targetEv100, stepDt);
@@ -1168,7 +1187,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       (load, ts) => ({ label: 'tonemap+overlay', colorAttachments: [color(canvasView, load, { r: 0, g: 0, b: 0, a: 1 })], timestampWrites: perf.gpuPass(ts.replace('core.overlay', 'core.tonemap')) }),
       (f, pass) => f.drawOverlay!(frame, pass),
       attribution,
-      (pass) => tonemap.draw(pass, resolved.color, resolved.bloom, { bloomMix: resolved.bloomMix, sharpness: resolved.sharpness, dither: 1 }),
+      (pass) => tonemap.draw(pass, resolved.color, resolved.bloom, { bloomMix: resolved.bloomMix, sharpness: resolved.sharpness, dither: 1 }, { rects: resources.get('ui.scrimRects'), levels: resolved.scrimLevels }),
     );
 
     perf.cpuEnd('core.render');
@@ -1384,7 +1403,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     exposureInfo() {
       const m = meter.last();
-      return { ev100, targetEv100: m.targetEv100, exposure: exposureFromEv100(ev100), litFraction: m.litFraction, histogramWeight: m.histogramWeight, evPrior: m.evPrior, evHistogram: m.evHistogram, outsideFraction: m.outsideFraction, evOutside: m.evOutside, outsideWeight: m.outsideWeight, sunlitFloor: m.sunlitFloor, farGain, farLevel: m.farLevel, farWeight: m.farWeight, sunVisibility: meter.lastSunVisibility(), override: evOverride };
+      return { ev100, targetEv100: m.targetEv100, exposure: exposureFromEv100(ev100), litFraction: m.litFraction, histogramWeight: m.histogramWeight, evPrior: m.evPrior, evHistogram: m.evHistogram, outsideFraction: m.outsideFraction, evOutside: m.evOutside, outsideWeight: m.outsideWeight, sunlitFloor: m.sunlitFloor, farGain, farLevel: m.farLevel, farWeight: m.farWeight, sunVisibility: meter.lastSunVisibility(), override: evOverride, hint: evHint };
     },
     async warm() {
       if (!pipelineWarm) return;

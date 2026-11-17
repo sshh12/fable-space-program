@@ -13,9 +13,11 @@ import {
   buildProjection,
   buildVesselPoses,
   discVisibleFraction,
+  frustumTangents,
   halton,
   jitterSequenceLength,
   lambertSpherePhase,
+  lensShiftOf,
   planetshineAt,
   shineVisibleFraction,
   sunAt,
@@ -23,6 +25,7 @@ import {
   taaJitter,
 } from '@/render/core/frame/math';
 import { FRAME_UNIFORM_FLOATS, OFFSET, octEncodeUnit } from '@/render/core/frame/uniforms';
+import { exposureHintOf, followExposureHint } from '@/render/core/post/exposure';
 import { expandIncludes } from '@/render/core/shaders/library';
 import { FRAME_WGSL, SHADOW_SOFTNESS_MAX_M, SHADOW_SOFTNESS_MIN_M, decodeShadowSoftness, encodeShadowSoftness } from '@/render/core/shaders/chunksFrame';
 import { f16ToF32, f32ToF16, generateBlueNoise } from '@/render/core/util/gpu';
@@ -78,6 +81,119 @@ describe('TAA jitter', () => {
     expect(b.z).toBe(a.z);
     expect(b.w).toBe(a.w);
     expect(a.z / a.w).toBeCloseTo(NEAR_PLANE / 40, 15);
+  });
+});
+
+describe('lens shift (CameraState.lensShift)', () => {
+  const fov = Math.PI / 3;
+  it('leaves the projection as it was, to the bit, when there is none', () => {
+    const plain = buildProjection(fov, 1920, 1080, [0.25, -0.5]);
+    const zero = buildProjection(fov, 1920, 1080, [0.25, -0.5], [0, 0]);
+    expect([...zero.proj]).toEqual([...plain.proj]);
+    expect([...zero.projUnjittered]).toEqual([...plain.projUnjittered]);
+    // Not a negative zero either: a shader that multiplies the matrix sees the same bits.
+    expect(Object.is(zero.projUnjittered[8], plain.projUnjittered[8])).toBe(true);
+    expect(Object.is(zero.projUnjittered[9], plain.projUnjittered[9])).toBe(true);
+    expect(zero.lensShift).toEqual([0, 0]);
+    expect(lensShiftOf({})).toEqual([0, 0]);
+  });
+
+  it('moves the whole picture by that fraction of the half viewport and nothing else', () => {
+    const shift: [number, number] = [0.4, -0.25];
+    const plain = buildProjection(fov, 1920, 1080, [0.25, -0.5]);
+    const p = buildProjection(fov, 1920, 1080, [0.25, -0.5], shift);
+    expect(p.lensShift).toEqual(shift);
+    expect(p.tanHalfFovY).toBe(plain.tanHalfFovY);
+    for (const pt of [
+      { x: 0, y: 0, z: -10 },
+      { x: 3, y: -2, z: -40 },
+      { x: -700, y: 90, z: -1e7 },
+    ]) {
+      for (const [with_, without] of [
+        [p.projUnjittered, plain.projUnjittered],
+        [p.proj, plain.proj],
+      ] as const) {
+        const a = mat4.transformPoint(without, pt);
+        const b = mat4.transformPoint(with_, pt);
+        expect(b.x / b.w - a.x / a.w).toBeCloseTo(shift[0], 13);
+        expect(b.y / b.w - a.y / a.w).toBeCloseTo(shift[1], 13);
+        expect(b.z).toBe(a.z);
+        expect(b.w).toBe(a.w);
+      }
+    }
+    // A point on the view axis lands where the shift says.
+    const axis = mat4.transformPoint(p.projUnjittered, { x: 0, y: 0, z: -123 });
+    expect([axis.x / axis.w, axis.y / axis.w]).toEqual(shift);
+  });
+
+  it('is read from the camera within -1..1, and a value that is not a number is no shift', () => {
+    expect(lensShiftOf({ lensShift: [0.3, -0.2] })).toEqual([0.3, -0.2]);
+    expect(lensShiftOf({ lensShift: [3, -7] })).toEqual([1, -1]);
+    expect(lensShiftOf({ lensShift: [NaN, 0.2] })).toEqual([0, 0]);
+    expect(lensShiftOf({ lensShift: [0.2, Infinity] })).toEqual([0, 0]);
+  });
+
+  it('gives the frustum its four sides: symmetric without a shift, the frame edges with one', () => {
+    const tanX = 0.9;
+    const tanY = 0.5;
+    expect(frustumTangents(tanX, tanY, [0, 0])).toEqual({ left: tanX, right: tanX, bottom: tanY, top: tanY });
+    const shift: [number, number] = [0.4, -0.25];
+    const side = frustumTangents(tanX, tanY, shift);
+    const p = buildProjection(2 * Math.atan(tanY), 1800, 1000, [0, 0], shift);
+    expect(p.tanHalfFovX).toBeCloseTo(tanX, 12);
+    // A point on each side plane projects onto the matching edge of the frame.
+    const ndc = (x: number, y: number): [number, number] => {
+      const c = mat4.transformPoint(p.projUnjittered, { x, y, z: -1 });
+      return [c.x / c.w, c.y / c.w];
+    };
+    expect(ndc(side.right, 0)[0]).toBeCloseTo(1, 12);
+    expect(ndc(-side.left, 0)[0]).toBeCloseTo(-1, 12);
+    expect(ndc(0, side.top)[1]).toBeCloseTo(1, 12);
+    expect(ndc(0, -side.bottom)[1]).toBeCloseTo(-1, 12);
+    // The picture moved right: more is seen on the left of the axis, less on its right.
+    expect(side.left).toBeGreaterThan(side.right);
+  });
+
+  it('is in the frame uniforms, and every ray of the shaders goes through ndcRay', () => {
+    expect(FRAME_WGSL).toContain('lensShift: vec4f');
+    expect(FRAME_WGSL).toMatch(/fn ndcRay\(ndc: vec2f\) -> vec3f \{\s*let a = ndc - frame\.lensShift\.xy;/);
+    expect(FRAME_WGSL).toMatch(/fn viewRay\(uv: vec2f\) -> vec3f \{\s*return ndcRay\(/);
+  });
+});
+
+describe('exposure hint (CameraState.exposureHint)', () => {
+  it('is a hint only with a finite target and a rate that is not negative', () => {
+    expect(exposureHintOf({})).toBeNull();
+    expect(exposureHintOf({ exposureHint: null })).toBeNull();
+    expect(exposureHintOf({ exposureHint: { targetEv100: 12, rateEvPerS: 2 } })).toEqual({ targetEv100: 12, rateEvPerS: 2 });
+    expect(exposureHintOf({ exposureHint: { targetEv100: 12, rateEvPerS: 0 } })).toEqual({ targetEv100: 12, rateEvPerS: 0 });
+    expect(exposureHintOf({ exposureHint: { targetEv100: 12, rateEvPerS: Infinity } })).not.toBeNull();
+    expect(exposureHintOf({ exposureHint: { targetEv100: NaN, rateEvPerS: 2 } })).toBeNull();
+    expect(exposureHintOf({ exposureHint: { targetEv100: Infinity, rateEvPerS: 2 } })).toBeNull();
+    expect(exposureHintOf({ exposureHint: { targetEv100: 12, rateEvPerS: -1 } })).toBeNull();
+    expect(exposureHintOf({ exposureHint: { targetEv100: 12, rateEvPerS: NaN } })).toBeNull();
+  });
+
+  it('is followed at the rate of the hint, linearly in EV, and lands on the target', () => {
+    // 2 EV per second, 60 frames a second: a thirtieth of an EV a frame, up or down.
+    expect(followExposureHint(10, 14, 2, 1 / 60)).toBeCloseTo(10 + 2 / 60, 12);
+    expect(followExposureHint(14, 10, 2, 1 / 60)).toBeCloseTo(14 - 2 / 60, 12);
+    let ev = 10;
+    let frames = 0;
+    while (ev !== 14 && frames < 1000) {
+      ev = followExposureHint(ev, 14, 2, 1 / 60);
+      frames++;
+    }
+    expect(ev).toBe(14);
+    expect(frames).toBeGreaterThanOrEqual(120);
+    expect(frames).toBeLessThanOrEqual(121);
+    // On the target it stays; a rate of 0 holds; an infinite rate is a cut, also in a frame of no time.
+    expect(followExposureHint(14, 14, 2, 1 / 60)).toBe(14);
+    expect(followExposureHint(10, 14, 0, 1 / 60)).toBe(10);
+    expect(followExposureHint(10, 14, Infinity, 1 / 60)).toBe(14);
+    expect(followExposureHint(10, 14, Infinity, 0)).toBe(14);
+    expect(followExposureHint(10, 14, 2, 0)).toBe(10);
+    expect(followExposureHint(10, 14, 2, -1)).toBe(10);
   });
 });
 
@@ -290,9 +406,11 @@ describe('shader library and utilities', () => {
       floats += arr ? size(arr[1]!) * Number(arr[2]) : size(t);
     }
     expect(floats).toBe(FRAME_UNIFORM_FLOATS);
-    expect(OFFSET.bodies).toBe(164);
-    // 2768 bytes until the LightUniform gained its shape vector (requests vfx-5, vehicle-pad-2).
-    expect(FRAME_UNIFORM_FLOATS * 4).toBe(3024);
+    expect(OFFSET.bodies).toBe(168);
+    // 2768 bytes until the LightUniform gained its shape vector (requests vfx-5, vehicle-pad-2); 3024 until the
+    // lens shift (sub-wave 3.2).
+    expect(FRAME_UNIFORM_FLOATS * 4).toBe(3040);
+    expect(OFFSET.lensShift).toBe(OFFSET.jitter + 4);
   });
   it('packs local lights: spots keep their position in endKind (old copies of the loop see a point), axis octahedral, radius in intensity.a (requests vfx-5, vehicle-pad-2)', () => {
     // The WGSL lightAxisDecode, on the CPU.

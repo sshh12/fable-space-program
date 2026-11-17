@@ -63,6 +63,9 @@ export class Projector {
   readonly focal: number;
   readonly cx: number;
   readonly cy: number;
+  /** The camera's lens shift, NDC units (0 without one): where the view axis meets the frame. */
+  readonly shiftX: number;
+  readonly shiftY: number;
   readonly near = NEAR_PLANE;
   readonly tanHalfX: number;
   readonly tanHalfY: number;
@@ -87,8 +90,13 @@ export class Projector {
     this.fovY = camera.fovY;
     const t = Math.tan(camera.fovY / 2);
     this.focal = this.height / 2 / t;
-    this.cx = this.width / 2;
-    this.cy = this.height / 2;
+    // The view axis passes through the frame at the camera's lens shift (a fraction of the half viewport,
+    // x right, y up; CameraState.lensShift): the centre of the frame without one.
+    const shift = camera.lensShift;
+    this.shiftX = shift && Number.isFinite(shift[0]) ? Math.min(1, Math.max(-1, shift[0])) : 0;
+    this.shiftY = shift && Number.isFinite(shift[1]) ? Math.min(1, Math.max(-1, shift[1])) : 0;
+    this.cx = (this.width / 2) * (1 + this.shiftX);
+    this.cy = (this.height / 2) * (1 - this.shiftY);
     this.tanHalfY = t;
     this.tanHalfX = (t * this.width) / this.height;
     // R(view -> root) from the quaternion; its transpose maps ROOT components into view space.
@@ -145,7 +153,14 @@ export class Projector {
 
   /** Projection matrix (view space -> clip) for the GPU; same as the engine's reversed-Z infinite projection. */
   projectionMatrix(): Mat4 {
-    return (this.projection ??= mat4.perspectiveReversedZInfinite(this.fovY, this.width / this.height, this.near));
+    if (!this.projection) {
+      const m = mat4.perspectiveReversedZInfinite(this.fovY, this.width / this.height, this.near);
+      // The lens shift as the render core's projection has it (clip.xy += shift * clip.w).
+      if (this.shiftX !== 0) m[8] = -this.shiftX;
+      if (this.shiftY !== 0) m[9] = -this.shiftY;
+      this.projection = m;
+    }
+    return this.projection;
   }
 
   private projection: Mat4 | null = null;

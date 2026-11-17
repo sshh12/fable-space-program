@@ -9,7 +9,7 @@
  */
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { CameraState, RenderFeature } from '@/core/contracts/render';
+import { UI_SCRIM_BYTES, type CameraState, type RenderFeature } from '@/core/contracts/render';
 import type { LocalSession } from '@/core/contracts/session';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import { translateFrame } from './origin';
@@ -19,6 +19,7 @@ import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { acquireGpu, type GpuHandle } from '@/core/gpu/device';
 import { v3 } from '@/core/math';
 import { installTestApi, type TestApiController } from '@/core/testing/testApi';
+import { packScrimRects, type UiScrimRect } from '../post/scrim';
 import { createRenderer, type CoreRenderer, type RendererOptions } from '../renderer';
 import { labCameraFromQuery, type LabCamera, type LabCameraSettings, type LabCameraSpec } from './camera';
 
@@ -69,6 +70,11 @@ export interface LabApp {
   renderFrame(realDt?: number): void;
   /** Stop / restart the requestAnimationFrame loop (renderFrame still works). */
   setLoop(running: boolean): void;
+  /**
+   * Publish panel rectangles for the core's UI scrim step ('ui.scrimRects'; device pixels of the canvas,
+   * origin top-left), as a menu will; null or an empty list restores the default (no rectangle).
+   */
+  setScrim(rects: readonly UiScrimRect[] | null): void;
   dispose(): void;
 }
 
@@ -120,6 +126,8 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
     if (options.camera && !queryPlaces) camera.spec = typeof options.camera === 'function' ? options.camera(snapshot, defs) : options.camera;
     let cameraState = camera.state(snapshot);
     let paused = query.get('paused') === '1';
+    /** The buffer of setScrim, created with the first rectangle. */
+    let scrimBuffer: GPUBuffer | null = null;
     let deterministic = false;
     let onFrame = options.onFrame ?? null;
     let looping = true;
@@ -192,6 +200,15 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
       query,
       snapshot: () => snapshot,
       cameraState: () => cameraState,
+      setScrim(rects) {
+        if (!rects || rects.length === 0) {
+          renderer.resources.reset('ui.scrimRects');
+          return;
+        }
+        scrimBuffer ??= gpu.device.createBuffer({ label: 'lab.scrimRects', size: UI_SCRIM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        gpu.device.queue.writeBuffer(scrimBuffer, 0, packScrimRects(rects) as Float32Array<ArrayBuffer>);
+        renderer.resources.publish('ui.scrimRects', scrimBuffer);
+      },
       setPaused(p) {
         paused = p;
       },

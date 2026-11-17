@@ -37,25 +37,56 @@ export interface Projection {
   projUnjittered: Mat4;
   /** Jitter in NDC units as contained in `proj`. */
   jitterNdc: [number, number];
+  /** The lens shift in NDC units as contained in `proj` and `projUnjittered` (lensShiftOf). */
+  lensShift: [number, number];
   tanHalfFovX: number;
   tanHalfFovY: number;
 }
 
 /**
- * THE projection (reversed-Z, infinite far, near = NEAR_PLANE) and its jittered copy. The jitter is added to
- * clip xy (clip.xy += jitterNdc * clip.w), so the depth mapping is untouched.
+ * The lens shift of a camera (CameraState.lensShift; ARCHITECTURE 18.8) in NDC units: the point of the frame
+ * the view axis passes through, as a fraction of the half viewport from the centre (x right, y up). [0, 0]
+ * when the camera states none or a component that is not a finite number; each component is held within
+ * -1..1 (the view axis stays inside the frame).
  */
-export function buildProjection(fovY: number, width: number, height: number, jitterPx: readonly [number, number]): Projection {
+export function lensShiftOf(camera: { lensShift?: readonly [number, number] }): [number, number] {
+  const s = camera.lensShift;
+  if (!s || !Number.isFinite(s[0]) || !Number.isFinite(s[1])) return [0, 0];
+  return [Math.min(1, Math.max(-1, s[0])), Math.min(1, Math.max(-1, s[1]))];
+}
+
+/**
+ * The four side planes of the view frustum as tangents about the view axis: a point at view-space (x, y) and
+ * distance `depth` along the axis is inside when -left * depth <= x <= right * depth and -bottom * depth <= y
+ * <= top * depth. Without a lens shift the frustum is symmetric (left = right = tanX, bottom = top = tanY);
+ * a shift moves the axis off the centre of the frame, so the sides differ. Every culling test against the
+ * camera's frustum uses these.
+ */
+export function frustumTangents(tanX: number, tanY: number, lensShift: readonly [number, number]): { left: number; right: number; bottom: number; top: number } {
+  return { left: tanX * (1 + lensShift[0]), right: tanX * (1 - lensShift[0]), bottom: tanY * (1 + lensShift[1]), top: tanY * (1 - lensShift[1]) };
+}
+
+/**
+ * THE projection (reversed-Z, infinite far, near = NEAR_PLANE) and its jittered copy. The jitter is added to
+ * clip xy (clip.xy += jitterNdc * clip.w), so the depth mapping is untouched. A lens shift (lensShiftOf) is
+ * added the same way, to both matrices: the whole picture moves by that fraction of the half viewport, the
+ * view axis, the field of view and the depth mapping stay as they are (a shift lens, not a turned camera).
+ */
+export function buildProjection(fovY: number, width: number, height: number, jitterPx: readonly [number, number], lensShift: readonly [number, number] = [0, 0]): Projection {
   const aspect = width / height;
   const projUnjittered = mat4.perspectiveReversedZInfinite(fovY, aspect, NEAR_PLANE);
+  const [sx, sy] = lensShift;
+  // clip.w = -z_view, so adding s * w means subtracting s from the z column. Without a shift the matrix is
+  // left as it was built, to the bit.
+  if (sx !== 0) projUnjittered[8] = -sx;
+  if (sy !== 0) projUnjittered[9] = -sy;
   const proj = new Float64Array(projUnjittered);
   const jx = (2 * jitterPx[0]) / width;
   const jy = (-2 * jitterPx[1]) / height;
-  // clip.w = -z_view, so adding j * w means subtracting j from the z column.
-  proj[8] = -jx;
-  proj[9] = -jy;
+  proj[8] = -jx - sx;
+  proj[9] = -jy - sy;
   const tanY = Math.tan(fovY / 2);
-  return { proj, projUnjittered, jitterNdc: [jx, jy], tanHalfFovX: tanY * aspect, tanHalfFovY: tanY };
+  return { proj, projUnjittered, jitterNdc: [jx, jy], lensShift: [sx, sy], tanHalfFovX: tanY * aspect, tanHalfFovY: tanY };
 }
 
 export function cameraBasis(camera: CameraState): { right: Vec3; up: Vec3; forward: Vec3 } {

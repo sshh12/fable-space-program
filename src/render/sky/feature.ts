@@ -14,7 +14,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import { STAR_RECORD_FLOATS, type SkyManifest } from '@/core/contracts/sky';
 import { mat4, quat, v3, type Mat4, type Vec3, type Vec3Tuple } from '@/core/math';
-import { MAX_BODIES, coreOf, createSceneBindings, discVisibleFraction, type SceneBindings, type Tracked } from '@/render/core';
+import { MAX_BODIES, coreOf, createSceneBindings, discVisibleFraction, lensShiftOf, type SceneBindings, type Tracked } from '@/render/core';
 import { BLADES, BLADE_COUNT, GHOSTS, GHOST_CLIP_RADIUS, SPIKE_COUNT, STARBURST, STREAKS, STREAK_COUNT, bladeAngle, coneNdcBounds, flareNormalisation, ghostFrame, ghostLateral, ghostSupport, hoodTransmission, ndcDirection, spikeAmplitude, type FlareView } from './flare';
 import {
   farBodyDiscIntegral,
@@ -490,6 +490,9 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
     f.fill(0);
     u[0] = GHOSTS.length;
     const rs = frame.sun.angularRadius;
+    // Under a lens shift the ghosts still mirror about the centre of the FRAME (sx, sy are frame NDC); only
+    // the step from a frame position to a view direction and back knows the shift.
+    const shift = lensShiftOf(frame.camera);
     const gf = ghostFrame(view, [sx, sy], rs);
     const lateral = ghostLateral(gf.offAxis);
     const halo = STARBURST.haloEnergy * flareNorm.halo;
@@ -514,10 +517,13 @@ export function createSkyFeature(options: SkyFeatureOptions = {}): SkyFeature {
       const support = ghostSupport(g, rs);
       const blur = g.blur * rs;
       // Centre direction and the image-plane basis at it (the CPU model's tangentBasis).
-      const c = ndcDirection(view, gx, gy);
+      const c = ndcDirection(view, gx - shift[0], gy - shift[1]);
       const gu = v3.normalize(v3.sub(view.up, v3.scale(c, v3.dot(view.up, c))));
       const gr = v3.cross(c, gu);
-      const [x0, y0, x1, y1] = coneNdcBounds(view, c, support);
+      // Bounds about the view axis, moved to the frame; the whole frame (a cone that reaches behind the eye) stays whole.
+      const cone = coneNdcBounds(view, c, support);
+      const whole = cone[0] === -1 && cone[1] === -1 && cone[2] === 1 && cone[3] === 1;
+      const [x0, y0, x1, y1] = whole ? cone : [cone[0] + shift[0], cone[1] + shift[1], cone[2] + shift[0], cone[3] + shift[1]];
       f.set(
         [
           ...[gx, gy, g.radius, g.flip],

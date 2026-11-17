@@ -1029,8 +1029,9 @@ export class SmokeSystem implements VolumeCombiner {
         behind = true;
         break;
       }
-      const sx = ((m[0]! * vx) / -vz) * 0.5 + 0.5;
-      const sy = 0.5 - ((m[5]! * vy) / -vz) * 0.5;
+      // Clip x and y with the z column: the lens shift of the projection (zero without one).
+      const sx = ((m[0]! * vx + m[8]! * vz) / -vz) * 0.5 + 0.5;
+      const sy = 0.5 - ((m[5]! * vy + m[9]! * vz) / -vz) * 0.5;
       x0 = Math.min(x0, sx);
       x1 = Math.max(x1, sx);
       y0 = Math.min(y0, sy);

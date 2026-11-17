@@ -89,6 +89,7 @@ struct FrameUniforms {
   renderSize: vec4f,           // w, h, 1/w, 1/h of the internal render targets
   displaySize: vec4f,          // w, h, 1/w, 1/h of the canvas
   jitter: vec4f,               // xy = jitter in render pixels, zw = the same in NDC units (already in proj)
+  lensShift: vec4f,            // xy = lens shift in NDC units (already in proj and projUnjittered; 0 without one), zw = 0
   time: vec4f,                 // realTime (s), realDt (s), frameIndex, animate (1 or 0)
   exposure: vec4f,             // exposure multiplier, ev100, qualityScale, renderScale
   sunDir: vec4f,               // xyz = unit direction to the star at the camera (ROOT axes), w = angular radius (rad)
@@ -135,11 +136,17 @@ fn sq(x: f32) -> f32 { return x * x; }
 /// Distance along the view axis (m) of a reversed-Z depth sample. Sky (depth 0) returns +large.
 fn viewZFromDepth(depth: f32) -> f32 { return frame.cameraForward.w / max(depth, 1e-37); }
 
+/// Unnormalised camera-relative ray through the point 'ndc' of the frame (x right, y up, -1..1; no jitter),
+/// with unit component along the view axis: the view axis itself passes through the frame at frame.lensShift.
+/// Every ray formed from a screen position goes through here (or through viewRay).
+fn ndcRay(ndc: vec2f) -> vec3f {
+  let a = ndc - frame.lensShift.xy;
+  return frame.cameraForward.xyz + frame.cameraRight.xyz * (a.x * frame.cameraRight.w) + frame.cameraUp.xyz * (a.y * frame.cameraUp.w);
+}
 /// Unnormalised camera-relative ray through the centre of the pixel at 'uv' (render target UV, y down),
 /// with unit component along the view axis; the TAA jitter is removed. pos = ray * viewZ.
 fn viewRay(uv: vec2f) -> vec3f {
-  let ndc = vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0) - frame.jitter.zw;
-  return frame.cameraForward.xyz + frame.cameraRight.xyz * (ndc.x * frame.cameraRight.w) + frame.cameraUp.xyz * (ndc.y * frame.cameraUp.w);
+  return ndcRay(vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0) - frame.jitter.zw);
 }
 /// Camera-relative position (ROOT axes, m) of a depth sample.
 fn positionFromDepth(uv: vec2f, depth: f32) -> vec3f { return viewRay(uv) * viewZFromDepth(depth); }

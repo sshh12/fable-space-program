@@ -32,6 +32,8 @@ export interface ViewFrustum {
   forward: Vec3;
   tanHalfFovX: number;
   tanHalfFovY: number;
+  /** The camera's lens shift in NDC units (the core's lensShiftOf); absent = none. */
+  lensShift?: readonly [number, number];
 }
 
 /** NDC rectangle [x0, y0, x1, y1] (y up) that the sphere can cover, null when it is outside the view, 'full' when the eye is inside. */
@@ -40,7 +42,8 @@ export function sphereScreenBounds(centerRelCam: Vec3, radius: number, view: Vie
   const cy = v3.dot(centerRelCam, view.up);
   const cz = v3.dot(centerRelCam, view.forward);
   if (cx * cx + cy * cy + cz * cz <= radius * radius) return 'full';
-  const axis = (c: number, tanHalf: number): [number, number] | null | 'full' => {
+  // The view axis passes through the frame at the lens shift: NDC = tangent / tanHalf + shift.
+  const axis = (c: number, tanHalf: number, shift: number): [number, number] | null | 'full' => {
     const d = Math.hypot(c, cz);
     if (d <= radius) return 'full';
     const centre = Math.atan2(c, cz);
@@ -49,13 +52,13 @@ export function sphereScreenBounds(centerRelCam: Vec3, radius: number, view: Vie
     const hi = centre + half;
     const limit = Math.PI / 2 - 1e-4;
     if (lo >= limit || hi <= -limit) return null;
-    const a = lo <= -limit ? -Infinity : Math.tan(lo) / tanHalf;
-    const b = hi >= limit ? Infinity : Math.tan(hi) / tanHalf;
+    const a = lo <= -limit ? -Infinity : Math.tan(lo) / tanHalf + shift;
+    const b = hi >= limit ? Infinity : Math.tan(hi) / tanHalf + shift;
     if (a >= 1 || b <= -1) return null;
     return [Math.max(a, -1), Math.min(b, 1)];
   };
-  const x = axis(cx, view.tanHalfFovX);
-  const y = axis(cy, view.tanHalfFovY);
+  const x = axis(cx, view.tanHalfFovX, view.lensShift?.[0] ?? 0);
+  const y = axis(cy, view.tanHalfFovY, view.lensShift?.[1] ?? 0);
   if (x === null || y === null) return null;
   const xr = x === 'full' ? [-1, 1] : x;
   const yr = y === 'full' ? [-1, 1] : y;

@@ -23,19 +23,20 @@ export const OFFSET = {
   renderSize: 112,
   displaySize: 116,
   jitter: 120,
-  time: 124,
-  exposure: 128,
-  sunDir: 132,
-  sunIlluminance: 136,
-  misc: 140,
-  counts: 144,
-  cloudNear0: 148,
-  cloudNear1: 152,
-  cloudNear2: 156,
-  cloudFar: 160,
-  bodies: 164,
-  shine: 164 + MAX_BODIES * BODY_UNIFORM_FLOATS,
-  lights: 164 + MAX_BODIES * BODY_UNIFORM_FLOATS + SHINE_RECEIVERS * SHINE_PER_RECEIVER * 8,
+  lensShift: 124,
+  time: 128,
+  exposure: 132,
+  sunDir: 136,
+  sunIlluminance: 140,
+  misc: 144,
+  counts: 148,
+  cloudNear0: 152,
+  cloudNear1: 156,
+  cloudNear2: 160,
+  cloudFar: 164,
+  bodies: 168,
+  shine: 168 + MAX_BODIES * BODY_UNIFORM_FLOATS,
+  lights: 168 + MAX_BODIES * BODY_UNIFORM_FLOATS + SHINE_RECEIVERS * SHINE_PER_RECEIVER * 8,
 } as const;
 /** Floats of one LightUniform (posRange, endKind, intensity, shape). */
 export const LIGHT_UNIFORM_FLOATS = 16;
@@ -179,6 +180,7 @@ export function packFrameUniforms(f: Float32Array, u: Uint32Array, frame: FrameC
   f.set([rw, rh, 1 / rw, 1 / rh], OFFSET.renderSize);
   f.set([dw, dh, 1 / dw, 1 / dh], OFFSET.displaySize);
   f.set([frame.jitterPx[0], frame.jitterPx[1], p.jitterNdc[0], p.jitterNdc[1]], OFFSET.jitter);
+  f.set([p.lensShift[0], p.lensShift[1], 0, 0], OFFSET.lensShift);
   f.set([frame.realTime, frame.realDt, x.sequenceIndex ?? frame.frameIndex, frame.animate ? 1 : 0], OFFSET.time);
   f.set([frame.exposure, frame.ev100, frame.qualityScale, x.renderScale], OFFSET.exposure);
   put3(f, OFFSET.sunDir, frame.sun.dirRoot, frame.sun.angularRadius);

@@ -683,6 +683,27 @@ export function adaptEv100(current: number, target: number, dt: number): number 
   return current + Math.sign(d) * step;
 }
 
+/**
+ * The exposure hint of a camera rig (CameraState.exposureHint; ARCHITECTURE 18.8), or null when the scene is
+ * metered: absent, null, a target that is not a finite number, or a rate that is negative or not a number
+ * (a rate of 0 holds the exposure where it is; an infinite one is a cut to the target).
+ */
+export function exposureHintOf(camera: { exposureHint?: { targetEv100: number; rateEvPerS: number } | null }): { targetEv100: number; rateEvPerS: number } | null {
+  const h = camera.exposureHint;
+  if (!h || !Number.isFinite(h.targetEv100) || !(h.rateEvPerS >= 0)) return null;
+  return h;
+}
+
+/**
+ * One step of an exposure that follows a rig's hint: towards `targetEv100` by `rateEvPerS * dt` at most, and
+ * exactly onto it when it is that near. Linear in EV, unlike the eye's adaptation: the rig states the rate.
+ */
+export function followExposureHint(current: number, targetEv100: number, rateEvPerS: number, dt: number): number {
+  const d = targetEv100 - current;
+  const step = rateEvPerS === Infinity ? Infinity : rateEvPerS * Math.max(0, dt);
+  return Math.abs(d) <= step ? targetEv100 : current + Math.sign(d) * step;
+}
+
 /** Exposure during the CUT_ADAPT_SECONDS after a cut between views: on the target with the time constant CUT_ADAPT_TAU. */
 export function adaptEv100Cut(current: number, target: number, dt: number): number {
   return current + (target - current) * (1 - Math.exp(-Math.max(0, dt) / CUT_ADAPT_TAU));
