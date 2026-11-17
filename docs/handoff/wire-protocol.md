@@ -10,7 +10,8 @@ Node and in a worker (no Node module, no package; timers and I/O are injected).
 Ran beside `presentation-sweep`: no presentation code is imported or run. Every verification was scoped
 (`npm run typecheck:paths -- src/net src/core/contracts tests/unit/net tests/browser/net`; `node
 tools/dev/heavy.mjs --class=cpu -- npx vitest run src/net tests/unit/net tools/dev/boundaries.test.ts`: 12 files,
-180 tests pass; `node tools/dev/check-stubs.mjs` OK). Commits of the fix round: c6b1c9e, db4bdf6 and this note.
+180 tests pass; `node tools/dev/check-stubs.mjs` OK). Commits of the fix round: c6b1c9e, db4bdf6, 5ab57a5; of the last items: 98f10e3 and this note. Last suite: 13 files, 187
+tests (with the real `ws` tests).
 
 ## 0. The review's findings: fixed / partly / not, with the evidence
 
@@ -25,11 +26,11 @@ tools/dev/heavy.mjs --class=cpu -- npx vitest run src/net tests/unit/net tools/d
 | 7 | Drop-superseded unsafe | FIXED | `near` carries `band: 'near' | 'far'` and supersedes per band; `islandSlow` is reliable; a superseding record replaces the waiting one IN PLACE (budget and sender); an `islandKey` removes the waiting deltas of its island (`obsoletedKeys`); `deltaMatchesKey(delta, heldIsland, heldKeyTick)` refuses a delta whose keyTick is not the held key's. `review.test.ts`, `session.test.ts` (c) |
 | 8 | Numbers reach the host unvalidated | FIXED (codec + machine); the universe's part listed in 0.3 | Stamp window of ARCHITECTURE 26 on commands and time requests in the machine (beyond clock(up) + 0.25 s refused; a late one is forwarded, the universe re-times it: 6.2); -0 canonicalised (`tick()`, `ranged`); ids printable ASCII <= 128 B, names <= 64 B without control characters, `relevantDistance` 0..1e9 m, `transfer.rate` 0..1e5, `advanceLimit.seconds` 0..250 years, `setRate` level within `WARP_LEVELS`, `sasHold` a unit vector (1e-3), every tick a safe integer, every float finite. `review.test.ts` |
 | 9 | Identity | FIXED | A resume is challenged like a new session (the host's `resume` gets the token AND the signature over the fresh nonce); the host is given the CLIENT's build (the one it signed) and `cpuScore` (`IdentityProof`); the transcript host checks a real keyed signature (wrong nonce, server, build or account fails). All transcripts re-recorded |
-| 10 | Visible queue across a reconnect | PARTLY | Done: `ResumedSeat` has a without-seat form (`vesselId: null`, `queued`); the contract says the universe re-sends `spawnQueued` after a resume and drops the entry of a session lost past the grace; a cancel made while reconnecting is remembered and sent on resume; `SpawnQueuedMessage.serverMs` (ETA counted from it, wall seconds); the client keeps `admissionQueue` and `launchQueue` apart. Not done: the two fields in `LinkState` (lead's section): request `wire-protocol-3`. The records agent had not added the launch queue to `session.ts` when this was written (no commit touches it), so the names above are mine and can follow theirs |
-| 11 | Fuzz | PARTLY | Structure-aware fuzzer of both drivers (valid messages of every type, extreme field values, bit flips, advancing time): server 20,000 frames, 1,167 sockets closed by the gateway, 0 internal errors; client 13,181 frames over 12 sessions, 0 internal errors. Byte fuzz 1,000,000 inputs, 0 throws. Samples per frame capped (128) inside the decoder; the largest client frame at the cap allocates 7.3 kB per decode, a frame over it 11.3 kB before it stops. NOT done: the server driver still decodes with `decodeFrame` (allocating, bounded as measured) rather than a `FrameReader`/pool; the session keeps forwarded messages, so it would need copies anyway |
+| 10 | Visible queue across a reconnect | FIXED (one `LinkState` member requested) | `ResumedSeat` has a without-seat form (`vesselId: null`, `queued`); the contract says the universe re-sends `spawnQueued` after a resume and drops the entry of a session lost past the grace; a cancel made while reconnecting is remembered and sent on resume; `SpawnQueuedMessage.serverMs` (ETA in wall seconds from it). Reconciled with the session contract the records agent added (`LaunchQueueEntry`, `ClientStores.launchQueue`, `UniverseCommands.cancelSpawn`): `ClientSession.launchQueue` is a `LaunchQueueState` = `LaunchQueueEntry` (with the request as `spawn` was given it) plus the wire's `reqId` and `serverMs`; it belongs to the session (kept while reconnecting, kept by a resume, null after a take-over by message or by close code 4002, null in a new session). The pad queue lives in that store, not in `LinkState`; request wire-protocol-3 is restated as the one missing member for the ADMISSION queue: `LinkState.queueEtaSeconds` (the position already has `queuePosition`) |
+| 11 | Fuzz | PARTLY | Structure-aware fuzzer of both drivers (valid messages of every type, extreme field values, bit flips, advancing time): server 20,000 frames, 1,167 sockets closed by the gateway, 0 internal errors; client 13,181 frames over 12 sessions, 0 internal errors. Byte fuzz 1,000,000 inputs, 0 throws. Samples per frame capped (128) inside the decoder; the largest client frame at the cap allocates 7.3 kB per decode, a frame over it 11.3 kB before it stops. NOT done, and why: `FrameReader` in the server driver is not a contained change. `decodeFrame` is all-or-nothing (the gateway acts on no message of a malformed frame); a `FrameReader` visits messages up to the failure, so the gateway would act on half frames unless it decodes twice (validate, then visit). And the only hot client type is `input`, whose samples the gateway must keep for 5 s (`InputBuffer`) and hand to the host, so they would be copied out of the pooled frame anyway. What it would take: a validating pass over the frame without building objects (a `FrameReader` with a no-op visit), then a visiting pass that copies the accepted samples into a pool of `InputSample`s owned by the `InputBuffer` and recycled when it prunes; the saving is about 32 B per sample, at most 60 samples a second per pilot (~2 kB/s) |
 | 12 | Closing records and close codes | FIXED | `refused`, `takenOver`, `bye` are force-flushed (budget `takeAll`, sender `flush(true)`) before the close; the client maps 4002 without its message to taken over and 4000 to a loss with backoff. `review.test.ts` |
-| 13 | Ten-vessel delta with all steering; census entry on first sight | STATED (not met) | Measured, `bandwidth.test.ts`: ten vessels at 3 g ALL steering 458 B per delta on average over a key interval (the first delivery's 282 B was two of ten steering while docking; 354 B is not met). A census entry on first sight 156 B with its handles, 91 B after (107-115 B is not met on first sight) |
-| 14 | `ws` adapter | PARTLY | `WS_SERVER_OPTIONS = { maxPayload: 64 KiB, perMessageDeflate: false }` exported for the gateway's `WebSocketServer`; `close()` calls `terminate()` for a declared loss or a slow consumer. NOT run against a real `ws` server: `ws` is still not installed (checked `node_modules/ws`), so maxPayload, fragmented messages, bufferedAmount under a stalled peer and close codes are not proven on the real package |
+| 13 | Ten-vessel delta with all steering; census entry on first sight | FIXED for the brief's lines; stated beyond | Nothing had grown: the same scenes encode to identical bytes on 9b5ee22 and on the fix round (`scratchpad` comparison); the 458 B was a different scenario (3 g, not docking). Then reduced: the control state is packed (axis mask, only non-zero axes, flags and SAS mode in one byte: 9 B to 4 B for a pilot on two axes), the delta's tick is a signed varint instead of float64 (5 B saved at today's ticks), and p, e, inc, lan, argPe travel as 48-bit floats (10 B per conic). Ten DOCKING vessels with ALL ten steering: worst 296 B, mean 262.6 B (line 300: MET; was 351 B). At 3 g all steering: 403 B mean (floor without an acceleration term in the predictor, see 0.5). Census entry: 81 B steady (line 90: MET; was 91 B), 123-146 B on first sight with its new strings. 10,000 objects in one census document: 975 kB (was 1,075 kB; ARCHITECTURE 14 plans 840 kB): see 0.5 |
+| 14 | `ws` adapter | FIXED | Against a REAL `ws` 8.23 server (`ws.test.ts`, 6 tests): `WS_SERVER_OPTIONS` in force (no extension negotiated; a 64 KiB + 1 message closed with 1009 before the gateway saw a byte of it), a message sent in two fragments arrives as one frame, close codes and reasons both ways (4000 'build' after the `refused` message; 4100 and its reason from the client), a socket declared lost is terminated (the client sees 1006, 0.35-2 s after the last frame with a 0.4 s loss timeout), a pre-auth flood of 400 pings is closed on the upstream bucket with 0 pongs answered, and under a peer that stopped reading `bufferedAmount` grew to 265 kB, the sender held 523 flushes back and its 2 MB cap tripped. `fflate` is not used anywhere in `src/net` |
 | 15 | Version skew | FIXED | Hello (code 1) and `refused` (code 34) layouts frozen and their bytes held in `review.test.ts`; a client skips a record of an unknown type by its length, a server refuses one; transcript `version-mismatch` gained a client of protocol 2 refused 'protocol' |
 | 16 | The client against a bad server frame | FIXED | `acknowledge()` tests ranges instead of materialising them (a range of 6,000,000: < 20 ms, < 1 MB); `lateApplied` keeps the last 256; `retryAfterMs` clamped to 10 min. `review.test.ts` |
 | 17 | Varints and coarse bounds | FIXED | Non-canonical varints refused (`badVarint`). Stated: the coarse path of island frames is good to 8 um/s and 0.5 mm, and float64 positions lose sub-mm precision beyond 5e10 m from the body centre |
@@ -58,6 +59,8 @@ not carry. Nothing under `data/defs/rules` was edited (PACKAGE_RULES 7a). Defaul
 | `relevantFloorShare` | 0.1 | share of the sustained rate |
 
 ### 0.2 Bytes per second per scenario (`bandwidth.test.ts`, real encoded frames, ten minutes each)
+
+(Measured in the fix round, before the size changes of 0.5; the numbers after them are in 0.5 and are 2-11 % lower.)
 
 Each scenario runs the island at 60 Hz offered, keys every second, plus an 8-vessel near tier at 10 Hz, two
 census entries a second in the relevant set, the pads and an `inputAck` each second. "Island alone" is what the
@@ -95,6 +98,52 @@ time-sync burst 4 probes 250 ms apart then every 10 ping intervals, `lateApplied
 `rateLimited`, `MAX_CLIENT_FRAME_MESSAGES` 256, the lead's half-input-interval step (derived from
 `inputsPerSecond`).
 
+### 0.5 The size lines after the review of 2026-11-17
+
+What grew: nothing. Encoding the same scenes on the tree of 9b5ee22 (before the fix round) and on the fix
+round gives identical bytes. The fix round's validation adds none, and its only new fields (`near.band`, 1 B;
+`spawnQueued.serverMs`; `rateLimited`) are in neither deltas nor census entries. The 458 B was another scenario
+(ten vessels at 3 g); the reviewer's 354 B is ten DOCKING vessels all steering (351 B worst here); the census
+entry's 91 B against the first delivery's 84 B is another test entry.
+
+What changed (every guarantee of the fix round kept; the decoders refuse non-canonical forms):
+- the control state is packed: an axis mask, only the non-zero axes, then flags and SAS mode in one byte (9 B
+  to 4 B for a pilot on two axes, 2 B for neutral controls); keys, deltas and the near tier carry it;
+- the island delta's tick is a signed varint (3-6 B for the ticks of a universe's life), float64 beyond 2^52;
+- p, e, inc, lan and argPe of every conic travel as 48-bit floats (relative 7.3e-12: 0.05 mm on a low orbit,
+  9 mm at the Moon, 3.4 m at 1 AU); tPeriapsis and a sent `a` stay float64; `canonicalConic` gives a sender
+  the conic its receivers hold.
+Fixtures shrank by 7-11 % (leo-coast 17,683 to 15,782 B); transcripts and fixtures were re-recorded.
+
+| Line | Before | Now | Brief |
+|---|---|---|---|
+| Ten docking vessels, ALL steering, worst of a key interval (20 seeds) | 351 B | 296 B (mean 262.6) | 300: MET |
+| Ten docking vessels, two steering, worst | 279 B | 264 B | 300: MET |
+| Ten vessels at 3 g, all steering, mean | 432.9 B | 377.9-403 B | (no line) |
+| Census entry, steady (relevant set) | 91 B | 81 B | 90: MET |
+| Census entry, first sight with its strings | 133-156 B | 123-146 B | (no line) |
+| Census document, 10,000 objects | 1,075 kB | 975 kB (74.6 B entry + 23.0 B strings per object) | ARCHITECTURE 14: 840 kB |
+
+Bytes per second per scenario after the changes (`bandwidth.test.ts`): ten docking (two steering) 264 B per
+delta, 8.7 kB/s at 30 Hz; ten at 3 g all steering 401 B, 12.8 kB/s; contact pair 259 B, 15.7 kB/s at 60 Hz;
+landed pair with four probes 447 B, 27.0 kB/s at 60 Hz. Delivered by the budget over 600 s: 6.72, 7.00, 7.19,
+7.81 kB/s; delta rate settled at 15.4, 10.1, 16.6, 10.0 Hz.
+
+What cannot be met in this format, for the lead to decide:
+- **3 g deltas**: the residuals are against key position + velocity x dt, so under 3 g they grow as a dt^2 / 2
+  (14.7 m: 21 bits of 1/64 mm after one second) and a dt (29 m/s: 25 bits of um/s), about 21 B of position and
+  velocity per vessel late in a key interval. The floor is ~380 B for ten. An acceleration term in the key (3
+  float32 per vessel, +12 B per vessel per key) would take ~10 B per vessel off every delta (~280 B for ten); at
+  30 Hz with a key a second, about 2.9 kB/s less per client, for a change of the IEEE-exact predictor of
+  `quant.ts`. Not done.
+- **Census at 840 kB**: the entries alone are 746 kB; the unique strings (a 12-character vessel id and a name,
+  23 B per object) are the rest. 840 kB needs the names out of the snapshot (a names document fetched once and
+  cached: ~790 kB), or the angles as 40-bit fixed point (5.7e-12 rad, 3 B less per object: ~945 kB), and both
+  together give ~760 kB. At the design load the difference is the first fetch of a sphere (975 against 840 kB per
+  client); the deltas that follow carry only what changed.
+- **First sight**: an object's strings travel once per session (handles), 42-65 B of them with its first entry.
+  That is the floor without shorter ids.
+
 ## 1. Acceptance, as the reviewer laid it out: proven / claimed / not done
 
 Proven = a test or a measurement in this repository shows it now; claimed = measured once (machine-dependent or
@@ -105,16 +154,16 @@ run by hand), not a standing test; not done = stated.
 | Round trip of every message type on 1,000 seeded random instances | PROVEN | all message types incl. `rateLimited`, equal values and bytes (`shared.test.ts` via `cases/codecCases.ts`) |
 | ... and on fixtures from FakeSession scenes | NOT DONE (substituted) | fixtures recorded from the real session (3 scenes, 917 frames), re-recorded after the fix round with no byte changed; FakeSession scenes listed in section 6 |
 | Keys bit-exact; delta quantisation within 16 um, 1 um/s, 5e-10 rad | PROVEN | `shared.test.ts` cases (7.81 um, 0.500 um/s, 1.60e-10 rad worst) |
-| Key at most 110 B per vessel; delta at most 130 B for two, 300 B for ten | PROVEN | 99 B; 75 B; 282 B (two of ten steering). With all ten steering: 458 B, NOT met (finding 13) |
-| Staging op under 100 B; census entry at most 90 B | PROVEN / PARTLY | 61 B; 84 B in steady state (91 B in `bandwidth.test.ts`'s entry), 156 B on first sight with handles (finding 13) |
-| Encode and decode at most 5 us per vessel | CLAIMED | `bench.ts` through the gate, 0.11-0.20 us per vessel, first delivery; not re-run after the fix round (the hot paths changed only by range checks) |
+| Key at most 110 B per vessel; delta at most 130 B for two, 300 B for ten | PROVEN | keys smaller than before (the packed control state); two docking vessels 55-62 B; ten docking vessels with two steering 230.6 B mean, 264 B worst, and with ALL ten steering 262.6 B mean, 296 B worst (`bandwidth.test.ts`). At 3 g all steering: 403 B mean, not a line of the brief (0.5) |
+| Staging op under 100 B; census entry at most 90 B | PROVEN | 61 B; census entry 81 B in steady state (the relevant set, strings as handles), 123-146 B on first sight with its new strings. The 10,000-object census document is 975 kB, above the 840 kB of ARCHITECTURE 14 (0.5) |
+| Encode and decode at most 5 us per vessel | CLAIMED | `bench.ts` through the gate, 0.11-0.20 us per vessel, first delivery; not re-run since (the hot paths gained range checks and the packed control state: a few branches per vessel) |
 | Zero allocation per message in steady state | PROVEN | `alloc.test.ts` (warm-up raised to 100,000 so the optimising compiler's own allocations finish first; growth now 5.7-19.5 kB over 100,000 messages, below one object per 5 messages, for delta, contact delta, key, inputAck, input, near) |
 | Fuzz: 1,000,000 inputs never throw / out of bounds / above 1 MB | PROVEN | `fuzz.test.ts`: 0 throws, largest sampled allocation 27.8 kB; plus the driver fuzz (finding 11) |
 | Same test file in Node and Chrome | PROVEN | section 7 |
 | Transcripts over loopback and injector to the same final states | PROVEN | 9 transcripts re-recorded (resume now challenged, real signatures, 3 clients in `version-mismatch`), loopback byte for byte, injector at 300 ms with stalls, 3 seeds |
 | Resume mid-handshake, mid-subscription, inputs in flight; takenOver stops sending; malformed / out of order refused | PROVEN | transcripts |
 | Injector within 5 ms of a scripted profile | CLAIMED | real timers, precise scheduler: 0.2 ms, first delivery (`transport.test.ts` runs it each time, but the numbers depend on the machine) |
-| Real `ws` server tests | NOT DONE | `ws` not installed (request wire-protocol-1). `fflate` is NOT used by `src/net` (the island blob is opaque): the lead can drop it |
+| Real `ws` server tests | PROVEN | `ws.test.ts` against `ws` 8.23 (finding 14). `fflate` is not used by `src/net` and was dropped |
 
 ## 2. Public API (exact signatures; all exported from `src/net/index.ts`)
 
@@ -199,9 +248,9 @@ tests/unit/net/fixtures/record.ts` (re-records the fixtures from the real sessio
 - **Deltas are against the last key, in residual units** (`DeltaPose`): the decoded message holds integers;
   `dequantizePose(key, dt, pose, out)` rebuilds float64 poses bit-identically in every runtime (only IEEE-exact
   operations). The key's attitude and rate are float32 as the brief says.
-- **Conics travel in a canonical form** (six float64 elements, `a` when not derivable, a closed flag; P, Q, W and
-  the period recomputed): equal to the sender's to a few ulps (worst 1e-14 measured); a decoded conic re-encodes
-  to the same bytes. Node and Chrome may differ by an ulp in sin/cos, so a census decoded in the two may differ
+- **Conics travel in a canonical form** (p, e, inc, lan, argPe as 48-bit floats, tPeriapsis float64, `a` when not
+  derivable, a closed flag; P, Q, W and the period recomputed): the receiver holds exactly `canonicalConic(sent)`,
+  within 2^-37 of the sender's elements (0.5); a decoded conic re-encodes to the same bytes. Node and Chrome may differ by an ulp in sin/cos, so a census decoded in the two may differ
   in the last bit of P, Q, W (ARCHITECTURE 3: clients compare with tolerance).
 - **Delivery**: 'latest' = `islandKey`, `islandDelta` (per island), `near` (per band), `durable`, and the
   list-like view models `pads`, `ships`, `assembly`, `roster`, `prompts`, `conjunctions` (per type); a newer one
@@ -220,16 +269,13 @@ tests/unit/net/fixtures/record.ts` (re-records the fixtures from the real sessio
 
 ## 5. Known limits (stated, not hidden)
 
-- **The real `ws` package is not tested**: `ws`, `@types/ws` and `fflate` were still not installed at the end of
-  the fix round (request wire-protocol-1). The `ws` adapter is tested against an EventEmitter with the `ws`
-  socket's interface; the browser-side transport against a real RFC 6455 server written for the tests, in Node
-  and in Chrome. `src/net` uses neither `ws` nor `fflate` (the island blob is carried opaque): `fflate` can be
-  dropped. When `ws` lands, the four real-server checks (maxPayload with `WS_SERVER_OPTIONS`, fragmented
-  messages, bufferedAmount under a stalled peer, close codes) are the next test to write in `transport.test.ts`.
+- **`ws`** is tested for real (`ws.test.ts`); `src/net` itself still imports no package (the gateway hands its
+  `ws` sockets to `nodeWsTransport`). The brief's "PROVIDED BY THE LEAD: ... fflate" is the lead's line to edit:
+  nothing here needs it (the island blob is carried opaque).
 - **Rate windows are per account within one gateway process** (`AccountLimits`, handed out by the host); an
   account spread over gateways would need the windows in the universe.
 - **The server driver decodes with `decodeFrame`** (allocating, bounded by the frame and sample caps as
-  measured), not a `FrameReader`; the margin loop's functions (`nextLead`, `stampTick`) are the app's to call
+  measured), not a `FrameReader` (finding 11 says what it would take); the margin loop's functions (`nextLead`, `stampTick`) are the app's to call
   (netcode-client), the session does not run the lead itself.
 - **Timer precision on Windows**: plain `setTimeout` lands on a 15.6 ms grid here; `RealScheduler({ precise:
   true })` reaches 0.2 ms by busy-waiting the last 17 ms before each deadline, so it is for measurements (tests,
@@ -237,8 +283,9 @@ tests/unit/net/fixtures/record.ts` (re-records the fixtures from the real sessio
 - **Island operations and the island blob** are carried as data whose meaning is island-core's: `split.cutJoints`
   are the child part indices of the cut joints, `capture.state` is opaque bytes, `rebase` carries the anchor slot
   and the new reference state. island-core and contact-docking may need to refine these by request.
-- **The launch queue reaches the app only through the wire and `ClientSession.launchQueue`** until the session
-  contract and `LinkState` can surface it (requests wire-protocol-2 and wire-protocol-3).
+- **The admission queue's estimated wait** has no `LinkState` field yet (request wire-protocol-3); the launch queue
+  reaches the app as `ClientSession.launchQueue` (`LaunchQueueEntry` plus `reqId` and `serverMs`) for netcode-client
+  to put in `ClientStores.launchQueue`.
 - **The stand-alone proxy's entry lives in `tests/unit/net/proxy/`** (src/net may not import Node networking;
   `tools/net` belongs to net-joint-gate and acceptance-multiclient). It is a copy away from `tools/net`.
 - **Fixtures**: the ascent scene's 40 s reach lift-off and ignitions but no decoupling, and the entry scene no
@@ -265,9 +312,9 @@ round: the near tier in both bands, a landed pair with probes (contact form at 6
 
 ## 7. Chrome run
 
-After the fix round: `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/net
---project=functional`, 2026-11-16: HeadlessChrome 157, 30 cases, 0 failed, 687 ms (1 Playwright test passed in
-2.1 s), with the re-recorded transcripts and the new codec. First delivery: 30 cases, 0 failed, 803 ms. Every Node case (26), the three fixtures fetched from the
+Last run, after the size changes: `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/net
+--project=functional`, 2026-11-17: HeadlessChrome 157, 30 cases, 0 failed, 694 ms (1 Playwright test passed in
+2.0 s), with the re-recorded transcripts and fixtures and the packed codec. After the fix round: 30 of 30, 687 ms. First delivery: 30 cases, 0 failed, 803 ms. Every Node case (26), the three fixtures fetched from the
 dev server, and the WHATWG WebSocket transport against the RFC 6455 test server the spec starts. The page uses no
 WebGPU, so no adapter is asserted. No resource failed to load, no console error or warning. Two earlier runs
 failed for reasons now fixed: Node's loader in the spec needs the JSON import attribute (`with { type: 'json' }`),
@@ -275,9 +322,9 @@ and the page's favicon request returned 404 (the page now has an icon of its own
 
 ## 8. Requests
 
-- `docs/requests/wire-protocol-1.md` (lead, root configuration): install `ws`, `@types/ws`, `fflate`. Open.
-- `docs/requests/wire-protocol-2.md` (lead, `session.ts`): a way to surface the launch queue to the app. Open.
-- `docs/requests/wire-protocol-3.md` (lead, `LinkState`): `admissionQueue` and `launchQueue` fields. Open.
+- `docs/requests/wire-protocol-1.md` (lead, root configuration): `ws`, `@types/ws`. CLOSED (installed; `fflate` dropped).
+- `docs/requests/wire-protocol-2.md` (lead, `session.ts`): answered by the records agent (`LaunchQueueEntry`, `ClientStores.launchQueue`, `UniverseCommands.cancelSpawn`); the client follows it.
+- `docs/requests/wire-protocol-3.md` (lead, `LinkState`): restated as ONE member, `queueEtaSeconds`, for the admission queue (the launch queue lives in `ClientStores.launchQueue`). Open.
 - No request against this package's paths was open when this note was written.
 - Contract changes: the wire-message section of `net.ts` (this package's own), and, under the fix round's
   authorisation, the optional limits fields of `UniverseRules.limits` with `WIRE_LIMIT_DEFAULTS`, `wireLimits()`
