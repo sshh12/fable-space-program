@@ -9,7 +9,7 @@
 export { ByteReader, ByteWriter, WireEncodeError, type DecodeError, type DecodeErrorCode, type StringTableIn, type StringTableOut } from './codec/bytes';
 export { assembleFrame, decodeDocument, decodeFrame, encodeDocument, encodeFrame, encodeMessage, FrameReader, FrameWriter, MAX_CLIENT_FRAME_MESSAGES, writeMessage, type DecodeOptions, type FrameResult, type FrameSource } from './codec/framing';
 export { DocumentStrings, HandleTableIn, HandleTableOut, MAX_HANDLES } from './codec/handles';
-export { MESSAGE_SPECS, randomMessage, specByCode, specOf, supersedeKey, type Delivery, type MessageSpec, type Sender as MessageSender } from './codec/messages';
+export { deltaMatchesKey, MESSAGE_SPECS, obsoletedKeys, randomMessage, specByCode, specOf, supersedeKey, type Delivery, type MessageSpec, type Sender as MessageSender } from './codec/messages';
 export { canonicalConic, canonicalRadius, expandConic } from './codec/census';
 export {
   ATT_SCALE,
@@ -45,10 +45,10 @@ export { addSample, clockTickAt, estimateClock, initialLead, leadParams, nextLea
 
 // Session layer.
 export { ClientSession, type ClientAction, type ClientConfig, type ClientPhase, type ClientRefusal } from './session/client';
-export { ServerSession, type AuthResult, type ResumeResult, type ServerAction, type ServerConfig, type ServerPhase, type ServerRefusalRecord } from './session/server';
+export { AccountLimits, budgetOptionsOf, ServerSession, type AuthResult, type IdentityProof, type ResumeResult, type ServerAction, type ServerConfig, type ServerPhase, type ServerRefusalRecord } from './session/server';
 export { ClientDriver, ServerDriver, type ClientDriverOptions, type ServerDriverOptions, type ServerHost } from './session/driver';
 export { InputBuffer, InputWindow, type InputBufferStats, type InputDrop } from './session/inputs';
-export { budgetClassOf, DownstreamBudget, type BudgetClass, type BudgetOptions, type BudgetStats } from './session/budget';
+export { budgetClassOf, DownstreamBudget, type BudgetClass, type BudgetOptions, type BudgetStats, type OfferInfo } from './session/budget';
 export { backoffMs, RateWindow } from './session/limits';
 
 // Injector.

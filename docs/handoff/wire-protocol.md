@@ -1,39 +1,120 @@
-# wire-protocol: hand-off
+# wire-protocol: hand-off (after the review's fix round)
 
 The wire layer of the v2 multiplayer universe (ARCHITECTURE 13, 14, 16.1; brief `wire-protocol` in
 `docs/WORK_PACKAGES_V2.json`, wave 4.1): the message schema (the wire-message section of
 `src/core/contracts/net.ts`) and its codec, framing, transports, the session layer for both ends, time sync and
 the input-margin loop, the per-client downstream budget, the latency injector (wrapper and stand-alone proxy)
 and a recorder/replayer of message streams. `src/net` imports `src/core` only and runs unchanged in Chrome, in
-Node and in a worker (it imports no Node module and no package; timers and I/O are injected).
+Node and in a worker (no Node module, no package; timers and I/O are injected).
 
-Ran beside `presentation-sweep` by the lead's decision: no presentation code is imported or run; `FakeSession`
-does not exist yet, so the fixtures were recorded from the REAL session (section 6 lists what is to be
-re-recorded from FakeSession scenes). Every verification was scoped (`typecheck:paths`, `vitest` on my paths,
-the boundary test); the whole-tree typecheck was not used.
+Ran beside `presentation-sweep`: no presentation code is imported or run. Every verification was scoped
+(`npm run typecheck:paths -- src/net src/core/contracts tests/unit/net tests/browser/net`; `node
+tools/dev/heavy.mjs --class=cpu -- npx vitest run src/net tests/unit/net tools/dev/boundaries.test.ts`: 12 files,
+180 tests pass; `node tools/dev/check-stubs.mjs` OK). Commits of the fix round: c6b1c9e, db4bdf6 and this note.
 
-## 1. Acceptance, line by line (measured on this machine, 2026-11-16, other agents' GPU work running)
+## 0. The review's findings: fixed / partly / not, with the evidence
 
-| Brief line | Result | Measured |
+| # | Finding | Status | Evidence (tests are under `tests/unit/net/`) |
+|---|---|---|---|
+| 1 | One 21-byte frame throws out of the gateway | FIXED | Reproduced first (the frame is an input stamped at -(2^53-1); the margin it produced made the `inputAck` encoder throw inside `ServerDriver.enter`). Causes fixed: stamps outside [clock(up) - inputBufferMs, clock(up) + roundTripAllowance] are dropped on BOTH sides (`InputBuffer.accept` 'past' / 'future'); without a pilot clock every stamped message is refused (`noClock`, fail closed); the margin is clamped to +-60 s where it is measured AND in the encoder; any error inside `ServerDriver.enter` (machine or host callback) closes THAT socket with 1011 and calls `host.error` (`ClientDriver` likewise, `onError`). `drivers.test.ts`: the exact frame without and with a clock, a throwing host closes one socket of two; the fuzz below |
+| 2 | Ping and timeSync floods | FIXED | Per-socket UPSTREAM token bucket in bytes (16 kB/s, burst 80 kB) and frames (60/s, burst 120), checked in `ServerDriver` BEFORE decoding; over it the socket is closed (`refused`). Pings 2/s and time-sync probes 2/s (account windows); before the welcome a ping costs no answer and at most `handshakeMessages` (8) other messages are taken. Control class 0 of the budget goes at most one bucket into debt, then waits; what waits for a socket (budget + sender) is capped at 1 MiB and 10 s, over a cap the socket closes (4003 `slowConsumer`). `drivers.test.ts` 'blocker 2' (bucket, ping/timeSync rates, handshake cap, byte cap, age cap) |
+| 3 | A limit for every client message type | FIXED | `wireLimits(rules)`: inputs, commands, time, seat requests (spawn/attach/detach/cancel), subscriptions, plans, quick, targets, pings, time-sync, samples per frame. ONE `rateLimited { what, dropped, ids, retryAfterMs }` per kind per window (new message, code 64; the client answers the dropped request ids as refused). The rate is checked BEFORE `repeat()`. `AccountLimits` is the account's windows, given by the host with the auth or resume answer (so a reconnect does not reset them); the resume catch-up burst is granted once per input-buffer span per account. The client paces its own requests at the same limits. `session.test.ts`, `drivers.test.ts` |
+| 4 | Time sync | FIXED | The welcome is no longer a sample; probes run on their own timer (a burst of 4, 250 ms apart, then one every 10 ping intervals) whatever else is sent; `ServerDriverOptions.wallMs()` beside `upMs()`. `timing.test.ts`: over the injector with 150 ms up and 30 ms down: round trip 176.5 ms, wall and up-time offsets off by 58.1 ms, i.e. the inherent half-asymmetry (60 ms) of any two-way sync, 9 probes in 60 s while inputs flowed at 60 Hz |
+| 5 | Input-margin loop | FIXED | The gateway reports the margin at most once per second (the earliest input of the window); `nextLead` shrinks the lead by at most half an input interval per report (grows at once); `InputWindow.add` never lets a stamp go back. `timing.test.ts` closed loop over the injector (80/40 ms, 15 ms jitter, 120 s): 116 reports, settled lead 114.1-114.8 ms, 0.00 % of 6,881 inputs late, 0 stamps back, 0 dropped as future |
+| 6 | Downstream budget to the lead's decisions | FIXED | `DownstreamBudget` rewritten: (a) 6 kB/s sustained, refilled at 24 kB/s while island or near records wait, at most 60 s in any 600 s; (b) island deltas at an adaptive rate between 30 Hz and 10 Hz from the delta sizes produced, contact deltas at 60 Hz from the burst allowance; (c) pads, ships, roster, prompts, conjunctions, assembly latest-wins per type; (d) `islandEnter` free up to 256 kB, the excess charged; (e) class 3 keeps a floor of 10 % of the sustained rate (taken from the same bucket, never extra bytes). Rule fields: section 0.1. Table per scenario: section 0.2. `session.test.ts` (a)-(e), `bandwidth.test.ts` (ten-vessel island with near tier, relevant set and pads, ten minutes) |
+| 7 | Drop-superseded unsafe | FIXED | `near` carries `band: 'near' | 'far'` and supersedes per band; `islandSlow` is reliable; a superseding record replaces the waiting one IN PLACE (budget and sender); an `islandKey` removes the waiting deltas of its island (`obsoletedKeys`); `deltaMatchesKey(delta, heldIsland, heldKeyTick)` refuses a delta whose keyTick is not the held key's. `review.test.ts`, `session.test.ts` (c) |
+| 8 | Numbers reach the host unvalidated | FIXED (codec + machine); the universe's part listed in 0.3 | Stamp window of ARCHITECTURE 26 on commands and time requests in the machine (beyond clock(up) + 0.25 s refused; a late one is forwarded, the universe re-times it: 6.2); -0 canonicalised (`tick()`, `ranged`); ids printable ASCII <= 128 B, names <= 64 B without control characters, `relevantDistance` 0..1e9 m, `transfer.rate` 0..1e5, `advanceLimit.seconds` 0..250 years, `setRate` level within `WARP_LEVELS`, `sasHold` a unit vector (1e-3), every tick a safe integer, every float finite. `review.test.ts` |
+| 9 | Identity | FIXED | A resume is challenged like a new session (the host's `resume` gets the token AND the signature over the fresh nonce); the host is given the CLIENT's build (the one it signed) and `cpuScore` (`IdentityProof`); the transcript host checks a real keyed signature (wrong nonce, server, build or account fails). All transcripts re-recorded |
+| 10 | Visible queue across a reconnect | PARTLY | Done: `ResumedSeat` has a without-seat form (`vesselId: null`, `queued`); the contract says the universe re-sends `spawnQueued` after a resume and drops the entry of a session lost past the grace; a cancel made while reconnecting is remembered and sent on resume; `SpawnQueuedMessage.serverMs` (ETA counted from it, wall seconds); the client keeps `admissionQueue` and `launchQueue` apart. Not done: the two fields in `LinkState` (lead's section): request `wire-protocol-3`. The records agent had not added the launch queue to `session.ts` when this was written (no commit touches it), so the names above are mine and can follow theirs |
+| 11 | Fuzz | PARTLY | Structure-aware fuzzer of both drivers (valid messages of every type, extreme field values, bit flips, advancing time): server 20,000 frames, 1,167 sockets closed by the gateway, 0 internal errors; client 13,181 frames over 12 sessions, 0 internal errors. Byte fuzz 1,000,000 inputs, 0 throws. Samples per frame capped (128) inside the decoder; the largest client frame at the cap allocates 7.3 kB per decode, a frame over it 11.3 kB before it stops. NOT done: the server driver still decodes with `decodeFrame` (allocating, bounded as measured) rather than a `FrameReader`/pool; the session keeps forwarded messages, so it would need copies anyway |
+| 12 | Closing records and close codes | FIXED | `refused`, `takenOver`, `bye` are force-flushed (budget `takeAll`, sender `flush(true)`) before the close; the client maps 4002 without its message to taken over and 4000 to a loss with backoff. `review.test.ts` |
+| 13 | Ten-vessel delta with all steering; census entry on first sight | STATED (not met) | Measured, `bandwidth.test.ts`: ten vessels at 3 g ALL steering 458 B per delta on average over a key interval (the first delivery's 282 B was two of ten steering while docking; 354 B is not met). A census entry on first sight 156 B with its handles, 91 B after (107-115 B is not met on first sight) |
+| 14 | `ws` adapter | PARTLY | `WS_SERVER_OPTIONS = { maxPayload: 64 KiB, perMessageDeflate: false }` exported for the gateway's `WebSocketServer`; `close()` calls `terminate()` for a declared loss or a slow consumer. NOT run against a real `ws` server: `ws` is still not installed (checked `node_modules/ws`), so maxPayload, fragmented messages, bufferedAmount under a stalled peer and close codes are not proven on the real package |
+| 15 | Version skew | FIXED | Hello (code 1) and `refused` (code 34) layouts frozen and their bytes held in `review.test.ts`; a client skips a record of an unknown type by its length, a server refuses one; transcript `version-mismatch` gained a client of protocol 2 refused 'protocol' |
+| 16 | The client against a bad server frame | FIXED | `acknowledge()` tests ranges instead of materialising them (a range of 6,000,000: < 20 ms, < 1 MB); `lateApplied` keeps the last 256; `retryAfterMs` clamped to 10 min. `review.test.ts` |
+| 17 | Varints and coarse bounds | FIXED | Non-canonical varints refused (`badVarint`). Stated: the coarse path of island frames is good to 8 um/s and 0.5 mm, and float64 positions lose sub-mm precision beyond 5e10 m from the body centre |
+| 18 | Limits as contract constants, units | FIXED | 22 optional fields added to `UniverseRules.limits` with units and `WIRE_LIMIT_DEFAULTS` (section 0.1); `WIRE_RANGES`. Units: `transfer.rate` kg/s of the resource, `advanceLimit.seconds` seconds of the craft's own clock, `merge.rollStep` index of the port's roll steps (integer), `nearOrigin.r` / `v` m and m/s in the body-centred inertial frame of `bodyId` at the message's tick. Additions beyond ARCHITECTURE 13.2 / 13.3, flagged: `rateLimited`, `near.band`, `SpawnQueuedMessage.serverMs`, `ResumedSeat.queued` and nullable `vesselId`, close codes 4003 and 1011, and the protocol constants in section 0.4 |
+| 19 | Fixtures | FIXED (stated) | Section 6 says what the fixtures are (recorded from the REAL session, not FakeSession) and lists the re-record set, extended |
+
+### 0.1 Rule fields the default rules document must receive at the tighten step
+
+Added (optional, documented with units) to `UniverseRules.limits` in the lead's section of `net.ts` under the fix
+round's authorisation; `wireLimits(rules)` merges `WIRE_LIMIT_DEFAULTS` for any field the document in force does
+not carry. Nothing under `data/defs/rules` was edited (PACKAGE_RULES 7a). Defaults:
+
+| Field | Default | Unit |
 |---|---|---|
-| Round trip: every message type on 1,000 seeded random instances decodes to equal values | MET | all 52 message types (socket, role, census documents), 1,000 each, equal values and equal bytes on re-encoding (`tests/unit/net/cases/codecCases.ts`) |
-| ... and on fixtures recorded from FakeSession scenes | PARTLY MET | recorded from the real session instead (FakeSession does not exist yet): 3 scenes, 917 frames, every frame re-encodes byte for byte, every message round-trips (`tests/unit/net/fixtures`). The FakeSession scenes are listed in section 6 |
-| Keys are bit-exact | MET | 2,000 random keys: float64 positions and velocities and float32 attitude and rate identical to the bit (Object.is) |
-| Quantisation of deltas at most 16 um, 1 um/s, 5e-10 rad | MET | worst over 20,000 poses (0 to 2 s after the key, docking and 3 g motion, turning): 7.81 um, 0.500 um/s, 1.60e-10 rad |
-| Single-owner key at most 110 B per vessel (with framing) | MET | 99 B (109 B with the pilot's `inputAck` in the same frame); 90 B per vessel in a key of 4 |
-| Shared delta at most 130 B for two vessels | MET | 75 B (worst of every 30 Hz send tick of a key interval, 20 seeds, docking approach, one control group) |
-| Shared delta at most 300 B for ten | MET | 282 B (same, two control groups) |
-| A staging IslandOp under 100 B | MET | 61 B (`split` with the directory-style id of the spent stage and the checksum) |
-| A census entry at most 90 B | MET | 84 B per entry in the relevant set (coasting ship, one patch, strings as session handles: ARCHITECTURE 13.1 "the mapping is sent once"); for the record: a public census document costs 112 B per entry with its own string table |
-| Encode at most 5 us and decode at most 5 us per vessel for a delta (benchmark through the gate) | MET | `node tools/dev/heavy.mjs --class=cpu -- npx tsx src/net/bench.ts`: encode (quantise + write) 0.127 us per vessel (2 vessels), 0.110 (10); decode (read + rebuild poses) 0.199 / 0.151 us; key 0.04-0.08 us; input 0.14 / 0.13 us per message. Taken while other agents ran GPU jobs (PACKAGE_RULES 16: provisional) |
-| Zero allocations per message in steady state for the high-rate types | MET | heap + array-buffer growth over 100,000 messages after warm-up (`tests/unit/net/alloc.test.ts`): encode at most 0.21 B and decode at most 0.33 B per message for `islandDelta` (10 vessels; and a contact pair with part-fast), `islandKey`, `inputAck`, `input`, `near`: noise, below one object. No collection during the benchmark's timed runs. (One `Uint8Array` view per FRAME is handed to the transport; not per message) |
-| Fuzz: 1,000,000 random and mutated byte strings never throw, never read out of bounds, never allocate above 1 MB | MET | 1,000,000 inputs (40 % random, 60 % mutated valid frames of every type), through `decodeFrame` and `FrameReader`, from every side: 0 throws, 38,980 decoded, every other refused with a typed reason; largest sampled allocation 7.1 kB; the worst inputs a client can send: 256 pings 38 kB, a 60 kB plan 64 kB, a 64-sample input 31 kB |
-| The same test file passes in Node (vitest) and in Chrome (Playwright spec loading the bundle) | MET | one case module (`tests/unit/net/cases`), two runners: `tests/unit/net/shared.test.ts` (Node: 26 cases pass) and `tests/browser/net/net.spec.ts` (Chrome 157 loads `runner.html`, which imports the same modules through Vite: the 26 cases, the 3 fixtures and the WebSocket transport, 30 of 30 pass in 0.8 s; the spec checks the list equals Node's). Section 7 |
-| Session layer: every transcript drives the client half against the server half over the loopback and over the injector at 300 ms with stalls to the same final states | MET | 9 transcripts (`tests/unit/net/transcripts/*.json`), each over the loopback and over the injector at a 300 ms round trip, 20 ms jitter, 5 % stalls of 200 ms, 3 seeds: the stated outcome every time; the loopback run reproduces the recorded frames byte for byte |
-| Resume after a drop mid-handshake, mid-subscription and with inputs in flight | MET | transcripts `resume-mid-handshake`, `resume-mid-subscription`, `resume-inputs-in-flight` (every input applied once, every request answered once), plus `stall-and-declared-loss` and `outage-beyond-grace` (resume refused after the 120 s grace, a new session) |
-| A takenOver session stops sending | MET | transcript `taken-over`: 0 frames sent after `takenOver`; its later command is answered as refused locally |
-| Malformed and out-of-order messages are refused with a typed reason | MET | transcript `malformed-and-out-of-order` (server refuses 'malformed' and 'outOfOrder', client refuses a malformed server frame) and `version-mismatch` ('build', 'defsHash'); unit tests for each refusal |
-| The injector reproduces a scripted profile (150 ms +/- 20 ms, 5 % stalls of 200 ms) within 5 ms, measured | MET (with the precise scheduler) | 300 frames on real timers: delivery minus the scripted arrival 0.01 .. 0.20 ms (p99 0.12 ms); base delays 130.0 .. 170.0 ms, 12 stall episodes, longest delay 350 ms. NOT met with plain `setTimeout` on this Windows machine: p99 15.4 ms, max 15.6 ms (the system timer's 15.6 ms grid), which is why `RealScheduler({ precise: true })` exists (section 5). The stand-alone proxy process (precise) gave round trips of 285-316 ms against a scripted 300 +/- 20 |
+| `upstreamBytesPerSecond` / `upstreamBurstBytes` | 16,000 / 81,920 | bytes per second / bytes |
+| `upstreamFramesPerSecond` / `upstreamBurstFrames` | 60 / 120 | frames per second / frames |
+| `pingsPerSecond` / `timeSyncsPerSecond` | 2 / 2 | messages per second |
+| `handshakeMessages` | 8 | messages before the welcome (pings excluded) |
+| `plansPerSecond` / `quicksPerSecond` / `targetsPerSecond` / `seatRequestsPerSecond` | 1 / 1 / 5 / 2 | messages per second |
+| `inputSamplesPerFrame` | 128 | samples |
+| `sendQueueBytes` / `sendQueueAge` | 1,048,576 / 10 | bytes / seconds |
+| `downstreamBytesPerSecond` | 6,000 | bytes per second, sustained |
+| `downstreamBurstBytesPerSecond` / `downstreamBurstSeconds` / `downstreamBurstWindow` | 24,000 / 60 / 600 | bytes per second / seconds / seconds |
+| `deltaRateTarget` / `deltaRateFloor` | 30 / 10 | Hz |
+| `islandEnterFreeBytes` | 262,144 | bytes |
+| `relevantFloorShare` | 0.1 | share of the sustained rate |
+
+### 0.2 Bytes per second per scenario (`bandwidth.test.ts`, real encoded frames, ten minutes each)
+
+Each scenario runs the island at 60 Hz offered, keys every second, plus an 8-vessel near tier at 10 Hz, two
+census entries a second in the relevant set, the pads and an `inputAck` each second. "Island alone" is what the
+island costs at a fixed rate (the reviewer's table); "delivered" is what the budget let through.
+
+| Scenario | Delta (avg) | Island alone at 30 Hz | at 60 Hz | Reviewer's figure | Delivered, 600 s average | First minute (burst) | Delta rate settled |
+|---|---|---|---|---|---|---|---|
+| Ten vessels docking, two steering | 279 B | 9.2 kB/s | 17.6 kB/s | 8.5-10.6 at 30 Hz | 6.79 kB/s | 11.4 kB/s | 14.7 Hz |
+| Ten vessels at 3 g, all steering | 455 B | 14.5 kB/s | 28.2 kB/s | 13.9-16.0 at 30 Hz | 7.08 kB/s | 16.7 kB/s | 10.0 Hz (floor) |
+| A pair in contact, exact form | 264 B | 8.1 kB/s | 16.0 kB/s | 16.1 at 60 Hz | 7.23 kB/s | 18.2 kB/s | 16.4 Hz |
+| A landed pair, four probes each | 452 B | 13.7 kB/s | 27.3 kB/s | 28.6 at 60 Hz | 7.81 kB/s | 24.1 kB/s | 10.0 Hz (floor) |
+
+Read plainly: 6 kB/s sustained cannot carry any of these at 30 Hz; the budget holds the average at 6 kB/s
+plus the one burst minute (at most 7.8 kB/s over any 600 s), gives 30 Hz (60 Hz in contact) for the burst
+minute, and then the delta rate falls to what fits, down to the 10 Hz floor. Two scenarios sit at the floor,
+where the island alone (4.6 kB/s) still fits beside the near tier and the relevant set's 10 % floor; a bigger
+island than these would wait (the floor is a rate of release, not a promise of bytes). If 30 Hz must hold for
+docking and contact, the sustained rate or the burst minute is the number to change (rule values above).
+
+### 0.3 What remains for the universe to validate (the codec and the gateway cannot)
+
+Authority and ownership (`craft.owner`, the helm on the island: ARCHITECTURE 26); that every id names an
+existing, visible object of the right kind (craft, vessel, port, part, site, pad, vehicle, body, clock, account,
+phrase); `transfer` resource valid for both craft and the rate within their plumbing; `advanceLimit` within the
+group's rules; `setRate` / warp / jump / follow / link / proposals within the time rules of section 26 (the
+gateway counts `time` messages, it does not judge them); a command's validity at its stamped tick (6.4); a spawn's
+vehicle, site, pad, slot and the name policy; a plan's opaque bytes; subscription contents beyond the distance
+range; lend-policy semantics; `cpuScore` is self-reported (a hint, never trusted); the rate of anything per
+account across gateways (the gateway's windows are per account only within one gateway process).
+
+### 0.4 Protocol constants (not rule values; flagged per finding 18)
+
+`MARGIN_REPORT_MS` 1000 (margin reports), the contact delta rate 60 Hz, the client's `MAX_RETRY_AFTER_MS` 10 min,
+time-sync burst 4 probes 250 ms apart then every 10 ping intervals, `lateApplied` memory 256, at most 64 ids per
+`rateLimited`, `MAX_CLIENT_FRAME_MESSAGES` 256, the lead's half-input-interval step (derived from
+`inputsPerSecond`).
+
+## 1. Acceptance, as the reviewer laid it out: proven / claimed / not done
+
+Proven = a test or a measurement in this repository shows it now; claimed = measured once (machine-dependent or
+run by hand), not a standing test; not done = stated.
+
+| Brief line | Status | Evidence |
+|---|---|---|
+| Round trip of every message type on 1,000 seeded random instances | PROVEN | all message types incl. `rateLimited`, equal values and bytes (`shared.test.ts` via `cases/codecCases.ts`) |
+| ... and on fixtures from FakeSession scenes | NOT DONE (substituted) | fixtures recorded from the real session (3 scenes, 917 frames), re-recorded after the fix round with no byte changed; FakeSession scenes listed in section 6 |
+| Keys bit-exact; delta quantisation within 16 um, 1 um/s, 5e-10 rad | PROVEN | `shared.test.ts` cases (7.81 um, 0.500 um/s, 1.60e-10 rad worst) |
+| Key at most 110 B per vessel; delta at most 130 B for two, 300 B for ten | PROVEN | 99 B; 75 B; 282 B (two of ten steering). With all ten steering: 458 B, NOT met (finding 13) |
+| Staging op under 100 B; census entry at most 90 B | PROVEN / PARTLY | 61 B; 84 B in steady state (91 B in `bandwidth.test.ts`'s entry), 156 B on first sight with handles (finding 13) |
+| Encode and decode at most 5 us per vessel | CLAIMED | `bench.ts` through the gate, 0.11-0.20 us per vessel, first delivery; not re-run after the fix round (the hot paths changed only by range checks) |
+| Zero allocation per message in steady state | PROVEN | `alloc.test.ts` (warm-up raised to 100,000 so the optimising compiler's own allocations finish first; growth now 5.7-19.5 kB over 100,000 messages, below one object per 5 messages, for delta, contact delta, key, inputAck, input, near) |
+| Fuzz: 1,000,000 inputs never throw / out of bounds / above 1 MB | PROVEN | `fuzz.test.ts`: 0 throws, largest sampled allocation 27.8 kB; plus the driver fuzz (finding 11) |
+| Same test file in Node and Chrome | PROVEN | section 7 |
+| Transcripts over loopback and injector to the same final states | PROVEN | 9 transcripts re-recorded (resume now challenged, real signatures, 3 clients in `version-mismatch`), loopback byte for byte, injector at 300 ms with stalls, 3 seeds |
+| Resume mid-handshake, mid-subscription, inputs in flight; takenOver stops sending; malformed / out of order refused | PROVEN | transcripts |
+| Injector within 5 ms of a scripted profile | CLAIMED | real timers, precise scheduler: 0.2 ms, first delivery (`transport.test.ts` runs it each time, but the numbers depend on the machine) |
+| Real `ws` server tests | NOT DONE | `ws` not installed (request wire-protocol-1). `fflate` is NOT used by `src/net` (the island blob is opaque): the lead can drop it |
 
 ## 2. Public API (exact signatures; all exported from `src/net/index.ts`)
 
@@ -76,18 +157,18 @@ documents `censusSnapshot`, `censusDelta`. Unions `ClientMessage`, `ServerMessag
 - `webSocketTransport(ws: WebSocketLike)`, `connectWebSocket(url)` (browser, worker, Node 22+ global WebSocket)
 - `nodeWsTransport(ws: WsSocketLike)` (a `ws` package socket, structurally typed)
 - `streamTransport(stream: ByteStreamLike, maxFrameBytes?)` (u32 LE length prefix; a Node `net.Socket` fits), `FrameAssembler`, `lengthPrefixed`
-- `class Sender { constructor(transport, { highWaterBytes?, maxFrameBytes? }); push(m, table?); pushRecord(record, key); flush(): number; stats }` (holds back above the high-water mark, supersedes 'latest' records, never drops reliable ones)
+- `class Sender { constructor(transport, { highWaterBytes?, maxFrameBytes?, maxQueuedBytes?, maxQueueAgeMs? }); push(m, table?, nowMs?); pushRecord(record, key, nowMs?); flush(force?): number; overflowed(nowMs): boolean; clear(); stats }` (holds back above the high-water mark, supersedes 'latest' records in place, never drops reliable ones; `WS_SERVER_OPTIONS` for a `ws` server)
 
 ### Time
 - `interface Scheduler { now(); setTimer(ms, fn); clearTimer(h) }`, `ManualScheduler` (virtual time, livelock guard), `RealScheduler({ precise? })`
-- `rttOf`, `offsetOf`, `estimateClock(samples)` (minimum-round-trip filter), `addSample`; `leadParams(rules)`, `initialLead(rtt, p)`, `nextLead(lead, marginMs, p)`, `stampTick`, `clockTickAt(clock, upMs)`
+- `rttOf`, `offsetOf`, `estimateClock(samples)` (minimum-round-trip filter), `addSample`; `leadParams(rules)` (with `maxDecreaseMs`), `initialLead(rtt, p)`, `nextLead(lead, marginMs, p)` (once per report), `stampTick`, `clockTickAt(clock, upMs)`
 
 ### Session layer (pure machines + drivers)
 - `class ClientSession(cfg: { build; defsHash; cpuScore; accountId; rules?; random; protocol? })`: `connect()`, `leave()`, `spawn(req): reqId`, `attach(vesselId, clockId?)`, `detach()`, `cancelSpawn(reqId)`, `command(tick, cmd)`, `time(tick, req)`, `target(ref)`, `plan(craftId, data)`, `quick(phrase, to)`, `subscribe(change)`, `input(controls, applyTick, sasHold?)`; events `tick(now)`, `transportOpen()`, `transportClosed(info)`, `messages(list)`, `malformed(error)`, `signed(signature)`; `drain(): ClientAction[]`, `nextDeadline()`, `linkState(): LinkState`; state `phase`, `session`, `vesselId`, `clock` (sync estimate), `inputMarginMs`, `inputs`, `pendingRequests`, `currentSubscriptions`
-- `class ServerSession(cfg: ServerConfig, nowMs, upMs)`: client events `messages`, `malformed`, `transportClosed`; host `authResult(AuthResult)`, `resumeResult(ResumeResult)`, `seatResult`, `spawnQueued`, `commandResult`, `setClock`, `inputApplied(seq, tick)`, `push(m)`, `takeOver()`, `end(reason, text)`, `retainedInputs()`; `tick(now, up)`, `drain(): ServerAction[]`, `nextDeadline()`
+- `class ServerSession(cfg: ServerConfig, nowMs, upMs)`: client events `messages`, `malformed`, `transportClosed`; host `authResult(AuthResult)`, `resumeResult(ResumeResult)`, `seatResult`, `spawnQueued`, `commandResult`, `setClock`, `inputApplied(seq, tick)`, `push(m)`, `takeOver()`, `end(reason, text)`, `abort(code, reason)`, `retainedInputs()`; `AuthResult` / `ResumeResult` carry an optional `limits: AccountLimits`; `tick(now, up)`, `drain(): ServerAction[]`, `nextDeadline()`
 - `class ClientDriver({ session, scheduler, connect(attempt, nextCandidate), sign(nonce, serverId, build), onMessage?, onLink?, onFrameOut?, sender? })`: `start()`, `enter(fn)`, `stop()`
-- `class ServerDriver({ transport, scheduler, config, upMs(), host: ServerHost, onFrameIn?, sender? })`: `enter(fn)`, `push(m)`, `authResult(r)`, `resumeResult(r)`; `interface ServerHost { verifyAuth(req, driver); resume(req, driver); forward(message, driver); lost?(info, driver); phase?(phase, driver) }` (the host answers the two checks by calling the driver)
-- `InputWindow`, `InputBuffer`, `DownstreamBudget({ bytesPerSecond?, burstBytes? })` with `budgetClassOf(m)`, `RateWindow`, `backoffMs(attempt, random)`
+- `class ServerDriver({ transport, scheduler, config, upMs(), wallMs?(), host: ServerHost, onFrameIn?, sender? })`: `enter(fn)`, `push(m)`, `authResult(r)`, `resumeResult(r)`; `interface ServerHost { verifyAuth(req: IdentityProof, driver); resume(req: IdentityProof & { session, relevantSeq }, driver); forward(message, driver); lost?(info, driver); phase?(phase, driver); error?(e, driver) }`; `IdentityProof { accountId, signature, nonce, serverId, build (the client's), cpuScore }` (the host answers the two checks by calling the driver)
+- `InputWindow`, `InputBuffer`, `DownstreamBudget({ bytesPerSecond?, burstBytesPerSecond?, burstSeconds?, burstWindowSeconds?, islandEnterFreeBytes?, relevantFloorShare?, deltaRateTarget?, deltaRateFloor? })` (`budgetOptionsOf(wireLimits(rules))`) with `budgetClassOf(m)`, `AccountLimits`, `RateWindow`, `backoffMs(attempt, random)`
 - Transcripts (`src/net/testing/transcripts.ts`, a testing module): `runTranscript(t, { link, rules?, client?, server? }): { outcome, recorded }`, `parseTranscript(json)`, `recordedFrames(entries)`; the pluggable halves `TranscriptClientHalf`, `TranscriptServerSide`
 
 ### Injector and recorder
@@ -122,11 +203,14 @@ tests/unit/net/fixtures/record.ts` (re-records the fixtures from the real sessio
   the period recomputed): equal to the sender's to a few ulps (worst 1e-14 measured); a decoded conic re-encodes
   to the same bytes. Node and Chrome may differ by an ulp in sin/cos, so a census decoded in the two may differ
   in the last bit of P, Q, W (ARCHITECTURE 3: clients compare with tolerance).
-- **Delivery**: 'latest' = `islandKey`, `islandDelta`, `islandSlow`, `near`, `durable` (superseded by island /
-  type); everything else reliable. Inputs are reliable messages (a resume sends its catch-up in several).
+- **Delivery**: 'latest' = `islandKey`, `islandDelta` (per island), `near` (per band), `durable`, and the
+  list-like view models `pads`, `ships`, `assembly`, `roster`, `prompts`, `conjunctions` (per type); a newer one
+  replaces the waiting one in place, and a key removes the waiting deltas of its island. Everything else,
+  `islandSlow` included, is reliable. Inputs are reliable messages (a resume sends its catch-up in several).
 - **Session rules a gateway and a client get for free**: version/build/defsHash refusal before the challenge;
-  resume by token (no challenge), with `ResumedSeat.lastInputSeq` so the client retires applied inputs; a
-  resumed gateway admits the catch-up once beyond the input rate; requests sent again after a resume are
+  resume by token AND a signature over a fresh nonce, with `ResumedSeat.lastInputSeq` so the client retires
+  applied inputs (and `ResumedSeat.queued` for a player still in the launch queue); a resumed gateway admits the
+  catch-up once per input-buffer span per account beyond the input rate; requests sent again after a resume are
   answered once (per socket by the gateway, and by the universe across sockets: the transcripts' host does it,
   server-persistence's must too); a request made while connecting waits for the welcome; after the grace a
   refused resume starts a new session and the requests of the old one are answered as refused ("the session
@@ -136,19 +220,25 @@ tests/unit/net/fixtures/record.ts` (re-records the fixtures from the real sessio
 
 ## 5. Known limits (stated, not hidden)
 
-- **The real `ws` package is not tested**: `ws`, `@types/ws` and `fflate` are not installed (request
-  wire-protocol-1). The `ws` adapter is tested against an EventEmitter with the `ws` socket's interface; the
-  browser-side transport is tested against a real RFC 6455 server written for the tests, in Node (Node's own
-  WebSocket) and in Chrome. `src/net` needs neither package (the island blob is carried opaque, deflated by the
-  application).
+- **The real `ws` package is not tested**: `ws`, `@types/ws` and `fflate` were still not installed at the end of
+  the fix round (request wire-protocol-1). The `ws` adapter is tested against an EventEmitter with the `ws`
+  socket's interface; the browser-side transport against a real RFC 6455 server written for the tests, in Node
+  and in Chrome. `src/net` uses neither `ws` nor `fflate` (the island blob is carried opaque): `fflate` can be
+  dropped. When `ws` lands, the four real-server checks (maxPayload with `WS_SERVER_OPTIONS`, fragmented
+  messages, bufferedAmount under a stalled peer, close codes) are the next test to write in `transport.test.ts`.
+- **Rate windows are per account within one gateway process** (`AccountLimits`, handed out by the host); an
+  account spread over gateways would need the windows in the universe.
+- **The server driver decodes with `decodeFrame`** (allocating, bounded by the frame and sample caps as
+  measured), not a `FrameReader`; the margin loop's functions (`nextLead`, `stampTick`) are the app's to call
+  (netcode-client), the session does not run the lead itself.
 - **Timer precision on Windows**: plain `setTimeout` lands on a 15.6 ms grid here; `RealScheduler({ precise:
   true })` reaches 0.2 ms by busy-waiting the last 17 ms before each deadline, so it is for measurements (tests,
   the proxy process), not for games, bots or gateways.
 - **Island operations and the island blob** are carried as data whose meaning is island-core's: `split.cutJoints`
   are the child part indices of the cut joints, `capture.state` is opaque bytes, `rebase` carries the anchor slot
   and the new reference state. island-core and contact-docking may need to refine these by request.
-- **The launch queue reaches the app only through the wire** until the session contract can surface it
-  (request wire-protocol-2).
+- **The launch queue reaches the app only through the wire and `ClientSession.launchQueue`** until the session
+  contract and `LinkState` can surface it (requests wire-protocol-2 and wire-protocol-3).
 - **The stand-alone proxy's entry lives in `tests/unit/net/proxy/`** (src/net may not import Node networking;
   `tools/net` belongs to net-joint-gate and acceptance-multiclient). It is a copy away from `tools/net`.
 - **Fixtures**: the ascent scene's 40 s reach lift-off and ignitions but no decoupling, and the entry scene no
@@ -157,19 +247,27 @@ tests/unit/net/fixtures/record.ts` (re-records the fixtures from the real sessio
 
 ## 6. Fixtures to re-record from FakeSession scenes (once presentation-sweep has built it)
 
+What the fixtures ARE: three `.fspw` recordings (`leo-coast-rcs`, `ascent-staging`, `entry-chutes`) of the
+real session's server messages (clock, keys, deltas, relevant deltas, durable, events) for one pilot alone, 917
+frames; they test that recorded bytes still decode and re-encode identically. They contain no near tier, no
+launch queue, no contact and no second vessel. Re-recording after the fix round changed no byte (`npx tsx
+tests/unit/net/fixtures/record.ts`).
+
 With `tests/unit/net/fixtures/record.ts` extended by a FakeSession source: rendezvous (two vessels closing from
 2 km: near tier, then an island with both, shared deltas at 30 Hz), docking approach (soft capture and hard dock:
 the contact form, `islandOp capture` and `merge`, `docked` events), an assembly (two craft, helm hand-over,
 `assembly` view, lend policies), echoes (recorded and projected echoes in the relevant set: `relevantFull` /
 `relevantDelta` with forecast chains, reservations, `limitTick`), the time strip (`clock` with members,
-proposals and offers; `prompts`; `conjunctions`; refused time requests with alternatives). Each becomes a `.fspw`
-file in `FIXTURE_FILES` (`tests/unit/net/cases/fixtureCases.ts`).
+proposals and offers; `prompts`; `conjunctions`; refused time requests with alternatives), and from the fix
+round: the near tier in both bands, a landed pair with probes (contact form at 60 Hz), the launch queue
+(`spawnQueued` with `serverMs`, a resume with `ResumedSeat.queued`, a cancel made while reconnecting), and
+`rateLimited`. Each becomes a `.fspw` file in `FIXTURE_FILES` (`tests/unit/net/cases/fixtureCases.ts`).
 
 ## 7. Chrome run
 
-`node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/net --project=functional`, 2026-11-16,
-after the GPU slot was released by another agent's reference-image self-check: HeadlessChrome 157, 30 cases,
-0 failed, 803 ms (1 Playwright test passed in 1.9 s). Every Node case (26), the three fixtures fetched from the
+After the fix round: `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/net
+--project=functional`, 2026-11-16: HeadlessChrome 157, 30 cases, 0 failed, 687 ms (1 Playwright test passed in
+2.1 s), with the re-recorded transcripts and the new codec. First delivery: 30 cases, 0 failed, 803 ms. Every Node case (26), the three fixtures fetched from the
 dev server, and the WHATWG WebSocket transport against the RFC 6455 test server the spec starts. The page uses no
 WebGPU, so no adapter is asserted. No resource failed to load, no console error or warning. Two earlier runs
 failed for reasons now fixed: Node's loader in the spec needs the JSON import attribute (`with { type: 'json' }`),
@@ -179,9 +277,11 @@ and the page's favicon request returned 404 (the page now has an icon of its own
 
 - `docs/requests/wire-protocol-1.md` (lead, root configuration): install `ws`, `@types/ws`, `fflate`. Open.
 - `docs/requests/wire-protocol-2.md` (lead, `session.ts`): a way to surface the launch queue to the app. Open.
+- `docs/requests/wire-protocol-3.md` (lead, `LinkState`): `admissionQueue` and `launchQueue` fields. Open.
 - No request against this package's paths was open when this note was written.
-- Contract changes: only the wire-message section of `net.ts` (this package's own). Nothing of the lead's section
-  was changed.
+- Contract changes: the wire-message section of `net.ts` (this package's own), and, under the fix round's
+  authorisation, the optional limits fields of `UniverseRules.limits` with `WIRE_LIMIT_DEFAULTS`, `wireLimits()`
+  and `WIRE_RANGES` (section 0.1). Nothing else of the lead's section was changed.
 
 ## 9. For the next packages
 
@@ -196,7 +296,10 @@ and the page's favicon request returned 404 (the page now has an icon of its own
   apply `handles` before relevant-set and near messages (the decoder does when given the table). Replay the
   transcripts with your client half: `runTranscript(t, { link, client: yourHalf })` must reach `t.expect`.
 - **server-persistence**: the gateway is `ServerSession` + `ServerDriver` per socket (the `ws` socket through
-  `nodeWsTransport`); implement `ServerHost` (signature check, resume check with `lastInputSeq`, forwarding,
-  U16 on `lost`); dedupe requests across a resume in the universe; role links are `streamTransport` over TCP
+  `nodeWsTransport`, the server built with `WS_SERVER_OPTIONS`); implement `ServerHost` (signature check over
+  `IdentityProof` for auth AND resume, resume check with `lastInputSeq` and the launch-queue entry, forwarding,
+  U16 on `lost`, `error` for a socket closed by an internal error); keep one `AccountLimits` per account and hand
+  it out with every auth and resume answer; give the driver `wallMs()`; set the pilot's clock (`setClock`) or
+  every stamped message is refused; validate what section 0.3 lists; dedupe requests across a resume in the universe; role links are `streamTransport` over TCP
   with `route` envelopes. Replay the transcripts with your server side: `runTranscript(t, { link, server:
   yourSide })` must reach `t.expect`.
