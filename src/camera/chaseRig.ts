@@ -34,9 +34,11 @@
  * back), navball modes, staging and spheres of influence; only another active vessel starts from the defaults.
  * `resetView()` returns to them.
  *
- * Distance limits: VehicleDef.cameras.chase (min, max). Vessels without a vehicle definition (debris of an
- * unknown vehicle, the FakeSim) use multiples of their bounding radius: default 2.4 r, min 1.15 r, max 60 r.
- * The minimum is always kept above 1.05 x the bounding radius.
+ * Distance limits (`chaseDistanceLimits`): those the vessel's one craft states (`CraftSnapshot.chase`), the
+ * nearest never inside 1.05 x the bounding radius; an assembly of several craft and a snapshot without craft
+ * blocks use multiples of the bounding radius: default 2.4 r, min 1.15 r, max 60 r. When the limits move past
+ * the camera (a dock makes the vessel larger) the camera travels inside them over about a second: its distance
+ * never steps.
  *
  * Terrain: with a TerrainProvider the eye stays `clearance` metres above the collision surface (or above the
  * sea where the body has an ocean); without one, above the body's datum sphere (and its sea level).
@@ -91,8 +93,13 @@ export const CHASE_BODY_BLEND_SECONDS = 3;
 export const CHASE_FRAME_BLEND_SECONDS = 1.6;
 /** Default distance in radii of the vessel about its centre of mass: a vessel fills about three fifths of the frame's height. */
 export const CHASE_DISTANCE_PER_RADIUS = 3.2;
-/** Time constant with which the default distance follows a change of the vessel's size (staging), s. */
+/**
+ * Time constant with which the default distance follows a change of the vessel's size (staging, a dock), s,
+ * and with which a camera that the limits have moved past (a dock) travels inside them.
+ */
 export const CHASE_AUTO_SECONDS = 0.8;
+/** A camera on its way inside limits that moved past it has arrived within this share of its distance (a tenth of a pixel across the frame). */
+const CHASE_LIMIT_REACHED = 1e-4;
 /** Default azimuth in orbit mode: the eye this far off the sun's line on the sunward side of the vessel, rad. */
 export const CHASE_SUN_OFFSET = 35 * DEG;
 /** The default azimuth follows the sun with this time constant (s) and at most this rate (rad/s). */
@@ -190,8 +197,10 @@ const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > 
  * vehicle definition, so an assembly and a design that is not in the library are framed correctly.
  *  - One craft: its own distances, the nearest never inside 1.05 radii of the vessel.
  *  - Several craft (an assembly): no craft's distances were chosen for the whole, so the frame comes from
- *    the bounding radius (2.4 radii by default, 1.15 to 60), widened to whatever a craft aboard allows: the
- *    camera can always come as near as the nearest hint that clears the assembly and go as far as the farthest.
+ *    the bounding radius: 2.4 radii by default, from 1.15 radii out to 60, or out to the farthest distance a
+ *    craft aboard allows when that is farther. A craft's default and nearest distance are not read: they
+ *    frame that craft as it was launched (two docked capsules that each state their launch stack's 140 m
+ *    are 10 m across, and are shown from 2.4 radii, not from 140 m).
  *  - No craft block (a hand-built snapshot): the bounding radius alone.
  * `defs` is not read; the parameter stays for the callers of the earlier signature.
  */
@@ -204,15 +213,9 @@ export function chaseDistanceLimits(_defs: DefLibrary, v: VesselSnapshot): { def
     const max = Math.max(min, chase.maxDistance);
     return { def: clamp(chase.defaultDistance, min, max), min, max };
   }
-  let min = 1.15 * r;
   let max = 60 * r;
-  let def = 2.4 * r;
-  for (const c of crafts) {
-    max = Math.max(max, c.chase.maxDistance);
-    def = Math.max(def, c.chase.defaultDistance);
-  }
-  min = Math.min(min, max);
-  return { def: clamp(def, min, max), min, max };
+  for (const c of crafts) max = Math.max(max, c.chase.maxDistance);
+  return { def: 2.4 * r, min: 1.15 * r, max };
 }
 
 /**
@@ -547,7 +550,17 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
       }
       const elevation = clamp(ref + pitch, -MAX_ELEVATION, MAX_ELEVATION);
       const distanceTarget = clamp(auto * zoom, lim.min, lim.max);
-      distance = snap || !(distance > 0) ? distanceTarget : clamp(Math.exp(Math.log(distance) + (Math.log(distanceTarget) - Math.log(distance)) * approach(realDt, 0.12)), lim.min, lim.max);
+      if (snap || !(distance > 0)) distance = distanceTarget;
+      else {
+        // The camera eases to its distance, and a limit holds it only from the side it is inside of. Limits
+        // that have moved past the camera (a dock: the vessel is larger from one frame to the next, and its
+        // nearest distance with it) do not put it on the new limit in that frame: it travels there over the
+        // time a separation takes, and is inside from then on.
+        const outside = distance < lim.min || distance > lim.max;
+        const gap = Math.log(distanceTarget) - Math.log(distance);
+        if (outside && Math.abs(gap) < CHASE_LIMIT_REACHED) distance = distanceTarget;
+        else distance = clamp(Math.exp(Math.log(distance) + gap * approach(realDt, outside ? CHASE_AUTO_SECONDS : 0.12)), Math.min(lim.min, distance), Math.max(lim.max, distance));
+      }
 
       let frame = chaseReferenceFrame(s, v, refMode);
       let dir = offsetDir(frame, azimuth, elevation);
