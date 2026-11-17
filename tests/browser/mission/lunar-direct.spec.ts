@@ -40,6 +40,15 @@
  *    written to the simulation: the pilot acts in the simulation's control ticks, which stand still with it.
  *
  * Output: out/screens/mission/*.png, out/mission/browser-mission.json (gates, windows, per-phase table, phase log).
+ *
+ * A PART OF THE FLIGHT: MISSION_UNTIL=<milestone id> ends the run when that milestone is recorded and its
+ * pictures are taken (MISSION_UNTIL=MAX_Q: the pad, the lift-off and the first minute and a half of the ascent,
+ * about three minutes with the load). Everything is the same machinery: the same page, pilot, picture stops,
+ * windows and rules. Judged are the milestones up to that one in order, the rules (cheatCounter, pad start,
+ * crew, terrain queries, errors), the gates of lift-off and max-q and the frame time of the phases flown; the
+ * gates of the later milestones need the whole flight and are not judged. Output of a part:
+ * out/mission/browser-mission-until-<milestone>.json and the pictures out/screens/mission/until-<milestone>-*.png
+ * (the whole flight's files are left as they are).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -54,6 +63,9 @@ import { assertDiscreteGpu, assertRealImage, expect, expectNoErrors, expectNomin
 const repoRoot = process.cwd();
 const SCENARIO = 'lunar-direct';
 const SHOTS = 'mission';
+/** The milestone a part of the flight ends at (see the header), or null for the whole flight. */
+const UNTIL = process.env.MISSION_UNTIL || null;
+const PART = UNTIL ? `until-${UNTIL.toLowerCase().replace(/_/g, '-')}` : null;
 const WINDOW_FRAMES = 240;
 const MIN_WINDOW_FRAMES = 60;
 const FLIGHT_LIMIT_MS = 120 * 60_000;
@@ -209,6 +221,9 @@ const closeWindow = (page: Page, phase: string): Promise<PerfWindow> =>
     // Before the reset: it clears the list (in the flight of 2026-11-12 the list was read after it and was empty
     // in every window, so the one frame of 452 ms in `moonArrival` has no breakdown).
     const slowest = window.__app!.cpuSlowest().slice(0, 2);
+    // The frame intervals too are those since the last reset: read after it the list was empty in every window
+    // and the frame-interval line failed with "no frame interval was measured" (found on 2026-11-17).
+    const intervals = window.__app!.rafIntervals().map((x) => Math.round(x * 10) / 10);
     window.__test!.resetPerf();
     return {
       phase: ph,
@@ -216,7 +231,7 @@ const closeWindow = (page: Page, phase: string): Promise<PerfWindow> =>
       warp: b.warpFactor,
       frames: p.raf.count,
       raf: { p50: p.raf.p50, p95: p.raf.p95, p99: p.raf.p99, max: p.raf.max, over33ms: p.raf.over33ms },
-      intervals: window.__app!.rafIntervals().map((x) => Math.round(x * 10) / 10),
+      intervals,
       gpu: { p50: p.gpu.p50, p95: p.gpu.p95, p99: p.gpu.p99 },
       appCpu: { p50: c.frame.p50, p99: c.frame.p99, max: c.frame.max },
       coreCpuP99: p.cpu.p99,
@@ -325,9 +340,12 @@ function aggregate(windows: PerfWindow[], phaseLog: { phase: string; wallMs: num
   });
 }
 
-test('lunar-direct flown by the test pilot in the page, pad to splashdown, in real time', async ({ page, pageLog }) => {
-  const scenarioMilestones = (JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'scenarios', `${SCENARIO}.json`), 'utf8')) as { milestones: { id: string }[] }).milestones.map((m) => m.id);
-  expect(scenarioMilestones).toHaveLength(17);
+test(`lunar-direct flown by the test pilot in the page, pad to ${UNTIL ?? 'splashdown'}, in real time`, async ({ page, pageLog }) => {
+  const allMilestones = (JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'scenarios', `${SCENARIO}.json`), 'utf8')) as { milestones: { id: string }[] }).milestones.map((m) => m.id);
+  expect(allMilestones).toHaveLength(17);
+  if (UNTIL) expect(allMilestones, `MISSION_UNTIL=${UNTIL} is a milestone of ${SCENARIO}`).toContain(UNTIL);
+  /** The milestones of the flight that is flown: all of them, or those up to MISSION_UNTIL. */
+  const scenarioMilestones = UNTIL ? allMilestones.slice(0, allMilestones.indexOf(UNTIL) + 1) : allMilestones;
 
   const windows: PerfWindow[] = [];
   const shots: Shot[] = [];
@@ -341,7 +359,7 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   const dump = (record: Record<string, unknown>): string => {
     const dir = path.join(repoRoot, 'out', 'mission');
     fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, 'browser-mission.json');
+    const file = path.join(dir, PART ? `browser-mission-${PART}.json` : 'browser-mission.json');
     const rows = windows.length > 0 ? aggregate(windows, phaseLog, flightEndMs || Date.now(), period()) : [];
     fs.writeFileSync(file, JSON.stringify({ when: new Date().toISOString(), realMinutes: ((flightEndMs || Date.now()) - t0) / 60_000, heldAtPictureStopsMinutes: heldMs / 60_000, clock, ...record, phases: rows, atMilestone, shots, errors: [...errorsSeen], console: pageLog.messages.slice(0, 50), phaseLog, windows }, null, 2));
     return file;
@@ -354,8 +372,9 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   const stops = new Map<string, StopSpec>();
   for (const id of scenarioMilestones) stops.set(id, { milestone: id, suffix: '', views: COCKPIT_AT.has(id) ? ['chase', 'cockpit'] : ['chase'], stop: { id, trigger: { milestone: id } } });
   for (const st of EXTRA_STOPS) {
-    expect(scenarioMilestones, `stop ${st.stop.id} belongs to a milestone of the scenario`).toContain(st.milestone);
-    stops.set(st.stop.id, st);
+    expect(allMilestones, `stop ${st.stop.id} belongs to a milestone of the scenario`).toContain(st.milestone);
+    // A part of the flight has the stops of the milestones it flies to.
+    if (scenarioMilestones.includes(st.milestone)) stops.set(st.stop.id, st);
   }
   /** Seconds of real time the simulation stood at picture stops. */
   let heldMs = 0;
@@ -369,7 +388,7 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
     const index = milestone === 'PAD' ? 0 : scenarioMilestones.indexOf(milestone) + 1;
     for (const view of views) {
       if (view !== 'chase') await setViewAndWait(page, view);
-      const name = `${String(index).padStart(2, '0')}-${milestone.toLowerCase().replace(/_/g, '-')}${suffix ? `-${suffix}` : ''}-${view}`;
+      const name = `${PART ? `${PART}-` : ''}${String(index).padStart(2, '0')}-${milestone.toLowerCase().replace(/_/g, '-')}${suffix ? `-${suffix}` : ''}-${view}`;
       const shot = await saveScreenshot(page, SHOTS, name);
       const info = await page.evaluate(async () => ({
         hdr: await window.__test!.hdrStats(),
@@ -511,6 +530,8 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
         windowFrames0 = await resetPerf(page);
       }
       if (p.done && scenarioMilestones.every((id) => handled.has(id))) break;
+      // A part of the flight ends with its last milestone (its pictures were taken above, at its own stop).
+      if (UNTIL && handled.has(UNTIL)) break;
       // Done but a milestone never came: two minutes of grace, then the gates say which one is missing.
       if (p.done && now - phaseLog[phaseLog.length - 1]!.wallMs > 120_000) break;
     }
@@ -562,7 +583,7 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   expect.soft(last.mission.crewAlive).toBe(true);
   expect.soft(last.terrain.incompleteQueries, 'terrain.incompleteQueries').toBe(0);
   expect.soft([...errorsSeen], 'window.__test.errors during the flight').toEqual([]);
-  expect.soft(milestones.map((x) => x.id), 'the seventeen milestones in order').toEqual(scenarioMilestones);
+  expect.soft(milestones.map((x) => x.id).slice(0, scenarioMilestones.length), `the ${scenarioMilestones.length} milestones in order`).toEqual(scenarioMilestones);
   for (let i = 1; i < milestones.length; i++) expect.soft(milestones[i]!.ut).toBeGreaterThanOrEqual(milestones[i - 1]!.ut);
   for (const r of milestones) for (const [k, v] of Object.entries(r.data)) expect.soft(Number.isFinite(v), `${r.id}.${k} finite`).toBe(true);
 
@@ -575,103 +596,106 @@ test('lunar-direct flown by the test pilot in the page, pad to splashdown, in re
   expect.soft(q['peakDynamicPressure']!).toBeGreaterThan(20000);
   expect.soft(q['peakDynamicPressure']!).toBeLessThan(40000);
   note('MAX_Q', `${(q['peakDynamicPressure']! / 1000).toFixed(2)} kPa at ${km(q['peakDynamicPressureAltitude']!)}`, '20-40 kPa');
-  // 3.
-  const s1 = m('STAGE_SEP_1').data;
-  const fj = m('FAIRING_JETTISON').data;
-  const s2 = m('STAGE_SEP_2').data;
-  expect.soft(s1['vesselsSeparated']!).toBeGreaterThanOrEqual(1);
-  expect.soft(fj['vesselsSeparated']!).toBeGreaterThanOrEqual(1);
-  expect.soft(s2['vesselsSeparated']!).toBeGreaterThanOrEqual(1);
-  expect.soft(fj['altitude']!).toBeGreaterThan(80000);
-  note('STAGE_SEP_1', `${km(s1['altitude']!)}, ${s1['speedSurface']!.toFixed(0)} m/s, ${s1['vesselsSeparated']} debris vessel(s)`, 'leaves debris');
-  note('FAIRING_JETTISON', `${km(fj['altitude']!)}, ${fj['vesselsSeparated']} debris vessels`, 'above 80 km, leaves debris');
-  note('STAGE_SEP_2', `${km(s2['altitude']!)}, ${s2['speedOrbital']!.toFixed(0)} m/s, ${s2['vesselsSeparated']} debris vessel(s)`, 'leaves debris');
-  // 4.
-  const eo = m('EARTH_ORBIT').data;
-  expect.soft(eo['periapsisAltitude']!).toBeGreaterThanOrEqual(160000);
-  expect.soft(eo['apoapsisAltitude']!).toBeLessThanOrEqual(400000);
-  note('EARTH_ORBIT', `${km(eo['periapsisAltitude']!)} x ${km(eo['apoapsisAltitude']!)}, incl. ${eo['inclinationDeg']!.toFixed(2)} deg`, 'Pe >= 160 km, Ap <= 400 km');
-  // 5-7.
-  const tli = m('TLI_COMPLETE');
-  expect.soft(tli.data['predictedSoiUt']!).toBeGreaterThan(tli.ut);
-  note('TLI_COMPLETE', `Moon encounter predicted ${((tli.data['predictedSoiUt']! - tli.ut) / 3600).toFixed(1)} h ahead`, 'patches contain a Moon encounter');
-  const soi = m('MOON_SOI_ENTER').data;
-  expect.soft(soi['soiTimeError']!).toBeLessThanOrEqual(2);
-  note('MOON_SOI_ENTER', `${soi['soiTimeError']!.toFixed(3)} s from the predicted time`, '+/- 2 s');
-  const lo = m('LUNAR_ORBIT').data;
-  expect.soft(lo['eccentricity']!).toBeLessThan(0.05);
-  expect.soft(lo['periapsisAltitude']!).toBeGreaterThan(60000);
-  note('LUNAR_ORBIT', `${km(lo['periapsisAltitude']!)} x ${km(lo['apoapsisAltitude']!)}, e ${lo['eccentricity']!.toFixed(4)}`, 'e < 0.05, Pe > 60 km');
-  // 8.
-  const td = m('LUNAR_TOUCHDOWN').data;
-  expect.soft(td['distanceToLandingTarget']!).toBeGreaterThanOrEqual(0);
-  expect.soft(td['distanceToLandingTarget']!).toBeLessThanOrEqual(1500);
-  expect.soft(td['availableLevel'], 'available data level at touchdown').toBe(deepest);
-  expect.soft(td['residentLevel'], 'resident data level at touchdown').toBe(deepest);
-  expect.soft(td['terrainComplete']).toBe(1);
-  expect.soft(td['touchdownVerticalSpeed']!).toBeLessThan(2.5);
-  expect.soft(td['touchdownHorizontalSpeed']!).toBeLessThan(1.0);
-  expect.soft(td['touchdownTiltDeg']!).toBeLessThan(12);
-  expect.soft(td['tiltDeg']!).toBeLessThan(12);
-  expect.soft(td['legs']).toBe(4);
-  expect.soft(td['legsBroken']).toBe(0);
-  expect.soft(td['legsIntact']).toBe(1);
-  const ll = m('LUNAR_LIFTOFF');
-  expect.soft(ll.ut - m('LUNAR_TOUCHDOWN').ut, 'time on the surface').toBeGreaterThan(SURFACE_STAY_SECONDS);
-  note(
-    'LUNAR_TOUCHDOWN',
-    `${td['distanceToLandingTarget']!.toFixed(2)} m from the target; data level ${td['residentLevel']} resident of ${td['availableLevel']} available (deepest ${deepest}); ${td['touchdownVerticalSpeed']!.toFixed(2)} m/s down, ${td['touchdownHorizontalSpeed']!.toFixed(3)} m/s across, tilt ${td['touchdownTiltDeg']!.toFixed(2)} deg (${td['tiltDeg']!.toFixed(2)} at the record), ${td['legs']! - td['legsBroken']!} of ${td['legs']} legs intact; ${(ll.ut - m('LUNAR_TOUCHDOWN').ut).toFixed(0)} s on the surface`,
-    '<= 1,500 m; deepest level; < 2.5 m/s; < 1.0 m/s; < 12 deg; legs intact; > 600 s landed',
-  );
-  // 9-10.
-  expect.soft(ll.data['vesselsLeftOnSurface']!).toBeGreaterThanOrEqual(1);
-  const left = last.vessels.filter((v) => v.bodyId === 'moon' && v.situation === 'landed' && !v.controllable);
-  expect.soft(left, 'the descent stage landed on the Moon at the end').toHaveLength(1);
-  expect.soft(left[0]?.parts.includes('heron-descent-stage')).toBe(true);
-  note('LUNAR_LIFTOFF', `after ${ll.data['surfaceStay']!.toFixed(0)} s on the surface; "${left[0]?.name ?? '?'}" still landed at the end`, 'descent stage stays behind as landed debris');
-  const exit = m('MOON_SOI_EXIT').data;
-  expect.soft(exit['soiTimeError']!).toBeLessThanOrEqual(2);
-  note('MOON_SOI_EXIT', `${exit['soiTimeError']!.toFixed(3)} s from the predicted time`, 'reached, +/- 2 s');
-  const pe = m('EARTH_PERIGEE_TARGETED').data;
-  expect.soft(pe['predictedPeriapsisAltitude']!).toBeGreaterThanOrEqual(30000);
-  expect.soft(pe['predictedPeriapsisAltitude']!).toBeLessThanOrEqual(60000);
-  note('EARTH_PERIGEE_TARGETED', `vacuum perigee ${km(pe['predictedPeriapsisAltitude']!)}`, '30-60 km');
-  // 11-12.
-  const ei = m('ENTRY_INTERFACE').data;
-  expect.soft(Math.abs(ei['altitude']! - 122000)).toBeLessThan(50);
-  expect.soft(ei['speedOrbital']!).toBeGreaterThan(10900);
-  expect.soft(ei['speedOrbital']!).toBeLessThan(11100);
-  const sp = m('SPLASHDOWN').data;
-  const drogue = m('DROGUE_DEPLOY').data;
-  const main = m('MAIN_DEPLOY').data;
-  expect.soft(sp['peakG']!).toBeLessThan(10);
-  expect.soft(sp['peakGDose']!).toBeLessThan(5);
-  expect.soft(sp['ablatorFraction']!).toBeGreaterThan(0.25);
-  expect.soft(drogue['rcsFraction']!).toBeGreaterThan(0.2);
-  note('ENTRY_INTERFACE', `${km(ei['altitude']!)}, ${(ei['speedOrbital']! / 1000).toFixed(3)} km/s; peak ${sp['peakG']!.toFixed(2)} g, g-dose ${sp['peakGDose']!.toFixed(2)}, ablator left ${(sp['ablatorFraction']! * 100).toFixed(1)} %, capsule RCS left at drogues ${(drogue['rcsFraction']! * 100).toFixed(1)} %`, '122 km, 10.9-11.1 km/s; < 10 g; dose < 5; ablator > 25 %; RCS > 20 %');
-  expect.soft(drogue['chuteEnvelope']).toBe(0);
-  expect.soft(main['chuteEnvelope']).toBe(0);
-  note('DROGUE_DEPLOY', `${drogue['deployAltitude']!.toFixed(0)} m, Mach ${drogue['deployMach']!.toFixed(2)}, ${(drogue['deployDynamicPressure']! / 1000).toFixed(2)} kPa`, 'inside the envelope');
-  note('MAIN_DEPLOY', `${main['deployAltitude']!.toFixed(0)} m, ${main['deploySpeed']!.toFixed(1)} m/s, ${(main['deployDynamicPressure']! / 1000).toFixed(2)} kPa`, 'inside the envelope');
-  // 13.
-  expect.soft(sp['surfaceWater']).toBe(1);
-  expect.soft(sp['insideRecoveryZone']).toBe(1);
-  expect.soft(sp['recoveryZoneDistance']!).toBeGreaterThanOrEqual(0);
-  expect.soft(sp['recoveryZoneDistance']!).toBeLessThan(sp['recoveryZoneRadius']!);
-  expect.soft(sp['touchdownVerticalSpeed']!).toBeLessThanOrEqual(9.5);
-  expect.soft(sp['crewAlive']).toBe(1);
-  expect.soft(sp['settledFor']!).toBeGreaterThanOrEqual(30);
-  expect.soft(sp['tiltDeg']!).toBeLessThan(25);
-  const zone = last.surfaceTargets.filter((t) => t.kind === 'recovery').find((t) => Math.abs(t.radius - sp['recoveryZoneRadius']!) < 1);
-  note(
-    'SPLASHDOWN',
-    `${sp['latitudeDeg']!.toFixed(2)} deg, ${sp['longitudeDeg']!.toFixed(2)} deg on water, ${km(sp['recoveryZoneDistance']!)} from the centre of "${zone?.name ?? '?'}" (radius ${km(sp['recoveryZoneRadius']!)}); ${sp['touchdownVerticalSpeed']!.toFixed(2)} m/s; upright at ${sp['tiltDeg']!.toFixed(1)} deg after ${sp['settledFor']!.toFixed(0)} s`,
-    'water, inside a recovery zone; <= 9.5 m/s; crew alive; upright after 30 s',
-  );
-  // 14 (the part a milestone record holds).
-  const days = (m('SPLASHDOWN').ut - milestones[0]!.ut) / 86400;
-  expect.soft(days).toBeLessThan(14);
-  note('budgets', `${days.toFixed(2)} days from lift-off to splashdown; ${realMinutes.toFixed(1)} minutes of real time from ready to splashdown`, '< 14 days');
+  // The gates from here to the splashdown are the whole flight's.
+  if (!UNTIL) {
+    // 3.
+    const s1 = m('STAGE_SEP_1').data;
+    const fj = m('FAIRING_JETTISON').data;
+    const s2 = m('STAGE_SEP_2').data;
+    expect.soft(s1['vesselsSeparated']!).toBeGreaterThanOrEqual(1);
+    expect.soft(fj['vesselsSeparated']!).toBeGreaterThanOrEqual(1);
+    expect.soft(s2['vesselsSeparated']!).toBeGreaterThanOrEqual(1);
+    expect.soft(fj['altitude']!).toBeGreaterThan(80000);
+    note('STAGE_SEP_1', `${km(s1['altitude']!)}, ${s1['speedSurface']!.toFixed(0)} m/s, ${s1['vesselsSeparated']} debris vessel(s)`, 'leaves debris');
+    note('FAIRING_JETTISON', `${km(fj['altitude']!)}, ${fj['vesselsSeparated']} debris vessels`, 'above 80 km, leaves debris');
+    note('STAGE_SEP_2', `${km(s2['altitude']!)}, ${s2['speedOrbital']!.toFixed(0)} m/s, ${s2['vesselsSeparated']} debris vessel(s)`, 'leaves debris');
+    // 4.
+    const eo = m('EARTH_ORBIT').data;
+    expect.soft(eo['periapsisAltitude']!).toBeGreaterThanOrEqual(160000);
+    expect.soft(eo['apoapsisAltitude']!).toBeLessThanOrEqual(400000);
+    note('EARTH_ORBIT', `${km(eo['periapsisAltitude']!)} x ${km(eo['apoapsisAltitude']!)}, incl. ${eo['inclinationDeg']!.toFixed(2)} deg`, 'Pe >= 160 km, Ap <= 400 km');
+    // 5-7.
+    const tli = m('TLI_COMPLETE');
+    expect.soft(tli.data['predictedSoiUt']!).toBeGreaterThan(tli.ut);
+    note('TLI_COMPLETE', `Moon encounter predicted ${((tli.data['predictedSoiUt']! - tli.ut) / 3600).toFixed(1)} h ahead`, 'patches contain a Moon encounter');
+    const soi = m('MOON_SOI_ENTER').data;
+    expect.soft(soi['soiTimeError']!).toBeLessThanOrEqual(2);
+    note('MOON_SOI_ENTER', `${soi['soiTimeError']!.toFixed(3)} s from the predicted time`, '+/- 2 s');
+    const lo = m('LUNAR_ORBIT').data;
+    expect.soft(lo['eccentricity']!).toBeLessThan(0.05);
+    expect.soft(lo['periapsisAltitude']!).toBeGreaterThan(60000);
+    note('LUNAR_ORBIT', `${km(lo['periapsisAltitude']!)} x ${km(lo['apoapsisAltitude']!)}, e ${lo['eccentricity']!.toFixed(4)}`, 'e < 0.05, Pe > 60 km');
+    // 8.
+    const td = m('LUNAR_TOUCHDOWN').data;
+    expect.soft(td['distanceToLandingTarget']!).toBeGreaterThanOrEqual(0);
+    expect.soft(td['distanceToLandingTarget']!).toBeLessThanOrEqual(1500);
+    expect.soft(td['availableLevel'], 'available data level at touchdown').toBe(deepest);
+    expect.soft(td['residentLevel'], 'resident data level at touchdown').toBe(deepest);
+    expect.soft(td['terrainComplete']).toBe(1);
+    expect.soft(td['touchdownVerticalSpeed']!).toBeLessThan(2.5);
+    expect.soft(td['touchdownHorizontalSpeed']!).toBeLessThan(1.0);
+    expect.soft(td['touchdownTiltDeg']!).toBeLessThan(12);
+    expect.soft(td['tiltDeg']!).toBeLessThan(12);
+    expect.soft(td['legs']).toBe(4);
+    expect.soft(td['legsBroken']).toBe(0);
+    expect.soft(td['legsIntact']).toBe(1);
+    const ll = m('LUNAR_LIFTOFF');
+    expect.soft(ll.ut - m('LUNAR_TOUCHDOWN').ut, 'time on the surface').toBeGreaterThan(SURFACE_STAY_SECONDS);
+    note(
+      'LUNAR_TOUCHDOWN',
+      `${td['distanceToLandingTarget']!.toFixed(2)} m from the target; data level ${td['residentLevel']} resident of ${td['availableLevel']} available (deepest ${deepest}); ${td['touchdownVerticalSpeed']!.toFixed(2)} m/s down, ${td['touchdownHorizontalSpeed']!.toFixed(3)} m/s across, tilt ${td['touchdownTiltDeg']!.toFixed(2)} deg (${td['tiltDeg']!.toFixed(2)} at the record), ${td['legs']! - td['legsBroken']!} of ${td['legs']} legs intact; ${(ll.ut - m('LUNAR_TOUCHDOWN').ut).toFixed(0)} s on the surface`,
+      '<= 1,500 m; deepest level; < 2.5 m/s; < 1.0 m/s; < 12 deg; legs intact; > 600 s landed',
+    );
+    // 9-10.
+    expect.soft(ll.data['vesselsLeftOnSurface']!).toBeGreaterThanOrEqual(1);
+    const left = last.vessels.filter((v) => v.bodyId === 'moon' && v.situation === 'landed' && !v.controllable);
+    expect.soft(left, 'the descent stage landed on the Moon at the end').toHaveLength(1);
+    expect.soft(left[0]?.parts.includes('heron-descent-stage')).toBe(true);
+    note('LUNAR_LIFTOFF', `after ${ll.data['surfaceStay']!.toFixed(0)} s on the surface; "${left[0]?.name ?? '?'}" still landed at the end`, 'descent stage stays behind as landed debris');
+    const exit = m('MOON_SOI_EXIT').data;
+    expect.soft(exit['soiTimeError']!).toBeLessThanOrEqual(2);
+    note('MOON_SOI_EXIT', `${exit['soiTimeError']!.toFixed(3)} s from the predicted time`, 'reached, +/- 2 s');
+    const pe = m('EARTH_PERIGEE_TARGETED').data;
+    expect.soft(pe['predictedPeriapsisAltitude']!).toBeGreaterThanOrEqual(30000);
+    expect.soft(pe['predictedPeriapsisAltitude']!).toBeLessThanOrEqual(60000);
+    note('EARTH_PERIGEE_TARGETED', `vacuum perigee ${km(pe['predictedPeriapsisAltitude']!)}`, '30-60 km');
+    // 11-12.
+    const ei = m('ENTRY_INTERFACE').data;
+    expect.soft(Math.abs(ei['altitude']! - 122000)).toBeLessThan(50);
+    expect.soft(ei['speedOrbital']!).toBeGreaterThan(10900);
+    expect.soft(ei['speedOrbital']!).toBeLessThan(11100);
+    const sp = m('SPLASHDOWN').data;
+    const drogue = m('DROGUE_DEPLOY').data;
+    const main = m('MAIN_DEPLOY').data;
+    expect.soft(sp['peakG']!).toBeLessThan(10);
+    expect.soft(sp['peakGDose']!).toBeLessThan(5);
+    expect.soft(sp['ablatorFraction']!).toBeGreaterThan(0.25);
+    expect.soft(drogue['rcsFraction']!).toBeGreaterThan(0.2);
+    note('ENTRY_INTERFACE', `${km(ei['altitude']!)}, ${(ei['speedOrbital']! / 1000).toFixed(3)} km/s; peak ${sp['peakG']!.toFixed(2)} g, g-dose ${sp['peakGDose']!.toFixed(2)}, ablator left ${(sp['ablatorFraction']! * 100).toFixed(1)} %, capsule RCS left at drogues ${(drogue['rcsFraction']! * 100).toFixed(1)} %`, '122 km, 10.9-11.1 km/s; < 10 g; dose < 5; ablator > 25 %; RCS > 20 %');
+    expect.soft(drogue['chuteEnvelope']).toBe(0);
+    expect.soft(main['chuteEnvelope']).toBe(0);
+    note('DROGUE_DEPLOY', `${drogue['deployAltitude']!.toFixed(0)} m, Mach ${drogue['deployMach']!.toFixed(2)}, ${(drogue['deployDynamicPressure']! / 1000).toFixed(2)} kPa`, 'inside the envelope');
+    note('MAIN_DEPLOY', `${main['deployAltitude']!.toFixed(0)} m, ${main['deploySpeed']!.toFixed(1)} m/s, ${(main['deployDynamicPressure']! / 1000).toFixed(2)} kPa`, 'inside the envelope');
+    // 13.
+    expect.soft(sp['surfaceWater']).toBe(1);
+    expect.soft(sp['insideRecoveryZone']).toBe(1);
+    expect.soft(sp['recoveryZoneDistance']!).toBeGreaterThanOrEqual(0);
+    expect.soft(sp['recoveryZoneDistance']!).toBeLessThan(sp['recoveryZoneRadius']!);
+    expect.soft(sp['touchdownVerticalSpeed']!).toBeLessThanOrEqual(9.5);
+    expect.soft(sp['crewAlive']).toBe(1);
+    expect.soft(sp['settledFor']!).toBeGreaterThanOrEqual(30);
+    expect.soft(sp['tiltDeg']!).toBeLessThan(25);
+    const zone = last.surfaceTargets.filter((t) => t.kind === 'recovery').find((t) => Math.abs(t.radius - sp['recoveryZoneRadius']!) < 1);
+    note(
+      'SPLASHDOWN',
+      `${sp['latitudeDeg']!.toFixed(2)} deg, ${sp['longitudeDeg']!.toFixed(2)} deg on water, ${km(sp['recoveryZoneDistance']!)} from the centre of "${zone?.name ?? '?'}" (radius ${km(sp['recoveryZoneRadius']!)}); ${sp['touchdownVerticalSpeed']!.toFixed(2)} m/s; upright at ${sp['tiltDeg']!.toFixed(1)} deg after ${sp['settledFor']!.toFixed(0)} s`,
+      'water, inside a recovery zone; <= 9.5 m/s; crew alive; upright after 30 s',
+    );
+    // 14 (the part a milestone record holds).
+    const days = (m('SPLASHDOWN').ut - milestones[0]!.ut) / 86400;
+    expect.soft(days).toBeLessThan(14);
+    note('budgets', `${days.toFixed(2)} days from lift-off to splashdown; ${realMinutes.toFixed(1)} minutes of real time from ready to splashdown`, '< 14 days');
+  } else note('part', `flown to ${UNTIL} in ${realMinutes.toFixed(1)} minutes of real time; cheatCounter ${last.cheatCounter}`, 'the milestones up to it in order, under the rules');
 
   const file = writeRecord();
   console.log(`\nBrowser mission (${file}), ${realMinutes.toFixed(1)} min:`);
