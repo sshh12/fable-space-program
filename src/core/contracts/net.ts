@@ -1012,6 +1012,10 @@ export const WIRE_CONSTANTS = {
   downstreamBytesPerSecond: 6000,
   /** The client's replica never predicts further ahead of the server's clock than this (13.5). */
   maxPredictionMs: 500,
+  /** A gateway closes a socket whose handshake has not reached the welcome in this long (refusal 'timeout'). */
+  handshakeTimeoutMs: 10_000,
+  /** A gateway remembers this many request ids of a session, to answer a request sent again after a resume once. */
+  requestMemory: 256,
   /** Largest frame a server accepts from a client, and the largest frame anyone accepts, bytes. */
   maxClientFrameBytes: 64 * 1024,
   maxFrameBytes: 8 * 1024 * 1024,
