@@ -382,9 +382,9 @@ round: the near tier in both bands, a landed pair with probes (contact form at 6
 
 ## 7. Chrome run
 
-Last run, after the size changes: `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/net
---project=functional`, 2026-11-17: HeadlessChrome 157, 30 cases, 0 failed, 694 ms (1 Playwright test passed in
-2.0 s), with the re-recorded transcripts and fixtures and the packed codec. After the fix round: 30 of 30, 687 ms. First delivery: 30 cases, 0 failed, 803 ms. Every Node case (26), the three fixtures fetched from the
+Last run, protocol 2 (0.6): `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/net
+--project=functional`, 2026-11-17: HeadlessChrome 157, 30 cases, 0 failed, 706 ms (1 Playwright test passed in
+2.1 s), with the re-recorded transcripts and fixtures. After the size changes of 0.5: 30 of 30, 694 ms. After the fix round: 30 of 30, 687 ms. First delivery: 30 cases, 0 failed, 803 ms. Every Node case (26), the three fixtures fetched from the
 dev server, and the WHATWG WebSocket transport against the RFC 6455 test server the spec starts. The page uses no
 WebGPU, so no adapter is asserted. No resource failed to load, no console error or warning. Two earlier runs
 failed for reasons now fixed: Node's loader in the spec needs the JSON import attribute (`with { type: 'json' }`),
@@ -402,12 +402,12 @@ and the page's favicon request returned 404 (the page now has an icon of its own
 
 ## 9. For the next packages
 
-- **universe-directory**: emit the server messages of net.ts as typed objects; `spawnQueued` carries the launch
+- **universe-directory**: emit the server messages of net.ts as typed objects; answer `names` with `nameInfo` (census documents carry no names: 0.6); fill `KeyVessel.acc` with the thrust acceleration of a thrusting vessel at the key; `spawnQueued` carries the launch
   queue (place and an honest wait from the pad timetable) and ends with `seatResult` or `spawnCancel`; census
   entries must have parallel `craftIds` / `ownerIds` / `ownerCallsigns`, whole-ms `expiresWallMs`, and a radius
   that travels on a 1 cm grid (rounded up); a forecast chain's first patch starting at the head and the last
   ending at `chainEndTick` is the cheap case.
-- **netcode-client**: build `NetSession` on `ClientSession` + `ClientDriver` (or a driver of your own on the
+- **netcode-client**: label census objects through `ClientSession.lookupNames` and cache the `nameInfo` answers; build `NetSession` on `ClientSession` + `ClientDriver` (or a driver of your own on the
   same machine); decode island frames with `FrameReader` (no allocation) and rebuild poses with
   `dequantizePose` against the last key; feed `inputAck.marginMs` to `nextLead`; stamp inputs with `stampTick`;
   apply `handles` before relevant-set and near messages (the decoder does when given the table). Replay the
