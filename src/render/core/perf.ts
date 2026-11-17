@@ -104,6 +104,8 @@ export class Perf implements PerfRecorder {
   constructor(
     private readonly device: GPUDevice,
     timestamps: boolean,
+    /** The clock of the CPU zones, ms. The real clock unless a test injects its own to assert the logic exactly. */
+    private readonly now: () => number = () => performance.now(),
   ) {
     if (timestamps) {
       this.querySet = device.createQuerySet({ label: 'perf.timestamps', type: 'timestamp', count: MAX_QUERIES });
@@ -171,14 +173,14 @@ export class Perf implements PerfRecorder {
 
   cpuBegin(name: string): void {
     if (name === 'frame') this.frameZoneUsed = true;
-    this.cpuOpen.set(name, performance.now());
+    this.cpuOpen.set(name, this.now());
   }
 
   cpuEnd(name: string): void {
     const t0 = this.cpuOpen.get(name);
     if (t0 === undefined) return;
     this.cpuOpen.delete(name);
-    const d = performance.now() - t0;
+    const d = this.now() - t0;
     this.cpuFrame.set(name, (this.cpuFrame.get(name) ?? 0) + d);
     if (name === 'frame') this.cpu.push(d);
   }
