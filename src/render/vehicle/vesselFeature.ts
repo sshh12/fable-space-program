@@ -22,7 +22,8 @@
  *  - Shadows are cast by coarser copies of the models: a shadow map cannot show what LOD 0 adds (fasteners,
  *    millimetre steps), so the cascades with fine texels draw every part's LOD 1 and the coarse ones its
  *    LOD 2, whatever LOD the camera sees. That keeps the shadow passes to a fraction of the stack's triangles.
- *  - A vessel that the simulation removes as expired is dither-faded over a second instead of popping.
+ *  - A vessel that the simulation removes as expired is dither-faded over a second instead of popping. A
+ *    vessel that docked is not: the vessel that absorbed it draws its parts from that snapshot on.
  */
 import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } from '@/core/contracts/render';
@@ -136,6 +137,24 @@ interface Ghost {
  */
 export function fairingPanelOf(part: PartSnapshot): number | null {
   return part.panel?.index ?? null;
+}
+
+/**
+ * The vessels of the previous snapshot that this one no longer holds and that are shown fading out where they
+ * were. Not a vessel that was destroyed (impact, burn-up: it vanishes in its own fireball), and not a vessel
+ * that docked: the vessel that absorbed it (`docked.absorbedVesselId`) holds every one of its parts from this
+ * snapshot on, so a fading copy would be the absorbed vessel drawn twice in the same place.
+ */
+export function departedVessels(prev: SimSnapshot, snapshot: SimSnapshot): VesselSnapshot[] {
+  const now = new Set(snapshot.vessels.map((v) => v.id));
+  const out: VesselSnapshot[] = [];
+  for (const v of prev.vessels) {
+    if (now.has(v.id)) continue;
+    const destroyed = snapshot.events.some((ev) => ev.type === 'vesselRemoved' && ev.vesselId === v.id && (ev.reason === 'impact' || ev.reason === 'burnedUp'));
+    const absorbed = snapshot.events.some((ev) => ev.type === 'docked' && ev.absorbedVesselId === v.id);
+    if (!destroyed && !absorbed) out.push(v);
+  }
+  return out;
 }
 
 /** Temperature the radiatively cooled nozzle sections settle at for a throttle setting, K. */
@@ -421,12 +440,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
   const collectGhosts = (frame: FrameContext, snapshot: SimSnapshot): void => {
     const prev = frame.prevSnapshot;
     if (prev === snapshot || prev.vessels.length === 0) return;
-    const now = new Set(snapshot.vessels.map((v) => v.id));
-    for (const v of prev.vessels) {
-      if (now.has(v.id) || ghosts.some((g) => g.vessel.id === v.id)) continue;
-      // Destroyed vessels (impact, burn-up) vanish in their own fireball; everything else fades.
-      const removal = snapshot.events.find((ev) => ev.type === 'vesselRemoved' && ev.vesselId === v.id);
-      if (removal && removal.type === 'vesselRemoved' && (removal.reason === 'impact' || removal.reason === 'burnedUp')) continue;
+    for (const v of departedVessels(prev, snapshot)) {
+      if (ghosts.some((g) => g.vessel.id === v.id)) continue;
       const plan = plans.get(v.id);
       if (plan) ghosts.push({ vessel: v, plan, ut0: prev.ut, t0: frame.realTime });
     }
