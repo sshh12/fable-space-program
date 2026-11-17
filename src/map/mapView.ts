@@ -30,7 +30,7 @@ export interface MapViewOptions {
 }
 
 export interface MapViewApi extends MapView {
-  /** Toggle: draw encounter patches around their body's position at intercept (Patch.bodyPosAtEnd). */
+  /** Toggle: draw encounter patches around their body's position at intercept (a ghost of the body where it stands then relative to the body the vessel comes from). */
   setDrawAtIntercept(on: boolean): void;
   readonly drawAtIntercept: boolean;
   /** Toggle: draw every debris orbit (default off: debris are dots, the hovered one shows its orbit). */

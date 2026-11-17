@@ -8,7 +8,7 @@ import type { PointerState } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraState } from '@/core/contracts/render';
 import type { LocalSession } from '@/core/contracts/session';
-import type { SimSnapshot } from '@/core/contracts/sim';
+import type { Patch, SimSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim } from '@/core/fakes/fakeSim';
@@ -16,10 +16,11 @@ import { bodyTarget, targetBodyOf } from '@/core/access/snapshotAccess';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { conicPosition, conicTrueAnomaly } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';
-import { v3 } from '@/core/math/vec3';
+import { v3, type Vec3 } from '@/core/math/vec3';
 import { PANEL_HEIGHT_PX, PANEL_WIDTH_PX } from '@/map/constants';
 import { dragDelta, MapController, modifierFactor, sameCamera } from '@/map/controller';
 import { occlusionWeight } from '@/map/occlusion';
+import type { MapScene } from '@/map/scene';
 import { lookAtCamera, orbitCamera } from '@/map/testing/camera';
 import { trueAnomalyAt } from '@/map/testing/kepler';
 import { createSyntheticFixture } from '@/map/testing/syntheticSnapshots';
@@ -716,5 +717,97 @@ describe('the scene cache and the lens shift (CameraState.lensShift)', () => {
     expect(at(shifted).y - at(plain).y).toBeCloseTo(0.1 * (plain.proj.height / 2), 6);
     // And back: the shift going away is a change as well.
     expect(r.map.sceneFor(r.snap, pose(), CSS)).not.toBe(shifted);
+  });
+});
+
+describe('at-intercept anchors in a frame whose origin is not the body the vessel leaves (presentation-sweep)', () => {
+  /**
+   * The fixture's snapshot (ROOT about the root body, which stands still at the origin) as a session states
+   * it about the Moon: every ROOT position minus the Moon's now, and `bodyPosAtEnd` of every patch the place
+   * of its body at the end of the patch relative to where the Moon is THEN, zero for a patch about the Moon
+   * (`patchesInFrame` of the simulation).
+   */
+  function aboutTheMoon(fx: ReturnType<typeof createSyntheticFixture>): { snapshot: SimSnapshot; offset: Vec3 } {
+    const s = fx.snapshot;
+    const offset = v3.neg(s.bodies.find((b) => b.id === fx.moonId)!.rRoot);
+    const move = (p: Patch): Patch => ({ ...p, bodyPosAtEnd: p.bodyId === fx.moonId ? v3.zero() : v3.sub(fx.bodyPosition(p.bodyId, p.tEnd), fx.bodyPosition(fx.moonId, p.tEnd)) });
+    const snapshot: SimSnapshot = {
+      ...s,
+      frame: { epoch: 1, origin: { kind: 'body', bodyId: fx.moonId }, rebase: null, previous: [] },
+      bodies: s.bodies.map((b) => ({ ...b, rRoot: v3.add(b.rRoot, offset) })),
+      vessels: s.vessels.map((v) => ({ ...v, rRoot: v3.add(v.rRoot, offset) })),
+      patches: { current: s.patches.current.map(move), planned: s.patches.planned.map(move) },
+    };
+    return { snapshot, offset };
+  }
+
+  const drawn = (s: SimSnapshot, camera: CameraState): MapScene => {
+    const map = new MapController(defs);
+    map.setActive(true);
+    map.setDrawAtIntercept(true);
+    map.frame(s, camera, CSS);
+    return map.currentScene!;
+  };
+  const ends = (scene: MapScene, id: string): { x0: number; y0: number; x1: number; y1: number } => {
+    const l = scene.lines.find((x) => x.id === id)!;
+    const i = l.start + l.count - 1;
+    return { x0: scene.verts.sx[l.start]!, y0: scene.verts.sy[l.start]!, x1: scene.verts.sx[i]!, y1: scene.verts.sy[i]! };
+  };
+
+  it('the encounter is drawn where the Moon stands at the intercept relative to the Earth AS DRAWN: the same picture as about the root body, and a continuous chain', () => {
+    const fx = createSyntheticFixture(defs);
+    const { snapshot, offset } = aboutTheMoon(fx);
+    const camera = lookAtCamera({ x: 2e8, y: -3e8, z: 9e8 }, { x: 1e8, y: 0, z: 0 });
+    const root = drawn(fx.snapshot, camera);
+    const moon = drawn(snapshot, { ...camera, positionRoot: v3.add(camera.positionRoot, offset) });
+    const id = `${fx.moonId}@intercept`;
+    expect(moon.ghosts.map((g) => g.id)).toEqual([id]);
+    // The ghost: where it is about the root body, moved with everything else (the Moon at the SOI entry).
+    const anchor = moon.ghostAnchors.get(id)!;
+    expect(v3.dist(anchor, v3.add(root.ghostAnchors.get(id)!, offset))).toBeLessThan(1e-3);
+    expect(v3.dist(anchor, v3.add(fx.bodyPosition(fx.moonId, snapshot.patches.current[1]!.tStart), offset))).toBeLessThan(1);
+    // The chain is continuous at the intercept, and every trajectory line begins and ends on the same pixel.
+    const dep = ends(moon, 'current/0');
+    const enc = ends(moon, 'current/1');
+    expect(Math.hypot(dep.x1 - enc.x0, dep.y1 - enc.y0)).toBeLessThan(1e-6);
+    const trajectories = root.lines.filter((l) => l.id.startsWith('current/') || l.id.startsWith('planned/')).map((l) => l.id);
+    expect(trajectories.length).toBeGreaterThanOrEqual(4);
+    for (const line of trajectories) {
+      const a = ends(root, line);
+      const b = ends(moon, line);
+      expect(Math.hypot(a.x0 - b.x0, a.y0 - b.y0), `${line} start`).toBeLessThan(1e-3);
+      expect(Math.hypot(a.x1 - b.x1, a.y1 - b.y1), `${line} end`).toBeLessThan(1e-3);
+    }
+    // What `bodyPosAtEnd` of the patch before the run gives in this frame is the Moon's own place (the origin),
+    // a third of a million kilometres from where the Earth's patch is drawn to end.
+    const prev = snapshot.patches.current[0]!;
+    const first = snapshot.patches.current[1]!;
+    const aboutOriginThen = v3.sub(v3.add(prev.bodyPosAtEnd, conicPosition(prev.conic, prev.nuEnd)), conicPosition(first.conic, first.nuStart));
+    expect(v3.len(aboutOriginThen)).toBeLessThan(1);
+    expect(v3.dist(anchor, aboutOriginThen)).toBeGreaterThan(1e7);
+  });
+
+  it('a planned list that starts about the body at the origin, with no current patch to continue, stays about that body: no ghost on top of it', () => {
+    const fx = createSyntheticFixture(defs);
+    const { snapshot, offset } = aboutTheMoon(fx);
+    const camera = lookAtCamera({ x: 2e8, y: -3e8, z: 9e8 }, { x: 1e8, y: 0, z: 0 });
+    // Only the planned patches about the Moon, cut loose from the current list (which ends before the encounter).
+    const cut = (s: SimSnapshot): SimSnapshot => {
+      const flyby = s.patches.planned.filter((p, i) => i === 0 && p.bodyId === fx.moonId);
+      expect(flyby).toHaveLength(1);
+      return { ...s, patches: { current: [s.patches.current[0]!], planned: flyby } };
+    };
+    // About the root body the Moon has a place at the end of that patch: a ghost there.
+    const root = drawn(cut(fx.snapshot), camera);
+    expect(root.ghosts.map((g) => [g.id, g.plannedOnly])).toEqual([[`${fx.moonId}@intercept`, true]]);
+    expect(v3.dist(root.ghosts[0]!.pos, fx.snapshot.patches.planned[0]!.bodyPosAtEnd)).toBe(0);
+    // About the Moon itself that place is the origin, where the Moon is drawn: the patch stays about the body.
+    const moon = drawn(cut(snapshot), { ...camera, positionRoot: v3.add(camera.positionRoot, offset) });
+    expect(moon.ghosts).toEqual([]);
+    const at = (scene: MapScene): { x: number; y: number } => scene.bodies.find((b) => b.id === fx.moonId)!;
+    const line = ends(moon, 'planned/0');
+    const reach = Math.hypot(line.x0 - at(moon).x, line.y0 - at(moon).y);
+    expect(reach).toBeGreaterThan(0);
+    expect(reach).toBeLessThan(moon.proj.width);
   });
 });

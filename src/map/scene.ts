@@ -496,8 +496,9 @@ export interface LineSpan {
 
 export interface SceneOptions {
   /**
-   * Draw each encounter's patches around their body's position at that encounter's intercept (derived from
-   * the preceding patch's Patch.bodyPosAtEnd) instead of the body's current position.
+   * Draw each encounter's patches around their body's position at that encounter's intercept (where it then
+   * stands relative to the body of the preceding patch, as that patch is drawn: `encounterAnchors`) instead
+   * of the body's current position.
    */
   atIntercept: boolean;
   /** Draw the orbits of all debris (default off: debris are dots, their orbit shows on hover). */
@@ -865,9 +866,14 @@ export class SceneBuilder {
 
   /**
    * At-intercept anchors, one per ENCOUNTER: a run of consecutive patches about the same body in one list.
-   * The patch before the run ends in ROOT at prev.bodyPosAtEnd + r(prev.nuEnd) (Patch contract), so the
-   * body sat at that point minus the run's first conic start: the drawn chain is continuous at that
-   * intercept. A planned list that starts inside an encounter of the current list (its first node lies
+   * At the hand-over the vessel is at r(prev.nuEnd) from the body of the patch before the run and at
+   * r(p.nuStart) from the run's body, so the run's body stands r(prev.nuEnd) - r(p.nuStart) from the other
+   * one THEN. The anchor is that offset from where the patch before the run IS DRAWN (its own anchor, else
+   * its body where it is now): the drawn chain is continuous at the intercept, and the picture is the same
+   * whatever the origin of the frame is. (`prev.bodyPosAtEnd` is not that place: it is the body at the end of
+   * its patch relative to where the frame's origin body is then. The two agree only in a frame whose origin
+   * is the body of `prev`, which a session's frame is not once the origin is the body of another sphere of
+   * influence.) A planned list that starts inside an encounter of the current list (its first node lies
    * there) continues that encounter and shares its anchor. Not anchored: the root body, and the run the
    * vessel is in now (current[0], drawn where its body is now). Fills scene.ghosts / ghostAnchors.
    */
@@ -876,6 +882,8 @@ export class SceneBuilder {
     /** Distinct anchors in order of appearance, with their body and whether the current list meets them. */
     const distinct = new Map<Vec3, { bodyId: string; current: boolean }>();
     const root = this.defs.rootBodyId;
+    // The body at the origin of the snapshot's ROOT positions (no frame stated: the library's root body).
+    const originBody = s.frame === undefined ? root : s.frame.origin.kind === 'body' ? s.frame.origin.bodyId : null;
     const current = s.patches.current;
     const lists: [Patch[], boolean][] = [
       [current, true],
@@ -894,12 +902,17 @@ export class SceneBuilder {
         anchor = null;
         if (p.bodyId === root || !bodies.has(p.bodyId)) continue;
         if (prev) {
-          anchor = v3.sub(v3.add(prev.bodyPosAtEnd, conicPosition(prev.conic, prev.nuEnd)), conicPosition(p.conic, p.nuStart));
+          const drawn = anchors.get(prev) ?? bodies.get(prev.bodyId)?.pos ?? ORIGIN;
+          anchor = v3.sub(v3.add(drawn, conicPosition(prev.conic, prev.nuEnd)), conicPosition(p.conic, p.nuStart));
         } else if (isCurrent) {
           continue; // the encounter the vessel is in now
         } else {
           const host = current.find((c) => c.bodyId === p.bodyId && p.tStart >= c.tStart - UT_EPS && p.tStart <= c.tEnd + UT_EPS);
-          anchor = host ? anchors.get(host) ?? null : v3.clone(p.bodyPosAtEnd);
+          if (host) anchor = anchors.get(host) ?? null;
+          // No patch of the current list to continue: the body where it stands at the end of this patch
+          // relative to the origin of the frame then (Patch.bodyPosAtEnd: the snapshot states no other place
+          // for it). A body that IS the origin has none (the offset is zero): its patches stay about the body.
+          else anchor = originBody === p.bodyId ? null : v3.clone(p.bodyPosAtEnd);
         }
         if (!anchor) continue;
         anchors.set(p, anchor);
