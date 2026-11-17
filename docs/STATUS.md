@@ -48,14 +48,7 @@ file differs from it, the section below is right.**
 - The updated gameplay video is DONE: `C:\Users\Shriv\Desktop\fable-space-program-mission-2026-11-12.mp4`
   (9:40, 2560x1440 at a constant 60 fps, H.264, game audio; one flight, all 17 milestones, `cheatCounter` 0;
   tooling in `tools/footage`, commits 1b9707b, 5ad2db2, 324d7c7).
-- **NEW REGRESSION seen in that flight, the first bug to look at:** about a second after the capsule meets the
-  water the WHOLE SEA RENDERS BLACK for stretches of several seconds. It was not in the afternoon's mission
-  flight (pictures `out/screens/mission/17-splashdown-*`), so it came in with the evening's ocean changes
-  (round 3 and/or `lead-7`, commits 4ac6e90 ... 39dacd5, a754ea9: the reset drops the impacts and the splash
-  of a frozen snapshot is taken once); the suspect is the splash response in the running game. Reproduce with
-  the `qa-drogues` scenario flown to the water (the video agent's rehearsal there did not show it, the full
-  flight did), then fix in `src/render/ocean`; the ocean's own `splash.spec.ts` passed, so add the missing
-  case.
+- **The sea going black after the splashdown (seen in the video flight) is NOT an ocean regression** (corrected 2026-11-16 after reproduction: tests/browser/ocean/warp-splash.spec.ts; it is also in the afternoon flight's picture 17-splashdown-splash-plus-10s). Cause: with the two sunlit canopies in the frame at a low sun, the render core's exposure meter stops down about four stops (EV100 8.65 to 12.5) within three seconds of contact and the dawn sea falls into the display curve's toe, for about eight seconds. Request `ocean-13` (render core, blocking for that scene): bound the meter under a low sun; it goes with the display-curve work right after the presentation sweep (`ocean-10`), with this scene added to the A/B set. The ocean's own share is fixed (cff94bd: wake foam follows the hull's speed, so a capsule lying in the water no longer sits in a white patch that held the camera two stops down).
 
 **Next steps, in order**
 1. Finish the item above (three recordings, the self-check), then the lead step of sub-wave 3.2
