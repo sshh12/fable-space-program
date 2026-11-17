@@ -4,7 +4,8 @@
  * lighting without depending on the FakeSim's date), over ground at a chosen elevation (the read-outs' radar
  * altitude follows, as the real sim reports it).
  */
-import type { BodySnapshot, Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { BodySnapshot, SimSnapshot } from '@/core/contracts/sim';
 import { v3, type Vec3 } from '@/core/math';
 
 export interface WorldOverrides {
@@ -25,7 +26,7 @@ export interface WorldOverrides {
   bodyDirs?: Record<string, (s: SimSnapshot) => Vec3 | null>;
 }
 
-export function withOverrides(inner: Sim, o: WorldOverrides): Sim {
+export function withOverrides(inner: LocalSession, o: WorldOverrides): LocalSession {
   const fix = (s: SimSnapshot): SimSnapshot => {
     let out = s;
     if (o.vesselAltitude !== null) {

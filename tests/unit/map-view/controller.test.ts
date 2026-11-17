@@ -7,7 +7,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { PointerState } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraState } from '@/core/contracts/render';
-import type { Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { SimSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim } from '@/core/fakes/fakeSim';
@@ -44,7 +45,7 @@ const pointer = (p: Partial<PointerState> = {}): PointerState => ({
 });
 
 interface Rig {
-  sim: Sim;
+  sim: LocalSession;
   snap: SimSnapshot;
   camera: CameraState;
   map: MapController;

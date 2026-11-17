@@ -28,7 +28,8 @@
  * same through the input layer's 'mfdCycle:i' actions).
  */
 import type { CapsuleMouldLineDef, DefLibrary } from '@/core/contracts/defs';
-import type { Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { getSection } from '@/core/defs/loader';
 import { revisionOf } from '@/core/access/snapshotAccess';
@@ -119,7 +120,7 @@ declare global {
 }
 
 /** Wraps the FakeSim: tags the vessel with the real vehicle, pins the sun, applies lab decorations. */
-function labSim(inner: Sim, defs: DefLibrary, vehicleId: string, sun: () => SunSpec, deco: { g: number | null }, partSun: (s: SimSnapshot, spec: { window: string; target: string }) => Vec3 | null, attitude: (s: SimSnapshot) => Quat | null): Sim {
+function labSim(inner: LocalSession, defs: DefLibrary, vehicleId: string, sun: () => SunSpec, deco: { g: number | null }, partSun: (s: SimSnapshot, spec: { window: string; target: string }) => Vec3 | null, attitude: (s: SimSnapshot) => Quat | null): LocalSession {
   const fix = (raw: SimSnapshot): SimSnapshot => {
     let s: SimSnapshot = { ...raw, vessels: raw.vessels.map((v) => (v.id === raw.activeVesselId ? { ...v, vehicleId, name: defs.vehicles[vehicleId]!.name } : v)) };
     if (deco.g !== null) s = { ...s, readouts: { ...s.readouts, gLoad: deco.g }, vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, gLoad: deco.g! } : v)) };
@@ -174,7 +175,7 @@ function labSim(inner: Sim, defs: DefLibrary, vehicleId: string, sun: () => SunS
 }
 
 /** Fly the FakeSim to an attitude (body-frame roll, then pitch, then yaw, degrees) with its own rate controls. */
-function flyAttitude(sim: Sim, att: LabScene['attitude']): void {
+function flyAttitude(sim: LocalSession, att: LabScene['attitude']): void {
   if (!att) return;
   const rate = 20;
   const neutral = { pitch: 0, yaw: 0, roll: 0, throttle: 0, translate: { x: 0, y: 0, z: 0 } };

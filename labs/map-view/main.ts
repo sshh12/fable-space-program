@@ -13,7 +13,8 @@
  */
 import type { PlayerCommands } from '@/core/contracts/controls';
 import type { FrameContext, RenderContext, ShaderLibrary } from '@/core/contracts/render';
-import type { Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MapUpdateResult } from '@/core/contracts/ui';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
@@ -101,7 +102,7 @@ async function boot(): Promise<void> {
   } else {
     // The craft carries the mission name of the synthetic scene (the FakeSim's default "Fake vessel" read as
     // placeholder text next to a finished interface; FakeSimOptions.vesselName, request map-view-7).
-    const fake: Sim = createFakeSim(defs, { scene: sceneName as FakeScene, vesselName: LAB_VESSEL_NAME });
+    const fake: LocalSession = createFakeSim(defs, { scene: sceneName as FakeScene, vesselName: LAB_VESSEL_NAME });
     sim = { snapshot: () => fake.snapshot(), advance: (dt) => fake.advance(dt), commands: fake.commands };
   }
 

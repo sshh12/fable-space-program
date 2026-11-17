@@ -9,7 +9,8 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type RenderContext, type RenderFeature } from '@/core/contracts/render';
-import type { BodySnapshot, Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { BodySnapshot, SimSnapshot } from '@/core/contracts/sim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Vec3 } from '@/core/math';
 import { coreOf, f32ToF16, type CoreSharedResources, type ManagedTarget, type Tracked } from '@/render/core';
@@ -33,7 +34,7 @@ export function sunDirection(spec: Exclude<SunSpec, null>, snapshot: SimSnapshot
 }
 
 /** Wrap a Sim so that the star stands where `getSun()` says, as seen from that body (other bodies follow). */
-export function withSun(inner: Sim, getSun: () => SunSpec): Sim {
+export function withSun(inner: LocalSession, getSun: () => SunSpec): LocalSession {
   const fix = (s: SimSnapshot): SimSnapshot => {
     const spec = getSun();
     if (!spec) return s;

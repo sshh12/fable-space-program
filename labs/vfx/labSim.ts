@@ -8,7 +8,8 @@
  */
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import type { DefLibrary, ModuleDef, ScenarioDef } from '@/core/contracts/defs';
-import type { ModuleState, PartSnapshot, Sim, SimDebug, SimEvent, SimSnapshot, VesselAeroState, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
+import type { LocalSession, SessionDebug } from '@/core/contracts/session';
+import type { ModuleState, PartSnapshot, SimEvent, SimSnapshot, VesselAeroState, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, G0, quat, v3, type Quat, type Vec3 } from '@/core/math';
@@ -99,11 +100,11 @@ export function labAtmosphere(altitude: number): { pressure: number; density: nu
   return { pressure, density: pressure / (287.05 * temperature), temperature };
 }
 
-export class LabSim implements Sim {
+export class LabSim implements LocalSession {
   readonly defs: DefLibrary;
   readonly scenario: ScenarioDef;
   readonly ready: Promise<void> = Promise.resolve();
-  readonly debug: SimDebug;
+  readonly debug: SessionDebug;
   readonly site: LabSite;
   vessels: LabVessel[] = [];
   activeIndex = 0;
@@ -117,7 +118,7 @@ export class LabSim implements Sim {
   throttle = 0;
   /** Downward acceleration applied to every vessel's velocity, m/s^2 (vessels of a ballistic scene fall freely). */
   freeFall = 0;
-  private readonly fake: Sim;
+  private readonly fake: LocalSession;
   private pending: SimEvent[] = [];
 
   constructor(defs: DefLibrary, site: LabSite, ut?: number) {
@@ -128,7 +129,7 @@ export class LabSim implements Sim {
     this.debug = this.fake.debug;
   }
 
-  get commands(): Sim['commands'] {
+  get commands(): LocalSession['commands'] {
     return this.fake.commands;
   }
   get needsIntegration(): boolean {

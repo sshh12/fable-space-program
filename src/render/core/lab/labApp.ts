@@ -10,7 +10,8 @@
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraState, RenderFeature } from '@/core/contracts/render';
-import type { Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { SimSnapshot } from '@/core/contracts/sim';
 import { translateFrame } from './origin';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
@@ -28,9 +29,9 @@ export interface LabAppOptions {
   /** FakeSim scene (default: ?scene=, else 'lowOrbit'). Ignored when `sim` is given. */
   scene?: FakeScene;
   /** A simulation to drive instead of the FakeSim (or a factory receiving the loaded defs). */
-  sim?: Sim | ((defs: DefLibrary) => Sim);
+  sim?: LocalSession | ((defs: DefLibrary) => LocalSession);
   /** Features to register before the first frame (or a factory called once defs and sim exist). */
-  features?: RenderFeature[] | ((defs: DefLibrary, sim: Sim) => RenderFeature[]);
+  features?: RenderFeature[] | ((defs: DefLibrary, sim: LocalSession) => RenderFeature[]);
   /** Camera placement (or a factory receiving the first snapshot); default: from the query string. */
   camera?: LabCameraSpec | ((snapshot: SimSnapshot, defs: DefLibrary) => LabCameraSpec);
   cameraSettings?: Partial<LabCameraSettings>;
@@ -52,7 +53,7 @@ export interface LabApp {
   readonly renderer: CoreRenderer;
   readonly gpu: GpuHandle;
   readonly defs: DefLibrary;
-  readonly sim: Sim;
+  readonly sim: LocalSession;
   readonly camera: LabCamera;
   readonly testApi: TestApiController;
   readonly query: URLSearchParams;

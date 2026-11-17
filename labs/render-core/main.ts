@@ -18,7 +18,8 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { RenderFeature } from '@/core/contracts/render';
-import type { Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { SimSnapshot } from '@/core/contracts/sim';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { dirToLatLon } from '@/core/geo/cubeSphere';
 import { mat4, quat, RAD, v3 } from '@/core/math';
@@ -74,7 +75,7 @@ let stand: StandFeature | null = null;
 let probes!: Probes;
 let defaultTerrain: string | null = null;
 
-function pickSite(defs: DefLibrary, sim: Sim): Site {
+function pickSite(defs: DefLibrary, sim: LocalSession): Site {
   const root = defs.rootBodyId;
   const arg = query.get('site');
   const vesselBody = sim.peek().vessels[0]?.bodyId ?? root;

@@ -21,7 +21,7 @@
  * window.__terrain is the handle for specs.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { Sim } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
 import { layerHasTile, TILE_LAYER } from '@/core/contracts/terrain';
 import { dirToLatLon, latLonToDir, tilePath, tileUvToDir, type TileKey } from '@/core/geo/cubeSphere';
 import { decodeTileFile } from '@/core/geo/tileCodec';
@@ -129,7 +129,7 @@ async function boot(): Promise<void> {
     canvas,
     name: 'terrain',
     autoReady: false,
-    sim: (defs: DefLibrary): Sim => withSun(createFakeSim(defs, { scene: (query.get('scene') as FakeScene | null) ?? 'lowOrbit' }), () => sun),
+    sim: (defs: DefLibrary): LocalSession => withSun(createFakeSim(defs, { scene: (query.get('scene') as FakeScene | null) ?? 'lowOrbit' }), () => sun),
     features: (defs) => {
       nearField = createNearFieldPublisher(defs, () => app.renderer.resources);
       const list = [createSkyStandIn(Number(query.get('sky') ?? 16000)), ballast.feature, nearField.feature];

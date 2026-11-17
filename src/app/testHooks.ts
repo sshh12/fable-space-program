@@ -8,6 +8,7 @@ import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import type { TestApiController } from '@/core/testing/testApi';
 import { coreOf, type ExposureInfo } from '@/render/core';
+import { diagnosticsOf } from '@/session';
 import { bodyAngularRadius, discInFrame, projectToFrame } from './framing';
 import type { PictureStop, PictureStopHit } from './pictureStops';
 import type { Game } from './game';
@@ -319,7 +320,7 @@ export function installGameTestHooks(testApi: TestApiController, game: Game): vo
     paused: () => game.paused,
     frames: () => game.frames,
     lever: () => game.controller.throttle,
-    simStats: () => ({ ...game.sim.stats() }) as unknown as Record<string, number>,
+    simStats: () => ({ ...diagnosticsOf(game.sim).stats() }) as unknown as Record<string, number>,
     inFlight: () => game.inFlight(),
     notifications: () => game.hud.notifications(),
     pilotReport: () => (game.pilot.pilot ? { ...game.pilot.pilot.report } : null),

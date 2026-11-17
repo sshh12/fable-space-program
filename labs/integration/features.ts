@@ -11,7 +11,8 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { RenderContext, RenderFeature } from '@/core/contracts/render';
-import type { PartSnapshot, Sim } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { PartSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import type { MfdPainter, NavballRenderer } from '@/core/contracts/ui';
 import type { GpuHandle } from '@/core/gpu/device';
@@ -21,7 +22,7 @@ export type FeaturePackage = (typeof FEATURE_PACKAGES)[number];
 
 type Module = Record<string, unknown>;
 const RENDER_MODULES = import.meta.glob<Module>('/src/render/{terrain,vehicle,cockpit,ocean,sky,atmosphere,vfx}/index.ts');
-const SIM_MODULES = import.meta.glob<Module>('/src/sim/index.ts');
+const SESSION_MODULES = import.meta.glob<Module>('/src/session/index.ts');
 const VESSEL_MODULES = import.meta.glob<Module>('/src/sim/vessel/public.ts');
 
 const modulePath = (p: FeaturePackage): string => `/src/render/${p}/index.ts`;
@@ -31,12 +32,12 @@ export function availablePackages(): FeaturePackage[] {
   return FEATURE_PACKAGES.filter((p) => modulePath(p) in RENDER_MODULES);
 }
 
-export const realSimAvailable = (): boolean => '/src/sim/index.ts' in SIM_MODULES;
+export const realSessionAvailable = (): boolean => '/src/session/index.ts' in SESSION_MODULES;
 
 /** What an adapter gets to build its package's features. */
 export interface FeatureEnv {
   defs: DefLibrary;
-  sim: Sim;
+  sim: LocalSession;
   ctx: RenderContext;
   gpu: GpuHandle;
   /** The height authority (fetch tile source on the baked tiles); shared by terrain and the real sim. */
@@ -179,13 +180,13 @@ export async function realVesselParts(defs: DefLibrary, vehicleId: string, stage
   }
 }
 
-export type CreateSim = (defs: DefLibrary, scenarioId: string, opts: { terrain: TerrainProvider }) => Sim;
+export type CreateSession = (defs: DefLibrary, scenarioId: string, opts: { terrain: TerrainProvider }) => LocalSession;
 
-/** `createSim` of src/sim (the real simulation), or null when it is not in the tree yet. */
-export async function importRealSim(): Promise<CreateSim | null> {
-  const load = SIM_MODULES['/src/sim/index.ts'];
+/** `createSession` of src/session (the session of the real simulation), or null when it is not in the tree yet. */
+export async function importRealSession(): Promise<CreateSession | null> {
+  const load = SESSION_MODULES['/src/session/index.ts'];
   if (!load) return null;
   const mod = await load();
-  const create = mod['createSim'];
-  return typeof create === 'function' ? (create as CreateSim) : null;
+  const create = mod['createSession'];
+  return typeof create === 'function' ? (create as CreateSession) : null;
 }

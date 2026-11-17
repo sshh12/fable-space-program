@@ -4,7 +4,8 @@
  * 'splash' events on demand) - the snapshot fields the ocean's vessel interaction reads.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { BodySnapshot, Sim, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { BodySnapshot, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { oceanSwellHeight } from '@/core/geo/oceanSwell';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
@@ -53,10 +54,10 @@ export class OceanLabWorld {
   moon: [number, number] | null = null;
   floating: FloatingVessel | null = null;
   private pending: SimEvent[] = [];
-  readonly sim: Sim;
+  readonly sim: LocalSession;
 
   constructor(
-    private readonly inner: Sim,
+    private readonly inner: LocalSession,
     readonly defs: DefLibrary,
     public site: LabSite,
   ) {

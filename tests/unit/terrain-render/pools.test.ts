@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { capMaxLevel, fitLodScale, GroundSpeed, levelRange, LOD_SCALE_MIN, lodK, morphWindow, POOL_HIGH, POOL_LOW, POOL_TARGET, SPEED_RISE_LEVELS, SPEED_WINDOW_SECONDS, warpLevelCap } from '@/render/terrain/lod';
 import { BodyQuadtree, EAGER_LEVELS, TILE_EMPTY, type LodObserverFixed, type SelectParams } from '@/render/terrain/quadtree';
-import { converge, countCracks, makeReady, observer, R, type Sim } from './cdlodTwin';
+import { converge, countCracks, makeReady, observer, R, type TwinSim } from './cdlodTwin';
 
 const DT = 1 / 60;
 
@@ -132,7 +132,7 @@ describe('one warp cap per observer', () => {
     expect(deep(items).length).toBeGreaterThan(30);
     expect(deep(items)).toEqual(deep(own));
     // The geometry still closes: a fine tile is fully morphed wherever it meets a coarser one.
-    const sim: Sim = { observers: [cam, ves], K, window: p.window, faceSize: face };
+    const sim: TwinSim = { observers: [cam, ves], K, window: p.window, faceSize: face };
     const r = countCracks(items, sim);
     expect(r.vertices).toBeGreaterThan(1000);
     expect({ cracks: r.cracks, worst: r.worst }).toEqual({ cracks: 0, worst: 0 });

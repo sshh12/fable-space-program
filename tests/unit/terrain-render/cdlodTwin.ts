@@ -58,7 +58,7 @@ export function converge(tree: BodyQuadtree, params: SelectParams): DrawItem[] {
   throw new Error('selection did not converge');
 }
 
-export interface Sim {
+export interface TwinSim {
   observers: LodObserverFixed[];
   K: number;
   window: MorphWindow;
@@ -67,7 +67,7 @@ export interface Sim {
 }
 
 /** Body-fixed position of grid vertex (i, j) of a selected tile after the morph: the float64 twin of terrainVertex. */
-export function vertex(n: TileNode, i: number, j: number, sim: Sim): Vec3 {
+export function vertex(n: TileNode, i: number, j: number, sim: TwinSim): Vec3 {
   const dir0 = frameDir(n.frame, i / GRID_QUADS, j / GRID_QUADS);
   const hc = heightAt(dir0, n.level);
   let d = Infinity;
@@ -91,7 +91,7 @@ export function vertex(n: TileNode, i: number, j: number, sim: Sim): Vec3 {
   return { x: dir.x * (R + h), y: dir.y * (R + h), z: dir.z * (R + h) };
 }
 
-export function boundaryVertices(it: DrawItem, sim: Sim): Vec3[] {
+export function boundaryVertices(it: DrawItem, sim: TwinSim): Vec3[] {
   const half = GRID_QUADS / 2;
   const i0 = it.quadrant < 0 ? 0 : (it.quadrant & 1) * half;
   const j0 = it.quadrant < 0 ? 0 : (it.quadrant >> 1) * half;
@@ -105,7 +105,7 @@ export function boundaryVertices(it: DrawItem, sim: Sim): Vec3[] {
 }
 
 /** Number of boundary vertices that no other tile shares (cracks), and the worst gap to the nearest other vertex. */
-export function countCracks(items: DrawItem[], sim: Sim): { cracks: number; vertices: number; worst: number; examples: { item: DrawItem; p: Vec3; gap: number }[] } {
+export function countCracks(items: DrawItem[], sim: TwinSim): { cracks: number; vertices: number; worst: number; examples: { item: DrawItem; p: Vec3; gap: number }[] } {
   const examples: { item: DrawItem; p: Vec3; gap: number }[] = [];
   const cell = 0.05;
   const map = new Map<string, { p: Vec3; item: number }[]>();

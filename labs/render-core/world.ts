@@ -4,7 +4,8 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { BodyPose, FrameContext } from '@/core/contracts/render';
-import type { BodySnapshot, Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { BodySnapshot, SimSnapshot } from '@/core/contracts/sim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, hash4, hashToUnit, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import type { ParentPose } from '@/render/core';
@@ -63,7 +64,7 @@ export function sunAtSite(site: Site, azDeg: number, elDeg: number): SunOverride
 }
 
 /** Wrap a Sim so that every snapshot has the star placed along the overridden direction (bodies' sunDir follow). */
-export function withSunOverride(inner: Sim, getOverride: () => SunOverride | null): Sim {
+export function withSunOverride(inner: LocalSession, getOverride: () => SunOverride | null): LocalSession {
   return withSnapshotMap(inner, (s: SimSnapshot): SimSnapshot => {
     const o = getOverride();
     const dir = o?.dirRoot(s);
@@ -83,7 +84,7 @@ export function withSunOverride(inner: Sim, getOverride: () => SunOverride | nul
 }
 
 /** The same Sim with every snapshot (and peek) passed through `fix`: how a lab stages what the renderer sees. */
-export function withSnapshotMap(inner: Sim, fix: (s: SimSnapshot) => SimSnapshot): Sim {
+export function withSnapshotMap(inner: LocalSession, fix: (s: SimSnapshot) => SimSnapshot): LocalSession {
   return {
     defs: inner.defs,
     scenario: inner.scenario,

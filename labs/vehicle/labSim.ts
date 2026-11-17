@@ -8,7 +8,8 @@
 import type { PlayerCommands } from '@/core/contracts/controls';
 import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
 import { padOf } from '@/core/defs/sites';
-import type { CraftSnapshot, ModuleState, PartSnapshot, Sim, SimDebug, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import type { LocalSession, SessionDebug } from '@/core/contracts/session';
+import type { CraftSnapshot, ModuleState, PartSnapshot, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
@@ -75,9 +76,9 @@ function hash01(text: string): number {
   return ((h >>> 0) % 100000) / 100000;
 }
 
-export class VehicleLabSim implements Sim {
+export class VehicleLabSim implements LocalSession {
   readonly defs: DefLibrary;
-  private readonly fake: Sim;
+  private readonly fake: LocalSession;
   private readonly vehicleId: string;
   private place: LabPlace;
   private list: LabVessel[] = [];
@@ -417,7 +418,7 @@ export class VehicleLabSim implements Sim {
   get nextEventUt(): number {
     return Infinity;
   }
-  setControls(inputs: Parameters<Sim['setControls']>[0]): void {
+  setControls(inputs: Parameters<LocalSession['setControls']>[0]): void {
     this.fake.setControls(inputs);
   }
   get commands(): PlayerCommands {
@@ -435,7 +436,7 @@ export class VehicleLabSim implements Sim {
   stateHash(): string {
     return `${this.fake.stateHash()}|${this.stage}|${this.list.length}`;
   }
-  get debug(): SimDebug {
+  get debug(): SessionDebug {
     return this.fake.debug;
   }
 }

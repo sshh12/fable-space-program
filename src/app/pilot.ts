@@ -8,7 +8,7 @@
  * latched controls would otherwise be overwritten every frame); view, map, HUD and pause keys keep working.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { Sim } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
 import { createMissionPilot, type MissionPilot } from '@/pilot';
 
 export interface PilotDriver {
@@ -24,7 +24,7 @@ export interface PilotDriver {
   afterFrame(): { finished: boolean };
 }
 
-export function createPilotDriver(defs: DefLibrary, sim: Sim): PilotDriver {
+export function createPilotDriver(defs: DefLibrary, sim: LocalSession): PilotDriver {
   let pilot: MissionPilot | null = null;
   let engaged = false;
   let prevUt = 0;

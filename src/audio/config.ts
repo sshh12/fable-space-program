@@ -5,6 +5,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { NavballState, Readouts, SimEventType, SimSnapshot, WarpState } from '@/core/contracts/sim';
+import { targetBodyOf, targetOf } from '@/core/access/snapshotAccess';
 import { DefError, getSection } from '@/core/defs/loader';
 
 export type Range = readonly [number, number];
@@ -291,7 +292,11 @@ const EVENT_TYPES: Record<SimEventType, true> = {
 };
 export const ALL_EVENT_TYPES = Object.keys(EVENT_TYPES) as SimEventType[];
 
-/** Snapshot paths a click watch or an alarm condition may name: `<group>.<field>`. */
+/**
+ * Snapshot paths a click watch or an alarm condition may name: `<group>.<field>`. (The table names every key
+ * of `Readouts`, the deprecated pair of the selected target among them while the contract has it: the compiler
+ * takes the two entries out with the fields. `readSnapshotPath` reads neither of them from the snapshot.)
+ */
 const READOUT_FIELDS: Record<keyof Readouts, true> = {
   met: true, altitudeAsl: true, altitudeRadar: true, latitude: true, longitude: true, speedOrbital: true, speedSurface: true,
   verticalSpeed: true, horizontalSpeed: true, apoapsisAltitude: true, periapsisAltitude: true, timeToApoapsis: true,
@@ -767,8 +772,20 @@ export function parseAudioConfig(lib: DefLibrary): AudioConfig {
   };
 }
 
-/** Resolve a validated `<group>.<field>` path in a snapshot. */
+/**
+ * Resolve a validated `<group>.<field>` path in a snapshot. The selected target is read through the access
+ * module whichever of its two paths the data names: `readouts.targetBodyId` (the deprecated field) is the id
+ * of the targeted body, null without a target and for a vessel or a port; `readouts.target` is a string that
+ * names the selection (`body:<id>`, `vessel:<id>`, `port:<vessel id>:<port id>`), null without one: a value a
+ * click watch can compare from one snapshot to the next, which the readout object is not.
+ */
 export function readSnapshotPath(snapshot: SimSnapshot, path: string): unknown {
+  if (path === 'readouts.targetBodyId') return targetBodyOf(snapshot.readouts);
+  if (path === 'readouts.target') {
+    const ref = targetOf(snapshot.readouts)?.ref;
+    if (!ref) return null;
+    return ref.kind === 'port' ? `port:${ref.vesselId}:${ref.portId}` : `${ref.kind}:${ref.id}`;
+  }
   const dot = path.indexOf('.');
   const group = (snapshot as unknown as Record<string, Record<string, unknown> | undefined>)[path.slice(0, dot)];
   return group?.[path.slice(dot + 1)];

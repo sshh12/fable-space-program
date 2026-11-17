@@ -35,7 +35,8 @@
 import type { DefLibrary } from '@/core/contracts/defs';
 import { padOf } from '@/core/defs/sites';
 import { RENDER_FORMATS, type RenderContext, type RenderFeature } from '@/core/contracts/render';
-import type { PartSnapshot, Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { PartSnapshot, SimSnapshot } from '@/core/contracts/sim';
 import type { PointerState } from '@/core/contracts/controls';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
@@ -56,7 +57,7 @@ import { createMapView, type MapViewApi } from '@/map';
 import { createProbes } from '../render-core/probes';
 import { createEndBallast } from './ballast';
 import { sunAtSite, withSnapshotMap, withSunOverride, type Site, type SunOverride } from '../render-core/world';
-import { availablePackages, buildFeatures, FEATURE_PACKAGES, importPackages, importRealSim, realSimAvailable, realVesselParts, type FeaturePackage } from './features';
+import { availablePackages, buildFeatures, FEATURE_PACKAGES, importPackages, importRealSession, realSessionAvailable, realVesselParts, type FeaturePackage } from './features';
 
 export interface IntegrationLab {
   app: LabApp;
@@ -415,12 +416,12 @@ async function boot(): Promise<void> {
     if (landing) sunOverride = sunAtSite({ bodyId: landing.bodyId, latDeg: landing.latDeg, lonDeg: landing.lonDeg, alt: 0 }, LUNAR_SURFACE_SUN[0], LUNAR_SURFACE_SUN[1]);
   }
   let simKind: 'fake' | 'real' = 'fake';
-  let inner: Sim;
+  let inner: LocalSession;
   let fakeSession: FakeSession | null = null;
-  const createSim = query.get('sim') === 'real' ? await importRealSim() : null;
-  if (query.get('sim') === 'real' && !createSim) problems.push(`sim: the real Sim was asked for but ${realSimAvailable() ? 'src/sim/index.ts does not export createSim' : 'src/sim/index.ts is not in the tree'}; using the FakeSim`);
-  if (createSim) {
-    inner = createSim(defs, query.get('scenario') ?? Object.keys(defs.scenarios)[0] ?? '', { terrain });
+  const createRealSession = query.get('sim') === 'real' ? await importRealSession() : null;
+  if (query.get('sim') === 'real' && !createRealSession) problems.push(`sim: the real session was asked for but ${realSessionAvailable() ? 'src/session/index.ts does not export createSession' : 'src/session/index.ts is not in the tree'}; using the fake session`);
+  if (createRealSession) {
+    inner = createRealSession(defs, query.get('scenario') ?? Object.keys(defs.scenarios)[0] ?? '', { terrain });
     simKind = 'real';
   } else {
     const scene = (query.get('scene') as FakeScene | null) ?? 'lowOrbit';

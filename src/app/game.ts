@@ -33,6 +33,7 @@
 import type { ButtonAction, ControlInputs } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraState, ViewMode } from '@/core/contracts/render';
+import type { LocalSession } from '@/core/contracts/session';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MapUpdateResult } from '@/core/contracts/ui';
 import type { GpuHandle } from '@/core/gpu/device';
@@ -41,7 +42,7 @@ import { createCameraInputMapper, createChaseRig, createCockpitRig, createMapRig
 import type { ExactFrame } from '@/core/contracts/testApi';
 import { createFlightController, createInputSystem, DEFAULT_BINDINGS, installUnloadGuard, keyHelpEntries, keyLabel, type FlightController, type InputSystem } from '@/input';
 import { coreOf, createRenderer, type CoreRenderer } from '@/render/core';
-import { createSim, type SimWorld } from '@/sim';
+import { createSession } from '@/session';
 import { DEFAULT_STREAMER_OPTIONS } from '@/render/terrain';
 import { createFetchTileSource, createTerrainProvider, type TerrainAuthority } from '@/terrain';
 import { createHud, createMfdPainter, createNavballRenderer, HUD_OBSTACLE_SELECTOR, type HudImpl, type NavballRendererImpl } from '@/ui';
@@ -110,7 +111,8 @@ export interface GameDeps {
 export interface Game {
   readonly defs: DefLibrary;
   readonly scenarioId: string;
-  readonly sim: SimWorld;
+  /** The session the game flies (`createSession` of src/session). */
+  readonly sim: LocalSession;
   readonly terrain: TerrainAuthority;
   readonly renderer: CoreRenderer;
   readonly features: GameFeatures;
@@ -178,7 +180,7 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   // ------------------------------------------------------------------------- simulation and height authority
   loading.begin('sim', { detail: 'height authority, vehicle, scenario' });
   const terrain = await createTerrainProvider(defs, createFetchTileSource('/tiles'));
-  const sim = createSim(defs, scenarioId, { terrain });
+  const sim = createSession(defs, scenarioId, { terrain });
   loading.update('sim', { detail: 'ground under the vehicle for the physics' });
   const simReady = sim.ready.then(() => loading.finish('sim', { detail: 'ready' }));
 

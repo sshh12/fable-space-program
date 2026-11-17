@@ -4,7 +4,8 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { BodyPose } from '@/core/contracts/render';
-import type { BodySnapshot, Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { BodySnapshot, SimSnapshot } from '@/core/contracts/sim';
 import { dirToLatLon, latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, RAD, v3, type Quat, type Vec3 } from '@/core/math';
 import type { ParentPose } from '@/render/core';
@@ -70,7 +71,7 @@ export function sunAtSite(site: Site, azDeg: number, elDeg: number): SunOverride
 }
 
 /** Wrap a Sim so that every snapshot has the star placed along the overridden direction (the bodies' sunDir follow). */
-export function withSunOverride(inner: Sim, getOverride: () => SunOverride | null): Sim {
+export function withSunOverride(inner: LocalSession, getOverride: () => SunOverride | null): LocalSession {
   const fix = (s: SimSnapshot): SimSnapshot => {
     const dir = getOverride()?.dirRoot(s);
     if (!dir) return s;

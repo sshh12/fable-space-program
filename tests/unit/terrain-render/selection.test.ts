@@ -9,7 +9,7 @@ import { dirToTile } from '@/core/geo/cubeSphere';
 import type { Vec3 } from '@/core/math';
 import { levelRange, lodK, morphWindow } from '@/render/terrain/lod';
 import { BodyQuadtree, type LodObserverFixed, type SelectParams } from '@/render/terrain/quadtree';
-import { converge, countCracks, makeReady, observer, R, type Sim } from './cdlodTwin';
+import { converge, countCracks, makeReady, observer, R, type TwinSim } from './cdlodTwin';
 
 function params(observers: LodObserverFixed[], K: number, maxLevel: number): SelectParams {
   return { frameIndex: 0, time: 0, observers, K, window: morphWindow(K), cap: maxLevel + 1, maxLevel, frustum: null, occluderRadius: 0, fadeSeconds: 0, prefetch: 0 };
@@ -30,7 +30,7 @@ describe('CDLOD selection', () => {
       const tree = new BodyQuadtree(R, -9130, 10790);
       const p = params(c.observers, c.K, c.maxLevel);
       const items = converge(tree, p);
-      const sim: Sim = { observers: c.observers, K: c.K, window: p.window, faceSize: tree.faceSize };
+      const sim: TwinSim = { observers: c.observers, K: c.K, window: p.window, faceSize: tree.faceSize };
       const r = countCracks(items, sim);
       const deepest = Math.max(...items.map((it) => it.node.level));
       expect(r.vertices).toBeGreaterThan(1000);
