@@ -1,15 +1,17 @@
-# presentation-sweep: hand-off (sub-wave 3.2; NOT FINISHED: two subsystems are left, see 1.2)
+# presentation-sweep: hand-off (sub-wave 3.2; FINISHED in the third working context, with the limits of 1.3)
 
 The one sweep over every presentation consumer (brief: `docs/WORK_PACKAGES_V2.json`, id `presentation-sweep`,
-with its LEAD NOTES). The package was larger than two working contexts. This file is the state at the end of
-the second: what is done and committed, what is left with its design, every decision taken and why, both
-gates as they were run. A successor continues from 1.2 and `git log --oneline --grep presentation-sweep`.
+with its LEAD NOTES). Three working contexts: the first two did the snapshot consumers, the frame rebase, the
+fake session and `createSession` (rows 1-11 below); the third did what was left: the tile-source seam, the
+render core's additions for the menu (scrim, exposure hint, lens shift), the browser mission's first minutes,
+and both gates on the final tree (`0685bd0`). Section 5 answers every acceptance line with what was
+measured; section 1.3 says what is not done.
 
 ## 1. State of the sweep
 
 Start: commit b076166 (the lead's contract step is 31e67fa; the tree before it is tagged
 `pre-sweep-2026-11-16`). One commit per subsystem. `npm run typecheck` (both configurations) is clean on the
-whole tree at 94a3e01.
+whole tree at 0685bd0.
 
 ### 1.1 Done and committed
 
@@ -26,63 +28,61 @@ whole tree at 94a3e01.
 | 9 | 22622c4 | Stage words, crew and fairing petal from the snapshot (`StageInfo.burnLabel`, `actionChutes`, `chuteEnvelopes`, `thrustVac`, `weightFlowVac`; `CraftCockpit.crew`; `PartSnapshot.panel`): `labelVehicleOf` is gone, no petal id is read or composed; the fake states the members through `describeStages` (its conformance test is green again) | FULL SET 33 of 33, the 30 exact at 0 pixels, no OTHER STATE (the HUD's stage tiles of `sweep-hud-leo`, `sweep-map-translunar`, `sweep-rails-warp`, `sweep-app-pad` to the pixel) |
 | 10 | b46bf4d | Frame rebase: the render core, the vessel feature's ghosts and the view manager follow a replacement of the origin (`src/core/access/frameAccess.ts`); the origin test (`tests/browser/integration/origin.spec.ts`); request presentation-sweep-5 | with row 11 |
 | 11 | 94a3e01 | `createSession` in `src/app` and the integration lab; `Sim` / `SimDebug` -> `LocalSession` / `SessionDebug` in every lab and test; the audio data's target path through the access module; the grep test `tests/unit/fakes/deprecated.test.ts` | FULL SET 33 of 33: section 3 |
+| 12 | 4f882d7 | (third context from here) The tile-source seam: `WorkerInit.source: TileSourceSpec`, the worker and the feature call `createTileSource(spec)`, `TerrainFeatureOptions.tileSource`, the terrain lab's `&source=pack&packs=`; `tests/browser/terrain/source.spec.ts` | FULL SET 33 of 33, the 30 exact at 0 pixels, no OTHER STATE |
+| 13 | 9c6d674 | The render core's additions: the UI scrim step, `CameraState.exposureHint`, `CameraState.lensShift`; RENDER_API section 19 (those three, the frame rebase, `readVelocity`, the tile source); `menu-core.spec.ts`, `scrim.perf.spec.ts` | with the final tree |
+| 14 | e481a23 | The browser mission flies a part of the flight (`MISSION_UNTIL=<milestone>`) and reads a window's frame intervals before the reset that clears them | (a spec) |
+| 15 | 0685bd0 | Requests 6 (terrain-render: ground plans for every pad) and 7 (the lead: `RenderContext` states the tile source) | (documents) |
 
-Unit suites at 94a3e01 (`src/render src/ui src/input src/camera src/map src/audio src/core/fakes
+Unit suites at 0685bd0: 82 files, 994 tests, all pass (the suites of section 8), and the 5 tests of `tests/unit/render-core/lensShiftConsumers.test.ts`, added after that run, pass. At 94a3e01 (`src/render src/ui src/input src/camera src/map src/audio src/core/fakes
 src/core/access src/app`, `tests/unit/{atmosphere,audio,cockpit,flight-ui,map-view,ocean,render-core,sky,terrain-render,vehicle,vfx,camera,fakes}`,
 `tools/dev/boundaries.test.ts`): 80 files, 971 tests, all pass.
 
-### 1.2 Left to do (NOT STARTED; each is one subsystem with its own commit and gate run)
+### 1.2 The three items of the third context
 
-**A. The tile-source seam** (scope 5; acceptance line 5). Not started. What is there and what to change:
-- `src/render/terrain/workerProtocol.ts`: `WorkerInit.tilesUrl: string` becomes `source: TileSourceSpec`
-  (`src/core/contracts/terrain.ts`); `tileWorker.ts:25` calls `createTileSource(msg.source)` of
-  `src/terrain/tileSource.ts` (it returns the existing fetch source for `{ kind: 'fetch' }`);
-  `streamer.ts:224` builds the init (`{ kind: 'fetch', baseUrl: new URL(ctx.tilesUrl, location.href).href }`
-  by default; a `pack` spec's `packListUrl` made absolute the same way).
-- The feature's own reads on the main thread go through the same source: `feature.ts:859`
-  (`createFetchTileSource(ctx.tilesUrl)`), `lowResAlbedo.ts:19` (a `fetch` of `<tiles>/<set>/<globals.albedoLowRes.path>`:
-  use `source.file(tileset, path)`), and `feature.ts:857`, which reads `<tiles>/index.json` (the dev server's
-  list of baked sets) so that a missing manifest logs no 404: with a pack source the sets are the keys of
-  `PackList.sets` (fetch `packListUrl`).
-- `RenderContext.tilesUrl` is the contract's (the lead's): give the terrain feature an option
-  `tileSource?: TileSourceSpec` (default from `ctx.tilesUrl`) and the terrain lab a query (`&source=pack&packs=<url>`).
-- The pack source batches what is asked in the same turn (docs/handoff/platform-delivery.md section 9): a
-  worker should issue a tile's reads together.
-- The test asked: the terrain lab through kind `fetch` and kind `pack` with identical frames, the pack inside
-  `STACK_NAME=fsp-presentation-sweep npm run stack -- ... -- <suite>` (the pack list is served with CORS `*`
-  at `/packs.json`; `tests/browser/platform` has the working pattern of a page that reads packs from the stack).
+**A. The tile-source seam: DONE** (scope 5; acceptance line 5; row 12). `WorkerInit` carries a
+`TileSourceSpec`; the tile worker calls `createTileSource(msg.source)`; the terrain feature takes the spec as
+an option (`tileSource`, default the plain files of `ctx.tilesUrl`: a normal page load asks for the same
+URLs), builds its own main-thread source from it (manifests, the low-resolution colour map through
+`TileSource.file`, the cover's land cover) and lists the sets the source serves (`listTileSets`: the dev
+server's `index.json`, or the sets of the pack list). A tile job asks for all its reads in one turn (heights,
+albedo, water mask, land cover and the tile's own night image), as the pack source batches. Evidence: section 3.
 
-**B. The render-core additions** (scope 6; acceptance line 6, first half). Not started beyond the default
-buffer of `'ui.scrimRects'` (commit 1). Design, from reading the code:
-- Scrim step: `src/render/core/post/tonemap.ts` binds the uniform buffer `resources.get('ui.scrimRects')`
-  (re-create the bind group when the key's version changes) and a few levels of the bloom DOWN chain
-  (`PostProcess.downViews`, exposed through `PostOutputs`; `bloomLevelCount` is 3 to 9, so bind a fixed four,
-  e.g. levels 0, 2, 4 and the last, and mix the two nearest for `blur`). In `fs`: `let n =
-  u32(scrim.header.x); if (n > 0u) { ... }` over the rectangles (rounded-rect distance, `dim`, `opacity`);
-  with a zero header the pass does the arithmetic it does today (the image gate must stay at 0 pixels and
-  the budget table's `core.tonemap` row unchanged: that is "no rectangle, no cost"). The 0.1 ms line needs
-  a perf spec that publishes four rectangles (a handle in `labs/render-core`) and reads `core.tonemap`.
-- `CameraState.exposureHint { targetEv100, rateEvPerS }`: in `renderer.ts` where `ev100` is set (after
-  `evOverride` / `evHeld`): with a hint, `ev100` moves toward `targetEv100` by at most `rateEvPerS * stepDt`
-  and the meter's target is ignored; a frame-exact capture holds as it does today.
-- `CameraState.lensShift [x, y]` (fraction of the half viewport): `buildProjection` (`frame/math.ts`) adds
-  it to the clip-space offset of the z column as the jitter is (`proj[8]`, `proj[9]`, also in
-  `projUnjittered`); `viewRay` (`shaders/chunksFrame.ts:140`) forms rays from `cameraForward/Right/Up` with
-  the tangents, so the shift must go into the ray too (a `lensShift` pair in the frame uniforms, or
-  `cameraForward` minus the shifted right / up). SIXTEEN files read `frame.cameraRight`, `cameraForward` or
-  the tangents (`grep -rln "frame.cameraRight\|frame.cameraForward\|tanHalfFov" src/render`): the features
-  that cull or march with a symmetric frustum (terrain selection, clouds, sky, ocean, particles) have to be
-  looked at one by one; state in `docs/RENDER_API.md` which honour the shift.
-- `docs/RENDER_API.md`: the three additions, `CoreRenderer.readVelocity()`, the rebase of the previous-frame
-  state (section 1.1 row 10) and the `?frameorigin=` option of the lab app are NOT documented there yet.
+**B. The render core's additions: DONE** (scope 6; acceptance line 6, first half; row 13). RENDER_API section
+19 is the reference. The scrim: 0.077 ms with four rectangles at 1440p, the same pass as before with none.
+The exposure hint and the lens shift are honoured by the core and by every feature that culls or forms rays
+by hand (the list is in RENDER_API 19.5). Evidence and pictures: section 3.
 
-**C. Runs that are still owed** (section 3 has what was run):
-- the first minutes of the browser mission (pad to max-q) in the integrated app: the app is on
-  `createSession` and both app checkpoints (`sweep-app-pad`, `sweep-app-cockpit`) are exact on it, but
-  `tests/browser/mission` was not flown in this context;
-- the budget gate and every lab spec WERE run on 94a3e01 (section 3): the budget within 3 % in every row,
-  489 lab specs pass, and the eight that fail are not the sweep's (six fail on the pre-sweep tree with the
-  same numbers, one has two states on both trees, one was a page load that timed out once).
+**C. The browser mission's first minutes on `createSession`: FLOWN** (acceptance line 6, second half; row
+14): pad to max-q through the mission spec's own machinery, milestones in order, cheatCounter 0, the pictures
+looked at. The spec as a whole exits red on three lines of app-integration's that are not this sweep's: the
+main-thread frame p99 at lift-off (the same miss as in the full flight of 2026-11-13, before the sweep) and
+one frame of 167 ms on the pad, which the frame-interval line reports for the first time because it was never
+measured before (section 3).
+
+### 1.3 Not done, and known limits
+
+- **The lab specs' eight failures of section 3 are listed, not fixed** (none is the sweep's; the table says
+  what each does on the final tree).
+- **The lens shift in `src/app/framing.ts`** (the app's test hooks `bodiesInFrame` / `groundSamples`): they
+  project without a shift. No rig of the app states one today; the menu package that adds one adds it there.
+- **The lens flare under a shift** places its ghosts about the centre of the FRAME, not about the shifted
+  view axis (D17): a choice, stated in RENDER_API 19.5.
+- **Thin geometry under a lens shift is not lit to the bit as without one** (same depth, another stochastic
+  sample pattern; section 3 has the numbers). The cause was inferred, not isolated.
+- **The scrim costs its 0.077 ms whenever ANY rectangle is published**, whatever the area (the shader compiler
+  flattens the conditions inside the loop; measured with a rectangle of no area: 0.072 ms). Within the line;
+  drawing the scrim as quads over the covered pixels only would make it proportional to the area. Not done.
+- **Three readers of tile-set FILES are not through the seam** (the clouds' coverage map, the sky probe's
+  albedo, the labs' stand-in planet read `ctx.tilesUrl`): request `presentation-sweep-7`. The integrated app
+  therefore still needs the plain files beside the packs; the terrain itself does not.
+- **The app and the integration lab still create their height authority and the terrain feature on the fetch
+  default** (`src/app/game.ts:182`, `labs/integration/main.ts:397`): choosing a pack spec from the endpoint
+  document and the boot pack is the shell's (app-integration-2 / shell-menu). `WorkerInit` has no boot pack:
+  a worker's pack source reads the boot pack's tiles from the network or the shared OPFS cache.
+- **`MAX_SITES = 4` ground plans per body** (D10): request `presentation-sweep-6`.
+- **An uncommitted `tests/unit/fakes/originProbe.scratch.test.ts`** named in the third context's brief was
+  not in the tree when that context began (`ls tests/unit/fakes`: `deprecated.test.ts`, `fakeSession.test.ts`,
+  `frameAccess.test.ts`; `git status` clean of it): nothing to commit or remove.
 
 ## 2. Decisions taken, and why
 
@@ -160,6 +160,28 @@ buffer of `'ui.scrimRects'` (commit 1). Design, from reading the code:
   `readouts.target` with a comparable string, so the data can switch at the tighten without code.
 - **A finding while the gate ran** (first context): the gate's page server serves the WORKING TREE. Do not
   edit `src` or `labs` while a gate or a lab spec runs.
+- **D15. The tile source is an option of the terrain feature, not a field of the context.** `RenderContext`
+  is the lead's; the feature's default is built from `ctx.tilesUrl`. The spec is handed to a worker with
+  absolute URLs (a worker resolves a relative URL against its own script). `listTileSets` reads the pack list
+  a second time (7 kB) rather than reaching into the pack source for its sets.
+- **D16. The scrim reads the bloom's DOWN chain, the widest six levels, and `blur` is relative to the frame.**
+  The chain's level count follows the frame height, so indexing from its wide end makes a blur as wide in the
+  frame at every resolution. Each level is read through a four-tap tent (a 12-row level sampled bilinearly
+  shows its texel grid). The scrim is applied before the display transform, so a backdrop is toned and
+  dithered like the scene. `packScrimRects` refuses a ninth rectangle instead of dropping it.
+- **D17. A lens shift is a shift lens:** the projection's z column carries it as it carries the jitter, in
+  both matrices; `cameraForward` stays the view axis and the tangents stay the field of view. One new chunk
+  function, `ndcRay(ndc)`, is the only place a ray is formed from a frame position (`viewRay`, the TAA's sky
+  reprojection and the two cloud rays go through it); one helper, `frustumTangents`, gives every culling
+  test its four sides. `FrameUniforms` grew by one vec4 (`lensShift`, after `jitter`). The flare's ghosts
+  mirror about the frame centre: with a shifted axis they would leave the frame on the side the menu panel is.
+  Without a shift every one of these paths computes what it computed before, to the bit (the image gate).
+- **D18. An exposure hint replaces the meter's target, linearly in EV at the rig's rate;** the meter keeps
+  reading so that the exposure has somewhere to go when the hint ends. `exposureCompensation` and `minEv100`
+  do not apply under a hint. A frame-exact capture with a hint holds the hint's target. The view manager hands
+  on the hint of the view a blend goes to, and blends the lens shift.
+- **D19. A part of the mission is the mission spec with `MISSION_UNTIL`,** not a second spec: one machinery.
+  Its record and pictures have their own names, so the whole flight's files are not overwritten.
 
 ## 3. The gates, as run
 
@@ -171,8 +193,12 @@ the full set each time:
 | 3b80cfc (pads) | PASSED 33 of 33; the 30 exact at 0 pixels on the first load; no OTHER STATE line; `lunar-touchdown` mean 0.0000 max 1; `shoreline` mean 0.0010 max 3; `sweep-lunar-orbit` mean 0.0000 max 1 |
 | 22622c4 (keys; snapshot words) | PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line; `lunar-touchdown` mean 0.0007, p99.9 1, max 6; `shoreline` mean 0.0010 max 3; `sweep-lunar-orbit` mean 0.0000 max 1 |
 | 94a3e01 (rebase; createSession) | PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line; `lunar-touchdown` mean 0.0009, p99.9 1, max 6; `shoreline` mean 0.0010, p99.9 1, max 3; `sweep-lunar-orbit` (now drawn about the Moon by the real session) mean 0.0000, p99.9 0, max 4, 0.001 % of the pixels (tolerance 0.02 / 1) |
+| 4f882d7 (the tile-source seam) | PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line; `lunar-touchdown` mean 0.0011, p99.9 1, max 11; `shoreline` mean 0.0010, p99.9 1, max 3; `sweep-lunar-orbit` mean 0.0000, max 4, 0.001 % of the pixels |
+| 0685bd0 (THE FINAL TREE: scrim, exposure hint, lens shift) | PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line; `lunar-touchdown` mean 0.0009, p99.9 1, max 6; `shoreline` mean 0.0010, p99.9 1, max 3; `sweep-lunar-orbit` mean 0.0000, max 4, 0.001 % of the pixels |
 
-No OTHER STATE line occurred in any of the three runs of this context. (The one of the first context:
+No OTHER STATE line occurred in either full run of the third context (on 4f882d7 and on 0685bd0): there is none to hand to the lead.
+
+No OTHER STATE line occurred in any of the three runs of the second context. (The one of the first context:
 `pad-noon`, load 1 of 3, 1440 pixels by up to 3 levels, the far sea's known second state, request lead-9.)
 
 **The origin test** (`tests/browser/integration/origin.spec.ts`, on b46bf4d; 7 tests, all pass):
@@ -201,8 +227,84 @@ SENSITIVITY: with the core's rebase switched off for one run, the same test fail
 384,399,018.52 m (control 20.02 m)"; pictures and velocity did not change, because nothing drawn today
 reads `prevEyeOffset` without a better source (the ocean has its own previous reference).
 
-**Budget gate** (`BUDGET_COMPARE=1 ... budget.perf.spec.ts --project=perf`, on 94a3e01, nothing else of this
-package running): every row within 3 % of the recorded sum.
+**The tile-source seam** (`tests/browser/terrain/source.spec.ts` inside the local stack, on 4f882d7):
+each view captured frame-exactly through a `fetch` spec and, on a fresh page, through a `pack` spec.
+
+| View | fetch against pack |
+|---|---|
+| `earth-leo-hawaii`, `earth-leo-nadir-night` (the night lights), `earth-10km`, `pad-30m` (cover, rocks, the ground plan) | 0 pixels differ in each |
+| `moon-terminator-5000km`, `moon-2km`, `moon-standing` | 0 pixels differ in each |
+
+Earth: 19,765 plain tile files through fetch; through pack 7,722 pack requests, 9 reads of the pack list and
+NO plain tile file. Moon: 8,718 files; 3,526 pack requests. No error on either page; no incomplete bake, no
+tile given up. The pictures were looked at (`out/screens/presentation-sweep/source-*.png`).
+
+**The render core's additions** (`tests/browser/integration/menu-core.spec.ts`, the integration lab's pad at
+noon, 1280 x 720, 3 tests, all pass; pictures `out/screens/presentation-sweep/menu-core/`, looked at):
+
+| What | Measured |
+|---|---|
+| Scrim, four rectangles | 519,396 pixels changed inside them, 0 outside; a rectangle of opacity 0: 0 pixels; rectangles taken away: the first picture to the bit |
+| blur 0.6, dim 0.5 | mean luma 93.6 -> 63.5; detail (mean step between neighbours) 3.72 -> 0.52 |
+| blur 0.3, dim 1 | 138.1 -> 137.9; detail 0.94 -> 0.52 |
+| blur 1, dim 0.7 | 85.6 -> 73.9; detail 5.66 -> 0.51 |
+| blur 0.6, dim 0.5, opacity 0.5 | 93.6 -> 82.9; detail 11.96 -> 7.39 |
+| Exposure hint, +2 EV at 1 EV/s | metered 14.576; 15.576 after 60 frames, 16.576 after 120, held; the meter's own target meanwhile 14.576; mean luma 42.7 at the hint's target, 98.2 back on the meter; rate 0 holds; a frame-exact capture with the hint is at the hint's target |
+| Lens shift 128 x 64 px, depth | of the 755,056 pixels both frames show, 4 (0.001 %) differ by more than a thousandth from the unshifted frame moved by 128 x 64 px (against the pixel beside the right one: 9.4 %) |
+| Lens shift, picture | 51.4 % of those pixels the same to the bit; mean difference 1.10 levels (one pixel off: 6.01); 2.41 % by more than 8 levels, all on thin things (lattice towers, the fence, bushes, cloud edges); the lit scene before the resolve differs by more than a twentieth in 5.31 % |
+| Lens shift, the strips brought in | 0 black pixels; mean luma 112.0 (left) and 105.7 (bottom) against 114.5 |
+
+**The scrim's cost** (`tests/browser/render-core/scrim.perf.spec.ts`, perf project, 2560 x 1440, the GPU under a
+7 ms ballast, 8 alternating windows of 180 frames per series; every window of a series gave the same median
+to a microsecond):
+
+| `core.tonemap` | GPU ms |
+|---|---|
+| no rectangle | 0.0322 |
+| four rectangles (57 % of the frame) | 0.1093: the scrim costs 0.0770 (line: 0.1) |
+| one rectangle of no area | 0.1040 |
+| no rectangle again | 0.0322 |
+
+**The browser mission's first minutes** (`MISSION_UNTIL=MAX_Q ... --project=mission`, the integrated app on
+`createSession`, 2560 x 1440, 1.1 minutes of flight; flown twice, the second time with the frame intervals
+read): LIFTOFF and MAX_Q in order; both picture stops reached; cheatCounter 0 at each milestone and at the
+end; pad start, crew alive, no incomplete terrain query, `window.__test.errors` empty; lift-off surface speed
+0.017 m/s, inertial 439.3 m/s (gate < 0.1; 439 +/- 2); max-q 28.35 kPa at 11.0 km (gate 20-40 kPa). The three
+pictures (`out/screens/mission/until-max-q-0[0-2]-*.png`: the pad, the lift-off in its smoke, the stack over
+the cloud deck at 14.9 km with the HUD's stage tiles) were looked at.
+
+| Phase | GPU p50 / p99 (line 11) | main thread p50 / p99 (line 6) | frame intervals |
+|---|---|---|---|
+| prelaunch | 5.64 / 6.15 | 3.56 / 4.37 | median 16.700 ms; ONE frame of 166.7 ms in 2,101 |
+| ignition | 6.36 / 6.88 | 4.09 / 6.44 | median 16.700; none dropped |
+| vertical | 6.10 / 6.96 | 6.31 / 11.64 | median 16.700; none dropped |
+| pitchProgramme | 4.64 / 5.33 | 4.26 / 7.88 | median 16.700; none dropped |
+
+THE SPEC EXITS RED on its soft lines: the main-thread p99 of ignition, vertical and pitchProgramme, and the
+one long frame on the pad. Not the sweep's as far as it can be told: the full flight of 2026-11-13, before
+the sweep (`out/mission/browser-mission.json`), had 7.36, 12.49 and 8.07 ms in the same three phases. The
+frame of 167 ms has no earlier measurement to compare with: until this context the spec read the intervals
+after the reset that clears them, so every window was empty (fixed in row 14). FOR THE LEAD: the whole
+flight will now judge the frame-interval line for the first time.
+
+**Budget gate** (`BUDGET_COMPARE=1 ... budget.perf.spec.ts --project=perf`) on 0685bd0, the final tree:
+
+| Row | Summed GPU time against the recorded | Packages the gate names as moved |
+|---|---|---|
+| pad lift-off | 6.10 ms against 6.17 (-1.2 %) | vfx 0.829 -> 0.800 |
+| ascent 10-40 km | 3.36 against 3.40 (-1.3 %) | |
+| LEO | 3.11 against 3.04 (+2.5 %) | core 0.683 -> 0.785 |
+| LEO cockpit | 3.44 against 3.57 (-3.9 %) | terrain 1.056 -> 0.927 |
+| lunar descent | 3.40 against 3.42 (-0.7 %) | |
+| reentry | 2.93 against 3.02 (-3.1 %) | core 0.863 -> 0.763 |
+| splashdown | 5.42 against 5.66 (-4.3 %) | vfx 0.259 -> 0.041 (the finding of the second context: not the sweep's) |
+| stony ground (whole frame) | 6.04 against 6.26 (-3.5 %) | atmosphere 1.515 -> 1.345 |
+| among kiawe (whole frame) | 5.47 against 5.60 (-2.3 %) | core 0.729 -> 0.705, ocean 0.262 -> 0.164 |
+| thickets from 120 m (whole frame) | 6.35 against 6.65 (-4.5 %) | core 0.967 -> 0.731 |
+
+All ten rows pass (10 passed, 10.1 min; nothing else of this package running; the user's two servers were up). No row rose by more than 3 %. The core's time moves by a tenth of a millisecond between runs of one tree in both directions (LEO +0.10, reentry -0.10, thickets -0.24 here; lunar descent 0.846 and 0.757 in two runs of 94a3e01), and the scrim cannot be in it: with no rectangle the whole tonemap pass is 0.032 ms at 1440p. THE TWO LEO ROWS WERE STARTED ONCE MORE when this file was committed; their numbers are in the next commit of this file.
+
+On 94a3e01 (the second context; nothing else of this package running): every row within 3 % of the recorded sum.
 
 | Row | Summed GPU time against the recorded | |
 |---|---|---|
@@ -222,8 +324,14 @@ of `pre-sweep-2026-11-16` gives 0.041 ms too (5.45 ms against 5.66, -3.7 %; luna
 the baseline was recorded on 9a873e0 (2026-11-13), and something between that commit and the tag stopped the
 effects from drawing what they drew in that scene (or made it free). Worth a look by the effects' owner.
 
-**Lab specs** (`npx playwright test tests/browser/<dir> --project=functional`, one directory at a time through
-the GPU gate, on 94a3e01; 2 h 10 min in all): 489 passed, 8 failed, 2 skipped. NONE OF THE EIGHT IS THE
+**Lab specs on the final tree** (0685bd0; one directory at a time through the GPU gate): RUNNING when this file was committed (started 2026-11-17 about 14:55 UTC, thirteen directories, about two hours); the table and the list of failing tests are in the next commit of this file.
+
+(not yet)
+
+(not yet)
+
+**Lab specs on 94a3e01** (the second context; `npx playwright test tests/browser/<dir> --project=functional`, one directory at a time through
+the GPU gate; 2 h 10 min in all): 489 passed, 8 failed, 2 skipped. NONE OF THE EIGHT IS THE
 SWEEP'S: the eight tests were run on an export of the tag `pre-sweep-2026-11-16` (`git archive` into the
 scratch directory, the tiles linked in) and once more on this tree.
 
@@ -337,6 +445,44 @@ chaseDistanceLimits(defs, v): { def; min; max }; cockpitHost(defs, vessel): Cock
 // labs/audio/scenes.ts: labVesselId(base: SimSnapshot): string; compose(base, s, t, revision)
 ```
 
+Added in the third context (RENDER_API section 19 has the semantics):
+
+```ts
+// src/render/terrain
+interface TerrainFeatureOptions { tileSource?: TileSourceSpec; ... }       // default { kind: 'fetch', baseUrl: ctx.tilesUrl }
+interface WorkerInit { type: 'init'; defs; source: TileSourceSpec; bodies; cacheBytes }   // was tilesUrl: string
+new TileStreamer(ctx, defs, bodyIds, options?, source?: TileSourceSpec)
+loadLowResAlbedo(source: TileSource, manifest: TileManifest, meanColor: Vec3Tuple)      // was (tilesUrl, ...)
+// src/render/terrain/tileSourceSpec.ts (NEW)
+fetchTileSourceSpec(tilesUrl: string): TileSourceSpec
+absoluteTileSourceSpec(spec: TileSourceSpec, base: string): TileSourceSpec
+listTileSets(spec: TileSourceSpec): Promise<string[] | null>              // fetch: <baseUrl>/index.json or null; pack: the pack list's sets; fs: throws
+// labs/terrain: &source=pack&packs=<pack list URL>[&opfs=<bytes>]
+
+// src/render/core (exported from '@/render/core')
+interface UiScrimRect { x0; y0; x1; y1; cornerRadius; blur; dim; opacity }   // device px, origin top-left; 0..1
+packScrimRects(rects: readonly UiScrimRect[], out?: Float32Array): Float32Array   // UI_SCRIM_BYTES / 4 floats; throws over UI_SCRIM_SLOTS
+SCRIM_LEVELS = 6; scrimLevelIndices(chainLevels: number): number[]; scrimLevelOf(blur: number): number
+scrimCoverage(rect, px: number, py: number): number
+exposureHintOf(camera): { targetEv100: number; rateEvPerS: number } | null
+followExposureHint(current: number, targetEv100: number, rateEvPerS: number, dt: number): number
+lensShiftOf(camera): [number, number]                                        // finite, within -1..1; else [0, 0]
+frustumTangents(tanX: number, tanY: number, lensShift: readonly [number, number]): { left; right; bottom; top }
+buildProjection(fovY, width, height, jitterPx, lensShift?: readonly [number, number]): Projection   // Projection.lensShift
+interface ExposureInfo { ...; hint: { targetEv100: number; rateEvPerS: number } | null }
+// FrameUniforms: lensShift: vec4f after jitter (FRAME_UNIFORM_OFFSET.lensShift = 124; bodies 164 -> 168; 3040 bytes)
+// WGSL chunk "frame": fn ndcRay(ndc: vec2f) -> vec3f; viewRay(uv) = ndcRay(ndc(uv) - jitter)
+// Tonemap.draw(pass, scene, bloom, params, scrim: { rects: GPUBuffer; levels: readonly GPUTextureView[] }); PostOutputs.scrimLevels
+// src/render/core/lab
+LabApp.setScrim(rects: readonly UiScrimRect[] | null): void
+interface LabCameraSettings { ...; lensShift: [number, number] | null; exposureHint: { targetEv100; rateEvPerS } | null }
+// lab query: &lensshift=<x>,<y>  &evhint=<EV100>,<EV per second>
+// src/render/atmosphere/select.ts: ViewFrustum.lensShift?: readonly [number, number]
+// src/map/projection.ts: Projector.shiftX / shiftY (the camera's lens shift); cx, cy and projectionMatrix() carry it
+// src/camera/viewManager.ts: a blend interpolates lensShift and hands on the exposureHint of the view blended to
+// tests/browser/mission/lunar-direct.spec.ts: MISSION_UNTIL=<milestone id>
+```
+
 FakeSession for the next packages is as the first context left it: `stores.launchQueue` in the scene
 `launchQueue`, `Readouts.target` and `.docking`, `portStates()`, `dockCapture` / `docked` events, echoes with
 offers and the three time strips.
@@ -345,16 +491,33 @@ offers and the three time strips.
 
 | Line | State |
 |---|---|
-| typecheck clean; the grep test | MET. `npm run typecheck` exit 0 at 94a3e01. `tests/unit/fakes/deprecated.test.ts` (9 tests): eight rules over 500+ files of the presentation, the labs, the browser tests and the presentation's unit tests; every exception listed with its reason (the access module, the fake as a producer, the retired member's type, the audio data's path, `scenario.vehicle` in `src/app/main.ts`, the lab vehicle sim, four tests of producers and of the origin); a stale exception fails. Outside its scan: section 6 |
-| every wave-2 unit and lab spec; every reference image; budget within 3 % | unit: 971 of 971 in the presentation suites. Reference images: 33 of 33 on 94a3e01, the 30 exact at 0 pixels. Budget: every row within 3 % (lunar descent on its second and third run). Lab specs: 489 pass; NOT MET for eight tests, none of them moved by the sweep (section 3 has each with its number on the pre-sweep tree) |
+| typecheck clean; the grep test | MET. `npm run typecheck` exit 0 at 0685bd0 (and at 94a3e01). `tests/unit/fakes/deprecated.test.ts` (9 tests): eight rules over 500+ files of the presentation, the labs, the browser tests and the presentation's unit tests; every exception listed with its reason (the access module, the fake as a producer, the retired member's type, the audio data's path, `scenario.vehicle` in `src/app/main.ts`, the lab vehicle sim, four tests of producers and of the origin); a stale exception fails. Outside its scan: section 6 |
+| every wave-2 unit and lab spec; every reference image; budget within 3 % | On the final tree 0685bd0. Unit: 82 files, 994 tests, all pass (the suites of section 8), and the 5 tests of `tests/unit/render-core/lensShiftConsumers.test.ts`, added after that run, pass. Reference images: PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line; `lunar-touchdown` mean 0.0009, p99.9 1, max 6; `shoreline` mean 0.0010, p99.9 1, max 3; `sweep-lunar-orbit` mean 0.0000, max 4, 0.001 % of the pixels. Budget: all ten rows pass, none rose by more than 3 % (the largest rise: LEO +2.5 %; the others between -4.5 % and -0.7 %). Lab specs: running on the final tree when this row was written; on 94a3e01 489 passed and the eight that failed were not the sweep's (section 3) |
 | the same frame at two origins under 1/255 per channel; a rebase without a step or a motion-vector spike | MET for the renderer: 0 pixels in four lunar frames under an exact translation of the origin. A frame COMPUTED about the other origin has a mean difference of 0.007 level and a 99.9th percentile of 1 (2 in `lunar-touchdown`); single pixels differ by up to 17 levels: the last bits of float64 at 384,000 km, not the renderer (D7 / D8, request 5). Rebase: three scenes, no step, velocity target equal to the control's, and the test fails without the core's rebase (section 3) |
 | two craft of one vehicle never mix; an assembly framed from its radius | MET: resource bars (`displays.test.ts`), wear and mounts (`mounts.test.ts`), RCS jets, canopies and event parts (`tests/unit/vfx/model.test.ts`), engine histories of the audio model (`tests/unit/audio/model.test.ts`); the chase rig on a three-craft assembly (`camera.test.ts`). Staging: the stage stack is per craft in the snapshot (`CraftSnapshot.staging`), the HUD reads the helm craft's |
-| the terrain lab through `fetch` and `pack` | NOT DONE (1.2 A) |
-| scrim step; the mission's first minutes on createSession | scrim, exposureHint, lensShift: NOT DONE (1.2 B). The app runs on `createSession` (both app checkpoints exact); the mission spec was not flown (1.2 C) |
+| the terrain lab through `fetch` and `pack` | MET. Seven views of Earth and the Moon, each captured frame-exactly through a `fetch` spec and through a `pack` spec against the local stack: 0 differing pixels in every one; the pack page asked for no plain tile file (section 3) |
+| scrim step at most 0.1 ms with four rectangles, unmeasurable with none | MET. 0.077 ms with four rectangles at 2560 x 1440 (`core.tonemap` 0.0322 -> 0.1093 ms); with none the pass is 0.0322 ms in two alternating series (identical to a microsecond), the image gate is at 0 pixels on the 30 exact checkpoints and the budget table is as below. Stated plainly: the 0.077 ms is paid for ANY rectangle, also one of no area (1.3) |
+| the mission's first minutes (pad to max-q) in the integrated app on createSession | MET for what the line asks: flown through the mission spec's machinery, LIFTOFF and MAX_Q in order, cheatCounter 0, gates of both milestones met, pictures looked at. The spec's own frame-time lines are NOT MET in three phases (main thread p99 at lift-off, as before the sweep; one 167 ms frame on the pad): section 3 |
 
 ## 6. For the lead and the tighten step
 
-- `createFakeSim`'s origin: request `presentation-sweep-5`.
+- **shell-menu, capability-settings** (the menu over the live scene): RENDER_API 19.3-19.5 is your interface.
+  Publish panel rectangles in DEVICE pixels with `packScrimRects` (at most eight); reset the key or publish an
+  empty list when no panel is up (any rectangle, also an invisible one, costs the scrim's 0.08 ms). A rig
+  frames its subject beside a panel with `lensShift` and drives the exposure of a transit with
+  `exposureHint`; both pass through the view manager's blends. `src/app/framing.ts` does not know the shift.
+- **island-core, solar-system-sim** (who replace origins more often): RENDER_API 19.1 is what a holder of
+  ROOT positions does; the three holders of today are listed there. A new holder is tested with
+  `&frameorigin=` and `origin.spec.ts`.
+- **terrain-render**: request `presentation-sweep-6` (ground plans for 16 and 9 pads). The terrain reads
+  everything through one `TileSourceSpec`; a tile job issues its reads in one turn.
+- **The shell / app-integration-2** (packs in the app): pass `tileSource` to `createTerrainFeature` and build
+  the height authority with `createTileSource` of the same spec; the clouds and the sky probe wait for
+  request `presentation-sweep-7`.
+- **The lead**: the browser mission's frame-interval line is judged for the first time (row 14); on the pad
+  it found one frame of 167 ms. `MISSION_UNTIL=MAX_Q` is a three-minute check of the app after a change.
+- `createFakeSim`'s origin: request `presentation-sweep-5` (lead decision of 2026-11-17: KEEP; `createFakeSim`
+  stays on the root body and no reference image is re-recorded).
 - `data/defs/audio/ui.json` names the click watch `readouts.targetBodyId`: when the field goes, the line
   becomes `readouts.target` (D14); `READOUT_FIELDS` in `src/audio/config.ts` loses the two keys by the compiler.
 - `src/pilot/missionPilot.ts:212` reads `readouts.targetBodyId` (not presentation; outside the grep test).
@@ -376,7 +539,10 @@ offers and the three time strips.
 - `presentation-sweep-2` (the fairing petal as a field): answered by the lead (7df28d3), read sites switched (row 9).
 - `presentation-sweep-3` (stage words, crew): answered by the lead (7df28d3), read sites switched (row 9).
 - `presentation-sweep-4` (the fake's render root): superseded by `presentation-sweep-5`, which has the cause.
-- `presentation-sweep-5` (lead, not blocking): the origin of the labs' fake against one exact lunar picture.
+- `presentation-sweep-5` (lead, not blocking): the origin of the labs' fake against one exact lunar picture. Decided: keep.
+- `presentation-sweep-6` (terrain-render, not blocking): ground plans for every pad of a body (`MAX_SITES` = 4).
+- `presentation-sweep-7` (the lead, not blocking): `RenderContext` states the tile source, so that the
+  clouds' and the sky probe's files of a tile set can come from packs.
 
 ## 8. How to run
 
@@ -386,9 +552,15 @@ node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/render src/ui src/inp
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional       (BASELINE_ONLY=a,b narrows it)
 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/integration/origin.spec.ts --project=functional           (ORIGIN_ONLY=a,b; ORIGIN_EXTRA=<query>)
 BUDGET_COMPARE=1 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/integration/budget.perf.spec.ts --project=perf
+STACK_NAME=fsp-presentation-sweep npm run stack -- -- node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/terrain/source.spec.ts --project=functional
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/integration/menu-core.spec.ts --project=functional
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/render-core/scrim.perf.spec.ts --project=perf
+MISSION_UNTIL=MAX_Q node tools/dev/heavy.mjs --class=gpu -- npx playwright test --project=mission
 ```
 
-Scratch of the two contexts (edit lists, gate logs, the lab-spec logs): `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\presentation-sweep\`
+Scratch of the third context (gate, budget, lab-spec, mission and stack logs; `rep.mjs <edits.mjs>`):
+`C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\presentation-sweep-3\`.
+Scratch of the first two contexts (edit lists, gate logs, the lab-spec logs): `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\presentation-sweep\`
 and `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\presentation-sweep-2\`
 (`repm.mjs <edits.json>` applies exact replacements to several files, all or none; write the JSON with the
 Write tool: a shell heredoc corrupts backslashes on this machine).
