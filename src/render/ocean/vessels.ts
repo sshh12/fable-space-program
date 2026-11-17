@@ -13,6 +13,22 @@ import { MAX_RIPPLES, MAX_VESSELS } from './shaders/waves';
 import type { OceanRippleSource, OceanVesselZone } from './uniforms';
 
 export const WAKE_SIZE = 256;
+/** A hull moving this fast over the water (m/s) churns the whole ring of foam at its waterline. */
+export const WAKE_FULL_SPEED = 2;
+
+/**
+ * Foam a hull adds to the ring at its waterline in one frame (0..1): in proportion to how much of it is wet, to the
+ * simulation time that has passed, and to the square of its speed THROUGH the water (over the sea, and against
+ * the water's own rise and fall), full from WAKE_FULL_SPEED. A hull that floats at rest churns nothing: with the
+ * time alone (before 2026-11-16) a capsule lying in the water fed its ring every frame, the ring stood at full
+ * foam within two seconds and spread into a white patch metres wide that never left, four times as fast under the
+ * pilot's physics warp. Nothing for a time step of zero or a speed that is not a number.
+ */
+export function wakeChurn(waterSubmersion: number, dt: number, speed: number): number {
+  if (!(dt > 0) || !(speed > 0) || !(waterSubmersion > 0)) return 0;
+  const moving = Math.min(1, speed / WAKE_FULL_SPEED);
+  return Math.min(1, waterSubmersion * 2) * Math.min(1, dt * 0.6) * moving * moving;
+}
 
 /** Water surface height above the reference radius exactly as the physics evaluates it (sim/world environment). */
 export function physicsWaterHeight(t: OceanTunables, seaLevel: number, dirFixed: Vec3, ut: number): number {
@@ -88,6 +104,8 @@ fn sq(x: f32) -> f32 { return x * x; }
 export class OceanVessels {
   private ripples: Ripple[] = [];
   private wet = new Map<string, WetState>();
+  /** Where each vessel at the water was a frame ago (body-fixed position, height above the water, time): its speed through the water. */
+  private moved = new Map<string, { pos: Vec3; height: number; ut: number }>();
   private wakeOrigin: [number, number] | null = null;
   private readonly wakeTex: [GPUTexture, GPUTexture];
   readonly wakeViews: [GPUTextureView, GPUTextureView];
@@ -180,6 +198,8 @@ export class OceanVessels {
         // What the shaders need of an impact, in one number: the hull's radius R0 to the centimetre, and above it
         // (in the third and fourth decimal) the strength of the impact, entry speed / 6 m/s up to 1 (request vfx-9).
         const r0 = Math.round(Math.max(v.boundingRadius, 0.5) * 100) / 100;
+        // (An impact the shaders cannot draw is none: a number that is not finite here would be in every pixel's sum.)
+        if (!Number.isFinite(r0) || !Number.isFinite(speed) || !Number.isFinite(e.ut) || !Number.isFinite(xy.x) || !Number.isFinite(xy.y)) continue;
         // Once: a snapshot that is drawn for several frames (time standing still) brings its events every frame.
         if (!this.ripples.some((r) => r.ut0 === e.ut && r.vesselId === e.vesselId)) {
           this.ripples.push({ x: xy.x, y: xy.y, ut0: e.ut, vesselId: e.vesselId, amplitude: r0 + 0.0099 * Math.min(1, Math.max(0, speed / 6)) });
@@ -230,6 +250,7 @@ export class OceanVessels {
     wu[0] = slots;
     this.wetSlots = slots;
     for (const id of [...this.wet.keys()]) if (!s.vessels.some((v) => v.id === id)) this.wet.delete(id);
+    for (const id of [...this.moved.keys()]) if (!s.vessels.some((v) => v.id === id)) this.moved.delete(id);
     this.ctx.device.queue.writeBuffer(this.wetness, 0, this.wetData);
 
     const zones: OceanVesselZone[] = [];
@@ -270,7 +291,16 @@ export class OceanVessels {
         const [cx, cy] = centre(p.x, p.y);
         const hull = Math.max(w.v.boundingRadius, 0.5) / texel;
         // A floating hull churns a ring of foam at its waterline in proportion to how much of it is wet.
-        const churn = Math.min(1, w.v.contact.waterSubmersion * 2) * Math.min(1, dt * 0.6);
+        // Its speed through the water since the frame before: over the sea, and against the water's rise and fall.
+        const was = this.moved.get(w.v.id);
+        let speed = 0;
+        if (was && s.ut > was.ut) {
+          const d = v3.sub(w.posFixed, was.pos);
+          const vertical = v3.dot(d, w.dirFixed);
+          speed = Math.hypot(Math.sqrt(Math.max(0, v3.lenSq(d) - vertical * vertical)), w.height - was.height) / (s.ut - was.ut);
+        }
+        this.moved.set(w.v.id, { pos: w.posFixed, height: w.height, ut: s.ut });
+        const churn = wakeChurn(w.v.contact.waterSubmersion, dt, speed);
         if (churn > 0) out.wakeSources.push({ cx, cy, radius: hull * 1.02, ring: Math.max(1, hull * 0.12), amount: churn });
       }
       for (const e of s.events) {
@@ -296,6 +326,7 @@ export class OceanVessels {
   resetTemporal(): void {
     this.ripples = [];
     this.wet.clear();
+    this.moved.clear();
     this.wakeOrigin = null;
   }
 

@@ -1190,3 +1190,42 @@ load): the spec captures and prints those lines without asserting them. Final ru
 this: 40 of 41 pass, the one failure being `shoreline`'s second state before it was held as the bounded difference
 (not re-run after that edit: the typecheck covers it and its numbers, 1,002 px by up to 3, are inside the bound of
 1,100 and 3).
+
+### 16.9 The black sea after the splashdown (reported 2026-11-12 on the mission flight; worked 2026-11-16)
+
+Reported as a regression of the `lead-7` commits ("a second after the capsule meets the water the whole sea renders
+black for seconds at a time"). Reproduced in the real app before anything was changed
+(`tests/browser/ocean/warp-splash.spec.ts`: `qa-drogues`, the test pilot down to the water at physics warp x4,
+samples of the camera's exposure and of the sea and the sky in the picture every 0.3 s) and taken apart:
+
+- Not a NaN (0 NaN pixels in every sample), not an odd input (one impact, one vessel at the water, time steps of
+  0.07 s), and not from the `lead-7` commits: the afternoon flight's own picture has it
+  (`out/screens/mission/17-splashdown-splash-plus-10s-chase.png`, 16:58: near sea Y 0.0035 under a sky of 0.105).
+- It is the camera. The exposure goes from EV100 8.65 before the contact to 12.5 within three seconds of it (the
+  sky from Y 0.82 to 0.24, the sea from 0.127 to 0.003-0.014) and stays there while the two sunlit canopies stand
+  in the frame; the meter's daylight bounds are off under a sun this low. Request `ocean-13` (render core, blocking).
+- The ocean's part: a hull lying in the water churned foam into its wake ring by the TIME it lay there
+  (`min(1, dt x 0.6)` per frame against a decay of 25 s), so the ring stood at full foam within two seconds and
+  spread into a white patch metres wide that never left (four times as fast at warp x4): the "ice floe" of the
+  last scene after the impact's own patch had gone, and bright enough to hold the camera two stops down after
+  the canopies had sunk (EV 10.77, sea Y 0.042 at +15 s). Now by the hull's speed THROUGH the water
+  (`wakeChurn(waterSubmersion, dt, speed)`, `WAKE_FULL_SPEED` 2 m/s, the speed squared: a capsule drifting at
+  0.4 m/s keeps a thin ring, one at rest none). After it: EV 8.53 and sea Y 0.138 at +14.7 s (0.127 before the
+  contact); picture `out/screens/ocean/warp-splash-plus-13s.png` (a sea, a lap ring at the hull, no patch).
+  Also: an impact whose numbers are not finite is dropped before it reaches the shaders' sums.
+- A flaw found on the way and NOT changed (it would change reference pictures): under cloud `waterSkyRadiance`
+  takes the SUN's beam share for the share of the published sky a sea mirrors. Under a low sun one cumulus far off
+  along the beam takes all of the beam while the sky is there to mirror; and it is what the recorder's "dark smear
+  band" in `shoreline` is (a cloud's shadow in which the sea mirrors the cloud base instead of the sky). The better
+  measure is how closed the cloud is over the point (the coverage map there): tried on 2026-11-16 (the overcast,
+  clear-sky and fair-weather numbers of 16.1 unchanged with it) and taken out again, because it made no difference
+  to this scene and changes every picture with a cloud's shadow on the sea. First item of the next round with
+  finding 2.
+
+Pictures of views without an impact: unchanged. The shaders are those of a754ea9 to the byte; the one change that
+draws differently is the wake foam of a vessel that has been lying in the water while the simulation ran, which no
+reference checkpoint has (the `splashdown` and `parachute-descent` pages are frozen from their first frame, where
+the wake was and is empty). `exact.spec.ts` after it: 0 px in every asserted pair again (the shoreline's known
+second state showed in two loads). Functional 42 of 42 (`warp-splash.spec.ts` new: it asserts no NaN and that the
+sea is never dark unless the camera has stopped down, and prints the stopped-down stretch as KNOWN until
+`ocean-13` is answered); unit 148 of 148 in 7 files with boundaries (`wake.test.ts` new).
