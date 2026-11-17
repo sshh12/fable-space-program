@@ -3,7 +3,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
-import { targetNameOf } from '@/core/fakes/snapshotAccess';
+import { targetNameOf } from '@/core/access/snapshotAccess';
 import { formatAngleDeg, formatDistance, formatLatLon, formatSpeed, formatTimeTo } from './format';
 import type { LabelSource, MarkerItem } from './scene';
 

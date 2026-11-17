@@ -4,7 +4,7 @@
 import type { BodyDef, DefLibrary } from '@/core/contracts/defs';
 import type { CameraInput, CameraState, ViewKind } from '@/core/contracts/render';
 import type { BodySnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
-import { activeVesselOf } from '@/core/fakes/snapshotAccess';
+import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 

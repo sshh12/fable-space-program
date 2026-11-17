@@ -21,7 +21,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraInput, CameraRig, CameraState, LodObserver, ViewKind, ViewMode } from '@/core/contracts/render';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
-import { activeVesselOf } from '@/core/fakes/snapshotAccess';
+import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { slerpDir, smoothBlend, vesselComRoot, ZERO_CAMERA_INPUT } from './cameraMath';

@@ -18,7 +18,7 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { activeVesselOf } from '@/core/fakes/snapshotAccess';
+import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { approach, fallbackBodyId, lookRotation, smoothBlend, vesselComRoot, type FlightCameraRig } from './cameraMath';
 
 export const MAP_MIN_DISTANCE = 1e5;

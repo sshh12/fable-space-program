@@ -16,7 +16,7 @@ import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { CameraInput, CameraState } from '@/core/contracts/render';
 import type { PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { listSections } from '@/core/defs/loader';
-import { activeVesselOf, cabinOf } from '@/core/fakes/snapshotAccess';
+import { activeVesselOf, cabinOf } from '@/core/access/snapshotAccess';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';

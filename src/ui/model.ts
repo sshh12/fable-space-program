@@ -4,7 +4,7 @@
  */
 import type { DefLibrary, ParachuteEnvelope, VehicleDef } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
-import { activeVesselOf, craftIdOf, craftOf, craftsOf, labelVehicleOf, targetNameOf } from '@/core/fakes/snapshotAccess';
+import { activeVesselOf, craftIdOf, craftOf, craftsOf, labelVehicleOf, targetNameOf } from '@/core/access/snapshotAccess';
 import {
   formatAltitude,
   formatApsis,

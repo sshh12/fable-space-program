@@ -11,7 +11,7 @@ import type { Sim, SimSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim } from '@/core/fakes/fakeSim';
-import { bodyTarget, targetBodyOf } from '@/core/fakes/snapshotAccess';
+import { bodyTarget, targetBodyOf } from '@/core/access/snapshotAccess';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { conicPosition, conicTrueAnomaly } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';

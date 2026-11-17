@@ -4,11 +4,10 @@
  * value its comment in src/core/contracts/sim.ts states, and the ONE place outside the simulation that still
  * reads a deprecated field on a consumer's behalf.
  *
- * Why it stands beside the fake session: every presentation package imports src/core only, so a helper that
- * the HUD, the map, the camera rigs, the render features and the audio engine share has to live in src/core,
- * and this directory is the part of src/core that the presentation sweep owns (request presentation-sweep-1
- * asks the lead for a home of its own at the tighten). Nothing here is fake: the functions are pure, hold no
- * state besides a per-object cache, and import contracts only.
+ * Why it is in src/core: every presentation package imports src/core only, so a helper that the HUD, the
+ * map, the camera rigs, the render features and the audio engine share has to live here (the lead's answer
+ * to request presentation-sweep-1 gave it this directory). The functions are pure, hold no state besides a
+ * per-object cache, and import contracts only.
  *
  * At the tighten step:
  *  - `revisionOf` becomes `snapshot.revision` (the field is required then, and `tick` is gone);

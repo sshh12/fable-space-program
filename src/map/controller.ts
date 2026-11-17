@@ -18,7 +18,7 @@ import type { TargetRef } from '@/core/contracts/net';
 import type { CameraState } from '@/core/contracts/render';
 import type { ManeuverNode, Patch, SimSnapshot } from '@/core/contracts/sim';
 import type { MapElementInfo, MapUpdateResult, MapView } from '@/core/contracts/ui';
-import { bodyTarget, revisionOf, targetBodyOf, targetOf } from '@/core/fakes/snapshotAccess';
+import { bodyTarget, revisionOf, targetBodyOf, targetOf } from '@/core/access/snapshotAccess';
 import { utAtTrueAnomaly } from './anomalyTime';
 import {
   ARM_ALPHA,

@@ -27,7 +27,7 @@ import {
   FAKE_VESSEL_ID,
   type FakeScene,
 } from '@/core/fakes/fakeSession';
-import { activeVesselOf, craftIdOf, partKeyOf, revisionOf, targetOf } from '@/core/fakes/snapshotAccess';
+import { activeVesselOf, craftIdOf, partKeyOf, revisionOf, targetOf } from '@/core/access/snapshotAccess';
 import { FRAME_HISTORY_EPOCHS, FrameEpochTracker, rebasePoint, rebaseVelocity } from '@/core/math/frame';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';

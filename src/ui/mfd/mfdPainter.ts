@@ -28,7 +28,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { WARP_LEVELS } from '@/core/contracts/defs';
-import { targetOf } from '@/core/fakes/snapshotAccess';
+import { targetOf } from '@/core/access/snapshotAccess';
 import { drawIcon, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor, TREND_ICONS } from '../icons';
 import {
   formatApsis,

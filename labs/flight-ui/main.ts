@@ -57,7 +57,7 @@ import type { MfdPage } from '@/core/contracts/ui';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
-import { bodyTarget } from '@/core/fakes/snapshotAccess';
+import { bodyTarget } from '@/core/access/snapshotAccess';
 import { acquireGpu } from '@/core/gpu/device';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG, G0 } from '@/core/math/scalar';

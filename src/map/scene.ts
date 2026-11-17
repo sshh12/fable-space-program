@@ -11,7 +11,7 @@
 import type { CameraState } from '@/core/contracts/render';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { ManeuverNode, Marker, MarkerKind, Patch, SimSnapshot, SurfaceTarget, VesselSnapshot } from '@/core/contracts/sim';
-import { targetNameOf } from '@/core/fakes/snapshotAccess';
+import { targetNameOf } from '@/core/access/snapshotAccess';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { conicFromState, conicMaxTrueAnomaly, conicPosition, conicRadiusCrossing, conicTrueAnomaly, timeSincePeriapsis, type ConicElements } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';

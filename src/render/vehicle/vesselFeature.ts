@@ -27,7 +27,7 @@
 import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } from '@/core/contracts/render';
 import type { ModuleState, PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
-import { CraftLineage, craftIdOf } from '@/core/fakes/snapshotAccess';
+import { CraftLineage, craftIdOf } from '@/core/access/snapshotAccess';
 import { quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle, type TemporalFeature } from '@/render/core';
 import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';

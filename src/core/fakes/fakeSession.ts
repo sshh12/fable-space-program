@@ -88,7 +88,7 @@ import { FRAME_HISTORY_EPOCHS, type FrameEpochOrigin, type FrameRebase } from '.
 import { quat, type Quat } from '../math/quat';
 import { clamp, DEG, G0, TWO_PI } from '../math/scalar';
 import { v3, type Vec3 } from '../math/vec3';
-import { partKey } from './snapshotAccess';
+import { partKey } from '../access/snapshotAccess';
 
 /** The flight scenes of v1: one vessel. */
 export type FakeScene = 'pad' | 'ascent' | 'lowOrbit' | 'translunar' | 'lunarOrbit' | 'lunarSurface' | 'reentry' | 'chutes';

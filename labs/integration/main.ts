@@ -40,7 +40,7 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
-import { cabinOf } from '@/core/fakes/snapshotAccess';
+import { cabinOf } from '@/core/access/snapshotAccess';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import { DEG, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';

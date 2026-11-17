@@ -39,7 +39,7 @@ import { WARP_LEVELS, MAX_PHYSICS_WARP_INDEX, type DefLibrary } from '@/core/con
 import type { CameraState, ViewKind } from '@/core/contracts/render';
 import type { SimEvent, SimSnapshot } from '@/core/contracts/sim';
 import type { Hud } from '@/core/contracts/ui';
-import { bodyTarget, targetBodyOf, targetOf } from '@/core/fakes/snapshotAccess';
+import { bodyTarget, targetBodyOf, targetOf } from '@/core/access/snapshotAccess';
 import type { GpuHandle } from '@/core/gpu/device';
 import { formatHeatFlux, formatMach, formatMet, formatPercent, formatPressure, formatRadAsDeg, formatUt, type VerticalTrend } from '../format';
 import { LOCK_ICON, MARKER_COLORS, MARKER_ICONS, PORT_ALIGN_ICON, STAGE_ICONS, stageIconFor, svgIcon, TREND_ICONS, type IconDef } from '../icons';

@@ -8,7 +8,7 @@ import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
-import { activeVesselOf } from '@/core/fakes/snapshotAccess';
+import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { bodyById, vesselComRoot, viewForward, viewUp } from './cameraMath';
 
 /** Vessels closer than this to a surface are LOD observers (terrain under the gear at full detail). */

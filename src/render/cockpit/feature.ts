@@ -19,7 +19,7 @@
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
 import type { PartSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { CockpitControls, MfdPainter, NavballRenderer } from '@/core/contracts/ui';
-import { cabinOf } from '@/core/fakes/snapshotAccess';
+import { cabinOf } from '@/core/access/snapshotAccess';
 import { mat3, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, createSceneBindings, MAX_BODIES, mipCount, nearestBody, sunVisibilityAt, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
 import { BALL_RADIUS_FRACTION } from '@/ui';

@@ -10,7 +10,7 @@
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { VesselSnapshot } from '@/core/contracts/sim';
 import { listSections } from '@/core/defs/loader';
-import { cabinOf, labelVehicleOf } from '@/core/fakes/snapshotAccess';
+import { cabinOf, labelVehicleOf } from '@/core/access/snapshotAccess';
 
 /** What this file reads of a cockpit layout section (`visuals/cockpits/<id>`, the cockpit package's data). */
 interface LayoutSeatLabels {

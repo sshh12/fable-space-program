@@ -15,7 +15,7 @@ import type { CraftSnapshot, PartSnapshot, SimSnapshot, VesselSnapshot } from '@
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim } from '@/core/fakes/fakeSim';
-import { CraftLineage, craftIdOf, partKeyOf } from '@/core/fakes/snapshotAccess';
+import { CraftLineage, craftIdOf, partKeyOf } from '@/core/access/snapshotAccess';
 import { v3 } from '@/core/math';
 import { engineMounts } from '@/render/vehicle/mounts';
 import { assembleVessel, splitForStage, vesselPartSnapshots, type Vessel } from '@/sim/vessel/public';

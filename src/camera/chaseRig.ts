@@ -49,7 +49,7 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
-import { craftsOf } from '@/core/fakes/snapshotAccess';
+import { craftsOf } from '@/core/access/snapshotAccess';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { activeVessel, approach, bodyById, bodyDef, enuAt, lookRotation, slerpDir, smoothBlend, vesselComRoot, type FlightCameraRig } from './cameraMath';
 
