@@ -1828,7 +1828,10 @@ Types: `src/core/contracts/net.ts`. Implementation of the wire layer: `src/net`.
   integers. Ids on the wire are session-local `u32` handles; the mapping to string ids is sent once.
 - Every high-rate message is idempotent and latest-wins (it carries a tick). A gateway may drop a queued
   delta when a newer one is ready (it watches the socket's buffered amount). The same messages would
-  survive an unreliable transport.
+  survive an unreliable transport. **The list-like view models are latest-wins too** (lead decision of
+  2026-11-16): `pads`, `ships`, `assembly`, `roster`, `prompts` and `conjunctions` are sent whole, and a
+  newer one of a type replaces the one that waits; `near` supersedes per band, and a key removes the waiting
+  deltas of its island. Everything else, `IslandSlow` included, is reliable.
 - The menu holds **no socket**. It polls `GET /live.json` (presence, feed, pads summary with the wait per
   class, up to 200 markers of the menu region) every 3 to 5 s with jitter, and stops while the tab is
   hidden. The document is built by the directory at most once a second, and only while somebody asks for
@@ -1914,7 +1917,7 @@ Server to client:
 | `IslandOp` | a structural change at a tick as an operation both sides execute: `split`, `merge`, `destroy`, `capture`, `release`, `add`, `remove`, `rebase`, `replace`; with a checksum of the result (part count, craft list, mass to 1e-9) | on event; reliable |
 | `IslandKey` | tick, input margin, and per stepped vessel the **exact** pose: position and velocity as float64 offsets from the reference orbit, attitude and rate as float32, applied controls | 1 Hz |
 | `InputAck` | for the pilot's own inputs and commands: `seq` and the tick each was applied at (a range when applied as stamped, one entry per late input) | with every delta |
-| `IslandDelta` | tick, key tick, and per vessel the groups that changed against the last key: POSE (quantised, 16-22 B), CONTROL, PART-FAST (ignition, gimbal, legs, chutes); a pair in contact is sent exact with its friction anchors and port state | 10 Hz single-owner, 30 Hz shared, 60 Hz for a contact pair |
+| `IslandDelta` | tick, key tick, and per vessel the groups that changed against the last key: POSE (quantised, 16-22 B), CONTROL, PART-FAST (ignition, gimbal, legs, chutes); a pair in contact is sent exact with its friction anchors and port state | adaptive (lead decision of 2026-11-16; it was 10 Hz single-owner, 30 Hz shared): 30 Hz, falling to what the client's downstream budget carries, down to a floor of 10 Hz (13.6); 60 Hz for a contact pair, out of the burst allowance |
 | `IslandSlow` | resource levels and part temperatures that changed | 2 Hz |
 | `Event` | a `SimEvent` with its tick, vessel and epoch | reliable |
 | `CommandResult` | `cmdId, ok, appliedTick, reason` | per command |
@@ -1933,7 +1936,11 @@ Server to client:
 - Keys are exact; the client resets its prediction only to exact state or to a delta whose quantisation
   (16 um, 1 um/s, 5e-10 rad) is far below the comparison tolerance (0.2 mm, 0.2 mm/s, 2e-5 rad). Vessels in
   contact are always sent exact.
-- A delta is always against the last key, never against the previous delta.
+- A delta is always against the last key, never against the previous delta. **A key carries an
+  acceleration term for a thrusting vessel** (lead decision of 2026-11-17): the non-gravitational
+  acceleration in island axes as float32, 12 B, and nothing for a coasting vessel. The deltas of a thrusting
+  vessel then predict position from key + v dt + a dt^2 / 2 and velocity from key + a dt, in the same
+  arithmetic on both sides, so the term adds no error and the residuals keep their bounds.
 - Structure never rides in a key or a delta. A staging event is tens of bytes (`IslandOp split` with the
   server's ids); the client rolls back to the operation's tick, applies it and replays, and asks for
   `replace` if the checksum differs.
@@ -1983,7 +1990,15 @@ Server to client:
   sequence number. Backoff: 0.5, 1, 2, 4, 8 s, then every 15 s, with jitter; gateways admit resumes before
   new sessions. A returning hidden tab rebuilds its replica from a fresh `IslandEnter`, never by
   fast-forward.
-- Every client has a hard downstream budget (6 kB/s by default) spent in priority order: own island, nearest
+- **The downstream budget is an average with a burst** (lead decision of 2026-11-16; rule fields
+  `limits.downstreamBytesPerSecond`, `downstreamBurstBytesPerSecond`, `downstreamBurstSeconds`,
+  `downstreamBurstWindow`): 6 kB/s is the SUSTAINED average, and while island or near records wait the
+  bucket refills at 24 kB/s for at most 60 s in any 600 s, which is at most 7.8 kB/s over any ten minutes.
+  **The island delta rate adapts** to it: 30 Hz (`deltaRateTarget`) for as long as the bytes are there,
+  then what fits, down to a floor of 10 Hz (`deltaRateFloor`); a contact pair gets 60 Hz out of the burst
+  allowance. An `IslandEnter` is free up to 256 kB, and the relevant set keeps a floor of 10 % of the
+  sustained rate, taken from the same bucket.
+- Every client has a hard downstream budget (6 kB/s sustained by default, as above) spent in priority order: own island, nearest
   near-tier vessels, the relevant set; superseded samples are dropped. The complete census never rides the
   socket. On a pad row the own island plus eight near islands reach the cap, so a launch day is costed at
   the cap, not at the 2.5 kB/s planning average (section 30).
@@ -2011,7 +2026,13 @@ same for every viewer is built per client.
   decisions; the public census is one 84 kB delta a second in total, built once for everyone and free on
   CDN hits once `pub` is its own service.
 - The first sync on a socket is the relevant set only; the full list of a sphere of influence (10,000
-  objects is 840 kB) is fetched over HTTP when the map opens.
+  objects is 809 kB as built, 80.9 B an object, against the 840 kB first estimated) is fetched over HTTP
+  when the map opens. **Names are not in census documents** (lead decision of 2026-11-17): a document
+  carries what moves (ids as handles of its own table, orbits, sizes, owners as ids) and never a craft's
+  name or an owner's callsign; nothing needs a string to be drawn on the map. The relevant set and the
+  near tier bring their strings with the first sight; for an object seen only in a document the client
+  asks with `names` on demand, at most `limits.namesPerRequest` (64) ids a request and
+  `limits.nameRequestsPerSecond` (2) requests a second, and keeps the answer for the session.
 - The map draws icons for the census by propagation on the client (GPU compute above 500 objects) and
   float64 lines and markers only for a capped relevant set (own ships, target, docked partners, hovered,
   plus 32 others).
@@ -2975,7 +2996,8 @@ Additions for v2:
 - Binding tables exist per input context: `menu`, `transit`, `flight`. Only `flight` reaches the flight
   controller; switching context releases all held keys. No table uses Ctrl, Alt or Meta.
 - New flight actions: `flightMenu` (Esc, P; replaces `pause`, nothing pauses), `cycleTarget` (B),
-  `toggleRoster` (O), `dockingView` (V), `openQuickComms` (Enter), `acceptPrompt` (Y), and a docking control
+  `toggleRoster` (O), `dockingView` (the `Equal` key: V is the next couch, `ui:nextSeat`; the presentation
+  sweep's choice, accepted by the lead on 2026-11-17), `openQuickComms` (Enter), `acceptPrompt` (Y), and a docking control
   mode that puts translation on the main keys.
 - `PlayerCommands.setTarget(ref: TargetRef | null)` with `TargetRef = { kind: 'body', id } | { kind:
   'vessel', id } | { kind: 'port', vesselId, portId }`. `NavballMode` gains `target`; `SasMode` gains
@@ -3189,7 +3211,9 @@ Design: `docs/research/v2/frontend-ux.md` section 9.
   against reserved words and a word list on the server; one rename per 30 days.
 - **Lobbies**: the client lists `LobbySummary` entries (one today) with region, measured round trip,
   population, rules summary and build compatibility. Admission states: `open`, `queued(position, eta)`,
-  `maintenance`, `incompatible`.
+  `maintenance`, `incompatible`. **The admission queue and the launch queue are two different queues**: the
+  first is a full lobby (`LinkState.state` 'queued' with `queuePosition` and `queueEtaSeconds`), the second
+  a full pad class (`ClientStores.launchQueue`, 5.9); a player can be admitted and then wait for a pad.
 - **Roster**: nearby, docked with you, everyone (paged). Block hides a player's quick-comms and name; their
   craft stays physical, and the rules screen says so.
 
@@ -3204,6 +3228,17 @@ Design: `docs/research/v2/frontend-ux.md` section 9.
   `X-Real-IP` comes from Railway's edge. (Load-test bots share addresses: bulk provisioning with an
   operator token is accepted on rehearsal environments and on the local stack only, never on production;
   the same switch enables the fault commands of 28.7 and the lifted admission cap.)
+- **The wire layer's bounds are rule fields** (`UniverseRules.limits`, read through `wireLimits(rules)`;
+  the defaults are `WIRE_LIMIT_DEFAULTS` in `src/core/contracts/net.ts`): an upstream bucket per socket,
+  checked BEFORE a frame is decoded (16 kB/s and 60 frames a second sustained, bursts of 80 kB and 120
+  frames; over it the socket is closed); pings and time-sync probes 2 a second each, and at most 8 messages
+  before the welcome; plans 1, quick-comms 1, targets 5 and seat requests 2 a second; `names` requests 2 a
+  second of at most 64 ids; at most 128 input samples in a frame; a socket whose outgoing queue passes
+  1 MB or holds a record older than 10 s is closed as a slow consumer. What is dropped is answered once
+  per kind and window with `rateLimited`. The downstream budget and the delta rate are rule fields
+  likewise (13.6). The default rules document states none of them yet: a rules file may not change before
+  the contract tighten (MIGRATION_V2 principle 5), which gives it every field of this list (MIGRATION_V2,
+  the tighten step).
 - Bytes are bounded as well as requests: every route that sends to the internet without admission (the
   client build, the boot pack, the mirror, the public documents, the anonymous API routes) has a daily
   egress budget and a per-address limit, and the hashed routes refuse query strings (16.2). A scraper,
@@ -3711,7 +3746,7 @@ asserted in the integrated app (`app-integration` packages, `final-gate`) and in
 | Postgres at stage 0 | replica limit 1 vCPU / 0.5 GB, so at most $5 a month of memory whatever the page cache does; `max_connections` 40; at most 4 connections per directory process and 1 for the dump; peak during a rollout at or under 12 |
 | Egress budgets at stage 0 (16.2) | per day: client build 3 GB, boot pack 1 GB, mirror 8 GB, anonymous public documents 2 GB, anonymous API 1 GB, dump uploads 1.5 GB; sockets bounded by the admission cap times 6 kB/s. Worst month about $40 of egress, about $140 with every service pegged as well |
 | Admission cap | 20 at stage 0 (the count the conservative projection puts at about $53 a month for the game if held all month), then the measured count; up to the measured main-thread limit at stage 1; 500 at stage 2 until a load test says otherwise; lifted on rehearsal environments for the compute ramps |
-| Downstream per player | planning average 2.5 kB/s (cruise); 6 kB/s hard cap, which a launch day reaches; upstream under 0.6 kB/s. The complete census is HTTP from the publisher and is not in this budget |
+| Downstream per player | planning average 2.5 kB/s (cruise); 6 kB/s sustained average with a burst allowance of 24 kB/s for at most 60 s in any 600 s (at most 7.8 kB/s over any ten minutes; lead decision of 2026-11-16, 13.6), which a launch day reaches; the island delta rate adapts between 30 Hz and a floor of 10 Hz inside it; upstream under 0.6 kB/s. The complete census is HTTP from the publisher and is not in this budget |
 | Server CPU per connected player (derived; conservative) | 0.0055 vCPU normal mix, 0.0094 launch-heavy; 0.025 and 0.043 on `hosting.md`'s figure |
 | One worker thread at 50 % (derived; conservative) | 100-125 integrated objects; 16. Replaced by the synchronised-worker measurements (1, 2, 4 and 8 on stage 0; 16 and 22 in the launch rehearsal) |
 | Shard and directory main threads (from stage 2) | <= 50 % utilisation with per-tick batching (about 48,000 inputs and as many frames a second per shard at 1,600 players would otherwise be most of a core) |

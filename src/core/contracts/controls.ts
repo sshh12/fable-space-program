@@ -246,7 +246,8 @@ export type ButtonAction =
 /**
  * v2 button actions (ARCHITECTURE 19): 'flightMenu' opens or closes the flight menu over the live flight
  * (Esc, P; it replaces 'pause'); 'cycleTarget' selects the next target of the relevant set (B);
- * 'toggleRoster' shows or hides the roster (O); 'dockingView' is the view at the control port (V);
+ * 'toggleRoster' shows or hides the roster (O); 'dockingView' is the view at the control port (the Equal
+ * key: V is the next couch, `ui:nextSeat`; the presentation sweep's choice, accepted by the lead);
  * 'openQuickComms' opens the quick-comms wheel (Enter); 'acceptPrompt' accepts the oldest open prompt (Y).
  *
  * Members of `ButtonAction` since the lead step of sub-wave 3.2 (2026-11-16): the binding table and its

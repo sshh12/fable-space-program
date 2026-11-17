@@ -978,6 +978,13 @@ export interface LinkState {
   /** Seconds left of the reconnect grace while reconnecting; queue position while queued. */
   graceRemaining: number | null;
   queuePosition: number | null;
+  /**
+   * While queued for ADMISSION (state 'queued': the lobby is full): the estimated wait until a place frees,
+   * s of wall time, beside `queuePosition`; null otherwise. Optional until the tighten step (absent = null).
+   * This is the admission queue. The LAUNCH queue (a full pad class) is a different queue and lives in
+   * `ClientStores.launchQueue` (session.ts): a player can be admitted and then wait for a pad.
+   */
+  queueEtaSeconds?: number | null;
   /** Tick up to which the pilot's island is durable (ARCHITECTURE 13.3 `Durable`); null when local. */
   durableTick: number | null;
   /** Player-facing reason for the current state when it is not 'online' or 'local'. */

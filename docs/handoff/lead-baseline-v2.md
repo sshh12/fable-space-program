@@ -1294,3 +1294,76 @@ brief, with the deprecated fields the sweep stops reading and their counts. Noth
    reconnecting the store keeps the last entry.
 3. `package.json` does not list `ws`, `@types/ws` or `fflate`, and none of them is in `node_modules`
    (request wire-protocol-1).
+
+## 26. Snapshot members for the presentation sweep, and small lead items (2026-11-17, 01:00-01:40; commit 7df28d3 and the one after it)
+
+**Requests presentation-sweep-2 and -3** (both resolved in the contract and the simulation; the read sites
+and the fakes are the sweep's, and the two request files state the members and how each read site uses
+them).
+
+| Member (`src/core/contracts/sim.ts`, all optional until the tighten) | What it states | Producer |
+|---|---|---|
+| `PartSnapshot.panel?: { index, count, of } \| null` | a jettisoned fairing petal: its sector, of how many, and the instance id of the fairing it was a petal of; null for every other part | `vesselPartSnapshots` (`src/sim/vessel/facade.ts`), from `PartRuntime.panel` and `fairingOfPanel` (`ids.ts`) |
+| `StageInfo.burnLabel?: string \| null` | what the stage burns ("Meridian M-3") | `stagingInfo`, from `describeStages` |
+| `StageInfo.thrustVac?`, `weightFlowVac?: number` | of the engines the stage ignites: thrust in vacuum, N, and the sum of thrust / Isp, N/s | the same |
+| `StageInfo.actionChutes?: ('drogue' \| 'main' \| null)[]` | parallel to `actionKinds`: what a deploy action deploys and what a cut action releases | the same |
+| `StageInfo.chuteEnvelopes?: { safe, destroy } \| null` | the envelopes of the canopy the stage's first deploy action puts out | the same |
+| `CraftCockpit.crew?: { seat, name }[]` | the crew by seat, as the vehicle the craft was built from lists them | `craftSnapshots`, from `craft.vehicle.crew` |
+
+- **One derivation for every producer**: `describeStages(vehicle, partDef)` in
+  `src/core/defs/stageWords.ts` (pure, shared code). The simulation calls it once per vehicle object where a
+  craft is made from its vehicle with the library at hand (`buildVehicle`, `decodeVessel`:
+  `rememberStages`, a WeakMap by vehicle object) and `stagingInfo` copies the result. The fakes call the
+  same function. A networked client derives them the same way from the definitions it holds: nothing of
+  this needs to travel on the wire.
+- **To the letter and to the bit what the HUD computes today** (`src/ui/model.ts`: `stageBurnLabel`,
+  `stageActionWords`, `stageAcceleration`, `describeChuteEnvelope`): the same iteration orders and the
+  same sums in the same order. That is why the engine figures are thrust and WEIGHT flow (the HUD's
+  `thrust` and `flow`, so `ve = G0 * thrustVac / weightFlowVac` is the HUD's own expression) and not a
+  mass flow, and why the chute words are an array beside `actionKinds` and not one deploy and one release
+  per stage. `tests/unit/sim-vessel/snapshotWords.test.ts` (9 tests) holds the HUD's computation, written
+  out against the definitions, against the snapshot's fields for every stage of `meridian-lunar`
+  (`Object.is` on the two sums).
+- **Nothing entered the state**: derived when the snapshot is built; `stateHash` and the encoded bytes are
+  the same before and after (tested); no definition file changed (rule 7a); the petal's instance id is
+  what it was (`panelInstanceId` in `ids.ts` is the one place that makes it, `fairingOfPanel` the one
+  place that reads it).
+- `tests/unit/sim-world/snapshotV2.test.ts` follows (the cockpit block now has `crew`) and asserts that the
+  session's whole path carries the stage words.
+
+**Small lead items.**
+- `LinkState.queueEtaSeconds?: number | null` (`net.ts`, the lead's section; request wire-protocol-3
+  resolved): the ADMISSION queue's estimated wait. Optional until the tighten, because the two builders of
+  a `LinkState` are not the lead's files: `src/net/session/client.ts:701` gains one line beside
+  `queuePosition` (from `admissionQueue.etaSeconds`), and the fake's link store states null.
+- `wire-protocol` brief, PROVIDED BY THE LEAD: `ws` 8.23 and its types (installed); fflate dropped.
+- ARCHITECTURE 19 and the comment in `controls.ts`: `dockingView` is on the `Equal` key, V is the next couch.
+- ARCHITECTURE 13.1 (the list-like view models are latest-wins), 13.3 (`IslandDelta`: adaptive, 30 Hz
+  down to a floor of 10 Hz, 60 Hz for a contact pair out of the burst), 13.4 (the key's acceleration term
+  for a thrusting vessel), 13.6 (6 kB/s is the sustained average; 24 kB/s for at most 60 s in any 600 s),
+  14 (names are not in census documents; 809 kB for 10,000 objects), 23 (the admission queue and the launch
+  queue are two different queues), 26 (the wire layer's bounds are rule fields, with their defaults),
+  29.2 (the downstream line).
+- MIGRATION_V2, the tighten step: the default rules document receives the 24 wire-layer rule fields of
+  `docs/handoff/wire-protocol.md` 0.1 and 0.6, each named with its default; `LinkState.queueEtaSeconds`
+  and the six snapshot members above become required.
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` (both configurations, the sweep's uncommitted work included) | clean |
+| Headless unit suites (src/sim, src/session, src/terrain, src/pilot, src/net, src/core, tools; tests/unit/sim-*, terrain-core, platform, net) | 88 files pass, 2 skipped; 969 tests pass, 13 skipped |
+| Codec corpus (`tests/unit/sim-vessel/codec.test.ts`) | 23 of 23 |
+| Pins (`tools/dev/guard-pins.test.ts`) | 3 of 3 |
+| `npm run test:mission` | 36 of 36, golden b8221b0fd316207e (`tests/mission/golden.json` untouched) |
+| The whole unit suite (`npx vitest run`) | 177 files, 2,138 tests: 2,115 pass, 15 skipped, 8 fail, all in `tests/unit/fakes/fakeSession.test.ts` (the conformance of the eight flight scenes: item 1 below) |
+
+**For the lead.**
+1. `tests/unit/fakes/fakeSession.test.ts` is RED in its eight flight scenes from this commit until the
+   fake states the members (its field comparison lists what the real session has and the fake has not:
+   the five `StageInfo` members, then `cockpit.crew`, then `panel`). The fakes are the sweep's; the
+   requests say how (`describeStages` spread into the fake's stages, `crew` from the vehicle, `panel: null`).
+2. The cost lines still multiply by 6 kB/s (ARCHITECTURE 16.2's socket row, the egress row of 29.2, the
+   two "at the 6 kB/s cap" rows of 30). With the burst allowance a client can average 7.8 kB/s over any
+   ten minutes for as long as its island keeps records waiting, which is 30 % over those rows. Not
+   changed here: whether the cost model is restated at 7.8 or the burst is argued to be rare is a decision.
+3. `Readouts.target` is still filled by no session (section 25, item 1).
