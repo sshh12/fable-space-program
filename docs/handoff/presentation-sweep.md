@@ -366,6 +366,9 @@ offers and the three time strips.
   has a vessel); `RetiredButtonAction` goes with the member.
 - The petal's instance id is no longer read anywhere in the presentation (`grep -rn "#panel" src/render src/ui labs` is empty of code).
 - `MAX_SITES = 4` ground plans in the terrain's material uniform (D10).
+- Open requests against the presentation's paths (app-integration-11 to -13, cockpit-18 to -22, core-3, core-7,
+  lead-8, lead-9, ocean-10 to -13, sky-lighting-11, vehicle-pad-8 and -12) are the visual close-out's: each asks
+  for a picture to change, and this sweep may not move a pixel. None was taken up.
 
 ## 7. Requests filed
 
