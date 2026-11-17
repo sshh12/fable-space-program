@@ -215,6 +215,9 @@ export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<LabGroup,
     });
     return {
       instanceId: placement.id,
+      // The flow group and its label, as a session states them for every part.
+      stageGroup: placement.stageGroup,
+      stageLabel: vehicle.stageGroups.find((g) => g.id === placement.stageGroup)?.label ?? placement.stageGroup,
       def: placement.def,
       localPos: v3.new(0, (STACK_BASE[placement.id] ?? 0) - base - def.bounds.yMin, 0),
       localRot: quat.identity(),

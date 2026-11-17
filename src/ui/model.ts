@@ -2,9 +2,9 @@
  * Display models built from a SimSnapshot: the exact strings the HUD panels and the MFD pages show. Both
  * render from these functions, so a number can never read differently on the two.
  */
-import type { DefLibrary, ParachuteEnvelope } from '@/core/contracts/defs';
+import type { DefLibrary, ParachuteEnvelope, VehicleDef } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
-import { activeVesselOf, targetNameOf } from '@/core/fakes/snapshotAccess';
+import { activeVesselOf, craftIdOf, craftOf, craftsOf, targetNameOf } from '@/core/fakes/snapshotAccess';
 import {
   formatAltitude,
   formatApsis,
@@ -386,6 +386,26 @@ export function orbitPhase(s: SimSnapshot, defs: DefLibrary): OrbitPhase {
 
 // --------------------------------------------------------------------------------------------- stages
 
+/**
+ * The stage stack of the craft whose staging panel the snapshot carries (`SimSnapshot.staging`: the helm craft
+ * of the active vessel), as its vehicle's file lists it, FOR WORDS ONLY: what a stage burns, which chutes it
+ * deploys or releases, and the engines behind the weak-gravity acceleration figure. `StageInfo` states a
+ * stage's label, icon and action kinds and none of these (request presentation-sweep-3 asks for them), and
+ * the contract gives a craft's `vehicleId` "for labels and icons only": this is that use, and the one place
+ * in the presentation that looks a vehicle up by an id from a snapshot. Null for a craft whose design the
+ * library does not have: every caller then says less (the stage's own label, the bare action kinds, the
+ * session's thrust-to-weight figure), and nothing else is read from a vehicle definition: resource groups,
+ * part keys, camera distances and the cockpit come from the snapshot.
+ */
+function stageWordsSource(s: SimSnapshot, defs: DefLibrary | undefined): VehicleDef | null {
+  const v = activeVesselOf(s);
+  if (!defs || !v) return null;
+  // The helm's craft; a vessel without a helm block is flown from its base craft, and a snapshot without craft
+  // blocks is one craft built from the vessel's vehicle.
+  const craft = (v.helm ? craftOf(v, v.helm.craftId) : null) ?? craftsOf(v)[0] ?? null;
+  return defs.vehicles[craft?.vehicleId ?? v.vehicleId] ?? null;
+}
+
 export interface StageTileView {
   index: number;
   number: string;
@@ -433,13 +453,12 @@ export interface StageTileView {
 
 /**
  * What a stage burns: the labels of the stage groups (VehicleDef.stageGroups) of the engines its igniteEngines
- * actions light, e.g. "Meridian M-3" or "Heron descent stage". Null when the active vessel's vehicle definition
- * is unknown or the stage ignites no engine. StageInfo index i is VehicleDef.stages[i] (the sim reports the
- * whole stack, fired stages included).
+ * actions light, e.g. "Meridian M-3" or "Heron descent stage". Null when the design of the craft is not in the
+ * library (stageWordsSource) or the stage ignites no engine. StageInfo index i is VehicleDef.stages[i] (the sim
+ * reports the whole stack, fired stages included).
  */
 export function stageBurnLabel(s: SimSnapshot, defs: DefLibrary, index: number): string | null {
-  const v = activeVesselOf(s);
-  const vehicle = v ? defs.vehicles[v.vehicleId] : undefined;
+  const vehicle = stageWordsSource(s, defs);
   const stage = vehicle?.stages[index];
   if (!vehicle || !stage) return null;
   const groups: string[] = [];
@@ -485,8 +504,7 @@ const CHUTE_NAMES = { drogue: 'drogues', main: 'mains' } as const;
  */
 export function stageActionWords(s: SimSnapshot, defs: DefLibrary | undefined, index: number): string {
   const info = s.staging.stages[index];
-  const v = activeVesselOf(s);
-  const vehicle = defs && v ? defs.vehicles[v.vehicleId] : undefined;
+  const vehicle = stageWordsSource(s, defs);
   const stage = vehicle?.stages[index];
   if (!vehicle || !stage) return stageActionText(info?.actionKinds ?? []);
   let deployed: 'drogue' | 'main' | null = null;
@@ -518,8 +536,7 @@ const G0 = 9.80665;
  */
 export function stageAcceleration(s: SimSnapshot, defs: DefLibrary | undefined, index: number): number | null {
   const info = s.staging.stages[index];
-  const v = activeVesselOf(s);
-  const vehicle = defs && v ? defs.vehicles[v.vehicleId] : undefined;
+  const vehicle = stageWordsSource(s, defs);
   const stage = vehicle?.stages[index];
   if (!info || !defs || !vehicle || !stage || !(info.burnTime > 0) || !(info.deltaVVac > 0)) return null;
   let thrust = 0;
@@ -613,15 +630,18 @@ export interface ResourceGroupView {
 }
 
 /**
- * Resources of the active vessel aggregated per stage group (VehicleDef.parts[].stageGroup, in the order of
- * VehicleDef.stageGroups). A vessel whose vehicle definition is unknown is shown as one group under its name.
+ * Resources of the active vessel aggregated per propellant-flow group, as the snapshot states it for every
+ * part: the group is the part's `stageGroup` WITHIN ITS CRAFT and the label its `stageLabel`, so no vehicle
+ * definition is read, a design that is not in the library has its bars, and two craft of one vehicle in one
+ * vessel never merge theirs (in a vessel of several craft a group is known by `craftId/stageGroup` and its
+ * label is led by the craft's name). Groups are in the order of the part list, which is the order of the
+ * stack. Parts without a stated group (a hand-built snapshot) are one group per craft under the vessel's name.
  */
 export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGroupView[] {
   const v = activeVesselOf(s);
   if (!v) return [];
-  const vehicle = defs.vehicles[v.vehicleId];
-  const groupOf = new Map<string, string>();
-  if (vehicle) for (const p of vehicle.parts) groupOf.set(p.id, p.stageGroup);
+  const several = craftsOf(v).length > 1;
+  const labels = new Map<string, string>();
   const sums = new Map<string, Map<string, { amount: number; capacity: number }>>();
   /** Per group: what its main engines burn, what its fixed-burn motors burn, and its heat shields' ablator. */
   const mainFeed = new Map<string, Set<string>>();
@@ -635,7 +655,13 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
   for (const part of v.parts) {
     const def = defs.parts[part.def];
     if (!def) continue;
-    const g = groupOf.get(part.instanceId) ?? v.id;
+    const craftId = craftIdOf(v, part);
+    const group = part.stageGroup ?? '';
+    const g = several ? `${craftId}/${group}` : part.stageGroup ?? v.id;
+    if (!labels.has(g)) {
+      const label = part.stageLabel ?? part.stageGroup ?? v.name;
+      labels.set(g, several ? `${craftOf(v, craftId)?.name ?? craftId} · ${label}` : label);
+    }
     for (const md of def.modules) {
       if (md.type === 'engine') for (const p of md.propellants) add(md.fixedBurn ? fixedFeed : mainFeed, g, p.resource);
       else if (md.type === 'heatShield') add(ablators, g, md.ablatorResource);
@@ -650,12 +676,8 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
       m.set(r.resource, e);
     }
   }
-  const order = vehicle ? vehicle.stageGroups.map((g) => g.id) : [];
-  const ids = [...sums.keys()].sort((a, b) => {
-    const ia = order.indexOf(a);
-    const ib = order.indexOf(b);
-    return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
-  });
+  // A Map keeps the order in which its keys were first set: the order of the part list.
+  const ids = [...sums.keys()];
   return ids.map((id) => {
     const entries = [...sums.get(id)!.entries()];
     const main = mainFeed.get(id);
@@ -667,7 +689,7 @@ export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGro
     const isPrimary = entries.some(([rid]) => held(rid)) ? held : entries.some(([rid]) => other(rid)) ? other : (rid: string): boolean => !ablator(rid);
     return {
       id,
-      label: vehicle?.stageGroups.find((g) => g.id === id)?.label ?? v.name,
+      label: labels.get(id) ?? v.name,
       bars: entries.map(([rid, e]) => ({
         resourceId: rid,
         name: defs.resources[rid]?.name ?? rid,
@@ -821,8 +843,7 @@ export function describeChuteEnvelope(s: SimSnapshot, defs: DefLibrary): ChuteEn
   if (env === null || !inAtmosphere(s, defs)) return null;
   const light = env.toUpperCase();
   const tone = env === 'safe' ? 'good' : env === 'risky' ? 'caution' : 'warning';
-  const v = activeVesselOf(s);
-  const vehicle = v ? defs.vehicles[v.vehicleId] : undefined;
+  const vehicle = stageWordsSource(s, defs);
   if (vehicle) {
     for (let i = s.staging.nextStage; i < vehicle.stages.length; i++) {
       for (const a of vehicle.stages[i]!.actions) {
@@ -861,11 +882,9 @@ export function milestoneTitle(id: string, s: SimSnapshot, defs: DefLibrary): st
       return 'Lift-off';
     case 'maxQ':
       return 'Max Q';
-    case 'stageFired': {
-      const v = activeVesselOf(s);
-      const label = v ? defs.vehicles[v.vehicleId]?.stages[t.stageIndex]?.label : undefined;
-      return label ?? `Stage ${t.stageIndex + 1} fired`;
-    }
+    case 'stageFired':
+      // The stage's own label, as the staging panel states it (the whole stack, fired stages included).
+      return s.staging.stages[t.stageIndex]?.label ?? `Stage ${t.stageIndex + 1} fired`;
     case 'orbit':
       return `${body(t.bodyId)} orbit reached`;
     case 'encounterPredicted':

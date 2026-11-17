@@ -269,15 +269,51 @@ describe('display models', () => {
     }
   });
 
-  it('aggregates resources per stage group in vehicle order', () => {
+  it('aggregates resources per stage group as the parts state it, in the order of the stack', () => {
     const sim = createFakeSim(defs, { scene: 'lowOrbit', parts: labVehicleParts(defs, { upper: 0.25 }, ['upper', 'descent', 'ascent', 'capsule']) });
     const groups = describeResources(tagLabVehicle(sim.snapshot()), defs);
     expect(groups.map((g) => g.label)).toEqual(['Meridian M-2', 'Heron descent stage', 'Heron ascent stage', 'Kestrel capsule']);
     expect(groups[0]!.bars.map((b) => b.name)).toEqual(['RP-1', 'Liquid oxygen']);
     expect(groups[0]!.bars[0]!.fraction).toBeCloseTo(0.25, 9);
-    // Without a vehicle definition, everything is one group under the vessel name.
-    const untagged = describeResources(sim.snapshot(), defs);
-    expect(untagged.map((g) => g.label)).toEqual(['Fake vessel']);
+    // The groups and their labels are the parts' own: a vessel whose vehicle is not in the library has the same bars.
+    const s = sim.snapshot();
+    const unknown = describeResources({ ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle' })) }, defs);
+    expect(unknown).toEqual(groups);
+    // Parts that state no group (a hand-built snapshot) are one group under the vessel's name.
+    const bare = describeResources({ ...s, vessels: s.vessels.map((v) => ({ ...v, parts: v.parts.map(({ stageGroup: _g, stageLabel: _l, ...p }) => p) })) }, defs);
+    expect(bare.map((g) => g.label)).toEqual([s.vessels.find((v) => v.id === s.activeVesselId)!.name]);
+  });
+
+  it('never merges the bars of two craft of one vehicle in one vessel', () => {
+    const sim = createFakeSim(defs, { scene: 'lowOrbit', parts: labVehicleParts(defs, { upper: 0.25 }, ['upper', 'capsule']) });
+    const s = sim.snapshot();
+    const active = s.vessels.find((v) => v.id === s.activeVesselId)!;
+    const craft = (id: string, name: string): NonNullable<typeof active.crafts>[number] => ({
+      id,
+      parent: null,
+      vehicleId: active.vehicleId,
+      name,
+      ownerId: null,
+      ownerCallsign: null,
+      commandPart: 'capsule',
+      staging: { nextStage: 0, stages: [], lockout: false },
+      chase: { defaultDistance: 100, minDistance: 10, maxDistance: 1000 },
+      policy: { lendAttitude: true, lendEngines: true, lendPropellant: true, helm: 'owner' },
+    });
+    // The second craft is the same vehicle with its upper stage three quarters full instead of a quarter.
+    const second = labVehicleParts(defs, { upper: 0.75 }, ['upper', 'capsule']);
+    const docked = {
+      ...active,
+      crafts: [craft('craft-a', 'Alba'), craft('craft-b', 'Brio')],
+      parts: [...active.parts.map((p) => ({ ...p, craftId: 'craft-a' })), ...second.map((p) => ({ ...p, craftId: 'craft-b' }))],
+    };
+    const groups = describeResources({ ...s, vessels: s.vessels.map((v) => (v === active ? docked : v)) }, defs);
+    expect(groups.map((g) => g.id)).toEqual(['craft-a/upper', 'craft-a/capsule', 'craft-b/upper', 'craft-b/capsule']);
+    expect(groups.map((g) => g.label)).toEqual(['Alba · Meridian M-2', 'Alba · Kestrel capsule', 'Brio · Meridian M-2', 'Brio · Kestrel capsule']);
+    expect(groups[0]!.bars[0]!.fraction).toBeCloseTo(0.25, 9);
+    expect(groups[2]!.bars[0]!.fraction).toBeCloseTo(0.75, 9);
+    // One craft alone keeps the plain group ids (the HUD's rows and the tests of a single stack).
+    expect(describeResources(s, defs).map((g) => g.id)).toEqual(['upper', 'capsule']);
   });
 
   describe('landing scope (MFD landing page)', () => {
@@ -696,6 +732,8 @@ describe('round-6 mission read-outs', () => {
       .filter((p) => groups.includes(p.stageGroup))
       .map((p) => ({
         instanceId: p.id,
+        stageGroup: p.stageGroup,
+        stageLabel: vehicle.stageGroups.find((g) => g.id === p.stageGroup)?.label ?? p.stageGroup,
         def: p.def,
         localPos: v3.new(0, 0, 0),
         localRot: quat.identity(),
@@ -797,8 +835,12 @@ describe('round-6 mission read-outs', () => {
     // The same scenario with its titles taken out.
     const scenario = defs.scenarios['lunar-direct']!;
     const plain = { ...defs, scenarios: { ...defs.scenarios, 'lunar-direct': { ...scenario, milestones: scenario.milestones.map(({ title: _title, ...m }) => m) } } };
-    const s = missionSnap('lowOrbit', ['capsule'], (_p, _r, c) => c, { scenario: { id: 'lunar-direct', startKind: 'pad', stagesAlreadyFired: 0 } });
+    // The staging panel of the mission vehicle as its session states it: a stage's label is read from there,
+    // never from a vehicle definition.
+    const stages = defs.vehicles[MISSION_VEHICLE]!.stages.map((st) => ({ label: st.label, icon: st.icon, fired: false, deltaVVac: 0, deltaVNow: 0, twr: 0, burnTime: 0, propellantFraction: null, actionKinds: st.actions.map((a) => a.kind as string) }));
+    const s = missionSnap('lowOrbit', ['capsule'], (_p, _r, c) => c, { scenario: { id: 'lunar-direct', startKind: 'pad', stagesAlreadyFired: 0 }, staging: { nextStage: 0, stages, lockout: false } });
     const t = (id: string): string => n(milestoneTitle(id, s, plain));
+    expect(n(milestoneTitle('STAGE_SEP_1', { ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle' })) }, plain))).toBe('M-1 separation');
     expect(t('LIFTOFF')).toBe('Lift-off');
     expect(t('STAGE_SEP_1')).toBe('M-1 separation');
     expect(t('EARTH_ORBIT')).toBe('Earth orbit reached');
