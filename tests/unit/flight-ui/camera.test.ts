@@ -5,6 +5,7 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
+import { createFakeSession } from '@/core/fakes/fakeSession';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
@@ -29,7 +30,7 @@ import {
   viewForward,
   type ViewFrame,
 } from '@/camera';
-import { labVehicleParts, tagLabVehicle, withLabVehicle } from '../../../labs/flight-ui/labVehicle';
+import { LAB_VEHICLE_ID, labVehicleParts, tagLabVehicle, withLabVehicle } from '../../../labs/flight-ui/labVehicle';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -414,6 +415,71 @@ describe('cockpit rig', () => {
     expect(rig.isAvailable(s)).toBe(false);
     const vm = createViewManager(rigs(), { defs, initialMode: 'cockpit' });
     expect(vm.update(s, IDLE, DT).camera.mode).toBe('chase');
+  });
+});
+
+describe('camera rigs without a vehicle definition and without an active vessel (presentation-sweep)', () => {
+  it('frames a three-craft assembly from its bounding radius, not from the distances chosen for one craft', () => {
+    const parts = labVehicleParts(defs);
+    const one = createFakeSession(defs, { scene: 'lowOrbit', vehicleId: LAB_VEHICLE_ID, parts }).snapshot();
+    const three = createFakeSession(defs, { scene: 'assembly', vehicleId: LAB_VEHICLE_ID, parts }).snapshot();
+    const single = one.vessels[0]!;
+    const assembly = three.vessels[0]!;
+    expect(assembly.crafts!.length).toBe(3);
+    expect(assembly.boundingRadius).toBeGreaterThan(2 * single.boundingRadius);
+    const lone = chaseDistanceLimits(defs, single);
+    const all = chaseDistanceLimits(defs, assembly);
+    // One craft: its own hints (the lab vehicle's 95 / 30 / 2500), the nearest never inside its bounding sphere.
+    expect(lone).toEqual({ def: 95, min: Math.max(30, 1.05 * single.boundingRadius), max: 2500 });
+    // The assembly: the single craft's nearest distance would put the camera inside it.
+    expect(lone.min).toBeLessThan(assembly.boundingRadius);
+    expect(all.min).toBeCloseTo(1.15 * assembly.boundingRadius, 9);
+    expect(all.def).toBeCloseTo(2.4 * assembly.boundingRadius, 9);
+    expect(all.max).toBeCloseTo(60 * assembly.boundingRadius, 9);
+    expect(all.max).toBeGreaterThanOrEqual(lone.max);
+    // A vehicle definition plays no part: the same limits for craft whose design the library does not have.
+    const unknown = { ...assembly, vehicleId: 'not-in-the-library', crafts: assembly.crafts!.map((c) => ({ ...c, vehicleId: 'not-in-the-library' })) };
+    expect(chaseDistanceLimits(defs, unknown)).toEqual(all);
+    // A snapshot without craft blocks is framed from the radius alone.
+    const bare = { ...single };
+    delete bare.crafts;
+    expect(chaseDistanceLimits(defs, bare)).toEqual({ def: 2.4 * single.boundingRadius, min: 1.15 * single.boundingRadius, max: 60 * single.boundingRadius });
+    // The rig itself: the camera stands outside the assembly, farther than it stands from one craft.
+    const rigOne = createChaseRig({ defs });
+    rigOne.activate(null, one);
+    rigOne.update(one, IDLE, DT);
+    const rigAll = createChaseRig({ defs });
+    rigAll.activate(null, three);
+    const c = rigAll.update(three, IDLE, DT);
+    expect(rigAll.distance).toBeGreaterThan(rigOne.distance);
+    expect(rigAll.distance).toBeGreaterThanOrEqual(all.min);
+    expect(v3.dist(c.positionRoot, vesselComRoot(assembly))).toBeGreaterThan(assembly.boundingRadius);
+  });
+
+  it('copes with no active vessel: the flight rigs are unavailable, the map opens on the body at the render root, the listener is the camera', () => {
+    const s = createFakeSession(defs, { scene: 'lunarOrbit', vehicleId: LAB_VEHICLE_ID, parts: labVehicleParts(defs) }).snapshot();
+    // What a menu or a spectator's session states: the vessels are there, nobody is seated in one.
+    const unseated = { ...s, activeVesselId: null as unknown as string };
+    expect(createChaseRig({ defs }).isAvailable(unseated)).toBe(false);
+    expect(createCockpitRig({ defs }).isAvailable(unseated)).toBe(false);
+    const map = createMapRig({ defs });
+    expect(map.isAvailable(unseated)).toBe(true);
+    const views = createViewManager([createChaseRig({ defs }), createCockpitRig({ defs }), map], { defs });
+    const frame = views.update(unseated, IDLE, DT);
+    expect(views.mode).toBe('map');
+    expect(frame.camera.kind).toBe('map');
+    expect(frame.camera.focusBodyId).toBe('moon');
+    expect(frame.listener.insideVesselId).toBeNull();
+    expect(frame.listener.attachedVesselId).toBeNull();
+    expect(frame.listener.ambientPressure).toBe(0);
+    // A seat taken and left again while a view blend runs: the view cuts to the rig's and nothing throws.
+    const seated = createViewManager([createChaseRig({ defs }), map], { defs });
+    seated.update(s, IDLE, DT);
+    seated.update(s, IDLE, DT, new Set(['toggleMap'] as const));
+    expect(seated.blending).toBe(true);
+    const left = seated.update(unseated, IDLE, DT);
+    expect(seated.blending).toBe(false);
+    expect(left.camera.kind).toBe('map');
   });
 });
 
