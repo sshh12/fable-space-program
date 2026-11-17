@@ -28,7 +28,7 @@ no longer serves source maps (it did, with the private sources, until 18:35 UTC)
 - **Cloud: the stage-0 skeleton is up on the Hobby plan** (game, shell with CDN, postgres 18, hourly dump, two
   buckets; Modal environment `fsp`), and costs U + $5 = $7.51 against the $30 idle ceiling over a 4.5-hour
   nearly idle window (the hello roles: a floor, not the real game); the whole package spent $0.033 on Railway.
-- **Not done**: the 6-hour and 72-hour idle cost readings (time), the compose suites (Docker not allowed
+- **Not done (first round; since done: sections 0b, 0c)**: the 6-hour and 72-hour idle cost readings (time), the compose suites (Docker not allowed
   this round), two browser tests on the local stack (local failover, terrain hash in the page: both proven in
   Node; the GPU queue was 90 minutes deep). Section 7.
 - **Findings that change figures of ARCHITECTURE**: the boot pack cannot hold levels 0-3 (122 MB); Railway's CDN
@@ -79,6 +79,51 @@ no longer serves source maps (it did, with the private sources, until 18:35 UTC)
   failure).
 - **Modal volume fsp-packs**: `copy_packs` from the deployed pack list: 214 objects, 121 copied (3.81 GB, each
   checked by its SHA-256 on arrival), 93 already there and re-hashed, 29 sets, 567 s.
+
+## 0c. The Docker forms, first real runs (2026-11-17, after the user capped the WSL VM at 6 GB)
+
+Each run went through the stack slot alone and stopped what it started, the Docker Desktop daemon included
+(the launcher starts it when it is stopped and stops it at the end). Nothing ran on the GPU slot.
+
+| Run | Result |
+|---|---|
+| `npm run stack -- --db=docker --fresh -- vitest localStack.stack.test.ts` | **9 of 9** (twice; the second on the final code): the container's cluster is UTF8, built-in, C.UTF-8 with production's settings, like the embedded one; ready in 2.3 s; SIGKILL then crash recovery in 2.3 s, the committed row there |
+| `stack-selftest.ts --only=refuse-docker` | **PASS**: a container created with FSP_PG_INITDB_ARGS=`--encoding=SQL_ASCII --locale=C` is refused ("SQL_ASCII with the libc locale provider and locale C; refusing it") |
+| `npm run stack -- --compose --fresh -- vitest --no-file-parallelism localStack.stack.test.ts compose.stack.test.ts` | **13 of 13** on the fourth attempt (the first three found the problems below): VM capped (6 GB in .wslconfig, 5.79 GiB seen by the daemon); **image smoke: the image's bundle d48bf288266c894b equals the host build's, buildId 47afafdf4c41b0ad printed by game's /healthz and shell's /version.json and computed from the host bundle**; the same pack requests: 36 Moon tiles byte-identical through the image's bucket (74 presigned requests) and through its mirror (26 slices); the in-stack suite in the compose form (encoding, settings, citext, lock, fence, SIGKILL recovery 2.25 s, endpoint document, boot pack, pack list); **the dump role in the pinned image wrote dumps/20261117T051733Z-none.dump (1,748 bytes) to MinIO, and pg_restore restored it into a fresh database of the container and into an embedded cluster on the host (built-in C.UTF-8): the marked row and its non-1252 text are in both** |
+
+**Memory**: the WSL VM process (vmmemWSL) peaked at **5.94 GiB**, against the 6 GB cap, at 04:55:56 UTC, during the
+first build of the image inside the VM (npm ci and the client build); the test phases ran under 4.3 GiB.
+
+**What the first compose runs found, and the fixes** (all in deploy/ and the tests):
+
+1. **MinIO no longer publishes its images**: `minio/minio` is gone from Docker Hub and `quay.io/minio/minio`
+   refuses an anonymous pull. compose.yml now pins Bitnami's last free MinIO build by digest
+   (`bitnamilegacy/minio:2025.7.23-debian-12-r5@sha256:6dabb4a2...`, creating the dumps bucket at start, health by
+   curl).
+2. **No container reaches a process on this Windows host**: host.docker.internal, the gateway and both host
+   addresses all time out from inside a container (a diagnostic through the stack slot), so the host's bucket
+   stand-in cannot be the containers' bucket. The packs bucket of the compose form is now the stand-in as a role
+   of the image (`ROLES=standin`, deploy/roles/standin.ts, refused unless STACK_LOCAL=1) over data/packs
+   bind-mounted read-only (packs, as the brief allows; never the plain-file tile tree), published on
+   127.0.0.1:47201. game signs for the host's address, shell reads by the service name. Host to container
+   (published ports) works; the restore into the host's embedded cluster therefore runs through a reverse tunnel
+   (a one-off container of the image publishes a port, the host bridges it to the cluster). I did not change the
+   firewall, WSL or Docker settings.
+3. **A bucket that does not answer hung the shell for good**: the S3 client had no timeouts, so the boot-pack
+   load waited forever and the shell never became healthy or logged why. s3For now sets a 5 s connection and
+   60 s request timeout (the callers retry). This is in the server bundle: it reaches Railway at the next
+   deploy (none in this turn: read-only on the cloud side).
+4. **Small ones**: `--db=docker` left a stopped container (`stop` is now `down`; the named volume keeps the
+   cluster); a failed `compose up` now prints each service's state and the last log lines before tearing
+   down; the in-stack suite runs in all three forms (host, `--db=docker`, `--compose`) and its files run one
+   after the other in the compose form (its hard kill would otherwise kill the other file's connections).
+
+**Left in Docker**: no container of this package (`docker compose down` for both projects; `docker ps -a` shows
+only other work's containers, `cmsbx-*`, exited two months ago, not touched); two named volumes kept like the
+embedded data directory (`fsp-fsp-platform-delivery_pg`, `_minio`); the images `fsp-roles:local` (724 MB),
+the pinned postgres:18 and the Bitnami MinIO. The daemon is stopped and no Docker process runs. The WSL VM
+process was still up a moment after the daemon stopped, with both distributions Stopped (WSL's own idle
+shutdown); I did not run `wsl --shutdown`.
 
 ## 1. What exists locally
 
@@ -252,10 +297,11 @@ done**.
 | --shape=split and --shape=launch | **Proven** | 5 and 9 processes, every /healthz 200 (first round) |
 | status at or under 0.6 GB | **Proven** | 387 MB (504 MB with the Vite dev server) |
 | THE SLOT, the launcher lock, the use files | **Proven** | Self-test slot, wait, free, kill, names (first round; kill and names again this round); the use-file cleanup regex fixed |
-| Compose form | **Not done** | Built, not run (no `.wslconfig`; Docker not allowed). Image smoke runs in CI |
+| Compose form: VM capped at 6 GB, same pack requests, same encoding, dump and restore (also into the embedded cluster), image smoke with the host build's buildId | **Proven (2026-11-17, section 0c)** | `--compose --fresh`: 13 of 13 (the in-stack suite in its compose form and tests/unit/platform/compose.stack.test.ts). The VM: .wslconfig 6 GB, the daemon sees 5.79 GiB; peak of the VM process 5.94 GiB (during the first image build) |
+| `--db=docker`: a real Postgres in a container against the embedded one; the refusal | **Proven (2026-11-17)** | The in-stack suite with Postgres in the container: 9 of 9 (UTF8, built-in C.UTF-8, production settings, citext, advisory lock, fenced write, SIGKILL and crash recovery in 2.3 s); self-test `refuse-docker`: a container created SQL_ASCII / libc C is refused |
 | Stage-0 skeleton on Hobby: shell, CDN, endpoint document, hello game, drain, dump, UTF8, nothing needing Pro | **Proven** | Sections 2 and 6; redeployed three times today (fix 1, fixes 2-6, the release) |
 | Secrets: never in a commit, a log line, the client bundle or a document; sealed | **Proven** | check-secrets before every commit; the three secrets sealed; the dumps key rotated; no source map or secret in the served client |
-| Cost by the one formula at 6 and 72 hours | **Not done (time)** | Readings: 25 min (U+5 $8.75), 4.5 h ($7.51), the reviewer's 6.43 h ($7.58, the floor). The 72-hour reading needs the skeleton untouched for three days |
+| Cost by the one formula at 6 and 72 hours | **Proven** | 6 hours: the reviewer's 6.43 h (U+5 $7.58); 72 hours: the lead's reading over 2026-11-12..17, U $2.60 a month, U+5 **$7.60** against $30 (capacity report section 1) |
 | Bucket throughput at 2,000 fetchers (D6) | **Not done: inconclusive** | Section 6 of the capacity report: the run measured the fleet; rerun recipe there |
 | docs/capacity report | **Done, corrected** | `docs/capacity/2026-11-12-platform.md` |
 | No existing Modal app or volume, no other Railway project touched | **Proven** | Section 2 lists everything created; haulpoint-tms untouched |
@@ -544,3 +590,7 @@ was re-recorded in format 2 during this work; the browser terrain check reads it
   redeployed at f025da8, proven from outside. Details in sections 0a and 0b.
 - 20:10 UTC: the platform browser spec, one GPU run inside the stack: 5 of 5 passed. Nothing of this package is
   running: no stack (slot free), no browser, no ops service; the Modal app fsp-offsite is deployed and idle.
+- 2026-11-17 04:49-05:20 UTC: the Docker forms run for the first time (the user capped the VM at 6 GB):
+  `--db=docker` 9 of 9, refuse-docker PASS, `--compose` 13 of 13 after three fixes (MinIO image gone, no
+  container-to-host path, no S3 timeouts). VM peak 5.94 GiB. The 72-hour cost line (the lead's) written into the
+  capacity report. Daemon stopped, no container of this package left.

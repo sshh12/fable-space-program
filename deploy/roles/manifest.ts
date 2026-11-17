@@ -20,6 +20,7 @@ export const ROLE_MANIFEST: Record<string, RoleEntry> = {
   dump: { load: () => import('./dump'), owner: 'platform-delivery (schema: server-persistence)' },
   pgsettings: { load: () => import('./pgsettings'), owner: 'platform-delivery (operator job)' },
   derating: { load: () => import('../bench/derating'), owner: 'platform-delivery (measurement job, D7)' },
+  standin: { load: () => import('./standin'), owner: 'platform-delivery (the compose form of the local stack only)' },
   game: { load: hello, owner: 'server-persistence (hello stand-in until wave 5)' },
   gate: { load: hello, owner: 'server-persistence (hello stand-in until wave 5)' },
   dir: { load: hello, owner: 'server-persistence (hello stand-in until wave 5)' },

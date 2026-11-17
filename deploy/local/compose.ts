@@ -6,16 +6,16 @@
  *
  * Machine rule (2026-11-12, the lead): the Docker VM must be capped before any of this runs. The launcher
  * refuses unless %UserProfile%\.wslconfig caps the WSL 2 VM at 6 GB or less (ARCHITECTURE 16.4). It starts
- * the Docker daemon if it is stopped and stops what it started. Tiles reach the containers over HTTP from
- * the host's bucket stand-in (host.docker.internal), never as the plain-file tree through a bind mount.
+ * the Docker daemon if it is stopped and stops what it started. The packs bucket of the compose form is the
+ * stand-in as a role of the image (`packs-store`, ROLES=standin) over data/packs bind-mounted read-only: on
+ * this machine no container reaches a process on the Windows host (measured on the first compose run), so the
+ * host's stand-in cannot serve them. Never the plain-file tile tree through a bind mount.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MEASURED_SLICE_BYTES } from '../packs/packList';
-import { startBucketStandIn } from './bucketStandIn';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const COMPOSE_FILE = path.join(REPO, 'deploy', 'local', 'compose.yml');
@@ -91,7 +91,9 @@ export async function startDockerPostgres(
   const facts = await clusterFacts(c);
   await c.end();
   const stop = async (): Promise<void> => {
-    docker(['compose', '-f', COMPOSE_FILE, '-p', project, 'stop', 'postgres'], 120_000);
+    // down, not stop: no container is left behind (docker ps -a stays empty); the named volume keeps the
+    // cluster for the next run, as the embedded cluster's data directory does.
+    docker(['compose', '-f', COMPOSE_FILE, '-p', project, 'down'], 120_000);
     if (started) stopDaemon(say);
   };
   if (!productionLocale(facts)) {
@@ -125,13 +127,20 @@ export async function runCompose(o: ComposeRun): Promise<number> {
   const dataDir = path.join(REPO, 'data', 'stack', o.name);
   fs.mkdirSync(dataDir, { recursive: true });
   let started = false;
-  const standIn = await startBucketStandIn({ packsDir: path.join(REPO, 'data', 'packs'), bucket: 'packs', accessKeyId: 'stack-local', secretAccessKey: 'stack-local-secret', host: '0.0.0.0', port: 47201 });
   const env = { ...process.env, COMPOSE_PROJECT_NAME: project };
   try {
     started = await ensureDaemon(o.say);
     if (o.opts.fresh) docker(['compose', '-f', COMPOSE_FILE, '-p', project, 'down', '-v'], 120_000);
     const up = spawnSync('docker', ['compose', '-f', COMPOSE_FILE, '-p', project, 'up', '-d', '--build', '--wait'], { stdio: 'inherit', env, timeout: 900_000 });
-    if (up.status !== 0) throw new Error('docker compose up failed');
+    if (up.status !== 0) {
+      // What failed, before everything is taken down: the services' states and the last lines of their logs.
+      const ps = docker(['compose', '-f', COMPOSE_FILE, '-p', project, 'ps', '-a', '--format', '{{.Service}} {{.State}} {{.Health}}'], 60_000);
+      o.say(`compose services:\n${ps.out.trim()}`);
+      const logs = docker(['compose', '-f', COMPOSE_FILE, '-p', project, 'logs', '--no-color', '--tail', '40', 'shell', 'game'], 60_000);
+      fs.writeFileSync(path.join(dataDir, 'compose-up-failed.log'), logs.out);
+      o.say(`the last log lines of shell and game: ${path.relative(REPO, path.join(dataDir, 'compose-up-failed.log'))}\n${logs.out.trim().split(/\r?\n/).slice(-25).join('\n')}`);
+      throw new Error('docker compose up failed');
+    }
     const endpointsFile = path.join(dataDir, 'endpoints.json');
     const ep = (await (await fetch('http://127.0.0.1:47202/endpoints.json')).text()).trim();
     fs.writeFileSync(endpointsFile, `${ep}\n`);
@@ -146,7 +155,6 @@ export async function runCompose(o: ComposeRun): Promise<number> {
     });
   } finally {
     docker(['compose', '-f', COMPOSE_FILE, '-p', project, 'down'], 180_000);
-    await standIn.close();
     if (started) stopDaemon(o.say);
     o.releaseLock();
   }

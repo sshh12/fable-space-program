@@ -54,6 +54,9 @@ export function s3For(b: BucketConfig): S3Client {
     // Railway buckets and MinIO accept the classic checksums only when asked; keep requests plain.
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
+    // A bucket that does not answer is an error, not a wait: without these a dropped connection hung the
+    // shell's boot-pack load for good (found on the first compose run); the callers retry.
+    requestHandler: { connectionTimeout: 5_000, requestTimeout: 60_000 },
   });
 }
 

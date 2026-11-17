@@ -68,5 +68,17 @@ node deploy/railway/usage.mjs snapshot | report       # the cost reading (ARCHIT
 npx tsx deploy/modal/make-requests.ts && modal run --env fsp deploy/modal/fsp_probe.py
 ```
 
-`deploy/local/compose.yml` (the pinned image, Postgres 18, MinIO) is reached only through the launcher
-(`--compose`), which refuses unless `%UserProfile%\.wslconfig` caps the WSL 2 VM at 6 GB or less.
+`deploy/local/compose.yml` (the pinned image, Postgres 18, MinIO, and `packs-store`: the bucket stand-in as a role
+of the image over data/packs bind-mounted read-only) is reached only through the launcher (`--compose`), which
+refuses unless `%UserProfile%\.wslconfig` caps the WSL 2 VM at 6 GB or less, starts the Docker daemon when it is
+stopped and stops it again. On this machine containers cannot reach processes on the Windows host, so nothing
+in the compose form depends on the host's stand-in. The suites:
+
+```sh
+STACK_NAME=fsp-platform-delivery npm run stack -- --compose --fresh -- npx vitest run --no-file-parallelism tests/unit/platform/localStack.stack.test.ts tests/unit/platform/compose.stack.test.ts
+STACK_NAME=fsp-platform-delivery npm run stack -- --db=docker -- npx vitest run tests/unit/platform/localStack.stack.test.ts
+npx tsx tests/unit/platform/stack-selftest.ts --only=refuse-docker
+```
+
+Variables of the compose form: `FSP_PG_INITDB_ARGS` (only to prove the refusal), and the ones the launcher
+sets for the command: `COMPOSE_PROJECT`, `COMPOSE_FILE`, `STACK_URL`, `STACK_ENDPOINTS`.

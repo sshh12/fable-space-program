@@ -188,6 +188,18 @@ async function main(): Promise<void> {
     fs.rmSync(path.dirname(dir), { recursive: true, force: true });
   }
 
+  // Only when asked (--only=refuse-docker): it needs Docker and the WSL VM cap. A Postgres container created
+  // with other cluster settings (FSP_PG_INITDB_ARGS, deploy/local/compose.yml) is refused like the embedded one.
+  if (only.includes('refuse-docker')) {
+    const prev = process.env.FSP_PG_INITDB_ARGS;
+    process.env.FSP_PG_INITDB_ARGS = '--encoding=SQL_ASCII --locale=C';
+    const x = stack('fsp-pd-selftest-d', ['--db=docker', '--fresh'], ['node', '-e', '"0"']);
+    const code = await x.done;
+    if (prev === undefined) delete process.env.FSP_PG_INITDB_ARGS;
+    else process.env.FSP_PG_INITDB_ARGS = prev;
+    report('refuse-docker', code !== 0 && /refusing it/.test(x.out()), `exit ${code}: ${(x.out().match(/the Postgres container of .*?refusing it/) ?? ['(no refusal message)'])[0]}`);
+  }
+
   if (want('shapes')) {
     for (const shape of ['split', 'launch'] as const) {
       const t0 = Date.now();

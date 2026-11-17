@@ -7,9 +7,11 @@
 #             settings (POSTGRES_INITDB_ARGS) and production's ALTER SYSTEM values
 #   minio     the S3 store for the dumps bucket and for the upload and presign scripts
 #   game      the pinned role image, ROLES=game (the hello stand-in until wave 5)
-#   shell     the pinned role image, ROLES=shell; the packs bucket is the host's stand-in over data/packs
-#             (host.docker.internal:47201): tiles reach the containers over HTTP, never as the plain-file
-#             tree through a bind mount
+#   shell     the pinned role image, ROLES=shell
+#   packs-store the packs bucket: the stand-in as a role of the same image (ROLES=standin) over data/packs
+#             bind-mounted read-only (packs, never the plain-file tile tree), published on 127.0.0.1:47201 so
+#             the host follows game's presigned URLs to it. Not the host's stand-in: on this machine no
+#             container reaches a process on the Windows host (found on the first compose run, 2026-11-17)
 #   dump      the dump role of the same image, on demand: docker compose run --rm dump
 name: fsp-local
 
@@ -21,7 +23,9 @@ x-image: &image
 
 x-packs: &packs
   PACKS_BUCKET: packs
-  PACKS_ENDPOINT: http://host.docker.internal:47201
+  # The host's view (the published port): game signs URLs for clients on the host. shell overrides it with
+  # the service name (it reads the bucket from inside the network).
+  PACKS_ENDPOINT: http://127.0.0.1:47201
   PACKS_REGION: us-east-1
   PACKS_ACCESS_KEY_ID: stack-local
   PACKS_SECRET_ACCESS_KEY: stack-local-secret
@@ -33,7 +37,9 @@ services:
     environment:
       POSTGRES_PASSWORD: stack-local
       POSTGRES_DB: fsp
-      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8
+      # Production's cluster settings. FSP_PG_INITDB_ARGS replaces them ONLY to prove the refusal: a cluster
+      # created otherwise must be refused by the launcher (tests/unit/platform/stack-selftest.ts, refuse-docker).
+      POSTGRES_INITDB_ARGS: ${FSP_PG_INITDB_ARGS:---encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8}
     command: ["postgres", "-c", "shared_buffers=96MB", "-c", "max_wal_size=256MB", "-c", "min_wal_size=64MB", "-c", "max_connections=40"]
     ports: ["127.0.0.1:47220:5432"]
     volumes: ["pg:/var/lib/postgresql"]
@@ -46,19 +52,42 @@ services:
       retries: 60
 
   minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-    command: ["server", "/data", "--console-address", ":9001"]
+    # MinIO no longer publishes its images (found on the first compose run, 2026-11-17: Docker Hub's minio/minio
+    # is gone and quay.io/minio/minio refuses an anonymous pull). Bitnami's last free build of MinIO, pinned by
+    # digest; it creates the dumps bucket at start (MINIO_DEFAULT_BUCKETS), runs as a non-root user, keeps its
+    # data under /bitnami/minio/data and carries curl for the health check.
+    image: bitnamilegacy/minio:2025.7.23-debian-12-r5@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
     environment:
       MINIO_ROOT_USER: stack-local
       MINIO_ROOT_PASSWORD: stack-local-secret
+      MINIO_DEFAULT_BUCKETS: dumps
     ports: ["127.0.0.1:47221:9000"]
-    volumes: ["minio:/data"]
+    volumes: ["minio:/bitnami/minio/data"]
     mem_limit: 512m
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
       interval: 2s
       timeout: 5s
-      retries: 30
+      retries: 60
+
+  packs-store:
+    <<: *image
+    environment:
+      ROLES: standin
+      STACK_LOCAL: "1"
+      PORT: "8080"
+      STANDIN_PORT: "47201"
+      PACKS_DIR: /packs
+      <<: *packs
+    volumes: ["../../data/packs:/packs:ro"]
+    ports: ["127.0.0.1:47201:47201"]
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
 
   game:
     <<: *image
@@ -73,7 +102,6 @@ services:
       RAILWAY_DEPLOYMENT_DRAINING_SECONDS: "45"
       <<: *packs
     ports: ["127.0.0.1:47203:8080"]
-    extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       postgres: { condition: service_healthy }
     mem_limit: 2g
@@ -93,8 +121,10 @@ services:
       ENDPOINT_API: http://127.0.0.1:47203
       ENDPOINT_PUB: http://127.0.0.1:47203
       <<: *packs
+      PACKS_ENDPOINT: http://packs-store:47201
     ports: ["127.0.0.1:47202:8080"]
-    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      packs-store: { condition: service_healthy }
     mem_limit: 256m
     cpus: 0.5
     healthcheck:
