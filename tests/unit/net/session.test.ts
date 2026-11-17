@@ -208,7 +208,7 @@ describe('the downstream budget', () => {
     expect(sent).toBeLessThanOrEqual(6000 * 10 + 6000 + 20000 + 8 * 304);
     expect(b.stats.superseded[1]).toBeGreaterThan(0);
     // The large reliable records went (not starved) and the relevant set got its share after the island.
-    expect(perClass[1]).toBeGreaterThan(perClass[3]);
+    expect(perClass[1]!).toBeGreaterThan(perClass[3]!);
     expect(b.stats.maxReliableWaitMs).toBeLessThan(10_000);
   });
 });
