@@ -107,10 +107,34 @@ export class ManualScheduler implements Scheduler {
   }
 }
 
-/** Real time: `performance.now()` and `setTimeout`. */
+/** The next turn of the event loop: `setImmediate` in Node, a zero timeout elsewhere. */
+function nextTurn(fn: () => void): void {
+  if (typeof setImmediate === 'function') setImmediate(fn);
+  else setTimeout(fn, 0);
+}
+
+/**
+ * Real time: `performance.now()` and `setTimeout`.
+ *
+ * `precise: true` is for the latency injector's measurements (tests and the proxy process): a timer sleeps
+ * until `preciseWindowMs` before it is due and then waits the rest by re-checking the clock on each turn of
+ * the event loop, because a plain `setTimeout` on Windows lands on the system timer's 15.6 ms grid and may
+ * fire up to a millisecond before `performance.now()` says it is due. It costs a busy event loop for up to
+ * `preciseWindowMs` before each deadline, so the default (games, bots, gateways) is plain sleeping.
+ */
 export class RealScheduler implements Scheduler {
   private nextId = 1;
   private readonly live = new Map<number, ReturnType<typeof setTimeout>>();
+  private readonly precise: boolean;
+  private readonly preciseWindowMs: number;
+  /** Timers inside their precise window, waiting for the clock. */
+  private readonly due = new Map<number, { at: number; fn: () => void }>();
+  private polling = false;
+
+  constructor(opts: { precise?: boolean; preciseWindowMs?: number } = {}) {
+    this.precise = opts.precise ?? false;
+    this.preciseWindowMs = opts.preciseWindowMs ?? 17;
+  }
 
   now(): number {
     return performance.now();
@@ -118,12 +142,39 @@ export class RealScheduler implements Scheduler {
 
   setTimer(delayMs: number, fn: () => void): TimerHandle {
     const id = this.nextId++;
-    const h = setTimeout(() => {
-      this.live.delete(id);
-      fn();
-    }, Math.max(0, delayMs));
+    const at = performance.now() + Math.max(0, delayMs);
+    if (!this.precise) {
+      const h = setTimeout(() => {
+        this.live.delete(id);
+        fn();
+      }, Math.max(0, delayMs));
+      this.live.set(id, h);
+      return { id };
+    }
+    const h = setTimeout(
+      () => {
+        this.live.delete(id);
+        this.due.set(id, { at, fn });
+        this.poll();
+      },
+      Math.max(0, delayMs - this.preciseWindowMs),
+    );
     this.live.set(id, h);
     return { id };
+  }
+
+  private poll(): void {
+    if (this.polling) return;
+    this.polling = true;
+    const turn = (): void => {
+      const now = performance.now();
+      const ready = [...this.due.entries()].filter(([, d]) => d.at <= now).sort((x, y) => x[1].at - y[1].at || x[0] - y[0]);
+      for (const [id] of ready) this.due.delete(id);
+      for (const [, d] of ready) d.fn();
+      if (this.due.size > 0) nextTurn(turn);
+      else this.polling = false;
+    };
+    nextTurn(turn);
   }
 
   clearTimer(handle: TimerHandle | null): void {
@@ -133,11 +184,13 @@ export class RealScheduler implements Scheduler {
       clearTimeout(h);
       this.live.delete(handle.id);
     }
+    this.due.delete(handle.id);
   }
 
   /** Cancel every timer (closing a test or a process). */
   clearAll(): void {
     for (const h of this.live.values()) clearTimeout(h);
     this.live.clear();
+    this.due.clear();
   }
 }
