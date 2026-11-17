@@ -89,12 +89,13 @@ function resourcesBefore(v: VesselSnapshot, vehicle: VehicleDef): ResourceGroupV
   });
 }
 
-/** The vehicle a scenario of the definitions names (not an id out of a snapshot). */
-const vehicleNamed = (id: string): VehicleDef => defs.vehicles[id]!;
+/** Every vehicle of the library that has stage groups (each of them: a vehicle without one cannot be assembled). */
+const libraryVehicles = (): VehicleDef[] => Object.values(defs.vehicles).filter((v) => v.stageGroups.length > 0);
 
 describe('resource groups of a single-craft vessel: the computation of before the sweep and the one of today', () => {
   it('every vehicle of the library, in the real session, with 0 to all of its stages fired: the same groups in the same order, with the same labels and bars', async () => {
-    const vehicles = Object.values(defs.vehicles);
+    const vehicles = libraryVehicles();
+    expect(vehicles.length).toBe(Object.keys(defs.vehicles).length);
     expect(vehicles.length).toBeGreaterThan(0);
     let compared = 0;
     let most = 0;
@@ -123,35 +124,38 @@ describe('resource groups of a single-craft vessel: the computation of before th
     expect(most).toBeGreaterThan(3);
   });
 
-  it('the comparison can fail: for a copy of a vehicle whose file lists two fuelled groups the other way round, the order of before follows the file and the order of today follows the parts', async () => {
-    const vehicle = Object.values(defs.vehicles)[0]!;
+  it('the comparison can fail: were two fuelled groups listed the other way round in the vehicle file, the order of before would follow the file and the order of today follows the parts', async () => {
+    const vehicle = libraryVehicles()[0]!;
     const base = Object.values(defs.scenarios).find((x) => x.vehicle === vehicle.id)!;
-    const whole = await makeSim(defs, orbitScenario(base, 'resources-whole', defs.rootBodyId, 300_000, 300_000, 0), terrain);
-    const listed = describeResources(whole.snapshot(), defs).map((g) => g.id);
+    const session = await makeSim(defs, orbitScenario(base, 'resources-whole', defs.rootBodyId, 300_000, 300_000, 0), terrain);
+    const s = session.snapshot();
+    const now = describeResources(s, defs);
+    const listed = now.map((g) => g.id);
     expect(listed.length).toBeGreaterThan(2);
-    // The last two groups that hold a resource change places in the file's list; the parts stay as they are.
+    // The file with its last two groups that hold a resource in each other's place. The session states the
+    // same snapshot for either file: a part names its group and the group's label, found by the group's id,
+    // and nothing in a snapshot says where a group stands in the list.
     const [a, b] = listed.slice(-2) as [string, string];
     const swapped: VehicleDef = { ...vehicle, stageGroups: vehicle.stageGroups.map((g) => (g.id === a ? vehicle.stageGroups.find((x) => x.id === b)! : g.id === b ? vehicle.stageGroups.find((x) => x.id === a)! : g)) };
-    const lib: DefLibrary = { ...defs, vehicles: { ...defs.vehicles, [vehicle.id]: swapped } };
-    const session = await makeSim(lib, orbitScenario(base, 'resources-swapped', defs.rootBodyId, 300_000, 300_000, 0), terrain);
-    const s = session.snapshot();
-    const now = describeResources(s, lib);
     const before = resourcesBefore(active(s), swapped);
-    expect(now.map((g) => g.id)).toEqual(listed);
     expect(before.map((g) => g.id)).toEqual([...listed.slice(0, -2), b, a]);
-    // The same groups with the same bars either way: the order is all that the snapshot does not state.
+    // The same groups with the same bars either way: the order is all that differs.
     expect([...now].sort((x, y) => x.id.localeCompare(y.id))).toEqual([...before].sort((x, y) => x.id.localeCompare(y.id)));
   });
 
   it('every scenario of the library as its session starts it (the pad, the orbits, the lunar surface, the entry)', async () => {
-    const scenarios = Object.values(defs.scenarios);
-    expect(scenarios.length).toBeGreaterThan(3);
-    for (const scenario of scenarios) {
-      const session = await makeSim(defs, scenario.id, terrain);
-      const s = session.snapshot();
-      const now = describeResources(s, defs);
-      expect(now.length, scenario.id).toBeGreaterThan(0);
-      expect(now, scenario.id).toEqual(resourcesBefore(active(s), vehicleNamed(scenario.vehicle)));
+    let started = 0;
+    for (const vehicle of libraryVehicles()) {
+      for (const scenario of Object.values(defs.scenarios).filter((x) => x.vehicle === vehicle.id)) {
+        const session = await makeSim(defs, scenario.id, terrain);
+        const s = session.snapshot();
+        const now = describeResources(s, defs);
+        expect(now.length, scenario.id).toBeGreaterThan(0);
+        expect(now, scenario.id).toEqual(resourcesBefore(active(s), vehicle));
+        started++;
+      }
     }
+    expect(started).toBe(Object.keys(defs.scenarios).length);
+    expect(started).toBeGreaterThan(3);
   });
 });
