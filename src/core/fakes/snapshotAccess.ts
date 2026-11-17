@@ -16,7 +16,7 @@
  *    the deprecated pair, with the same field names, so a call site changes by its callee only);
  *  - `craftsOf`, `craftIdOf` and `parentOf` lose their fallbacks.
  */
-import type { DefLibrary } from '../contracts/defs';
+import type { DefLibrary, VehicleDef } from '../contracts/defs';
 import type { TargetRef } from '../contracts/net';
 import type { CraftSnapshot, PartSnapshot, Readouts, SimSnapshot, VesselSnapshot } from '../contracts/sim';
 
@@ -83,6 +83,18 @@ export function targetNameOf(snapshot: SimSnapshot, defs: DefLibrary): string | 
   const vessels = snapshot.vessels;
   for (let i = 0; i < vessels.length; i++) if (vessels[i]!.id === vesselId) return vessels[i]!.name;
   return vesselId;
+}
+
+/**
+ * The vehicle definition a craft was built from, FOR LABELS AND ICONS ONLY: the use the contract gives
+ * `CraftSnapshot.vehicleId` ("never index `defs.vehicles` with it for behaviour"). This is the one place in
+ * the presentation that looks a vehicle up by an id from a snapshot; its callers read words from it and
+ * nothing else (what a stage burns and which chutes it handles, src/ui/model.ts; the name of the crew member
+ * in a seat, src/app/seat.ts), and each of them says less when it returns null, which it does for a craft
+ * whose design the library does not have. `craft` null = the vessel's base craft (`VesselSnapshot.vehicleId`).
+ */
+export function labelVehicleOf(defs: DefLibrary, vessel: VesselSnapshot, craft: CraftSnapshot | null = null): VehicleDef | null {
+  return defs.vehicles[craft?.vehicleId ?? vessel.vehicleId] ?? null;
 }
 
 /** The `TargetRef` of a body (what `PlayerCommands.setTarget` takes for it). */
@@ -215,6 +227,44 @@ function parentInSnapshot(snapshot: SimSnapshot, craftId: string): string | null
     const crafts = vessels[i]!.crafts;
     if (!crafts) continue;
     for (let j = 0; j < crafts.length; j++) if (crafts[j]!.id === craftId) return crafts[j]!.parent ?? null;
+  }
+  return null;
+}
+
+/** A cabin of a vessel: the craft that has it, its command part in the part list, and what the craft states of it. */
+export interface CabinRef {
+  craft: CraftSnapshot;
+  part: PartSnapshot;
+  /** Cockpit interior layout id (`CraftCockpit.id`). */
+  cockpitId: string;
+  /** The seat of the command part the craft puts its camera in (`CraftCockpit.cameraSeat`). */
+  cameraSeat: string | null;
+}
+
+/**
+ * The cabin the viewer looks out of in a vessel: the craft at the helm when it has one, else the first other
+ * craft with one. A cabin is what the craft states (`CraftSnapshot.commandPart` and `.cockpit` with a layout
+ * id) and the part of THAT craft with the command part's instance id, so two craft of one vehicle in an
+ * assembly each have their own; no vehicle definition is read. Null for a vessel without a cabin: debris, a
+ * probe whose first-person view is the sensor camera, a hand-built snapshot without craft blocks.
+ */
+export function cabinOf(vessel: VesselSnapshot): CabinRef | null {
+  const crafts = vessel.crafts;
+  if (!crafts) return null;
+  const helm = vessel.helm?.craftId;
+  // Two passes over the same list: the helm's craft, then the others in their order.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < crafts.length; i++) {
+      const craft = crafts[i]!;
+      if ((craft.id === helm) !== (pass === 0)) continue;
+      const cabin = craft.cockpit;
+      if (!cabin || cabin.id === null || craft.commandPart === null) continue;
+      const parts = vessel.parts;
+      for (let j = 0; j < parts.length; j++) {
+        const part = parts[j]!;
+        if (part.instanceId === craft.commandPart && craftIdOf(vessel, part) === craft.id) return { craft, part, cockpitId: cabin.id, cameraSeat: cabin.cameraSeat };
+      }
+    }
   }
   return null;
 }

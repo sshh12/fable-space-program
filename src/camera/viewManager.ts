@@ -19,11 +19,12 @@ import type { AudioListener } from '@/core/contracts/audio';
 import type { ButtonAction } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraInput, CameraRig, CameraState, LodObserver, ViewKind, ViewMode } from '@/core/contracts/render';
-import type { SimSnapshot } from '@/core/contracts/sim';
+import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
+import { activeVesselOf } from '@/core/fakes/snapshotAccess';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { activeVessel, slerpDir, smoothBlend, vesselComRoot, ZERO_CAMERA_INPUT } from './cameraMath';
+import { slerpDir, smoothBlend, vesselComRoot, ZERO_CAMERA_INPUT } from './cameraMath';
 import { buildAudioListener, buildLodObservers } from './listener';
 
 export const VIEW_BLEND_SECONDS = 0.6;
@@ -106,15 +107,16 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
     return k;
   };
 
-  const freeze = (c: CameraState, s: SimSnapshot): Frozen => {
-    const v = activeVessel(s);
+  /** The camera relative to the active vessel of the snapshot it was computed from; null without one (nothing to blend about). */
+  const freeze = (c: CameraState, s: SimSnapshot): Frozen | null => {
+    const v = activeVesselOf(s);
+    if (!v) return null;
     if (c.kind === 'interior') {
       return { kind: c.kind, pos: quat.rotateInv(v.q, v3.sub(c.positionRoot, v.rRoot)), q: quat.mul(quat.conj(v.q), c.qViewToRoot), state: c };
     }
     return { kind: c.kind, pos: v3.sub(c.positionRoot, vesselComRoot(v)), q: quat.clone(c.qViewToRoot), state: c };
   };
-  const thaw = (f: Frozen, s: SimSnapshot): { pos: Vec3; q: Quat } => {
-    const v = activeVessel(s);
+  const thaw = (f: Frozen, v: VesselSnapshot): { pos: Vec3; q: Quat } => {
     if (f.kind === 'interior') return { pos: v3.add(v.rRoot, quat.rotate(v.q, f.pos)), q: quat.mul(v.q, f.q) };
     return { pos: v3.add(vesselComRoot(v), f.pos), q: f.q };
   };
@@ -126,7 +128,8 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
     if (prevRig && kindOf(prevRig, s) !== 'map') lastFlightMode = mode;
     rig.activate(last, s);
     // Freeze against the snapshot the presented camera was computed from (the vessel has moved since).
-    blend = last && lastSnapshot ? { from: freeze(last, lastSnapshot), t: 0 } : null;
+    const from = last && lastSnapshot ? freeze(last, lastSnapshot) : null;
+    blend = from ? { from, t: 0 } : null;
     mode = next;
     return true;
   };
@@ -157,9 +160,9 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
     }
   };
 
-  const mix = (from: Frozen, to: CameraState, k: number, s: SimSnapshot): CameraState => {
-    const a = thaw(from, s);
-    const pivot = vesselComRoot(activeVessel(s));
+  const mix = (from: Frozen, to: CameraState, k: number, v: VesselSnapshot): CameraState => {
+    const a = thaw(from, v);
+    const pivot = vesselComRoot(v);
     const ra = v3.sub(a.pos, pivot);
     const rb = v3.sub(to.positionRoot, pivot);
     const la = Math.max(v3.len(ra), 1e-3);
@@ -218,9 +221,12 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
       const target = rig.update(s, input, realDt);
       kinds.set(rig.mode, target.kind);
       let camera = target;
-      if (blend) {
+      // A blend swings about the active vessel: without one (the seat was left mid-blend) the view cuts to the rig's.
+      const pivotVessel = blend ? activeVesselOf(s) : null;
+      if (blend && !pivotVessel) blend = null;
+      if (blend && pivotVessel) {
         blend.t = Math.min(1, blend.t + Math.max(0, realDt) / blendSeconds);
-        camera = mix(blend.from, target, smoothBlend(blend.t), s);
+        camera = mix(blend.from, target, smoothBlend(blend.t), pivotVessel);
         if (blend.t >= 1) {
           blend = null;
           camera = target;

@@ -369,9 +369,9 @@ describe('cockpit interior geometry (shared mould line)', () => {
 async function cockpitCameraFov(): Promise<number> {
   const defs = await testDefs();
   const vehicleId = Object.values(defs.vehicles).find((v) => v.cockpit)!.id;
-  const sim = createFakeSim(defs, { scene: 'lowOrbit', parts: vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 4 })) });
-  const raw = sim.snapshot();
-  const s = { ...raw, vessels: raw.vessels.map((v) => (v.id === raw.activeVesselId ? { ...v, vehicleId } : v)) };
+  // The fake is told its vehicle, so the craft block states the cabin of the command part as a session does.
+  const sim = createFakeSim(defs, { scene: 'lowOrbit', vehicleId, parts: vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 4 })) });
+  const s = sim.snapshot();
   const rig = createCockpitRig({ defs });
   rig.activate(null, s);
   return rig.update(s, { yaw: 0, pitch: 0, zoom: 1 }, 0).fovY;

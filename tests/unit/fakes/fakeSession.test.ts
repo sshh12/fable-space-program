@@ -256,10 +256,13 @@ describe('the fake session: frames', () => {
     expect(focus.navball).toEqual(root.navball);
   });
 
-  it('the v1 name gives the same session: createFakeSim is createFakeSession', () => {
+  it('the v1 name gives the same session with the v1 render root: createFakeSim is createFakeSession about the root body', () => {
     for (const scene of FAKE_SCENES) {
       const a = createFakeSim(defs, { scene });
-      const b = createFakeSession(defs, { scene });
+      const b = createFakeSession(defs, { scene, renderRoot: 'rootBody' });
+      expect(a.peek().frame!.origin).toEqual({ kind: 'body', bodyId: defs.rootBodyId });
+      // Asked for the session's root, the v1 name gives it.
+      expect(createFakeSim(defs, { scene, renderRoot: 'focusBody' }).peek()).toEqual(createFakeSession(defs, { scene }).peek());
       for (let i = 0; i < 5; i++) {
         a.advance(1 / 60);
         b.advance(1 / 60);

@@ -1,12 +1,16 @@
 /**
  * A readable name for a cabin seat, for the toast the game shows when the player changes couches (the `ui:nextSeat`
  * key, request core-6): the cockpit layout's label of the seat where it has one, else the name of the crew
- * member the vehicle definition puts in that seat, else the seat's id.
+ * member the craft's vehicle puts in that seat, else the seat's id.
+ *
+ * The cabin is the craft's own (`cabinOf`: its command part and the layout id the snapshot states). The crew
+ * name is a label read through the presentation's one label lookup (`labelVehicleOf`, keyed by the vehicle of
+ * the craft that has the cabin); a craft whose design the library does not have is named by its seat ids.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { VesselSnapshot } from '@/core/contracts/sim';
 import { listSections } from '@/core/defs/loader';
-import { cockpitHost } from '@/camera';
+import { cabinOf, labelVehicleOf } from '@/core/fakes/snapshotAccess';
 
 /** What this file reads of a cockpit layout section (`visuals/cockpits/<id>`, the cockpit package's data). */
 interface LayoutSeatLabels {
@@ -14,11 +18,11 @@ interface LayoutSeatLabels {
 }
 
 export function seatName(defs: DefLibrary, vessel: VesselSnapshot, seatId: string): string {
-  const host = cockpitHost(defs, vessel);
-  if (host) {
-    const label = listSections<LayoutSeatLabels>(defs, 'visuals/cockpits/')[host.cockpitId]?.couches?.seats?.[seatId]?.label;
+  const cabin = cabinOf(vessel);
+  if (cabin) {
+    const label = listSections<LayoutSeatLabels>(defs, 'visuals/cockpits/')[cabin.cockpitId]?.couches?.seats?.[seatId]?.label;
     if (typeof label === 'string' && label !== '') return label;
   }
-  const crew = defs.vehicles[vessel.vehicleId]?.crew.find((c) => c.seat === seatId)?.name;
+  const crew = labelVehicleOf(defs, vessel, cabin?.craft ?? null)?.crew.find((c) => c.seat === seatId)?.name;
   return crew ?? seatId;
 }

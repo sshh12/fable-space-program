@@ -16,10 +16,10 @@
  *  - drawTransparent (order 100, after plumes and plasma): window panes and cover glass;
  *  - drawOverlay: g-induced tunnel vision when the camera is the interior view.
  */
-import type { VehicleDef } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
 import type { PartSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { CockpitControls, MfdPainter, NavballRenderer } from '@/core/contracts/ui';
+import { cabinOf } from '@/core/fakes/snapshotAccess';
 import { mat3, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, createSceneBindings, MAX_BODIES, mipCount, nearestBody, sunVisibilityAt, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
 import { BALL_RADIUS_FRACTION } from '@/ui';
@@ -292,20 +292,24 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   let debugView = 0;
   const st: CockpitFrameStats = { active: false, layout: null, vesselId: null, vesselActive: false, lod: null, inside: false, triangles: 0, shadowTriangles: 0, drawnTriangles: 0, polys: 0, patches: 0, sunLit: false, covered: [], tunnel: 0, vibration: 0, displayBrightness: 0, prepareMs: 0 };
 
-  const pick = (frame: FrameContext): { gm: GpuModel; vessel: VesselSnapshot; part: PartSnapshot; vehicle: VehicleDef } | null => {
+  /**
+   * The cabin to draw: the vessel the camera is inside, else the active vessel, else the first vessel with a
+   * cabin whose layout is loaded. The cabin is the craft's own (its command part and the layout id it states,
+   * `cabinOf`): no vehicle definition is read, and there may be no active vessel.
+   */
+  const pick = (frame: FrameContext): { gm: GpuModel; vessel: VesselSnapshot; part: PartSnapshot } | null => {
     const s = frame.snapshot;
-    const order = [frame.camera.insideVesselId, s.activeVesselId, ...s.vessels.map((v) => v.id)];
+    const active: string | null = s.activeVesselId;
+    const order = [frame.camera.insideVesselId, active, ...s.vessels.map((v) => v.id)];
     for (const id of order) {
       if (!id) continue;
       const vessel = s.vessels.find((v) => v.id === id);
       if (!vessel) continue;
-      const vehicle = defs.vehicles[vessel.vehicleId];
-      if (!vehicle?.cockpit) continue;
-      const gm = models.get(vehicle.cockpit);
+      const cabin = cabinOf(vessel);
+      if (!cabin) continue;
+      const gm = models.get(cabin.cockpitId);
       if (!gm) continue;
-      const part = vessel.parts.find((p) => p.instanceId === vehicle.cameras.cockpit.part);
-      if (!part) continue;
-      return { gm, vessel, part, vehicle };
+      return { gm, vessel, part: cabin.part };
     }
     return null;
   };

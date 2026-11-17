@@ -8,7 +8,8 @@ import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
-import { activeVessel, bodyById, vesselComRoot, viewForward, viewUp } from './cameraMath';
+import { activeVesselOf } from '@/core/fakes/snapshotAccess';
+import { bodyById, vesselComRoot, viewForward, viewUp } from './cameraMath';
 
 /** Vessels closer than this to a surface are LOD observers (terrain under the gear at full detail). */
 export const OBSERVER_SURFACE_DISTANCE = 2000;
@@ -70,7 +71,21 @@ export function pressureAtCamera(defs: DefLibrary, s: SimSnapshot, v: VesselSnap
 }
 
 export function buildAudioListener(defs: DefLibrary, s: SimSnapshot, camera: CameraState): AudioListener {
-  const v = activeVessel(s);
+  const v = activeVesselOf(s);
+  if (!v) {
+    // No vessel to be heard from (the menu, a spectator, between ships): the listener is the camera itself, in
+    // ROOT axes, attached to nothing and in no air.
+    return {
+      mode: camera.mode,
+      kind: camera.kind,
+      insideVesselId: null,
+      attachedVesselId: null,
+      positionVes: v3.zero(),
+      forwardVes: viewForward(camera.qViewToRoot),
+      upVes: viewUp(camera.qViewToRoot),
+      ambientPressure: 0,
+    };
+  }
   const rel = v3.sub(camera.positionRoot, v.rRoot);
   return {
     mode: camera.mode,

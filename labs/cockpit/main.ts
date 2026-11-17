@@ -201,7 +201,8 @@ async function boot(): Promise<void> {
     sim: (defs) => {
       vehicleId = Object.values(defs.vehicles).find((v) => v.cockpit)!.id;
       const parts = vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: scene.fired }));
-      const fake = createFakeSim(defs, { scene: scene.fake, parts });
+      // The fake is told its vehicle: the craft block then states the cabin of the command part, as a session does.
+      const fake = createFakeSim(defs, { scene: scene.fake, parts, vehicleId });
       flyAttitude(fake, scene.attitude);
       if (scene.lights || params.get('lights') === '1') fake.commands.toggleLights();
       const partSun = (s: SimSnapshot, spec: { window: string; target: string }): Vec3 | null => {

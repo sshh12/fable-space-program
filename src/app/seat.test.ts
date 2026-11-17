@@ -19,7 +19,13 @@ function defs(label?: string): DefLibrary {
   } as unknown as DefLibrary;
 }
 
-const vessel = { id: 'v', vehicleId: 'craft', parts: [{ instanceId: 'capsule-1', def: 'capsule' }] } as unknown as VesselSnapshot;
+/** A vessel of one craft whose command part has the cabin `cabin`, as a session states it. */
+const vessel = {
+  id: 'v',
+  vehicleId: 'craft',
+  crafts: [{ id: 'v', vehicleId: 'craft', commandPart: 'capsule-1', cockpit: { id: 'cabin', cameraSeat: 'cdr', sensorMount: null } }],
+  parts: [{ instanceId: 'capsule-1', craftId: 'v', def: 'capsule' }],
+} as unknown as VesselSnapshot;
 
 describe('seatName', () => {
   it("is the cockpit layout's label where the layout has one", () => {
@@ -33,6 +39,9 @@ describe('seatName', () => {
 
   it('is the seat id where nothing names it, and for a vessel without a known vehicle', () => {
     expect(seatName(defs(), vessel, 'plt')).toBe('plt');
-    expect(seatName(defs(), { ...vessel, vehicleId: 'unknown', parts: [] } as unknown as VesselSnapshot, 'ms')).toBe('ms');
+    expect(seatName(defs(), { ...vessel, vehicleId: 'unknown', crafts: [], parts: [] } as unknown as VesselSnapshot, 'ms')).toBe('ms');
+    // The craft with the cabin names the vehicle the crew is looked up in, not the vessel's base craft.
+    const other = { ...vessel, vehicleId: 'unknown' } as unknown as VesselSnapshot;
+    expect(seatName(defs(), other, 'cdr')).toBe('Ilse Marwen');
   });
 });

@@ -4,7 +4,7 @@
  */
 import type { DefLibrary, ParachuteEnvelope, VehicleDef } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
-import { activeVesselOf, craftIdOf, craftOf, craftsOf, targetNameOf } from '@/core/fakes/snapshotAccess';
+import { activeVesselOf, craftIdOf, craftOf, craftsOf, labelVehicleOf, targetNameOf } from '@/core/fakes/snapshotAccess';
 import {
   formatAltitude,
   formatApsis,
@@ -391,11 +391,11 @@ export function orbitPhase(s: SimSnapshot, defs: DefLibrary): OrbitPhase {
  * of the active vessel), as its vehicle's file lists it, FOR WORDS ONLY: what a stage burns, which chutes it
  * deploys or releases, and the engines behind the weak-gravity acceleration figure. `StageInfo` states a
  * stage's label, icon and action kinds and none of these (request presentation-sweep-3 asks for them), and
- * the contract gives a craft's `vehicleId` "for labels and icons only": this is that use, and the one place
- * in the presentation that looks a vehicle up by an id from a snapshot. Null for a craft whose design the
- * library does not have: every caller then says less (the stage's own label, the bare action kinds, the
- * session's thrust-to-weight figure), and nothing else is read from a vehicle definition: resource groups,
- * part keys, camera distances and the cockpit come from the snapshot.
+ * the contract gives a craft's `vehicleId` "for labels and icons only": this is that use, through the one
+ * lookup of the presentation (`labelVehicleOf`). Null for a craft whose design the library does not have:
+ * every caller then says less (the stage's own label, the bare action kinds, the session's thrust-to-weight
+ * figure), and nothing else is read from a vehicle definition: resource groups, part keys, camera distances
+ * and the cockpit come from the snapshot.
  */
 function stageWordsSource(s: SimSnapshot, defs: DefLibrary | undefined): VehicleDef | null {
   const v = activeVesselOf(s);
@@ -403,7 +403,7 @@ function stageWordsSource(s: SimSnapshot, defs: DefLibrary | undefined): Vehicle
   // The helm's craft; a vessel without a helm block is flown from its base craft, and a snapshot without craft
   // blocks is one craft built from the vessel's vehicle.
   const craft = (v.helm ? craftOf(v, v.helm.craftId) : null) ?? craftsOf(v)[0] ?? null;
-  return defs.vehicles[craft?.vehicleId ?? v.vehicleId] ?? null;
+  return labelVehicleOf(defs, v, craft);
 }
 
 export interface StageTileView {

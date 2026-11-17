@@ -39,7 +39,7 @@ beforeAll(async () => {
 const IDLE: CameraInput = { yaw: 0, pitch: 0, zoom: 1 };
 const DT = 1 / 60;
 
-function sim(scene: FakeScene, renderRoot: 'focusBody' | 'rootBody' = 'focusBody'): { snap: () => SimSnapshot; advance: (dt: number) => void } {
+function sim(scene: FakeScene, renderRoot: 'focusBody' | 'rootBody' = 'rootBody'): { snap: () => SimSnapshot; advance: (dt: number) => void } {
   const s = createFakeSim(defs, { scene, parts: labVehicleParts(defs), renderRoot });
   return { snap: () => tagLabVehicle(s.snapshot()), advance: (dt) => s.advance(dt) };
 }
@@ -395,12 +395,13 @@ describe('cockpit rig', () => {
   });
 
   it('resolves the cockpit seat of every vehicle in the library that has a cockpit', () => {
-    const base = createFakeSim(defs, { scene: 'lowOrbit' }).snapshot();
     const withCockpit = Object.values(defs.vehicles).filter((v) => v.cockpit !== null);
     expect(withCockpit.length).toBeGreaterThan(0);
     for (const vehicle of withCockpit) {
       const parts = vehicle.parts.map((p) => ({ instanceId: p.id, def: p.def, localPos: v3.new(0, 10, 0), localRot: quat.identity(), tempSkin: 290, maxTemp: 1000, resources: {}, modules: [], shielded: false }));
-      const s = { ...base, vessels: base.vessels.map((v) => ({ ...v, vehicleId: vehicle.id, parts })) };
+      // A session of that vehicle: the craft block states the cabin of its command part, which is where the rig finds it.
+      const s = createFakeSim(defs, { scene: 'lowOrbit', vehicleId: vehicle.id, parts }).snapshot();
+      expect(s.vessels[0]!.crafts![0]!.cockpit, vehicle.id).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit.seat, sensorMount: null });
       const pose = resolveSeatPose(defs, s.vessels[0]!);
       expect(pose, vehicle.id).not.toBeNull();
       expect(pose!.eyeVes.y).toBeGreaterThan(10);

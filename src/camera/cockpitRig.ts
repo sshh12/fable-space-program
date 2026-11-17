@@ -12,10 +12,11 @@
  * Poses come from the snapshot as given (already interpolated to presentation time); positions are float64
  * in the ROOT frame.
  */
-import type { DefLibrary, PartDef, VehicleDef } from '@/core/contracts/defs';
+import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { CameraInput, CameraState } from '@/core/contracts/render';
 import type { PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { listSections } from '@/core/defs/loader';
+import { activeVesselOf, cabinOf } from '@/core/fakes/snapshotAccess';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
@@ -68,7 +69,7 @@ export interface CockpitHost {
   partDef: PartDef;
   /** Cockpit layout id (`visuals/cockpits/<id>`, the cockpit package's data). */
   cockpitId: string;
-  /** The craft's own camera seat (CraftSnapshot.cockpit.cameraSeat, or the vehicle's `cameras.cockpit.seat`). */
+  /** The craft's own camera seat (`CraftSnapshot.cockpit.cameraSeat`). */
   cameraSeat: string | null;
 }
 
@@ -78,26 +79,16 @@ const commandSeats = (partDef: PartDef): CockpitSeat[] => {
 };
 
 /**
- * The command part the cockpit camera sits in. A snapshot with craft names it itself (CraftSnapshot.commandPart
- * and .cockpit: the craft at the helm first, then the vessel's other craft with a cabin); one without (hand-built,
- * before the snapshot's tighten step) is resolved through the vehicle's authoring fields as before.
+ * The command part the cockpit camera sits in: the snapshot's craft name it themselves (`CraftSnapshot.commandPart`
+ * and `.cockpit`: the craft at the helm first, then the vessel's other craft with a cabin). No vehicle definition
+ * is read, so a design that is not in the library has its cabin, and in an assembly of two craft of one vehicle
+ * the part is the one of the craft that names it. A vessel whose craft state no cabin (debris, a probe, a
+ * hand-built snapshot without craft blocks) has no cockpit view.
  */
 export function cockpitHost(defs: DefLibrary, vessel: VesselSnapshot): CockpitHost | null {
-  const crafts = vessel.crafts ?? [];
-  const helm = vessel.helm?.craftId;
-  for (const craft of [...crafts.filter((c) => c.id === helm), ...crafts.filter((c) => c.id !== helm)]) {
-    const cabin = craft.cockpit;
-    if (!cabin || cabin.id === null || craft.commandPart === null) continue;
-    const part = vessel.parts.find((p) => p.instanceId === craft.commandPart && (p.craftId === undefined || p.craftId === craft.id));
-    const partDef = part ? defs.parts[part.def] : undefined;
-    if (part && partDef) return { part, partDef, cockpitId: cabin.id, cameraSeat: cabin.cameraSeat };
-  }
-  const vehicle: VehicleDef | undefined = defs.vehicles[vessel.vehicleId];
-  if (!vehicle || vehicle.cockpit === null) return null;
-  const ref = vehicle.cameras.cockpit;
-  const part = vessel.parts.find((p) => p.instanceId === ref.part);
-  const partDef = part ? defs.parts[part.def] : undefined;
-  return part && partDef ? { part, partDef, cockpitId: vehicle.cockpit, cameraSeat: ref.seat } : null;
+  const cabin = cabinOf(vessel);
+  const partDef = cabin ? defs.parts[cabin.part.def] : undefined;
+  return cabin && partDef ? { part: cabin.part, partDef, cockpitId: cabin.cockpitId, cameraSeat: cabin.cameraSeat } : null;
 }
 
 /** What the rig reads of a cockpit layout section (`visuals/cockpits/<id>`; the cockpit package owns and validates it). */
@@ -222,8 +213,8 @@ export function createCockpitRig(opts: CockpitRigOptions): CockpitRig {
       return seatNow;
     },
     isAvailable: (s) => {
-      const v = s.vessels.find((x) => x.id === s.activeVesselId);
-      return v !== undefined && (resolveSeatPose(defs, v, chosenIn(v)) ?? resolveSeatPose(defs, v)) !== null;
+      const v = activeVesselOf(s);
+      return v !== null && (resolveSeatPose(defs, v, chosenIn(v)) ?? resolveSeatPose(defs, v)) !== null;
     },
     activate() {
       reset();

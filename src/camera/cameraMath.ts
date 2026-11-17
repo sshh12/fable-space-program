@@ -4,6 +4,7 @@
 import type { BodyDef, DefLibrary } from '@/core/contracts/defs';
 import type { CameraInput, CameraState, ViewKind } from '@/core/contracts/render';
 import type { BodySnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { activeVesselOf } from '@/core/fakes/snapshotAccess';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 
@@ -17,10 +18,26 @@ export interface FlightCameraRig {
   isAvailable(snapshot: SimSnapshot): boolean;
 }
 
+/**
+ * The vessel the viewer is seated in, for a rig that needs one (the chase and the cockpit rig, which say so in
+ * `isAvailable`): throws without one. Code that also runs with no active vessel (the menu, a spectator, a
+ * pilot between ships) asks `activeVesselOf` and handles null.
+ */
 export function activeVessel(s: SimSnapshot): VesselSnapshot {
-  const v = s.vessels.find((x) => x.id === s.activeVesselId);
+  const v = activeVesselOf(s);
   if (!v) throw new Error(`snapshot has no active vessel ${s.activeVesselId}`);
   return v;
+}
+
+/**
+ * The body a view falls back to when it has nothing else to look at: the active vessel's SOI body, else the
+ * body at the render root, else the library's root body.
+ */
+export function fallbackBodyId(defs: DefLibrary, s: SimSnapshot): string {
+  const v = activeVesselOf(s);
+  if (v) return v.bodyId;
+  const origin = s.frame?.origin;
+  return origin ? origin.bodyId : defs.rootBodyId;
 }
 
 export function bodyById(s: SimSnapshot, id: string): BodySnapshot {

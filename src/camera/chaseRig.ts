@@ -49,6 +49,7 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
+import { craftsOf } from '@/core/fakes/snapshotAccess';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { activeVessel, approach, bodyById, bodyDef, enuAt, lookRotation, slerpDir, smoothBlend, vesselComRoot, type FlightCameraRig } from './cameraMath';
 
@@ -185,15 +186,35 @@ function anglesOf(frame: Quat, dirRoot: Vec3): { azimuth: number; elevation: num
 
 const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x);
 
-export function chaseDistanceLimits(defs: DefLibrary, v: VesselSnapshot): { def: number; min: number; max: number } {
+/**
+ * The distance limits of the chase camera about a vessel, m, from the snapshot alone (ARCHITECTURE 20): the
+ * chase distances its craft state (`CraftSnapshot.chase`) combined with the vessel's bounding radius, never a
+ * vehicle definition, so an assembly and a design that is not in the library are framed correctly.
+ *  - One craft: its own distances, the nearest never inside 1.05 radii of the vessel.
+ *  - Several craft (an assembly): no craft's distances were chosen for the whole, so the frame comes from
+ *    the bounding radius (2.4 radii by default, 1.15 to 60), widened to whatever a craft aboard allows: the
+ *    camera can always come as near as the nearest hint that clears the assembly and go as far as the farthest.
+ *  - No craft block (a hand-built snapshot): the bounding radius alone.
+ * `defs` is not read; the parameter stays for the callers of the earlier signature.
+ */
+export function chaseDistanceLimits(_defs: DefLibrary, v: VesselSnapshot): { def: number; min: number; max: number } {
   const r = Math.max(0.5, v.boundingRadius);
-  const chase = defs.vehicles[v.vehicleId]?.cameras.chase;
-  if (chase) {
+  const crafts = craftsOf(v);
+  if (crafts.length === 1) {
+    const chase = crafts[0]!.chase;
     const min = Math.max(chase.minDistance, 1.05 * r);
     const max = Math.max(min, chase.maxDistance);
     return { def: clamp(chase.defaultDistance, min, max), min, max };
   }
-  return { def: 2.4 * r, min: 1.15 * r, max: 60 * r };
+  let min = 1.15 * r;
+  let max = 60 * r;
+  let def = 2.4 * r;
+  for (const c of crafts) {
+    max = Math.max(max, c.chase.maxDistance);
+    def = Math.max(def, c.chase.defaultDistance);
+  }
+  min = Math.min(min, max);
+  return { def: clamp(def, min, max), min, max };
 }
 
 /**

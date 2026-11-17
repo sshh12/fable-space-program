@@ -18,7 +18,8 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { activeVessel, approach, lookRotation, smoothBlend, vesselComRoot, type FlightCameraRig } from './cameraMath';
+import { activeVesselOf } from '@/core/fakes/snapshotAccess';
+import { approach, fallbackBodyId, lookRotation, smoothBlend, vesselComRoot, type FlightCameraRig } from './cameraMath';
 
 export const MAP_MIN_DISTANCE = 1e5;
 export const MAP_MAX_DISTANCE = 2e9;
@@ -70,7 +71,7 @@ export function createMapRig(opts: MapRigOptions): FlightCameraRig & {
     if (f.kind === 'vessel') return 2e6;
     const body = defs.bodies[f.id];
     const R = body?.radius ?? 1e6;
-    const v = s.vessels.find((x) => x.id === s.activeVesselId);
+    const v = activeVesselOf(s);
     let reach = 1.6 * R;
     if (v && v.bodyId === f.id) {
       const ap = s.readouts.apoapsisAltitude;
@@ -109,8 +110,8 @@ export function createMapRig(opts: MapRigOptions): FlightCameraRig & {
       pendingOrbit = { azimuth: az, elevation: el, distance: dist };
     },
     activate(from, s) {
-      const v = activeVessel(s);
-      if (!focus || focusPos(s, focus) === null) focus = { kind: 'body', id: v.bodyId };
+      // Without an active vessel (the menu, a spectator) the map opens on the body at the render root.
+      if (!focus || focusPos(s, focus) === null) focus = { kind: 'body', id: fallbackBodyId(defs, s) };
       glide = null;
       const d = defaultDistance(s, focus);
       logDistTarget = Math.log(d);
@@ -130,7 +131,7 @@ export function createMapRig(opts: MapRigOptions): FlightCameraRig & {
     },
     update(s: SimSnapshot, input: CameraInput, realDt: number): CameraState {
       if (!focus || focusPos(s, focus) === null) {
-        focus = { kind: 'body', id: activeVessel(s).bodyId };
+        focus = { kind: 'body', id: fallbackBodyId(defs, s) };
         logDistTarget = logDist = Math.log(defaultDistance(s, focus));
         glide = null;
       }
