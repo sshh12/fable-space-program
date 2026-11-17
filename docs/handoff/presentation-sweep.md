@@ -1,200 +1,213 @@
-# presentation-sweep: hand-off (sub-wave 3.2; NOT FINISHED: first working context ends here)
+# presentation-sweep: hand-off (sub-wave 3.2; NOT FINISHED: two subsystems are left, see 1.2)
 
 The one sweep over every presentation consumer (brief: `docs/WORK_PACKAGES_V2.json`, id `presentation-sweep`,
-with its LEAD NOTES; the last one is the work order). The package is larger than one working context. This
-file is the state at the end of the first: what is done and committed, what is left in the order to do it,
-every decision taken and why. A successor continues from "Left to do" and
-`git log --oneline --grep presentation-sweep`.
+with its LEAD NOTES). The package was larger than two working contexts. This file is the state at the end of
+the second: what is done and committed, what is left with its design, every decision taken and why, both
+gates as they were run. A successor continues from 1.2 and `git log --oneline --grep presentation-sweep`.
 
 ## 1. State of the sweep
 
 Start: commit b076166 (the lead's contract step is 31e67fa; the tree before it is tagged
-`pre-sweep-2026-11-16`). One commit per subsystem. The whole tree compiles at every commit except for
-`src/net` and `tests/unit/net`, which are `wire-protocol`'s and were in motion while the sweep ran; filter
-them: `npx tsc --noEmit -p tsconfig.json | grep -v "src/net\|tests/unit/net"` (empty at 311feed).
+`pre-sweep-2026-11-16`). One commit per subsystem. `npm run typecheck` (both configurations) is clean on the
+whole tree at 94a3e01.
 
 ### 1.1 Done and committed
 
-| # | Commit | Subsystem | Image gate after it (BASELINE_ONLY) |
+| # | Commit | Subsystem | Image gate after it |
 |---|---|---|---|
-| 1 | 105b8f8 | The lead's work order: the 21 compile errors. Binding table (the six v2 actions, `sas:target`, `sas:antiTarget`, `sas:portAlign`, their key labels and reference-card lines), the HUD's SAS row and names, the MFD's two pages, the chase rig's reference mode, the map's `targetApproach` tables, `setTarget(TargetRef)` at every call, the default of `'ui.scrimRects'`, the `pause` key as `flightMenu`, the selected target through ONE helper | `sweep-hud-leo`, `sweep-map-translunar`, `sweep-cockpit-leo`, `sweep-app-pad`, `sweep-app-cockpit`: 0 pixels each, first load |
-| 2 | 32203ca | The vessel feature: per-part state under the LINEAGE key (`CraftSnapshot.parent`, never the vessel id), the engines a part carries from the part list (`src/render/vehicle/mounts.ts`), no vehicle definition; `CraftLineage` and the part keys in the access module | `pad-noon`, `ascent-10km`, `leo-day`, `lunar-orbit-low-sun`, `parachute-descent`, `sweep-hud-leo`, `sweep-separation-debris`, `sweep-app-pad`: 0 pixels each, first load |
-| 3 | 1a93c40 | The HUD model: resource groups and labels from the parts (`stageGroup`, `stageLabel`, per craft), a stage's label from the staging panel, the words about a stage through one label source | with the gate of row 4 |
-| 4 | adbddff | `FakeSession` (`src/core/fakes/fakeSession.ts`) with the scenes of the shared universe, client stores and a conformance test per scene; `createFakeSim` kept as its v1 name | run with the fake Moon-centred in every lab: see D7 and request presentation-sweep-4 |
-| 5 | 311feed | Camera rigs, cockpit feature, seat names on the craft blocks (`chaseDistanceLimits`, `cabinOf`, `labelVehicleOf`); the view manager, map rig and audio listener cope with no active vessel; `createFakeSim` keeps the v1 render root | THE FULL SET OF 33: section 3 |
+| 1 | 105b8f8 | The lead's work order: the 21 compile errors (binding table, HUD SAS row, MFD pages, chase rig, map marker tables, `setTarget(TargetRef)`, the default of `'ui.scrimRects'`, `pause` -> `flightMenu`, the selected target through one helper) | five `sweep-*` checkpoints, 0 pixels |
+| 2 | 32203ca | The vessel feature: per-part state under the lineage key (`CraftSnapshot.parent`), engine mounts from the part list, no vehicle definition | eight checkpoints, 0 pixels |
+| 3 | 1a93c40 | The HUD model: resource groups and labels from the parts, per craft | with row 4 |
+| 4 | adbddff | `FakeSession` with the scenes of the shared universe, client stores, a conformance test per scene | (the fake Moon-centred: D7) |
+| 5 | 311feed | Camera rigs, cockpit feature, seat names on the craft blocks; no active vessel in the view manager, map rig, listener | full set, 33 of 33 |
+| 6 | 1c72140 | (second context from here) The access module moves to `src/core/access/snapshotAccess.ts` (the lead's answer to request 1). No boundary entry was needed: `src/core` is one area of `tools/dev/boundaries.test.ts` | not a pixel change |
+| 7 | 3b80cfc | Pads: every reader through `padsOf` / `padOf` / `padLocationOf`; one runtime per pad in the site feature; a structure generator is given its pad; a ground survey per pad; the terrain's ground plans, the pad smoke, the effects' flat disc and the chase rig's trench per pad | FULL SET 33 of 33, the 30 exact at 0 pixels, first load, no OTHER STATE |
+| 8 | 08efeb3 | `tick` -> `revisionOf`; no active vessel in the audio model, the effects and the labs; effects and audio key per-part state by the part key; `findEventPart`; unit tests on the keys | with row 9 |
+| 9 | 22622c4 | Stage words, crew and fairing petal from the snapshot (`StageInfo.burnLabel`, `actionChutes`, `chuteEnvelopes`, `thrustVac`, `weightFlowVac`; `CraftCockpit.crew`; `PartSnapshot.panel`): `labelVehicleOf` is gone, no petal id is read or composed; the fake states the members through `describeStages` (its conformance test is green again) | FULL SET 33 of 33, the 30 exact at 0 pixels, no OTHER STATE (the HUD's stage tiles of `sweep-hud-leo`, `sweep-map-translunar`, `sweep-rails-warp`, `sweep-app-pad` to the pixel) |
+| 10 | b46bf4d | Frame rebase: the render core, the vessel feature's ghosts and the view manager follow a replacement of the origin (`src/core/access/frameAccess.ts`); the origin test (`tests/browser/integration/origin.spec.ts`); request presentation-sweep-5 | with row 11 |
+| 11 | 94a3e01 | `createSession` in `src/app` and the integration lab; `Sim` / `SimDebug` -> `LocalSession` / `SessionDebug` in every lab and test; the audio data's target path through the access module; the grep test `tests/unit/fakes/deprecated.test.ts` | FULL SET 33 of 33: section 3 |
 
-| 6 | 1c72140 | (second working context from here) The access module moves to `src/core/access/snapshotAccess.ts` (the lead's answer to request 1); no boundary entry was needed (`src/core` is one area) | not a pixel change |
-| 7 | 3b80cfc | Pads: every reader through `padsOf` / `padOf` / `padLocationOf`; the site feature keeps one runtime per pad; a structure generator is given its pad; a ground survey per pad; the terrain's ground plans, the pad smoke, the effects' flat disc and the chase rig's trench per pad | THE FULL SET: 33 of 33, the 30 exact at 0 pixels on the first load, no OTHER STATE line |
-| 8 | 08efeb3 | `tick` -> `revisionOf` everywhere; no active vessel in the audio model, the effects and the labs; effects and audio key per-part state by the part key; `findEventPart`; unit tests on the keys | with the gate of row 9 |
-| 9 | 22622c4 | The stage words, the crew and the fairing petal from the snapshot (`StageInfo.burnLabel`, `actionChutes`, `chuteEnvelopes`, `thrustVac`, `weightFlowVac`; `CraftCockpit.crew`; `PartSnapshot.panel`): `labelVehicleOf` is gone, no petal id is read or composed; the fake states the members through `describeStages` | THE FULL SET: section 3 |
+Unit suites at 94a3e01 (`src/render src/ui src/input src/camera src/map src/audio src/core/fakes
+src/core/access src/app`, `tests/unit/{atmosphere,audio,cockpit,flight-ui,map-view,ocean,render-core,sky,terrain-render,vehicle,vfx,camera,fakes}`,
+`tools/dev/boundaries.test.ts`): 80 files, 971 tests, all pass.
 
-Unit suites at 311feed (`src/render src/ui src/input src/camera src/map src/audio src/core/fakes src/app`
-and `tests/unit/{atmosphere,audio,cockpit,flight-ui,map-view,ocean,render-core,sky,terrain-render,vehicle,vfx,camera,fakes}`,
-`tools/dev/boundaries.test.ts`): 78 files, 950 tests, all pass. `tests/unit/camera` (two files that no
-package of `WORK_PACKAGES_V2.json` owns; this package may not edit them) passes unchanged.
+### 1.2 Left to do (NOT STARTED; each is one subsystem with its own commit and gate run)
 
-### 1.2 Left to do, in this order
+**A. The tile-source seam** (scope 5; acceptance line 5). Not started. What is there and what to change:
+- `src/render/terrain/workerProtocol.ts`: `WorkerInit.tilesUrl: string` becomes `source: TileSourceSpec`
+  (`src/core/contracts/terrain.ts`); `tileWorker.ts:25` calls `createTileSource(msg.source)` of
+  `src/terrain/tileSource.ts` (it returns the existing fetch source for `{ kind: 'fetch' }`);
+  `streamer.ts:224` builds the init (`{ kind: 'fetch', baseUrl: new URL(ctx.tilesUrl, location.href).href }`
+  by default; a `pack` spec's `packListUrl` made absolute the same way).
+- The feature's own reads on the main thread go through the same source: `feature.ts:859`
+  (`createFetchTileSource(ctx.tilesUrl)`), `lowResAlbedo.ts:19` (a `fetch` of `<tiles>/<set>/<globals.albedoLowRes.path>`:
+  use `source.file(tileset, path)`), and `feature.ts:857`, which reads `<tiles>/index.json` (the dev server's
+  list of baked sets) so that a missing manifest logs no 404: with a pack source the sets are the keys of
+  `PackList.sets` (fetch `packListUrl`).
+- `RenderContext.tilesUrl` is the contract's (the lead's): give the terrain feature an option
+  `tileSource?: TileSourceSpec` (default from `ctx.tilesUrl`) and the terrain lab a query (`&source=pack&packs=<url>`).
+- The pack source batches what is asked in the same turn (docs/handoff/platform-delivery.md section 9): a
+  worker should issue a tile's reads together.
+- The test asked: the terrain lab through kind `fetch` and kind `pack` with identical frames, the pack inside
+  `STACK_NAME=fsp-presentation-sweep npm run stack -- ... -- <suite>` (the pack list is served with CORS `*`
+  at `/packs.json`; `tests/browser/platform` has the working pattern of a page that reads packs from the stack).
 
-1. (done in the commit of this file: the chase limits of a three-craft assembly and the rigs without an
-   active vessel are held by two tests in `tests/unit/flight-ui/camera.test.ts`.)
-2. **Pads**: every reader of `LaunchSiteDef.pad`, `.padAzimuthDeg`, `.structures` through `padsOf` / `padOf`
-   / `padLocationOf` (`src/core/defs/sites.ts`). Readers (grep `\.structures\b|padAzimuthDeg|site\.pad\b`):
-   `src/render/vehicle/siteFeature.ts` (ONE RUNTIME PER PAD: frame at the pad's own location, arm state and
-   `padActivity` per pad, `state(siteId, padId?)` / `override(siteId, patch, padId?)`, the option callbacks
-   given the pad), `site/pad.ts:395`, `site/survey.ts:76` (a pad other than the first that has structures
-   needs a survey of its own: throw as a site without one does, never level ground), `src/render/terrain/
-   feature.ts:398` and `sitePlan.ts:61-62`, `src/render/vfx/director.ts:144-150` and `smoke.ts:830,921,926`,
-   labs (`labs/vehicle/labSim.ts:285-286`, `labs/vfx/scenes.ts:46-50`, `labs/integration/main.ts:235`,
-   `labs/flight-ui/main.ts:336`), tests (`tests/unit/vehicle/site.test.ts`, `looks.test.ts`,
-   `tests/browser/vehicle/game.spec.ts`). The chase rig's trench heading reads `pads` already; the fake reads
-   `padOf(site)`. No file under `data/defs/sites` may change (rule 7a): with today's data `padsOf(site)` is
-   the single pad, so every pad checkpoint must stay exact.
-3. **`snapshot.tick` -> `revisionOf(snapshot)`**: `src/render/cockpit/displays.ts:231`, `src/audio/model.ts:767`,
-   `labs/cockpit/main.ts:275`, `src/map/testing/syntheticSnapshots.ts:663` (a producer: add `revision`).
-   **`activeVesselId`**: 123 reads in 62 files at the start; done so far: `src/ui/model.ts`, the camera
-   package, `src/render/cockpit/feature.ts` (`pick`), `src/map/controller.ts` (target click). In `src` about
-   thirty reads are left and most are a `find` that copes with null as written. THE ONES THAT DO NOT:
-   `src/audio/model.ts:294-296` (falls back to `vessels[0]`, dereferences it, and reports a missing active
-   vessel as a problem every frame), `src/render/vfx/feature.ts:391` (the same fallback) and `:519`
-   (`frame.vesselPose(snap.activeVesselId)`), `src/render/core/lab/camera.ts:179`. The ocean's wetness slots
-   (`src/render/ocean/vessels.ts:174`) already sort the active vessel first and the rest by height, which is
-   "nearest first" without one. Then `src/app` (game.ts 362 and 506, testHooks, pictureStops: `find`s) and
-   the labs (68 reads at the start).
-   The neutral singleton blocks are the session's to produce (`neutralFlightBlocks()` of src/sim/view does
-   not exist yet): a consumer reads them as they are.
-4. **Ids**: `src/render/vfx/director.ts:357` composes `#panel0` (request presentation-sweep-2);
-   event part ids: use `eventPartOf` (access module) wherever an event's `partId` is matched against parts
-   (grep `ev.partId`, `e.partId` in `src/render/vfx`, `src/audio`, `src/ui/hud/hud.ts:861`); vfx and audio
-   keep per-part state (emitters, voices): key it with `CraftLineage.keyOf` as the vessel feature does, and
-   add the unit tests on keys for plume state (acceptance line 4).
-5. **Frame rebase**: `FrameEpochTracker` (src/core/math/frame.ts) in: the view manager (`last.positionRoot`
-   is handed to `rig.activate`), the chase rig (`lastDir` and the swing are directions: check), the map rig
-   (focus is an id: nothing held; check `glide`), the render core's previous-frame state (`frame.prevCamera`,
-   `prevSnapshot`, the vessel poses' `prevOriginRelCam`: motion vectors must not spike at an epoch change),
-   vfx world-anchored effects (`explosion.posRoot`, trails, dust), the vessel feature's ghosts
-   (`g.vessel.rRoot` held for the fade: rebase or drop at an epoch change). The fake gives the test:
-   `FakeSession.setRenderRoot(bodyId)` replaces the origin as an SOI change does (epoch, rebase, history).
-   Tests asked by the brief: the same frame with the origin at Earth and at the Moon (mean difference under
-   one level per channel: `createFakeSession` with `renderRoot` 'rootBody' and 'focusBody'; D7 has the
-   numbers as they are today) and a screenshot pair across `setRenderRoot` with no step and no motion-vector
-   spike.
-6. **The tile-source seam**: `WorkerInit` (`src/render/terrain/workerProtocol.ts`) carries a
-   `TileSourceSpec`; `tileWorker.ts` and the streamer call `createTileSource(spec)`
-   (docs/handoff/platform-delivery.md); the dev default stays fetch; the terrain lab through kind `fetch` and
-   kind `pack` (the pack against the local stack: `npm run stack -- ... -- <suite>` with
-   `STACK_NAME=fsp-presentation-sweep`) with identical frames.
-7. **Render core**: the scrim step in the tonemap pass (bloom pyramid inside `'ui.scrimRects'`; no
-   rectangle, no cost; at most 0.1 ms with four), `CameraState.exposureHint { targetEv100, rateEvPerS }`
-   and `lensShift`; `docs/RENDER_API.md`. The default buffer exists (commit 1).
-8. **`createSim` -> `createSession`**: `src/app/game.ts`, `labs/integration/features.ts` and `main.ts`, every
-   spec; `Sim` / `SimDebug` -> `LocalSession` / `SessionDebug` (many labs type their sim as `Sim`); specs
-   that assert an Earth-centred `rRoot` rewritten to differences. `sweep-lunar-orbit` (tolerance) is the one
-   recorded picture the moving origin touches. Labs may move from `createFakeSim` to `createFakeSession`
-   only with `renderRoot: 'rootBody'` until request presentation-sweep-4 is decided.
-9. **`tests/unit/fakes/deprecated.test.ts`** (the grep test): no file outside `src/sim`, the loader and
-   the listed exceptions reads `.tick` of a snapshot, `.targetBodyId`, `.targetClosestApproach`,
-   `LaunchSiteDef.pad` / `.padAzimuthDeg` / `.structures`, `'pause'`, `createSim`, `Sim` / `SimDebug`, or
-   `vehicles[<expression with .vehicleId or .vehicle>]`, and no presentation file compares a ROOT position
-   with zero or names the root body as the origin. Exceptions to list, each with its reason:
-   `src/core/fakes/snapshotAccess.ts` (D1, D6), `src/core/fakes/fakeSession.ts` (a producer, as the session
-   is: it fills the deprecated fields and reads the vehicle it is published as), `src/input/bindings.ts`
-   (the retired member's type), producers of hand-built snapshots that must still fill a required deprecated
-   field (`src/map/testing/syntheticSnapshots.ts`, `labs/map-view/main.ts`).
-10. The whole unit suite, every lab spec (`npx playwright test tests/browser/<dir> --project=functional`,
-    one directory at a time through the gate), the full image gate, the budget gate on a quiet machine, the
-    first minutes of the browser mission on `createSession`, this file as PACKAGE_RULES rule 17 asks.
+**B. The render-core additions** (scope 6; acceptance line 6, first half). Not started beyond the default
+buffer of `'ui.scrimRects'` (commit 1). Design, from reading the code:
+- Scrim step: `src/render/core/post/tonemap.ts` binds the uniform buffer `resources.get('ui.scrimRects')`
+  (re-create the bind group when the key's version changes) and a few levels of the bloom DOWN chain
+  (`PostProcess.downViews`, exposed through `PostOutputs`; `bloomLevelCount` is 3 to 9, so bind a fixed four,
+  e.g. levels 0, 2, 4 and the last, and mix the two nearest for `blur`). In `fs`: `let n =
+  u32(scrim.header.x); if (n > 0u) { ... }` over the rectangles (rounded-rect distance, `dim`, `opacity`);
+  with a zero header the pass does the arithmetic it does today (the image gate must stay at 0 pixels and
+  the budget table's `core.tonemap` row unchanged: that is "no rectangle, no cost"). The 0.1 ms line needs
+  a perf spec that publishes four rectangles (a handle in `labs/render-core`) and reads `core.tonemap`.
+- `CameraState.exposureHint { targetEv100, rateEvPerS }`: in `renderer.ts` where `ev100` is set (after
+  `evOverride` / `evHeld`): with a hint, `ev100` moves toward `targetEv100` by at most `rateEvPerS * stepDt`
+  and the meter's target is ignored; a frame-exact capture holds as it does today.
+- `CameraState.lensShift [x, y]` (fraction of the half viewport): `buildProjection` (`frame/math.ts`) adds
+  it to the clip-space offset of the z column as the jitter is (`proj[8]`, `proj[9]`, also in
+  `projUnjittered`); `viewRay` (`shaders/chunksFrame.ts:140`) forms rays from `cameraForward/Right/Up` with
+  the tangents, so the shift must go into the ray too (a `lensShift` pair in the frame uniforms, or
+  `cameraForward` minus the shifted right / up). SIXTEEN files read `frame.cameraRight`, `cameraForward` or
+  the tangents (`grep -rln "frame.cameraRight\|frame.cameraForward\|tanHalfFov" src/render`): the features
+  that cull or march with a symmetric frustum (terrain selection, clouds, sky, ocean, particles) have to be
+  looked at one by one; state in `docs/RENDER_API.md` which honour the shift.
+- `docs/RENDER_API.md`: the three additions, `CoreRenderer.readVelocity()`, the rebase of the previous-frame
+  state (section 1.1 row 10) and the `?frameorigin=` option of the lab app are NOT documented there yet.
+
+**C. Runs that are still owed** (section 3 has what was run):
+- the first minutes of the browser mission (pad to max-q) in the integrated app: the app is on
+  `createSession` and both app checkpoints (`sweep-app-pad`, `sweep-app-cockpit`) are exact on it, but
+  `tests/browser/mission` was not flown in this context;
+- the budget gate and the lab specs: see section 3 for what was run and what was not.
 
 ## 2. Decisions taken, and why
 
-- **D1. One access module for what several presentation packages read of a snapshot:
-  `src/core/fakes/snapshotAccess.ts`.** `revisionOf`, `targetOf` / `targetBodyOf` / `targetNameOf` /
-  `bodyTarget`, `activeVesselOf`, `craftsOf` / `craftOf` / `craftIdOf` / `parentOf`, `partKeyOf` / `partKey`,
-  `eventPartOf`, `CraftLineage`, `cabinOf`, `labelVehicleOf`. It is the ONE file outside the simulation
-  that reads `Readouts.targetBodyId`, `.targetClosestApproach` and `SimSnapshot.tick`, and the one that
-  looks a vehicle up by a runtime id. Why there: every presentation package may import `src/core` only
-  (boundary rules), and `src/core/fakes` is the only part of `src/core` this package owns. Request
-  `presentation-sweep-1` asks the lead for a home of its own at the tighten.
-- **D2. `targetOf(readouts)` returns a `TargetView`, not a made-up `TargetReadout`.** `TargetView` is the
-  part of `TargetReadout` that the deprecated pair can state (`ref`, `relativeInclination`,
-  `closestApproaches[]` with `relSpeed` only where a session states it), with the same field names; a
-  `TargetReadout` is assignable to it. A derived `TargetReadout` would have needed a range, a range rate
-  and a relative speed at the approach that nothing states. At the tighten a call site changes
-  `targetOf(r)` to `r.target`.
-- **D3. Keys of the v2 actions.** `flightMenu` Esc and P, `cycleTarget` B, `toggleRoster` O,
-  `acceptPrompt` Y, `openQuickComms` Enter (ARCHITECTURE 19). `dockingView` is NOT on V: the next couch
-  (`ui:nextSeat`, request core-6) has V and every letter is bound, so it is on `Equal` (right of the three
-  display keys 9 0 -). The three SAS holds against a target are on `Semicolon`, `Quote`, `Backslash` (the
-  digit row is full). FOR THE LEAD: ARCHITECTURE 19 still says V for `dockingView`. The retired `pause` is
-  named once, as a type (`RetiredButtonAction` in `src/input/bindings.ts`), so that the exhaustiveness
-  check compiles until the lead removes the member. In the app and the flight-ui lab `flightMenu` toggles
-  the local pause (no menu is built here); `tests/browser/app/app.spec.ts` ("P freezes simulation time") is
-  unchanged by it.
-- **D4. The HUD's SAS row** has the three target holds as buttons that are hidden unless the session lists
-  them in `sasModesAvailable` (a third row; nothing shows today). Port alignment has an icon of its own
-  (`PORT_ALIGN_ICON`), not in the navball's marker atlas. **The MFD** paints `target` and `docking` as
-  pages of rows; they are not in `MFD_PAGES` (the page cycle and the lab's page list stay six), a display
-  shows one when its page is set to it (`MFD_TARGET_PAGES`). NOT SEEN IN A BROWSER YET: the three buttons
-  and the two pages (the fake's `rendezvous` and `dockingApproach` scenes produce what they show; the
-  flight-ui lab takes `FakeScene` only).
-- **D5. Engine mounts from the part list** (`engineMounts`): an engine with attach nodes is mounted on
-  every part of its craft that shares a node position with it; an engine without nodes (motor packs, RCS
-  pods) on the part whose `PartDef.bounds` cylinder is nearest to its origin (the nearer origin breaks a
-  tie). For the one vehicle of the library this is exactly the parent of the vehicle tree, before and after
-  every stage (`tests/unit/vehicle/mounts.test.ts`, 6 tests).
-- **D6. Words about a stage and the crew's names still come from the vehicle's file, through ONE lookup**
-  (`labelVehicleOf`; callers `stageWordsSource` in `src/ui/model.ts`, keyed by the helm craft's vehicle, and
-  `src/app/seat.ts`, keyed by the craft with the cabin): what a stage burns, which chutes it deploys or
-  releases, the engines behind the weak-gravity acceleration figure, the crew member in a seat. The
-  snapshot states none of them, the contract gives `vehicleId` "for labels and icons only", and dropping
-  them would have changed the HUD's stage tiles (exact reference images). Request `presentation-sweep-3`
-  asks for the fields that would remove it. THE ACCEPTANCE LINE "no file ... indexes defs.vehicles[ by a
-  runtime id" IS NOT MET BY THIS ONE LOOKUP, and will not be until the lead answers the request.
-- **D7. The fake's render root.** `createFakeSession` states ROOT positions about the active vessel's SOI
-  body, as a session does (conformance); `createFakeSim`, the v1 name that all labs use, keeps the origin
-  at the library's root body, where v1's FakeSim had it. Reason, measured (gate run on adbddff with the fake
-  Moon-centred in every lab): `lunar-terminator-20000km`, `lunar-terminator-5000km`, `translunar-moon` 0
-  pixels; `lunar-orbit-low-sun` 58 pixels up to 4 levels; `lunar-surface-cockpit` 12,279 pixels up to 17
-  levels (mean 0.0074, along the window frames); `lunar-touchdown` 5.98 % of the pixels, mean 0.0368
-  against a tolerance of 0.02, max 136 (faint, all over the ground and the horizon). Each the same on every
-  load, so they are the origin's and not a second state. The renderer is origin-agnostic in the mean and
-  not to the bit; the cause (a float32 quantity of some hundred metres somewhere before the camera-relative
-  subtraction, or a snapped cascade) is NOT FOUND. Pictures: `out/screens/presentation-sweep/origin/`.
-  Request `presentation-sweep-4` puts the choice to the lead (keep, or re-record three lunar pictures).
-- **The fairing petal index** is still read from the instance id (`fairingPanelOf` in
-  `src/render/vehicle/vesselFeature.ts`, the one place): the snapshot states it nowhere else. Request
-  `presentation-sweep-2`.
-- **`VesselVisualFeature.anim(craftId, instanceId)`** (was `(vesselId, instanceId)`): the two vehicle specs
-  pass `p.craftId ?? id`; `labs/vehicle/labSim.ts` gives its vessels craft blocks with `parent`.
-- **`chaseDistanceLimits(defs, vessel)` keeps its signature** (`defs` unused): `tests/unit/camera` calls it.
-  One craft: its `chase` hints with the nearest never inside 1.05 radii (as before). Several craft: the
-  bounding radius (2.4 radii by default, 1.15 to 60), widened to the farthest any craft allows.
-- **A finding while the gate ran**: the gate's page server serves the WORKING TREE. A lab file edited while
-  a gate run is in progress is loaded by the next checkpoint (one load of `lunar-surface-cockpit` failed on
-  a half-made edit of `labs/integration/main.ts`). Do not edit `src` or `labs` while a gate runs.
+- **D1. One access module for what several presentation packages read of a snapshot**, now
+  `src/core/access/snapshotAccess.ts` (the lead's decision on request 1). It is the one file outside the
+  simulation that reads `Readouts.targetBodyId`, `.targetClosestApproach` and `SimSnapshot.tick`. Beside it,
+  `src/core/access/frameAccess.ts` has what a holder of ROOT positions needs (D8).
+- **D2. `targetOf(readouts)` returns a `TargetView`**, the part of `TargetReadout` the deprecated pair can
+  state; a `TargetReadout` is assignable to it. At the tighten a call site changes `targetOf(r)` to `r.target`.
+- **D3. Keys of the v2 actions**: `flightMenu` Esc and P, `cycleTarget` B, `toggleRoster` O, `acceptPrompt` Y,
+  `openQuickComms` Enter, `dockingView` on `Equal` (accepted by the lead; V is the next couch), the three SAS
+  holds against a target on `Semicolon`, `Quote`, `Backslash`. The retired `pause` is named once, as a type
+  (`RetiredButtonAction` in `src/input/bindings.ts`).
+- **D4. The HUD's SAS row** has the three target holds as buttons hidden unless the session lists them;
+  the MFD paints `target` and `docking` as pages outside the page cycle (`MFD_TARGET_PAGES`). Not seen in a
+  browser yet: no session offers them before wave 4.
+- **D5. Engine mounts from the part list** (`engineMounts`, `tests/unit/vehicle/mounts.test.ts`).
+- **D6. No vehicle definition is looked up by a runtime id any more.** The words about a stage, the crew by
+  seat and the fairing petal are snapshot fields (the lead's commit 7df28d3): `stageBurnLabel(s, i)`,
+  `stageActionWords(s, i)`, `stageAcceleration(s, i)` and `describeChuteEnvelope(s, defs)` of
+  `src/ui/model.ts` read `StageInfo`; `seatName` reads `CraftCockpit.crew`; `fairingPanelOf` is
+  `part.panel?.index`; the effects find the first petal of a `fairingJettisoned` event among the event's new
+  vessels (`panel.index === 0`). A session that does not state the words says less (the stage's label, the
+  bare action kinds, the thrust-to-weight figure), as before for an unknown design. The fake states them
+  with `describeStages` of the vehicle it is published as, and WITH THEM THAT VEHICLE'S ACTION KINDS (the two
+  lists are parallel); a fake of no vehicle states the neutral values and `actionKinds: ['engine']` as before.
+  The flight-ui lab vehicle does the same in `tagLabVehicle` (`vehicleStaging`: the whole stack of the lab
+  vehicle over the figures of the stages the fake reports).
+- **D7 / D8. The origin of ROOT positions.** The renderer is origin-agnostic TO THE BIT: the same frame
+  handed to it about the root body and, translated exactly, about the Moon gives 0 differing pixels in all
+  four lunar checkpoints (`origin.spec.ts`, section 3). What the first context measured (12,279 pixels in
+  `lunar-surface-cockpit`) is not the renderer: a frame COMPUTED about the other origin has other numbers. A
+  position 384,000 km from the origin lies on a float64 grid of 6e-8 m, so `vessel.rRoot + offset` puts the
+  camera up to 3e-8 m elsewhere relative to the vessel (measured 1.1e-8 to 2.9e-8 m); that carries float32
+  values on the GPU over a rounding step and with them isolated samples (edge coverage in one frame of the
+  jitter sequence, a stochastic shadow tap). Nothing was there to fix in the renderer; v1's far origin is
+  the coarser input and the session's origin the better one. `createFakeSim` (the labs' fake) therefore
+  still states ROOT about the root body, because one exact lab picture would move with the origin: request
+  `presentation-sweep-5` puts the choice to the lead with the pictures and the difference maps.
+- **D9. A rebase is applied as of the time a position was taken** (`rebaseHeldAt`): `FrameRebase` is the old
+  origin in the new frame at the time of the snapshot that carries it, and the two origins move against each
+  other (1 km/s for the Earth and the Moon), so a position of one frame ago moved with the offset of now is
+  16 m off. The core reads `prevSnapshot` and `prevCamera` in the new frame that way; `prevEyeOffset` and
+  `frame.prevSnapshot` are then what they would be had the origin always been the new one. (Per-object motion
+  vectors never needed it: they are differences inside one frame each.) A frame that cannot be reached from
+  the one a holder last saw (the epoch went backwards: another session; or the history no longer describes
+  the held epoch) is `'drop'` in `observeFrame`: a new history, never an exception in a frame.
+  Holders found and done: the render core (`prevSnapshot`, `prevCamera`), the vessel feature (ghosts: ROOT
+  position and velocity of a vessel that left the snapshot), the view manager (`last` and its snapshot, from
+  which a rig is activated and a blend starts). Looked at and holding nothing in ROOT across frames: the
+  chase rig (directions and angles), the cockpit rig, the map rig (its focus is an id), the map scene (built
+  from the snapshot and the camera of one frame), the effects (the effect domain is body-relative), the
+  shadows (anchor coordinates of a body or a vessel), terrain, ocean, atmosphere, sky.
+- **D10. Pads.** One runtime per pad in the site feature (its frame at the pad's resolved coordinates, its
+  arm state from the vessel on THAT pad). `SiteFeature.state(siteId, padId?)`: absent = the first pad;
+  `override(siteId, patch, padId?)`: absent = every pad of the site. A ground survey per pad: the first pad's
+  is `survey` of the section `visuals/sites/<siteId>` (as today), another pad's is `pads[<pad id>].survey` of
+  the same section; a pad with structures and no survey throws, as a site did. KNOWN LIMIT: the terrain's
+  material uniform holds `MAX_SITES = 4` ground plans per body; the fifth pad of a body onwards gets no
+  hardstand plan (a site of 9 or 16 pads needs the uniform's layout changed: not done, it moves no pixel
+  today). No file under `data/defs/sites` changed.
+- **D11. No active vessel.** The audio model is silent but for the UI bus (the listener is "the camera, in no
+  air": every source is placed about the active vessel); the effects ride with the vessel the camera
+  follows, else the nearest; labs take the fake's one vessel. A spectator's mix is a later package's.
+- **D12. Keys of per-part state in effects and audio**: `<vessel id>|<part key>|...` (RCS jet clusters,
+  canopies, engine histories of the audio model). The vessel id stays in the key, so nothing carries over a
+  separation that did not before; two craft of one vehicle in a vessel no longer share a key. Engine plume
+  clusters are keyed by vessel, plume look and part DEFINITION by design (a cluster is the drawn group of
+  like engines of a vessel), which is not per-part state.
+- **D13. `findEventPart(snapshot, id)`**: an event names a part by instance id or by part key; a part that
+  left with a piece in the same tick answers to the key of every craft up its line of descent
+  (`CraftSnapshot.parent`): keys are composed and compared, never taken apart.
+- **D14. The audio data names `readouts.targetBodyId` as a click watch** (`data/defs/audio/ui.json`, not
+  this package's): `readSnapshotPath` answers that path through `targetBodyOf` and the new path
+  `readouts.target` with a comparable string, so the data can switch at the tighten without code.
+- **A finding while the gate ran** (first context): the gate's page server serves the WORKING TREE. Do not
+  edit `src` or `labs` while a gate or a lab spec runs.
 
-## 3. The image gate on the committed state (311feed)
+## 3. The gates, as run
 
-`node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional`,
-2026-11-17, 12.4 minutes, on commit 311feed with nothing else changed in `src` or `labs`: **PASSED, 33 of 33.**
+**Reference images** (`node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional`),
+the full set each time:
 
-- The 30 exact checkpoints: "0 pixels differ" each, every one on its FIRST load. No OTHER STATE line in this run.
-- `lunar-touchdown`: mean 0.0011 (tolerance 0.02), 99.9th percentile 1 (3), max 11, 0.178 % of the pixels.
-- `shoreline`: mean 0.0010 (0.02), 99.9th percentile 1 (3), max 3, 0.183 % of the pixels.
-- `sweep-lunar-orbit`: mean 0.0000 (0.02), 99.9th percentile 0 (1), max 1.
+| On commit | Result |
+|---|---|
+| 3b80cfc (pads) | PASSED 33 of 33; the 30 exact at 0 pixels on the first load; no OTHER STATE line; `lunar-touchdown` mean 0.0000 max 1; `shoreline` mean 0.0010 max 3; `sweep-lunar-orbit` mean 0.0000 max 1 |
+| 22622c4 (keys; snapshot words) | PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line; `lunar-touchdown` mean 0.0007, p99.9 1, max 6; `shoreline` mean 0.0010 max 3; `sweep-lunar-orbit` mean 0.0000 max 1 |
+| 94a3e01 (rebase; createSession) | PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line; `lunar-touchdown` mean 0.0009, p99.9 1, max 6; `shoreline` mean 0.0010, p99.9 1, max 3; `sweep-lunar-orbit` (now drawn about the Moon by the real session) mean 0.0000, p99.9 0, max 4, 0.001 % of the pixels (tolerance 0.02 / 1) |
 
-**OTHER STATE lines of the earlier, narrowed runs, for the lead (request lead-9):** one, in the run after
-commit adbddff: `pad-noon`, load 1 of 3: 1440 pixels differ, by up to 3 levels (mean 0.0007, 99.9th
-percentile 1); load 2 was the reference to the bit. It is the far sea's known second state (the same 1,440
-pixels as in the lead's hand-off section 24). The lines of that run for `lunar-orbit-low-sun`,
-`lunar-surface-cockpit` and `lunar-touchdown` were NOT a second state: they were the Moon-centred fake (D7),
-the same on every load, and are gone since 311feed.
+No OTHER STATE line occurred in any of the three runs of this context. (The one of the first context:
+`pad-noon`, load 1 of 3, 1440 pixels by up to 3 levels, the far sea's known second state, request lead-9.)
 
-The budget gate (`BUDGET_COMPARE=1`) has NOT been run in this context.
+**The origin test** (`tests/browser/integration/origin.spec.ts`, on b46bf4d; 7 tests, all pass):
 
-## 4. Public API added or changed so far (exact signatures)
+| Frame | Translated exactly to the Moon | Computed about the Moon | Camera relative to the vessel |
+|---|---|---|---|
+| `lunar-terminator-5000km` | 0 pixels | 0 pixels | 1.09e-8 m |
+| `lunar-orbit-low-sun` | 0 pixels | 0 pixels | 2.73e-8 m |
+| `lunar-surface-cockpit` | 0 pixels | 12,279 pixels, up to 17 levels, mean 0.0074, p99.9 1 | 1.60e-8 m |
+| `lunar-touchdown` (not exact: its loads differ) | 0 pixels (1,706 pixels up to 5 levels in another run) | 8,379 pixels, up to 10 levels, mean 0.0070, p99.9 2 | 2.88e-8 m |
+
+A replacement of the origin between two frames (`__integration.setRenderRoot`, the frame that carries the new
+epoch against the same frame of a run without it; frames stepped by hand from a frame index that is a
+multiple of 64, exposure fixed):
+
+| Scene | Two control runs | Replaced against control | Velocity target, max (control) | The eye over the frame (control) |
+|---|---|---|---|---|
+| `sea` (2 m above the water, origin to the Moon) | 28,127 px, up to 4, mean 0.0123 | 28,133 px, up to 4, mean 0.0123 | 4.609e-3 (4.609e-3) | 15.79 m (7.67 m) |
+| `leo` (origin to the Moon) | 99,823 px, up to 12, mean 0.0582 | 107,646 px, up to 13, mean 0.0626 | 4.008e-4 (4.008e-4) | 142.30 m (129.81 m) |
+| `lunar-orbit` (root body to the Moon) | 29 px, up to 2 | 34 px, up to 2 (0 pixels in an earlier run) | 1.146e-4 (1.146e-4) | 27.23 m (20.02 m) |
+
+No step: the replaced frame differs from the control as two controls differ from each other. No
+motion-vector spike: the velocity target is the control's. The eye's and the vessel's displacement over the
+frame differ from the control's by what the two origins move against each other in 1/60 s, as they must.
+SENSITIVITY: with the core's rebase switched off for one run, the same test failed with "the eye moved
+384,399,018.52 m (control 20.02 m)"; pictures and velocity did not change, because nothing drawn today
+reads `prevEyeOffset` without a better source (the ocean has its own previous reference).
+
+**Budget gate** (`BUDGET_COMPARE=1`): NOT RUN at this writing.
+
+**Lab specs** (`npx playwright test tests/browser/<dir> --project=functional`, one directory at a time):
+NOT RUN at this writing.
+
+## 4. Public API added or changed (exact signatures)
 
 ```ts
-// src/core/fakes/snapshotAccess.ts
+// src/core/access/snapshotAccess.ts (was src/core/fakes/snapshotAccess.ts)
 revisionOf(snapshot: SimSnapshot): number
 interface TargetView { ref: TargetRef; relativeInclination: number | null; closestApproaches: readonly { ut: number; distance: number; relSpeed?: number }[] }
 targetOf(readouts: Readouts): TargetView | null
@@ -209,77 +222,116 @@ parentOf(craft: CraftSnapshot): string | null
 partKeyOf(vessel: VesselSnapshot, part: PartSnapshot): string          // `craftId/instanceId`
 partKey(craftId: string, instanceId: string): string
 eventPartOf(vessel: VesselSnapshot, eventPartId: string): PartSnapshot | null
-labelVehicleOf(defs: DefLibrary, vessel: VesselSnapshot, craft?: CraftSnapshot | null): VehicleDef | null   // labels only
+findEventPart(snapshot: SimSnapshot, eventPartId: string): { vessel: VesselSnapshot; part: PartSnapshot } | null   // NEW
 interface CabinRef { craft: CraftSnapshot; part: PartSnapshot; cockpitId: string; cameraSeat: string | null }
 cabinOf(vessel: VesselSnapshot): CabinRef | null
 class CraftLineage { rootOf(snapshot, craftId): string; knownRootOf(craftId): string; keyOf(snapshot, vessel, part): string; knownKeyOf(craftId, instanceId): string; clear(): void }
+// labelVehicleOf is GONE.
 
-// src/core/fakes/fakeSession.ts
-type FakeScene = 'pad' | 'ascent' | 'lowOrbit' | 'translunar' | 'lunarOrbit' | 'lunarSurface' | 'reentry' | 'chutes'
-type FakeV2Scene = 'rendezvous' | 'dockingApproach' | 'assembly' | 'echoes' | 'timeLive' | 'timeAhead' | 'timeBehind' | 'launchQueue'
-type FakeSessionScene = FakeScene | FakeV2Scene
-interface FakeSessionOptions { scene; ut?; parts?; vehicleId?; siteId?; location?; altitude?; ground?; stageLabels?; legsDeployed?; vesselName?; renderRoot?: 'focusBody' | 'rootBody' }
-class FakeSession implements LocalSession { readonly scene; readonly stores: ClientStores; readonly universe: UniverseCommands; setRenderRoot(bodyId: string): void; portStates(): { partKey: string; state: DockingPortState }[] }
-createFakeSession(defs: DefLibrary, opts: FakeSessionOptions): FakeSession          // render root: the focus body
-FAKE_SCENES, FAKE_V2_SCENES, FAKE_VESSEL_ID, FAKE_TARGET_ID, FAKE_STATION_ID, FAKE_ASSEMBLY_ID, FAKE_ECHO_RECORDED_ID, FAKE_ECHO_PROJECTED_ID, FAKE_PORT_INSTANCE, FAKE_SESSION_DEFAULT_UT
-// src/core/fakes/fakeSim.ts (the v1 names)
-createFakeSim(defs: DefLibrary, opts: FakeSimOptions): LocalSession                  // render root: the library's root body unless opts says otherwise
+// src/core/access/frameAccess.ts (NEW)
+type FrameChange = { kind: 'same' } | { kind: 'rebase'; rebase: FrameRebase } | { kind: 'drop' }
+observeFrame(tracker: FrameEpochTracker, frame: FrameEpoch | undefined): FrameChange   // never throws
+rebaseHeldAt(rebase: FrameRebase, age: number): FrameRebase                             // offset - velocity * age
+rebaseSnapshot(snapshot: SimSnapshot, rebase: FrameRebase): SimSnapshot                 // bodies, vessels, explosion events
+
+// src/core/fakes
+createFakeSession(defs, opts: FakeSessionOptions): FakeSession   // render root: the focus body; states StageInfo words, cockpit.crew, panel: null
+createFakeSim(defs, opts: FakeSimOptions): LocalSession           // render root: the library's root body unless opts.renderRoot says otherwise (request 5)
+
+// src/render/core
+CoreRenderer.readVelocity(): Promise<{ width: number; height: number; data: Float32Array }>   // RT3, two floats per pixel
+// render(): prevSnapshot / prevCamera are rebased at a new frame epoch (see D9); frame.prevEyeOffset follows.
+// src/render/core/lab
+translateFrame(snapshot: SimSnapshot, camera: CameraState, bodyId: string): { snapshot: SimSnapshot; camera: CameraState }
+// createLabApp: ?frameorigin=<body id> hands the renderer the translated frame.
 
 // src/render/vehicle
-engineMounts(defs: DefLibrary, parts: readonly PartSnapshot[], craftOf: (part: PartSnapshot) => string): Map<number, number[]>   // mounts.ts
-fairingPanelOf(part: PartSnapshot): number | null                                    // vesselFeature.ts
-VesselVisualFeature.anim(craftId: string, instanceId: string): PartAnim              // was (vesselId, instanceId)
+interface SiteFeature { siteIds(): string[]; padIds(siteId: string): string[]; state(siteId: string, padId?: string): SiteState | undefined; override(siteId: string, patch: Partial<SiteState> | null, padId?: string): void }
+interface SiteStats { sites: number; pads: number; ... }
+SiteFeatureOptions.padElevation?: (site: LaunchSiteDef, pad: PadDef) => number
+SiteFeatureOptions.groundHeight?: (site: LaunchSiteDef, east: number, north: number, pad: PadDef) => number
+generateStructure(defs, site, model, params, placement?, ground?: GroundField, pad?: PadDef): SiteVisual   // pad absent = the first
+interface SiteGenContext { params; site; pad: PadDef; defs; ground }
+siteSurvey(defs: DefLibrary, site: LaunchSiteDef, pad?: PadDef): SiteSurveyDef | null
+siteGround(defs: DefLibrary, site: LaunchSiteDef, pad?: PadDef): GroundField
+fairingPanelOf(part: PartSnapshot): number | null            // part.panel?.index
+VesselVisualFeature.anim(craftId: string, instanceId: string): PartAnim
+engineMounts(defs, parts, craftOf): Map<number, number[]>
 
+// src/render/terrain
+buildSitePlan(pad: Pick<PadDef, 'structures' | 'flatRadius'>, t: SitePlanTunables): SitePlan   // was (site)
+// src/render/vfx
+canopyKey(vesselId: string, ownerPartKey: string, module: number, canopy: number): string
+// src/render/cockpit/displays.ts: painted[i] = { page, revision, at }   (was { page, tick, at })
+
+// src/ui/model.ts
+stageBurnLabel(s: SimSnapshot, index: number): string | null        // was (s, defs, index)
+stageActionWords(s: SimSnapshot, index: number): string             // was (s, defs, index)
+stageAcceleration(s: SimSnapshot, index: number): number | null     // was (s, defs, index)
+describeChuteEnvelope(s: SimSnapshot, defs: DefLibrary): ChuteEnvelopeView | null   // reads StageInfo
+// src/app/seat.ts
+seatName(defs: DefLibrary, vessel: VesselSnapshot, seatId: string): string          // reads CraftCockpit.crew
+// src/audio/config.ts
+readSnapshotPath(snapshot, path): unknown   // 'readouts.targetBodyId' and 'readouts.target' through the access module
 // src/camera
-chaseDistanceLimits(defs: DefLibrary, v: VesselSnapshot): { def: number; min: number; max: number }   // from CraftSnapshot.chase and boundingRadius
-cockpitHost(defs: DefLibrary, vessel: VesselSnapshot): CockpitHost | null            // through cabinOf; no vehicle definition
-fallbackBodyId(defs: DefLibrary, s: SimSnapshot): string                              // cameraMath.ts
+chaseDistanceLimits(defs, v): { def; min; max }; cockpitHost(defs, vessel): CockpitHost | null; fallbackBodyId(defs, s): string
 
-// src/ui
-targetName(s: SimSnapshot, defs: DefLibrary): string | null                           // model.ts
-MFD_TARGET_PAGES: readonly MfdPage[]                                                  // mfd/mfdPainter.ts; MFD_PAGES stays the six
-PORT_ALIGN_ICON: IconDef                                                              // icons.ts
-// src/input/bindings.ts: ALL_BUTTON_ACTIONS lists the v2 actions and not 'pause'; DEFAULT_BINDINGS as D3.
+// labs
+// labs/integration: &origin=root|focus (the fake's render root); window.__integration.setRenderRoot(bodyId): boolean;
+//   features.ts: importRealSession(), realSessionAvailable(), type CreateSession   (were importRealSim, realSimAvailable, CreateSim)
+// labs/flight-ui/labVehicle.ts: vehicleStaging(vehicle: VehicleDef, words: readonly StageWords[], stated: SimSnapshot['staging']): SimSnapshot['staging']
+// labs/audio/scenes.ts: labVesselId(base: SimSnapshot): string; compose(base, s, t, revision)
 ```
 
-FakeSession for the next packages: the menu (`shell-menu`) has `stores.launchQueue` non-null in the scene
-`launchQueue` (position 3, then one place nearer every simulated minute; `universe.cancelSpawn()` leaves the
-queue) and every other store filled for the scene; the HUD of wave 5 has `Readouts.target` and
-`Readouts.docking`, the port states (`portStates()`, because `DockingPortState` is not yet a member of
-`ModuleState`), `dockCapture` / `docked` events, echoes with offers and the three time strips. A scene's
-other vessels are drawn with the part list the fake was given.
+FakeSession for the next packages is as the first context left it: `stores.launchQueue` in the scene
+`launchQueue`, `Readouts.target` and `.docking`, `portStates()`, `dockCapture` / `docked` events, echoes with
+offers and the three time strips.
 
 ## 5. Acceptance lines of the brief, as they stand
 
 | Line | State |
 |---|---|
-| typecheck clean; grep test | typecheck clean for the presentation at 311feed; the grep test is NOT WRITTEN; deprecated reads remain (items 2, 3, 8 of 1.2); one `defs.vehicles[<runtime id>]` stays by design (D6) |
-| every wave-2 unit and lab spec; every reference image; budget within 3 % | unit: 950 of 950 in the presentation suites; LAB SPECS NOT RUN in this context; reference images: section 3; BUDGET GATE NOT RUN |
-| the same frame at two origins; a rebase without a step | NOT DONE (item 5); measured today: D7 |
-| two craft of one vehicle never mix; an assembly framed from its radius | keys: resource bars (`displays.test.ts`), wear and mounts (`mounts.test.ts`) DONE; plume and staging keys NOT DONE (item 4); the chase rig on a three-craft assembly DONE (`camera.test.ts`: 1.15 / 2.4 / 60 bounding radii, the camera outside the assembly) |
-| the terrain lab through `fetch` and `pack` | NOT DONE (item 6) |
-| scrim step; the mission's first minutes on createSession | NOT DONE (items 7, 8) |
+| typecheck clean; the grep test | MET. `npm run typecheck` exit 0 at 94a3e01. `tests/unit/fakes/deprecated.test.ts` (9 tests): eight rules over 500+ files of the presentation, the labs, the browser tests and the presentation's unit tests; every exception listed with its reason (the access module, the fake as a producer, the retired member's type, the audio data's path, `scenario.vehicle` in `src/app/main.ts`, the lab vehicle sim, four tests of producers and of the origin); a stale exception fails. Outside its scan: section 6 |
+| every wave-2 unit and lab spec; every reference image; budget within 3 % | unit: 971 of 971 in the presentation suites; reference images: 33 of 33 on 94a3e01 (section 3); lab specs and budget: section 3 |
+| the same frame at two origins under 1/255 per channel; a rebase without a step or a motion-vector spike | MET for the renderer: 0 pixels in four lunar frames under an exact translation of the origin. A frame COMPUTED about the other origin has a mean difference of 0.007 level and a 99.9th percentile of 1 (2 in `lunar-touchdown`); single pixels differ by up to 17 levels: the last bits of float64 at 384,000 km, not the renderer (D7 / D8, request 5). Rebase: three scenes, no step, velocity target equal to the control's, and the test fails without the core's rebase (section 3) |
+| two craft of one vehicle never mix; an assembly framed from its radius | MET: resource bars (`displays.test.ts`), wear and mounts (`mounts.test.ts`), RCS jets, canopies and event parts (`tests/unit/vfx/model.test.ts`), engine histories of the audio model (`tests/unit/audio/model.test.ts`); the chase rig on a three-craft assembly (`camera.test.ts`). Staging: the stage stack is per craft in the snapshot (`CraftSnapshot.staging`), the HUD reads the helm craft's |
+| the terrain lab through `fetch` and `pack` | NOT DONE (1.2 A) |
+| scrim step; the mission's first minutes on createSession | scrim, exposureHint, lensShift: NOT DONE (1.2 B). The app runs on `createSession` (both app checkpoints exact); the mission spec was not flown (1.2 C) |
 
-## 6. Requests filed
+## 6. For the lead and the tighten step
 
-- `docs/requests/presentation-sweep-1.md` (lead, not blocking): a home in `src/core` for the access module.
-- `docs/requests/presentation-sweep-2.md` (lead and the simulation, not blocking): the fairing petal as a field.
-- `docs/requests/presentation-sweep-3.md` (lead and the simulation, blocking for the grep line): stage words
-  and crew names in the snapshot.
-- `docs/requests/presentation-sweep-4.md` (lead, not blocking): the render root of the fake's lunar scenes
-  against three recorded pictures.
-- For the lead, no file: `tests/unit/camera` has no owner in `WORK_PACKAGES_V2.json`; ARCHITECTURE 19 names
-  V for `dockingView` (D3).
+- `createFakeSim`'s origin: request `presentation-sweep-5`.
+- `data/defs/audio/ui.json` names the click watch `readouts.targetBodyId`: when the field goes, the line
+  becomes `readouts.target` (D14); `READOUT_FIELDS` in `src/audio/config.ts` loses the two keys by the compiler.
+- `src/pilot/missionPilot.ts:212` reads `readouts.targetBodyId` (not presentation; outside the grep test).
+- `tests/unit/camera/chase.test.ts:278` reads `site.structures` in a fallback; `tests/unit/camera` has no
+  owner in `WORK_PACKAGES_V2.json`.
+- At the tighten: `revisionOf` -> `snapshot.revision`; `targetOf(r)` -> `r.target`; `craftsOf`, `craftIdOf`,
+  `parentOf` lose their fallbacks; `activeVesselId: string | null` compiles in `src` as far as this sweep
+  could see without the type (every use was read; the labs' and specs' `find(...)!` state that their scene
+  has a vessel); `RetiredButtonAction` goes with the member.
+- The petal's instance id is no longer read anywhere in the presentation (`grep -rn "#panel" src/render src/ui labs` is empty of code).
+- `MAX_SITES = 4` ground plans in the terrain's material uniform (D10).
 
-## 7. How to run
+## 7. Requests filed
+
+- `presentation-sweep-1` (a home for the access module): answered, done (row 6).
+- `presentation-sweep-2` (the fairing petal as a field): answered by the lead (7df28d3), read sites switched (row 9).
+- `presentation-sweep-3` (stage words, crew): answered by the lead (7df28d3), read sites switched (row 9).
+- `presentation-sweep-4` (the fake's render root): superseded by `presentation-sweep-5`, which has the cause.
+- `presentation-sweep-5` (lead, not blocking): the origin of the labs' fake against one exact lunar picture.
+
+## 8. How to run
 
 ```
-npx tsc --noEmit -p tsconfig.json | grep -v "src/net\|tests/unit/net"          (through heavy.mjs --class=cpu)
-node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/render src/ui src/input src/camera src/map src/audio src/core/fakes src/app tests/unit/atmosphere tests/unit/audio tests/unit/cockpit tests/unit/flight-ui tests/unit/map-view tests/unit/ocean tests/unit/render-core tests/unit/sky tests/unit/terrain-render tests/unit/vehicle tests/unit/vfx tests/unit/camera tests/unit/fakes tools/dev/boundaries.test.ts
-BASELINE_ONLY=a,b node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional
+node tools/dev/heavy.mjs --class=cpu -- npm run typecheck
+node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/render src/ui src/input src/camera src/map src/audio src/core/fakes src/core/access src/app tests/unit/atmosphere tests/unit/audio tests/unit/cockpit tests/unit/flight-ui tests/unit/map-view tests/unit/ocean tests/unit/render-core tests/unit/sky tests/unit/terrain-render tests/unit/vehicle tests/unit/vfx tests/unit/camera tests/unit/fakes tools/dev/boundaries.test.ts
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional       (BASELINE_ONLY=a,b narrows it)
+node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/integration/origin.spec.ts --project=functional           (ORIGIN_ONLY=a,b; ORIGIN_EXTRA=<query>)
 BUDGET_COMPARE=1 node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/integration/budget.perf.spec.ts --project=perf
 ```
 
-Scratch of this context (edit lists, gate logs): `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\presentation-sweep\`
-(`rep.mjs <file> <edits.json>` applies exact replacements; write the JSON with the Write tool: a shell
-heredoc corrupts backslashes on this machine).
+Scratch of the two contexts (edit lists, gate logs, the lab-spec logs): `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\presentation-sweep\`
+and `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\presentation-sweep-2\`
+(`repm.mjs <edits.json>` applies exact replacements to several files, all or none; write the JSON with the
+Write tool: a shell heredoc corrupts backslashes on this machine).

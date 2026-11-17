@@ -1,4 +1,4 @@
-Status: open
+Status: superseded by presentation-sweep-5 (2026-11-17: the cause is found and it is not in the renderer; that request has the measurement and the decision that is left)
 From: presentation-sweep
 Owner path: tests/browser/baselines.manifest.json, data/baselines (the lead); src/render/** for the cause
 Blocking: no (a decision for the lead; the sweep keeps the recorded pictures as they are)
