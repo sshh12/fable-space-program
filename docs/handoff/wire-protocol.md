@@ -28,7 +28,7 @@ the boundary test); the whole-tree typecheck was not used.
 | Encode at most 5 us and decode at most 5 us per vessel for a delta (benchmark through the gate) | MET | `node tools/dev/heavy.mjs --class=cpu -- npx tsx src/net/bench.ts`: encode (quantise + write) 0.127 us per vessel (2 vessels), 0.110 (10); decode (read + rebuild poses) 0.199 / 0.151 us; key 0.04-0.08 us; input 0.14 / 0.13 us per message. Taken while other agents ran GPU jobs (PACKAGE_RULES 16: provisional) |
 | Zero allocations per message in steady state for the high-rate types | MET | heap + array-buffer growth over 100,000 messages after warm-up (`tests/unit/net/alloc.test.ts`): encode at most 0.21 B and decode at most 0.33 B per message for `islandDelta` (10 vessels; and a contact pair with part-fast), `islandKey`, `inputAck`, `input`, `near`: noise, below one object. No collection during the benchmark's timed runs. (One `Uint8Array` view per FRAME is handed to the transport; not per message) |
 | Fuzz: 1,000,000 random and mutated byte strings never throw, never read out of bounds, never allocate above 1 MB | MET | 1,000,000 inputs (40 % random, 60 % mutated valid frames of every type), through `decodeFrame` and `FrameReader`, from every side: 0 throws, 38,980 decoded, every other refused with a typed reason; largest sampled allocation 7.1 kB; the worst inputs a client can send: 256 pings 38 kB, a 60 kB plan 64 kB, a 64-sample input 31 kB |
-| The same test file passes in Node (vitest) and in Chrome (Playwright spec loading the bundle) | see section 7 | one case module (`tests/unit/net/cases`), two runners: `tests/unit/net/shared.test.ts` (Node: 26 cases pass) and `tests/browser/net/net.spec.ts` (Chrome loads `runner.html`, which imports the same modules through Vite, plus the fixtures and the WebSocket transport) |
+| The same test file passes in Node (vitest) and in Chrome (Playwright spec loading the bundle) | MET | one case module (`tests/unit/net/cases`), two runners: `tests/unit/net/shared.test.ts` (Node: 26 cases pass) and `tests/browser/net/net.spec.ts` (Chrome 157 loads `runner.html`, which imports the same modules through Vite: the 26 cases, the 3 fixtures and the WebSocket transport, 30 of 30 pass in 0.8 s; the spec checks the list equals Node's). Section 7 |
 | Session layer: every transcript drives the client half against the server half over the loopback and over the injector at 300 ms with stalls to the same final states | MET | 9 transcripts (`tests/unit/net/transcripts/*.json`), each over the loopback and over the injector at a 300 ms round trip, 20 ms jitter, 5 % stalls of 200 ms, 3 seeds: the stated outcome every time; the loopback run reproduces the recorded frames byte for byte |
 | Resume after a drop mid-handshake, mid-subscription and with inputs in flight | MET | transcripts `resume-mid-handshake`, `resume-mid-subscription`, `resume-inputs-in-flight` (every input applied once, every request answered once), plus `stall-and-declared-loss` and `outage-beyond-grace` (resume refused after the 120 s grace, a new session) |
 | A takenOver session stops sending | MET | transcript `taken-over`: 0 frames sent after `takenOver`; its later command is answered as refused locally |
@@ -167,7 +167,13 @@ file in `FIXTURE_FILES` (`tests/unit/net/cases/fixtureCases.ts`).
 
 ## 7. Chrome run
 
-See the last lines of this section (filled in after the gated run).
+`node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/net --project=functional`, 2026-11-16,
+after the GPU slot was released by another agent's reference-image self-check: HeadlessChrome 157, 30 cases,
+0 failed, 803 ms (1 Playwright test passed in 1.9 s). Every Node case (26), the three fixtures fetched from the
+dev server, and the WHATWG WebSocket transport against the RFC 6455 test server the spec starts. The page uses no
+WebGPU, so no adapter is asserted. No resource failed to load, no console error or warning. Two earlier runs
+failed for reasons now fixed: Node's loader in the spec needs the JSON import attribute (`with { type: 'json' }`),
+and the page's favicon request returned 404 (the page now has an icon of its own).
 
 ## 8. Requests
 
