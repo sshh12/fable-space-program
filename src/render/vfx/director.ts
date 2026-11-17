@@ -343,8 +343,9 @@ export class EffectDirector {
   ): void {
     const P = this.data.particles;
     const S = this.data.staging;
-    // (The part an event names may by now be in another vessel: a decoupler leaves with the stage it dropped.)
-    const findPart = (eventPartId: string): { vessel: VesselSnapshot; part: PartSnapshot } | null => findEventPart(snap, eventPartId);
+    // (The part an event names may by now be in another vessel: a decoupler leaves with the stage it dropped.
+    // It is looked for in the vessels the event names: another vessel of the same vehicle carries the same ids.)
+    const findPart = (eventPartId: string): { vessel: VesselSnapshot; part: PartSnapshot } | null => findEventPart(snap, eventPartId, ev);
     const vessel = snap.vessels.find((v) => v.id === ev.vesselId);
     const seed = hashSeed(ev.type, ev.vesselId, ev.ut);
 

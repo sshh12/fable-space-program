@@ -150,31 +150,70 @@ export function eventPartOf(vessel: VesselSnapshot, eventPartId: string): PartSn
 }
 
 /**
- * The part an EVENT names, looked for in every vessel of the snapshot, with the vessel that holds it now. A
- * separation in the tick of the event may already have moved the part into a piece, which is a craft of its
- * own (`CraftSnapshot.parent` names the craft it left), while the event still names the part by the craft it
- * was a part of: so in the part-key form a part answers to the key of its own craft and of every craft up
- * its line of descent that the snapshot describes. Keys are composed and compared; no id is taken apart.
+ * The vessels an EVENT names: the one it happened to (`vesselId`, which every event states) and the ones it
+ * made (`newVesselIds` of a separation). Every `SimEvent` is one.
  */
-export function findEventPart(snapshot: SimSnapshot, eventPartId: string): { vessel: VesselSnapshot; part: PartSnapshot } | null {
+export interface EventVessels {
+  vesselId: string;
+  newVesselIds?: readonly string[];
+}
+
+/** The part of `vessel` that an event part id names (the two forms as in `findEventPart`), or null. */
+function eventPartIn(snapshot: SimSnapshot, vessel: VesselSnapshot, eventPartId: string, keyed: boolean): PartSnapshot | null {
+  const parts = vessel.parts;
+  for (let j = 0; j < parts.length; j++) {
+    const part = parts[j]!;
+    if (!keyed) {
+      if (part.instanceId === eventPartId) return part;
+      continue;
+    }
+    let craftId: string | null = craftIdOf(vessel, part);
+    // (The bound only ends a malformed cycle of parents.)
+    for (let hops = 0; craftId !== null && hops < 256; hops++) {
+      if (partKey(craftId, part.instanceId) === eventPartId) return part;
+      craftId = parentInSnapshot(snapshot, craftId);
+    }
+  }
+  return null;
+}
+
+/**
+ * The part an EVENT names, with the vessel that holds it now. A separation in the tick of the event may
+ * already have moved the part into a piece, which is a craft of its own (`CraftSnapshot.parent` names the
+ * craft it left), while the event still names the part by the craft it was a part of: so in the part-key form
+ * a part answers to the key of its own craft and of every craft up its line of descent that the snapshot
+ * describes. Keys are composed and compared; no id is taken apart.
+ *
+ * `event` is the event the id comes from (any `SimEvent`). Its own vessel is searched first, then the vessels
+ * it made, in its order: the part is in one of them unless a later separation took it further. That order
+ * decides the instance-id form, because an instance id is unique within a craft only: another vessel of the
+ * same vehicle carries the same ids, so in a vessel the event does not name an instance id is evidence of
+ * nothing and is not looked for there (the part a jettisoned fairing was is in no vessel any more; the
+ * fairing of the vehicle beside it is not it). A part key is unique in the snapshot and is looked for in
+ * every vessel. Without `event` every vessel is searched in the snapshot's order, in both forms: that is for
+ * a caller that has the id and nothing else.
+ */
+export function findEventPart(snapshot: SimSnapshot, eventPartId: string, event?: EventVessels): { vessel: VesselSnapshot; part: PartSnapshot } | null {
   const keyed = eventPartId.includes('/');
   const vessels = snapshot.vessels;
-  for (let i = 0; i < vessels.length; i++) {
-    const vessel = vessels[i]!;
-    const parts = vessel.parts;
-    for (let j = 0; j < parts.length; j++) {
-      const part = parts[j]!;
-      if (!keyed) {
-        if (part.instanceId === eventPartId) return { vessel, part };
-        continue;
-      }
-      let craftId: string | null = craftIdOf(vessel, part);
-      // (The bound only ends a malformed cycle of parents.)
-      for (let hops = 0; craftId !== null && hops < 256; hops++) {
-        if (partKey(craftId, part.instanceId) === eventPartId) return { vessel, part };
-        craftId = parentInSnapshot(snapshot, craftId);
+  if (event !== undefined) {
+    const made = event.newVesselIds;
+    const count = made === undefined ? 0 : made.length;
+    for (let n = -1; n < count; n++) {
+      const id = n < 0 ? event.vesselId : made![n]!;
+      for (let i = 0; i < vessels.length; i++) {
+        const vessel = vessels[i]!;
+        if (vessel.id !== id) continue;
+        const part = eventPartIn(snapshot, vessel, eventPartId, keyed);
+        if (part !== null) return { vessel, part };
       }
     }
+    if (!keyed) return null;
+  }
+  for (let i = 0; i < vessels.length; i++) {
+    const vessel = vessels[i]!;
+    const part = eventPartIn(snapshot, vessel, eventPartId, keyed);
+    if (part !== null) return { vessel, part };
   }
   return null;
 }
