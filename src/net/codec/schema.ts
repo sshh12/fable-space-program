@@ -540,13 +540,3 @@ export function union<T extends { [P in K]: string }, K extends keyof T & string
     },
   };
 }
-
-/** Map a codec of A onto B (B is a re-shaped A, for example a tuple of an object). */
-export function mapped<A, B>(c: Codec<A>, to: (a: A) => B, from: (b: B) => A): Codec<B> {
-  return {
-    min: c.min,
-    write: (w, v) => c.write(w, from(v)),
-    read: (r) => to(c.read(r)),
-    random: (g) => to(c.random(g)),
-  };
-}
