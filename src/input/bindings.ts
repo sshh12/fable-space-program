@@ -10,11 +10,18 @@
  * `requiresKeyboardLock`; it is active only while `InputFrame.keyboardLocked` is true. The only such default
  * is ControlLeft as an alternate throttle-down (a lunar landing holds throttle-down and pitch together).
  *
- * Matching rule: a binding without modifiers matches its code whatever modifiers are held (Shift is itself
+ * Matching rule: a binding without modifiers matches its code with Shift or Alt held or not (Shift is itself
  * the throttle-up key, so Shift+W must still pitch). A binding with modifiers matches only while all of them
- * are held, and the most specific matching binding of a code wins.
+ * are held, and the most specific matching binding of a code wins. A key pressed with Control or Meta is a
+ * chord of the browser (reload, find, zoom, a new tab) unless a binding of its code names that modifier: the
+ * input core then leaves it alone, no action and no preventDefault (inputCore.ts; Control held as the game's
+ * own key under keyboard lock is not such a chord).
+ *
+ * Served actions: the v2 actions are bound here from the first day, so that no key moves when their
+ * consumers arrive, but a key that nothing answers is not on the reference card (`ServedActions`,
+ * `keyHelpEntries`), and Esc is the game's key only on a page that has a flight menu to open with it.
  */
-import { SAS_MODES, SAS_TARGET_MODES, type AxisAction, type ButtonAction, type SasMode, type SasTargetMode } from '@/core/contracts/controls';
+import { SAS_MODES, SAS_TARGET_MODES, type AxisAction, type ButtonAction, type ButtonActionV2, type SasMode, type SasTargetMode } from '@/core/contracts/controls';
 
 export type ModifierKey = 'Shift' | 'Control' | 'Alt' | 'Meta';
 
@@ -33,6 +40,12 @@ interface BindingBase {
   modifiers?: readonly ModifierKey[];
   /** Active only while fullscreen keyboard lock is held (InputFrame.keyboardLocked). */
   requiresKeyboardLock?: boolean;
+  /**
+   * In the table of an input core only when the page serves the binding's action (`isServed`); on any other
+   * page the key is not the game's (no action, no preventDefault) and is off the reference card. The one
+   * default is Esc for the flight menu.
+   */
+  requiresServed?: boolean;
 }
 
 /** Held key contributing `value` (-1..1) to a continuous axis while down. */
@@ -121,6 +134,43 @@ const buttonListIsComplete: MissingButton extends never ? true : MissingButton =
 void axisListIsComplete;
 void buttonListIsComplete;
 
+/**
+ * The v2 actions whose consumers arrive with the shared universe (ARCHITECTURE 19, additions for v2: the
+ * target set, the roster, the docking view, quick comms, the prompt cards). No session and no page answers
+ * them before wave 4. Their keys are bound all the same; their lines join the reference card when the page
+ * says that it serves them.
+ */
+export const DEFERRED_ACTIONS = ['cycleTarget', 'toggleRoster', 'dockingView', 'openQuickComms', 'acceptPrompt'] as const satisfies readonly ButtonActionV2[];
+export type DeferredAction = (typeof DEFERRED_ACTIONS)[number];
+
+/**
+ * What a page serves of the actions that not every page serves; the caller of `createInputSystem` /
+ * `createInputCore` and of `keyHelpEntries` states it, and states nothing while it serves none of them.
+ *
+ * The three SAS holds against a target are not here: whether they are served is the session's to say, in
+ * `Readouts.sasModesAvailable`, frame by frame (`KeyHelpEntry.sasMode`).
+ */
+export interface ServedActions {
+  /**
+   * The page has the shell's flight menu over the live flight, and opens it on `flightMenu`. Without it
+   * (the default) the offline game answers `flightMenu` with its local pause, as it answered the retired
+   * action before v2: P pauses and its line on the card says so, and Esc is not bound at all (it is the
+   * browser's key, which leaves fullscreen and with it the keyboard capture), as before the action existed.
+   */
+  flightMenu?: boolean;
+  /** The deferred actions the page answers (default: none). */
+  actions?: readonly DeferredAction[];
+}
+
+const isDeferred = (action: string): action is DeferredAction => (DEFERRED_ACTIONS as readonly string[]).includes(action);
+
+/** True when the page serves an action as v2 defines it; every action that is not named in `ServedActions` is served. */
+export function isServed(action: AxisAction | ButtonAction | UiAction, served: ServedActions = {}): boolean {
+  if (action === 'flightMenu') return served.flightMenu === true;
+  if (isDeferred(action)) return served.actions?.includes(action) === true;
+  return true;
+}
+
 const axis = (code: string, action: AxisAction, value: number, extra: Partial<AxisBinding> = {}): AxisBinding => ({ kind: 'axis', code, action, value, ...extra });
 const button = (code: string, action: ButtonAction | UiAction, extra: Partial<ButtonBinding> = {}): ButtonBinding => ({ kind: 'button', code, action, ...extra });
 
@@ -186,8 +236,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = Object.freeze([
   button('BracketLeft', 'prevVessel'),
   button('F2', 'toggleHud'),
   // The flight menu over the live flight (ARCHITECTURE 19: Esc and P; P stays so that an Esc the browser took
-  // to leave fullscreen can never trap the player).
-  button('Escape', 'flightMenu'),
+  // to leave fullscreen can never trap the player). Esc waits for the menu (`ServedActions.flightMenu`): until
+  // a page has one, P is the offline game's pause, as before v2, and Esc is the browser's alone.
+  button('Escape', 'flightMenu', { requiresServed: true }),
   button('KeyP', 'flightMenu'),
   // Targets, the roster, prompts and quick comms (ARCHITECTURE 19).
   button('KeyB', 'cycleTarget'),
@@ -356,8 +407,14 @@ const BUTTON_TEXT: Record<Exclude<ButtonAction, `sas:${string}` | RetiredButtonA
   'ui:nextSeat': { group: 'Views', text: 'Next couch (cockpit view)' },
 };
 
-/** Group and text of a binding for the key-help overlay. */
-export function describeBinding(b: Binding): { group: BindingGroup; text: string } {
+/** What the offline game does on `flightMenu` while no page has a flight menu (`ServedActions.flightMenu`). */
+const LOCAL_PAUSE_TEXT = 'Pause';
+
+/**
+ * Group and text of a binding for the key-help overlay, on a page that serves `served`: the line of
+ * `flightMenu` names the flight menu where there is one and the pause that answers the key where there is not.
+ */
+export function describeBinding(b: Binding, served: ServedActions = {}): { group: BindingGroup; text: string } {
   if (b.kind === 'axis') {
     const t = AXIS_TEXT[b.action];
     return { group: t.group, text: b.value >= 0 ? t.pos : t.neg };
@@ -366,6 +423,7 @@ export function describeBinding(b: Binding): { group: BindingGroup; text: string
     const mode = b.action.slice(4) as SasMode;
     return { group: 'SAS', text: `Hold ${SAS_LABEL[mode] ?? mode}` };
   }
+  if (b.action === 'flightMenu' && !isServed(b.action, served)) return { group: BUTTON_TEXT.flightMenu.group, text: LOCAL_PAUSE_TEXT };
   return BUTTON_TEXT[b.action as keyof typeof BUTTON_TEXT];
 }
 
@@ -376,19 +434,43 @@ export interface KeyHelpEntry {
   keys: string[];
   /** Keys that only work while the keyboard is captured (fullscreen keyboard lock). */
   lockedKeys: string[];
+  /**
+   * Set on the line of a SAS hold against a target: the session serves the hold only while it lists the mode
+   * in `Readouts.sasModesAvailable` (a vessel or port target is selected, and the session has such holds at
+   * all), and the card shows the line only then, as the HUD's SAS row shows the mode's button. Absent: the
+   * line is always shown.
+   */
+  sasMode?: SasTargetMode;
 }
 
 export const BINDING_GROUP_ORDER: readonly BindingGroup[] = ['Attitude', 'Throttle & staging', 'SAS', 'Translation', 'Systems', 'Time & navigation', 'Views', 'Cockpit displays'];
 
-/** Key-help content generated from a binding table, grouped and ordered for display. */
-export function keyHelpEntries(table: readonly Binding[]): KeyHelpEntry[] {
+const sasTargetModeOf = (b: Binding): SasTargetMode | null => SAS_TARGET_MODES.find((mode) => b.kind === 'button' && b.action === `sas:${mode}`) ?? null;
+
+/** A binding has a line on the reference card of a page that serves `served`: something answers its key there. */
+function onCard(b: Binding, served: ServedActions): boolean {
+  if (b.kind === 'axis') return true;
+  if (b.requiresServed && !isServed(b.action, served)) return false;
+  return !isDeferred(b.action) || isServed(b.action, served);
+}
+
+/**
+ * Key-help content generated from a binding table, grouped and ordered for display: the reference card.
+ * It lists what something serves. A deferred action (`DEFERRED_ACTIONS`) has its line only when `served`
+ * names it; a key that waits for its consumer (`requiresServed`: Esc) is on its action's line only then; and
+ * the lines of the SAS holds against a target carry `sasMode`, for the card to show them while the session
+ * lists the mode. With nothing stated the card is the one of a page without the shared universe.
+ */
+export function keyHelpEntries(table: readonly Binding[], served: ServedActions = {}): KeyHelpEntry[] {
   const byId = new Map<string, KeyHelpEntry>();
   for (const b of table) {
+    if (!onCard(b, served)) continue;
     const id = actionIdOf(b);
-    const d = describeBinding(b);
+    const d = describeBinding(b, served);
     let e = byId.get(id);
     if (!e) {
-      e = { group: d.group, text: d.text, keys: [], lockedKeys: [] };
+      const hold = sasTargetModeOf(b);
+      e = { group: d.group, text: d.text, keys: [], lockedKeys: [], ...(hold ? { sasMode: hold } : {}) };
       byId.set(id, e);
     }
     const label = [...(b.modifiers ?? []), keyLabel(b.code)].join(' + ');

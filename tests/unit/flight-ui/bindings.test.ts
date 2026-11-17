@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { SAS_MODES, type SasMode } from '@/core/contracts/controls';
 import {
   ALL_AXIS_ACTIONS,
   ALL_BUTTON_ACTIONS,
   BROWSER_RESERVED_CODES,
   BROWSER_RESERVED_MODIFIERS,
   DEFAULT_BINDINGS,
+  DEFERRED_ACTIONS,
   chordOf,
+  isServed,
   keyHelpEntries,
   validateBindings,
   type Binding,
+  type ServedActions,
 } from '@/input';
+import { keyHelpLineShown } from '@/ui/model';
+import { flatTerrain, loadLibrary, makeSim } from '../sim-world/helpers';
 
 describe('default binding table (ARCHITECTURE section 11)', () => {
   it('never uses Control, Alt or Meta as a key or modifier unless flagged requiresKeyboardLock', () => {
@@ -104,9 +110,70 @@ describe('default binding table (ARCHITECTURE section 11)', () => {
   it('lists no retired action: the pause key is the flight menu', () => {
     expect((ALL_BUTTON_ACTIONS as readonly string[]).includes('pause')).toBe(false);
     expect(DEFAULT_BINDINGS.some((b) => (b.action as string) === 'pause')).toBe(false);
-    const entries = keyHelpEntries(DEFAULT_BINDINGS);
+    // On a page with the shell's flight menu the line names it, on both of its keys.
+    const entries = keyHelpEntries(DEFAULT_BINDINGS, { flightMenu: true });
     expect(entries.find((e) => e.text === 'Flight menu')).toMatchObject({ group: 'Time & navigation', keys: ['Esc', 'P'] });
-    expect(entries.find((e) => e.text === 'Hold Port alignment')).toMatchObject({ group: 'SAS', keys: ['\\'] });
+    expect(entries.find((e) => e.text === 'Hold Port alignment')).toMatchObject({ group: 'SAS', keys: ['\\'], sasMode: 'portAlign' });
+  });
+
+  describe('the reference card lists what something serves', () => {
+    /** The keys nothing answers before the shared universe: the five deferred actions and the three holds against a target. */
+    const UNSERVED_KEYS = ['B', 'O', 'Y', 'Enter', '=', ';', "'", '\\'];
+    /** The card as the HUD shows it for a session that lists `modes`. */
+    const card = (served: ServedActions | undefined, modes: readonly SasMode[]): { text: string; keys: string[] }[] =>
+      keyHelpEntries(DEFAULT_BINDINGS, served)
+        .filter((e) => keyHelpLineShown(e, modes))
+        .map((e) => ({ text: e.text, keys: [...e.keys, ...e.lockedKeys] }));
+
+    it('a page that states nothing, on the real session: none of the eight keys nothing serves, no Esc, and P is the pause it is', async () => {
+      const defs = await loadLibrary();
+      const session = await makeSim(defs, 'lunar-direct', flatTerrain(defs, { earth: -100, moon: 0 }));
+      const modes = session.snapshot().readouts.sasModesAvailable;
+      expect(modes).toContain('stability');
+      const lines = card(undefined, modes);
+      const keys = lines.flatMap((l) => l.keys);
+      for (const key of [...UNSERVED_KEYS, 'Esc']) expect(keys, `key ${key}`).not.toContain(key);
+      expect(lines.find((l) => l.keys.includes('P'))).toEqual({ text: 'Pause', keys: ['P'] });
+      expect(lines.some((l) => l.text === 'Flight menu')).toBe(false);
+      // Every other line of the table is on the card: nothing else went with them.
+      const all = keyHelpEntries(DEFAULT_BINDINGS, { flightMenu: true, actions: DEFERRED_ACTIONS });
+      const gone = all.filter((e) => !lines.some((l) => l.text === e.text)).map((e) => e.text);
+      expect(gone.sort()).toEqual(['Accept prompt', 'Docking view', 'Flight menu', 'Hold Anti-target', 'Hold Port alignment', 'Hold Target', 'Next target', 'Quick comms', 'Roster'].sort());
+      expect(lines.length).toBe(all.length - 8);
+      // The table itself is whole: every one of those keys is still bound to its action (the test above).
+      for (const action of [...DEFERRED_ACTIONS, 'sas:target', 'sas:antiTarget', 'sas:portAlign', 'flightMenu']) {
+        expect(DEFAULT_BINDINGS.some((b) => b.action === action), action).toBe(true);
+      }
+    });
+
+    it('a deferred action joins the card when the page says that it serves it, and only that one', () => {
+      const modes = [...SAS_MODES];
+      const withRoster = card({ actions: ['toggleRoster'] }, modes);
+      expect(withRoster.find((l) => l.text === 'Roster')).toEqual({ text: 'Roster', keys: ['O'] });
+      expect(withRoster.some((l) => l.text === 'Next target' || l.text === 'Docking view' || l.text === 'Quick comms' || l.text === 'Accept prompt')).toBe(false);
+      const everything = card({ flightMenu: true, actions: DEFERRED_ACTIONS }, modes);
+      for (const [text, key] of [['Next target', 'B'], ['Roster', 'O'], ['Accept prompt', 'Y'], ['Quick comms', 'Enter'], ['Docking view', '=']] as const) {
+        expect(everything.find((l) => l.text === text), text).toEqual({ text, keys: [key] });
+      }
+      expect(everything.find((l) => l.text === 'Flight menu')).toEqual({ text: 'Flight menu', keys: ['Esc', 'P'] });
+      expect(everything.some((l) => l.text === 'Pause')).toBe(false);
+      expect(isServed('toggleRoster')).toBe(false);
+      expect(isServed('toggleRoster', { actions: ['toggleRoster'] })).toBe(true);
+      expect(isServed('flightMenu')).toBe(false);
+      expect(isServed('stage')).toBe(true);
+    });
+
+    it('a hold against a target is on the card while the session lists its mode, as its button is in the SAS row', () => {
+      const none = card(undefined, [...SAS_MODES]);
+      expect(none.some((l) => l.text.startsWith('Hold ') && [';', "'", '\\'].some((k) => l.keys.includes(k)))).toBe(false);
+      expect(none.filter((l) => l.text.startsWith('Hold ')).length).toBe(SAS_MODES.length);
+      const target = card(undefined, [...SAS_MODES, 'target', 'antiTarget']);
+      expect(target.find((l) => l.text === 'Hold Target')).toEqual({ text: 'Hold Target', keys: [';'] });
+      expect(target.find((l) => l.text === 'Hold Anti-target')).toEqual({ text: 'Hold Anti-target', keys: ["'"] });
+      expect(target.some((l) => l.text === 'Hold Port alignment')).toBe(false);
+      // Only those three lines depend on the session.
+      expect(keyHelpEntries(DEFAULT_BINDINGS).filter((e) => e.sasMode !== undefined).map((e) => e.sasMode)).toEqual(['target', 'antiTarget', 'portAlign']);
+    });
   });
 
   it('validateBindings catches unsafe or conflicting tables', () => {

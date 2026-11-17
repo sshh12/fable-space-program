@@ -2,6 +2,7 @@
  * Display models built from a SimSnapshot: the exact strings the HUD panels and the MFD pages show. Both
  * render from these functions, so a number can never read differently on the two.
  */
+import type { SasMode } from '@/core/contracts/controls';
 import type { DefLibrary, ParachuteEnvelope } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { activeVesselOf, craftIdOf, craftOf, craftsOf, targetNameOf } from '@/core/access/snapshotAccess';
@@ -962,4 +963,16 @@ export function describePad(s: SimSnapshot, defs: DefLibrary): PadView | null {
     planeCrossing: lw ? formatCountdown(lw.timeToPlaneCrossing) : null,
     launchAzimuth: lw ? formatBearing(lw.launchAzimuthDeg) : null,
   };
+}
+
+// ------------------------------------------------------------------------------------------- key card
+
+/**
+ * Whether a line of the key card is shown: a line that names a SAS mode (`sasMode`: a hold against a target)
+ * is on the card while the session lists the mode in `Readouts.sasModesAvailable`, the rule by which the
+ * SAS row shows the mode's button; every other line always is. A session without such holds never lists
+ * them, so their keys are not on its card.
+ */
+export function keyHelpLineShown(line: { readonly sasMode?: SasMode }, sasModesAvailable: readonly SasMode[]): boolean {
+  return line.sasMode === undefined || sasModesAvailable.includes(line.sasMode);
 }

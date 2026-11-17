@@ -10,11 +10,20 @@
  *  - A button action fires once per physical press: auto-repeat (`repeat`) and a second keydown without a
  *    keyup are ignored. `pressed` lists every action whose key went down since the previous sample.
  *  - `requiresKeyboardLock` bindings are inert while the keyboard is not locked.
+ *  - A binding that waits for its consumer (`requiresServed`: Esc for the flight menu) is not in the table of
+ *    a core whose page does not serve the action: its key is then an unbound key.
+ *  - A key that goes down with Control or Meta held is a chord of the browser (Ctrl+R, Ctrl+F, Ctrl+= ...)
+ *    unless a binding of its code names that modifier: `keyDown` and its `keyUp` report it as not bound, so
+ *    the DOM layer leaves the event alone, and it produces no action and no axis value. Two things are not
+ *    such a chord: a modifier key itself (ControlLeft is the alternate throttle-down under keyboard lock),
+ *    and any key while Control is held AS THAT GAME KEY (under keyboard lock, throttle-down and pitch
+ *    together: the browser gets no chord there). A key that went down as the game's stays the game's until
+ *    it is released, whatever is pressed after it.
  *  - Pointer edges (`pressed`, `released`, `doubleClick`) and deltas/wheel accumulate between samples and are
  *    reported exactly once.
  */
 import type { AxisAction, ButtonAction, InputFrame, PointerState } from '@/core/contracts/controls';
-import { ALL_AXIS_ACTIONS, type Binding, type ButtonBinding, type ModifierKey, type UiAction } from './bindings';
+import { ALL_AXIS_ACTIONS, isServed, type Binding, type ButtonBinding, type ModifierKey, type ServedActions, type UiAction } from './bindings';
 
 export interface ModifierState {
   shift: boolean;
@@ -29,11 +38,16 @@ export interface FlightInputFrame extends InputFrame {
 }
 
 export interface InputCore {
+  /** The table as given (the reference card is generated from it with the same `ServedActions`). */
   readonly bindings: readonly Binding[];
-  /** True when the code appears in the binding table (the DOM layer then calls preventDefault). */
+  /** True when a binding of the code is in this core's table (a binding that waits for an unserved action is not). */
   isBound(code: string): boolean;
-  /** Returns true when the key is bound. `repeat` = browser auto-repeat. */
+  /**
+   * Returns true when the key press is the game's (the DOM layer then calls preventDefault): the code is
+   * bound and the press is not a chord of the browser. `repeat` = browser auto-repeat.
+   */
   keyDown(code: string, repeat: boolean, mods: ModifierState): boolean;
+  /** Returns true when the key is bound and its press was the game's. */
   keyUp(code: string): boolean;
   /** Release every held key and pointer button (blur, fullscreen exit, focus moved into a text field). */
   releaseAll(): void;
@@ -72,9 +86,18 @@ function modifierHeld(m: ModifierKey, s: ModifierState): boolean {
   }
 }
 
-export function createInputCore(bindings: readonly Binding[]): InputCore {
+/** The modifiers whose chords belong to the browser, with the codes of their keys. */
+const BROWSER_CHORD_KEYS: readonly { modifier: ModifierKey; codes: readonly string[] }[] = [
+  { modifier: 'Control', codes: ['ControlLeft', 'ControlRight'] },
+  { modifier: 'Meta', codes: ['MetaLeft', 'MetaRight'] },
+];
+const MODIFIER_CODES: ReadonlySet<string> = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight']);
+
+export function createInputCore(bindings: readonly Binding[], served: ServedActions = {}): InputCore {
   const byCode = new Map<string, Binding[]>();
   for (const b of bindings) {
+    // A binding that waits for its consumer is not bound on a page that does not serve the action.
+    if (b.requiresServed && !isServed(b.action, served)) continue;
     const list = byCode.get(b.code) ?? [];
     list.push(b);
     byCode.set(b.code, list);
@@ -83,6 +106,8 @@ export function createInputCore(bindings: readonly Binding[]): InputCore {
   for (const list of byCode.values()) list.sort((a, b) => (b.modifiers?.length ?? 0) - (a.modifiers?.length ?? 0));
 
   const held = new Set<string>();
+  /** Codes whose press was left to the browser (a chord of its own), until they are released. */
+  const passed = new Set<string>();
   /** Codes that went down since the last sample (taps count for one frame even if already released). */
   const tapped = new Set<string>();
   const pressed = new Set<ButtonAction>();
@@ -105,6 +130,20 @@ export function createInputCore(bindings: readonly Binding[]): InputCore {
     else pressed.add(action);
   };
 
+  /**
+   * The press of `code` with the modifiers `m` is a chord of the browser: Control or Meta is held, not as a
+   * key of the game (a held modifier key with an active binding of its own), and no active binding of the
+   * code names it.
+   */
+  const browserChord = (list: readonly Binding[], m: ModifierState): boolean => {
+    for (const { modifier, codes } of BROWSER_CHORD_KEYS) {
+      if (!modifierHeld(modifier, m)) continue;
+      if (codes.some((c) => held.has(c) && (byCode.get(c) ?? []).some(active))) continue;
+      if (!list.some((b) => active(b) && (b.modifiers ?? []).includes(modifier))) return true;
+    }
+    return false;
+  };
+
   const core: InputCore = {
     bindings,
     isBound: (code) => byCode.has(code),
@@ -112,7 +151,13 @@ export function createInputCore(bindings: readonly Binding[]): InputCore {
       mods = m;
       const list = byCode.get(code);
       if (!list) return false;
-      if (repeat || held.has(code)) return true;
+      if (held.has(code)) return true;
+      if (passed.has(code)) return false;
+      if (!MODIFIER_CODES.has(code) && browserChord(list, m)) {
+        passed.add(code);
+        return false;
+      }
+      if (repeat) return true;
       held.add(code);
       tapped.add(code);
       const btn = list.find((b): b is ButtonBinding => b.kind === 'button' && active(b) && (b.modifiers ?? []).every((x) => modifierHeld(x, m)));
@@ -121,10 +166,12 @@ export function createInputCore(bindings: readonly Binding[]): InputCore {
     },
     keyUp(code) {
       held.delete(code);
+      if (passed.delete(code)) return false;
       return byCode.has(code);
     },
     releaseAll() {
       held.clear();
+      passed.clear();
       tapped.clear();
       if ((pointer.buttons & 1) !== 0) pendingRelease++;
       pointer.buttons = 0;

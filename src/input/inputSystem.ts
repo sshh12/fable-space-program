@@ -4,8 +4,14 @@
  *   const input = createInputSystem(canvas);
  *   every frame:  const frame = input.sample();      // InputFrame (+ HUD-only `ui` actions)
  *
- * - Keys by `event.code` through the binding table; every bound code calls preventDefault (Tab, Space,
- *   Backspace, Slash, F2, digits...), so the page never scrolls, changes focus or opens quick-find.
+ * - Keys by `event.code` through the binding table; every key press that is the game's calls preventDefault
+ *   (Tab, Space, Backspace, Slash, F2, digits...), so the page never scrolls, changes focus or opens quick-find.
+ *   A press with Control or Meta held is the browser's chord (reload, find, zoom, print, a new tab) unless the
+ *   table binds the key WITH that modifier, which no default does: it is left alone, no action and no
+ *   preventDefault. (Under keyboard lock Control held as the alternate throttle-down is a game key, and the
+ *   keys pressed with it fly the vessel.)
+ * - Esc is the browser's key (it leaves fullscreen and the keyboard capture) on a page without a flight menu:
+ *   the table's Esc binding is live only where `served.flightMenu` says the page opens one (`ServedActions`).
  * - The wheel listener is non-passive and cancelled (Ctrl+wheel would zoom the page); steps are normalised to
  *   their sign (+1 = away from the user), because wheel deltas depend on the device and OS scaling.
  * - Keyboard events whose target is an editable element (a text field of the map's node panel) are left
@@ -23,12 +29,17 @@
  *   outcome and is re-evaluated on every fullscreenchange. A refusal is never an error.
  */
 import type { ButtonAction } from '@/core/contracts/controls';
-import { DEFAULT_BINDINGS, type Binding, type UiAction } from './bindings';
+import { DEFAULT_BINDINGS, type Binding, type ServedActions, type UiAction } from './bindings';
 import { createInputCore, type FlightInputFrame, type ModifierState } from './inputCore';
 import { createKeyboardCapture } from './keyboardCapture';
 
 export interface InputSystemOptions {
   bindings?: readonly Binding[];
+  /**
+   * What the page serves of the actions that not every page serves (default: none of them). The same value
+   * goes to `keyHelpEntries`, so the reference card and the live keys agree.
+   */
+  served?: ServedActions;
   /**
    * Opt-in: request fullscreen + keyboard lock on the first real user gesture (default false: nothing here asks
    * for it by itself; the player uses the HUD's capture control).
@@ -77,7 +88,7 @@ const modsOf = (e: KeyboardEvent | MouseEvent): ModifierState => ({ shift: e.shi
 
 export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions = {}): InputSystem {
   const bindings = opts.bindings ?? DEFAULT_BINDINGS;
-  const core = createInputCore(bindings);
+  const core = createInputCore(bindings, opts.served);
   const isOverUi = opts.isOverUi ?? ((target: EventTarget | null): boolean => target instanceof Element && target !== canvas && !canvas.contains(target));
   const listeners = new Set<(locked: boolean, fullscreen: boolean) => void>();
   let lockedSeen = false;

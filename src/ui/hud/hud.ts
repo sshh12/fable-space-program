@@ -62,6 +62,7 @@ import {
   isEntering,
   isLanded,
   isPredictionRow,
+  keyHelpLineShown,
   landingTargetExpanded,
   landingTargetRows,
   describeAirData,
@@ -95,6 +96,11 @@ export interface HudKeyHelpEntry {
   text: string;
   keys: string[];
   lockedKeys: string[];
+  /**
+   * The line of a SAS hold that the session serves only while it lists the mode (`Readouts.sasModesAvailable`:
+   * the holds against a target): shown while it does (`keyHelpLineShown`), as the SAS row shows the button.
+   */
+  sasMode?: SasMode;
 }
 
 export interface HudOptions {
@@ -740,14 +746,23 @@ export function createHud(opts: HudOptions): HudImpl {
   }
   const groupEls: HTMLElement[] = [];
   const groupHeights: number[] = [];
+  /** The lines that are on the card only while the session lists their SAS mode (hidden until it does). */
+  const helpHoldLines: { entry: HudKeyHelpEntry; show: Flag }[] = [];
   for (const [g, entries] of groups) {
     const group = el('div', 'group', [el('h3', '', [g])]);
     for (const e of entries) {
       const keys = el('span', 'keys', [...e.keys.map((k) => keyCap(k)), ...e.lockedKeys.map((k) => keyCap(k, 'kbd locked', 'Only with Keyboard capture on (the switch at the top right)'))]);
-      group.append(el('div', 'item', [el('span', '', [e.text]), keys]));
+      const line = el('div', 'item', [el('span', '', [e.text]), keys]);
+      group.append(line);
+      if (e.sasMode !== undefined) {
+        const show = hiddenFlag(line);
+        show.set(false);
+        helpHoldLines.push({ entry: e, show });
+      }
     }
     groupEls.push(group);
-    groupHeights.push(entries.length + 1.6);
+    // The columns are balanced for the lines that are always there.
+    groupHeights.push(entries.filter((e) => e.sasMode === undefined).length + 1.6);
   }
   const cols = el(
     'div',
@@ -1190,6 +1205,8 @@ export function createHud(opts: HudOptions): HudImpl {
       b.show?.set(available);
       b.on.set(r.sasEnabled && r.sasMode === mode);
     }
+    // The key card lists a hold against a target while the session offers it, as the row above does.
+    for (const line of helpHoldLines) line.show.set(keyHelpLineShown(line.entry, r.sasModesAvailable));
     sasCaptionOn.set(r.sasEnabled);
 
     // Gauges (composited transforms: no layout, no paint).

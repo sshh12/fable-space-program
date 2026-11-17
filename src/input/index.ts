@@ -9,9 +9,11 @@ export {
   BROWSER_RESERVED_CODES,
   BROWSER_RESERVED_MODIFIERS,
   DEFAULT_BINDINGS,
+  DEFERRED_ACTIONS,
   actionIdOf,
   chordOf,
   describeBinding,
+  isServed,
   keyHelpEntries,
   keyLabel,
   validateBindings,
@@ -19,8 +21,10 @@ export {
   type Binding,
   type BindingGroup,
   type ButtonBinding,
+  type DeferredAction,
   type KeyHelpEntry,
   type ModifierKey,
+  type ServedActions,
   type UiAction,
 } from './bindings';
 export { createInputCore, type FlightInputFrame, type InputCore, type ModifierState } from './inputCore';
