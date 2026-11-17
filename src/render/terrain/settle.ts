@@ -16,7 +16,7 @@
  * `release` decides what holds a resource and frees it; it must not throw.
  */
 export async function settleAll<T extends readonly unknown[] | []>(pending: T, release: (value: Awaited<T[number]>) => void): Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }> {
-  const settled = await Promise.allSettled(pending);
+  const settled: readonly PromiseSettledResult<unknown>[] = await Promise.allSettled(pending);
   const failed = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected');
   if (failed === undefined) return settled.map((s) => (s as PromiseFulfilledResult<unknown>).value) as { -readonly [P in keyof T]: Awaited<T[P]> };
   for (const s of settled) if (s.status === 'fulfilled') release(s.value as Awaited<T[number]>);
