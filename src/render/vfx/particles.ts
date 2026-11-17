@@ -11,9 +11,9 @@
  * with no air there is no drag and no turbulence, so dust thrown up on an airless body flies ballistic,
  * radial sheets, and the same dust in air billows.
  */
-import { RENDER_FORMATS, type FrameContext, type RenderContext } from '@/core/contracts/render';
+import { RENDER_FORMATS, type CameraState, type FrameContext, type RenderContext } from '@/core/contracts/render';
 import type { Vec3, Vec3Tuple } from '@/core/math';
-import type { Tracked } from '@/render/core';
+import { lensShiftOf, type Tracked } from '@/render/core';
 import type { VfxCommon } from './common';
 import type { DomainRebase } from './domain';
 
@@ -22,8 +22,29 @@ export type ParticleKind = keyof typeof PARTICLE_KIND;
 export const PARTICLE_FLOATS = 24;
 export const MAX_EMITTERS = 64;
 const EMITTER_FLOATS = 36;
-const SIM_FLOATS = 44;
+const SIM_FLOATS = 48;
 const SHAPE = { sphere: 0, ring: 1, cylinder: 2, disc: 3 } as const;
+
+/**
+ * The camera of the frame before as the simulation step reads it (`ParticleU.prevRight`, `prevUp`,
+ * `prevForward`, `prevShift`): its axes in ROOT axes, the tangents of half its field of view and its lens
+ * shift in NDC units. The step finds the terrain next to a particle in last frame's depth, which was drawn
+ * through that camera's projection, shift included: the ray through the point `ndc` of that frame is
+ * `forward + right * ((ndc.x - shift[0]) * tanX) + up * ((ndc.y - shift[1]) * tanY)`, the frame chunk's
+ * `ndcRay` with last frame's values (RENDER_API 19.5).
+ */
+export function prevCameraUniforms(camera: CameraState, renderSize: readonly [number, number]): { right: [number, number, number]; up: [number, number, number]; forward: [number, number, number]; tanX: number; tanY: number; shift: [number, number] } {
+  const q = camera.qViewToRoot;
+  const rot = (x: number, y: number, z: number): [number, number, number] => {
+    const tx = 2 * (q.y * z - q.z * y);
+    const ty = 2 * (q.z * x - q.x * z);
+    const tz = 2 * (q.x * y - q.y * x);
+    return [x + q.w * tx + (q.y * tz - q.z * ty), y + q.w * ty + (q.z * tx - q.x * tz), z + q.w * tz + (q.x * ty - q.y * tx)];
+  };
+  const tanY = Math.tan(camera.fovY / 2);
+  const tanX = tanY * (renderSize[0] / renderSize[1]);
+  return { right: rot(1, 0, 0), up: rot(0, 1, 0), forward: rot(0, 0, -1), tanX, tanY, shift: lensShiftOf(camera) };
+}
 
 export interface EmitterDesc {
   kind: ParticleKind;
@@ -81,6 +102,7 @@ struct ParticleU {
   prevUp: vec4f,       // up, w = tan(fovY / 2)
   prevForward: vec4f,  // forward, w = 1 when the scene depth copy holds a usable previous frame
   flags: vec4f,        // x = 1 apply the re-base, y = shutter time (s), z = pool size, w = pixels per radian
+  prevShift: vec4f,    // previous camera: xy = its lens shift in NDC units (0 without one), zw = 0
 }
 const KIND_DUST = 0.0; const KIND_ICE = 1.0; const KIND_GAS = 2.0; const KIND_SPARK = 3.0; const KIND_CHIP = 4.0; const KIND_DROPLET = 5.0; const KIND_MIST = 6.0;
 `;
@@ -244,7 +266,10 @@ fn glow(T: f32) -> vec3f {
           let d = textureLoad(sceneDepthTex, pix, 0);
           if (d > 0.0) {
             let z = frame.cameraForward.w / d;
-            let ray = pu.prevForward.xyz + pu.prevRight.xyz * (ndc.x * pu.prevRight.w) + pu.prevUp.xyz * (ndc.y * pu.prevUp.w);
+            // The ray of the PREVIOUS camera through that point of its frame: ndcRay of the frame chunk with last
+            // frame's axes, tangents and lens shift (that frame's view axis passed through it at prevShift).
+            let fromAxis = ndc - pu.prevShift.xy;
+            let ray = pu.prevForward.xyz + pu.prevRight.xyz * (fromAxis.x * pu.prevRight.w) + pu.prevUp.xyz * (fromAxis.y * pu.prevUp.w);
             let surf = ray * z;
             if (distance(surf, pr) < 1.5 + 0.02 * z) {
               let ds = surf - vfx.domPrevOrigin.xyz;
@@ -614,20 +639,12 @@ export class ParticleSystem {
         f.set([rebase.B[r * 3]!, rebase.B[r * 3 + 1]!, rebase.B[r * 3 + 2]!, r === 0 ? rebase.b.x : r === 1 ? rebase.b.y : rebase.b.z], 16 + r * 4);
       }
     }
-    const cam = frame.prevCamera;
-    const q = cam.qViewToRoot;
-    const rot = (x: number, y: number, z: number): [number, number, number] => {
-      const tx = 2 * (q.y * z - q.z * y);
-      const ty = 2 * (q.z * x - q.x * z);
-      const tz = 2 * (q.x * y - q.y * x);
-      return [x + q.w * tx + (q.y * tz - q.z * ty), y + q.w * ty + (q.z * tx - q.x * tz), z + q.w * tz + (q.x * ty - q.y * tx)];
-    };
-    const tanY = Math.tan(cam.fovY / 2);
-    const tanX = tanY * (frame.renderSize[0] / frame.renderSize[1]);
-    f.set([...rot(1, 0, 0), tanX], 28);
-    f.set([...rot(0, 1, 0), tanY], 32);
-    f.set([...rot(0, 0, -1), depthUsable ? 1 : 0], 36);
+    const prev = prevCameraUniforms(frame.prevCamera, frame.renderSize);
+    f.set([...prev.right, prev.tanX], 28);
+    f.set([...prev.up, prev.tanY], 32);
+    f.set([...prev.forward, depthUsable ? 1 : 0], 36);
     f.set([rebase ? 1 : 0, 1 / 120, this.pool, frame.renderSize[1] / (2 * Math.tan(frame.camera.fovY / 2))], 40);
+    f.set([prev.shift[0], prev.shift[1], 0, 0], 44);
     this.device.queue.writeBuffer(this.simBuffer, 0, this.simData);
   }
 
