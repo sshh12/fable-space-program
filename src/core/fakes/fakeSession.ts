@@ -89,6 +89,7 @@ import { quat, type Quat } from '../math/quat';
 import { clamp, DEG, G0, TWO_PI } from '../math/scalar';
 import { v3, type Vec3 } from '../math/vec3';
 import { partKey } from '../access/snapshotAccess';
+import { describeStages, type StageWords } from '../defs/stageWords';
 
 /** The flight scenes of v1: one vessel. */
 export type FakeScene = 'pad' | 'ascent' | 'lowOrbit' | 'translunar' | 'lunarOrbit' | 'lunarSurface' | 'reentry' | 'chutes';
@@ -301,6 +302,8 @@ export class FakeSession implements LocalSession {
   private target: TargetRef | null = null;
   private nextStage = 0;
   private readonly stageLabels: string[];
+  /** What each stage of the vehicle the fake is published as says about itself (`describeStages`); empty without a vehicle. */
+  private stageWords: StageWords[] | null = null;
   private nodes: ManeuverNode[] = [];
   private nodeSeq = 0;
   private events: SimEvent[] = [];
@@ -981,7 +984,8 @@ export class FakeSession implements LocalSession {
             if (m.type === 'light') return { ...m, on: this.lightsOn };
             return m;
           });
-      return { ...p, craftId, ...(shift ? { localPos: v3.add(p.localPos, shift) } : {}), modules };
+      // (No part of the fake is a fairing petal unless the given part says it is one.)
+      return { ...p, panel: p.panel ?? null, craftId, ...(shift ? { localPos: v3.add(p.localPos, shift) } : {}), modules };
     });
   }
 
@@ -1004,7 +1008,9 @@ export class FakeSession implements LocalSession {
     const authored = vehicle && vehicle.cameras.cockpit?.part === commandPart ? vehicle : undefined;
     const own = command?.type === 'command' ? command : undefined;
     const id = own?.cockpit ?? authored?.cockpit ?? null;
-    return { id, cameraSeat: id === null ? null : (authored?.cameras.cockpit?.seat ?? null), sensorMount: own?.sensorCamera ?? null };
+    // The crew by seat, as the vehicle the fake is published as lists them (a session states it the same way).
+    const crew = (vehicle?.crew ?? []).map((m) => ({ seat: m.seat, name: m.name }));
+    return { id, cameraSeat: id === null ? null : (authored?.cameras.cockpit?.seat ?? null), sensorMount: own?.sensorCamera ?? null, crew };
   }
 
   /** One craft block. `staging` is the craft's own stage stack: the viewer's craft has the panel's, another lists none. */
@@ -1378,17 +1384,33 @@ export class FakeSession implements LocalSession {
       landingTarget: this.landingTargetReadout(surfaceTargets, subDir, groundTrackDir, body.radius),
     };
 
-    const stages: StageInfo[] = this.stageLabels.map((label, i) => ({
-      label,
-      icon: i === this.stageLabels.length - 1 ? 'parachute' : 'engine',
-      fired: i < this.nextStage,
-      deltaVVac: 3000,
-      deltaVNow: 2800,
-      twr: 1.3,
-      burnTime: 160,
-      propellantFraction: i < this.nextStage ? 1 - this.throttleActual * 0.5 : 1,
-      actionKinds: ['engine'],
-    }));
+    // What a stage says about itself (what it burns, its chutes, the engines it ignites) is the vehicle's that
+    // the fake is published as, stage by stage, through the derivation a session uses; with those words go the
+    // stage's action kinds (the two lists are parallel). A fake of no vehicle, and a stage the vehicle does not
+    // have, state the neutral values.
+    const vehicle = this.scenario.vehicle !== '' ? this.defs.vehicles[this.scenario.vehicle] : undefined;
+    this.stageWords ??= vehicle ? describeStages(vehicle, (id) => this.defs.parts[id]) : [];
+    const stageWords = this.stageWords;
+    const stages: StageInfo[] = this.stageLabels.map((label, i) => {
+      const words = stageWords[i];
+      const actionKinds = words && vehicle ? vehicle.stages[i]!.actions.map((a): string => a.kind) : ['engine'];
+      return {
+        label,
+        icon: i === this.stageLabels.length - 1 ? 'parachute' : 'engine',
+        fired: i < this.nextStage,
+        deltaVVac: 3000,
+        deltaVNow: 2800,
+        twr: 1.3,
+        burnTime: 160,
+        propellantFraction: i < this.nextStage ? 1 - this.throttleActual * 0.5 : 1,
+        actionKinds,
+        burnLabel: words ? words.burnLabel : null,
+        thrustVac: words ? words.thrustVac : 0,
+        weightFlowVac: words ? words.weightFlowVac : 0,
+        actionChutes: words ? [...words.actionChutes] : actionKinds.map(() => null),
+        chuteEnvelopes: words ? words.chuteEnvelopes : null,
+      };
+    });
     const staging = { nextStage: this.nextStage, stages, lockout: false };
 
     // The craft of the viewer's vessel: one, or three side by side in the assembly scene (60 m apart).

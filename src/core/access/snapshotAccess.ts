@@ -15,7 +15,7 @@
  *    the deprecated pair, with the same field names, so a call site changes by its callee only);
  *  - `craftsOf`, `craftIdOf` and `parentOf` lose their fallbacks.
  */
-import type { DefLibrary, VehicleDef } from '../contracts/defs';
+import type { DefLibrary } from '../contracts/defs';
 import type { TargetRef } from '../contracts/net';
 import type { CraftSnapshot, PartSnapshot, Readouts, SimSnapshot, VesselSnapshot } from '../contracts/sim';
 
@@ -82,18 +82,6 @@ export function targetNameOf(snapshot: SimSnapshot, defs: DefLibrary): string | 
   const vessels = snapshot.vessels;
   for (let i = 0; i < vessels.length; i++) if (vessels[i]!.id === vesselId) return vessels[i]!.name;
   return vesselId;
-}
-
-/**
- * The vehicle definition a craft was built from, FOR LABELS AND ICONS ONLY: the use the contract gives
- * `CraftSnapshot.vehicleId` ("never index `defs.vehicles` with it for behaviour"). This is the one place in
- * the presentation that looks a vehicle up by an id from a snapshot; its callers read words from it and
- * nothing else (what a stage burns and which chutes it handles, src/ui/model.ts; the name of the crew member
- * in a seat, src/app/seat.ts), and each of them says less when it returns null, which it does for a craft
- * whose design the library does not have. `craft` null = the vessel's base craft (`VesselSnapshot.vehicleId`).
- */
-export function labelVehicleOf(defs: DefLibrary, vessel: VesselSnapshot, craft: CraftSnapshot | null = null): VehicleDef | null {
-  return defs.vehicles[craft?.vehicleId ?? vessel.vehicleId] ?? null;
 }
 
 /** The `TargetRef` of a body (what `PlayerCommands.setTarget` takes for it). */

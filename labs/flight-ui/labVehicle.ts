@@ -9,8 +9,9 @@
  * never loaded by the app.
  */
 import type { CapsuleMouldLineDef, DefLibrary, ModuleDef, PartDef, ResourceDef, TimedStageAction, VehicleDef } from '@/core/contracts/defs';
-import type { ModuleState, PartSnapshot, SimSnapshot } from '@/core/contracts/sim';
+import type { ModuleState, PartSnapshot, SimSnapshot, StageInfo } from '@/core/contracts/sim';
 import { getSection } from '@/core/defs/loader';
+import { describeStages, type StageWords } from '@/core/defs/stageWords';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 
@@ -106,6 +107,39 @@ export const LAB_STAGES: { label: string; icon: string; actions: TimedStageActio
   { label: 'Mains', icon: 'chute', actions: [{ kind: 'cutParachute', parts: ['capsule'] }, { kind: 'deployParachute', parts: ['capsule'], mode: 'main' }] },
 ];
 
+/** The lab vehicle and what each of its stages says about itself (`describeStages`), kept by `withLabVehicle` for `tagLabVehicle`. */
+let labStack: { vehicle: VehicleDef; words: StageWords[] } | null = null;
+
+/**
+ * The stage stack a session states for a craft built from `vehicle`: one entry per stage of the vehicle with
+ * its action kinds and its words (`words`: `describeStages` of the vehicle), over the label, the icon and the
+ * figures of the given panel where it has that stage (a stage the panel does not have is not fired and has no
+ * figures).
+ */
+export function vehicleStaging(vehicle: VehicleDef, words: readonly StageWords[], stated: SimSnapshot['staging']): SimSnapshot['staging'] {
+  const stages = vehicle.stages.map((st, i): StageInfo => {
+    const have = stated.stages[i];
+    const w = words[i]!;
+    return {
+      label: have?.label ?? st.label,
+      icon: have?.icon ?? st.icon,
+      fired: have?.fired ?? i < stated.nextStage,
+      deltaVVac: have?.deltaVVac ?? 0,
+      deltaVNow: have?.deltaVNow ?? 0,
+      twr: have?.twr ?? 0,
+      burnTime: have?.burnTime ?? 0,
+      propellantFraction: have ? have.propellantFraction : null,
+      actionKinds: st.actions.map((a): string => a.kind),
+      burnLabel: w.burnLabel,
+      thrustVac: w.thrustVac,
+      weightFlowVac: w.weightFlowVac,
+      actionChutes: [...w.actionChutes],
+      chuteEnvelopes: w.chuteEnvelopes,
+    };
+  });
+  return { ...stated, stages };
+}
+
 /** Adds the lab resources, parts and vehicle to a loaded library (in memory only). */
 export function withLabVehicle(defs: DefLibrary): DefLibrary {
   const mould = getSection<CapsuleMouldLineDef>(defs, 'visuals/shared/kestrel-mouldline');
@@ -173,12 +207,14 @@ export function withLabVehicle(defs: DefLibrary): DefLibrary {
     cameras: { cockpit: { part: LAB_COMMAND_PART, seat: LAB_CAMERA_SEAT }, chase: { ...LAB_CHASE } },
     cockpit: LAB_COCKPIT_ID,
   };
-  return {
+  const library: DefLibrary = {
     ...defs,
     resources: { ...defs.resources, ...Object.fromEntries(RESOURCES.map((r) => [r.id, r])) },
     parts: { ...defs.parts, ...Object.fromEntries(parts.map((p) => [p.id, p])) },
     vehicles: { ...defs.vehicles, [vehicle.id]: vehicle },
   };
+  labStack = { vehicle, words: describeStages(vehicle, (id) => library.parts[id]) };
+  return library;
 }
 
 export type LabGroup = 'booster' | 'upper' | 'm3' | 'descent' | 'ascent' | 'capsule';
@@ -237,13 +273,18 @@ export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<LabGroup,
 
 /**
  * The fake session reports vehicleId '' unless it is told one; the lab tags its snapshots with the lab vehicle:
- * the vessel's vehicle id and name, and its craft block as a session states it for that vehicle (the vehicle id,
- * the cabin of the command part and its camera seat, the chase distances). The fake also reports a
+ * the vessel's vehicle id and name, its craft block as a session states it for that vehicle (the vehicle id,
+ * the cabin of the command part with its camera seat and its crew, the chase distances) and the vehicle's
+ * stage stack with what every stage says about itself (`vehicleStaging`: the whole stack of the lab vehicle,
+ * over the figures of the stages the fake reports). The fake also reports a
  * heat shield only in its plasma scenes; the lab vehicle always carries one, so its ablator is reported as the
  * sim reports it (readouts.ablatorFraction null only for a vessel without a heat shield) and the MFD entry page
  * agrees with the systems page in every scene.
  */
 export function tagLabVehicle(s: SimSnapshot): SimSnapshot {
+  if (!labStack) throw new Error('tagLabVehicle: the lab vehicle is not in a library yet (withLabVehicle)');
+  const { vehicle, words } = labStack;
+  const staging = vehicleStaging(vehicle, words, s.staging);
   const active = s.vessels.find((v) => v.id === s.activeVesselId);
   let ablator = s.readouts.ablatorFraction;
   if (ablator === null && active) {
@@ -251,6 +292,7 @@ export function tagLabVehicle(s: SimSnapshot): SimSnapshot {
   }
   return {
     ...s,
+    staging,
     vessels: s.vessels.map((v) => {
       if (v.id !== s.activeVesselId) return v;
       const hasCabin = v.parts.some((p) => p.instanceId === LAB_COMMAND_PART);
@@ -259,7 +301,8 @@ export function tagLabVehicle(s: SimSnapshot): SimSnapshot {
         vehicleId: LAB_VEHICLE_ID,
         name: 'Meridian 1',
         commandPart: hasCabin ? LAB_COMMAND_PART : null,
-        cockpit: hasCabin ? { id: LAB_COCKPIT_ID, cameraSeat: LAB_CAMERA_SEAT, sensorMount: null } : null,
+        cockpit: hasCabin ? { id: LAB_COCKPIT_ID, cameraSeat: LAB_CAMERA_SEAT, sensorMount: null, crew: vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) } : null,
+        staging,
         chase: { ...LAB_CHASE },
       }));
       return { ...v, vehicleId: LAB_VEHICLE_ID, name: 'Meridian 1', ...(crafts ? { crafts } : {}) };

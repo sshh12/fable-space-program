@@ -202,7 +202,7 @@ export function createLabProps(sim: LabSim, defs: DefLibrary, options: LabPropsO
         if (!pose) continue;
         for (const part of vessel.parts) {
           const def = defs.parts[part.def];
-          if (!def || part.instanceId.includes('#panel')) continue;
+          if (!def || (part.panel ?? null) !== null) continue;
           const model = modelFor(def);
           if (model) batch.add(model, instanceInFrame(pose, part.localPos, part.localRot, { bodyFixed: false }));
           // Landing legs: a strut from each hinge to its foot and a pad there.

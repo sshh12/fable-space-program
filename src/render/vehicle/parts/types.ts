@@ -49,7 +49,7 @@ export const NEUTRAL_ANIM: Readonly<PartAnim> = { nozzleTemp: 0, soot: 0, frost:
 export interface PoseInput {
   def: PartDef;
   modules: readonly ModuleState[];
-  /** Fairing debris: the petal index of an instance id `<id>#panel<k>`; null for a whole part. */
+  /** Fairing debris: the petal's sector (`PartSnapshot.panel.index`); null for a whole part. */
   panel: number | null;
   anim: Readonly<PartAnim>;
 }

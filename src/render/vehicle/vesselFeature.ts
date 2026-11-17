@@ -5,7 +5,7 @@
  *
  *  - One model set per part definition, generated once from data/defs/visuals/parts (generator registry).
  *  - Articulation comes from each part visual's `pose`: engine gimbal, leg deployment and stroke, fairing
- *    petals (`<id>#panel<k>`), clamp arms, antennas, lamps, hot nozzle sections, window panes.
+ *    petals (`PartSnapshot.panel`), clamp arms, antennas, lamps, hot nozzle sections, window panes.
  *  - History the snapshot does not carry (nozzle temperature after a burn, soot from firing, frost that
  *    sheds after lift-off, arm retraction) is kept per part and survives staging. A part is known by the part
  *    key of its LINEAGE: the launched craft its craft descends from (`CraftSnapshot.parent`, followed while
@@ -129,15 +129,11 @@ interface Ghost {
 }
 
 /**
- * The petal of a fairing that a part of fairing debris is: the simulation gives each petal its own vessel and
- * names the petal in the instance id (`<fairing instance id>#panel<k>`, src/sim/vessel/public.ts), and the
- * snapshot states the index nowhere else (request presentation-sweep-2 asks for the field; this is the one
- * place that reads it from the id until then). null for a whole part.
+ * The petal of a fairing that a part of fairing debris is (the simulation gives each petal a vessel of its
+ * own): the sector the snapshot states, `PartSnapshot.panel`. null for a whole part.
  */
-const PANEL = /#panel(\d+)$/;
 export function fairingPanelOf(part: PartSnapshot): number | null {
-  const match = PANEL.exec(part.instanceId);
-  return match ? Number(match[1]) : null;
+  return part.panel?.index ?? null;
 }
 
 /** Temperature the radiatively cooled nozzle sections settle at for a throttle setting, K. */

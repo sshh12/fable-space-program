@@ -400,9 +400,9 @@ describe('cockpit rig', () => {
     expect(withCockpit.length).toBeGreaterThan(0);
     for (const vehicle of withCockpit) {
       const parts = vehicle.parts.map((p) => ({ instanceId: p.id, def: p.def, localPos: v3.new(0, 10, 0), localRot: quat.identity(), tempSkin: 290, maxTemp: 1000, resources: {}, modules: [], shielded: false }));
-      // A session of that vehicle: the craft block states the cabin of its command part, which is where the rig finds it.
+      // A session of that vehicle: the craft block states the cabin of its command part (which is where the rig finds it) and the crew by seat.
       const s = createFakeSim(defs, { scene: 'lowOrbit', vehicleId: vehicle.id, parts }).snapshot();
-      expect(s.vessels[0]!.crafts![0]!.cockpit, vehicle.id).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit.seat, sensorMount: null });
+      expect(s.vessels[0]!.crafts![0]!.cockpit, vehicle.id).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit.seat, sensorMount: null, crew: vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) });
       const pose = resolveSeatPose(defs, s.vessels[0]!);
       expect(pose, vehicle.id).not.toBeNull();
       expect(pose!.eyeVes.y).toBeGreaterThan(10);

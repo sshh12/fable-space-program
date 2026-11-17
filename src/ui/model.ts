@@ -2,9 +2,9 @@
  * Display models built from a SimSnapshot: the exact strings the HUD panels and the MFD pages show. Both
  * render from these functions, so a number can never read differently on the two.
  */
-import type { DefLibrary, ParachuteEnvelope, VehicleDef } from '@/core/contracts/defs';
+import type { DefLibrary, ParachuteEnvelope } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
-import { activeVesselOf, craftIdOf, craftOf, craftsOf, labelVehicleOf, targetNameOf } from '@/core/access/snapshotAccess';
+import { activeVesselOf, craftIdOf, craftOf, craftsOf, targetNameOf } from '@/core/access/snapshotAccess';
 import {
   formatAltitude,
   formatApsis,
@@ -386,25 +386,11 @@ export function orbitPhase(s: SimSnapshot, defs: DefLibrary): OrbitPhase {
 
 // --------------------------------------------------------------------------------------------- stages
 
-/**
- * The stage stack of the craft whose staging panel the snapshot carries (`SimSnapshot.staging`: the helm craft
- * of the active vessel), as its vehicle's file lists it, FOR WORDS ONLY: what a stage burns, which chutes it
- * deploys or releases, and the engines behind the weak-gravity acceleration figure. `StageInfo` states a
- * stage's label, icon and action kinds and none of these (request presentation-sweep-3 asks for them), and
- * the contract gives a craft's `vehicleId` "for labels and icons only": this is that use, through the one
- * lookup of the presentation (`labelVehicleOf`). Null for a craft whose design the library does not have:
- * every caller then says less (the stage's own label, the bare action kinds, the session's thrust-to-weight
- * figure), and nothing else is read from a vehicle definition: resource groups, part keys, camera distances
- * and the cockpit come from the snapshot.
- */
-function stageWordsSource(s: SimSnapshot, defs: DefLibrary | undefined): VehicleDef | null {
-  const v = activeVesselOf(s);
-  if (!defs || !v) return null;
-  // The helm's craft; a vessel without a helm block is flown from its base craft, and a snapshot without craft
-  // blocks is one craft built from the vessel's vehicle.
-  const craft = (v.helm ? craftOf(v, v.helm.craftId) : null) ?? craftsOf(v)[0] ?? null;
-  return labelVehicleOf(defs, v, craft);
-}
+// The words about a stage (what it burns, which chutes it deploys or releases, the engines behind the
+// weak-gravity acceleration figure) are what the staging panel of the snapshot states per stage
+// (`StageInfo.burnLabel`, `actionChutes`, `chuteEnvelopes`, `thrustVac`, `weightFlowVac`: the stack of the helm
+// craft of the active vessel). No vehicle definition is read. A session that does not state them says less:
+// the stage's own label, the bare action kinds, the session's thrust-to-weight figure.
 
 export interface StageTileView {
   index: number;
@@ -444,33 +430,20 @@ export interface StageTileView {
   /** What firing the stage does, from its action kinds ("separate · deploy chute"); empty when unknown. */
   actions: string;
   /**
-   * What the stage burns: the stage groups of the engines it ignites ("Meridian M-3"), from the vessel's vehicle
-   * definition (stageBurnLabel); null when unknown or when the stage lights no engine. The active tile is titled
+   * What the stage burns: the stage groups of the engines it ignites ("Meridian M-3"), as the staging panel
+   * states it (stageBurnLabel); null when unknown or when the stage lights no engine. The active tile is titled
    * with it (the stage's own label names the event that started the burn, "M-3 separation").
    */
   burnName: string | null;
 }
 
 /**
- * What a stage burns: the labels of the stage groups (VehicleDef.stageGroups) of the engines its igniteEngines
- * actions light, e.g. "Meridian M-3" or "Heron descent stage". Null when the design of the craft is not in the
- * library (stageWordsSource) or the stage ignites no engine. StageInfo index i is VehicleDef.stages[i] (the sim
- * reports the whole stack, fired stages included).
+ * What a stage burns: the labels of the stage groups of the engines its ignite actions light, e.g.
+ * "Meridian M-3" or "Heron descent stage" (`StageInfo.burnLabel`). Null when the session does not state it or
+ * the stage ignites no engine. (The session reports the whole stack, fired stages included.)
  */
-export function stageBurnLabel(s: SimSnapshot, defs: DefLibrary, index: number): string | null {
-  const vehicle = stageWordsSource(s, defs);
-  const stage = vehicle?.stages[index];
-  if (!vehicle || !stage) return null;
-  const groups: string[] = [];
-  for (const a of stage.actions) {
-    if (a.kind !== 'igniteEngines') continue;
-    for (const id of a.parts) {
-      const g = vehicle.parts.find((p) => p.id === id)?.stageGroup;
-      if (g !== undefined && !groups.includes(g)) groups.push(g);
-    }
-  }
-  if (groups.length === 0) return null;
-  return groups.map((g) => vehicle.stageGroups.find((x) => x.id === g)?.label ?? g).join(' + ');
+export function stageBurnLabel(s: SimSnapshot, index: number): string | null {
+  return s.staging.stages[index]?.burnLabel ?? null;
 }
 
 /** Words for the action kinds of a stage (the second line of an engine-less next-stage tile). */
@@ -497,27 +470,24 @@ export function stageActionText(actionKinds: readonly string[]): string {
 const CHUTE_NAMES = { drogue: 'drogues', main: 'mains' } as const;
 
 /**
- * What firing a stage does, from the vessel's vehicle definition where it is known: the words of
- * stageActionText, with every chute named by its kind ("separate · deploy drogues", "release drogues · deploy
- * mains": a cut releases the canopies the latest earlier stage deployed). Falls back to the bare action kinds of
- * the StageInfo without a vehicle definition.
+ * What firing a stage does: the words of stageActionText, with every chute named by its kind where the staging
+ * panel states it (`StageInfo.actionChutes`, one entry per action: "separate · deploy drogues", "release
+ * drogues · deploy mains": a cut releases the canopies the latest deploy before it put out). Falls back to the
+ * bare action kinds for a session that does not state the chutes.
  */
-export function stageActionWords(s: SimSnapshot, defs: DefLibrary | undefined, index: number): string {
+export function stageActionWords(s: SimSnapshot, index: number): string {
   const info = s.staging.stages[index];
-  const vehicle = stageWordsSource(s, defs);
-  const stage = vehicle?.stages[index];
-  if (!vehicle || !stage) return stageActionText(info?.actionKinds ?? []);
-  let deployed: 'drogue' | 'main' | null = null;
-  for (let i = 0; i < index; i++) for (const a of vehicle.stages[i]!.actions) if (a.kind === 'deployParachute') deployed = a.mode;
+  const chutes = info?.actionChutes;
+  if (!info || !chutes) return stageActionText(info?.actionKinds ?? []);
   const words: string[] = [];
-  for (const a of stage.actions) {
+  info.actionKinds.forEach((kind, i) => {
+    const chute = chutes[i] ?? null;
     let w: string | undefined;
-    if (a.kind === 'deployParachute') w = `deploy ${CHUTE_NAMES[a.mode]}`;
-    else if (a.kind === 'cutParachute') w = deployed ? `release ${CHUTE_NAMES[deployed]}` : ACTION_WORDS.cutparachute;
-    else w = ACTION_WORDS[a.kind.toLowerCase()];
+    if (kind === 'deployParachute') w = chute ? `deploy ${CHUTE_NAMES[chute]}` : ACTION_WORDS.deployparachute;
+    else if (kind === 'cutParachute') w = chute ? `release ${CHUTE_NAMES[chute]}` : ACTION_WORDS.cutparachute;
+    else w = ACTION_WORDS[kind.toLowerCase()];
     if (w !== undefined && !words.includes(w)) words.push(w);
-    if (a.kind === 'deployParachute') deployed = a.mode;
-  }
+  });
   return words.join(' · ');
 }
 
@@ -528,30 +498,17 @@ const G0 = 9.80665;
 
 /**
  * Full-throttle acceleration of stage `index` at its current mass, m/s^2, from its vacuum delta-v, its burn time
- * and the vacuum Isp of the engines it ignites (VehicleDef stage actions; fixed-burn motors left out):
- * a0 = ve (1 - e^(-dv/ve)) / t, exact for a constant-thrust burn. It does not depend on gravity, so it stays
+ * and the vacuum thrust and weight flow of the engines it ignites (`StageInfo.thrustVac`, `weightFlowVac`;
+ * fixed-burn motors left out): a0 = ve (1 - e^(-dv/ve)) / t, exact for a constant-thrust burn. It does not depend on gravity, so it stays
  * right where the sim's TWR is stale: StageInfo is refreshed on integrated steps only, and after a coast on rails
  * across a sphere-of-influence change its TWR still holds the gravity of the old body (request flight-ui-8).
- * Null without a vehicle definition, engines or a burn time.
+ * Null where the session does not state the engines, and without engines or a burn time.
  */
-export function stageAcceleration(s: SimSnapshot, defs: DefLibrary | undefined, index: number): number | null {
+export function stageAcceleration(s: SimSnapshot, index: number): number | null {
   const info = s.staging.stages[index];
-  const vehicle = stageWordsSource(s, defs);
-  const stage = vehicle?.stages[index];
-  if (!info || !defs || !vehicle || !stage || !(info.burnTime > 0) || !(info.deltaVVac > 0)) return null;
-  let thrust = 0;
-  let flow = 0;
-  for (const a of stage.actions) {
-    if (a.kind !== 'igniteEngines') continue;
-    for (const id of a.parts) {
-      const def = defs.parts[vehicle.parts.find((p) => p.id === id)?.def ?? ''];
-      for (const m of def?.modules ?? []) {
-        if (m.type !== 'engine' || m.fixedBurn || !(m.ispVac > 0)) continue;
-        thrust += m.thrustVac;
-        flow += m.thrustVac / m.ispVac;
-      }
-    }
-  }
+  if (!info || info.thrustVac === undefined || info.weightFlowVac === undefined || !(info.burnTime > 0) || !(info.deltaVVac > 0)) return null;
+  const thrust = info.thrustVac;
+  const flow = info.weightFlowVac;
   if (!(flow > 0)) return null;
   const ve = (G0 * thrust) / flow;
   return (ve * (1 - Math.exp(-info.deltaVVac / ve))) / info.burnTime;
@@ -566,7 +523,7 @@ export interface StagesView {
   deltaVTotal: string;
 }
 
-/** `defs` names what the stages burn (StageTileView.burnName); without it burnName is null. */
+/** `defs` gives the local gravity (below WEAK_GRAVITY a tile shows its acceleration); without it every tile shows the thrust-to-weight ratio. */
 export function describeStages(s: SimSnapshot, defs?: DefLibrary): StagesView {
   const st = s.staging;
   // The active stage: the latest fired stage the sim still reports numbers for (the owner of the running engines).
@@ -596,12 +553,12 @@ export function describeStages(s: SimSnapshot, defs?: DefLibrary): StagesView {
       deltaVNow: hasEngines && Math.abs(info.deltaVNow - info.deltaVVac) > 0.01 * info.deltaVVac ? formatDeltaV(info.deltaVNow) : '',
       twr: hasEngines ? formatTwr(info.twr) : '',
       thrustLabel: weak ? 'Accel' : 'TWR',
-      thrustValue: !hasEngines ? '' : weak ? `${formatNumber(stageAcceleration(s, defs, i) ?? info.twr * gLocal!, 2)}${NBSP}m/s²` : formatTwr(info.twr),
+      thrustValue: !hasEngines ? '' : weak ? `${formatNumber(stageAcceleration(s, i) ?? info.twr * gLocal!, 2)}${NBSP}m/s²` : formatTwr(info.twr),
       burnTime: hasEngines ? formatDuration(info.burnTime) : '',
       propellant: info.propellantFraction,
       hasEngines,
-      actions: stageActionWords(s, defs, i),
-      burnName: defs ? stageBurnLabel(s, defs, i) : null,
+      actions: stageActionWords(s, i),
+      burnName: stageBurnLabel(s, i),
     };
   });
   return { tiles, active, lockout: st.lockout, nextStage: st.nextStage, deltaVTotal: formatDeltaV(s.readouts.deltaVTotal) };
@@ -832,9 +789,10 @@ function envelopeWords(e: ParachuteEnvelope, inside: boolean): string {
 /**
  * The chute envelope light (Readouts.chuteEnvelope) with the chutes it is about. The sim reports it for the NEXT
  * chute stage that has not fired, so once the drogues are out the light is about the mains: at 7.4 km and
- * 130 m/s it reads RISKY for them while the drogues opened safely. The row therefore names the chute (from
- * the vehicle's stage actions, the same stage the sim looks at) and its tooltip spells out the envelope.
- * Null when no chute stage remains.
+ * 130 m/s it reads RISKY for them while the drogues opened safely. The row therefore names the chute (the
+ * first stage from the next one on that deploys a parachute, the stage the sim looks at: `StageInfo.actionKinds`
+ * with `actionChutes`) and its tooltip spells out the envelope (`StageInfo.chuteEnvelopes`). Null when no chute
+ * stage remains.
  */
 export function describeChuteEnvelope(s: SimSnapshot, defs: DefLibrary): ChuteEnvelopeView | null {
   const env = s.readouts.chuteEnvelope;
@@ -843,21 +801,20 @@ export function describeChuteEnvelope(s: SimSnapshot, defs: DefLibrary): ChuteEn
   if (env === null || !inAtmosphere(s, defs)) return null;
   const light = env.toUpperCase();
   const tone = env === 'safe' ? 'good' : env === 'risky' ? 'caution' : 'warning';
-  const vehicle = stageWordsSource(s, defs);
-  if (vehicle) {
-    for (let i = s.staging.nextStage; i < vehicle.stages.length; i++) {
-      for (const a of vehicle.stages[i]!.actions) {
-        if (a.kind !== 'deployParachute') continue;
-        const partDef = defs.parts[vehicle.parts.find((p) => a.parts.includes(p.id))?.def ?? ''];
-        const md = partDef?.modules.find((m) => m.type === 'parachute' && m.mode === a.mode);
-        const name = CHUTE_NAMES[a.mode];
-        const detail =
-          md?.type === 'parachute'
-            ? `Deploying the ${name} now: ${light}. Safe ${envelopeWords(md.safe, true)}; the canopies fail ${envelopeWords(md.destroy, false)}.`
-            : `Deploying the ${name} now: ${light}.`;
-        return { label: CHUTE_DEPLOY_LABEL[a.mode], light, tone, detail };
-      }
-    }
+  const stages = s.staging.stages;
+  for (let i = s.staging.nextStage; i < stages.length; i++) {
+    const info = stages[i]!;
+    const at = info.actionKinds.indexOf('deployParachute');
+    if (at < 0) continue;
+    // A session that does not say which canopy the stage deploys leaves the row unnamed.
+    const mode = info.actionChutes?.[at] ?? null;
+    if (mode === null) break;
+    const env = info.chuteEnvelopes ?? null;
+    const name = CHUTE_NAMES[mode];
+    const detail = env
+      ? `Deploying the ${name} now: ${light}. Safe ${envelopeWords(env.safe, true)}; the canopies fail ${envelopeWords(env.destroy, false)}.`
+      : `Deploying the ${name} now: ${light}.`;
+    return { label: CHUTE_DEPLOY_LABEL[mode], light, tone, detail };
   }
   return { label: 'Chute deploy', light, tone, detail: `Deploying the next chutes now: ${light}.` };
 }

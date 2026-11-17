@@ -39,7 +39,8 @@ import {
   RADAR_ALTITUDE_SWITCH,
 } from '@/ui';
 import { WARP_LEVELS } from '@/core/contracts/defs';
-import { LAB_STAGES, labVehicleParts, tagLabVehicle, withLabVehicle } from '../../../labs/flight-ui/labVehicle';
+import { LAB_STAGES, labVehicleParts, tagLabVehicle, vehicleStaging, withLabVehicle } from '../../../labs/flight-ui/labVehicle';
+import { describeStages as describeStageWords } from '@/core/defs/stageWords';
 import { UI_COLORS } from '@/core/ui/theme';
 import { balanceColumns } from '@/ui/hud/hud';
 import { ablatorGauge, drawBarGauge, type Frame } from '@/ui/mfd/mfdPainter';
@@ -195,16 +196,19 @@ describe('display models', () => {
     expect(zoneStatus({ ...s, readouts: { ...s.readouts, landingTarget: { ...lt, predicted: null }, altitudeAsl: 200e3 } }, defs)).toBeNull();
   });
 
-  it('names what a stage burns from the vehicle definition', () => {
+  it('names what a stage burns from what the staging panel states, never from a vehicle definition', () => {
     const s = snap('ascent');
-    expect(stageBurnLabel(s, defs, 0)).toBe('Meridian M-1');
-    expect(stageBurnLabel(s, defs, 3)).toBe('Meridian M-3');
-    expect(stageBurnLabel(s, defs, 4)).toBe('Heron descent stage');
-    // Stages that ignite nothing, and vessels without a vehicle definition, have no burn name.
-    expect(stageBurnLabel(s, defs, 5)).toBeNull();
-    expect(stageBurnLabel({ ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle', crafts: v.crafts?.map((c) => ({ ...c, vehicleId: 'no-such-vehicle' })) })) }, defs, 0)).toBeNull();
-    // The craft's vehicle is what counts (the helm craft's stage stack is the panel's), not the vessel's base craft label.
-    expect(stageBurnLabel({ ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle' })) }, defs, 0)).toBe('Meridian M-1');
+    expect(stageBurnLabel(s, 0)).toBe('Meridian M-1');
+    expect(stageBurnLabel(s, 3)).toBe('Meridian M-3');
+    expect(stageBurnLabel(s, 4)).toBe('Heron descent stage');
+    // Stages that ignite nothing have no burn name, and neither has a panel that does not state one.
+    expect(stageBurnLabel(s, 5)).toBeNull();
+    const silent = { ...s, staging: { ...s.staging, stages: s.staging.stages.map(({ burnLabel: _b, ...rest }) => rest) } };
+    expect(stageBurnLabel(silent, 0)).toBeNull();
+    // The vehicle ids of the vessel and its craft name no design the library has: the words are the panel's.
+    const unknown = { ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle', crafts: v.crafts?.map((c) => ({ ...c, vehicleId: 'no-such-vehicle' })) })) };
+    expect(stageBurnLabel(unknown, 0)).toBe('Meridian M-1');
+    expect(describeStages(unknown, defs).tiles[3]!.burnName).toBe('Meridian M-3');
     expect(describeStages(s, defs).tiles[3]!.burnName).toBe('Meridian M-3');
   });
 
@@ -580,7 +584,7 @@ describe('round-2 display rules', () => {
     expect(stageActionText(['fireSeparationMotors', 'jettisonLES', 'jettisonFairing'])).toBe('sep. motors · jettison tower · jettison fairing');
     expect(stageActionText(['deployLegs', 'deployLegs'])).toBe('deploy gear');
     expect(stageActionText(['someFutureAction'])).toBe('');
-    // With the vehicle definition every chute is named by its kind, and a cut releases what an earlier stage deployed.
+    // Where the staging panel states the chutes every chute is named by its kind, and a cut releases what an earlier stage deployed.
     const sim = createFakeSim(defs, { scene: 'pad', parts: labVehicleParts(defs), stageLabels: LAB_STAGES.map((x) => x.label) });
     const tiles = describeStages(tagLabVehicle(sim.snapshot()), defs).tiles;
     expect(tiles.find((t) => t.label === 'Drogues')!.actions).toBe('separate · deploy drogues');
@@ -748,7 +752,9 @@ describe('round-6 mission read-outs', () => {
     return {
       ...base,
       ...patch,
-      // The vessel and its craft are of the mission vehicle (the craft's vehicle id is what words about a stage are looked up by).
+      // The staging panel is the mission vehicle's as its session states it: every stage with its action kinds and
+      // what it says about itself (the words about a stage are read from there).
+      staging: vehicleStaging(vehicle, describeStageWords(vehicle, (id) => defs.parts[id]), patch.staging ?? base.staging),
       vessels: base.vessels.map((v) => (v.id === base.activeVesselId ? { ...v, vehicleId: MISSION_VEHICLE, crafts: v.crafts?.map((c) => ({ ...c, vehicleId: MISSION_VEHICLE })), parts } : v)),
     };
   };
@@ -806,7 +812,7 @@ describe('round-6 mission read-outs', () => {
     // Stage index 4 ignites the descent engine (lyra-d); its TWR is stale (Earth gravity at 10 000 km).
     stages[4] = { ...stages[4]!, fired: true, deltaVVac: ve * Math.log(m0 / (m0 - mprop)), deltaVNow: ve * Math.log(m0 / (m0 - mprop)), burnTime, twr: engine.thrustVac / (m0 * 1.49), propellantFraction: 0.92 };
     const s = { ...base, staging: { ...base.staging, stages, nextStage: 5 } };
-    expect(stageAcceleration(s, defs, 4)).toBeCloseTo(engine.thrustVac / m0, 6);
+    expect(stageAcceleration(s, 4)).toBeCloseTo(engine.thrustVac / m0, 6);
     const tile = describeStages(s, defs).tiles[4]!;
     expect(tile.thrustLabel).toBe('Accel');
     expect(n(tile.thrustValue)).toBe(`${(engine.thrustVac / m0).toFixed(2)} m/s²`);

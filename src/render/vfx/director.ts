@@ -58,6 +58,16 @@ export interface DirectorOutput {
   onPad: boolean;
 }
 
+/** The petal of sector 0 among the vessels a `fairingJettisoned` event names (`PartSnapshot.panel`), with its vessel; null when none is in the snapshot. */
+function firstPetal(snap: SimSnapshot, vesselIds: readonly string[]): { vessel: VesselSnapshot; part: PartSnapshot } | null {
+  for (const id of vesselIds) {
+    const vessel = snap.vessels.find((v) => v.id === id);
+    const part = vessel?.parts.find((p) => p.panel?.index === 0);
+    if (vessel && part) return { vessel, part };
+  }
+  return null;
+}
+
 const hashSeed = (...parts: (number | string)[]): number => {
   let h = 0x9e3779b9;
   for (const p of parts) {
@@ -354,7 +364,9 @@ export class EffectDirector {
       }
       case 'decoupled':
       case 'fairingJettisoned': {
-        const hit = findPart(ev.partId) ?? findPart(`${ev.partId}#panel0`);
+        // A jettisoned fairing is gone from the snapshot: its petals replaced it, a vessel each (the event's new
+        // vessels), and the puff starts at the first petal.
+        const hit = findPart(ev.partId) ?? (ev.type === 'fairingJettisoned' ? firstPetal(snap, ev.newVesselIds) : null);
         const vd = hit && vesselDom(hit.vessel);
         if (!hit || !vd) break;
         const def = this.defs.parts[hit.part.def];
