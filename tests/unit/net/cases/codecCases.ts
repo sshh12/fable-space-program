@@ -40,6 +40,8 @@ function makeKey(g: Gen): KeyVessel {
     vel: { x: (g.next() - 0.5) * 200, y: (g.next() - 0.5) * 200, z: (g.next() - 0.5) * 200 },
     att: { x: Math.fround(q.x / n), y: Math.fround(q.y / n), z: Math.fround(q.z / n), w: Math.fround(q.w / n) },
     rate: { x: Math.fround((g.next() - 0.5) * 0.2), y: Math.fround((g.next() - 0.5) * 0.2), z: Math.fround((g.next() - 0.5) * 0.2) },
+    // Half the keys are under thrust (up to 3 g per axis).
+    acc: g.chance(0.5) ? { x: Math.fround((g.next() - 0.5) * 60), y: Math.fround((g.next() - 0.5) * 60), z: Math.fround((g.next() - 0.5) * 60) } : null,
     controls: { throttle: 0, pitch: 0, yaw: 0, roll: 0, tx: 0, ty: 0, tz: 0, sasEnabled: false, rcsEnabled: false, fineControl: false, sasMode: 'stability', sasHold: null },
   };
 }
@@ -132,6 +134,7 @@ export const codecCases: NetCase[] = [
           for (const k of ['x', 'y', 'z'] as const) {
             ok(Object.is(a.pos[k], b.pos[k]) && Object.is(a.vel[k], b.vel[k]) && Object.is(a.rate[k], b.rate[k]), `key ${i}/${j}.${k} not bit-exact`);
             ok(Object.is(Math.fround(a.rate[k]), b.rate[k]), 'rate is float32');
+            ok((a.acc === null) === (b.acc === null) && (a.acc === null || Object.is(a.acc[k], b.acc![k])), `key ${i}/${j} acc.${k} not bit-exact`);
           }
           for (const k of ['x', 'y', 'z', 'w'] as const) ok(Object.is(a.att[k], b.att[k]), `key ${i}/${j} att.${k} not bit-exact`);
         }

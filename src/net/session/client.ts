@@ -236,6 +236,21 @@ export class ClientSession {
   }
 
   /** Leave the launch queue of a spawn request. */
+  /**
+   * Ask for the names of vessels and the callsigns of accounts seen without them (a census document carries
+   * none): split into requests of the rules' `namesPerRequest`; answered by `nameInfo` messages. Sent only while
+   * online (a client asks again for what it still lacks after a reconnect).
+   */
+  lookupNames(vessels: readonly string[], accounts: readonly string[]): void {
+    if (this.phase !== 'online') return;
+    const per = wireLimits(this.cfg.rules).namesPerRequest;
+    const all = [...vessels.map((id) => ({ v: true, id })), ...accounts.map((id) => ({ v: false, id }))];
+    for (let i = 0; i < all.length; i += per) {
+      const part = all.slice(i, i + per);
+      this.send({ type: 'names', vessels: part.filter((x) => x.v).map((x) => x.id), accounts: part.filter((x) => !x.v).map((x) => x.id) });
+    }
+  }
+
   /** Leave the launch queue: sent now, or remembered and sent when the session is resumed. */
   cancelSpawn(reqId: number): void {
     this.pending.delete(reqId);

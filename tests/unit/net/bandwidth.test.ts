@@ -223,7 +223,35 @@ describe('the budget against real frames, per scenario', () => {
     const doc = encodeDocument({ type: 'censusSnapshot', soi: 'earth', seq: 1, wallMs: 1_763_000_000_000, tick: 1_000_000_000, pollAfterS: 30, entries });
     console.log(`ten docking vessels, all steering: worst ${worst} B, mean ${(sum / n).toFixed(1)} B; census of 10,000 objects: ${(doc.length / 1000).toFixed(0)} kB (${(doc.length / 10_000).toFixed(1)} B per object)`);
     expect(worst).toBeLessThanOrEqual(300);
-    // Not the 840 kB of ARCHITECTURE 14: the hand-off states the floor (the unique strings) and the options.
-    expect(doc.length).toBeLessThanOrEqual(10_000 * 100);
+    // ARCHITECTURE 14 plans 840 kB: met since names and callsigns left the documents (lead decision, 2026-11-17).
+    expect(doc.length).toBeLessThanOrEqual(840_000);
+  });
+
+  it('ten vessels at 3 g, all steering: the acceleration term of the key against the same deltas without it', () => {
+    const measure = (withAcc: boolean) => {
+      let sum = 0;
+      let worst = 0;
+      let n = 0;
+      let keyBytes = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const p0 = scenePoses(10, seed, 1000, 'ascent');
+        const k0 = keyOf(ISLAND, 1_000_000, p0, 'ascent');
+        const key = withAcc ? k0 : { ...k0, vessels: k0.vessels.map((v) => ({ ...v, acc: null })) };
+        keyBytes = encodeMessage(key).length;
+        for (let dt = 4; dt <= 120; dt += 4) {
+          const b = encodeMessage(deltaOf(key, key.tick + dt, advance(p0, dt, 9 + seed, 'ascent'), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])).length;
+          sum += b;
+          worst = Math.max(worst, b);
+          n++;
+        }
+      }
+      return { mean: sum / n, worst, key: keyBytes };
+    };
+    const a = measure(true);
+    const b = measure(false);
+    console.log(`3 g, all steering: with the term mean ${a.mean.toFixed(1)} B, worst ${a.worst} B, key ${a.key} B; without it mean ${b.mean.toFixed(1)} B, worst ${b.worst} B, key ${b.key} B`);
+    expect(a.mean).toBeLessThan(b.mean - 40);
+    // The term costs 12 B per thrusting vessel in the key, nothing for a coasting one.
+    expect(a.key - b.key).toBe(12 * 10);
   });
 });

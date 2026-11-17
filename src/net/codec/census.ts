@@ -209,6 +209,13 @@ const P_TO_END = 4;
 export interface EntryContext {
   baseTick: number;
   frames: FrameTable;
+  /** Whether names and callsigns travel (the socket's relevant set: yes; a census document: never). */
+  names: boolean;
+}
+
+/** What a census document carries of an entry: everything but its name and its owners' callsigns. */
+export function documentEntry(e: CensusEntry): CensusEntry {
+  return { ...e, name: '', ownerCallsigns: e.ownerCallsigns.map(() => null) };
 }
 
 function signedDelta(name: string, v: number, base: number): number {
@@ -248,7 +255,7 @@ export function writeEntry(w: ByteWriter, e: CensusEntry, ctx: EntryContext): vo
   );
   w.u8((e.clockId !== null ? E2_CLOCK : 0) | (e.reservedBy !== null ? E2_RESERVED : 0));
   handle.write(w, e.vesselId);
-  handle.write(w, e.name);
+  if (ctx.names) handle.write(w, e.name);
   handle.write(w, e.vehicleId);
   if (!trivial) {
     if (n > 4096) throw new WireEncodeError('census entry: more than 4096 craft');
@@ -257,7 +264,7 @@ export function writeEntry(w: ByteWriter, e: CensusEntry, ctx: EntryContext): vo
   }
   for (let i = 0; i < n; i++) {
     handleOrNull.write(w, e.ownerIds[i]!);
-    handleOrNull.write(w, e.ownerCallsigns[i]!);
+    if (ctx.names) handleOrNull.write(w, e.ownerCallsigns[i]!);
   }
   handle.write(w, e.bodyId);
   w.varInt(signedDelta('headTick', head, ctx.baseTick));
@@ -304,14 +311,14 @@ function frameAt(r: ByteReader, frames: FrameTable): number {
   return i;
 }
 
-const MIN_ENTRY_BYTES = 12;
+const MIN_ENTRY_BYTES = 11;
 
 export function readEntry(r: ByteReader, ctx: EntryContext): CensusEntry {
   const f1 = r.u8();
   const f2 = r.u8();
   if (f2 > 3) r.fail('badEnum');
   const vesselId = handle.read(r);
-  const name = handle.read(r);
+  const name = ctx.names ? handle.read(r) : '';
   const vehicleId = handle.read(r);
   let craftIds: string[];
   if (f1 & E_TRIVIAL_CRAFT) craftIds = [vesselId];
@@ -324,7 +331,7 @@ export function readEntry(r: ByteReader, ctx: EntryContext): CensusEntry {
   const ownerCallsigns: (string | null)[] = [];
   for (let i = 0; i < craftIds.length && !r.failed; i++) {
     ownerIds.push(handleOrNull.read(r));
-    ownerCallsigns.push(handleOrNull.read(r));
+    ownerCallsigns.push(ctx.names ? handleOrNull.read(r) : null);
   }
   const bodyId = handle.read(r);
   const headTick = ctx.baseTick + r.varInt();

@@ -10,7 +10,7 @@ Node and in a worker (no Node module, no package; timers and I/O are injected).
 Ran beside `presentation-sweep`: no presentation code is imported or run. Every verification was scoped
 (`npm run typecheck:paths -- src/net src/core/contracts tests/unit/net tests/browser/net`; `node
 tools/dev/heavy.mjs --class=cpu -- npx vitest run src/net tests/unit/net tools/dev/boundaries.test.ts`: 12 files,
-180 tests pass; `node tools/dev/check-stubs.mjs` OK). Commits of the fix round: c6b1c9e, db4bdf6, 5ab57a5; of the last items: 98f10e3 and this note. Last suite: 13 files, 187
+180 tests pass; `node tools/dev/check-stubs.mjs` OK). Commits of the fix round: c6b1c9e, db4bdf6, 5ab57a5; of the last items: 98f10e3, 748e316; of the lead's two decisions (0.6): the commit of this note. Last suite: 13 files, 187
 tests (with the real `ws` tests).
 
 ## 0. The review's findings: fixed / partly / not, with the evidence
@@ -50,6 +50,7 @@ not carry. Nothing under `data/defs/rules` was edited (PACKAGE_RULES 7a). Defaul
 | `pingsPerSecond` / `timeSyncsPerSecond` | 2 / 2 | messages per second |
 | `handshakeMessages` | 8 | messages before the welcome (pings excluded) |
 | `plansPerSecond` / `quicksPerSecond` / `targetsPerSecond` / `seatRequestsPerSecond` | 1 / 1 / 5 / 2 | messages per second |
+| `nameRequestsPerSecond` / `namesPerRequest` | 2 / 64 | requests per second / ids per request (0.6) |
 | `inputSamplesPerFrame` | 128 | samples |
 | `sendQueueBytes` / `sendQueueAge` | 1,048,576 / 10 | bytes / seconds |
 | `downstreamBytesPerSecond` | 6,000 | bytes per second, sustained |
@@ -60,7 +61,7 @@ not carry. Nothing under `data/defs/rules` was edited (PACKAGE_RULES 7a). Defaul
 
 ### 0.2 Bytes per second per scenario (`bandwidth.test.ts`, real encoded frames, ten minutes each)
 
-(Measured in the fix round, before the size changes of 0.5; the numbers after them are in 0.5 and are 2-11 % lower.)
+(Measured in the fix round, before the size changes of 0.5 and 0.6: the current table is in 0.6.)
 
 Each scenario runs the island at 60 Hz offered, keys every second, plus an 8-vessel near tier at 10 Hz, two
 census entries a second in the relevant set, the pads and an `inputAck` each second. "Island alone" is what the
@@ -130,19 +131,88 @@ landed pair with four probes 447 B, 27.0 kB/s at 60 Hz. Delivered by the budget 
 7.81 kB/s; delta rate settled at 15.4, 10.1, 16.6, 10.0 Hz.
 
 What cannot be met in this format, for the lead to decide:
-- **3 g deltas**: the residuals are against key position + velocity x dt, so under 3 g they grow as a dt^2 / 2
+- **3 g deltas** (DONE since, by the lead's decision: 0.6): the residuals were against key position + velocity x dt, so under 3 g they grow as a dt^2 / 2
   (14.7 m: 21 bits of 1/64 mm after one second) and a dt (29 m/s: 25 bits of um/s), about 21 B of position and
   velocity per vessel late in a key interval. The floor is ~380 B for ten. An acceleration term in the key (3
   float32 per vessel, +12 B per vessel per key) would take ~10 B per vessel off every delta (~280 B for ten); at
   30 Hz with a key a second, about 2.9 kB/s less per client, for a change of the IEEE-exact predictor of
   `quant.ts`. Not done.
-- **Census at 840 kB**: the entries alone are 746 kB; the unique strings (a 12-character vessel id and a name,
+- **Census at 840 kB** (DONE since, names out of the documents: 0.6): the entries alone are 746 kB; the unique strings (a 12-character vessel id and a name,
   23 B per object) are the rest. 840 kB needs the names out of the snapshot (a names document fetched once and
   cached: ~790 kB), or the angles as 40-bit fixed point (5.7e-12 rad, 3 B less per object: ~945 kB), and both
   together give ~760 kB. At the design load the difference is the first fetch of a sphere (975 against 840 kB per
   client); the deltas that follow carry only what changed.
 - **First sight**: an object's strings travel once per session (handles), 42-65 B of them with its first entry.
   That is the floor without shorter ids.
+
+### 0.6 The lead's two decisions of 2026-11-17 (protocol version 2)
+
+`WIRE_PROTOCOL_VERSION` is now 2. The control state, the delta's tick, the conic elements, the key and the census
+documents changed layout. The Hello and `refused` layouts did not change (their frozen bytes still pass). The
+transcripts and fixtures were re-recorded, and `version-mismatch`'s skew client now speaks version 1.
+
+**Names leave the census documents.** A census document carries what moves: ids as handles of its own table,
+orbits, sizes, owners as ids. It never carries a craft's `name` or an owner's callsign: a decoded document
+entry has `name: ''` and `ownerCallsigns` all null (`documentEntry(e)` is what a receiver holds). The contract,
+in the wire section above `NamesMessage`, states that a census entry never needs its strings to be drawn on the
+map. It also says who sends the strings and when:
+- over the socket, the relevant set and the near tier keep their strings as session handles, sent once before
+  first use: the name arrives with the first sight;
+- for objects seen only in a census document, the client asks with `names { vessels, accounts }` (code 18) on
+  demand. The gateway takes at most `limits.namesPerRequest` (default 64) ids per request and
+  `limits.nameRequestsPerSecond` (default 2) requests per second; over either, the request is dropped and
+  answered once as `rateLimited { what: 'names' }`. The universe answers with `nameInfo` (code 65), and the
+  client caches it for the session. `ClientSession.lookupNames(vessels, accounts)` splits a request to the
+  limit.
+
+The two fields join section 0.1's list for the tighten step. In `drivers.test.ts` a request is forwarded,
+an oversize one and a flood are each answered by one `rateLimited`, and `nameInfo` arrives intact.
+
+| Census | Before the size work | After 0.5 | Now | ARCHITECTURE 14 |
+|---|---|---|---|---|
+| Document of 10,000 objects | 1,075 kB | 975 kB | **809 kB (80.9 B per object)** | 840 kB: MET |
+| Relevant-set entry, steady | 91 B | 81 B | 81 B (it keeps its name, as a handle) | 90 B: MET |
+
+The 48-bit floats stay. There are no 40-bit angles.
+
+**The key's acceleration term.** `KeyVessel.acc: Vec3 | null` is the non-gravitational acceleration (thrust
+over mass, island axes, m/s², float32). The slot's low bit says it is there, so a coasting vessel's key costs 0
+bytes more and a thrusting one 12 B. Deltas of a thrusting vessel predict:
+- position from key + v·dt + a·dt²/2;
+- velocity from key + a·dt.
+
+Both are computed operation for operation alike in `quantizePose` and `dequantizePose` (IEEE-exact, no fused
+operations). Error bounds:
+- the term itself travels as float32 bits, and the predictor uses exactly those bits on both sides, so it
+  adds no error;
+- the residuals keep their quantisation (position 1/64 mm, velocity 1 µm/s) and their tested bounds
+  (16 µm, 1 µm/s, 5e-10 rad), now also over keys with the term (`codecCases`: half the random keys carry it;
+  keys stay bit-exact, `acc` included).
+
+The ascent scene now thrusts at 3 g along each vessel's axis, which turns at up to 3 °/s, with ±0.5 m/s² of
+unpredicted throttle and steering noise.
+
+| Ten vessels at 3 g, all steering (20 seeds, every 30 Hz send tick of a key interval) | Mean | Worst | Key of ten |
+|---|---|---|---|
+| Without the term | 383.0 B | 408 B | 813 B |
+| **With the term** | **329.6 B** | **366 B** | 933 B (+12 B per vessel) |
+
+The lead's estimate was about 280 B. The rest is the unpredicted part of the acceleration: velocity residuals
+of 0.25 m/s after a second are 3 B per axis. With 0.1 m/s² of noise, the mean would be close to the estimate.
+
+In the streamed scenario (a key every second, fresh noise every step), the delta goes from 401 B to 372 B. The
+island alone costs 12.1 kB/s at 30 Hz (was 12.8). The budget delivers 7.18 kB/s over 600 s and settles at
+10.7 Hz (was 10.1). Saving per client at 30 Hz with a key a second: (383 - 330) x 30 - 120 ≈ 1.5 kB/s, against
+the estimated 2.9.
+
+Per scenario now (`bandwidth.test.ts`, island alone at its rate, then what the budget delivers over 600 s):
+
+| Scenario | Delta | Island alone | Delivered (600 s) | Delta rate settled |
+|---|---|---|---|---|
+| Ten docking (two steering) | 264 B | 8.7 kB/s at 30 Hz | 6.72 kB/s | 15.4 Hz |
+| Ten at 3 g, all steering | 372 B | 12.1 kB/s at 30 Hz | 7.18 kB/s | 10.7 Hz |
+| A pair in contact, exact form | 259 B | 15.7 kB/s at 60 Hz | 7.19 kB/s | 16.6 Hz |
+| A landed pair, four probes each | 447 B | 27.0 kB/s at 60 Hz | 7.81 kB/s | 10.0 Hz |
 
 ## 1. Acceptance, as the reviewer laid it out: proven / claimed / not done
 
@@ -154,8 +224,8 @@ run by hand), not a standing test; not done = stated.
 | Round trip of every message type on 1,000 seeded random instances | PROVEN | all message types incl. `rateLimited`, equal values and bytes (`shared.test.ts` via `cases/codecCases.ts`) |
 | ... and on fixtures from FakeSession scenes | NOT DONE (substituted) | fixtures recorded from the real session (3 scenes, 917 frames), re-recorded after the fix round with no byte changed; FakeSession scenes listed in section 6 |
 | Keys bit-exact; delta quantisation within 16 um, 1 um/s, 5e-10 rad | PROVEN | `shared.test.ts` cases (7.81 um, 0.500 um/s, 1.60e-10 rad worst) |
-| Key at most 110 B per vessel; delta at most 130 B for two, 300 B for ten | PROVEN | keys smaller than before (the packed control state); two docking vessels 55-62 B; ten docking vessels with two steering 230.6 B mean, 264 B worst, and with ALL ten steering 262.6 B mean, 296 B worst (`bandwidth.test.ts`). At 3 g all steering: 403 B mean, not a line of the brief (0.5) |
-| Staging op under 100 B; census entry at most 90 B | PROVEN | 61 B; census entry 81 B in steady state (the relevant set, strings as handles), 123-146 B on first sight with its new strings. The 10,000-object census document is 975 kB, above the 840 kB of ARCHITECTURE 14 (0.5) |
+| Key at most 110 B per vessel; delta at most 130 B for two, 300 B for ten | PROVEN | key 80-91 B per vessel coasting, +12 B under thrust (the acceleration term); two docking vessels 55-62 B; ten docking vessels with two steering 230.6 B mean, 264 B worst, with ALL ten steering 262.6 B mean, 296 B worst; ten at 3 g all steering 329.6 B mean with the term (383.0 without), not a line of the brief (0.6) |
+| Staging op under 100 B; census entry at most 90 B | PROVEN | 61 B; census entry 81 B in steady state (the relevant set, strings as handles), 123-146 B on first sight with its new strings; the 10,000-object census document 809 kB, within the 840 kB of ARCHITECTURE 14 since names left the documents (0.6) |
 | Encode and decode at most 5 us per vessel | CLAIMED | `bench.ts` through the gate, 0.11-0.20 us per vessel, first delivery; not re-run since (the hot paths gained range checks and the packed control state: a few branches per vessel) |
 | Zero allocation per message in steady state | PROVEN | `alloc.test.ts` (warm-up raised to 100,000 so the optimising compiler's own allocations finish first; growth now 5.7-19.5 kB over 100,000 messages, below one object per 5 messages, for delta, contact delta, key, inputAck, input, near) |
 | Fuzz: 1,000,000 inputs never throw / out of bounds / above 1 MB | PROVEN | `fuzz.test.ts`: 0 throws, largest sampled allocation 27.8 kB; plus the driver fuzz (finding 11) |

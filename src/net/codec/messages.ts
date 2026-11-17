@@ -19,7 +19,7 @@ import type {
   WorldlineMessage,
 } from '@/core/contracts/net';
 import { ByteWriter, WireEncodeError, type ByteReader } from './bytes';
-import { readElements, readEntryList, readFrames, readSegments, randomElements, randomEntry, randomSegment, writeElements, writeEntryList, writeSegments, writeWithFrames } from './census';
+import { documentEntry, readElements, readEntryList, readFrames, readSegments, randomElements, randomEntry, randomSegment, writeElements, writeEntryList, writeSegments, writeWithFrames } from './census';
 import {
   assemblyView,
   clockState,
@@ -100,13 +100,13 @@ const relevantFull: Codec<Omit<RelevantFullMessage, 'type'>> = {
     if (!Number.isSafeInteger(v.seq) || v.seq < 0 || !Number.isSafeInteger(v.tick)) throw new WireEncodeError('relevantFull: seq or tick');
     w.varUint(v.seq);
     w.f64(v.tick);
-    writeWithFrames(w, scratch, false, (sw, frames) => writeEntryList(sw, v.entries, { baseTick: v.tick, frames }));
+    writeWithFrames(w, scratch, false, (sw, frames) => writeEntryList(sw, v.entries, { baseTick: v.tick, frames, names: true }));
   },
   read(r) {
     const seq = r.varUint();
     const t = r.tick();
     const frames = readFrames(r, false);
-    return { seq, tick: t, entries: readEntryList(r, { baseTick: t, frames }) };
+    return { seq, tick: t, entries: readEntryList(r, { baseTick: t, frames, names: true }) };
   },
   random(g) {
     const t = tick.random(g) % 2 ** 51;
@@ -122,7 +122,7 @@ const relevantDelta: Codec<Omit<RelevantDeltaMessage, 'type'>> = {
     w.varUint(v.baseSeq);
     w.f64(v.tick);
     writeWithFrames(w, scratch, false, (sw, frames) => {
-      writeEntryList(sw, v.changed, { baseTick: v.tick, frames });
+      writeEntryList(sw, v.changed, { baseTick: v.tick, frames, names: true });
       array(handle, 1_000_000).write(sw, v.removed);
       writeElements(sw, v.elements, frames);
     });
@@ -132,7 +132,7 @@ const relevantDelta: Codec<Omit<RelevantDeltaMessage, 'type'>> = {
     const baseSeq = r.varUint();
     const t = r.tick();
     const frames = readFrames(r, false);
-    const changed = readEntryList(r, { baseTick: t, frames });
+    const changed = readEntryList(r, { baseTick: t, frames, names: true });
     const removed = array(handle, 1_000_000).read(r);
     return { seq, baseSeq, tick: t, changed, removed, elements: readElements(r, frames) };
   },
@@ -167,6 +167,9 @@ const worldline: Codec<Omit<WorldlineMessage, 'type'>> = {
   random: (g) => ({ vesselId: g.id(10), fromTick: g.safeInt(2 ** 50), toTick: g.safeInt(2 ** 50), segments: Array.from({ length: g.int(0, 3) }, () => randomSegment(g)) }),
 };
 
+/** Most ids one `names` or `nameInfo` message carries (the rules' `namesPerRequest` is at most this). */
+export const MAX_NAMES_PER_MESSAGE = 256;
+
 /** The strings of a census document's table: ids and craft names (UTF-8 of at most `WIRE_RANGES.maxIdBytes`). */
 const tableString = str(WIRE_RANGES.maxIdBytes);
 
@@ -199,7 +202,7 @@ const censusSnapshot: Codec<Omit<CensusSnapshotDocument, 'type'>> = {
     f64.write(w, v.wallMs);
     tick.write(w, v.tick);
     f64.write(w, v.pollAfterS);
-    writeDocBody(w, (sw) => writeWithFrames(sw, scratch, false, (s2, frames) => writeEntryList(s2, v.entries, { baseTick: v.tick, frames })));
+    writeDocBody(w, (sw) => writeWithFrames(sw, scratch, false, (s2, frames) => writeEntryList(s2, v.entries, { baseTick: v.tick, frames, names: false })));
   },
   read(r) {
     const soi = id.read(r);
@@ -210,13 +213,13 @@ const censusSnapshot: Codec<Omit<CensusSnapshotDocument, 'type'>> = {
     const outer = r.table;
     r.table = readDocStrings(r);
     const frames = readFrames(r, false);
-    const entries = readEntryList(r, { baseTick: t, frames });
+    const entries = readEntryList(r, { baseTick: t, frames, names: false });
     r.table = outer;
     return { soi, seq, wallMs, tick: t, pollAfterS, entries };
   },
   random(g) {
     const t = tick.random(g) % 2 ** 51;
-    return { soi: g.id(6), seq: g.safeInt(1e9), wallMs: g.f64(), tick: t, pollAfterS: g.f64(), entries: Array.from({ length: g.int(0, 3) }, () => randomEntry(g, t)) };
+    return { soi: g.id(6), seq: g.safeInt(1e9), wallMs: g.f64(), tick: t, pollAfterS: g.f64(), entries: Array.from({ length: g.int(0, 3) }, () => documentEntry(randomEntry(g, t))) };
   },
 };
 
@@ -231,7 +234,7 @@ const censusDelta: Codec<Omit<CensusDeltaDocument, 'type'>> = {
     f64.write(w, v.pollAfterS);
     writeDocBody(w, (sw) =>
       writeWithFrames(sw, scratch, false, (s2, frames) => {
-        writeEntryList(s2, v.changed, { baseTick: v.tick, frames });
+        writeEntryList(s2, v.changed, { baseTick: v.tick, frames, names: false });
         array(handle, 1_000_000).write(s2, v.removed);
       }),
     );
@@ -246,7 +249,7 @@ const censusDelta: Codec<Omit<CensusDeltaDocument, 'type'>> = {
     const outer = r.table;
     r.table = readDocStrings(r);
     const frames = readFrames(r, false);
-    const changed = readEntryList(r, { baseTick: t, frames });
+    const changed = readEntryList(r, { baseTick: t, frames, names: false });
     const removed = array(handle, 1_000_000).read(r);
     r.table = outer;
     return { soi, seq, baseSeq, wallMs, tick: t, pollAfterS, changed, removed };
@@ -260,7 +263,7 @@ const censusDelta: Codec<Omit<CensusDeltaDocument, 'type'>> = {
       wallMs: g.f64(),
       tick: t,
       pollAfterS: g.f64(),
-      changed: Array.from({ length: g.int(0, 2) }, () => randomEntry(g, t)),
+      changed: Array.from({ length: g.int(0, 2) }, () => documentEntry(randomEntry(g, t))),
       removed: Array.from({ length: g.int(0, 2) }, () => g.id(8)),
     };
   },
@@ -432,7 +435,17 @@ add(
   64,
   'server',
   'reliable',
-  fieldsOf('rateLimited', { what: enumOf(['command', 'time', 'seat', 'subscribe', 'plan', 'quick', 'target', 'input'] as const), dropped: uint, ids: array(uint, 64), retryAfterMs: f64 }),
+  fieldsOf('rateLimited', { what: enumOf(['command', 'time', 'seat', 'subscribe', 'plan', 'quick', 'target', 'input', 'names'] as const), dropped: uint, ids: array(uint, 64), retryAfterMs: f64 }),
+);
+// Names as static metadata (net.ts `NamesMessage`): the codec bounds a request to MAX_NAMES_PER_MESSAGE ids,
+// the gateway to the rules' `namesPerRequest`.
+add('names', 18, 'client', 'reliable', fieldsOf('names', { vessels: array(id, MAX_NAMES_PER_MESSAGE), accounts: array(id, MAX_NAMES_PER_MESSAGE) }));
+add(
+  'nameInfo',
+  65,
+  'server',
+  'reliable',
+  fieldsOf('nameInfo', { vessels: array(struct({ id, name: str(WIRE_RANGES.maxIdBytes) }), MAX_NAMES_PER_MESSAGE), accounts: array(struct({ id, callsign: id }), MAX_NAMES_PER_MESSAGE) }),
 );
 // Role to role.
 add('route', 96, 'role', 'reliable', fieldsOf('route', { route: uint, payload: blob(MAX_ROUTE_BYTES) }));

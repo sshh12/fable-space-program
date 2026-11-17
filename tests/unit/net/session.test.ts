@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { ClientMessage, ClockState, ServerMessage } from '@/core/contracts/net';
-import { DEFAULT_UNIVERSE_RULES, WIRE_CONSTANTS } from '@/core/contracts/net';
+import { DEFAULT_UNIVERSE_RULES, WIRE_CONSTANTS, WIRE_PROTOCOL_VERSION } from '@/core/contracts/net';
 import { decodeFrame, encodeMessage } from '@/net/codec/framing';
 import { DownstreamBudget } from '@/net/session/budget';
 import { ClientSession } from '@/net/session/client';
@@ -38,7 +38,7 @@ function sent(s: ServerSession): ServerMessage[] {
 /** A server session brought online at t = 0. */
 function online(c = cfg()): ServerSession {
   const s = new ServerSession(c, 0, 0);
-  s.messages([{ type: 'hello', protocol: 1, build: 'b', defsHash: 'd', cpuScore: null, resume: null }]);
+  s.messages([{ type: 'hello', protocol: WIRE_PROTOCOL_VERSION, build: 'b', defsHash: 'd', cpuScore: null, resume: null }]);
   s.messages([{ type: 'auth', accountId: 'a', signature: new Uint8Array(2) }]);
   s.authResult({ ok: true, accountId: 'a', callsign: 'A', session: 'tok', liveClock: live, serverMs: 0, upMs: 0 });
   s.setClock(live);
@@ -62,7 +62,7 @@ describe('the gateway session', () => {
   it('refuses a handshake that does not finish in time', () => {
     // A client that keeps the socket alive with pings but never answers the challenge.
     const s = new ServerSession(cfg(), 0, 0);
-    s.messages([{ type: 'hello', protocol: 1, build: 'b', defsHash: 'd', cpuScore: null, resume: null }]);
+    s.messages([{ type: 'hello', protocol: WIRE_PROTOCOL_VERSION, build: 'b', defsHash: 'd', cpuScore: null, resume: null }]);
     for (let t = 1000; t < WIRE_CONSTANTS.handshakeTimeoutMs; t += 1000) {
       s.tick(t, 0);
       s.messages([{ type: 'ping', seq: t }]);
@@ -75,7 +75,7 @@ describe('the gateway session', () => {
 
   it('refuses every Hello in standby; the client tries the next candidate at once, then backs off', () => {
     const s = new ServerSession(cfg({ standby: true }), 0, 0);
-    s.messages([{ type: 'hello', protocol: 1, build: 'b', defsHash: 'd', cpuScore: null, resume: null }]);
+    s.messages([{ type: 'hello', protocol: WIRE_PROTOCOL_VERSION, build: 'b', defsHash: 'd', cpuScore: null, resume: null }]);
     expect(sent(s).some((m) => m.type === 'refused' && m.reason === 'standby')).toBe(true);
     const c = new ClientSession({ build: 'b', defsHash: 'd', cpuScore: null, accountId: 'a', random: () => 0.5 });
     c.tick(0);

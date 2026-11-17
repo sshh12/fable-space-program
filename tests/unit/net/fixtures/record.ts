@@ -136,7 +136,7 @@ async function recordScene(scene: Scene, defs: Awaited<ReturnType<typeof loadLib
         type: 'islandKey',
         island: 1,
         tick,
-        vessels: [{ slot: 0, pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, att: { x: Math.fround(v.q.x), y: Math.fround(v.q.y), z: Math.fround(v.q.z), w: Math.fround(v.q.w) }, rate: { x: Math.fround(v.w.x), y: Math.fround(v.w.y), z: Math.fround(v.w.z) }, controls: controlState(v, c) }],
+        vessels: [{ slot: 0, pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, att: { x: Math.fround(v.q.x), y: Math.fround(v.q.y), z: Math.fround(v.q.z), w: Math.fround(v.q.w) }, rate: { x: Math.fround(v.w.x), y: Math.fround(v.w.y), z: Math.fround(v.w.z) }, acc: null, controls: controlState(v, c) }],
       };
       out(atMs, [key, { type: 'relevantDelta', seq: i / 120 + 1, baseSeq: i / 120, tick, changed: [entryOf(v, s, tick)], removed: [], elements: [] }, { type: 'durable', tick: tick - 30 }]);
     } else if (i % 12 === 0 && key) {

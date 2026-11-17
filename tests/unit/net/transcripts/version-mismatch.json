@@ -1,6 +1,6 @@
 {
   "name": "version-mismatch",
-  "description": "A client of an older build connects: the gateway refuses it ('build', \"a new version is ready\") before any challenge; the refusal is final (no reconnect), and a spawn made meanwhile is answered as refused without being sent. A second client with the right build but another definition library is refused ('defsHash'). A third client speaks another protocol version (2): refused ('protocol') before any challenge, final.",
+  "description": "A client of an older build connects: the gateway refuses it ('build', \"a new version is ready\") before any challenge; the refusal is final (no reconnect), and a spawn made meanwhile is answered as refused without being sent. A second client with the right build but another definition library is refused ('defsHash'). A third client speaks an older protocol version (1): refused ('protocol') before any challenge, final.",
   "host": {
     "build": "b-2026-11",
     "defsHash": "defs-1",
@@ -31,7 +31,7 @@
     {
       "id": "c",
       "accountId": "acct-c",
-      "protocol": 2,
+      "protocol": 1,
       "seed": 73
     }
   ],
@@ -151,7 +151,7 @@
         "atMs": 0,
         "dir": "c2s",
         "conn": 0,
-        "hex": "0101140109622d323032362d313006646566732d310000"
+        "hex": "0101140209622d323032362d313006646566732d310000"
       },
       {
         "atMs": 0,
@@ -165,7 +165,7 @@
         "atMs": 0,
         "dir": "c2s",
         "conn": 0,
-        "hex": "0101140109622d323032362d313106646566732d300000"
+        "hex": "0101140209622d323032362d313106646566732d300000"
       },
       {
         "atMs": 0,
@@ -179,7 +179,7 @@
         "atMs": 0,
         "dir": "c2s",
         "conn": 0,
-        "hex": "0101140209622d323032362d313106646566732d310000"
+        "hex": "0101140109622d323032362d313106646566732d310000"
       },
       {
         "atMs": 0,

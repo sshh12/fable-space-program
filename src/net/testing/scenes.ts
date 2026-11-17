@@ -51,21 +51,37 @@ export function keyOf(island: number, tick: number, poses: readonly IslandPose[]
     vel: { ...s.vel },
     att: { x: Math.fround(s.att.x), y: Math.fround(s.att.y), z: Math.fround(s.att.z), w: Math.fround(s.att.w) },
     rate: { x: Math.fround(s.rate.x), y: Math.fround(s.rate.y), z: Math.fround(s.rate.z) },
+    // Under thrust the shard states the acceleration at the key (float32), as the codec carries it.
+    acc: motion === 'ascent' ? f32vec(thrustOf(s.att)) : null,
     controls: heldControls(motion === 'ascent' ? 255 : 0),
   }));
   return { type: 'islandKey', island, tick, vessels };
 }
 
+/** Thrust of an ascent: 3 g (29.4 m/s^2) along the vessel's +Y axis, in island axes. */
+export const ASCENT_ACCELERATION = 29.4;
+export function thrustOf(q: { x: number; y: number; z: number; w: number }): { x: number; y: number; z: number } {
+  const A = ASCENT_ACCELERATION;
+  return { x: 2 * (q.x * q.y - q.w * q.z) * A, y: (1 - 2 * (q.x * q.x + q.z * q.z)) * A, z: 2 * (q.y * q.z + q.w * q.x) * A };
+}
+
+function f32vec(v: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+  return { x: Math.fround(v.x), y: Math.fround(v.y), z: Math.fround(v.z) };
+}
+
 /**
- * The poses `dtTicks` later: a docking approach (RCS at 0.05 m/s^2, differential gravity, turning at up to
- * 0.3 deg/s) or an ascent (30 m/s^2 of thrust, turning at up to 3 deg/s).
+ * The poses `dtTicks` later: a docking approach (RCS at 0.05 m/s^2 in random directions, turning at up to
+ * 0.3 deg/s) or an ascent (3 g of thrust along the vessel's axis, turning at up to 3 deg/s, with +-0.5 m/s^2
+ * of throttle and steering noise).
  */
 export function advance(poses: readonly IslandPose[], dtTicks: number, seed: number, motion: Motion): IslandPose[] {
   const p = new Prng(seed);
   const dt = dtTicks / 120;
-  const acc = motion === 'docking' ? 0.05 : 30;
+  const acc = motion === 'docking' ? 0.05 : 1;
   return poses.map((s) => {
-    const a = { x: (p.next() - 0.5) * acc, y: (p.next() - 0.5) * acc, z: (p.next() - 0.5) * acc };
+    const noise = { x: (p.next() - 0.5) * acc, y: (p.next() - 0.5) * acc, z: (p.next() - 0.5) * acc };
+    const t = motion === 'ascent' ? thrustOf(s.att) : { x: 0, y: 0, z: 0 };
+    const a = { x: t.x + noise.x, y: t.y + noise.y, z: t.z + noise.z };
     const n = makePose();
     n.pos = { x: s.pos.x + s.vel.x * dt + 0.5 * a.x * dt * dt, y: s.pos.y + s.vel.y * dt + 0.5 * a.y * dt * dt, z: s.pos.z + s.vel.z * dt + 0.5 * a.z * dt * dt };
     n.vel = { x: s.vel.x + a.x * dt, y: s.vel.y + a.y * dt, z: s.vel.z + a.z * dt };

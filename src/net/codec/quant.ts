@@ -49,6 +49,11 @@ const scratchCur: number[] = [0, 0, 0, 0];
  * The key's attitude advanced by `dt` seconds with its rate (VES axes): q + dt/2 q (x) (w, 0), normalised.
  * Writes x, y, z, w into `out`.
  */
+/** The key's acceleration term (a key vessel's `acc`; null for a coasting vessel or a plain pose). */
+function keyAcc(key: KeyVessel | IslandPose): { x: number; y: number; z: number } | null {
+  return 'acc' in key ? (key as KeyVessel).acc : null;
+}
+
 function predictAttitude(key: KeyVessel | IslandPose, dt: number, out: number[]): void {
   const q = key.att;
   const w = key.rate;
@@ -105,9 +110,15 @@ const scratchVal: number[] = [0, 0, 0];
 export function quantizePose(key: KeyVessel | IslandPose, dtTicks: number, cur: IslandPose, out: DeltaPose): void {
   const dt = dtTicks / TICKS_PER_SECOND;
   // Position against the key's straight-line extrapolation.
-  const pxp = key.pos.x + key.vel.x * dt;
-  const pyp = key.pos.y + key.vel.y * dt;
-  const pzp = key.pos.z + key.vel.z * dt;
+  // The prediction: key position + velocity x dt (+ acceleration x dt^2 / 2 when the key has the term).
+  const acc = keyAcc(key);
+  const h = 0.5 * dt * dt;
+  const pxp = acc ? key.pos.x + key.vel.x * dt + acc.x * h : key.pos.x + key.vel.x * dt;
+  const pyp = acc ? key.pos.y + key.vel.y * dt + acc.y * h : key.pos.y + key.vel.y * dt;
+  const pzp = acc ? key.pos.z + key.vel.z * dt + acc.z * h : key.pos.z + key.vel.z * dt;
+  const vxp = acc ? key.vel.x + acc.x * dt : key.vel.x;
+  const vyp = acc ? key.vel.y + acc.y * dt : key.vel.y;
+  const vzp = acc ? key.vel.z + acc.z * dt : key.vel.z;
   let px = Math.round(cur.pos.x * POS_FINE) - Math.round(pxp * POS_FINE);
   let py = Math.round(cur.pos.y * POS_FINE) - Math.round(pyp * POS_FINE);
   let pz = Math.round(cur.pos.z * POS_FINE) - Math.round(pzp * POS_FINE);
@@ -120,14 +131,14 @@ export function quantizePose(key: KeyVessel | IslandPose, dtTicks: number, cur: 
   out.px = px;
   out.py = py;
   out.pz = pz;
-  let vx = Math.round(cur.vel.x * VEL_FINE) - Math.round(key.vel.x * VEL_FINE);
-  let vy = Math.round(cur.vel.y * VEL_FINE) - Math.round(key.vel.y * VEL_FINE);
-  let vz = Math.round(cur.vel.z * VEL_FINE) - Math.round(key.vel.z * VEL_FINE);
+  let vx = Math.round(cur.vel.x * VEL_FINE) - Math.round(vxp * VEL_FINE);
+  let vy = Math.round(cur.vel.y * VEL_FINE) - Math.round(vyp * VEL_FINE);
+  let vz = Math.round(cur.vel.z * VEL_FINE) - Math.round(vzp * VEL_FINE);
   out.coarseVel = Math.abs(vx) > FINE_LIMIT || Math.abs(vy) > FINE_LIMIT || Math.abs(vz) > FINE_LIMIT;
   if (out.coarseVel) {
-    vx = Math.round(cur.vel.x * VEL_COARSE) - Math.round(key.vel.x * VEL_COARSE);
-    vy = Math.round(cur.vel.y * VEL_COARSE) - Math.round(key.vel.y * VEL_COARSE);
-    vz = Math.round(cur.vel.z * VEL_COARSE) - Math.round(key.vel.z * VEL_COARSE);
+    vx = Math.round(cur.vel.x * VEL_COARSE) - Math.round(vxp * VEL_COARSE);
+    vy = Math.round(cur.vel.y * VEL_COARSE) - Math.round(vyp * VEL_COARSE);
+    vz = Math.round(cur.vel.z * VEL_COARSE) - Math.round(vzp * VEL_COARSE);
   }
   out.vx = vx;
   out.vy = vy;
@@ -168,13 +179,16 @@ const MAX_COMPONENT = 0.7071067811865476 + 1e-9;
 export function dequantizePose(key: KeyVessel | IslandPose, dtTicks: number, d: DeltaPose, out: IslandPose): boolean {
   const dt = dtTicks / TICKS_PER_SECOND;
   const S = d.coarsePos ? POS_COARSE : POS_FINE;
-  out.pos.x = (Math.round((key.pos.x + key.vel.x * dt) * S) + d.px) / S;
-  out.pos.y = (Math.round((key.pos.y + key.vel.y * dt) * S) + d.py) / S;
-  out.pos.z = (Math.round((key.pos.z + key.vel.z * dt) * S) + d.pz) / S;
+  // The same prediction as quantizePose, operation for operation.
+  const acc = keyAcc(key);
+  const h = 0.5 * dt * dt;
+  out.pos.x = (Math.round((acc ? key.pos.x + key.vel.x * dt + acc.x * h : key.pos.x + key.vel.x * dt) * S) + d.px) / S;
+  out.pos.y = (Math.round((acc ? key.pos.y + key.vel.y * dt + acc.y * h : key.pos.y + key.vel.y * dt) * S) + d.py) / S;
+  out.pos.z = (Math.round((acc ? key.pos.z + key.vel.z * dt + acc.z * h : key.pos.z + key.vel.z * dt) * S) + d.pz) / S;
   const V = d.coarseVel ? VEL_COARSE : VEL_FINE;
-  out.vel.x = (Math.round(key.vel.x * V) + d.vx) / V;
-  out.vel.y = (Math.round(key.vel.y * V) + d.vy) / V;
-  out.vel.z = (Math.round(key.vel.z * V) + d.vz) / V;
+  out.vel.x = (Math.round((acc ? key.vel.x + acc.x * dt : key.vel.x) * V) + d.vx) / V;
+  out.vel.y = (Math.round((acc ? key.vel.y + acc.y * dt : key.vel.y) * V) + d.vy) / V;
+  out.vel.z = (Math.round((acc ? key.vel.z + acc.z * dt : key.vel.z) * V) + d.vz) / V;
   let a: number;
   let b: number;
   let c: number;

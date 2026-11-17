@@ -720,6 +720,8 @@ export const universeRules: Codec<UniverseRules> = struct<R>({
     quicksPerSecond: opt(f64),
     targetsPerSecond: opt(f64),
     seatRequestsPerSecond: opt(f64),
+      nameRequestsPerSecond: opt(f64),
+      namesPerRequest: opt(f64),
     inputSamplesPerFrame: opt(f64),
     sendQueueBytes: opt(f64),
     sendQueueAge: opt(f64),

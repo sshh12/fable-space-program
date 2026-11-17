@@ -347,6 +347,9 @@ export interface UniverseRules {
     quicksPerSecond?: number;
     targetsPerSecond?: number;
     seatRequestsPerSecond?: number;
+    /** `names` requests per second, and ids one request may ask for (vessel names and account callsigns). */
+    nameRequestsPerSecond?: number;
+    namesPerRequest?: number;
     /** Input samples one client frame may carry in all. */
     inputSamplesPerFrame?: number;
     /** A socket whose outgoing queue holds more than this many bytes, or a record older than this many seconds, is closed (a slow consumer). */
@@ -1029,7 +1032,7 @@ export interface CapabilityReport {
 // added here by request.
 
 /** Version of the wire protocol. `HelloMessage.protocol` must equal the server's or the session is refused. */
-export const WIRE_PROTOCOL_VERSION = 1;
+export const WIRE_PROTOCOL_VERSION = 2;
 
 /**
  * Defaults of the optional wire fields of `UniverseRules.limits` (used while the rules document in force does
@@ -1047,6 +1050,8 @@ export const WIRE_LIMIT_DEFAULTS = {
   quicksPerSecond: 1,
   targetsPerSecond: 5,
   seatRequestsPerSecond: 2,
+  nameRequestsPerSecond: 2,
+  namesPerRequest: 64,
   inputSamplesPerFrame: 128,
   sendQueueBytes: 1024 * 1024,
   sendQueueAge: 10,
@@ -1524,6 +1529,13 @@ export interface KeyVessel {
   /** Attitude (VES -> inertial axes) and angular velocity (VES axes, rad/s), float32 values. */
   att: import('../math/quat').Quat;
   rate: import('../math/vec3').Vec3;
+  /**
+   * The vessel's non-gravitational acceleration at the key (thrust over mass, island axes, m/s^2), float32
+   * values; null when it is not thrusting. Deltas of a thrusting vessel are predicted from it (position
+   * key + v dt + a dt^2 / 2, velocity key + a dt), which keeps their residuals small under thrust; the residuals'
+   * quantisation and its bounds are those of every delta. A coasting vessel's key costs nothing for it.
+   */
+  acc: import('../math/vec3').Vec3 | null;
   controls: WireControlState;
 }
 
@@ -1713,7 +1725,7 @@ export interface NearMessage {
  */
 export interface RateLimitedMessage {
   type: 'rateLimited';
-  what: 'command' | 'time' | 'seat' | 'subscribe' | 'plan' | 'quick' | 'target' | 'input';
+  what: 'command' | 'time' | 'seat' | 'subscribe' | 'plan' | 'quick' | 'target' | 'input' | 'names';
   dropped: number;
   ids: number[];
   /** When the client may send this kind again, ms from now. */
@@ -1848,6 +1860,33 @@ export interface RouteMessage {
   payload: Uint8Array;
 }
 
+/**
+ * NAMES ARE STATIC METADATA, fetched once (lead decision of 2026-11-17). A census document carries what moves:
+ * ids, orbits, sizes, owners (as ids); it never carries a craft's `name` or an owner's callsign (a decoded
+ * document entry has `name: ''` and `ownerCallsigns` all null). A census entry never needs its strings to be
+ * drawn on the map: the map draws it from its orbit and kind and labels it when the name is known.
+ * Who sends the strings, and when:
+ *  - over the socket, the relevant set and the near tier carry their strings as session handles, sent once per
+ *    session before first use (the `handles` message): an object's name arrives with its first sight;
+ *  - for objects seen only in a census document, the client asks with `names` (on demand: the objects it
+ *    labels, at most `limits.namesPerRequest` ids per request and `limits.nameRequestsPerSecond` requests per
+ *    second, ARCHITECTURE 26), and the gateway answers with `nameInfo` from the universe; the client caches
+ *    the answers for the session (a rename arrives as a new `nameInfo` for that id).
+ */
+/** Client -> server: the names of vessels and the callsigns of accounts the client has ids for but no strings. */
+export interface NamesMessage {
+  type: 'names';
+  vessels: string[];
+  accounts: string[];
+}
+
+/** Server -> client: what `names` asked for (ids the universe does not know are left out). */
+export interface NameInfoMessage {
+  type: 'nameInfo';
+  vessels: { id: string; name: string }[];
+  accounts: { id: string; callsign: string }[];
+}
+
 // ----------------------------------------------------------------------------------- public census (HTTP)
 
 /** The public census of one sphere of influence (ARCHITECTURE 13.3, 14 tier C2): identical for every viewer, served by the publisher. */
@@ -1883,6 +1922,7 @@ export type CensusDocument = CensusSnapshotDocument | CensusDeltaDocument;
 
 /** Everything a client sends on its socket. */
 export type ClientMessage =
+  | NamesMessage
   | HelloMessage
   | AuthMessage
   | SpawnMessage
@@ -1936,6 +1976,7 @@ export type ServerMessage =
   | RulesMessage
   | NoticeMessage
   | RateLimitedMessage
+  | NameInfoMessage
   | PingMessage
   | PongMessage
   | TimeSyncReplyMessage;

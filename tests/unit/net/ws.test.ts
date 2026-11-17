@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { ClientMessage, ServerMessage, UniverseRules } from '@/core/contracts/net';
-import { DEFAULT_UNIVERSE_RULES, WIRE_CONSTANTS } from '@/core/contracts/net';
+import { DEFAULT_UNIVERSE_RULES, WIRE_CONSTANTS, WIRE_PROTOCOL_VERSION } from '@/core/contracts/net';
 import { decodeFrame, encodeFrame } from '@/net/codec/framing';
 import { ServerDriver } from '@/net/session/driver';
 import { RealScheduler } from '@/net/time/scheduler';
@@ -22,7 +22,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0).reverse()) await c();
 });
 
-const HELLO: ClientMessage = { type: 'hello', protocol: 1, build: 'b', defsHash: 'd', cpuScore: null, resume: null };
+const HELLO: ClientMessage = { type: 'hello', protocol: WIRE_PROTOCOL_VERSION, build: 'b', defsHash: 'd', cpuScore: null, resume: null };
 const live = { id: 'live', kind: 'live' as const, tick0: 0, anchorUpMs: 0, rate: 1, untilTick: null, limitedBy: null, members: [], proposals: [] };
 
 interface Gateway {

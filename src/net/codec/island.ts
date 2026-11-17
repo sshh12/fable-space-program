@@ -194,7 +194,7 @@ export const inputCodec: HotCodec<InputMessage> = {
 // ------------------------------------------------------------------------------------------ islandKey
 
 function makeKeyVessel(): KeyVessel {
-  return { slot: 0, pos: new FrameVec3(), vel: new FrameVec3(), att: new FrameQuat(), rate: new FrameVec3(), controls: emptyControlState() };
+  return { slot: 0, pos: new FrameVec3(), vel: new FrameVec3(), att: new FrameQuat(), rate: new FrameVec3(), acc: null, controls: emptyControlState() };
 }
 
 export class IslandKeyFrame implements IslandKeyMessage {
@@ -203,6 +203,8 @@ export class IslandKeyFrame implements IslandKeyMessage {
   tick = 0;
   vessels: KeyVessel[] = [];
   readonly pool = new Pool<KeyVessel>(makeKeyVessel);
+  /** The acceleration vectors of the pooled vessels (a vessel holds one while its key has the term). */
+  readonly accs = new Pool<FrameVec3>(() => new FrameVec3());
 }
 
 const KEY_VESSEL_MIN = 1 + 48 + 16 + 12 + 2;
@@ -217,7 +219,8 @@ export const islandKeyCodec: HotCodec<IslandKeyMessage> = {
     w.varUint(m.vessels.length);
     for (const v of m.vessels) {
       check(isUint(v.slot) && v.slot <= MAX_SLOT, 'islandKey: slot');
-      w.varUint(v.slot);
+      // The slot's low bit says whether the acceleration term follows the rate (a coasting vessel: no byte).
+      w.varUint(v.slot * 2 + (v.acc ? 1 : 0));
       writeVecF64(w, v.pos.x, v.pos.y, v.pos.z, 'islandKey.pos');
       writeVecF64(w, v.vel.x, v.vel.y, v.vel.z, 'islandKey.vel');
       writeF32(w, v.att.x, 'islandKey.att');
@@ -227,6 +230,11 @@ export const islandKeyCodec: HotCodec<IslandKeyMessage> = {
       writeF32(w, v.rate.x, 'islandKey.rate');
       writeF32(w, v.rate.y, 'islandKey.rate');
       writeF32(w, v.rate.z, 'islandKey.rate');
+      if (v.acc) {
+        writeF32(w, v.acc.x, 'islandKey.acc');
+        writeF32(w, v.acc.y, 'islandKey.acc');
+        writeF32(w, v.acc.z, 'islandKey.acc');
+      }
       controlState.write(w, v.controls);
     }
   },
@@ -243,11 +251,17 @@ export const islandKeyCodec: HotCodec<IslandKeyMessage> = {
     f.vessels.length = n;
     for (let i = 0; i < n; i++) {
       const v = f.pool.at(i);
-      v.slot = r.varUintMax(MAX_SLOT);
+      const head = r.varUintMax(MAX_SLOT * 2 + 1);
+      v.slot = Math.floor(head / 2);
       r.vec3f64Into(v.pos);
       r.vec3f64Into(v.vel);
       r.quatInto(v.att, true);
       r.vec3f32Into(v.rate);
+      if (head % 2 === 1) {
+        const a = f.accs.at(i);
+        r.vec3f32Into(a);
+        v.acc = a;
+      } else v.acc = null;
       readControlStateInto(r, v.controls);
       f.vessels[i] = v;
       if (r.failed) {
@@ -267,6 +281,7 @@ export const islandKeyCodec: HotCodec<IslandKeyMessage> = {
         vel: { x: g.f64(), y: g.f64(), z: g.f64() },
         att: { x: f32v(g), y: f32v(g), z: f32v(g), w: f32v(g) },
         rate: { x: f32v(g), y: f32v(g), z: f32v(g) },
+        acc: g.chance(0.5) ? { x: f32v(g), y: f32v(g), z: f32v(g) } : null,
         controls: randomControlState(g),
       });
     }
@@ -279,7 +294,7 @@ function cloneControls(c: WireControlState): WireControlState {
 }
 
 function cloneKeyVessel(v: KeyVessel): KeyVessel {
-  return { slot: v.slot, pos: { ...v.pos }, vel: { ...v.vel }, att: { ...v.att }, rate: { ...v.rate }, controls: cloneControls(v.controls) };
+  return { slot: v.slot, pos: { ...v.pos }, vel: { ...v.vel }, att: { ...v.att }, rate: { ...v.rate }, acc: v.acc ? { ...v.acc } : null, controls: cloneControls(v.controls) };
 }
 
 // ---------------------------------------------------------------------------------------- islandDelta

@@ -66,6 +66,7 @@ export class AccountLimits {
       command: new RateWindow(l.commandsPerSecond, 1000),
       time: new RateWindow(l.timeMessages, l.timeMessageWindow * 1000),
       seat: new RateWindow(l.seatRequestsPerSecond, 1000),
+      names: new RateWindow(l.nameRequestsPerSecond, 1000),
       subscribe: new RateWindow(l.subscriptionsPerSecond, 1000),
       plan: new RateWindow(l.plansPerSecond, 1000),
       quick: new RateWindow(l.quicksPerSecond, 1000),
@@ -164,7 +165,7 @@ export class ServerSession {
   readonly refusals: ServerRefusalRecord[] = [];
   /** Requests handled, by id (bounded: the last `requestMemory`), with their answer once known. */
   private readonly seen = new Map<number, ServerMessage | null>();
-  readonly dropped: Record<LimitedKind | 'repeats' | 'stamp', number> = { input: 0, command: 0, time: 0, seat: 0, subscribe: 0, plan: 0, quick: 0, target: 0, ping: 0, timeSync: 0, repeats: 0, stamp: 0 };
+  readonly dropped: Record<LimitedKind | 'repeats' | 'stamp', number> = { input: 0, command: 0, time: 0, seat: 0, subscribe: 0, plan: 0, quick: 0, target: 0, names: 0, ping: 0, timeSync: 0, repeats: 0, stamp: 0 };
 
   constructor(cfg: ServerConfig, nowMs: number, upMs: number) {
     this.cfg = cfg;
@@ -473,6 +474,10 @@ export class ServerSession {
       case 'subscribe':
         if (!this.account.windows.subscribe.admit(this.now)) return this.noteDrop('subscribe', 1, []);
         this.subscriptions = { ...this.subscriptions, ...m.change };
+        this.out({ kind: 'forward', message: m });
+        return;
+      case 'names':
+        if (!this.account.windows.names.admit(this.now) || m.vessels.length + m.accounts.length > this.limits.namesPerRequest) return this.noteDrop('names', 1, []);
         this.out({ kind: 'forward', message: m });
         return;
       case 'plan':

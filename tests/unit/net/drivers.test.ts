@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { ClientMessage, ClockState, ServerMessage, WireMessage, WireMessageType } from '@/core/contracts/net';
-import { DEFAULT_UNIVERSE_RULES, wireLimits } from '@/core/contracts/net';
+import { DEFAULT_UNIVERSE_RULES, WIRE_PROTOCOL_VERSION, wireLimits } from '@/core/contracts/net';
 import { assembleFrame, decodeFrame, encodeFrame, encodeMessage } from '@/net/codec/framing';
 import { HandleTableOut } from '@/net/codec/handles';
 import { MESSAGE_SPECS, randomMessage } from '@/net/codec/messages';
@@ -32,7 +32,7 @@ const live: ClockState = {
 };
 const HELLO: ClientMessage = {
   type: 'hello',
-  protocol: 1,
+  protocol: WIRE_PROTOCOL_VERSION,
   build: 'b',
   defsHash: 'd',
   cpuScore: null,
@@ -244,6 +244,26 @@ describe('blocker 2: floods', () => {
       b.sch.advanceBy(1000);
     }
     expect(b.closes).toEqual([CLOSE.slowConsumer]);
+  });
+});
+
+describe('names are static metadata, asked for on demand within the rules', () => {
+  it('a names request is forwarded; one over namesPerRequest or the rate is dropped and answered once as rateLimited', () => {
+    const l = wireLimits(rules);
+    const g = gateway(new ManualScheduler(), true);
+    online(g);
+    g.client.send(encodeFrame([{ type: 'names', vessels: ['v1', 'v2'], accounts: ['acct-1'] }]));
+    g.sch.advanceBy(10);
+    expect(g.forwarded.filter((m) => m.type === 'names')).toHaveLength(1);
+    const many = Array.from({ length: l.namesPerRequest + 1 }, (_, i) => `v${i}`);
+    g.client.send(encodeFrame([{ type: 'names', vessels: many, accounts: [] }]));
+    for (let i = 0; i < 5; i++) g.client.send(encodeFrame([{ type: 'names', vessels: ['v9'], accounts: [] }]));
+    g.sch.advanceBy(1500);
+    expect(g.forwarded.filter((m) => m.type === 'names').length).toBeLessThanOrEqual(1 + l.nameRequestsPerSecond * 2);
+    expect(g.received.filter((m) => m.type === 'rateLimited' && m.what === 'names')).toHaveLength(1);
+    g.driver.push({ type: 'nameInfo', vessels: [{ id: 'v1', name: 'ORBITER ONE' }], accounts: [{ id: 'acct-1', callsign: 'ALPHA' }] });
+    g.sch.advanceBy(10);
+    expect(g.received.find((m) => m.type === 'nameInfo')).toEqual({ type: 'nameInfo', vessels: [{ id: 'v1', name: 'ORBITER ONE' }], accounts: [{ id: 'acct-1', callsign: 'ALPHA' }] });
   });
 });
 
