@@ -1,0 +1,46 @@
+{
+  "leo-coast-rcs": {
+    "file": "leo-coast-rcs.fspw",
+    "frames": 205,
+    "bytes": 17683,
+    "messages": {
+      "clock": 1,
+      "islandKey": 21,
+      "relevantDelta": 21,
+      "durable": 21,
+      "islandDelta": 180,
+      "event": 6
+    },
+    "scenario": "qa-leo",
+    "seconds": 20
+  },
+  "ascent-staging": {
+    "file": "ascent-staging.fspw",
+    "frames": 410,
+    "bytes": 50592,
+    "messages": {
+      "clock": 1,
+      "islandKey": 41,
+      "relevantDelta": 41,
+      "durable": 41,
+      "islandDelta": 360,
+      "event": 26
+    },
+    "scenario": "lunar-direct",
+    "seconds": 40
+  },
+  "entry-chutes": {
+    "file": "entry-chutes.fspw",
+    "frames": 302,
+    "bytes": 26640,
+    "messages": {
+      "clock": 1,
+      "islandKey": 31,
+      "relevantDelta": 31,
+      "durable": 31,
+      "islandDelta": 270
+    },
+    "scenario": "qa-drogues",
+    "seconds": 30
+  }
+}
