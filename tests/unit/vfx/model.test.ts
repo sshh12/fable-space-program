@@ -220,6 +220,40 @@ describe('plume clusters from the real vehicle', () => {
     expect(gatherPlumeClusters(defs, data, off)).toHaveLength(0);
   });
 
+  it('a vessel of one craft has the clusters and the keys it always had (vessel, look, part type, module, chunk), however the snapshot states its craft', () => {
+    const vessel = vesselOf(0);
+    engineOn(vessel, 'atlas-9m', {});
+    engineOn(vessel, 'kestrel-les', { thrust: 8e5 });
+    const clusters = gatherPlumeClusters(defs, data, vessel);
+    // One per group of like engines, in the order of the part list: the key as it was before a craft was looked at.
+    const expected: string[] = [];
+    for (const p of vessel.parts) {
+      if (p.def !== 'atlas-9m' && p.def !== 'kestrel-les') continue;
+      defs.parts[p.def]!.modules.forEach((m, mi) => {
+        if (m.type !== 'engine') return;
+        const key = `${vessel.id}|${m.plume}|${p.def}|${mi}|0`;
+        if (!expected.includes(key)) expected.push(key);
+      });
+    }
+    expect(expected).toHaveLength(2);
+    expect(clusters.map((c) => c.key)).toEqual(expected);
+    // The parts state one craft (not the one the vessel's craft block names: this vessel is put together as a
+    // lab's is). With no craft stated on the parts, and with no craft block either, every value is the same.
+    expect(new Set(vessel.parts.map((p) => p.craftId)).size).toBe(1);
+    const asBuilt = JSON.stringify(clusters);
+    const bare: VesselSnapshot = {
+      ...vessel,
+      parts: vessel.parts.map((p) => {
+        const copy = { ...p };
+        delete copy.craftId;
+        return copy;
+      }),
+    };
+    expect(JSON.stringify(gatherPlumeClusters(defs, data, bare))).toBe(asBuilt);
+    delete bare.crafts;
+    expect(JSON.stringify(gatherPlumeClusters(defs, data, bare))).toBe(asBuilt);
+  });
+
   it('every firing RCS thruster is a small jet along its exhaust direction', () => {
     const vessel = vesselOf(6);
     const part = vessel.parts.find((p) => p.def === 'heron-descent-stage')!;
@@ -251,15 +285,57 @@ describe('plume clusters from the real vehicle', () => {
 });
 
 describe('two craft of one vehicle in one vessel (their parts carry the same instance ids)', () => {
-  /** The lander twice in one vessel: craft `a` as built, craft `b` beside it. */
-  const twoCraft = (): VesselSnapshot => {
-    const one = vesselOf(6);
-    const other = vesselOf(6);
+  /** One vehicle twice in one vessel (the lander unless stated otherwise): craft `a` as built, craft `b` beside it. */
+  const twoCraft = (stagesAlreadyFired = 6, apart = 12): VesselSnapshot => {
+    const one = vesselOf(stagesAlreadyFired);
+    const other = vesselOf(stagesAlreadyFired);
     return {
       ...one,
-      parts: [...one.parts.map((p) => ({ ...p, craftId: 'a' })), ...other.parts.map((p) => ({ ...p, craftId: 'b', localPos: v3.add(p.localPos, { x: 12, y: 0, z: 0 }) }))],
+      parts: [...one.parts.map((p) => ({ ...p, craftId: 'a' })), ...other.parts.map((p) => ({ ...p, craftId: 'b', localPos: v3.add(p.localPos, { x: apart, y: 0, z: 0 }) }))],
     };
   };
+
+  it('the engines of each craft are a cluster of their own, with their own throttle and their own place: no jet is merged, keyed or counted across the craft', () => {
+    // The whole stack twice, 40 m apart: the nine booster engines of craft a at full throttle, those of craft b at 40 %.
+    const vessel = twoCraft(0, 40);
+    const mi = defs.parts['atlas-9m']!.modules.findIndex((m) => m.type === 'engine');
+    const fire = (craftId: string, throttleActual: number): void => {
+      for (const p of vessel.parts) {
+        if (p.def !== 'atlas-9m' || p.craftId !== craftId) continue;
+        Object.assign(p.modules[mi]!, { active: true, throttleActual, thrust: 3.9e6 * throttleActual, massFlow: 1200 * throttleActual, ambientPressure: 101325, ignitionAge: 30, shutdownAge: -1 });
+      }
+    };
+    fire('a', 1);
+    fire('b', 0.4);
+    const clusters = gatherPlumeClusters(defs, data, vessel);
+    expect(clusters.map((c) => c.key)).toEqual([`${vessel.id}|a|plume.methalox-booster|atlas-9m|${mi}|0`, `${vessel.id}|b|plume.methalox-booster|atlas-9m|${mi}|0`]);
+    const [a, b] = clusters as [(typeof clusters)[number], (typeof clusters)[number]];
+    for (const [c, throttle] of [
+      [a, 1],
+      [b, 0.4],
+    ] as const) {
+      expect(c.nozzles).toHaveLength(9);
+      expect(c.nozzles.every((n) => n.throttle === throttle)).toBe(true);
+      expect(c.thrust).toBeCloseTo(9 * 3.9e6 * throttle, 0);
+      // The merged jet is that of nine engines round the foot of ONE stack, and every exit is within that ring.
+      expect(c.merged!.exitRadius).toBeCloseTo(3.3 + 0.95, 2);
+      for (const n of c.nozzles) expect(Math.hypot(n.posVes.x - c.centreVes.x, n.posVes.z - c.centreVes.z)).toBeLessThan(3.4);
+    }
+    expect(b.centreVes.x - a.centreVes.x).toBeCloseTo(40, 6);
+    expect(b.centreVes.y).toBeCloseTo(a.centreVes.y, 6);
+    // Craft a's cluster is the one the same stack has alone in a vessel, value for value (its key aside).
+    const alone = vesselOf(0);
+    engineOn(alone, 'atlas-9m', {});
+    const single = gatherPlumeClusters(defs, data, alone)[0]!;
+    expect(single.key).toBe(`${alone.id}|plume.methalox-booster|atlas-9m|${mi}|0`);
+    expect(JSON.stringify({ ...a, key: '' })).toBe(JSON.stringify({ ...single, key: '' }));
+    // Craft b firing alone is craft b's cluster, where craft b is.
+    fire('a', 0);
+    for (const p of vessel.parts) if (p.def === 'atlas-9m' && p.craftId === 'a') Object.assign(p.modules[mi]!, { shutdownAge: 100 });
+    const onlyB = gatherPlumeClusters(defs, data, vessel);
+    expect(onlyB.map((c) => c.key)).toEqual([`${vessel.id}|b|plume.methalox-booster|atlas-9m|${mi}|0`]);
+    expect(onlyB[0]!.centreVes.x).toBeCloseTo(b.centreVes.x, 9);
+  });
 
   it('the RCS jets of each craft are clusters of their own: no key is shared, and a jet of one craft says nothing about the other', () => {
     const vessel = twoCraft();

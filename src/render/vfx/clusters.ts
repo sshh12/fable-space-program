@@ -1,12 +1,12 @@
 /**
  * Plume clusters: everything that is drawn as an exhaust jet volume, gathered from a vessel snapshot.
- * Pure (no GPU): engines of one part type and plume look on a vessel form one cluster (a nine-engine
- * booster is one volume with nine jets that merge downstream); every firing RCS thruster is a small
- * cluster of its own.
+ * Pure (no GPU): engines of one part type and plume look on one craft of a vessel form one cluster (a
+ * nine-engine booster is one volume with nine jets that merge downstream; two boosters of one vehicle docked
+ * in a vessel are two); every firing RCS thruster is a small cluster of its own.
  */
 import type { DefLibrary, ModuleDef, PartDef } from '@/core/contracts/defs';
 import type { ModuleState, PartSnapshot, VesselSnapshot } from '@/core/contracts/sim';
-import { partKeyOf } from '@/core/access/snapshotAccess';
+import { craftIdOf, partKeyOf } from '@/core/access/snapshotAccess';
 import { quat, v3, type Vec3 } from '@/core/math';
 import type { PlumeLookDef, VfxData } from './data';
 import { DEFAULT_VISIBLE_FRACTION, engineEmissionState, farVisibleAngle, jetBoundaryRadius, jetBulkRadius, jetShape, type JetShape, type NozzleGeometry } from './plumeModel';
@@ -41,7 +41,10 @@ export interface NozzleInstance {
 }
 
 export interface PlumeCluster {
-  /** Stable id: vessel, look, part type and chunk. */
+  /**
+   * Stable id: vessel, look, part type and chunk; in a vessel whose parts are of more than one craft the craft
+   * comes after the vessel (an RCS jet: vessel, part key, module and thruster).
+   */
   key: string;
   kind: 'engine' | 'rcs';
   vesselId: string;
@@ -199,6 +202,12 @@ export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: Ves
   const open = new Map<string, { cluster: PlumeCluster; geometry: NozzleGeometry; chunk: number }>();
   const rcs: { cluster: PlumeCluster; geometry: NozzleGeometry; level: number }[] = [];
   const rcsLook = data.plumes[data.rcs.plume]!;
+  // Engines are grouped within a craft. Two craft of one vehicle in a vessel carry the same part types: taken
+  // together, their jets would be one cluster with one merged jet, one trail and one source of dust, placed
+  // between the two. The craft is part of the group where the vessel's parts are of more than one; a vessel
+  // of one craft keeps the keys it always had, to the character (the dust a jet raises is seeded from its key).
+  const firstCraft = vessel.parts.length > 0 ? craftIdOf(vessel, vessel.parts[0]!) : null;
+  const severalCraft = vessel.parts.some((p) => craftIdOf(vessel, p) !== firstCraft);
 
   for (const part of vessel.parts) {
     const def: PartDef | undefined = defs.parts[part.def];
@@ -211,7 +220,8 @@ export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: Ves
         if (!look) continue;
         const es = engineEmissionState(look, state as EngineState);
         if (es.throttle <= 0 && es.residual <= 0) continue;
-        const groupKey = `${mdef.plume}|${part.def}|${mi}`;
+        const likeEngines = `${mdef.plume}|${part.def}|${mi}`;
+        const groupKey = severalCraft ? `${craftIdOf(vessel, part)}|${likeEngines}` : likeEngines;
         for (let ni = 0; ni < mdef.nozzles.length; ni++) {
           const nd = mdef.nozzles[ni]!;
           const geometry: NozzleGeometry = { exitRadius: nd.exitDiameter / 2, exitPressure: nd.exitPressure, chamberPressure: mdef.chamberPressure };
