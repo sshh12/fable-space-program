@@ -36,7 +36,7 @@ import { FarExposure } from './post/farExposure';
 import { CUT_ADAPT_SECONDS, CUT_ADAPT_TAU, EV_DARK_FLOOR, exposureFromEv100, exposureHintOf, followExposureHint, interiorFarGain, sunThroughAir, type EmissiveHint, type MeterInput } from './post/exposure';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorConfig, type GovernorState } from './post/governor';
 import { PostProcess } from './post/postProcess';
-import { Tonemap, type Look } from './post/tonemap';
+import { displayLinear, srgbEncode, Tonemap, type Look } from './post/tonemap';
 import { createSharedResources, type CoreSharedResources } from './resources';
 import { createSceneBindings } from './sceneBindings';
 import { BLUE_NOISE_SIZE, FRAME_WGSL, FULLSCREEN_WGSL, GBUFFER_WGSL, MAX_BODIES, NOISE_WGSL, SHINE_RECEIVERS } from './shaders/chunksFrame';
@@ -77,8 +77,8 @@ export interface RendererOptions {
    * The one switch of the display curve and the meter's bounds (requests ocean-10, ocean-13; RENDER_API
    * section 13): 1 (the default) = both as they are, to the pixel; 2 = the camera curve above mid-grey
    * (post/tonemap.ts) and the meter's bounds on small bright subjects and under a low sun (post/exposure.ts).
-   * Also by the page's address, `look=2`, and by the env of the page's server, VITE_CORE_LOOK=2 (a run that
-   * exercises a whole suite with it).
+   * Also by the page's address, `corelook=2` (`look` is taken by two labs' cameras), and by the env of the
+   * page's server, VITE_CORE_LOOK=2 (a run that exercises a whole suite with it).
    */
   look?: Look;
 }
@@ -119,6 +119,14 @@ export interface HdrPixels {
   height: number;
   /** rgba float32, row 0 = top. Pre-exposed values as stored in the target. */
   data: Float32Array;
+}
+
+/** What a page opened with `coredebug=1` finds at `globalThis.__core` (measurement specs; nothing in the game reads it). */
+export interface CoreDebugHandle {
+  renderer: CoreRenderer;
+  look: Look;
+  /** Display level, 0..255, that the curve in use gives a grey of this pre-exposed scene value. */
+  displayLevel(preExposed: number): number;
 }
 
 export interface ExposureInfo {
@@ -341,7 +349,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   const pipelineWarm = opts.pipelineWarm ?? pageQuery.get('warm') !== '0';
   const contactAsked = pageQuery.get('contact') ?? VITE_ENV?.VITE_CORE_CONTACT;
   const contactShader: ContactShader = opts.contactShader ?? (contactAsked === 'first' ? 'first' : 'near');
-  const look: Look = opts.look ?? ((pageQuery.get('look') ?? VITE_ENV?.VITE_CORE_LOOK) === '2' ? 2 : 1);
+  const look: Look = opts.look ?? ((pageQuery.get('corelook') ?? VITE_ENV?.VITE_CORE_LOOK) === '2' ? 2 : 1);
   const shadowSwitches = (pageQuery.get('shadowdebug') ?? VITE_ENV?.VITE_CORE_SHADOW_DEBUG) === '1';
   const shaders: CoreShaderLibrary = createShaderLibrary(device, reportError, { warm: pipelineWarm });
   shaders.register('hash', HASH_WGSL);
@@ -1451,5 +1459,14 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   }
   // How long the renderer took to create, in the page's performance timeline (the load timeline reads it).
   performance.measure('render-core.create', { start: createdFrom, end: performance.now() });
+  // A handle for measurements on any page, the app's included (`coredebug=1` in the page's address): the
+  // renderer's read-outs and the display level (0..255) of a pre-exposed grey under the curve in use.
+  if (pageQuery.get('coredebug') === '1') {
+    (globalThis as unknown as { __core?: CoreDebugHandle }).__core = {
+      renderer,
+      look,
+      displayLevel: (preExposed) => 255 * srgbEncode(Math.min(Math.max(displayLinear([preExposed, preExposed, preExposed], look)[1], 0), 1)),
+    };
+  }
   return renderer;
 }
