@@ -16,7 +16,7 @@
  */
 import { NEUTRAL_CONTROLS, type CommandResult, type ControlInputs, type NavballMode, type NodeEdit, type Pilot, type PlayerCommands, type SasMode } from '@/core/contracts/controls';
 import { MAX_PHYSICS_WARP_INDEX, PHYSICS_DT, WARP_LEVELS } from '@/core/contracts/defs';
-import { TICKS_PER_SECOND } from '@/core/contracts/net';
+import { TICKS_PER_SECOND, type TargetRef } from '@/core/contracts/net';
 import { CONTROL_TICK_STEPS, type Sim, type SimSnapshot } from '@/core/contracts/sim';
 
 /** Real-time frame the rails quantum mirrors (the browser's 60 Hz). */
@@ -31,7 +31,8 @@ export type LoggedCommand =
   | { name: 'addNode'; ut: number }
   | { name: 'setNode'; id: string; edit: NodeEdit }
   | { name: 'removeNode'; id: string }
-  | { name: 'setTarget'; bodyId: string | null }
+  /** A body target is logged by its id, as every log recorded before sub-wave 3.2 has it; a vessel or port target by its reference (`bodyId` null). */
+  | { name: 'setTarget'; bodyId: string | null; ref?: TargetRef }
   | { name: 'cycleActiveVessel'; direction: 1 | -1 };
 
 /** One control tick at which the pilot changed something: its ordinal, the commands issued, the controls set. */
@@ -118,7 +119,8 @@ function recordingCommands(target: PlayerCommands, sink: LoggedCommand[]): Playe
     addNode: (ut: number): string => note({ name: 'addNode', ut }, target.addNode(ut)),
     setNode: (id: string, edit: NodeEdit): CommandResult => note({ name: 'setNode', id, edit: { ...edit, ...(edit.dv ? { dv: { ...edit.dv } } : {}) } }, target.setNode(id, edit)),
     removeNode: (id: string): CommandResult => note({ name: 'removeNode', id }, target.removeNode(id)),
-    setTarget: (bodyId: string | null): CommandResult => note({ name: 'setTarget', bodyId }, target.setTarget(bodyId)),
+    setTarget: (ref: TargetRef | null): CommandResult =>
+      note(ref === null || ref.kind === 'body' ? { name: 'setTarget', bodyId: ref === null ? null : ref.id } : { name: 'setTarget', bodyId: null, ref }, target.setTarget(ref)),
     cycleActiveVessel: (direction: 1 | -1): CommandResult => note({ name: 'cycleActiveVessel', direction }, target.cycleActiveVessel(direction)),
   };
 }
@@ -165,7 +167,7 @@ function applyLogged(commands: PlayerCommands, c: LoggedCommand): void {
       commands.removeNode(c.id);
       break;
     case 'setTarget':
-      commands.setTarget(c.bodyId);
+      commands.setTarget(c.ref ?? (c.bodyId === null ? null : { kind: 'body', id: c.bodyId }));
       break;
     case 'cycleActiveVessel':
       commands.cycleActiveVessel(c.direction);

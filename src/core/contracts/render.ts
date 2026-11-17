@@ -82,8 +82,8 @@ export const PLASMA_WINDOW_BYTES = 16;
  *     (cornerRadius px, blur 0..1 = which level of the bloom pyramid, dim 0..1 = multiplier of the backdrop
  *      luminance, opacity 0..1 = cross-fade of the scrim over the sharp scene)
  * Published under the key 'ui.scrimRects' by whoever owns the panels (src/shell); the default is a zero
- * header. The key joins `SharedResourceMap` at the start of sub-wave 3.2 with the core's default for it
- * (the core keeps one default per key, so the key cannot be declared before its default exists).
+ * header. The key is in `SharedResourceMap` since the lead step of sub-wave 3.2 (2026-11-16); the core
+ * keeps one default per key (src/render/core/resources.ts), which the presentation sweep adds.
  */
 export const UI_SCRIM_SLOTS = 8;
 export const UI_SCRIM_BYTES = 16 + UI_SCRIM_SLOTS * 32;
@@ -362,6 +362,11 @@ export interface SharedResourceMap {
   'ui.navball': GPUTextureView;
   /** Array texture of cockpit multi-function displays. */
   'ui.mfd': GPUTextureView;
+  /**
+   * v2: the menu's panel rectangles for the core's scrim step (ARCHITECTURE 18.8): a uniform buffer of
+   * UI_SCRIM_BYTES in the layout documented at UI_SCRIM_SLOTS above. Default: a zero header (no rectangle).
+   */
+  'ui.scrimRects': GPUBuffer;
   /**
    * Sampleable COPIES of the reversed-Z depth attachment at render resolution (depth32float, bound as
    * texture_depth_2d, read with textureLoad). The live depth attachment itself is never sampled.

@@ -18,7 +18,7 @@ import type { ConicElements } from '../math/conic';
 import type { Vec3 } from '../math/vec3';
 import type { ControlInputs, CommandResult, PlayerCommands } from './controls';
 import type { BodyId, DefLibrary, ScenarioDef, SiteId, VehicleId } from './defs';
-import type { AssemblyView, CensusEntry, FeedEvent, LinkState, LobbySummary, PadState, PresenceSummary, Prompt, RosterEntry, ShipRecord, TargetRef, UniverseRules } from './net';
+import type { AssemblyView, CensusEntry, FeedEvent, LinkState, LobbySummary, PadClass, PadState, PresenceSummary, Prompt, RosterEntry, ShipRecord, TargetRef, UniverseRules } from './net';
 import type { Marker, Patch, SimSnapshot } from './sim';
 
 // ------------------------------------------------------------------------------------------------ stores
@@ -59,6 +59,12 @@ export interface ClientStores {
   prompts: Store<readonly Prompt[]>;
   /** The state of the link to the universe. */
   link: Store<LinkState>;
+  /**
+   * The session's launch request that is waiting for a pad, or null (`LaunchQueueEntry`). A new value
+   * whenever the place or the estimate changes; null again when the request has ended. Always null in a
+   * `LocalSession`: Practice never queues.
+   */
+  launchQueue: Store<LaunchQueueEntry | null>;
 }
 
 // ---------------------------------------------------------------------------------------------- universe
@@ -80,6 +86,48 @@ export type SeatResult =
   | { ok: true; vesselId: string; clockId: string | null }
   | { ok: false; reason: string; alternative: { site: SiteId; pad: string; slot: SpawnSlot } | { clockId: string } | null };
 
+/**
+ * THE VISIBLE LAUNCH QUEUE (user decision of 2026-11-13; ARCHITECTURE 5.9, 9.3, 23). When every slot that a
+ * pad of the vehicle's class offers at the requested time is taken, the spawn is neither refused nor moved
+ * silently to another clock: the request WAITS, and the player sees their place and an honest wait.
+ *
+ * How it reaches the app. `UniverseCommands.spawn` stays one promise that resolves once, with a
+ * `SeatResult`: while the request waits, the promise is pending and `ClientStores.launchQueue` holds this
+ * entry. The store gets a new entry whenever the directory states a new place or a new estimate (the wire's
+ * `spawnQueued`), and null when the request has ended, in one of three ways:
+ *   seated     the promise resolves `{ ok: true, ... }` and the transit begins, as for a spawn that never waited;
+ *   refused    the promise resolves `{ ok: false, reason, alternative }` (the pad was withdrawn, the rules changed,
+ *              the vehicle no longer fits);
+ *   left       the player called `UniverseCommands.cancelSpawn()`: the promise resolves
+ *              `{ ok: false, reason, alternative: null }` with a reason that says the player left the queue.
+ * Choosing another offer while waiting (a cohort slot, another site, a friend's clock: the menu keeps
+ * offering them beside the queue) is leaving the queue and spawning again.
+ *
+ * Whose it is. The place belongs to the SESSION, and a session has at most one spawn in flight. A reconnect
+ * inside the grace resumes the session with its place: while `ClientStores.link` is 'reconnecting' the store
+ * keeps the last entry (it may be stale, and the link's state says so), and after the resume the directory
+ * states the place again. A session lost past the grace loses its place: the promise resolves refused. A
+ * second tab or device that attaches to the account TAKES THE SESSION OVER (`link.state` 'takenOver' on the
+ * first): it is a new session and does not inherit the waiting request; the first tab's promise resolves
+ * refused, and the new tab's `launchQueue` is null until it asks for a launch itself.
+ *
+ * A `LocalSession` (Practice, the labs, the headless mission) has its own pads and never queues: its store
+ * is always null and `cancelSpawn` reports that nothing waits.
+ */
+export interface LaunchQueueEntry {
+  /** The request that waits, as `spawn` was given it. */
+  request: SpawnRequest;
+  /** The pad class the vehicle needs (`UniverseRules.pads.classLimits`): the queue is of the requests for pads of that class. */
+  padClass: PadClass;
+  /** Place in the queue: 1 = next. */
+  position: number;
+  /**
+   * Estimated wait until a pad of the class is free for this request, s, from the pad timetable (the
+   * scheduler of ARCHITECTURE 5.9). An estimate: it can grow as well as shrink, and the menu shows it as one.
+   */
+  etaSeconds: number;
+}
+
 /** What the session asks the directory to keep it informed about (ARCHITECTURE 13.3 `Subscribe`, 14). */
 export interface Subscriptions {
   /** Spheres of influence whose public census the map shows. */
@@ -99,8 +147,18 @@ export interface Subscriptions {
  * detach, subscriptions, rename, abandon. What a pilot does from the seat is `PlayerCommands`.
  */
 export interface UniverseCommands {
-  /** Launch a vehicle from a pad at a slot; resolves when the directory has answered. */
+  /**
+   * Launch a vehicle from a pad at a slot; resolves when the directory has answered. When the pads of the
+   * vehicle's class are full the request waits in the visible launch queue (`LaunchQueueEntry`,
+   * `ClientStores.launchQueue`) and the promise stays pending until it is seated, refused or left.
+   */
   spawn(request: SpawnRequest): Promise<SeatResult>;
+  /**
+   * Leave the launch queue: the waiting `spawn` resolves refused (the player left) and
+   * `ClientStores.launchQueue` becomes null. `{ ok: false }` with a reason when nothing waits (always, in a
+   * `LocalSession`).
+   */
+  cancelSpawn(): Promise<CommandResult>;
   /** Take the seat of one of the account's craft. `clockId` is honoured only as rule U8b allows. */
   attach(vesselId: string, clockId?: string): Promise<SeatResult>;
   /** Leave the seat (the flight menu states what then happens to the craft, U16). */

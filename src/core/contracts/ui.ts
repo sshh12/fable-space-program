@@ -19,15 +19,14 @@ export interface NavballRenderer {
   render(encoder: GPUCommandEncoder, snapshot: SimSnapshot): void;
 }
 
-export type MfdPage = 'flight' | 'orbit' | 'systems' | 'staging' | 'entry' | 'landing';
-
 /**
- * v2 pages: the target card and the docking instrument (`Readouts.target`, `Readouts.docking`), painted by
- * the same Canvas-2D painter as the HUD panels.
- *
- * Not yet members of `MfdPage`: the painter keeps tables with one entry per page (src/ui/mfd/mfdPainter.ts),
- * so the lead joins this type to `MfdPage` at the start of sub-wave 3.2, when their owner adds the entries.
+ * The pages of a cockpit multi-function display. 'target' and 'docking' (v2; members since the lead step of
+ * sub-wave 3.2, 2026-11-16) are the target card and the docking instrument (`Readouts.target`,
+ * `Readouts.docking`), painted by the same Canvas-2D painter as the HUD panels.
  */
+export type MfdPage = 'flight' | 'orbit' | 'systems' | 'staging' | 'entry' | 'landing' | 'target' | 'docking';
+
+/** The v2 pages, members of `MfdPage`. */
 export type MfdPageV2 = 'target' | 'docking';
 
 /** Draws a cockpit multi-function display page with Canvas 2D. Shares formatters with the HUD. */

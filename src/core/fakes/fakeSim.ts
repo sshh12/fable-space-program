@@ -243,7 +243,8 @@ export class FakeSim implements Sim {
         this.nodes = this.nodes.filter((x) => x.id !== id);
         return before === this.nodes.length ? { ok: false, reason: 'Unknown node' } : ok();
       },
-      setTarget: (bodyId) => ((this.targetBodyId = bodyId), ok()),
+      // Body targets only, as v1's World: the fake has no other vessel to aim at.
+      setTarget: (ref) => (ref !== null && ref.kind !== 'body' ? { ok: false, reason: 'The fake simulation has body targets only' } : ((this.targetBodyId = ref === null ? null : ref.id), ok())),
       cycleActiveVessel: () => ({ ok: false, reason: 'No other controllable vessel' }),
     };
     const cheat = (): void => {

@@ -5,7 +5,7 @@
  */
 import type { Vec3 } from '../math/vec3';
 import type { BodyId, ResourceId } from './defs';
-import type { LendPolicy } from './net';
+import type { LendPolicy, TargetRef } from './net';
 import type { ViewKind } from './render';
 import type { ManeuverNode, SimSnapshot } from './sim';
 
@@ -37,6 +37,11 @@ export const NEUTRAL_CONTROLS: Readonly<ControlInputs> = Object.freeze({
 /**
  * SAS hold modes. 'maneuver' holds the remaining-delta-v direction of the next maneuver node; like every
  * other mode it only steers attitude: SAS never touches throttle, staging or planning.
+ *
+ * The last three (`SasTargetMode`) need a vessel or port target: hold the direction to the target, away
+ * from it, or the own control port's axis anti-parallel to the targeted port's. They are members since the
+ * lead step of sub-wave 3.2 (2026-11-16); a session offers them in `Readouts.sasModesAvailable` only while
+ * such a target is selected, and refuses them otherwise.
  */
 export type SasMode =
   | 'stability'
@@ -46,16 +51,12 @@ export type SasMode =
   | 'antinormal'
   | 'radialOut'
   | 'radialIn'
-  | 'maneuver';
+  | 'maneuver'
+  | 'target'
+  | 'antiTarget'
+  | 'portAlign';
 
-/**
- * v2 SAS hold modes that need a vessel or port target: hold the direction to the target, away from it, or
- * the own control port's axis anti-parallel to the targeted port's. All are attitude holds.
- *
- * Not yet members of `SasMode`: the input layer and the HUD keep tables with one entry per mode
- * (src/input/bindings.ts, src/ui/hud/hud.ts), so the lead joins this type to `SasMode` at the start of
- * sub-wave 3.2, when their owner adds the entries.
- */
+/** The SAS hold modes that need a vessel or port target (v2): the last three members of `SasMode`. */
 export type SasTargetMode = 'target' | 'antiTarget' | 'portAlign';
 
 /** The eight modes that exist without a vessel or port target, in HUD order. */
@@ -73,15 +74,14 @@ export const SAS_MODES: readonly SasMode[] = [
 /** The SAS modes that need a vessel or port target (v2), in HUD order after SAS_MODES. */
 export const SAS_TARGET_MODES: readonly SasTargetMode[] = ['target', 'antiTarget', 'portAlign'];
 
-export type NavballMode = 'surface' | 'orbit';
-
 /**
- * v2 navball mode 'target': prograde and retrograde show the velocity relative to the target.
- *
- * Not yet a member of `NavballMode`: the chase rig maps every navball mode to a reference frame
- * (src/camera/chaseRig.ts), so the lead joins this type to `NavballMode` at the start of sub-wave 3.2, when
- * its owner adds the case.
+ * What the navball's prograde and retrograde are relative to. 'target' (v2; a member since the lead step of
+ * sub-wave 3.2): the velocity relative to the selected vessel or port target; a session refuses it while
+ * no such target is selected.
  */
+export type NavballMode = 'surface' | 'orbit' | 'target';
+
+/** The v2 navball mode, a member of `NavballMode`. */
 export type NavballModeV2 = 'target';
 
 export interface CommandResult {
@@ -133,14 +133,13 @@ export interface PlayerCommands {
   setNode(id: string, edit: NodeEdit): CommandResult;
   removeNode(id: string): CommandResult;
   /**
-   * Select the target body, or null for none.
+   * Select the target, or null for none: a body, a vessel or a docking port (`TargetRef`; a body id `b` is
+   * `{ kind: 'body', id: b }`). A session that has no vessel or port targets (v1's World, until the
+   * navigation of wave 4) refuses those two kinds with a reason and keeps the target it had.
    *
-   * v2: the parameter becomes `ref: TargetRef | null` (a body, a vessel or a docking port; a body id `b`
-   * is then `{ kind: 'body', id: b }`). The lead changes this signature at the start of sub-wave 3.2,
-   * together with the call sites and the implementations; it cannot be widened earlier because
-   * implementations forward the argument as a body id. Until then vessel and port targets do not exist.
+   * The parameter was `bodyId: BodyId | null` until the lead step of sub-wave 3.2 (2026-11-16).
    */
-  setTarget(bodyId: BodyId | null): CommandResult;
+  setTarget(ref: TargetRef | null): CommandResult;
   /**
    * Take a seat in another craft the pilot may control in the pilot's island ([ and ]). (v1: cycle the
    * active vessel among controllable vessels in the physics bubble.)
@@ -235,7 +234,14 @@ export type ButtonAction =
   | 'pause'
   /** Cycle the page of cockpit multi-function display 0 (left), 1 (centre) or 2 (right). */
   | `mfdCycle:${0 | 1 | 2}`
-  | `sas:${SasMode}`;
+  | `sas:${SasMode}`
+  /** v2 (ARCHITECTURE 19; members since the lead step of sub-wave 3.2): see `ButtonActionV2`. */
+  | 'flightMenu'
+  | 'cycleTarget'
+  | 'toggleRoster'
+  | 'dockingView'
+  | 'openQuickComms'
+  | 'acceptPrompt';
 
 /**
  * v2 button actions (ARCHITECTURE 19): 'flightMenu' opens or closes the flight menu over the live flight
@@ -243,9 +249,8 @@ export type ButtonAction =
  * 'toggleRoster' shows or hides the roster (O); 'dockingView' is the view at the control port (V);
  * 'openQuickComms' opens the quick-comms wheel (Enter); 'acceptPrompt' accepts the oldest open prompt (Y).
  *
- * Not yet members of `ButtonAction`: the binding table and its reference card list every action
- * (src/input/bindings.ts), so the lead joins this type to `ButtonAction` at the start of sub-wave 3.2, when
- * their owner adds the entries.
+ * Members of `ButtonAction` since the lead step of sub-wave 3.2 (2026-11-16): the binding table and its
+ * reference card (src/input/bindings.ts) list every action, and gain these entries in that sub-wave.
  */
 export type ButtonActionV2 = 'flightMenu' | 'cycleTarget' | 'toggleRoster' | 'dockingView' | 'openQuickComms' | 'acceptPrompt';
 

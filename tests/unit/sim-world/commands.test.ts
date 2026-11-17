@@ -134,12 +134,23 @@ describe('commands and read-outs', () => {
     const sim = await makeSim(defs, 'qa-lunar-orbit', terrain);
     let s = sim.peek();
     expect(s.readouts.targetBodyId).toBe('moon');
-    expect(sim.commands.setTarget('nowhere').ok).toBe(false);
+    expect(sim.commands.setTarget({ kind: 'body', id: 'nowhere' }).ok).toBe(false);
     expect(sim.commands.setTarget(null).ok).toBe(true);
     expect(sim.peek().readouts.targetBodyId).toBeNull();
     expect(sim.peek().navball.markers.target).toBeNull();
-    expect(sim.commands.setTarget('earth').ok).toBe(true);
+    expect(sim.commands.setTarget({ kind: 'body', id: 'earth' }).ok).toBe(true);
     expect(sim.peek().navball.markers.target).not.toBeNull();
+    // A target is a body, a vessel or a docking port since sub-wave 3.2; this session has body targets
+    // only, refuses the two others by name and keeps the target it had.
+    const vessel = sim.commands.setTarget({ kind: 'vessel', id: s.activeVesselId });
+    expect(vessel).toEqual({ ok: false, reason: 'Vessel targets are not available in this session' });
+    expect(sim.commands.setTarget({ kind: 'port', vesselId: s.activeVesselId, portId: 'x/y' })).toEqual({ ok: false, reason: 'Docking-port targets are not available in this session' });
+    expect(sim.peek().readouts.targetBodyId).toBe('earth');
+    // The SAS and navball modes that need such a target exist in the contract and are refused here.
+    expect(sim.commands.setSasMode('target')).toEqual({ ok: false, reason: 'No vessel or port target' });
+    expect(sim.commands.setSasMode('portAlign').ok).toBe(false);
+    expect(sim.commands.setNavballMode('target')).toEqual({ ok: false, reason: 'No vessel or port target' });
+    expect(sim.peek().readouts.sasModesAvailable).not.toContain('target');
     // 100 km over the Moon is above the 20 km switch altitude: orbit mode, and a manual choice sticks.
     expect(s.navball.mode).toBe('orbit');
     sim.commands.setNavballMode('surface');

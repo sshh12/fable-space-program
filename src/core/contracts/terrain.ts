@@ -204,8 +204,9 @@ export interface TileSource {
  *          stack). `packListUrl` answers with the pack list: the mirrors in order, their addressing mode and
  *          slice size, and per tile set the index location; nothing of it is compiled into the client.
  *          `cache` adds the OPFS cache in front of the network (absent or null = none).
- * `TilePackIndex` (the index format) is defined by `platform-delivery` in src/terrain/packIndex.ts and
- * lifted into this file by the lead afterwards.
+ * `TilePackIndex` (the index format) and `PackList` (what `packListUrl` serves) are at the end of this
+ * file: `platform-delivery` defined them in src/terrain/packIndex.ts, the lead lifted them here at the
+ * lead step of sub-wave 3.2 (2026-11-16), and that module re-exports them and keeps the codec.
  */
 export type TileSourceSpec =
   | { kind: 'fs'; root: string }
@@ -295,4 +296,81 @@ export interface RockInstance {
 export interface RockField {
   /** All rocks with radius >= minRadius whose base lies within `radius` metres of `dir`. Deterministic. */
   rocksNear(bodyId: string, dir: Vec3, radius: number, minRadius: number): RockInstance[];
+}
+
+// ------------------------------------------------------------------------------------------------- packs
+// The delivery format of baked data (ARCHITECTURE 10.4): the JSON header of a pack index object and the
+// pack list. Types only: the binary records, the Morton order, the boot pack and the validation are in
+// src/terrain/packIndex.ts, which re-exports everything below. A client reads the pack list from
+// `TileSourceSpec.packListUrl`, and the tile source reads the index of each set it names.
+
+/** Version of the pack index and of the pack list (`v` of both). */
+export const PACK_FORMAT_VERSION = 1;
+
+/** One pack an index refers to. */
+export interface PackRef {
+  hash: string;
+  bytes: number;
+}
+
+/** A kind of group: the layers stored together, in this order. `files` is the plain-file kind. */
+export interface PackKind {
+  name: string;
+  layers: string[];
+}
+
+/** One section of records: ordinals [first, first + count) of (kind, level, face), at [offset, offset + bytes) of the index object. */
+export interface PackSection {
+  k: number;
+  l: number;
+  f: number;
+  first: number;
+  count: number;
+  offset: number;
+  bytes: number;
+}
+
+/** A plain file of a set: [pack number, offset, length, sha256 of the file (32 hex)]. */
+export type PackFileEntry = [number, number, number, string];
+
+/** The JSON header of a `.idx` object. */
+export interface TilePackIndex {
+  v: typeof PACK_FORMAT_VERSION;
+  /** Set name: a tile set (`earth`) or a file set (`sky`, `assets`). */
+  set: string;
+  /** `tiles` when the set has a manifest.json (a TileManifest), `files` for a plain file set. */
+  type: 'tiles' | 'files';
+  /** The manifest's contentHash at packing time (tile sets). */
+  contentHash: string | null;
+  packs: PackRef[];
+  kinds: PackKind[];
+  sections: PackSection[];
+  /** Path relative to the set root (forward slashes) -> location. Tile sets list manifest.json here. */
+  files: Record<string, PackFileEntry>;
+}
+
+/**
+ * The pack list (ARCHITECTURE 10.4): what a client reads from `TileSourceSpec.packListUrl`. Signed once per
+ * UTC day by the role that holds the packs credential; never compiled into the client.
+ *   mirrors   ordered candidates. `objects` maps a content hash to its own (presigned) URL; otherwise the URL
+ *             is `base + hash` (mode `ranges`) or `base + hash + '/' + n` (mode `slices`, slice n of
+ *             `sliceBytes`). Relative URLs resolve against the pack list's own URL.
+ *   sets      per set the index object (hash and bytes).
+ */
+export interface PackListMirror {
+  id: string;
+  mode: 'ranges' | 'slices';
+  sliceBytes?: number;
+  base?: string;
+  objects?: Record<string, string>;
+}
+
+export interface PackList {
+  v: typeof PACK_FORMAT_VERSION;
+  /** UTC day the bucket URLs were signed for (YYYY-MM-DD). */
+  signedDay: string | null;
+  /** Seconds after which a client fetches the list again (it also does on a 403). */
+  refreshAfterS: number;
+  mirrors: PackListMirror[];
+  sets: Record<string, { index: string; indexBytes: number }>;
 }

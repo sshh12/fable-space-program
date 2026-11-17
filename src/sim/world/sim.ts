@@ -12,7 +12,7 @@
  * about its centre of mass stays exactly on its conic. The same point-mass gravity is used on rails and
  * when integrating, so both hand-overs are exact.
  */
-import { NEUTRAL_CONTROLS, SAS_MODES, type CommandResult, type ControlInputs, type NavballMode, type NodeEdit, type PlayerCommands, type SasMode } from '@/core/contracts/controls';
+import { NEUTRAL_CONTROLS, SAS_MODES, SAS_TARGET_MODES, type CommandResult, type ControlInputs, type NavballMode, type NodeEdit, type PlayerCommands, type SasMode } from '@/core/contracts/controls';
 import { MAX_PHYSICS_WARP_INDEX, PHYSICS_DT, WARP_LEVELS, type DefLibrary, type ScenarioDef } from '@/core/contracts/defs';
 import {
   CONTROL_TICK_STEPS,
@@ -33,7 +33,7 @@ import {
 } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { padLocationOf, padOf } from '@/core/defs/sites';
-import type { TimeLimitKind } from '@/core/contracts/net';
+import type { TargetRef, TimeLimitKind } from '@/core/contracts/net';
 import { FRAME_HISTORY_EPOCHS, type FrameEpochOrigin, type FrameRebase } from '@/core/math/frame';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG, G0, RAD } from '@/core/math/scalar';
@@ -2060,6 +2060,8 @@ class World implements SimWorld, MilestoneHost {
       setSasMode: (mode: SasMode): CommandResult => {
         const a = act();
         if (!a) return refuse('No vessel');
+        // The three target modes hold on a vessel or a port, which this session does not have (wave 4).
+        if ((SAS_TARGET_MODES as readonly SasMode[]).includes(mode)) return refuse('No vessel or port target');
         if (!SAS_MODES.includes(mode)) return refuse('Unknown SAS mode');
         if (mode === 'maneuver' && this.nodes.length === 0) return refuse('No maneuver node');
         setSasMode(a.vessel, mode);
@@ -2097,6 +2099,8 @@ class World implements SimWorld, MilestoneHost {
         return ok;
       },
       setNavballMode: (mode: NavballMode): CommandResult => {
+        // 'target' shows the velocity relative to a vessel or a port, which this session does not have (wave 4).
+        if (mode === 'target') return refuse('No vessel or port target');
         if (mode !== 'surface' && mode !== 'orbit') return refuse('Unknown navball mode');
         this.navballMode = mode;
         this.touch();
@@ -2154,7 +2158,11 @@ class World implements SimWorld, MilestoneHost {
         this.dropNode(id, false);
         return ok;
       },
-      setTarget: (bodyId: string | null): CommandResult => {
+      setTarget: (ref: TargetRef | null): CommandResult => {
+        // Body targets only: vessel and port targets come with the navigation of wave 4 (the relative state
+        // of two vessels, `Readouts.target`). A refused target leaves the one that was selected.
+        if (ref !== null && ref.kind !== 'body') return refuse(ref.kind === 'vessel' ? 'Vessel targets are not available in this session' : 'Docking-port targets are not available in this session');
+        const bodyId = ref === null ? null : ref.id;
         if (bodyId !== null && !this.defs.bodies[bodyId]) return refuse('Unknown body');
         this.targetBodyId = bodyId;
         this.patchesDirty = true;

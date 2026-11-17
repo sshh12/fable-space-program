@@ -63,17 +63,15 @@ export type MarkerKind =
   | 'impact'
   | 'atmosphereEntry'
   | 'closestApproach'
-  | 'maneuverNode';
+  | 'maneuverNode'
+  /**
+   * v2: a closest approach to a targeted VESSEL, drawn as a pair (the marker and the target's position
+   * then; `Marker.otherVesselId` and the fields after it). A member since the lead step of sub-wave 3.2
+   * (2026-11-16); no producer emits it before the navigation of wave 4.
+   */
+  | 'targetApproach';
 
-/**
- * v2 marker kinds. 'targetApproach': a closest approach to a targeted VESSEL, drawn as a pair (the marker
- * and the target's position then; `Marker.otherVesselId` and the fields after it).
- *
- * Not yet members of `MarkerKind`: the map keeps a table with one entry per kind (src/map/scene.ts), so the
- * lead joins this type to `MarkerKind` at the start of sub-wave 3.2, when the map's owner adds the entry.
- * Until then no `Marker` carries it: `Marker.kind` is `MarkerKind`, so a producer cannot emit one, and
- * the fields `otherVesselId` ... `onForecast` of `Marker` stay unset.
- */
+/** The v2 marker kind, a member of `MarkerKind`. */
 export type MarkerKindV2 = 'targetApproach';
 
 export interface Marker {

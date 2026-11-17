@@ -28,12 +28,17 @@
  * Morton order. At a level where a layer of the kind is global the set is dense and the ordinal is the Morton
  * code itself; at a sparse level the ordinal is the rank of the code among the covered ones.
  */
-import type { TileManifest, TileRect } from '../core/contracts/terrain';
+import { PACK_FORMAT_VERSION } from '../core/contracts/terrain';
+import type { PackFileEntry, PackKind, PackList, PackListMirror, PackRef, PackSection, TileManifest, TilePackIndex, TileRect } from '../core/contracts/terrain';
 import type { TileKey } from '../core/geo/cubeSphere';
+
+// The JSON shapes of the format live in the terrain contract since the lead step of sub-wave 3.2
+// (2026-11-16); they are re-exported here, so what imported them from this module still does.
+export { PACK_FORMAT_VERSION };
+export type { PackFileEntry, PackKind, PackList, PackListMirror, PackRef, PackSection, TilePackIndex };
 
 export const PACK_INDEX_MAGIC = 'FPI1';
 export const BOOT_PACK_MAGIC = 'FPB1';
-export const PACK_FORMAT_VERSION = 1;
 /** Pack sizes (bytes): content-defined boundaries never fall below the minimum nor above the maximum. */
 export const PACK_MIN_BYTES = 64 * 1024 * 1024;
 export const PACK_MAX_BYTES = 256 * 1024 * 1024;
@@ -46,47 +51,6 @@ export const HASH_HEX = 32;
 /** Deepest level the Morton arithmetic here supports (x, y < 2^15). */
 export const MAX_PACK_LEVEL = 15;
 
-/** One pack an index refers to. */
-export interface PackRef {
-  hash: string;
-  bytes: number;
-}
-
-/** A kind of group: the layers stored together, in this order. `files` is the plain-file kind. */
-export interface PackKind {
-  name: string;
-  layers: string[];
-}
-
-/** One section of records: ordinals [first, first + count) of (kind, level, face), at [offset, offset + bytes) of the index object. */
-export interface PackSection {
-  k: number;
-  l: number;
-  f: number;
-  first: number;
-  count: number;
-  offset: number;
-  bytes: number;
-}
-
-/** A plain file of a set: [pack number, offset, length, sha256 of the file (32 hex)]. */
-export type PackFileEntry = [number, number, number, string];
-
-/** The JSON header of a `.idx` object. */
-export interface TilePackIndex {
-  v: typeof PACK_FORMAT_VERSION;
-  /** Set name: a tile set (`earth`) or a file set (`sky`, `assets`). */
-  set: string;
-  /** `tiles` when the set has a manifest.json (a TileManifest), `files` for a plain file set. */
-  type: 'tiles' | 'files';
-  /** The manifest's contentHash at packing time (tile sets). */
-  contentHash: string | null;
-  packs: PackRef[];
-  kinds: PackKind[];
-  sections: PackSection[];
-  /** Path relative to the set root (forward slashes) -> location. Tile sets list manifest.json here. */
-  files: Record<string, PackFileEntry>;
-}
 
 /** Size in bytes of one record of a kind with `layerCount` layers. */
 export const recordBytes = (layerCount: number): number => 6 + 4 * layerCount;
@@ -336,31 +300,6 @@ export const bootTileKey = (set: string, layer: string, k: TileKey): string => `
 
 // -------------------------------------------------------------------------------------------- pack list
 
-/**
- * The pack list (ARCHITECTURE 10.4): what a client reads from `TileSourceSpec.packListUrl`. Signed once per
- * UTC day by the role that holds the packs credential; never compiled into the client.
- *   mirrors   ordered candidates. `objects` maps a content hash to its own (presigned) URL; otherwise the URL
- *             is `base + hash` (mode `ranges`) or `base + hash + '/' + n` (mode `slices`, slice n of
- *             `sliceBytes`). Relative URLs resolve against the pack list's own URL.
- *   sets      per set the index object (hash and bytes).
- */
-export interface PackListMirror {
-  id: string;
-  mode: 'ranges' | 'slices';
-  sliceBytes?: number;
-  base?: string;
-  objects?: Record<string, string>;
-}
-
-export interface PackList {
-  v: typeof PACK_FORMAT_VERSION;
-  /** UTC day the bucket URLs were signed for (YYYY-MM-DD). */
-  signedDay: string | null;
-  /** Seconds after which a client fetches the list again (it also does on a 403). */
-  refreshAfterS: number;
-  mirrors: PackListMirror[];
-  sets: Record<string, { index: string; indexBytes: number }>;
-}
 
 export function validatePackList(x: unknown): PackList {
   const p = x as Partial<PackList>;
