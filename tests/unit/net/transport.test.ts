@@ -189,7 +189,8 @@ describe('the injector', () => {
 
   it('the stand-alone proxy process injects its profile into a TCP link', async () => {
     // An echo server behind the proxy.
-    const echo = createServer((s) => s.on('data', (d) => s.write(d)));
+    // (The echo's sockets see a reset when the proxy process is killed at the end: that is expected, not an error.)
+    const echo = createServer((s) => s.on('error', () => undefined).on('data', (d) => s.write(d)));
     await new Promise<void>((r) => echo.listen(0, '127.0.0.1', r));
     cleanups.push(() => new Promise<void>((r) => echo.close(() => r())));
     const echoPort = (echo.address() as { port: number }).port;

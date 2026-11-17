@@ -18,6 +18,8 @@ setFlagsFromString('--expose-gc');
 const gc = runInNewContext('gc') as () => void;
 
 const N = 100_000;
+/** Runs before the measurement: the pools grow and the optimising compiler is done with the code (its own allocations are not the codec's). */
+const WARMUP = 100_000;
 
 function used(): number {
   const m = process.memoryUsage();
@@ -26,7 +28,7 @@ function used(): number {
 
 /** Growth over N runs of `once` after a warm-up and a forced collection. */
 function growthOf(once: () => void): number {
-  for (let i = 0; i < 20_000; i++) once();
+  for (let i = 0; i < WARMUP; i++) once();
   gc();
   gc();
   const before = used();
@@ -60,7 +62,7 @@ function steadyGrowth(msg: WireMessage, source: FrameSource, table: HandleTableO
     const err = reader.read(frame, visit);
     if (err) throw new Error(`${msg.type}: ${JSON.stringify(err)}`);
   });
-  expect(visited).toBe(20_000 + N);
+  expect(visited).toBe(WARMUP + N);
   return { encode, decode };
 }
 
@@ -110,6 +112,7 @@ describe('the high-rate messages allocate nothing in steady state', () => {
     const inTable = new HandleTableIn();
     const msg: WireMessage = {
       type: 'near',
+      band: 'near',
       tick: 1_000_060,
       vessels: Array.from({ length: 8 }, (_, i) => ({
         vesselId: coastingEntry(i, 0).vesselId,

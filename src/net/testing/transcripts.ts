@@ -17,7 +17,34 @@
 import type { ClientMessage, ClockState, ServerMessage, TimeRequest, UniverseRules, WireCommand } from '@/core/contracts/net';
 import { DEFAULT_UNIVERSE_RULES, TICKS_PER_SECOND } from '@/core/contracts/net';
 import type { SpawnRequest, Subscriptions } from '@/core/contracts/session';
-import { Prng } from '@/core/math/hash';
+import { hashU32, Prng } from '@/core/math/hash';
+import type { IdentityProof } from '../session/server';
+
+/**
+ * The transcripts' stand-in for the device key: a keyed hash of nonce || serverId || build under a secret of
+ * the account (the scripted host knows every account's secret). A real signature check in shape: a wrong
+ * nonce, server, build or account fails it.
+ */
+export function transcriptSignature(accountId: string, nonce: Uint8Array, serverId: string, build: string): Uint8Array {
+  const text = `${accountId}\u0000${serverId}\u0000${build}\u0000`;
+  let h = hashU32(0x5157);
+  for (let i = 0; i < text.length; i++) h = hashU32(h ^ text.charCodeAt(i));
+  for (const b of nonce) h = hashU32(h ^ b);
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 8; i++) {
+    h = hashU32(h + i);
+    out[4 * i] = h & 0xff;
+    out[4 * i + 1] = (h >>> 8) & 0xff;
+    out[4 * i + 2] = (h >>> 16) & 0xff;
+    out[4 * i + 3] = h >>> 24;
+  }
+  return out;
+}
+
+function signatureValid(p: IdentityProof): boolean {
+  const want = transcriptSignature(p.accountId, p.nonce, p.serverId, p.build);
+  return p.signature.length === want.length && want.every((b, i) => p.signature[i] === b);
+}
 import { encodeFrame } from '../codec/framing';
 import { injectTransport, type InjectedTransport } from '../injector/injected';
 import type { InjectorProfile } from '../injector/model';
@@ -215,8 +242,8 @@ class DefaultClientHalf implements TranscriptClientHalf {
       session: this.session,
       scheduler: ctx.scheduler,
       connect: () => ctx.connect(),
-      // The scripted host accepts the signature of a known account: the account id's bytes.
-      sign: () => new TextEncoder().encode(cfg.accountId),
+      // The device key of the account (the scripted host checks it like a real signature).
+      sign: (nonce, serverId, build) => transcriptSignature(cfg.accountId, nonce, serverId, build),
       onMessage: (m) => {
         if (m.type === 'seatResult') this.answers.set(m.reqId, m.result.ok);
         else if (m.type === 'commandResult') this.answers.set(m.cmdId, m.ok);
@@ -348,10 +375,10 @@ class ScriptedServerSide implements TranscriptServerSide, ServerHost {
     this.ctx.scheduler.setTimer(ms, fn);
   }
 
-  verifyAuth(req: { accountId: string; signature: Uint8Array }, d: ServerDriver): void {
+  verifyAuth(req: IdentityProof, d: ServerDriver): void {
     this.later(this.t.host.authDelayMs, () => {
       const a = this.accounts.get(req.accountId);
-      if (!a || new TextDecoder().decode(req.signature) !== req.accountId) {
+      if (!a || !signatureValid(req)) {
         d.authResult({ ok: false, reason: 'auth', text: 'This device key is not known.' });
         return;
       }
@@ -369,7 +396,12 @@ class ScriptedServerSide implements TranscriptServerSide, ServerHost {
     });
   }
 
-  resume(req: { session: string }, d: ServerDriver): void {
+  resume(req: IdentityProof & { session: string }, d: ServerDriver): void {
+    // The token alone takes no flight: the device key must sign the fresh nonce, and be the token's account's.
+    if (!signatureValid(req) || this.accounts.get(req.accountId)?.session !== req.session) {
+      this.later(this.t.host.authDelayMs, () => d.resumeResult({ ok: false, reason: 'resume', text: 'The session ended.' }));
+      return;
+    }
     this.later(this.t.host.authDelayMs, () => {
       const entry = [...this.accounts.entries()].find(([, a]) => a.session === req.session);
       const now = this.ctx.scheduler.now();
@@ -389,7 +421,7 @@ class ScriptedServerSide implements TranscriptServerSide, ServerHost {
         liveClock: liveClock(),
         serverMs: now,
         upMs: this.ctx.upMs(),
-        seat: { vesselId: a.seat ?? '', clockId: a.seat ? 'live' : null, relevantSeq: null, lastInputSeq: a.lastInputSeq },
+        seat: { vesselId: a.seat, queued: null, clockId: a.seat ? 'live' : null, relevantSeq: null, lastInputSeq: a.lastInputSeq },
       };
       d.resumeResult(result);
       d.enter((s) => s.setClock(liveClock()));
@@ -449,7 +481,7 @@ class ScriptedServerSide implements TranscriptServerSide, ServerHost {
       (a.driver ?? d).push(msg);
     };
     if (m.type === 'spawn') {
-      h.queuePlaces.forEach((position, i) => this.later(h.seatDelayMs * (i + 1), () => (a.driver ?? d).push({ type: 'spawnQueued', reqId: m.reqId, position, etaSeconds: position * 150, padClass: 'heavy' })));
+      h.queuePlaces.forEach((position, i) => this.later(h.seatDelayMs * (i + 1), () => (a.driver ?? d).push({ type: 'spawnQueued', reqId: m.reqId, position, etaSeconds: position * 150, serverMs: this.ctx.scheduler.now(), padClass: 'heavy' })));
       this.later(h.seatDelayMs * (h.queuePlaces.length + 1), () => {
         a.seat = `${d.session.accountId}-${m.request.vehicleId}`;
         send({ type: 'seatResult', reqId: m.reqId, result: { ok: true, vesselId: a.seat, clockId: 'live' } });

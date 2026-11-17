@@ -475,7 +475,8 @@ export class ByteReader {
       if (this.error === null) this.fail('badTick');
       return 0;
     }
-    return v;
+    // -0 is canonicalised: a tick is an integer, and integers have one zero.
+    return v === 0 ? 0 : v;
   }
 
   /** Unsigned varint, at most 8 bytes and 2^53 - 1. */

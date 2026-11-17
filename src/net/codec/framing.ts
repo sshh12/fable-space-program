@@ -134,6 +134,8 @@ export interface DecodeOptions {
   handles?: HandleTableIn | null;
   /** Size limit, bytes (default: `maxClientFrameBytes` from a client, `maxFrameBytes` otherwise). */
   maxBytes?: number;
+  /** Most input samples the frame may carry in all ('badCount' beyond; decoding stops there, so the cap bounds the allocation). */
+  maxInputSamples?: number;
 }
 
 const frameReader = new ByteReader();
@@ -159,9 +161,12 @@ export function decodeFrame(bytes: Uint8Array, opts: DecodeOptions): FrameResult
   r.table = opts.handles ?? null;
   r.where = 'frame';
   const n = readCount(r, opts.source);
+  const maxSamples = opts.maxInputSamples ?? Infinity;
+  let samples = 0;
   for (let i = 0; i < n; i++) {
     const m = readOne(r, opts.source, opts.handles ?? null);
     if (m === null) return { ok: false, error: { ...(r.takeError() ?? { code: 'truncated', offset: r.pos, where: 'frame' }), index: i }, messages };
+    if (m.type === 'input' && (samples += m.samples.length) > maxSamples) return { ok: false, error: { code: 'badCount', offset: r.pos, where: 'input', index: i }, messages };
     messages.push(m);
   }
   if (r.failed) return { ok: false, error: { ...r.takeError()!, index: -1 }, messages };

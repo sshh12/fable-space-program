@@ -33,6 +33,7 @@ import type {
   WireControlState,
 } from '@/core/contracts/net';
 import type { Presence } from '@/core/contracts/net';
+import { WIRE_RANGES } from '@/core/contracts/net';
 import type { SeatResult, SpawnRequest, SpawnSlot, Subscriptions } from '@/core/contracts/session';
 import type { Quat } from '@/core/math/quat';
 import type { Vec3 } from '@/core/math/vec3';
@@ -41,6 +42,8 @@ import { FrameVec3, WireEncodeError } from './bytes';
 import {
   array,
   axis8,
+  name as clientName,
+  ranged,
   blob,
   bool,
   enumOf,
@@ -91,7 +94,7 @@ export const handle: Codec<string> = {
     }
     return s;
   },
-  random: (g) => g.str(10),
+  random: (g) => g.id(10),
 };
 
 /** A nullable string as a handle, 0 standing for null (one byte cheaper than a flag). */
@@ -111,7 +114,7 @@ export const handleOrNull: Codec<string | null> = {
     }
     return s;
   },
-  random: (g) => (g.chance(0.3) ? null : g.str(10)),
+  random: (g) => (g.chance(0.3) ? null : g.id(10)),
 };
 
 // ------------------------------------------------------------------------------------------- controls
@@ -159,6 +162,22 @@ export function randomControls(g: Gen): WireControls {
   return { throttle: g.int(0, 255), pitch: g.int(-127, 127), yaw: g.int(-127, 127), roll: g.int(-127, 127), tx: g.int(-127, 127), ty: g.int(-127, 127), tz: g.int(-127, 127) };
 }
 
+/** A SAS hold direction is a unit vector (to `WIRE_RANGES.unitTolerance`). */
+export function isUnit(v: { x: number; y: number; z: number }): boolean {
+  return Math.abs(Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) - 1) <= WIRE_RANGES.unitTolerance;
+}
+
+/** A random unit vector of float32 values. */
+export function randomUnitF32(g: Gen): Vec3 {
+  for (;;) {
+    const x = g.next() * 2 - 1;
+    const y = g.next() * 2 - 1;
+    const z = g.next() * 2 - 1;
+    const n = Math.sqrt(x * x + y * y + z * z);
+    if (n > 0.1) return { x: Math.fround(x / n), y: Math.fround(y / n), z: Math.fround(z / n) };
+  }
+}
+
 const CS_SAS = 1;
 const CS_RCS = 2;
 const CS_FINE = 4;
@@ -171,7 +190,10 @@ export const controlState: Codec<WireControlState> = {
     writeControls(w, v);
     w.u8((v.sasEnabled ? CS_SAS : 0) | (v.rcsEnabled ? CS_RCS : 0) | (v.fineControl ? CS_FINE : 0) | (v.sasHold ? CS_HOLD : 0));
     sasMode.write(w, v.sasMode);
-    if (v.sasHold) unitF32.write(w, v.sasHold);
+    if (v.sasHold) {
+      if (!isUnit(v.sasHold)) throw new WireEncodeError('sasHold: not a unit vector');
+      unitF32.write(w, v.sasHold);
+    }
   },
   read(r) {
     const out = {} as WireControlState;
@@ -179,7 +201,7 @@ export const controlState: Codec<WireControlState> = {
     return out;
   },
   random(g) {
-    return { ...randomControls(g), sasEnabled: g.chance(0.5), rcsEnabled: g.chance(0.5), fineControl: g.chance(0.5), sasMode: g.pick(SAS_MODE_LIST), sasHold: g.chance(0.5) ? unitF32.random(g) : null };
+    return { ...randomControls(g), sasEnabled: g.chance(0.5), rcsEnabled: g.chance(0.5), fineControl: g.chance(0.5), sasMode: g.pick(SAS_MODE_LIST), sasHold: g.chance(0.5) ? randomUnitF32(g) : null };
   },
 };
 
@@ -195,6 +217,7 @@ export function readControlStateInto(r: ByteReader, out: WireControlState): void
   if (flags & CS_HOLD) {
     const h = out.sasHold ?? new FrameVec3();
     r.vec3f32Into(h);
+    if (!r.failed && !isUnit(h)) r.fail('badValue');
     out.sasHold = h;
   } else out.sasHold = null;
 }
@@ -453,7 +476,7 @@ export const spawnSlot: Codec<SpawnSlot> = union<SpawnSlot, 'kind'>('kind', {
   clock: { clockId: id },
 });
 
-export const spawnRequest: Codec<SpawnRequest> = struct<SpawnRequest>({ vehicleId: id, site: id, pad: id, slot: spawnSlot, name: text });
+export const spawnRequest: Codec<SpawnRequest> = struct<SpawnRequest>({ vehicleId: id, site: id, pad: id, slot: spawnSlot, name: clientName });
 
 type SeatAlternative = Extract<SeatResult, { ok: false }>['alternative'];
 const seatAlternative: Codec<SeatAlternative> = {
@@ -481,8 +504,8 @@ const seatAlternative: Codec<SeatAlternative> = {
   random(g) {
     const k = g.int(0, 2);
     if (k === 0) return null;
-    if (k === 1) return { clockId: g.str(8) };
-    return { site: g.str(8), pad: g.str(4), slot: spawnSlot.random(g) };
+    if (k === 1) return { clockId: g.id(8) };
+    return { site: g.id(8), pad: g.id(4), slot: spawnSlot.random(g) };
   },
 };
 
@@ -505,13 +528,13 @@ export const seatResult: Codec<SeatResult> = {
     if (ok !== 0) r.fail('badEnum');
     return { ok: false, reason: text.read(r), alternative: seatAlternative.read(r) };
   },
-  random: (g) => (g.chance(0.5) ? { ok: true, vesselId: g.str(10), clockId: g.chance(0.3) ? null : g.str(6) } : { ok: false, reason: g.str(20), alternative: seatAlternative.random(g) }),
+  random: (g) => (g.chance(0.5) ? { ok: true, vesselId: g.id(10), clockId: g.chance(0.3) ? null : g.id(6) } : { ok: false, reason: g.str(20), alternative: seatAlternative.random(g) }),
 };
 
 type RosterSub = NonNullable<Subscriptions['roster']>;
 export const subscriptions: Codec<Subscriptions> = struct<Subscriptions>({
   censusBodies: opt(array(id, 64)),
-  relevantDistance: opt(f64),
+  relevantDistance: opt(ranged(0, WIRE_RANGES.relevantDistanceMax)),
   padSites: opt(array(id, 64)),
   roster: opt(nullable(struct<RosterSub>({ filter: enumOf(['nearby', 'docked', 'lobby'] as const), cursor: nullable(id) }))),
   worldlineOf: opt(nullable(id)),
@@ -657,6 +680,28 @@ export const universeRules: Codec<UniverseRules> = struct<R>({
     timeMessageWindow: f64,
     subscriptionsPerSecond: f64,
     accountsPerAddressPerHour: f64,
+    upstreamBytesPerSecond: opt(f64),
+    upstreamBurstBytes: opt(f64),
+    upstreamFramesPerSecond: opt(f64),
+    upstreamBurstFrames: opt(f64),
+    pingsPerSecond: opt(f64),
+    timeSyncsPerSecond: opt(f64),
+    handshakeMessages: opt(f64),
+    plansPerSecond: opt(f64),
+    quicksPerSecond: opt(f64),
+    targetsPerSecond: opt(f64),
+    seatRequestsPerSecond: opt(f64),
+    inputSamplesPerFrame: opt(f64),
+    sendQueueBytes: opt(f64),
+    sendQueueAge: opt(f64),
+    downstreamBytesPerSecond: opt(f64),
+    downstreamBurstBytesPerSecond: opt(f64),
+    downstreamBurstSeconds: opt(f64),
+    downstreamBurstWindow: opt(f64),
+    deltaRateTarget: opt(f64),
+    deltaRateFloor: opt(f64),
+    islandEnterFreeBytes: opt(f64),
+    relevantFloorShare: opt(f64),
   }),
   planning: struct<R['planning']>({ workerMaxEstimateMs: f64, weakClientCpuScore: nullable(f64) }),
 });

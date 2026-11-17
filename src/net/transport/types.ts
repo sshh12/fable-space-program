@@ -50,4 +50,8 @@ export const CLOSE = {
   /** No frame arrived for `disconnect.lossTimeout` (declared loss, ARCHITECTURE U16). */
   lost: 4001,
   takenOver: 4002,
+  /** The gateway's outgoing queue passed its caps (a peer that does not read). */
+  slowConsumer: 4003,
+  /** An error inside the server's own code for this socket (the process goes on). */
+  internalError: 1011,
 } as const;

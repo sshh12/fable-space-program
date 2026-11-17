@@ -12,7 +12,7 @@
  * input.
  */
 import type { InputAckMessage, InputMessage, InputSample, WireControls } from '@/core/contracts/net';
-import { TICKS_PER_SECOND, WIRE_CONSTANTS } from '@/core/contracts/net';
+import { TICKS_PER_SECOND, WIRE_CONSTANTS, WIRE_RANGES } from '@/core/contracts/net';
 import type { Vec3 } from '@/core/math/vec3';
 import { RateWindow } from './limits';
 
@@ -22,6 +22,7 @@ const BUFFER_TICKS = Math.round((WIRE_CONSTANTS.inputBufferMs * TICKS_PER_SECOND
 
 export class InputWindow {
   private nextSeq: number;
+  private lastTick = -Infinity;
   private unacked: InputSample[] = [];
   /** Late applications the server reported: seq -> applied tick. */
   readonly lateApplied = new Map<number, number>();
@@ -36,7 +37,10 @@ export class InputWindow {
    * buffer: they can steer nothing any more).
    */
   add(controls: WireControls, applyTick: number, sasHold: Vec3 | null): InputSample {
-    const s: InputSample = { seq: this.nextSeq++, applyTick, ...pickControls(controls), sasHold: sasHold ? { ...sasHold } : null };
+    // Stamps never go backwards (a lead that shrank must not reorder the pilot's controls).
+    const tick = Math.max(applyTick, this.lastTick);
+    this.lastTick = tick;
+    const s: InputSample = { seq: this.nextSeq++, applyTick: tick, ...pickControls(controls), sasHold: sasHold ? { ...sasHold } : null };
     this.unacked.push(s);
     if (this.unacked[0]!.applyTick < applyTick - BUFFER_TICKS) this.unacked = this.unacked.filter((x) => x.applyTick >= applyTick - BUFFER_TICKS);
     return s;
@@ -63,15 +67,18 @@ export class InputWindow {
     return out;
   }
 
-  /** Apply an acknowledgement. */
+  /** Apply an acknowledgement (ranges are tested, never materialised: a server cannot make this allocate). */
   acknowledge(ack: InputAckMessage): void {
-    const done = new Set<number>();
-    for (const r of ack.stamped) for (let s = r.from; s <= r.to; s++) done.add(s);
-    for (const l of ack.late) {
-      done.add(l.seq);
-      this.lateApplied.set(l.seq, l.appliedTick);
+    const late = new Map<number, number>();
+    for (const l of ack.late.slice(0, 4096)) late.set(l.seq, l.appliedTick);
+    const acked = (seq: number): boolean => late.has(seq) || ack.stamped.some((r) => seq >= r.from && seq <= r.to);
+    for (const s of this.unacked) {
+      const t = late.get(s.seq);
+      if (t !== undefined) this.lateApplied.set(s.seq, t);
     }
-    if (done.size) this.unacked = this.unacked.filter((s) => !done.has(s.seq));
+    this.unacked = this.unacked.filter((s) => !acked(s.seq));
+    // Keep the late applications of the last 256 inputs only.
+    if (this.lateApplied.size > 256) for (const k of [...this.lateApplied.keys()].slice(0, this.lateApplied.size - 256)) this.lateApplied.delete(k);
   }
 
   /** Retire every sample up to `seq` (a resumed session says the universe applied them). */
@@ -93,8 +100,8 @@ function pickControls(c: WireControls): WireControls {
   return { throttle: c.throttle, pitch: c.pitch, yaw: c.yaw, roll: c.roll, tx: c.tx, ty: c.ty, tz: c.tz };
 }
 
-/** Why the gateway dropped an input sample. */
-export type InputDrop = 'repeat' | 'rate' | 'future';
+/** Why the gateway dropped an input sample ('past': stamped before the buffer's span; 'noClock': no pilot clock is set). */
+export type InputDrop = 'repeat' | 'rate' | 'future' | 'past' | 'noClock';
 
 interface Buffered {
   sample: InputSample;
@@ -110,16 +117,25 @@ export interface InputBufferStats {
   dropped: Record<InputDrop, number>;
 }
 
+/** The input margin is reported at most once per this many ms (one report per window keeps the client's loop from integrating one stale value many times). */
+export const MARGIN_REPORT_MS = 1000;
+
 export class InputBuffer {
   private lastSeq = 0;
   private readonly buffer: Buffered[] = [];
-  private readonly rate: RateWindow;
+  private rate: RateWindow;
   private margins: { atMs: number; ms: number }[] = [];
   private marginChanged = false;
-  readonly stats: InputBufferStats = { accepted: 0, dropped: { repeat: 0, rate: 0, future: 0 } };
+  private marginReportedAt = -Infinity;
+  readonly stats: InputBufferStats = { accepted: 0, dropped: { repeat: 0, rate: 0, future: 0, past: 0, noClock: 0 } };
 
   constructor(inputsPerSecond: number) {
     this.rate = new RateWindow(inputsPerSecond, 1000);
+  }
+
+  /** Count the rate in this window (the account's, shared by its sessions). */
+  useWindow(w: RateWindow): void {
+    this.rate = w;
   }
 
   /** Samples that may still be admitted beyond the rate limit (the catch-up of a resume). */
@@ -138,7 +154,7 @@ export class InputBuffer {
    * `clockTick` (running at `rate`) and stamps up to `stampLimitTick` are admitted. Returns the accepted
    * samples, in order, for the shard.
    */
-  accept(msg: InputMessage, nowMs: number, clockTick: number, rate: number, stampLimitTick: number): InputSample[] {
+  accept(msg: InputMessage, nowMs: number, clockTick: number, rate: number, stampLimitTick: number, stampFloorTick: number): InputSample[] {
     const out: InputSample[] = [];
     for (const s of msg.samples) {
       if (s.seq <= this.lastSeq) {
@@ -147,6 +163,11 @@ export class InputBuffer {
       }
       if (s.applyTick > stampLimitTick) {
         this.stats.dropped.future++;
+        this.lastSeq = s.seq;
+        continue;
+      }
+      if (s.applyTick < stampFloorTick) {
+        this.stats.dropped.past++;
         this.lastSeq = s.seq;
         continue;
       }
@@ -162,7 +183,8 @@ export class InputBuffer {
       this.stats.accepted++;
       this.buffer.push({ sample: s, receivedMs: nowMs, appliedTick: null, acked: false });
       const perTick = rate > 0 ? 1000 / (TICKS_PER_SECOND * rate) : 0;
-      this.margins.push({ atMs: nowMs, ms: Math.round((s.applyTick - clockTick) * perTick * 10) / 10 });
+      const m = Math.max(-WIRE_RANGES.marginMaxMs, Math.min(WIRE_RANGES.marginMaxMs, (s.applyTick - clockTick) * perTick));
+      this.margins.push({ atMs: nowMs, ms: Math.round(m * 10) / 10 });
       this.marginChanged = true;
       out.push(s);
     }
@@ -184,15 +206,24 @@ export class InputBuffer {
     return min;
   }
 
-  /** True when something is to be acknowledged (an application or a new margin). */
-  hasAck(): boolean {
-    return this.marginChanged || this.buffer.some((b) => b.appliedTick !== null && !b.acked);
+  /** True when a margin report is due (new margins, and a window since the last report). */
+  private marginDue(nowMs: number): boolean {
+    return this.marginChanged && nowMs >= this.marginReportedAt + MARGIN_REPORT_MS;
   }
 
-  /** The acknowledgement of every application not yet reported, with the margin; null when there is none. */
+  /** True when something is to be acknowledged (an application, or a margin report that is due). */
+  hasAck(nowMs: number): boolean {
+    return this.marginDue(nowMs) || this.buffer.some((b) => b.appliedTick !== null && !b.acked);
+  }
+
+  /** The acknowledgement of every application not yet reported, with the margin when a report is due (else null); null when there is nothing. */
   takeAck(nowMs: number): InputAckMessage | null {
-    if (!this.hasAck()) return null;
-    this.marginChanged = false;
+    if (!this.hasAck(nowMs)) return null;
+    const reportMargin = this.marginDue(nowMs);
+    if (reportMargin) {
+      this.marginChanged = false;
+      this.marginReportedAt = nowMs;
+    }
     const stamped: { from: number; to: number }[] = [];
     const late: { seq: number; appliedTick: number }[] = [];
     for (const b of this.buffer) {
@@ -205,7 +236,7 @@ export class InputBuffer {
         else stamped.push({ from: seq, to: seq });
       } else late.push({ seq, appliedTick: b.appliedTick });
     }
-    return { type: 'inputAck', marginMs: this.marginMs(nowMs), stamped, late };
+    return { type: 'inputAck', marginMs: reportMargin ? this.marginMs(nowMs) : null, stamped, late };
   }
 
   /** Forget inputs older than the buffer's span. */

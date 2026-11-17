@@ -8,6 +8,7 @@
  * optional (`?:`) fields; a union is a u8 variant index (declaration order: never reorder, append only)
  * followed by the variant's fields; `nullable` is a u8 flag; arrays and strings are varint-counted.
  */
+import { WIRE_RANGES } from '@/core/contracts/net';
 import { Prng } from '@/core/math/hash';
 import { ByteReader, ByteWriter, MAX_VARINT_SIGNED, WireEncodeError, utf8Length } from './bytes';
 
@@ -68,6 +69,13 @@ export class Gen {
       const v = Math.fround(this.chance(0.5) ? this.f64() : (this.next() - 0.5) * 10 ** this.int(-4, 8));
       if (Number.isFinite(v)) return v;
     }
+  }
+  /** An id: printable ASCII without spaces (what the `id` codec accepts), at most `maxChars`. */
+  id(maxChars = 12): string {
+    const n = this.int(0, maxChars);
+    let s = '';
+    for (let i = 0; i < n; i++) s += String.fromCharCode(this.int(0x21, 0x7e));
+    return s;
   }
   /** A string with ASCII, the id separators, and 2-, 3- and 4-byte UTF-8 characters. */
   str(maxChars = 12): string {
@@ -252,8 +260,61 @@ export function str(maxBytes: number = MAX_ID_BYTES): Codec<string> {
   };
 }
 
-export const id = str(MAX_ID_BYTES);
+/** Ids: printable ASCII without spaces, at most `WIRE_RANGES.maxIdBytes` (craft, vessel, account, body, site, clock ids, callsigns, part keys). */
+export const id: Codec<string> = {
+  min: 1,
+  write(w, v) {
+    if (typeof v !== 'string' || v.length > WIRE_RANGES.maxIdBytes || !ID_RE.test(v)) fail(`id: ${JSON.stringify(String(v)).slice(0, 40)} is not printable ASCII of at most ${WIRE_RANGES.maxIdBytes} bytes`);
+    w.str(v);
+  },
+  read(r) {
+    const s = r.str(WIRE_RANGES.maxIdBytes);
+    if (!r.failed && !ID_RE.test(s)) r.fail('badValue');
+    return s;
+  },
+  random(g) {
+    const n = g.int(0, 12);
+    let s = '';
+    for (let i = 0; i < n; i++) s += String.fromCharCode(g.int(0x21, 0x7e));
+    return s;
+  },
+};
+const ID_RE = /^[\x21-\x7e]*$/;
+
+/** Names a client gives (a craft's name): at most `WIRE_RANGES.maxNameBytes` of UTF-8, no control characters. */
+export const name: Codec<string> = {
+  min: 1,
+  write(w, v) {
+    if (typeof v !== 'string' || utf8Length(v) > WIRE_RANGES.maxNameBytes || CONTROL_RE.test(v)) fail('name: longer than allowed or with control characters');
+    w.str(v);
+  },
+  read(r) {
+    const s = r.str(WIRE_RANGES.maxNameBytes);
+    if (!r.failed && CONTROL_RE.test(s)) r.fail('badValue');
+    return s;
+  },
+  random: (g) => g.str(10).replace(CONTROL_RE, 'x'),
+};
+const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/;
+
 export const text = str(MAX_TEXT_BYTES);
+
+/** A finite float64 in [lo, hi]. */
+export function ranged(lo: number, hi: number): Codec<number> {
+  return {
+    min: 8,
+    write(w, v) {
+      if (typeof v !== 'number' || !(v >= lo && v <= hi)) fail(`number: ${String(v)} is not in [${lo}, ${hi}]`);
+      w.f64(v === 0 ? 0 : v);
+    },
+    read(r) {
+      const v = r.finiteF64();
+      if (!r.failed && !(v >= lo && v <= hi)) r.fail('badValue');
+      return v === 0 ? 0 : v;
+    },
+    random: (g) => lo + (hi - lo) * g.next(),
+  };
+}
 
 /** A byte string of at most `maxBytes`. */
 export function blob(maxBytes: number): Codec<Uint8Array> {
@@ -376,7 +437,7 @@ export function record<V>(c: Codec<V>, max: number): Codec<Record<string, V>> {
       const n = r.count(1 + c.min, max);
       const out: Record<string, V> = {};
       for (let i = 0; i < n; i++) {
-        const k = r.str(MAX_ID_BYTES);
+        const k = id.read(r);
         const v = c.read(r);
         if (r.failed) return {};
         // Keys are plain data: refuse the one key an object literal cannot hold as data.
@@ -391,7 +452,7 @@ export function record<V>(c: Codec<V>, max: number): Codec<Record<string, V>> {
     random(g) {
       const out: Record<string, V> = {};
       const n = g.int(0, Math.min(3, max));
-      for (let i = 0; i < n; i++) out[`k${i}${g.str(4)}`] = c.random(g);
+      for (let i = 0; i < n; i++) out[`k${i}${id.random(g).slice(0, 6)}`] = c.random(g);
       return out;
     },
   };

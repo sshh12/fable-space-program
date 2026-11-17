@@ -337,8 +337,8 @@ export function readEntry(r: ByteReader, ctx: EntryContext): CensusEntry {
 /** A random entry in canonical form. */
 export function randomEntry(g: Gen, baseTick: number): CensusEntry {
   const nCraft = g.chance(0.6) ? 1 : g.int(1, 4);
-  const vesselId = g.str(10) || 'v';
-  const craftIds = nCraft === 1 && g.chance(0.6) ? [vesselId] : Array.from({ length: nCraft }, () => g.str(10));
+  const vesselId = g.id(10) || 'v';
+  const craftIds = nCraft === 1 && g.chance(0.6) ? [vesselId] : Array.from({ length: nCraft }, () => g.id(10));
   const head = baseTick + g.int(-5e8, 5e8);
   const chainEnd = head + g.int(0, 2e7);
   const patches: CensusPatch[] = [];
@@ -355,17 +355,17 @@ export function randomEntry(g: Gen, baseTick: number): CensusEntry {
     craftIds,
     kind: g.pick(KINDS),
     name: g.str(14),
-    vehicleId: g.str(12),
-    ownerIds: craftIds.map(() => (g.chance(0.2) ? null : g.str(12))),
-    ownerCallsigns: craftIds.map(() => (g.chance(0.2) ? null : g.str(8))),
+    vehicleId: g.id(12),
+    ownerIds: craftIds.map(() => (g.chance(0.2) ? null : g.id(12))),
+    ownerCallsigns: craftIds.map(() => (g.chance(0.2) ? null : g.id(8))),
     bodyId: g.pick(['earth', 'moon', 'mars']),
     patches,
     landed: g.chance(0.15) ? { bodyId: 'moon', latitude: g.f64(), longitude: g.f64(), altitude: g.f64() } : null,
     headTick: head,
     horizonTick: g.chance(0.5) ? null : head + g.int(0, 1e8),
     chainEndTick: chainEnd,
-    clockId: g.chance(0.6) ? null : g.str(8),
-    reservedBy: g.chance(0.8) ? null : g.str(8),
+    clockId: g.chance(0.6) ? null : g.id(8),
+    reservedBy: g.chance(0.8) ? null : g.id(8),
     limitTick: g.chance(0.3) ? null : head + g.int(-1e9, 1e9),
     radius: g.int(0, 200000) / 100,
     expiresWallMs: g.chance(0.3) ? null : g.safeInt(4e12),
@@ -433,7 +433,7 @@ export function readElements(r: ByteReader, frames: FrameTable): OsculatingEleme
 
 export function randomElements(g: Gen): OsculatingElements {
   const mu = g.pick([3.986004418e14, 4.9048695e12]);
-  return { vesselId: g.str(10), tick: g.safeInt(2 ** 50), bodyId: g.pick(['earth', 'moon']), conic: randomConic(g, mu) };
+  return { vesselId: g.id(10), tick: g.safeInt(2 ** 50), bodyId: g.pick(['earth', 'moon']), conic: randomConic(g, mu) };
 }
 
 const SEG_CONIC = 0;
@@ -502,6 +502,6 @@ export function readSegments(r: ByteReader, frames: FrameTable): WorldlineSegmen
 export function randomSegment(g: Gen): WorldlineSegment {
   const k = g.int(0, 2);
   if (k === 0) return { kind: 'conic', bodyId: g.pick(['earth', 'moon']), conic: randomConic(g, 3.986004418e14), fromTick: g.safeInt(2 ** 50), toTick: g.safeInt(2 ** 50) };
-  if (k === 1) return { kind: 'arc', bodyId: g.str(6), samples: array(arcSample, 4).random(g) };
-  return { kind: 'rest', bodyId: g.str(6), latitude: g.f64(), longitude: g.f64(), altitude: g.f64(), fromTick: g.safeInt(2 ** 50), toTick: g.safeInt(2 ** 50) };
+  if (k === 1) return { kind: 'arc', bodyId: g.id(6), samples: array(arcSample, 4).random(g) };
+  return { kind: 'rest', bodyId: g.id(6), latitude: g.f64(), longitude: g.f64(), altitude: g.f64(), fromTick: g.safeInt(2 ** 50), toTick: g.safeInt(2 ** 50) };
 }

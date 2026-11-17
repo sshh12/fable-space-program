@@ -98,7 +98,7 @@ describe('the gateway session', () => {
     s.messages(Array.from({ length: n + 3 }, (_, i): ClientMessage => ({ type: 'command', cmdId: i + 1, tick: 10, command: { kind: 'stage' } })));
     const actions = s.drain();
     expect(actions.filter((a) => a.kind === 'forward')).toHaveLength(n);
-    expect(s.dropped.commands).toBe(3);
+    expect(s.dropped.command).toBe(3);
     const t = online();
     t.messages(Array.from({ length: rules.limits.timeMessages + 2 }, (_, i): ClientMessage => ({ type: 'time', cmdId: i + 1, tick: 10, request: { kind: 'hold', on: true } })));
     expect(t.dropped.time).toBe(2);
@@ -107,7 +107,7 @@ describe('the gateway session', () => {
     expect(t.dropped.time).toBe(2);
     const u = online();
     u.messages(Array.from({ length: rules.limits.subscriptionsPerSecond + 4 }, (): ClientMessage => ({ type: 'subscribe', change: { relevantDistance: 1 } })));
-    expect(u.dropped.subscriptions).toBe(4);
+    expect(u.dropped.subscribe).toBe(4);
   });
 
   it('answers a request sent again (after a resume) once, from memory', () => {
@@ -165,7 +165,7 @@ describe('inputs, backoff', () => {
 
   it('the input buffer keeps inputs with their applied ticks for inputBufferMs', () => {
     const b = new InputBuffer(60);
-    b.accept({ type: 'input', samples: [sample(1, 10), sample(2, 14)] }, 0, 0, 1, 1e9);
+    b.accept({ type: 'input', samples: [sample(1, 10), sample(2, 14)] }, 0, 0, 1, 1e9, -1e9);
     b.applied(1, 10);
     b.prune(WIRE_CONSTANTS.inputBufferMs - 1);
     expect(b.retained().map((r) => [r.sample.seq, r.appliedTick])).toEqual([
@@ -187,29 +187,114 @@ describe('inputs, backoff', () => {
 });
 
 describe('the downstream budget', () => {
-  it('spends 6 kB/s in priority order, drops superseded samples, never drops a reliable record, never starves a large one', () => {
+  const rec = (n: number) => new Uint8Array(n);
+
+  it('(a) 6 kB/s sustained; 24 kB/s while the island waits, for at most 60 s in any 600 s', () => {
     const b = new DownstreamBudget();
-    const rec = (n: number) => new Uint8Array(n);
-    let sent = 0;
-    const perClass = [0, 0, 0, 0];
-    for (let t = 0; t <= 10_000; t += 33) {
-      // Own island at 30 Hz (300 B deltas, latest-wins), near tier at 10 Hz, relevant set changes, control.
-      b.offer(rec(300), 1, 'islandDelta:1', t);
-      if (t % 99 === 0) b.offer(rec(250), 2, 'near', t);
-      if (t % 990 === 0) b.offer(rec(900), 3, null, t);
-      if (t % 3300 === 0) b.offer(rec(20000), 1, null, t);
-      b.offer(rec(8), 0, null, t);
-      for (const r of b.take(t)) {
-        sent += r.record.length;
-      }
+    // A near tier that wants 24 kB/s for 20 minutes (400 B at 60 Hz, latest-wins).
+    const perSecond: number[] = [];
+    for (let t = 0; t <= 1_200_000; t += 1000 / 60) {
+      b.offer(rec(400), 2, 'near:near', t);
+      const s = Math.floor(t / 1000);
+      for (const r of b.take(t)) perSecond[s] = (perSecond[s] ?? 0) + r.record.length;
     }
-    for (let c = 0; c < 4; c++) perClass[c] = b.stats.sentBytes[c as 0 | 1 | 2 | 3];
-    // Over 10 s: at most 10 s of budget plus the first burst (and the big records' debt, bounded by one of them).
-    expect(sent).toBeLessThanOrEqual(6000 * 10 + 6000 + 20000 + 8 * 304);
-    expect(b.stats.superseded[1]).toBeGreaterThan(0);
-    // The large reliable records went (not starved) and the relevant set got its share after the island.
-    expect(perClass[1]!).toBeGreaterThan(perClass[3]!);
-    expect(b.stats.maxReliableWaitMs).toBeLessThan(10_000);
+    const sum = (from: number, to: number) => perSecond.slice(from, to).reduce((a, x) => a + (x ?? 0), 0);
+    // The first minute bursts, the next nine do not, the eleventh bursts again.
+    expect(sum(1, 59) / 58).toBeGreaterThan(20_000);
+    expect(sum(61, 600) / 539).toBeLessThan(6100);
+    expect(sum(601, 659) / 58).toBeGreaterThan(20_000);
+    // Every 600-s window: at most 540 s at 6 kB/s, 60 s at 24 kB/s and one bucket.
+    for (let s = 0; s + 600 <= perSecond.length; s += 30) expect(sum(s, s + 600)).toBeLessThanOrEqual(540 * 6000 + 60 * 24_000 + 6000 + 400);
+    expect(b.stats.burstSeconds).toBeLessThanOrEqual(120.1);
+  });
+
+  it('(b) island deltas adapt between the floor and the target to the sizes produced; contact deltas go at 60 Hz from the burst', () => {
+    const b = new DownstreamBudget({ burstSeconds: 0 });
+    let deltas = 0;
+    for (let t = 0; t < 20_000; t += 1000 / 60) {
+      b.offer(rec(300), 1, 'islandDelta:1', t);
+      for (const r of b.take(t)) if (r.key === 'islandDelta:1' && t >= 10_000) deltas++;
+    }
+    // 6000 x 0.9 x 0.8 / 300 = 14.4 Hz.
+    expect(b.stats.deltaRateHz).toBeCloseTo(14.4, 1);
+    expect(deltas / 10).toBeGreaterThan(13);
+    expect(deltas / 10).toBeLessThan(15.5);
+    // Small deltas: the target, never more.
+    const small = new DownstreamBudget({ burstSeconds: 0 });
+    let n = 0;
+    for (let t = 0; t < 10_000; t += 1000 / 60) {
+      small.offer(rec(60), 1, 'islandDelta:1', t);
+      for (const r of small.take(t)) if (r.key === 'islandDelta:1' && t >= 5000) n++;
+    }
+    expect(n / 5).toBeLessThanOrEqual(30.5);
+    expect(n / 5).toBeGreaterThan(28);
+    // Huge deltas: the floor, never less.
+    const big = new DownstreamBudget({ burstSeconds: 0 });
+    n = 0;
+    for (let t = 0; t < 20_000; t += 1000 / 60) {
+      big.offer(rec(500), 1, 'islandDelta:1', t);
+      for (const r of big.take(t)) if (r.key === 'islandDelta:1' && t >= 10_000) n++;
+    }
+    expect(big.stats.deltaRateHz).toBe(10);
+    // Contact: 60 Hz while the burst allowance lasts.
+    const contact = new DownstreamBudget();
+    n = 0;
+    for (let t = 0; t < 10_000; t += 1000 / 60) {
+      contact.offer(rec(160), 1, 'islandDelta:1', t, { contact: true });
+      for (const r of contact.take(t)) if (r.key === 'islandDelta:1' && t >= 5000) n++;
+    }
+    expect(n / 5).toBeGreaterThan(55);
+  });
+
+  it('(c) a record with a key replaces the waiting one IN PLACE; a key removes the deltas it obsoletes; reliable records keep their order', () => {
+    const b = new DownstreamBudget();
+    b.take(0);
+    // Drain the bucket so everything waits.
+    b.offer(rec(6000), 1, null, 0);
+    expect(b.take(0)).toHaveLength(1);
+    const a1 = rec(10).fill(1);
+    const a2 = rec(10).fill(2);
+    b.offer(a1, 3, 'pads', 0);
+    b.offer(rec(10).fill(9), 3, null, 0);
+    b.offer(a2, 3, 'pads', 0);
+    b.offer(rec(50), 1, 'islandDelta:4', 0);
+    b.offer(rec(80), 1, 'islandKey:4', 0, { obsoletes: 'islandDelta:4' });
+    const out = b.take(2000);
+    // Class 3 goes first here from its floor credit, in its own order: the newer pads in the older one's place.
+    expect(out.map((r) => r.key)).toEqual(['pads', null, 'islandKey:4']);
+    expect(out[0]!.record[0]).toBe(2);
+    expect(b.stats.superseded[3]).toBe(1);
+    expect(b.stats.superseded[1]).toBe(1);
+  });
+
+  it('(d) an island enter is free up to 256 kB and charged beyond; (e) class 3 keeps its floor under a saturated island', () => {
+    const b = new DownstreamBudget({ burstSeconds: 0 });
+    b.take(0);
+    b.offer(rec(200 * 1024), 1, null, 0, { islandEnter: true });
+    b.offer(rec(500), 3, null, 0);
+    expect(b.take(0).map((r) => r.record.length)).toEqual([500, 200 * 1024]);
+    b.offer(rec(300 * 1024), 1, null, 0, { islandEnter: true });
+    // 44 kB charged: it waits for a full bucket, then takes the bucket into its debt.
+    expect(b.take(1)).toHaveLength(0);
+    expect(b.take(1000)).toHaveLength(1);
+    // A saturated island (30 kB/s of reliable records) and a relevant set that wants 9 kB/s.
+    const s = new DownstreamBudget({ burstSeconds: 0 });
+    for (let t = 0; t <= 100_000; t += 100) {
+      s.offer(rec(3000), 1, null, t);
+      s.offer(rec(900), 3, null, t);
+      s.take(t);
+    }
+    const share = s.stats.sentBytes[3] / (s.stats.sentBytes[1] + s.stats.sentBytes[3]);
+    expect(share).toBeGreaterThan(0.09);
+    expect(s.stats.sentBytes[1] + s.stats.sentBytes[3]).toBeLessThanOrEqual(6000 * 100 + 6000 + 3000);
+  });
+
+  it('control records go first but into a bounded debt', () => {
+    const b = new DownstreamBudget({ burstSeconds: 0 });
+    for (let i = 0; i < 1000; i++) b.offer(rec(100), 0, null, 0);
+    // One bucket plus one second of debt: 120 records of 100 B, then they wait.
+    expect(b.take(0).length).toBe(120);
+    expect(b.waitingCount).toBe(880);
   });
 });
 

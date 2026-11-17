@@ -327,6 +327,43 @@ export interface UniverseRules {
      * address; bulk provisioning for load tests uses the operator token and is not subject to it).
      */
     accountsPerAddressPerHour: number;
+    /**
+     * Wire-layer bounds (added by `wire-protocol`, fix round of 2026-11-16, with the lead's authorisation):
+     * OPTIONAL until the default rules document carries them at the tighten step; a document without a field
+     * takes `WIRE_LIMIT_DEFAULTS` (wire section below). Read them through `wireLimits(rules)`. Units in the
+     * field names; durations in seconds.
+     */
+    /** Upstream bucket of one socket, checked before decoding: sustained bytes and frames per second and the bucket sizes. */
+    upstreamBytesPerSecond?: number;
+    upstreamBurstBytes?: number;
+    upstreamFramesPerSecond?: number;
+    upstreamBurstFrames?: number;
+    /** Pings and time-sync probes accepted per second, and messages of any kind accepted before the welcome. */
+    pingsPerSecond?: number;
+    timeSyncsPerSecond?: number;
+    handshakeMessages?: number;
+    /** Per-type limits: plans (ARCHITECTURE 13.3: at most 1 Hz), quick-comms, targets, seat requests (spawn, attach, detach, spawn cancel). */
+    plansPerSecond?: number;
+    quicksPerSecond?: number;
+    targetsPerSecond?: number;
+    seatRequestsPerSecond?: number;
+    /** Input samples one client frame may carry in all. */
+    inputSamplesPerFrame?: number;
+    /** A socket whose outgoing queue holds more than this many bytes, or a record older than this many seconds, is closed (a slow consumer). */
+    sendQueueBytes?: number;
+    sendQueueAge?: number;
+    /** Downstream budget (lead decision of 2026-11-16): the sustained average per client, the burst rate allowed for at most `downstreamBurstSeconds` in any `downstreamBurstWindow` seconds. */
+    downstreamBytesPerSecond?: number;
+    downstreamBurstBytesPerSecond?: number;
+    downstreamBurstSeconds?: number;
+    downstreamBurstWindow?: number;
+    /** Island delta rate per client: the target and the floor, Hz (the rate adapts between them to what the budget leaves). */
+    deltaRateTarget?: number;
+    deltaRateFloor?: number;
+    /** An island-enter message up to this many bytes is outside the bucket; beyond it the excess is charged. */
+    islandEnterFreeBytes?: number;
+    /** Share of the sustained budget the relevant set and the view models (class 3) are guaranteed, 0..1. */
+    relevantFloorShare?: number;
   };
 
   /** Where planning work runs (ARCHITECTURE 6.3). */
@@ -995,6 +1032,64 @@ export interface CapabilityReport {
 export const WIRE_PROTOCOL_VERSION = 1;
 
 /**
+ * Defaults of the optional wire fields of `UniverseRules.limits` (used while the rules document in force does
+ * not carry them; the default document receives them at the tighten step). Units as on the fields.
+ */
+export const WIRE_LIMIT_DEFAULTS = {
+  upstreamBytesPerSecond: 16_000,
+  upstreamBurstBytes: 80 * 1024,
+  upstreamFramesPerSecond: 60,
+  upstreamBurstFrames: 120,
+  pingsPerSecond: 2,
+  timeSyncsPerSecond: 2,
+  handshakeMessages: 8,
+  plansPerSecond: 1,
+  quicksPerSecond: 1,
+  targetsPerSecond: 5,
+  seatRequestsPerSecond: 2,
+  inputSamplesPerFrame: 128,
+  sendQueueBytes: 1024 * 1024,
+  sendQueueAge: 10,
+  downstreamBytesPerSecond: 6000,
+  downstreamBurstBytesPerSecond: 24_000,
+  downstreamBurstSeconds: 60,
+  downstreamBurstWindow: 600,
+  deltaRateTarget: 30,
+  deltaRateFloor: 10,
+  islandEnterFreeBytes: 256 * 1024,
+  relevantFloorShare: 0.1,
+} as const;
+
+export type WireLimits = UniverseRules['limits'] & { -readonly [K in keyof typeof WIRE_LIMIT_DEFAULTS]: number };
+
+/** The limits of a rules document with every wire field filled (the document's value, else the default). */
+export function wireLimits(rules: Pick<UniverseRules, 'limits'>): WireLimits {
+  const out = { ...WIRE_LIMIT_DEFAULTS, ...rules.limits } as WireLimits;
+  for (const k of Object.keys(WIRE_LIMIT_DEFAULTS) as (keyof typeof WIRE_LIMIT_DEFAULTS)[]) if (out[k] === undefined) out[k] = WIRE_LIMIT_DEFAULTS[k];
+  return out;
+}
+
+/**
+ * Ranges of the numbers clients send (the codec refuses a value outside them; ARCHITECTURE 26). Distances m,
+ * rates kg/s, durations s. Ids are printable ASCII of at most `maxIdBytes`; names and phrases at most
+ * `maxNameBytes` of UTF-8 without control characters.
+ */
+export const WIRE_RANGES = {
+  maxIdBytes: 128,
+  maxNameBytes: 64,
+  /** `Subscriptions.relevantDistance`, m. */
+  relevantDistanceMax: 1e9,
+  /** `transfer.rate`, kg/s. */
+  transferRateMax: 1e5,
+  /** `advanceLimit.seconds`: at most the default lead cap (250 years). */
+  advanceLimitMaxSeconds: 250 * 365.25 * 86400,
+  /** A SAS hold direction must be a unit vector to within this. */
+  unitTolerance: 1e-3,
+  /** Input margins reported, ms (clamped). */
+  marginMaxMs: 60_000,
+} as const;
+
+/**
  * Protocol constants of ARCHITECTURE 13 that are not rules of the universe (the universe's timers are
  * `UniverseRules` fields: the ping interval, the loss timeout, the reconnect grace, the round-trip allowance
  * and the gateway's rate limits are read from the rules document in force).
@@ -1089,9 +1184,15 @@ export interface AuthMessage {
   signature: Uint8Array;
 }
 
-/** Where a resumed session was seated again (U8b); the server follows with `clock`, `islandEnter` and the relevant set. */
+/**
+ * Where a resumed session was seated again (U8b); the server follows with `clock`, `islandEnter` and the
+ * relevant set. A session resumed without a seat has `vesselId: null`; one that was waiting in the launch queue
+ * carries the waiting request in `queued`, and the universe re-sends `spawnQueued` after the resume (a queued
+ * request of a session lost past the reconnect grace is dropped with the session).
+ */
 export interface ResumedSeat {
-  vesselId: string;
+  vesselId: string | null;
+  queued: Omit<SpawnQueuedMessage, 'type'> | null;
   clockId: string | null;
   /** The relevant-set sequence number the server continues from (the client's, when it still had it; null = a full set follows). */
   relevantSeq: number | null;
@@ -1208,8 +1309,10 @@ export interface SpawnQueuedMessage {
   reqId: number;
   /** 1 = next. */
   position: number;
-  /** Estimated wait until a pad of the class is free, s, from the pad timetable. */
+  /** Estimated wait until a pad of the class is free: seconds of wall time from `serverMs`, from the pad timetable (an estimate). */
   etaSeconds: number;
+  /** The server's wall clock when this was sent, ms since the Unix epoch. */
+  serverMs: number;
   padClass: PadClass;
 }
 
@@ -1592,11 +1695,29 @@ export interface NearVessel {
   controls: WireControlState | null;
 }
 
-/** Server -> client, 10 Hz within 20 km and 2 Hz beyond: the near tier (14, tier B). */
+/**
+ * Server -> client, 10 Hz within 20 km (`band: 'near'`) and 2 Hz beyond (`'far'`): the near tier (14, tier B).
+ * The two bands are separate messages, each superseding only its own band. (`band` is an addition to 13.3.)
+ */
 export interface NearMessage {
   type: 'near';
+  band: 'near' | 'far';
   tick: number;
   vessels: NearVessel[];
+}
+
+/**
+ * Server -> client (an addition to 13.3): requests of one kind were dropped by a rate limit (ARCHITECTURE 26).
+ * One message per kind per window, whatever the number dropped: `ids` lists the request ids dropped (at most
+ * 64; the client answers those still pending as refused), `dropped` counts every message dropped.
+ */
+export interface RateLimitedMessage {
+  type: 'rateLimited';
+  what: 'command' | 'time' | 'seat' | 'subscribe' | 'plan' | 'quick' | 'target' | 'input';
+  dropped: number;
+  ids: number[];
+  /** When the client may send this kind again, ms from now. */
+  retryAfterMs: number;
 }
 
 /** Osculating elements of a thrusting craft of the relevant set (1 Hz while it thrusts). */
@@ -1814,6 +1935,7 @@ export type ServerMessage =
   | FeedMessage
   | RulesMessage
   | NoticeMessage
+  | RateLimitedMessage
   | PingMessage
   | PongMessage
   | TimeSyncReplyMessage;

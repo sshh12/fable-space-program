@@ -45,7 +45,9 @@ import {
 import { simEvent } from './events';
 import { DocumentStrings } from './handles';
 import { inputAckCodec, inputCodec, islandDeltaCodec, islandKeyCodec, islandSlowCodec, nearCodec, type HotCodec } from './island';
-import { array, blob, bool, enumOf, f64, id, nullable, struct, text, tick, u8, uint, union, type Codec, type Fields, type Gen } from './schema';
+import { array, blob, bool, enumOf, f64, id, name as clientName, nullable, ranged, str, struct, text, tick, uint, union, varUint, type Codec, type Fields, type Gen } from './schema';
+import { WARP_LEVELS } from '@/core/contracts/defs';
+import { WIRE_RANGES } from '@/core/contracts/net';
 
 /** Who sends a message. */
 export type Sender = 'client' | 'server' | 'both' | 'role' | 'document';
@@ -141,7 +143,7 @@ const relevantDelta: Codec<Omit<RelevantDeltaMessage, 'type'>> = {
       baseSeq: g.safeInt(1e9),
       tick: t,
       changed: Array.from({ length: g.int(0, 2) }, () => randomEntry(g, t)),
-      removed: Array.from({ length: g.int(0, 2) }, () => g.str(8)),
+      removed: Array.from({ length: g.int(0, 2) }, () => g.id(8)),
       elements: Array.from({ length: g.int(0, 2) }, () => randomElements(g)),
     };
   },
@@ -162,8 +164,11 @@ const worldline: Codec<Omit<WorldlineMessage, 'type'>> = {
     const frames = readFrames(r, true);
     return { vesselId, fromTick, toTick, segments: readSegments(r, frames) };
   },
-  random: (g) => ({ vesselId: g.str(10), fromTick: g.safeInt(2 ** 50), toTick: g.safeInt(2 ** 50), segments: Array.from({ length: g.int(0, 3) }, () => randomSegment(g)) }),
+  random: (g) => ({ vesselId: g.id(10), fromTick: g.safeInt(2 ** 50), toTick: g.safeInt(2 ** 50), segments: Array.from({ length: g.int(0, 3) }, () => randomSegment(g)) }),
 };
+
+/** The strings of a census document's table: ids and craft names (UTF-8 of at most `WIRE_RANGES.maxIdBytes`). */
+const tableString = str(WIRE_RANGES.maxIdBytes);
 
 /** A census document: header, its own string table, then the frames and entries. */
 function writeDocBody(w: ByteWriter, body: (sw: ByteWriter, strings: DocumentStrings) => void): void {
@@ -173,7 +178,7 @@ function writeDocBody(w: ByteWriter, body: (sw: ByteWriter, strings: DocumentStr
   body(inner, strings);
   if (strings.list.length > 4_000_000) throw new WireEncodeError('census document: too many strings');
   w.varUint(strings.list.length);
-  for (const s of strings.list) id.write(w, s);
+  for (const s of strings.list) tableString.write(w, s);
   w.raw(inner.bytes());
 }
 
@@ -181,7 +186,7 @@ function readDocStrings(r: ByteReader): DocumentStrings {
   const strings = new DocumentStrings();
   const n = r.count(1, 4_000_000);
   const list: string[] = [];
-  for (let i = 0; i < n && !r.failed; i++) list.push(id.read(r));
+  for (let i = 0; i < n && !r.failed; i++) list.push(tableString.read(r));
   strings.load(list);
   return strings;
 }
@@ -211,7 +216,7 @@ const censusSnapshot: Codec<Omit<CensusSnapshotDocument, 'type'>> = {
   },
   random(g) {
     const t = tick.random(g) % 2 ** 51;
-    return { soi: g.str(6), seq: g.safeInt(1e9), wallMs: g.f64(), tick: t, pollAfterS: g.f64(), entries: Array.from({ length: g.int(0, 3) }, () => randomEntry(g, t)) };
+    return { soi: g.id(6), seq: g.safeInt(1e9), wallMs: g.f64(), tick: t, pollAfterS: g.f64(), entries: Array.from({ length: g.int(0, 3) }, () => randomEntry(g, t)) };
   },
 };
 
@@ -249,14 +254,14 @@ const censusDelta: Codec<Omit<CensusDeltaDocument, 'type'>> = {
   random(g) {
     const t = tick.random(g) % 2 ** 51;
     return {
-      soi: g.str(6),
+      soi: g.id(6),
       seq: g.safeInt(1e9),
       baseSeq: g.safeInt(1e9),
       wallMs: g.f64(),
       tick: t,
       pollAfterS: g.f64(),
       changed: Array.from({ length: g.int(0, 2) }, () => randomEntry(g, t)),
-      removed: Array.from({ length: g.int(0, 2) }, () => g.str(8)),
+      removed: Array.from({ length: g.int(0, 2) }, () => g.id(8)),
     };
   },
 };
@@ -281,16 +286,16 @@ const wireCommand = union<import('@/core/contracts/net').WireCommand, 'kind'>('k
   grantHelm: { accountId: id },
   releaseHelm: {},
   lendPolicy: { craftId: id, policy: lendPolicyPatch },
-  advanceLimit: { craftId: id, seconds: f64 },
-  transfer: { from: id, to: id, resource: id, rate: f64 },
+  advanceLimit: { craftId: id, seconds: ranged(0, WIRE_RANGES.advanceLimitMaxSeconds) },
+  transfer: { from: id, to: id, resource: id, rate: ranged(0, WIRE_RANGES.transferRateMax) },
   crossfeed: { portId: id, on: bool },
-  rename: { craftId: id, name: text },
+  rename: { craftId: id, name: clientName },
   abandon: { craftId: id },
   cycleVessel: { direction: enumOf([1, -1] as const) },
 });
 
 const timeRequest = union<import('@/core/contracts/net').TimeRequest, 'kind'>('kind', {
-  setRate: { warpIndex: u8 },
+  setRate: { warpIndex: varUint(WARP_LEVELS.length - 1) },
   warpTo: { tick },
   jumpToTick: { tick },
   jumpToClock: { clockId: id },
@@ -359,7 +364,15 @@ add(
     liveClock: clockState,
     serverMs: f64,
     upMs: f64,
-    resumed: nullable(struct<import('@/core/contracts/net').ResumedSeat>({ vesselId: id, clockId: nullable(id), relevantSeq: nullable(uint), lastInputSeq: uint })),
+    resumed: nullable(
+      struct<import('@/core/contracts/net').ResumedSeat>({
+        vesselId: nullable(id),
+        queued: nullable(struct<Omit<import('@/core/contracts/net').SpawnQueuedMessage, 'type'>>({ reqId: uint, position: uint, etaSeconds: f64, serverMs: f64, padClass })),
+        clockId: nullable(id),
+        relevantSeq: nullable(uint),
+        lastInputSeq: uint,
+      }),
+    ),
   }),
 );
 add(
@@ -376,7 +389,7 @@ add(
 );
 add('takenOver', 35, 'server', 'reliable', fieldsOf('takenOver', { text }));
 add('seatResult', 36, 'server', 'reliable', fieldsOf('seatResult', { reqId: uint, result: seatResult }));
-add('spawnQueued', 37, 'server', 'reliable', fieldsOf('spawnQueued', { reqId: uint, position: uint, etaSeconds: f64, padClass }));
+add('spawnQueued', 37, 'server', 'reliable', fieldsOf('spawnQueued', { reqId: uint, position: uint, etaSeconds: f64, serverMs: f64, padClass }));
 add('handles', 38, 'server', 'reliable', fieldsOf('handles', { entries: array(struct<{ handle: number; id: string }>({ handle: uint, id: text }), 1_000_000) }));
 add('clock', 39, 'server', 'reliable', fieldsOf('clock', { role: enumOf(['own', 'live'] as const), clock: clockState, maxRate: f64, offers: array(timeOffer, 64) }));
 add('islandEnter', 40, 'server', 'reliable', fieldsOf('islandEnter', { island: uint, islandId: id, epoch: uint, tick, members: array(id, 65536), state: wireBlob }));
@@ -384,7 +397,8 @@ add('islandOp', 41, 'server', 'reliable', fieldsOf('islandOp', { island: uint, e
 add('islandKey', 42, 'server', 'latest', islandKeyCodec, islandKeyCodec);
 add('islandDelta', 43, 'server', 'latest', islandDeltaCodec, islandDeltaCodec);
 add('inputAck', 44, 'server', 'reliable', inputAckCodec, inputAckCodec);
-add('islandSlow', 45, 'server', 'latest', islandSlowCodec);
+// Reliable: a slow message covers only the parts of its round-robin turn, so a newer one does not replace it.
+add('islandSlow', 45, 'server', 'reliable', islandSlowCodec);
 add('event', 46, 'server', 'reliable', fieldsOf('event', { tick, epoch: uint, event: simEvent }));
 add('commandResult', 47, 'server', 'reliable', fieldsOf('commandResult', { cmdId: uint, ok: bool, appliedTick: nullable(tick), reason: nullable(text), alternative: nullable(timeOffer) }));
 add('nearOrigin', 48, 'server', 'reliable', fieldsOf('nearOrigin', { island: uint, bodyId: id, tick, r: vec3, v: vec3 }));
@@ -392,23 +406,31 @@ add('near', 49, 'server', 'latest', nearCodec, nearCodec);
 add('relevantFull', 50, 'server', 'reliable', handWritten('relevantFull', relevantFull));
 add('relevantDelta', 51, 'server', 'reliable', handWritten('relevantDelta', relevantDelta));
 add('worldline', 52, 'server', 'reliable', handWritten('worldline', worldline));
-add('conjunctions', 53, 'server', 'reliable', fieldsOf('conjunctions', { list: array(conjunction, 4096) }));
+// The view models that replace the whole list are latest-wins per type (lead decision of 2026-11-16).
+add('conjunctions', 53, 'server', 'latest', fieldsOf('conjunctions', { list: array(conjunction, 4096) }));
 add('durable', 54, 'server', 'latest', fieldsOf('durable', { tick }));
-add('pads', 55, 'server', 'reliable', fieldsOf('pads', { pads: array(padState, 4096) }));
-add('ships', 56, 'server', 'reliable', fieldsOf('ships', { ships: array(shipRecord, 1024) }));
-add('assembly', 57, 'server', 'reliable', fieldsOf('assembly', { view: nullable(assemblyView) }));
+add('pads', 55, 'server', 'latest', fieldsOf('pads', { pads: array(padState, 4096) }));
+add('ships', 56, 'server', 'latest', fieldsOf('ships', { ships: array(shipRecord, 1024) }));
+add('assembly', 57, 'server', 'latest', fieldsOf('assembly', { view: nullable(assemblyView) }));
 add(
   'roster',
   58,
   'server',
-  'reliable',
+  'latest',
   fieldsOf('roster', { filter: enumOf(['nearby', 'docked', 'lobby'] as const), cursor: nullable(id), next: nullable(id), entries: array(rosterEntry, 4096) }),
 );
-add('prompts', 59, 'server', 'reliable', fieldsOf('prompts', { prompts: array(prompt, 256) }));
+add('prompts', 59, 'server', 'latest', fieldsOf('prompts', { prompts: array(prompt, 256) }));
 add('feed', 60, 'server', 'reliable', fieldsOf('feed', { events: array(feedEvent, 4096) }));
 add('rules', 61, 'server', 'reliable', fieldsOf('rules', { rules: universeRules }));
 add('notice', 62, 'server', 'reliable', fieldsOf('notice', { kind: enumOf(['recovering', 'draining', 'maintenance', 'buildChange', 'resync', 'keepOut', 'info'] as const), text, untilUpMs: nullable(f64) }));
 add('timeSyncReply', 63, 'server', 'reliable', fieldsOf('timeSyncReply', { seq: uint, clientMs: f64, serverRecvMs: f64, serverSendMs: f64, upMs: f64 }));
+add(
+  'rateLimited',
+  64,
+  'server',
+  'reliable',
+  fieldsOf('rateLimited', { what: enumOf(['command', 'time', 'seat', 'subscribe', 'plan', 'quick', 'target', 'input'] as const), dropped: uint, ids: array(uint, 64), retryAfterMs: f64 }),
+);
 // Role to role.
 add('route', 96, 'role', 'reliable', fieldsOf('route', { route: uint, payload: blob(MAX_ROUTE_BYTES) }));
 // Public documents (HTTP).
@@ -447,12 +469,34 @@ export function supersedeKey(m: WireMessage): string | null {
   switch (m.type) {
     case 'islandKey':
     case 'islandDelta':
-    case 'islandSlow':
       return `${m.type}:${m.island}`;
     case 'near':
+      return `near:${m.band}`;
     case 'durable':
+    case 'conjunctions':
+    case 'pads':
+    case 'ships':
+    case 'assembly':
+    case 'roster':
+    case 'prompts':
       return m.type;
     default:
       return null;
   }
+}
+
+/**
+ * Keys of queued records a message makes useless: a key of an island makes the queued deltas of that island
+ * useless (they are against an older key the client will no longer hold when they arrive).
+ */
+export function obsoletedKeys(m: WireMessage): string | null {
+  return m.type === 'islandKey' ? `islandDelta:${m.island}` : null;
+}
+
+/**
+ * Whether a delta can be applied by a receiver that holds the key at `heldKeyTick` of island `heldIsland`: a
+ * delta is always against the last key, never another (ARCHITECTURE 13.4); anything else is dropped.
+ */
+export function deltaMatchesKey(delta: { island: number; keyTick: number }, heldIsland: number | null, heldKeyTick: number | null): boolean {
+  return heldIsland !== null && heldKeyTick !== null && delta.island === heldIsland && delta.keyTick === heldKeyTick;
 }

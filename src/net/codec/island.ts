@@ -36,9 +36,10 @@ import type {
   PartFastEntry,
   WireControlState,
 } from '@/core/contracts/net';
+import { WIRE_RANGES } from '@/core/contracts/net';
 import type { ChuteState } from '@/core/contracts/sim';
 import { FrameQuat, FrameVec3, MAX_VARINT_SIGNED, WireEncodeError, type ByteReader, type ByteWriter } from './bytes';
-import { controlState, exhaustive, handle, randomControls, readControlStateInto, readControls, writeControls } from './common';
+import { controlState, exhaustive, handle, isUnit, randomControls, randomUnitF32, readControlStateInto, readControls, writeControls } from './common';
 import { Gen, type Codec } from './schema';
 
 /** A codec that can also decode into a reusable frame. */
@@ -125,6 +126,7 @@ export const inputCodec: HotCodec<InputMessage> = {
       w.u8(s.sasHold ? 1 : 0);
       writeControls(w, s);
       if (s.sasHold) {
+        check(isUnit(s.sasHold), 'input.sasHold: not a unit vector');
         writeF32(w, s.sasHold.x, 'input.sasHold');
         writeF32(w, s.sasHold.y, 'input.sasHold');
         writeF32(w, s.sasHold.z, 'input.sasHold');
@@ -160,6 +162,11 @@ export const inputCodec: HotCodec<InputMessage> = {
       if (flags === 1) {
         const h = f.holds.at(i);
         r.vec3f32Into(h);
+        // A unit vector (the squared norm, on locals: no allocation on the hot path).
+        const hx = h.x;
+        const hy = h.y;
+        const hz = h.z;
+        if (!r.failed && !(Math.abs(hx * hx + hy * hy + hz * hz - 1) <= 2 * WIRE_RANGES.unitTolerance)) r.fail('badValue');
         s.sasHold = h;
       } else s.sasHold = null;
       f.samples[i] = s;
@@ -176,7 +183,7 @@ export const inputCodec: HotCodec<InputMessage> = {
     let seq = g.safeInt(1e9);
     let tick = g.safeInt(2 ** 50);
     for (let i = 0; i < n; i++) {
-      samples.push({ seq, applyTick: tick, ...randomControls(g), sasHold: g.chance(0.4) ? { x: f32v(g), y: f32v(g), z: f32v(g) } : null });
+      samples.push({ seq, applyTick: tick, ...randomControls(g), sasHold: g.chance(0.4) ? randomUnitF32(g) : null });
       seq += g.int(1, 3);
       tick += g.int(-4, 40);
     }
@@ -670,6 +677,8 @@ function cloneDeltaVessel(v: DeltaVessel): DeltaVessel {
 
 /** Margin grid: 0.1 ms. */
 const MARGIN_SCALE = 10;
+/** Margins are reported within +-this, ms (`WIRE_RANGES.marginMaxMs`). */
+const MARGIN_MAX_MS = WIRE_RANGES.marginMaxMs;
 
 export class InputAckFrame implements InputAckMessage {
   readonly type = 'inputAck' as const;
@@ -688,11 +697,15 @@ export class InputAckFrame implements InputAckMessage {
 export const inputAckCodec: HotCodec<InputAckMessage> = {
   min: 3,
   write(w, m) {
-    const margin = m.marginMs === null ? null : Math.round(m.marginMs * MARGIN_SCALE);
-    check(margin === null || isSint(margin), 'inputAck.marginMs');
+    // Clamped to the reportable range: no producer value can make the encoder fail here.
+    // (A flag and a plain number, never a null-or-number value: that would box the number on the hot path.)
+    const ms = m.marginMs;
+    const has = ms !== null && ms - ms === 0;
+    let margin = 0;
+    if (has) margin = Math.round((ms > MARGIN_MAX_MS ? MARGIN_MAX_MS : ms < -MARGIN_MAX_MS ? -MARGIN_MAX_MS : ms) * MARGIN_SCALE);
     check(m.stamped.length <= 4096 && m.late.length <= 4096, 'inputAck: too many entries');
-    w.u8(margin === null ? 0 : 1);
-    if (margin !== null) w.varInt(margin);
+    w.u8(has ? 1 : 0);
+    if (has) w.varInt(margin);
     w.varUint(m.stamped.length);
     let prevTo = 0;
     for (let i = 0; i < m.stamped.length; i++) {
@@ -854,15 +867,17 @@ class NearSlot {
 
 export class NearFrame implements NearMessage {
   readonly type = 'near' as const;
+  band: 'near' | 'far' = 'near';
   tick = 0;
   vessels: NearVessel[] = [];
   readonly pool = new Pool<NearSlot>(() => new NearSlot());
 }
 
 export const nearCodec: HotCodec<NearMessage> = {
-  min: 9,
+  min: 10,
   write(w, m) {
-    check(isTick(m.tick) && m.vessels.length <= MAX_VESSELS, 'near: tick or count');
+    check(isTick(m.tick) && m.vessels.length <= MAX_VESSELS && (m.band === 'near' || m.band === 'far'), 'near: band, tick or count');
+    w.u8(m.band === 'near' ? 0 : 1);
     w.f64(m.tick);
     w.varUint(m.vessels.length);
     for (const v of m.vessels) {
@@ -896,10 +911,13 @@ export const nearCodec: HotCodec<NearMessage> = {
   read(r) {
     const f = new NearFrame();
     nearCodec.readInto(r, f);
-    return { type: 'near', tick: f.tick, vessels: f.vessels.map((v) => ({ ...v, thrust: v.thrust ? { ...v.thrust } : null, controls: v.controls ? cloneControls(v.controls) : null })) };
+    return { type: 'near', band: f.band, tick: f.tick, vessels: f.vessels.map((v) => ({ ...v, thrust: v.thrust ? { ...v.thrust } : null, controls: v.controls ? cloneControls(v.controls) : null })) };
   },
   readInto(r, out) {
     const f = out as NearFrame;
+    const band = r.u8();
+    if (band > 1) r.fail('badEnum');
+    f.band = band === 0 ? 'near' : 'far';
     f.tick = r.tick();
     const n = r.count(17, MAX_VESSELS);
     f.vessels.length = n;
@@ -948,9 +966,10 @@ export const nearCodec: HotCodec<NearMessage> = {
   random(g) {
     return {
       type: 'near',
+      band: g.chance(0.5) ? 'near' : 'far',
       tick: g.safeInt(2 ** 50),
       vessels: Array.from({ length: g.int(0, 4) }, () => ({
-        vesselId: g.str(10),
+        vesselId: g.id(10),
         island: g.safeInt(MAX_ISLAND),
         coarse: g.chance(0.2),
         px: randomResidual(g),

@@ -4,15 +4,22 @@
  * back-pressure-aware `Sender`, close, ask the host or the app) and wakes the machine at its next deadline.
  * They are the one place where the session layer touches time and I/O, and both run unchanged in a browser,
  * in Node and in a worker: everything they touch is injected.
+ *
+ * Containment: nothing a peer sends can take the process down. Every entry into a machine runs inside a
+ * try/catch; an error closes THAT socket (1011) and is reported to `onError`, and the driver's timer is armed
+ * again. The gateway's driver also enforces the upstream bucket (bytes and frames per second, before decoding)
+ * and the send-queue caps (bytes and age: a slow consumer is closed).
  */
 import type { ClientMessage, LinkState, ServerMessage } from '@/core/contracts/net';
+import { wireLimits } from '@/core/contracts/net';
 import { decodeFrame } from '../codec/framing';
 import { HandleTableIn } from '../codec/handles';
 import type { Scheduler, TimerHandle } from '../time/scheduler';
 import { Sender, type SenderOptions } from '../transport/sender';
 import type { CloseInfo, Transport } from '../transport/types';
+import { CLOSE } from '../transport/types';
 import type { ClientSession } from './client';
-import type { AuthResult, ResumeResult, ServerConfig, ServerPhase } from './server';
+import type { AuthResult, IdentityProof, ResumeResult, ServerConfig, ServerPhase } from './server';
 import { ServerSession } from './server';
 
 /**
@@ -36,6 +43,8 @@ export interface ClientDriverOptions {
   onLink?(link: LinkState): void;
   /** Every frame sent, for recorders (the bytes are a copy). */
   onFrameOut?(bytes: Uint8Array): void;
+  /** An error inside the machine (a bug, or a server it cannot follow): the socket was closed. */
+  onError?(e: unknown): void;
   sender?: SenderOptions;
 }
 
@@ -46,6 +55,8 @@ export class ClientDriver {
   private handles = new HandleTableIn();
   private timer: TimerHandle | null = null;
   private stopped = false;
+  private running = false;
+  private readonly deferred: ((s: ClientSession) => void)[] = [];
 
   constructor(private readonly opts: ClientDriverOptions) {
     this.session = opts.session;
@@ -53,7 +64,7 @@ export class ClientDriver {
 
   /** Connect (the session's `connect`). */
   start(): void {
-    this.enter(() => this.session.connect());
+    this.enter((s) => s.connect());
   }
 
   /**
@@ -70,18 +81,24 @@ export class ClientDriver {
     try {
       let next: ((s: ClientSession) => void) | undefined = fn;
       while (next) {
-        this.session.tick(this.opts.scheduler.now());
-        next(this.session);
-        this.run();
+        try {
+          this.session.tick(this.opts.scheduler.now());
+          next(this.session);
+          this.run();
+        } catch (e) {
+          this.opts.onError?.(e);
+          const t = this.transport;
+          t?.close(CLOSE.protocolError, 'client error');
+          this.session.transportClosed({ code: CLOSE.protocolError, reason: 'client error', clean: false });
+          this.run();
+        }
         next = this.deferred.shift();
       }
     } finally {
       this.running = false;
+      this.arm();
     }
   }
-
-  private running = false;
-  private readonly deferred: ((s: ClientSession) => void)[] = [];
 
   /** Stop the driver: close the transport, cancel the timer. */
   stop(): void {
@@ -101,7 +118,8 @@ export class ClientDriver {
           this.sender?.push(a.message);
           break;
         case 'close':
-          this.sender?.flush();
+          // The last words leave whatever the buffer holds.
+          this.sender?.flush(true);
           this.transport?.close(a.code, a.reason);
           break;
         case 'sign':
@@ -116,7 +134,6 @@ export class ClientDriver {
       }
     }
     this.sender?.flush();
-    this.arm();
   }
 
   private openTransport(attempt: number, nextCandidate: boolean): void {
@@ -182,16 +199,19 @@ export class ClientDriver {
 /**
  * What a gateway's driver asks of its host (the directory, the shard, the account store). The two checks are
  * answered by calling `driver.authResult` / `driver.resumeResult` when the answer is known (at once, after a
- * database round trip, or never for a socket that closes first).
+ * database round trip, or never for a socket that closes first). Both carry the proof of the device key: the
+ * signature of nonce || serverId || build, where build is the CLIENT's (`IdentityProof`).
  */
 export interface ServerHost {
-  verifyAuth(req: { accountId: string; signature: Uint8Array; nonce: Uint8Array; serverId: string; build: string }, driver: ServerDriver): void;
-  resume(req: { session: string; relevantSeq: number | null }, driver: ServerDriver): void;
+  verifyAuth(req: IdentityProof, driver: ServerDriver): void;
+  resume(req: IdentityProof & { session: string; relevantSeq: number | null }, driver: ServerDriver): void;
   /** A client message for the universe (inputs: the accepted samples). */
   forward(message: ClientMessage, driver: ServerDriver): void;
-  /** The socket was lost (declared loss or closed): U16 applies to the pilot. */
+  /** The socket was lost (declared loss, closed, refused, aborted): U16 applies to the pilot. */
   lost?(info: CloseInfo, driver: ServerDriver): void;
   phase?(phase: ServerPhase, driver: ServerDriver): void;
+  /** An error inside the machine or the host's own callbacks: the socket was closed (1011). */
+  error?(e: unknown, driver: ServerDriver): void;
 }
 
 export interface ServerDriverOptions {
@@ -200,24 +220,67 @@ export interface ServerDriverOptions {
   config: ServerConfig;
   /** The directory up-time now, ms. */
   upMs(): number;
+  /** The server's wall clock now, ms since the Unix epoch (time-sync replies); default: the scheduler's clock. */
+  wallMs?(): number;
   host: ServerHost;
   /** Every frame received, for recorders. */
   onFrameIn?(bytes: Uint8Array): void;
   sender?: SenderOptions;
 }
 
+/** A token bucket (bytes or frames). */
+class Bucket {
+  private level: number;
+  private last: number;
+  constructor(
+    private readonly rate: number,
+    private readonly size: number,
+    now: number,
+  ) {
+    this.level = size;
+    this.last = now;
+  }
+  take(n: number, now: number): boolean {
+    this.level = Math.min(this.size, this.level + ((now - this.last) * this.rate) / 1000);
+    this.last = now;
+    if (n > this.level) return false;
+    this.level -= n;
+    return true;
+  }
+}
+
 export class ServerDriver {
   readonly session: ServerSession;
   private readonly sender: Sender;
   private timer: TimerHandle | null = null;
+  private running = false;
+  private readonly deferred: ((s: ServerSession) => void)[] = [];
+  private readonly upBytes: Bucket;
+  private readonly upFrames: Bucket;
+  private readonly maxSamples: number;
+  private readonly maxQueuedBytes: number;
+  private readonly maxQueueAgeMs: number;
 
   constructor(private readonly opts: ServerDriverOptions) {
-    this.session = new ServerSession(opts.config, opts.scheduler.now(), opts.upMs());
-    this.sender = new Sender(opts.transport, opts.sender);
+    const now = opts.scheduler.now();
+    const l = wireLimits(opts.config.rules);
+    this.session = new ServerSession(opts.config, this.wall(), opts.upMs());
+    this.sender = new Sender(opts.transport, { maxQueuedBytes: l.sendQueueBytes, maxQueueAgeMs: l.sendQueueAge * 1000, ...opts.sender });
+    this.upBytes = new Bucket(l.upstreamBytesPerSecond, l.upstreamBurstBytes, now);
+    this.upFrames = new Bucket(l.upstreamFramesPerSecond, l.upstreamBurstFrames, now);
+    this.maxSamples = l.inputSamplesPerFrame;
+    this.maxQueuedBytes = l.sendQueueBytes;
+    this.maxQueueAgeMs = l.sendQueueAge * 1000;
     opts.transport.setHandler({
       frame: (bytes) => {
+        const t = opts.scheduler.now();
+        // The upstream bucket, before anything is decoded.
+        if (!this.upFrames.take(1, t) || !this.upBytes.take(bytes.length, t)) {
+          this.enter((s) => s.abort(CLOSE.refused, 'rateLimited: upstream above the bucket'));
+          return;
+        }
         opts.onFrameIn?.(bytes.slice());
-        const res = decodeFrame(bytes, { source: 'client' });
+        const res = decodeFrame(bytes, { source: 'client', maxInputSamples: this.maxSamples });
         this.enter((s) => (res.ok ? s.messages(res.messages as ClientMessage[]) : s.malformed(res.error)));
       },
       close: (info) => this.enter((s) => s.transportClosed(info)),
@@ -227,6 +290,10 @@ export class ServerDriver {
 
   get transport(): Transport {
     return this.opts.transport;
+  }
+
+  private wall(): number {
+    return this.opts.wallMs ? this.opts.wallMs() : this.opts.scheduler.now();
   }
 
   /**
@@ -242,18 +309,26 @@ export class ServerDriver {
     try {
       let next: ((s: ServerSession) => void) | undefined = fn;
       while (next) {
-        this.session.tick(this.opts.scheduler.now(), this.opts.upMs());
-        next(this.session);
-        this.run();
+        try {
+          this.session.tick(this.wall(), this.opts.upMs());
+          next(this.session);
+          this.run();
+        } catch (e) {
+          // Contain it: this socket closes, the process goes on.
+          try {
+            this.opts.host.error?.(e, this);
+          } finally {
+            this.session.abort(CLOSE.internalError, 'internal error');
+            this.runSafely();
+          }
+        }
         next = this.deferred.shift();
       }
     } finally {
       this.running = false;
+      this.arm();
     }
   }
-
-  private running = false;
-  private readonly deferred: ((s: ServerSession) => void)[] = [];
 
   /** Send a message downstream. */
   push(m: ServerMessage): void {
@@ -270,22 +345,35 @@ export class ServerDriver {
     this.enter((s) => s.resumeResult(r));
   }
 
+  private runSafely(): void {
+    try {
+      this.run();
+    } catch {
+      this.opts.transport.close(CLOSE.internalError, 'internal error');
+    }
+  }
+
   private run(): void {
     for (const a of this.session.drain()) {
       switch (a.kind) {
         case 'send':
-          for (let i = 0; i < a.records.length; i++) this.sender.pushRecord(a.records[i]!, a.keys[i] ?? null);
+          for (let i = 0; i < a.records.length; i++) this.sender.pushRecord(a.records[i]!, a.keys[i] ?? null, this.opts.scheduler.now());
           break;
         case 'close':
-          this.sender.flush();
+          // The last words (refused, takenOver, bye) leave whatever the buffer holds.
+          this.sender.flush(true);
           this.opts.transport.close(a.code, a.reason);
           break;
-        case 'verifyAuth':
-          this.opts.host.verifyAuth(a, this);
+        case 'verifyAuth': {
+          const { kind: _k, ...proof } = a;
+          this.opts.host.verifyAuth(proof, this);
           break;
-        case 'resume':
-          this.opts.host.resume(a, this);
+        }
+        case 'resume': {
+          const { kind: _k, ...req } = a;
+          this.opts.host.resume(req, this);
           break;
+        }
         case 'forward':
           this.opts.host.forward(a.message, this);
           break;
@@ -298,7 +386,17 @@ export class ServerDriver {
       }
     }
     this.sender.flush();
-    this.arm();
+    const now = this.opts.scheduler.now();
+    const budget = this.session.budget;
+    const over = this.sender.overflowed(now) || budget.waitingBytes() + this.sender.queuedBytes > this.maxQueuedBytes || budget.oldestWaitMs(now) > this.maxQueueAgeMs;
+    if (over && this.session.phase !== 'closed') {
+      // A slow consumer: what waits for it (in the budget or the sender) passed the rules' caps.
+      this.session.abort(CLOSE.slowConsumer, 'slow consumer');
+      for (const a of this.session.drain()) if (a.kind === 'close') this.opts.transport.close(a.code, a.reason);
+      else if (a.kind === 'lost') this.opts.host.lost?.(a.info, this);
+      else if (a.kind === 'phase') this.opts.host.phase?.(a.phase, this);
+      this.sender.clear();
+    }
   }
 
   private arm(): void {
@@ -306,7 +404,7 @@ export class ServerDriver {
     this.timer = null;
     const at = this.session.nextDeadline();
     if (at === null) return;
-    this.timer = this.opts.scheduler.setTimer(Math.max(0, at - this.opts.scheduler.now()), () => {
+    this.timer = this.opts.scheduler.setTimer(Math.max(0, at - this.wall()), () => {
       this.timer = null;
       this.enter(() => undefined);
     });

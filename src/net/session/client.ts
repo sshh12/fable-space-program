@@ -32,10 +32,11 @@ import type {
   WireCommand,
   WireControls,
 } from '@/core/contracts/net';
-import { DEFAULT_UNIVERSE_RULES, WIRE_PROTOCOL_VERSION } from '@/core/contracts/net';
+import { DEFAULT_UNIVERSE_RULES, WIRE_PROTOCOL_VERSION, wireLimits } from '@/core/contracts/net';
 import type { SpawnRequest, Subscriptions } from '@/core/contracts/session';
 import type { Vec3 } from '@/core/math/vec3';
 import type { DecodeError } from '../codec/bytes';
+import { encodeMessage } from '../codec/framing';
 import { addSample, estimateClock, type SyncEstimate, type SyncSample } from '../time/sync';
 import type { CloseInfo } from '../transport/types';
 import { CLOSE } from '../transport/types';
@@ -78,8 +79,12 @@ interface PendingRequest {
   sent: boolean;
 }
 
-const SYNC_BURST = 3;
+/** Time sync: a burst of probes after the welcome (one every `SYNC_BURST_GAP_MS`), then one every 10 ping intervals. */
+const SYNC_BURST = 4;
+const SYNC_BURST_GAP_MS = 250;
 const SYNC_EVERY_PINGS = 10;
+/** Longest wait a server may ask for before a retry, ms. */
+const MAX_RETRY_AFTER_MS = 10 * 60_000;
 
 export class ClientSession {
   phase: ClientPhase = 'idle';
@@ -99,7 +104,14 @@ export class ClientSession {
   /** The last refusal received, and the last one this client made of the server. */
   refusal: { reason: SessionRefusal; text: string; retryAfterMs: number | null } | null = null;
   ownRefusal: { reason: ClientRefusal; detail: string } | null = null;
-  queuePosition: number | null = null;
+  /**
+   * The two queues (lead ruling of 2026-11-16): the ADMISSION queue (a full lobby: `refused.queue`, no session)
+   * and the LAUNCH queue (an admitted player waiting for a pad slot: `spawnQueued`, or the resumed seat's
+   * `queued`).
+   */
+  admissionQueue: { position: number; etaSeconds: number } | null = null;
+  launchQueue: { reqId: number; position: number; etaSeconds: number; serverMs: number; padClass: import('@/core/contracts/net').PadClass } | null = null;
+  private readonly pendingCancels = new Set<number>();
   durableTick: number | null = null;
   inputMarginMs: number | null = null;
 
@@ -115,7 +127,8 @@ export class ClientSession {
   private lastFrameAt = 0;
   private lastSentAt = 0;
   private pingSeq = 0;
-  private pingsSinceSync = 0;
+  private nextSyncAt = Infinity;
+  private syncCount = 0;
   private syncSeq = 0;
   private syncSent = new Map<number, number>();
   private samples: SyncSample[] = [];
@@ -129,7 +142,11 @@ export class ClientSession {
   constructor(cfg: ClientConfig) {
     this.cfg = { protocol: cfg.protocol ?? WIRE_PROTOCOL_VERSION, build: cfg.build, defsHash: cfg.defsHash, cpuScore: cfg.cpuScore, accountId: cfg.accountId, random: cfg.random, rules: cfg.rules ?? DEFAULT_UNIVERSE_RULES };
     this.subscriptionRate = new RateWindow(this.cfg.rules.limits.subscriptionsPerSecond, 1000);
+    const l = wireLimits(this.cfg.rules);
+    this.pace = { command: new RateWindow(l.commandsPerSecond, 1000), time: new RateWindow(l.timeMessages, l.timeMessageWindow * 1000), seat: new RateWindow(l.seatRequestsPerSecond, 1000) };
   }
+
+  private readonly pace: { command: RateWindow; time: RateWindow; seat: RateWindow };
 
   // ------------------------------------------------------------------------------------- the driver
 
@@ -147,6 +164,7 @@ export class ClientSession {
       d.push(this.lastSentAt + this.pingMs());
     }
     if (this.phase === 'online' && this.subscriptionsDirty) d.push(this.subscriptionRate.nextFreeAt(this.now));
+    if (this.phase === 'online') d.push(this.nextSyncAt);
     return d.length ? Math.min(...d) : null;
   }
 
@@ -166,12 +184,12 @@ export class ClientSession {
       this.dropTransport(CLOSE.lost, 'no frame for the loss timeout');
       return;
     }
-    if (nowMs >= this.lastSentAt + this.pingMs()) {
-      if (this.phase === 'online' && ++this.pingsSinceSync >= SYNC_EVERY_PINGS) {
-        this.pingsSinceSync = 0;
-        this.sendTimeSync();
-      } else this.send({ type: 'ping', seq: ++this.pingSeq });
+    // Time-sync probes run on their own timer, whatever else is sent (a pilot at 30 Hz still syncs).
+    if (this.phase === 'online' && nowMs >= this.nextSyncAt) {
+      this.sendTimeSync();
+      this.nextSyncAt = nowMs + (this.syncCount < SYNC_BURST ? SYNC_BURST_GAP_MS : SYNC_EVERY_PINGS * this.pingMs());
     }
+    if (nowMs >= this.lastSentAt + this.pingMs()) this.send({ type: 'ping', seq: ++this.pingSeq });
     if (this.phase === 'online') this.flushSubscriptions();
   }
 
@@ -210,9 +228,12 @@ export class ClientSession {
   }
 
   /** Leave the launch queue of a spawn request. */
+  /** Leave the launch queue: sent now, or remembered and sent when the session is resumed. */
   cancelSpawn(reqId: number): void {
     this.pending.delete(reqId);
+    if (this.launchQueue?.reqId === reqId) this.launchQueue = null;
     if (this.phase === 'online') this.send({ type: 'spawnCancel', reqId });
+    else this.pendingCancels.add(reqId);
   }
 
   command(tick: number, command: WireCommand): number {
@@ -274,6 +295,14 @@ export class ClientSession {
 
   transportClosed(info: CloseInfo): void {
     if (this.phase === 'idle' || this.phase === 'backoff' || this.phase === 'closed' || this.phase === 'takenOver' || this.phase === 'refused') return;
+    // The close code says it when the message itself was lost.
+    if (info.code === CLOSE.takenOver) {
+      this.phase = 'takenOver';
+      this.wakeAt = null;
+      this.failPending(this.finalReason());
+      this.status();
+      return;
+    }
     this.afterLoss(info.reason || `closed (${info.code})`);
   }
 
@@ -338,7 +367,8 @@ export class ClientSession {
         this.status();
         return;
       case 'welcome':
-        if (this.phase !== 'auth' && !(this.phase === 'hello' && this.session !== null && m.resumed !== null)) return this.refuseServer('outOfOrder', 'welcome outside the handshake');
+        // A resume is challenged like a new session: the welcome always follows the client's Auth.
+        if (this.phase !== 'auth') return this.refuseServer('outOfOrder', 'welcome outside the handshake');
         this.onWelcome(m);
         return;
       default:
@@ -356,7 +386,7 @@ export class ClientSession {
     this.callsign = m.callsign;
     this.attempt = 0;
     this.lostAt = null;
-    this.queuePosition = null;
+    this.admissionQueue = null;
     this.refusal = null;
     this.nextCandidate = false;
     this.standbyStreak = 0;
@@ -365,22 +395,28 @@ export class ClientSession {
       this.vesselId = m.resumed.vesselId;
       this.clockId = m.resumed.clockId;
       this.relevantSeq = m.resumed.relevantSeq;
+      this.launchQueue = m.resumed.queued;
       this.inputs.retireThrough(m.resumed.lastInputSeq);
     } else {
       // A new session: what an old session waited for is gone with it.
       this.vesselId = null;
       this.clockId = null;
       this.relevantSeq = null;
+      this.launchQueue = null;
+      this.pendingCancels.clear();
       this.failPending('the session was not resumed', true);
       // Inputs of an ended session steer nothing in the new one.
       if (hadSession) this.inputs.retireThrough(this.inputs.next - 1);
     }
-    this.samples = addSample(this.samples, { clientSendMs: this.now, serverRecvMs: m.serverMs, serverSendMs: m.serverMs, clientRecvMs: this.now, upMs: m.upMs });
-    this.clock = estimateClock(this.samples);
+    // The welcome is not a time-sync sample (its send and receive times are not the client's): probes follow.
+    this.syncCount = 0;
+    this.nextSyncAt = this.now;
     this.out({ kind: 'deliver', message: m });
-    for (let i = 0; i < SYNC_BURST; i++) this.sendTimeSync();
     if (Object.keys(this.subscriptions).length) this.subscriptionsDirty = true;
     this.flushSubscriptions();
+    // A launch-queue cancel made while reconnecting goes now.
+    for (const reqId of this.pendingCancels) this.send({ type: 'spawnCancel', reqId });
+    this.pendingCancels.clear();
     // Requests made before this welcome, and on a resume every request still waiting, go now.
     for (const p of [...this.pending.values()].sort((a, b) => a.id - b.id)) {
       if (p.sent && !resumed) continue;
@@ -399,13 +435,25 @@ export class ClientSession {
     switch (m.type) {
       case 'seatResult':
         this.pending.delete(m.reqId);
+        if (this.launchQueue?.reqId === m.reqId) this.launchQueue = null;
         if (m.result.ok) {
           this.vesselId = m.result.vesselId;
           this.clockId = m.result.clockId;
         }
         break;
-      case 'spawnQueued':
-        this.queuePosition = m.position;
+      case 'spawnQueued': {
+        const { type: _t, ...q } = m;
+        this.launchQueue = q;
+        break;
+      }
+      case 'rateLimited':
+        // The requests the server dropped are answered here as refused (one message per kind per window).
+        for (const id of m.ids) {
+          const p = this.pending.get(id);
+          if (!p) continue;
+          this.pending.delete(id);
+          this.deliverRefusal(p, `Too many requests: wait ${Math.ceil(m.retryAfterMs / 1000)} s.`);
+        }
         break;
       case 'commandResult':
         this.pending.delete(m.cmdId);
@@ -442,7 +490,7 @@ export class ClientSession {
 
   private onRefused(reason: SessionRefusal, text: string, retryAfterMs: number | null, queue: { position: number; etaSeconds: number } | null): void {
     this.refusal = { reason, text, retryAfterMs };
-    this.queuePosition = queue ? queue.position : null;
+    this.admissionQueue = queue;
     this.out({ kind: 'close', code: CLOSE.refused, reason });
     switch (reason) {
       case 'protocol':
@@ -468,7 +516,7 @@ export class ClientSession {
         this.beginBackoff(this.standbyStreak++ === 0 ? 0 : backoffMs(this.attempt++, this.cfg.random));
         break;
       default:
-        this.beginBackoff(retryAfterMs ?? backoffMs(this.attempt++, this.cfg.random));
+        this.beginBackoff(retryAfterMs !== null && retryAfterMs >= 0 ? Math.min(retryAfterMs, MAX_RETRY_AFTER_MS) : backoffMs(this.attempt++, this.cfg.random));
     }
     this.status();
   }
@@ -507,6 +555,20 @@ export class ClientSession {
     const id = this.nextId++;
     const message = build(id);
     const online = this.phase === 'online';
+    // Paced here at the rules' limits, so a well-behaved client never meets the server's limiter.
+    // A request the encoder refuses (an app bug: a fractional tick, a field out of range) is answered as
+    // refused at once and never queued, so it cannot fail again on every send and resume.
+    try {
+      encodeMessage(message);
+    } catch (e) {
+      this.deliverRefusal({ id, message, sent: false }, `The request is invalid: ${(e as Error).message}`);
+      return id;
+    }
+    const window = message.type === 'command' ? this.pace.command : message.type === 'time' ? this.pace.time : this.pace.seat;
+    if (!window.admit(this.now)) {
+      this.deliverRefusal({ id, message, sent: false }, 'Too many requests: wait a moment.');
+      return id;
+    }
     this.pending.set(id, { id, message, sent: online });
     if (online) this.send(message);
     // A session that cannot go on answers at once (taken over, left, refused for good).
@@ -527,11 +589,16 @@ export class ClientSession {
   private failPending(reason: string, sentOnly = false): void {
     for (const p of [...this.pending.values()]) {
       if (sentOnly && !p.sent) continue;
-      const m = p.message;
-      if (m.type === 'spawn' || m.type === 'attach') this.out({ kind: 'deliver', message: { type: 'seatResult', reqId: p.id, result: { ok: false, reason, alternative: null } } });
-      else this.out({ kind: 'deliver', message: { type: 'commandResult', cmdId: p.id, ok: false, appliedTick: null, reason, alternative: null } });
+      this.deliverRefusal(p, reason);
       this.pending.delete(p.id);
     }
+  }
+
+  /** Answer a request to the app as refused (a seat result or a command result, by kind). */
+  private deliverRefusal(p: PendingRequest, reason: string): void {
+    const m = p.message;
+    if (m.type === 'spawn' || m.type === 'attach') this.out({ kind: 'deliver', message: { type: 'seatResult', reqId: p.id, result: { ok: false, reason, alternative: null } } });
+    else this.out({ kind: 'deliver', message: { type: 'commandResult', cmdId: p.id, ok: false, appliedTick: null, reason, alternative: null } });
   }
 
   private flushSubscriptions(): void {
@@ -542,6 +609,7 @@ export class ClientSession {
   }
 
   private sendTimeSync(): void {
+    this.syncCount++;
     const seq = ++this.syncSeq;
     this.syncSent.set(seq, this.now);
     if (this.syncSent.size > 32) this.syncSent.delete(this.syncSent.keys().next().value!);
@@ -596,7 +664,7 @@ export class ClientSession {
       rttMs: this.clock ? this.clock.rttMs : null,
       inputMarginMs: this.inputMarginMs,
       graceRemaining: grace,
-      queuePosition: state === 'queued' ? this.queuePosition : null,
+      queuePosition: state === 'queued' ? (this.admissionQueue?.position ?? null) : null,
       durableTick: this.durableTick,
       reason,
     };
