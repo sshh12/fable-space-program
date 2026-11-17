@@ -63,6 +63,11 @@
  *
  * The test tests itself: the last block runs the same rules over small sources that exist only in this file
  * (a second project, served to the compiler from memory), in which every line that must be found is marked.
+ *
+ * AT THE TIGHTEN STEP a rule whose member is taken out of the contracts says so ("does not declare"): take the
+ * rule out, with its exceptions and with the lines of the self-test's sources that are marked with its id
+ * (they name the member, so they no longer compile). The rules `vehicles`, `cockpitCamera`, `origin`, `pause`
+ * and `html` name nothing that is removed, and stay.
  */
 import fs from 'node:fs';
 import path from 'node:path';
