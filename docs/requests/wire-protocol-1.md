@@ -23,7 +23,7 @@ Install, as the lead step "before 4.1" planned:
 What `wire-protocol` does meanwhile, inside its own paths (no workaround copies foreign code):
 - `src/net` imports neither package (the boundary test forbids `ws` there, and the codec carries the island
   blob opaque with its encoding named, so it needs no deflate). The Node `ws` transport adapts any object
-  with the `ws` socket's interface, structurally typed in `src/net/transport/nodeWs.ts`.
+  with the `ws` socket's interface, structurally typed in `src/net/transport/websocket.ts` (`nodeWsTransport`).
 - The tests of the browser WebSocket transport run against a small RFC 6455 server written for the tests
   (`tests/unit/net/helpers/miniWsServer.ts`, node:http + node:crypto), in Node (Node 24's own WebSocket
   client) and in Chrome. The test of the Node `ws` adapter against a real `ws` server is the one test that
