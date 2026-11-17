@@ -11,6 +11,8 @@
  *    key of its LINEAGE: the launched craft its craft descends from (`CraftSnapshot.parent`, followed while
  *    the parent is known) and its instance id, which a separation does not change. Two craft of one vehicle,
  *    docked or not, are two lineages: their parts never share state (ARCHITECTURE 18.7). No id is taken apart.
+ *    The state is kept for the parts that are drawn (partHistory.ts): what no vessel of the snapshot and no
+ *    vessel still fading out holds is forgotten when the set of drawn parts changes.
  *  - The engines a part carries (their soot stains it) come from the part list (mounts.ts), never from a
  *    vehicle definition.
  *  - Every vessel instance is a MOVING shadow caster: it is drawn only into cascades that are re-rendered
@@ -29,14 +31,15 @@ import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } from '@/core/contracts/render';
 import type { ModuleState, PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { observeFrame, rebaseHeldAt } from '@/core/access/frameAccess';
-import { CraftLineage, craftIdOf } from '@/core/access/snapshotAccess';
+import { craftIdOf } from '@/core/access/snapshotAccess';
 import { FrameEpochTracker, rebasePoint, rebaseVelocity } from '@/core/math/frame';
 import { quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle, type TemporalFeature } from '@/render/core';
 import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';
 import { engineMounts } from './mounts';
+import { PartHistory } from './partHistory';
 import { generatePart } from './parts';
-import { NEUTRAL_ANIM, type PartAnim, type PartVisual, type PoseInput, type PoseOpts } from './parts/types';
+import type { PartAnim, PartVisual, PoseInput, PoseOpts } from './parts/types';
 
 export interface VesselVisualOptions {
   /**
@@ -79,7 +82,10 @@ export interface VesselVisualFeature extends RenderFeature, TemporalFeature {
   /**
    * Presentation state of one part (labs and tests set it to show a history without waiting): the part
    * `instanceId` of the craft `craftId` (`CraftSnapshot.id`, `PartSnapshot.craftId`; in a snapshot without
-   * craft blocks the vessel's id). A piece that left the craft shares the state of the part it was.
+   * craft blocks the vessel's id). A piece that left the craft shares the state of the part it was: its craft
+   * is resolved through its line of descent, from the frames the feature drew or from the last snapshot it was
+   * given. State asked for a part that no vessel of the snapshot holds (a craft no snapshot has shown yet
+   * included) is dropped again in the next frame.
    */
   anim(craftId: string, instanceId: string): PartAnim;
 }
@@ -192,10 +198,16 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
   let fineBatch: MeshBatch;
   let coarseBatch: MeshBatch;
   const visuals = new Map<string, PartModels>();
-  const anims = new Map<string, PartAnim>();
+  /** The state of the parts that are drawn, each filed under its lineage key. */
+  const history = new PartHistory();
+  /**
+   * Set when the parts that are drawn may have changed (a plan was built or dropped) and when state was asked
+   * for by ids: the history is pruned at the end of that frame, and in no other.
+   */
+  let pruneDue = false;
+  /** The snapshot of the last frame, null before the first: `anim` resolves a craft it has not drawn against it. */
+  let latest: SimSnapshot | null = null;
   const plans = new Map<string, VesselPlan>();
-  /** Whose parts a craft's parts continue: the state of a part is filed under its lineage key. */
-  const lineage = new CraftLineage();
   const reported = new Set<string>();
   let ghosts: Ghost[] = [];
   /** The epoch of the ROOT frame the ghosts' positions and velocities are held in. */
@@ -244,16 +256,6 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     return entry;
   };
 
-  /** The presentation state filed under a lineage key (`CraftLineage.keyOf`). */
-  const animOf = (key: string): PartAnim => {
-    let a = anims.get(key);
-    if (!a) {
-      a = { ...NEUTRAL_ANIM, frost: -1 };
-      anims.set(key, a);
-    }
-    return a;
-  };
-
   /** Changes when the part list of a vessel changes: its length and the part keys of its first and last part. */
   const planKey = (vessel: VesselSnapshot): string => {
     const parts = vessel.parts;
@@ -267,13 +269,14 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     const parts = vessel.parts;
     const mounts = engineMounts(defs, parts, (part) => craftIdOf(vessel, part));
     const entries: PartEntry[] = [];
+    pruneDue = true;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i]!;
       const v = visualOf(part.def);
       if (!v) continue;
       const def = defs.parts[part.def]!;
-      const anim = animOf(lineage.keyOf(snapshot, vessel, part));
-      const engineAnims = (mounts.get(i) ?? []).map((e) => animOf(lineage.keyOf(snapshot, vessel, parts[e]!)));
+      const anim = history.of(snapshot, vessel, part);
+      const engineAnims = (mounts.get(i) ?? []).map((e) => history.of(snapshot, vessel, parts[e]!));
       const panel = fairingPanelOf(part);
       entries.push({ craftId: craftIdOf(vessel, part), instanceId: part.instanceId, def, models: v, visual: v.visual, anim, lodStates: [], engineAnims, panel, input: { def, modules: part.modules, panel, anim }, seen: false });
     }
@@ -452,7 +455,10 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     order: 0,
     stats,
     partVisual: (defId) => visuals.get(defId)?.visual,
-    anim: (craftId, instanceId) => animOf(lineage.knownKeyOf(craftId, instanceId)),
+    anim: (craftId, instanceId) => {
+      pruneDue = true;
+      return history.byId(latest, craftId, instanceId);
+    },
 
     init(c) {
       ctx = c;
@@ -468,6 +474,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       const t0 = performance.now();
       ctx.perf.cpuBegin('vehicle.instances');
       const snapshot = frame.snapshot;
+      latest = snapshot;
       const dt = Number.isFinite(lastUt) ? Math.max(0, Math.min(3600, snapshot.ut - lastUt)) : 0;
       lastUt = snapshot.ut;
       lodSelector.begin(frame);
@@ -518,7 +525,17 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
           drawVessel(frame, g.vessel, g.plan, parent, 1 - (frame.realTime - g.t0) / fadeSeconds, 0, false);
         }
       }
-      for (const id of plans.keys()) if (!alive.has(id) && !ghosts.some((g) => g.vessel.id === id)) plans.delete(id);
+      for (const id of plans.keys()) {
+        if (alive.has(id) || ghosts.some((g) => g.vessel.id === id)) continue;
+        plans.delete(id);
+        pruneDue = true;
+      }
+      // Everything of this frame is drawn: what the history still holds of parts that are in no vessel of the
+      // snapshot and in no ghost is read by nothing, and goes.
+      if (pruneDue) {
+        pruneDue = false;
+        history.prune(snapshot, ghosts.map((g) => g.vessel));
+      }
       batch.finish();
       fineBatch.finish();
       coarseBatch.finish();
@@ -568,7 +585,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       for (const v of visuals.values()) for (const list of Object.values(v.lods)) for (const h of list) h.destroy();
       visuals.clear();
       plans.clear();
-      lineage.clear();
+      history.clear();
+      latest = null;
     },
   };
   return feature;

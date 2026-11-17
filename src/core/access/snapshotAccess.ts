@@ -232,6 +232,11 @@ export function findEventPart(snapshot: SimSnapshot, eventPartId: string, event?
  * snapshot, or by an earlier one this table saw. A parent that has left the snapshot is still named by its
  * piece, so the chain ends at the first craft nobody described. The answer for a craft is remembered, and so
  * is the same in every later frame, whatever leaves the snapshot afterwards. No id is taken apart.
+ *
+ * The table is as large as its holder lets it be: `retain` forgets every craft the holder's state can no
+ * longer reach (a flight sheds stages, petals and debris without end; each is a craft). A craft that was
+ * forgotten and is seen again is resolved afresh from the snapshot it is seen in, so the holder forgets a
+ * craft together with the state it filed under the keys of that craft's parts.
  */
 export class CraftLineage {
   private readonly roots = new Map<string, string>();
@@ -269,6 +274,25 @@ export class CraftLineage {
   /** The lineage key of the part `instanceId` of the craft `craftId`, from what the table has resolved. */
   knownKeyOf(craftId: string, instanceId: string): string {
     return partKey(this.knownRootOf(craftId), instanceId);
+  }
+
+  /** True when the table holds an answer for `craftId`: it resolved the craft and has not forgotten it since. */
+  knows(craftId: string): boolean {
+    return this.roots.has(craftId);
+  }
+
+  /**
+   * Forget every craft that is not in `live`: the craft the holder's state can still reach (those that the
+   * parts of the vessels it shows are of). The answers for the craft in `live` stay as they are, also where
+   * the line of one passes through a craft that is forgotten here.
+   */
+  retain(live: ReadonlySet<string>): void {
+    for (const craftId of this.roots.keys()) if (!live.has(craftId)) this.roots.delete(craftId);
+  }
+
+  /** The number of craft the table holds an answer for. */
+  get size(): number {
+    return this.roots.size;
   }
 
   clear(): void {
