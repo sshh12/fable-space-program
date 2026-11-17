@@ -3,7 +3,7 @@
  * north, column 0 = longitude -180) on the CPU, so that things placed by the CPU (rocks) can take the
  * colour of the ground they stand on.
  */
-import type { TileManifest } from '@/core/contracts/terrain';
+import type { TileManifest, TileSource } from '@/core/contracts/terrain';
 import type { Vec3, Vec3Tuple } from '@/core/math';
 import { IMAGE_DECODE_OPTIONS } from './workerProtocol';
 
@@ -11,14 +11,14 @@ export const srgbToLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : (
 
 /**
  * Sampler of the linear albedo at a body-fixed direction. A tile set without the global map yields the
- * body's mean colour everywhere (`meanColor`, BodyDef.render.meanColor).
+ * body's mean colour everywhere (`meanColor`, BodyDef.render.meanColor). The map is a plain file of the tile
+ * set, read through the tile source like every other byte of it (`TileSource.file`).
  */
-export async function loadLowResAlbedo(tilesUrl: string, manifest: TileManifest, meanColor: Vec3Tuple): Promise<(dir: Vec3) => Vec3Tuple> {
+export async function loadLowResAlbedo(source: TileSource, manifest: TileManifest, meanColor: Vec3Tuple): Promise<(dir: Vec3) => Vec3Tuple> {
   const g = manifest.globals?.albedoLowRes;
   if (!g) return () => [meanColor[0], meanColor[1], meanColor[2]];
-  const res = await fetch(`${tilesUrl}/${manifest.tileset}/${g.path}?v=${encodeURIComponent(manifest.contentHash)}`);
-  if (!res.ok) throw new Error(`tile set "${manifest.tileset}": ${g.path} HTTP ${res.status}`);
-  const bitmap = await createImageBitmap(await res.blob(), IMAGE_DECODE_OPTIONS);
+  const bytes = await source.file(manifest.tileset, g.path);
+  const bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: `image/${g.format}` }), IMAGE_DECODE_OPTIONS);
   const w = bitmap.width;
   const h = bitmap.height;
   const canvas = new OffscreenCanvas(w, h);

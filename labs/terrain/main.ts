@@ -17,19 +17,22 @@
  *   p.<body>.<key>=<n>      override a tunable of data/defs/render/<body>.surface.json (A/B comparisons)
  *   coverkinds=<ids>        draw only these kinds of ground cover; covershadow=0: the cover casts no shadow;
  *   leaftest=0              leaf sprays drawn whole; casters=0: terrain, rocks and cover cast no sun shadow
+ *   source=pack&packs=<url> stream from packs (the pack list at <url>, e.g. the local stack's /packs.json) instead
+ *                           of the plain files under /tiles; opfs=<bytes> puts the OPFS cache in front
  *
  * window.__terrain is the handle for specs.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { LocalSession } from '@/core/contracts/session';
-import { layerHasTile, TILE_LAYER } from '@/core/contracts/terrain';
-import { dirToLatLon, latLonToDir, tilePath, tileUvToDir, type TileKey } from '@/core/geo/cubeSphere';
+import { layerHasTile, TILE_LAYER, type TileSourceSpec } from '@/core/contracts/terrain';
+import { dirToLatLon, latLonToDir, tileUvToDir, type TileKey } from '@/core/geo/cubeSphere';
 import { decodeTileFile } from '@/core/geo/tileCodec';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3 } from '@/core/math';
 import { createLabApp, type LabApp } from '@/render/core/lab';
 import { createTerrainFeature, type TerrainDebug, type TerrainFeature } from '@/render/terrain';
-import { createFetchTileSource, createTerrainProvider, type TerrainAuthority } from '@/terrain';
+import { createTerrainProvider, type TerrainAuthority } from '@/terrain';
+import { createTileSource } from '@/terrain/tileSource';
 import { createBallast, createMagentaBackground, createNearFieldPublisher, createSkyStandIn, withSun, type SunSpec } from './labKit';
 
 export interface TerrainLab {
@@ -141,7 +144,13 @@ async function boot(): Promise<void> {
     },
   });
   const ctx = app.renderer.context;
-  const tileSource = createFetchTileSource(ctx.tilesUrl);
+  // One spec for the feature (main thread and workers) and for the lab's own height authority and reads.
+  const packList = query.get('packs');
+  if (query.get('source') === 'pack' && !packList) throw new Error('terrain lab: source=pack needs packs=<URL of the pack list>');
+  const opfsBytes = Number(query.get('opfs') ?? 0);
+  const sourceSpec: TileSourceSpec =
+    query.get('source') === 'pack' ? { kind: 'pack', packListUrl: packList!, cache: opfsBytes > 0 ? { kind: 'opfs', maxBytes: opfsBytes } : null } : { kind: 'fetch', baseUrl: ctx.tilesUrl };
+  const tileSource = createTileSource(sourceSpec);
   for (const [key, value] of query) {
     const m = /^p\.([\w-]+)\.(\w+)$/.exec(key);
     const surface = m ? ctx.defs.bodies[m[1]!]?.render.surface : undefined;
@@ -154,7 +163,7 @@ async function boot(): Promise<void> {
       return provider;
     },
     // With performance attribution the rocks are a feature of their own, so their passes are timed alone.
-    { streamer: { workers: Number(query.get('workers') ?? 6) }, rocks: query.get('rocks') !== '0', cover: query.get('cover') !== '0', rocksSeparate: query.get('perf') === 'features' },
+    { streamer: { workers: Number(query.get('workers') ?? 6) }, tileSource: sourceSpec, rocks: query.get('rocks') !== '0', cover: query.get('cover') !== '0', rocksSeparate: query.get('perf') === 'features' },
   );
   await app.renderer.addFeature(terrain);
   if (terrain.rocks) await app.renderer.addFeature(terrain.rocks);
@@ -230,11 +239,14 @@ async function boot(): Promise<void> {
     async referenceTile(bodyId, key) {
       const tileset = ctx.defs.bodies[bodyId]!.terrain!.tileset;
       const manifest = await tileSource.manifest(tileset);
-      const albedoLayer = manifest.layers[TILE_LAYER.albedo]!;
-      const url = `${ctx.tilesUrl}/${tilePath(tileset, TILE_LAYER.albedo, key, albedoLayer.ext)}?v=${encodeURIComponent(manifest.contentHash)}`;
+      const albedoBytes = await tileSource.tile(tileset, TILE_LAYER.albedo, key);
+      if (!albedoBytes) throw new Error(`terrain lab: "${tileset}" has no albedo tile ${key.face}/${key.level}/${key.x}/${key.y}`);
+      // Decoded by an image element, as a page would show the file (not by the worker's createImageBitmap).
+      const url = URL.createObjectURL(new Blob([albedoBytes as Uint8Array<ArrayBuffer>], { type: `image/${manifest.layers[TILE_LAYER.albedo]!.ext}` }));
       const img = new Image();
       img.src = url;
       await img.decode();
+      URL.revokeObjectURL(url);
       const c = document.createElement('canvas');
       c.width = img.naturalWidth;
       c.height = img.naturalHeight;

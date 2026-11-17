@@ -17,13 +17,14 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { RenderContext } from '@/core/contracts/render';
-import type { TileLayerManifest } from '@/core/contracts/terrain';
+import type { TileLayerManifest, TileSourceSpec } from '@/core/contracts/terrain';
 import { coreOf } from '@/render/core';
 import { BatchMipGenerator, LayerPool } from './gpuPools';
 import { GRID_VERTS } from './lod';
 import { BodyQuadtree, NIGHT_DARK, TILE_EMPTY, TILE_LOADING, TILE_QUEUED, TILE_READY, TILE_UPLOADING, type TileNode } from './quadtree';
 import { NIGHT_SIZE } from './nightImage';
 import { ownsData } from './records';
+import { absoluteTileSourceSpec, fetchTileSourceSpec } from './tileSourceSpec';
 import type { TileJob, TileResult, WorkerInit, WorkerResponse } from './workerProtocol';
 
 export interface StreamBody {
@@ -206,6 +207,8 @@ export class TileStreamer {
     defs: DefLibrary,
     bodyIds: string[],
     options: Partial<StreamerOptions> = {},
+    /** Where the workers read tiles from (default: the plain files of `ctx.tilesUrl`). */
+    source: TileSourceSpec = fetchTileSourceSpec(ctx.tilesUrl),
   ) {
     this.options = { ...DEFAULT_STREAMER_OPTIONS, ...options };
     const o = this.options;
@@ -221,7 +224,7 @@ export class TileStreamer {
 
     // The height authority in a worker needs the body and site definitions only.
     const workerDefs: DefLibrary = { bodies: defs.bodies, rootBodyId: defs.rootBodyId, sites: defs.sites, resources: {}, parts: {}, vehicles: {}, scenarios: {}, sections: {} };
-    const init: WorkerInit = { type: 'init', defs: workerDefs, tilesUrl: new URL(ctx.tilesUrl, globalThis.location.href).href, bodies: bodyIds, cacheBytes: o.workerCacheBytes };
+    const init: WorkerInit = { type: 'init', defs: workerDefs, source: absoluteTileSourceSpec(source, globalThis.location.href), bodies: bodyIds, cacheBytes: o.workerCacheBytes };
     for (let i = 0; i < o.workers; i++) {
       const worker = new Worker(new URL('./tileWorker.ts', import.meta.url), { type: 'module', name: `terrain-tiles-${i}` });
       const slot: WorkerSlot = { worker, ready: false, job: null };

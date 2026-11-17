@@ -6,12 +6,13 @@
  */
 import type { BodyDef, DefLibrary } from '@/core/contracts/defs';
 import { MATERIAL_ID, RENDER_FORMATS, type BodyPose, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
-import { TILE_LAYER, type TileManifest } from '@/core/contracts/terrain';
+import { TILE_LAYER, type TileManifest, type TileSource, type TileSourceSpec } from '@/core/contracts/terrain';
 import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { dirToTile, latLonToDir, type TileKey } from '@/core/geo/cubeSphere';
 import { DEG, mat3, quat, v3, type Mat3, type Vec3 } from '@/core/math';
 import { coreOf, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
-import { createFetchTileSource, type TerrainAuthority } from '@/terrain';
+import type { TerrainAuthority } from '@/terrain';
+import { createTileSource } from '@/terrain/tileSource';
 import { createGridMesh, GRID_VERTEX_LAYOUT, type GridMesh } from './gridMesh';
 import { loadLowResAlbedo, srgbToLinear } from './lowResAlbedo';
 import { capMaxLevel, capMorph, fitLodScale, GRID_QUADS, GRID_VERTS, GroundSpeed, levelRange, LOD_K_MAX, LOD_K_MIN, lodK, morphWindow, POOL_LOW, smooth01, warpLevelCap, type ReliefFloor } from './lod';
@@ -25,6 +26,7 @@ import { regolithBrdfWgsl, TERRAIN_BRDF_WGSL } from './shaders/lighting';
 import { buildSitePlan, MAX_SITES } from './sitePlan';
 import { MATERIAL_UNIFORM_FLOATS, TERRAIN_GBUFFER_WGSL, TERRAIN_WATER_WGSL } from './shaders/surface';
 import { TileStreamer, type PoolDemand, type StreamBody, type StreamerOptions, type StreamStats } from './streamer';
+import { fetchTileSourceSpec, listTileSets } from './tileSourceSpec';
 import type { BoundSphere } from './tileMath';
 
 /** Supplies the main-thread height authority (the one the simulation uses, so rocks and collision agree). */
@@ -34,6 +36,14 @@ export interface TerrainFeatureOptions {
   id?: string;
   order?: number;
   streamer?: Partial<StreamerOptions>;
+  /**
+   * Where the feature reads tiles from, on the main thread and in its workers alike (`createTileSource` of
+   * src/terrain; ARCHITECTURE 10.2). Default: the plain files of `RenderContext.tilesUrl`
+   * (`{ kind: 'fetch', baseUrl: ctx.tilesUrl }`). A `pack` spec streams from packs; give the height
+   * authority of `terrainProviderFactory` a source of the same spec, so that what is drawn and what is
+   * collided with are the same bytes.
+   */
+  tileSource?: TileSourceSpec;
   /** Levels 0..pinLevel of every body are always resident (default 2). */
   pinLevel?: number;
   /** Levels up to this one are loaded ahead for a body the camera is within 16 radii of (default 3). */
@@ -254,6 +264,10 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
   const bodies: BodyState[] = [];
   let streamer: TileStreamer;
   let provider: TerrainAuthority;
+  // One description of the tile source for the main thread and the workers; the main thread's source reads
+  // what the feature itself needs (manifests, the low-resolution colour map, the cover's land-cover tiles).
+  const sourceSpec = options.tileSource ?? fetchTileSourceSpec(ctx.tilesUrl);
+  let tiles: TileSource;
   let rocks: RockRenderer | null = null;
   let cover: CoverRenderer | null = null;
   let gbufferPipeline: Tracked<GPURenderPipeline>;
@@ -385,7 +399,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     const terrain = def.terrain!;
     const params = readSurfaceParams(def.id, surface);
     const set = await loadMaterialSet(ctx, surface.materialSet);
-    const albedoAt = await loadLowResAlbedo(ctx.tilesUrl, manifest, def.render.meanColor);
+    const albedoAt = await loadLowResAlbedo(tiles, manifest, def.render.meanColor);
     const albedoLayer = manifest.layers[TILE_LAYER.albedo];
     if (!albedoLayer) throw new Error(`tile set "${terrain.tileset}" has no albedo layer`);
     const tree = new BodyQuadtree(def.radius, terrain.minElevation, terrain.maxElevation, def.ocean ? def.ocean.seaLevel : null);
@@ -853,10 +867,11 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       const core = coreOf(ctx);
       provider = await terrainProviderFactory(ctx);
 
-      // Bodies with terrain whose tile set has been baked (the server lists them; a missing manifest would log a 404).
-      const listing = await fetch(`${ctx.tilesUrl}/index.json`, { cache: 'no-cache' });
-      const baked = listing.ok ? ((await listing.json()) as { tilesets: string[] }).tilesets : null;
-      const source = createFetchTileSource(ctx.tilesUrl);
+      // Bodies with terrain whose tile set the source serves (the dev server lists the baked sets, a pack
+      // list its sets; a missing manifest would log a 404).
+      tiles = createTileSource(sourceSpec);
+      const source = tiles;
+      const baked = await listTileSets(sourceSpec);
       const defs: DefLibrary = ctx.defs;
       const candidates = Object.values(defs.bodies).filter((d) => d.terrain && d.render.surface && (!baked || baked.includes(d.terrain.tileset)));
       // Regolith surfaces are lit by this package's version of the regolith BRDF (shaders/lighting.ts).
@@ -869,6 +884,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
         defs,
         candidates.map((d) => d.id),
         options.streamer,
+        sourceSpec,
       );
       slots = streamer.options.tileLayers;
       records = new Float32Array(slots * RECORD_FLOATS);

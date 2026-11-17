@@ -4,14 +4,18 @@
  * tile sits at a level that has image data of its own, the decoded image tiles.
  */
 import type { DefLibrary } from '@/core/contracts/defs';
+import type { TileSourceSpec } from '@/core/contracts/terrain';
 import type { TileKey } from '@/core/geo/cubeSphere';
 
 export interface WorkerInit {
   type: 'init';
   /** Definitions the height authority needs (bodies and sites; the other sections may be empty). */
   defs: DefLibrary;
-  /** Tile root, e.g. "/tiles" or an absolute URL. */
-  tilesUrl: string;
+  /**
+   * Where the worker reads tiles from: it calls `createTileSource(source)` (src/terrain). Its URLs are
+   * absolute (`absoluteTileSourceSpec`): a worker resolves a relative URL against its own script.
+   */
+  source: TileSourceSpec;
   /** Bodies with terrain to serve. */
   bodies: string[];
   /** Decoded-tile cache budget of the worker's height authority, bytes. */
@@ -51,7 +55,10 @@ export interface TileResult {
   /** Night lights, NIGHT_SIZE x NIGHT_SIZE bytes (nightImage.ts); null when not requested or when the tile is completely dark. */
   night: Uint8Array<ArrayBuffer> | null;
   nightDark: boolean;
-  /** Milliseconds spent baking and decoding (diagnostics). */
+  /**
+   * Diagnostics, milliseconds: `bakeMs` from the start of the job until the bake is done (the heights read
+   * and the bake itself); `imageMs` what the image layers, read and decoded beside it, took beyond that.
+   */
   bakeMs: number;
   imageMs: number;
 }

@@ -1,14 +1,15 @@
 /// <reference lib="webworker" />
 /**
- * Terrain tile worker (module worker). Owns one terrain-core height authority fed by a fetch TileSource and
- * answers tile jobs: geometry + normal/material bake, and the decode of the image layers (albedo:
- * createImageBitmap; night: one channel with a border from the neighbouring tiles, nightImage.ts; water
- * mask, land cover: tileCodec).
+ * Terrain tile worker (module worker). Owns one terrain-core height authority fed by the TileSource its init
+ * message describes (`WorkerInit.source`: plain files over HTTP, or packs) and answers tile jobs: geometry +
+ * normal/material bake, and the decode of the image layers (albedo: createImageBitmap; night: one channel
+ * with a border from the neighbouring tiles, nightImage.ts; water mask, land cover: tileCodec).
  */
 import { deepestAvailable, layerHasTile, TILE_LAYER, type TileLayerManifest, type TileManifest, type TileSource } from '@/core/contracts/terrain';
 import { tileKeyString, type TileKey } from '@/core/geo/cubeSphere';
 import { decodeTileFile, IMAGE_TILE_SIZE } from '@/core/geo/tileCodec';
-import { createFetchTileSource, createTerrainProvider, type TerrainAuthority } from '@/terrain';
+import { createTerrainProvider, type TerrainAuthority } from '@/terrain';
+import { createTileSource } from '@/terrain/tileSource';
 import { buildNightImage } from './nightImage';
 import { IMAGE_DECODE_OPTIONS, type TileJob, type TileResult, type WorkerInit, type WorkerRequest, type WorkerResponse } from './workerProtocol';
 
@@ -22,14 +23,15 @@ const manifests = new Map<string, TileManifest>();
 const N = IMAGE_TILE_SIZE;
 
 async function init(msg: WorkerInit): Promise<void> {
-  source = createFetchTileSource(msg.tilesUrl);
+  const tiles = createTileSource(msg.source);
+  source = tiles;
   // Levels 0..2 of the pyramid per body (17 MB) instead of the manifest's resident level: a worker bakes
   // tiles, it never answers collision queries.
-  provider = await createTerrainProvider(msg.defs, source, { bodies: msg.bodies, residentLevel: 2, cacheBytes: msg.cacheBytes });
-  for (const id of msg.bodies) {
-    const tileset = msg.defs.bodies[id]!.terrain!.tileset;
-    manifests.set(tileset, await source.manifest(tileset));
-  }
+  provider = await createTerrainProvider(msg.defs, tiles, { bodies: msg.bodies, residentLevel: 2, cacheBytes: msg.cacheBytes });
+  // Asked for together: a pack source reads the indexes of the sets it is asked for in one turn side by side.
+  const tilesets = msg.bodies.map((id) => msg.defs.bodies[id]!.terrain!.tileset);
+  const loaded = await Promise.all(tilesets.map((tileset) => tiles.manifest(tileset)));
+  for (const [i, tileset] of tilesets.entries()) manifests.set(tileset, loaded[i]!);
 }
 
 /** Small cache of decoded u8 tiles of coarser levels (aux data of tiles deeper than the layer's data). */
@@ -134,28 +136,29 @@ function nightRed(tileset: string, key: TileKey): Promise<Uint8Array | null> {
 async function runJob(job: TileJob): Promise<void> {
   const p = provider!;
   const t0 = performance.now();
-  await p.prepareTile(job.bodyId, job.key, 'render');
-  const bake = p.bakeTile(job.bodyId, job.key);
-  const t1 = performance.now();
+  let t1 = t0;
   const manifest = manifests.get(job.tileset)!;
-  let albedo: ImageBitmap | null = null;
-  let aux: Uint8Array<ArrayBuffer> | null = null;
-  let night: Uint8Array<ArrayBuffer> | null = null;
-  let nightDark = false;
-  if (job.image) {
-    aux = new Uint8Array(N * N * 2);
-    const [bitmap] = await Promise.all([
-      imageTile(job.tileset, TILE_LAYER.albedo, job.key),
-      auxChannel(job.tileset, manifest.layers[TILE_LAYER.watermask], TILE_LAYER.watermask, job.key, false, aux, 0),
-      auxChannel(job.tileset, manifest.layers[TILE_LAYER.landcover], TILE_LAYER.landcover, job.key, true, aux, 1),
-    ]);
-    if (!bitmap) throw new Error(`albedo tile ${job.key.face}/${job.key.level}/${job.key.x}/${job.key.y} of "${job.tileset}" does not exist`);
-    albedo = bitmap;
-  }
-  if (job.night) {
-    night = await buildNightImage(job.key, (k) => nightRed(job.tileset, k));
-    nightDark = night === null;
-  }
+  // Every read of the job is asked for in this one turn (the heights the bake needs, the image layers, the
+  // tile's own night image): a pack source collects what is asked together into one ranged request per run
+  // of bytes, and the layers of a tile lie next to each other in a pack. Over plain files the requests
+  // simply overlap.
+  const baked = p.prepareTile(job.bodyId, job.key, 'render').then(() => {
+    const b = p.bakeTile(job.bodyId, job.key);
+    t1 = performance.now();
+    return b;
+  });
+  const aux: Uint8Array<ArrayBuffer> | null = job.image ? new Uint8Array(N * N * 2) : null;
+  const image = aux
+    ? Promise.all([
+        imageTile(job.tileset, TILE_LAYER.albedo, job.key),
+        auxChannel(job.tileset, manifest.layers[TILE_LAYER.watermask], TILE_LAYER.watermask, job.key, false, aux, 0),
+        auxChannel(job.tileset, manifest.layers[TILE_LAYER.landcover], TILE_LAYER.landcover, job.key, true, aux, 1),
+      ]).then(([bitmap]) => bitmap)
+    : null;
+  const nightImage = job.night ? buildNightImage(job.key, (k) => nightRed(job.tileset, k)) : null;
+  const [bake, albedo, night] = await Promise.all([baked, image, nightImage]);
+  if (job.image && !albedo) throw new Error(`albedo tile ${job.key.face}/${job.key.level}/${job.key.x}/${job.key.y} of "${job.tileset}" does not exist`);
+  const nightDark = job.night && night === null;
   const heights = bake.geometry.heights as Float32Array<ArrayBuffer>;
   const normal = bake.normalMaterial.rgba as Uint8Array<ArrayBuffer>;
   const result: TileResult = {
