@@ -727,6 +727,14 @@ result into OPEN_QUESTIONS Q7.
   menu offers the earliest free **cohort slot**: buckets of 5 minutes up to the **cohort horizon**
   (`cohortHorizon`, default 14 days). Everyone in a bucket shares one cohort clock and is solid to each
   other; other cohorts are echoes.
+- **A full launch complex shows a visible queue** (user decision of 2026-11-13). When every slot that a pad
+  of the vehicle's class offers at the requested time is taken, the spawn is neither refused nor moved
+  silently to another clock: the request waits in the queue of its class, and the player sees their place
+  and an honest estimate of the wait from the pad timetable, beside the cohort, window and friend offers,
+  and can leave it (`spawnQueued` and `spawnCancel` on the wire; `LaunchQueueEntry`,
+  `ClientStores.launchQueue` and `UniverseCommands.cancelSpawn` in the session contract). The place belongs
+  to the session: a resume inside the reconnect grace keeps it, a session that is lost or taken over by
+  another tab loses it. Practice has its own pads and never queues.
 - **What cohorts buy.** Every clock runs at 1x, so the complex produces `pads x 3600 / cycle` launch slots
   per wall hour for ever (600 with the 25 pads of the release complex and a 150 s mean cycle) plus a
   one-time **reservoir** of `pads x horizon / cycle` slots (201,600 with a 14-day horizon). The pad count
@@ -3112,7 +3120,8 @@ Design, wireframes and visual language ("Dawn Line"): `docs/research/v2/frontend
   and vehicle selection on a turntable with computed read-outs (including the first-person view kind and
   the "can reach" ladder) and an exploded stage view; site and pad selection over the live globe with pad
   states, the wait per class, local solar time, the launch-window readout and slot offers (live, cohort
-  with its lead stated, window, a friend's clock); briefing and commit; My Ships (where, kept for how long
+  with its lead stated, window, a friend's clock) and, when every slot of the class is taken, the launch
+  queue with the player's place and an honest wait (5.9); briefing and commit; My Ships (where, kept for how long
   and why, resume, track, rename, abandon); Universe ("How this universe works", rendered from
   `UniverseRules`, with the measured capacity report and the wait a player can expect at the measured
   limit); Settings; controls reference; **Credits** (rendered from `visuals/credits.json` plus the audio

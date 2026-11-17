@@ -216,9 +216,14 @@ it holds 95 %, chute envelope "RISKY" while inside it, Mach shown in vacuum).
       `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional`
       (12 minutes; BASELINE_ONLY=a,b narrows it). Left: the lead pushes `data/baselines` to a baselines
       branch (seven PNGs are new on 2026-11-16: hand-off section 24, item 8).
-   c. At the start of sub-wave 3.2: join the v2 union members, change `setTarget` to `TargetRef`, add the
-      `'ui.scrimRects'` key (hand-off section 2, "what is therefore still to do"), and hand the sweep the list
-      of deprecated fields.
+   c. DONE on 2026-11-17 (commit 31e67fa; hand-off section 25): the lead step of sub-wave 3.2. The v2
+      union members are joined, `setTarget` takes a `TargetRef`, `'ui.scrimRects'` is a key, the pack types
+      are in the terrain contract, and the session contract has the visible launch queue (request
+      wire-protocol-2). Headless: compiles and passes (the mission 36 of 36 at the golden). Presentation:
+      RED BY DESIGN, 21 compile errors in 11 files and two tests of `tests/unit/map-view`: the list is in
+      the brief of `presentation-sweep` as its first work order, with the deprecated fields it stops
+      reading. Until the sweep has worked it off, `npm run typecheck` fails in its first half and the app,
+      the labs and the browser specs are built by Vite without a type check.
    d. Then waves 4-7 as in `MIGRATION_V2.md` section 3.
 
 ## The 2026-11-11 15:35 crash and the git recovery

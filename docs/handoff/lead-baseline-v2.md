@@ -1227,3 +1227,70 @@ nothing changed, ocean-12 is where to look.
 2026-11-12): `leo-night.png`, `leo-terminator.png`, `lunar-surface-cockpit.png`,
 `reentry-peak-heating.png`, `sweep-app-cockpit.png`, `sweep-app-pad.png`, `sweep-cockpit-leo.png`. The
 manifest holds the sha256 of all 33.
+
+## 25. The lead step of sub-wave 3.2: the contract changes that could not be additive (2026-11-17, 00:00-00:40; commit 31e67fa)
+
+**What changed, by contract file** (`src/core/contracts`; `net.ts` is not touched):
+
+| File | Change |
+|---|---|
+| `controls.ts` | `SasMode` gains `target`, `antiTarget`, `portAlign` (`SAS_MODES` stays the eight without a target; `SAS_TARGET_MODES` the three); `NavballMode` gains `target`; `ButtonAction` gains `flightMenu`, `cycleTarget`, `toggleRoster`, `dockingView`, `openQuickComms`, `acceptPrompt` (and with `SasMode`, `sas:target` and the two others); `PlayerCommands.setTarget(ref: TargetRef \| null)`. The names `SasTargetMode`, `NavballModeV2`, `ButtonActionV2` stay, as names of the subsets (`src/net/codec/common.ts` uses the first) |
+| `sim.ts` | `MarkerKind` gains `targetApproach` (`MarkerKindV2` stays as its name) |
+| `ui.ts` | `MfdPage` gains `target` and `docking` (`MfdPageV2` stays) |
+| `render.ts` | `'ui.scrimRects': GPUBuffer` in `SharedResourceMap` (the layout constants `UI_SCRIM_SLOTS`, `UI_SCRIM_BYTES`, `UI_SCRIM_RECTS_KEY` were there) |
+| `terrain.ts` | `PACK_FORMAT_VERSION`, `PackRef`, `PackKind`, `PackSection`, `PackFileEntry`, `TilePackIndex`, `PackListMirror`, `PackList`, lifted from `src/terrain/packIndex.ts` (platform-delivery's request); that module imports and re-exports them and keeps the codec, so its eleven importers are unchanged |
+| `session.ts` | the visible launch queue (request wire-protocol-2; user decision of 2026-11-13): `LaunchQueueEntry`, `ClientStores.launchQueue`, `UniverseCommands.cancelSpawn`; `spawn` stays one promise, pending while the request waits. No implementation of `ClientStores` or `UniverseCommands` exists yet, so the members are required |
+
+**Not in this step, as the migration lists them:** `SimSnapshot.activeVesselId: string | null` and
+`scenario` nullable are the tighten AFTER sub-wave 3.2 (the sweep makes its 123 reads cope first); the two
+warp levels and `warpAltitudeLimits` optional come with wave 4.1c, in the commit that defaults absent
+limits in the body system (the two levels alone fail the library load, and a body file may not change
+before the tighten: rule 7a).
+
+**The headless side.**
+- `src/sim/world/sim.ts`: `setTarget` takes a `TargetRef`; a body target is what it was (the state hash
+  still covers `targetBodyId`); a vessel or a port target is REFUSED by name and the target that was
+  selected stays. `setSasMode` refuses the three target modes and `setNavballMode` refuses `target`
+  ("No vessel or port target"): the World has neither, and the navigation that would give them
+  (the relative state of two vessels, `Readouts.target`) is wave 4's. Nothing was invented.
+- `src/pilot/runner.ts`: the logged command keeps `{ name: 'setTarget', bodyId }` for a body target (the
+  form of every recorded log) and carries `ref` for the two other kinds; the replay takes both.
+  `src/pilot/missionPilot.ts` and `src/core/fakes/fakeSim.ts` follow (the fake has body targets only).
+- No definition file changed (rule 7a).
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit -p tsconfig.node.json` (server, bots, deploy, src/sim, src/universe, src/session, src/terrain, src/pilot, src/net) | clean |
+| Headless unit suites (src/sim, src/session, src/terrain, src/pilot, src/net, src/core, tools; tests/unit/sim-*, terrain-core, platform, net) | 86 files pass, 2 skipped; 951 tests pass, 13 skipped |
+| Codec corpus (`tests/unit/sim-vessel/codec.test.ts`) | 23 of 23 |
+| Pins (`tools/dev/guard-pins.test.ts`) | 3 of 3 |
+| Terrain guard | 10 of 10 |
+| `npm run test:mission` | 36 of 36, golden b8221b0fd316207e |
+| The whole unit suite (`npx vitest run`) | 2,073 pass, 15 skipped, 2 fail: both in `tests/unit/map-view/controller.test.ts` (presentation) |
+
+**The presentation side is red, by design.** `tsc --noEmit -p tsconfig.json`: 21 errors in 11 files:
+
+| Directory | Errors | Files |
+|---|---|---|
+| `src/ui` | 7 | `hud/hud.ts` 4, `mfd/mfdPainter.ts` 3 |
+| `src/map` | 4 | `labels.ts` 2, `scene.ts` 1, `controller.ts` 1 |
+| `src/input` | 3 | `bindings.ts` 3 |
+| `src/camera` | 3 | `chaseRig.ts` 3 |
+| `src/render` | 1 | `core/resources.ts` 1 (the default of `'ui.scrimRects'`) |
+| `labs` | 2 | `flight-ui/main.ts` 1, `map-view/main.ts` 1 |
+| `tests/unit/map-view` | 1 | `controller.test.ts` 1 (and its two failing tests) |
+
+The list with line numbers and what each asks for is the LEAD NOTE at the end of `presentation-sweep`'s
+brief, with the deprecated fields the sweep stops reading and their counts. Nothing of it was fixed here.
+
+**For the lead.**
+1. `Readouts.target` is filled by NO session. The contract tells a consumer to derive it from
+   `targetBodyId` / `targetClosestApproach` while it is absent, and the sweep's note asks for that in one
+   helper. The tighten cannot remove the two deprecated fields until a producer fills `target` for body
+   targets (it needs the relative speed at a closest approach, which no navigation function returns
+   today): solar-system-sim's, or a lead decision to keep the two fields until then.
+2. The launch queue's semantics that the wire leaves open were decided in the contract: the place belongs
+   to the session; a second tab that takes the account over does NOT inherit it; while the link is
+   reconnecting the store keeps the last entry.
+3. `package.json` does not list `ws`, `@types/ws` or `fflate`, and none of them is in `node_modules`
+   (request wire-protocol-1).
