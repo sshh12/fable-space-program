@@ -971,3 +971,847 @@ export interface CapabilityReport {
 // ===================================================================================== WIRE MESSAGES =====
 // Written and owned by the `wire-protocol` package from wave 4 (ARCHITECTURE 13.3). Nothing below this line
 // is the lead's; nothing above it is a wire encoding.
+//
+// Every message of ARCHITECTURE 13.2 and 13.3 as a TypeScript type; the byte layout is src/net (one codec,
+// shared by the browser, the bots, the gateway, the shard and the directory). Rules of this section:
+//  - Numbers are plain JS numbers. A field whose wire form is a fixed grid says so ("on a grid of ..."): the
+//    decoder returns grid values, so a value already on the grid travels exactly and any other value is
+//    rounded to the grid by the encoder. Fields with no grid note travel exactly (float64), and must be
+//    finite: a decoder refuses NaN and Infinity, as JSON would lose them (file header).
+//  - Ticks are integer float64 values (ARCHITECTURE 3); a decoder refuses a tick that is not an integer.
+//  - Integer fields named `seq`, `cmdId`, `reqId`, `island`, `slot`, `part`, `handle`, `revision`, counts
+//    and positions are non-negative safe integers.
+//  - A vessel inside an island frame is named by its SLOT, the index of its id in the island's member list
+//    (`IslandEnterMessage.members`, changed only by `IslandOpMessage`): the bytes of an island frame are the
+//    same for every subscriber (ARCHITECTURE 13.4). Strings of the per-client relevant set and near tier
+//    travel as session-local handles (`HandlesMessage`); the public census documents carry their own table.
+//  - The `type` tag of every message is its name; src/net maps it to a one-byte code.
+//
+// Who writes what: `wire-protocol` owns this section; universe-directory, netcode-client and
+// server-persistence file requests against it (docs/requests). Role-to-role messages beyond `route` are
+// added here by request.
+
+/** Version of the wire protocol. `HelloMessage.protocol` must equal the server's or the session is refused. */
+export const WIRE_PROTOCOL_VERSION = 1;
+
+/**
+ * Protocol constants of ARCHITECTURE 13 that are not rules of the universe (the universe's timers are
+ * `UniverseRules` fields: the ping interval, the loss timeout, the reconnect grace, the round-trip allowance
+ * and the gateway's rate limits are read from the rules document in force).
+ */
+export const WIRE_CONSTANTS = {
+  /** Each `Input` message repeats the control changes of the last this-many ms (13.3). */
+  inputRepeatMs: 250,
+  /** The gateway keeps every input with the tick it was applied at for this long (16.1). */
+  inputBufferMs: 5000,
+  /** Reconnect backoff: these waits in order, then `reconnectSteadyMs` for ever, each with +/- `reconnectJitter` (13.6). */
+  reconnectBackoffMs: [500, 1000, 2000, 4000, 8000] as readonly number[],
+  reconnectSteadyMs: 15_000,
+  reconnectJitter: 0.25,
+  /** Default hard downstream budget of one client socket, bytes per second (13.6, 29.2). */
+  downstreamBytesPerSecond: 6000,
+  /** The client's replica never predicts further ahead of the server's clock than this (13.5). */
+  maxPredictionMs: 500,
+  /** Largest frame a server accepts from a client, and the largest frame anyone accepts, bytes. */
+  maxClientFrameBytes: 64 * 1024,
+  maxFrameBytes: 8 * 1024 * 1024,
+} as const;
+
+// --------------------------------------------------------------------------------------- shared parts
+
+/** A craft's or the pilot's continuous controls in wire units: what the server latches and both sides step with. */
+export interface WireControls {
+  /** Throttle, 0..255 (u8): throttle = throttle / 255. */
+  throttle: number;
+  /** Pitch, yaw, roll and RCS translation per VES axis, -127..127 (i8): axis = value / 127. */
+  pitch: number;
+  yaw: number;
+  roll: number;
+  tx: number;
+  ty: number;
+  tz: number;
+}
+
+/**
+ * The applied control state of a vessel as island frames carry it: the latched pilot controls plus the SAS
+ * and RCS state, which is everything the replica needs to predict another pilot's vessel.
+ */
+export interface WireControlState extends WireControls {
+  sasEnabled: boolean;
+  rcsEnabled: boolean;
+  fineControl: boolean;
+  sasMode: import('./controls').SasMode | import('./controls').SasTargetMode;
+  /** Hold direction of a maneuver or target mode, unit vector in inertial (ICRF-parallel) axes, float32 values; null when the mode needs none. */
+  sasHold: import('../math/vec3').Vec3 | null;
+}
+
+/** A blob in another codec (the island codec, the vessel codec), deflated by the application or not. */
+export interface WireBlob {
+  encoding: 'raw' | 'deflate-raw';
+  /** Length of the blob after inflation (= `bytes.length` when raw). */
+  rawLength: number;
+  bytes: Uint8Array;
+}
+
+/** An answer offered with a refused time request or seat (the lead's `TimeOffer`). */
+export type WireOffer = TimeOffer;
+
+// ------------------------------------------------------------------------------------- session (13.2)
+
+/** Client -> server, first message on a socket. */
+export interface HelloMessage {
+  type: 'hello';
+  protocol: number;
+  /** Client build id and the hash of its definition library (`DefLibrary` bundle). */
+  build: string;
+  defsHash: string;
+  /** Calibration CPU score; null before the calibration ran. */
+  cpuScore: number | null;
+  /** Resume a session inside the reconnect grace: the session token of `WelcomeMessage` and the last relevant-set sequence number applied (null = none). */
+  resume: { session: string; relevantSeq: number | null } | null;
+}
+
+/** Server -> client: the nonce to sign (ARCHITECTURE 25: the client signs nonce || serverId || build). */
+export interface ChallengeMessage {
+  type: 'challenge';
+  nonce: Uint8Array;
+  serverId: string;
+}
+
+/** Client -> server: the account and the device key's signature of the challenge. */
+export interface AuthMessage {
+  type: 'auth';
+  accountId: string;
+  signature: Uint8Array;
+}
+
+/** Where a resumed session was seated again (U8b); the server follows with `clock`, `islandEnter` and the relevant set. */
+export interface ResumedSeat {
+  vesselId: string;
+  clockId: string | null;
+  /** The relevant-set sequence number the server continues from (the client's, when it still had it; null = a full set follows). */
+  relevantSeq: number | null;
+}
+
+/** Server -> client: the session is open. */
+export interface WelcomeMessage {
+  type: 'welcome';
+  /** Short-lived session token for this socket and for `Hello.resume` inside the grace. */
+  session: string;
+  accountId: string;
+  callsign: string;
+  /** The rules document in force (the full document follows as `rules` when the client's is older). */
+  rulesId: string;
+  rulesVersion: number;
+  liveClock: ClockState;
+  /** Server wall time and directory up-time when this message was sent, ms (the first time-sync sample). */
+  serverMs: number;
+  upMs: number;
+  /** Non-null when `Hello.resume` was honoured. */
+  resumed: ResumedSeat | null;
+}
+
+/** Why the server refused or ended a session. */
+export type SessionRefusal =
+  /** Protocol version, client build or definition library differ ("a new version is ready"). */
+  | 'protocol'
+  | 'build'
+  | 'defsHash'
+  /** The signature did not verify, or the account is unknown. */
+  | 'auth'
+  /** The session token is unknown or its grace ended: start a new session. */
+  | 'resume'
+  /** This role is in standby (a stage move, ARCHITECTURE 13.1): try the next candidate at once. */
+  | 'standby'
+  | 'maintenance'
+  /** The admission cap is reached; `queue` says where the client stands. */
+  | 'full'
+  /** A frame did not decode, or a message came that the session's state does not accept. */
+  | 'malformed'
+  | 'outOfOrder'
+  | 'rateLimited'
+  /** The handshake did not complete in time. */
+  | 'timeout';
+
+/** Server -> client: the session is refused (or ended); the server closes the socket after it. */
+export interface RefusedMessage {
+  type: 'refused';
+  reason: SessionRefusal;
+  /** Player-facing sentence. */
+  text: string;
+  /** When the client may try again, ms; null = at its own backoff. */
+  retryAfterMs: number | null;
+  queue: { position: number; etaSeconds: number } | null;
+}
+
+/** Server -> client: another session of the account attached; this one stops sending and is closed. */
+export interface TakenOverMessage {
+  type: 'takenOver';
+  text: string;
+}
+
+/** Either side: an orderly end of the session (an explicit leave, a drain, maintenance). */
+export interface ByeMessage {
+  type: 'bye';
+  reason: 'leave' | 'drain' | 'maintenance' | 'lost';
+  text: string;
+}
+
+/** Client -> server: launch from a pad at a slot (ARCHITECTURE 5.9). Answered by `seatResult`, after `spawnQueued` updates when the pads of the class are full. */
+export interface SpawnMessage {
+  type: 'spawn';
+  reqId: number;
+  request: import('./session').SpawnRequest;
+}
+
+/** Client -> server: take the seat of one of the account's craft; the clock is honoured only as U8b allows. */
+export interface AttachMessage {
+  type: 'attach';
+  reqId: number;
+  vesselId: string;
+  clockId: string | null;
+}
+
+/** Client -> server: leave the seat (U16). Answered by `commandResult` with `cmdId = reqId`. */
+export interface DetachMessage {
+  type: 'detach';
+  reqId: number;
+}
+
+/** Client -> server: leave the launch queue of a spawn request (user decision of 2026-11-13). */
+export interface SpawnCancelMessage {
+  type: 'spawnCancel';
+  reqId: number;
+}
+
+/** Server -> client: the answer to a spawn or an attach. */
+export interface SeatResultMessage {
+  type: 'seatResult';
+  reqId: number;
+  result: import('./session').SeatResult;
+}
+
+/**
+ * Server -> client: every pad slot the vehicle's class can use is taken at the requested time, so the
+ * request waits in a VISIBLE QUEUE (user decision of 2026-11-13): the player's place and an honest wait.
+ * Sent when the request is queued and whenever the place or the estimate changes; the request ends with
+ * `seatResult` (seated, or refused) or with the client's `spawnCancel`.
+ */
+export interface SpawnQueuedMessage {
+  type: 'spawnQueued';
+  reqId: number;
+  /** 1 = next. */
+  position: number;
+  /** Estimated wait until a pad of the class is free, s, from the pad timetable. */
+  etaSeconds: number;
+  padClass: PadClass;
+}
+
+// ------------------------------------------------------------------------------- client -> server (13.3)
+
+/** One control sample: the controls the pilot set at `applyTick`. */
+export interface InputSample extends WireControls {
+  /** Increases by one per sample within a session (a resumed session continues the sequence). */
+  seq: number;
+  applyTick: number;
+  /** Hold direction for a maneuver or target SAS mode, unit vector in inertial axes, float32 values; null otherwise. */
+  sasHold: import('../math/vec3').Vec3 | null;
+}
+
+/** Client -> server, while flying: the newest samples, repeating the changes of the last `inputRepeatMs` that are not yet acknowledged; oldest first. */
+export interface InputMessage {
+  type: 'input';
+  samples: InputSample[];
+}
+
+/** A command of the seat (ARCHITECTURE 13.3 `Command`; `PlayerCommands` minus planning and time). Port and part arguments are part keys. */
+export type WireCommand =
+  | { kind: 'stage' }
+  | { kind: 'abort' }
+  | { kind: 'sas'; on: boolean }
+  | { kind: 'sasMode'; mode: import('./controls').SasMode | import('./controls').SasTargetMode }
+  | { kind: 'rcs'; on: boolean }
+  | { kind: 'legs' }
+  | { kind: 'lights' }
+  | { kind: 'fineControl'; on: boolean }
+  | { kind: 'armPort'; portId: string; armed: boolean }
+  | { kind: 'undock'; portId: string }
+  | { kind: 'controlPoint'; partKey: string | null }
+  | { kind: 'requestHelm' }
+  | { kind: 'grantHelm'; accountId: string }
+  | { kind: 'releaseHelm' }
+  | { kind: 'lendPolicy'; craftId: string; policy: Partial<LendPolicy> }
+  | { kind: 'advanceLimit'; craftId: string; seconds: number }
+  | { kind: 'transfer'; from: string; to: string; resource: import('./defs').ResourceId; rate: number }
+  | { kind: 'crossfeed'; portId: string; on: boolean }
+  | { kind: 'rename'; craftId: string; name: string }
+  | { kind: 'abandon'; craftId: string }
+  | { kind: 'cycleVessel'; direction: 1 | -1 };
+
+/** Client -> server: a command stamped with the tick the pilot pressed it at; answered by `commandResult`. */
+export interface CommandMessage {
+  type: 'command';
+  /** Unique within the session; shared with `time` and `detach` (`reqId`). */
+  cmdId: number;
+  tick: number;
+  command: WireCommand;
+}
+
+/** A time request (ARCHITECTURE 5.3, 13.3 `Time`). */
+export type TimeRequest =
+  /** Index into WARP_LEVELS (U6, U7). */
+  | { kind: 'setRate'; warpIndex: number }
+  | { kind: 'warpTo'; tick: number }
+  | { kind: 'jumpToTick'; tick: number }
+  | { kind: 'jumpToClock'; clockId: string }
+  | { kind: 'hold'; on: boolean }
+  | { kind: 'link'; accountId: string }
+  | { kind: 'unlink'; accountId: string }
+  | { kind: 'follow'; accountId: string | null }
+  | { kind: 'meet'; accountId: string; atTick: number }
+  | { kind: 'reply'; proposalId: string; accept: boolean }
+  | { kind: 'askAdvance'; vesselId: string };
+
+/** Client -> server: a time request stamped with the pilot's tick (U7); answered by `commandResult`, with the reason and an alternative when refused. */
+export interface TimeMessage {
+  type: 'time';
+  cmdId: number;
+  tick: number;
+  request: TimeRequest;
+}
+
+/** Client -> server: the pilot's target. */
+export interface TargetMessage {
+  type: 'target';
+  ref: TargetRef | null;
+}
+
+/** Client -> server: replace the given parts of the session's subscriptions (absent keys keep their value). */
+export interface SubscribeMessage {
+  type: 'subscribe';
+  change: import('./session').Subscriptions;
+}
+
+/** Client -> server: the pilot's maneuver nodes and target for one craft, opaque to the simulation (at most 1 Hz). */
+export interface PlanMessage {
+  type: 'plan';
+  craftId: string;
+  data: Uint8Array;
+}
+
+/** Client -> server: a quick-comms phrase (decision 51), to one pilot or to the near tier (null). */
+export interface QuickMessage {
+  type: 'quick';
+  phrase: string;
+  toAccountId: string | null;
+}
+
+/** Either side: keep-alive (every `disconnect.pingInterval`); answered by `pong` with the same `seq`. */
+export interface PingMessage {
+  type: 'ping';
+  seq: number;
+}
+
+export interface PongMessage {
+  type: 'pong';
+  seq: number;
+}
+
+/** Client -> server: a time-sync probe; `clientMs` is the client's clock when sent. */
+export interface TimeSyncMessage {
+  type: 'timeSync';
+  seq: number;
+  clientMs: number;
+}
+
+/** Server -> client: the answer, with the server's wall clock at receipt and at send, and the directory up-time at send (ms). */
+export interface TimeSyncReplyMessage {
+  type: 'timeSyncReply';
+  seq: number;
+  clientMs: number;
+  serverRecvMs: number;
+  serverSendMs: number;
+  upMs: number;
+}
+
+// ------------------------------------------------------------------------------- server -> client (13.3)
+
+/** Server -> client: session-local handles for strings (ARCHITECTURE 13.1); sent before the first message that uses them. */
+export interface HandlesMessage {
+  type: 'handles';
+  entries: { handle: number; id: string }[];
+}
+
+/** Server -> client: the pilot's clock (`role: 'own'`) or the live clock (`'live'`) changed (5.2), with what the time strip needs that the clock does not hold. */
+export interface ClockMessage {
+  type: 'clock';
+  role: 'own' | 'live';
+  clock: ClockState;
+  /** Highest rate the pilot may request now, as a factor. */
+  maxRate: number;
+  /** The actions the time model offers the pilot now. */
+  offers: TimeOffer[];
+}
+
+/** Server -> client: the complete state of the pilot's island, on entering it or when it re-formed (7.2). */
+export interface IslandEnterMessage {
+  type: 'islandEnter';
+  /** The island's number in every frame of this island (u32, unique in the lobby while the island lives). */
+  island: number;
+  islandId: string;
+  epoch: number;
+  tick: number;
+  /** Vessel ids in slot order: frames name a vessel by its index here. */
+  members: string[];
+  /** The island in the island codec (src/sim/island, `island-core`), opaque to the wire layer. */
+  state: WireBlob;
+}
+
+/** What a structural operation does (ARCHITECTURE 13.3, 13.4); vessels by slot, parts by index in `Vessel.parts`. */
+export type IslandOpBody =
+  /** `separateVessel` at the cut joints (the child part of each cut joint); the new vessels are appended to the members in this order. */
+  | { op: 'split'; slot: number; cutJoints: number[]; newVesselIds: string[] }
+  /** The docking merge of `other` into `base` through the two ports, at a roll step; `other`'s slot is removed. */
+  | { op: 'merge'; base: number; other: number; basePort: number; otherPort: number; rollStep: number }
+  | { op: 'destroy'; slot: number; parts: number[]; cause: 'impact' | 'overheat' | 'overstress' | 'explosion' | 'collision' }
+  /** Soft capture on between two ports; `state` is the constraint's initial state in the island codec's form. */
+  | { op: 'capture'; a: number; aPort: number; b: number; bPort: number; state: Uint8Array }
+  | { op: 'release'; a: number; aPort: number; b: number; bPort: number }
+  /** A vessel enters the island (appended), in the vessel codec. */
+  | { op: 'add'; vesselId: string; vessel: WireBlob }
+  | { op: 'remove'; slot: number; reason: 'left' | 'destroyed' | 'removed' }
+  /** A new reference orbit at the op tick: the anchor's slot and the orbit's state about its body, BCI, float64. */
+  | { op: 'rebase'; anchor: number; bodyId: BodyId; r: import('../math/vec3').Vec3; v: import('../math/vec3').Vec3 }
+  /** The complete state of one vessel (the answer to a checksum mismatch). */
+  | { op: 'replace'; slot: number; vessel: WireBlob };
+
+/** The check both sides compute after an operation: parts, a hash of the craft ids in order, and the summed mass (compared to 1e-9 relative). */
+export interface IslandOpChecksum {
+  partCount: number;
+  /** FNV-1a 32-bit over the vessel's craft ids joined by '\n' (src/net `craftListHash`). */
+  craftHash: number;
+  massKg: number;
+}
+
+/** Server -> client: a structural change at a tick, executed by both sides (reliable). */
+export interface IslandOpMessage {
+  type: 'islandOp';
+  island: number;
+  epoch: number;
+  tick: number;
+  /** Increases by one per operation of the island. */
+  seq: number;
+  body: IslandOpBody;
+  /** The result for the vessel the operation leaves at `body`'s first slot (the base for a merge); null for `remove`. */
+  checksum: IslandOpChecksum | null;
+}
+
+/** One stepped vessel of a key: the exact pose, ISL frame (offsets from the island's reference orbit at the tick). */
+export interface KeyVessel {
+  slot: number;
+  /** Position and velocity offsets, m and m/s, float64 (exact). */
+  pos: import('../math/vec3').Vec3;
+  vel: import('../math/vec3').Vec3;
+  /** Attitude (VES -> inertial axes) and angular velocity (VES axes, rad/s), float32 values. */
+  att: import('../math/quat').Quat;
+  rate: import('../math/vec3').Vec3;
+  controls: WireControlState;
+}
+
+/** Server -> client, 1 Hz: the exact state of every stepped vessel of the island at `tick`. */
+export interface IslandKeyMessage {
+  type: 'islandKey';
+  island: number;
+  tick: number;
+  vessels: KeyVessel[];
+}
+
+/**
+ * The POSE group of a delta: residuals against the last key, in fixed units (ARCHITECTURE 13.4).
+ *  - position: 1/64 mm (a 1 mm grid when `coarsePos`), against keyPos + keyVel x (tick - keyTick) / 120;
+ *  - velocity: 1 um/s (16 um/s when `coarseVel`), against keyVel;
+ *  - attitude: smallest three of the unit quaternion (the largest component, `attLargest`, is dropped and
+ *    made positive) on a 2^-34 grid; residuals against the key's attitude advanced by its rate to first
+ *    order and normalised, unless `attAbsolute` (the components themselves on the grid);
+ *  - angular velocity: 1 urad/s, against the key's rate.
+ * `src/net` `quantizePose` / `dequantizePose` are the two sides; both use only IEEE-exact operations, so the
+ * reconstruction is bit-identical in every runtime. Quantisation error: 7.8 um, 0.5 um/s, 2e-10 rad, 0.5 urad/s.
+ */
+export interface DeltaPose {
+  coarsePos: boolean;
+  coarseVel: boolean;
+  px: number;
+  py: number;
+  pz: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  attLargest: 0 | 1 | 2 | 3;
+  attAbsolute: boolean;
+  qa: number;
+  qb: number;
+  qc: number;
+  wx: number;
+  wy: number;
+  wz: number;
+}
+
+/** Fast part state of a delta (PART-FAST): what changed against the key. */
+export type PartFastEntry =
+  /** Gimbal about the part's X and Z axes on a 1e-4 rad grid (-3.2767 .. 3.2767 rad). */
+  | { kind: 'engine'; part: number; ignited: boolean; flameout: boolean; gimbalX: number; gimbalZ: number }
+  /** Deployment 0..255 (stowed .. deployed). */
+  | { kind: 'legs'; part: number; deploy: number; broken: boolean }
+  /** Inflation 0..255 (none .. full canopy). */
+  | { kind: 'chute'; part: number; state: import('./sim').ChuteState; inflation: number };
+
+/** A vessel in contact or soft capture, sent exact (float64) with its probe anchors and port states (ARCHITECTURE 13.3). */
+export interface ContactState {
+  pos: import('../math/vec3').Vec3;
+  vel: import('../math/vec3').Vec3;
+  att: import('../math/quat').Quat;
+  rate: import('../math/vec3').Vec3;
+  /** Contact probes by index: touching and wet flags and the friction anchor (body-fixed frame of the body touched, m; vessel frame of the other vessel for a vessel contact). */
+  probes: { probe: number; touching: boolean; wet: boolean; anchor: import('../math/vec3').Vec3 }[];
+  /** Docking ports by part index (ARCHITECTURE 7.5). */
+  ports: { part: number; state: DockingPortStateName; armed: boolean; progress: number }[];
+}
+
+/** The states of a docking port (the lead's `DockingPortState.state`). */
+export type DockingPortStateName = 'disabled' | 'ready' | 'occupied' | 'soft' | 'hard' | 'cooldown';
+
+/** One vessel of a delta: only the groups that changed against the key. */
+export interface DeltaVessel {
+  slot: number;
+  /** Null when the vessel is sent in the exact contact form instead. */
+  pose: DeltaPose | null;
+  controls: WireControlState | null;
+  partFast: PartFastEntry[] | null;
+  contact: ContactState | null;
+}
+
+/** Server -> client, 10 / 30 / 60 Hz: the island at `tick` against the key at `keyTick` (never against another delta). */
+export interface IslandDeltaMessage {
+  type: 'islandDelta';
+  island: number;
+  tick: number;
+  keyTick: number;
+  vessels: DeltaVessel[];
+}
+
+/**
+ * Server -> client, with every key and delta (the per-client header of ARCHITECTURE 13.4): the pilot's
+ * inputs, as applied.
+ */
+export interface InputAckMessage {
+  type: 'inputAck';
+  /** How early (positive) or late (negative) the pilot's inputs reach the server for their stamped tick, ms, on a 0.1 ms grid; null before the first input. */
+  marginMs: number | null;
+  /** Inputs applied at their stamped tick, as inclusive seq ranges. */
+  stamped: { from: number; to: number }[];
+  /** Inputs applied later than stamped, one entry each, with the tick they were applied at. */
+  late: { seq: number; appliedTick: number }[];
+}
+
+/** Server -> client, 2 Hz: slow part state that changed (round robin over the parts; the server's values overwrite the replica's). */
+export interface IslandSlowMessage {
+  type: 'islandSlow';
+  island: number;
+  tick: number;
+  vessels: {
+    slot: number;
+    /** Resource `index` of the part (in `PartDef.resources` order) as a fraction of its capacity, on a 1/65535 grid. */
+    resources: { part: number; index: number; fraction: number }[];
+    /** Part temperatures, K, on a 0.1 K grid (0 .. 6553.5 K). */
+    temps: { part: number; kelvin: number }[];
+  }[];
+}
+
+/** Server -> client: a simulation event with its tick and the epoch of the holder that produced it (reliable). */
+export interface EventMessage {
+  type: 'event';
+  tick: number;
+  epoch: number;
+  event: import('./sim').SimEvent;
+}
+
+/** Server -> client: the outcome of a command, a time request or a detach. */
+export interface CommandResultMessage {
+  type: 'commandResult';
+  cmdId: number;
+  ok: boolean;
+  /** The tick it took effect at (a late command is re-timed, never refused for being late; 6.2); null when refused. */
+  appliedTick: number | null;
+  reason: string | null;
+  /** For a refused time request: the alternative the server offers. */
+  alternative: TimeOffer | null;
+}
+
+/** Server -> client: the reference orbit of a near-tier island (sent when it is first used and at every rebase; reliable). */
+export interface NearOriginMessage {
+  type: 'nearOrigin';
+  island: number;
+  bodyId: BodyId;
+  tick: number;
+  r: import('../math/vec3').Vec3;
+  v: import('../math/vec3').Vec3;
+}
+
+/** One near-tier vessel: a quantised pose relative to its own island's reference orbit (`NearOriginMessage`). */
+export interface NearVessel {
+  vesselId: string;
+  island: number;
+  /** Position and velocity offsets on a 1 mm / 1 mm/s grid, or a 1 m / 1 m/s grid when `coarse`. Integers in those units. */
+  coarse: boolean;
+  px: number;
+  py: number;
+  pz: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  /** Attitude: smallest three on a 2^-15 grid (integers -23170 .. 23170), the largest component's index. */
+  attLargest: 0 | 1 | 2 | 3;
+  qa: number;
+  qb: number;
+  qc: number;
+  /** 0..255. */
+  throttle: number;
+  /** Thrust direction in VES axes, -127..127 per axis (unit vector / 127); null when no engine burns. */
+  thrust: { x: number; y: number; z: number } | null;
+  /** Next stage index of the base craft; any engine burning; a flameout. */
+  stage: number;
+  burning: boolean;
+  flameout: boolean;
+  /** The pilot's controls when the island is warm (tau <= 60 s, ARCHITECTURE 7.3); null otherwise. */
+  controls: WireControlState | null;
+}
+
+/** Server -> client, 10 Hz within 20 km and 2 Hz beyond: the near tier (14, tier B). */
+export interface NearMessage {
+  type: 'near';
+  tick: number;
+  vessels: NearVessel[];
+}
+
+/** Osculating elements of a thrusting craft of the relevant set (1 Hz while it thrusts). */
+export interface OsculatingElements {
+  vesselId: string;
+  tick: number;
+  bodyId: BodyId;
+  conic: ConicElements;
+}
+
+/**
+ * Server -> client: the pilot's relevant set (ARCHITECTURE 14, tier C1), in full. Entries travel in the census
+ * entry codec. A `CensusPatch.conic` travels as six float64 elements (p, e, inc, lan, argPe, tPeriapsis; `a`
+ * when it is not p / (1 - e^2), as for (near-)radial orbits) and the body's mu: P, Q, W and the period are
+ * recomputed on decode (equal to the sent ones to a few ulps), and a decoded conic re-encodes to the same
+ * bytes. `radius` travels on a 1 cm grid, rounded up; `expiresWallMs` as whole ms.
+ */
+export interface RelevantFullMessage {
+  type: 'relevantFull';
+  seq: number;
+  tick: number;
+  entries: CensusEntry[];
+}
+
+/** Server -> client: changes of the relevant set against the set at `baseSeq` (reliable; a full set replaces it). */
+export interface RelevantDeltaMessage {
+  type: 'relevantDelta';
+  seq: number;
+  baseSeq: number;
+  tick: number;
+  changed: CensusEntry[];
+  removed: string[];
+  elements: OsculatingElements[];
+}
+
+/** A piece of a committed worldline. */
+export type WorldlineSegment =
+  | { kind: 'conic'; bodyId: BodyId; conic: ConicElements; fromTick: number; toTick: number }
+  /** Sampled integrated arc: BCI state at each sample tick (1 Hz). */
+  | { kind: 'arc'; bodyId: BodyId; samples: { tick: number; r: import('../math/vec3').Vec3; v: import('../math/vec3').Vec3 }[] }
+  | { kind: 'rest'; bodyId: BodyId; latitude: number; longitude: number; altitude: number; fromTick: number; toTick: number };
+
+/** Server -> client, on request (`Subscriptions.worldlineOf`): committed segments of one vessel between two ticks. */
+export interface WorldlineMessage {
+  type: 'worldline';
+  vesselId: string;
+  fromTick: number;
+  toTick: number;
+  segments: WorldlineSegment[];
+}
+
+/** Server -> client: the pilot's screened encounters and proximity warnings (replaces the previous list). */
+export interface ConjunctionsMessage {
+  type: 'conjunctions';
+  list: Conjunction[];
+}
+
+/** Server -> client, 1 Hz: the tick up to which the pilot's island is durable (ARCHITECTURE 15.1). */
+export interface DurableMessage {
+  type: 'durable';
+  tick: number;
+}
+
+/** Server -> client: pads of the subscribed sites (replaces the list). */
+export interface PadsMessage {
+  type: 'pads';
+  pads: PadState[];
+}
+
+export interface ShipsMessage {
+  type: 'ships';
+  ships: ShipRecord[];
+}
+
+export interface AssemblyMessage {
+  type: 'assembly';
+  view: AssemblyView | null;
+}
+
+/** Server -> client: one page of the roster; `next` is the cursor of the following page (null = last). */
+export interface RosterMessage {
+  type: 'roster';
+  filter: 'nearby' | 'docked' | 'lobby';
+  cursor: string | null;
+  next: string | null;
+  entries: RosterEntry[];
+}
+
+/** Server -> client: the open prompt cards (replaces the list). */
+export interface PromptsMessage {
+  type: 'prompts';
+  prompts: Prompt[];
+}
+
+/** Server -> client: new lines of the feed ticker and the ops log, oldest first. */
+export interface FeedMessage {
+  type: 'feed';
+  events: FeedEvent[];
+}
+
+/** Server -> client: the rules document in force. */
+export interface RulesMessage {
+  type: 'rules';
+  rules: UniverseRules;
+}
+
+export type NoticeKind = 'recovering' | 'draining' | 'maintenance' | 'buildChange' | 'resync' | 'keepOut' | 'info';
+
+/** Server -> client: an out-of-fiction notice (a shard recovering, a drain, a keep-out zone). */
+export interface NoticeMessage {
+  type: 'notice';
+  kind: NoticeKind;
+  text: string;
+  /** Directory up-time (ms) until which it applies; null = until replaced. */
+  untilUpMs: number | null;
+}
+
+// --------------------------------------------------------------------------------------------- roles
+
+/**
+ * Role to role (ARCHITECTURE 16.1, batched per control tick): the bytes of a whole client batch, or of an
+ * island's frame, forwarded unchanged to `route` (a session or an island number), so one frame between two
+ * roles carries the traffic of many clients without re-encoding.
+ */
+export interface RouteMessage {
+  type: 'route';
+  route: number;
+  payload: Uint8Array;
+}
+
+// ----------------------------------------------------------------------------------- public census (HTTP)
+
+/** The public census of one sphere of influence (ARCHITECTURE 13.3, 14 tier C2): identical for every viewer, served by the publisher. */
+export interface CensusSnapshotDocument {
+  type: 'censusSnapshot';
+  soi: BodyId;
+  /** Sequence number of this state of the sphere's census. */
+  seq: number;
+  /** When it was built: wall time (ms) and live tick. */
+  wallMs: number;
+  tick: number;
+  /** When to poll again, s (13.1). */
+  pollAfterS: number;
+  entries: CensusEntry[];
+}
+
+/** The changes from the census at `baseSeq` to `seq`; a client without `baseSeq` fetches the snapshot. */
+export interface CensusDeltaDocument {
+  type: 'censusDelta';
+  soi: BodyId;
+  seq: number;
+  baseSeq: number;
+  wallMs: number;
+  tick: number;
+  pollAfterS: number;
+  changed: CensusEntry[];
+  removed: string[];
+}
+
+export type CensusDocument = CensusSnapshotDocument | CensusDeltaDocument;
+
+// ------------------------------------------------------------------------------------------- unions
+
+/** Everything a client sends on its socket. */
+export type ClientMessage =
+  | HelloMessage
+  | AuthMessage
+  | SpawnMessage
+  | AttachMessage
+  | DetachMessage
+  | SpawnCancelMessage
+  | InputMessage
+  | CommandMessage
+  | TimeMessage
+  | TargetMessage
+  | SubscribeMessage
+  | PlanMessage
+  | QuickMessage
+  | PingMessage
+  | PongMessage
+  | TimeSyncMessage
+  | ByeMessage;
+
+/** Everything a server sends on a client socket. */
+export type ServerMessage =
+  | ChallengeMessage
+  | WelcomeMessage
+  | RefusedMessage
+  | TakenOverMessage
+  | ByeMessage
+  | SeatResultMessage
+  | SpawnQueuedMessage
+  | HandlesMessage
+  | ClockMessage
+  | IslandEnterMessage
+  | IslandOpMessage
+  | IslandKeyMessage
+  | IslandDeltaMessage
+  | InputAckMessage
+  | IslandSlowMessage
+  | EventMessage
+  | CommandResultMessage
+  | NearOriginMessage
+  | NearMessage
+  | RelevantFullMessage
+  | RelevantDeltaMessage
+  | WorldlineMessage
+  | ConjunctionsMessage
+  | DurableMessage
+  | PadsMessage
+  | ShipsMessage
+  | AssemblyMessage
+  | RosterMessage
+  | PromptsMessage
+  | FeedMessage
+  | RulesMessage
+  | NoticeMessage
+  | PingMessage
+  | PongMessage
+  | TimeSyncReplyMessage;
+
+/** Every message of the wire: socket messages, role links and the census documents. */
+export type WireMessage = ClientMessage | ServerMessage | RouteMessage | CensusDocument;
+export type WireMessageType = WireMessage['type'];
