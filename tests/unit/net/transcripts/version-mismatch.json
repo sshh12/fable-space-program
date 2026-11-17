@@ -1,0 +1,144 @@
+{
+  "name": "version-mismatch",
+  "description": "A client of an older build connects: the gateway refuses it ('build', \"a new version is ready\") before any challenge; the refusal is final (no reconnect), and a spawn made meanwhile is answered as refused without being sent. A second client with the right build but another definition library is refused ('defsHash').",
+  "host": {
+    "build": "b-2026-11",
+    "defsHash": "defs-1",
+    "serverId": "gw-1",
+    "accounts": {
+      "acct-a": "ALPHA",
+      "acct-b": "BRAVO"
+    },
+    "authDelayMs": 40,
+    "seatDelayMs": 60,
+    "lateEvery": 0,
+    "queuePlaces": []
+  },
+  "clients": [
+    {
+      "id": "a",
+      "accountId": "acct-a",
+      "build": "b-2026-10",
+      "seed": 71
+    },
+    {
+      "id": "b",
+      "accountId": "acct-b",
+      "defsHash": "defs-0",
+      "seed": 72
+    }
+  ],
+  "steps": [
+    {
+      "atMs": 0,
+      "do": "connect",
+      "client": "a"
+    },
+    {
+      "atMs": 0,
+      "do": "connect",
+      "client": "b"
+    },
+    {
+      "atMs": 100,
+      "do": "spawn",
+      "client": "a",
+      "request": {
+        "vehicleId": "meridian-lunar",
+        "site": "ka-lae",
+        "pad": "lc-1",
+        "slot": {
+          "kind": "live"
+        },
+        "name": "ALPHA ONE"
+      }
+    }
+  ],
+  "endMs": 5000,
+  "expect": {
+    "clients": {
+      "a": {
+        "phase": "refused",
+        "accountId": null,
+        "vesselId": null,
+        "pendingRequests": [],
+        "unackedInputs": 0,
+        "subscriptions": {},
+        "refusal": "build",
+        "ownRefusal": null,
+        "answers": [
+          "1:refused"
+        ],
+        "queuePlaces": [],
+        "sentAfterTakenOver": 0
+      },
+      "b": {
+        "phase": "refused",
+        "accountId": null,
+        "vesselId": null,
+        "pendingRequests": [],
+        "unackedInputs": 0,
+        "subscriptions": {},
+        "refusal": "defsHash",
+        "ownRefusal": null,
+        "answers": [],
+        "queuePlaces": [],
+        "sentAfterTakenOver": 0
+      }
+    },
+    "host": {
+      "accounts": {
+        "acct-a": {
+          "appliedInputs": 0,
+          "duplicateInputs": 0,
+          "lastInputSeq": 0,
+          "subscriptions": {},
+          "handled": [],
+          "seat": null
+        },
+        "acct-b": {
+          "appliedInputs": 0,
+          "duplicateInputs": 0,
+          "lastInputSeq": 0,
+          "subscriptions": {},
+          "handled": [],
+          "seat": null
+        }
+      },
+      "refusals": [
+        "build",
+        "defsHash"
+      ]
+    }
+  },
+  "recorded": {
+    "a": [
+      {
+        "atMs": 0,
+        "dir": "c2s",
+        "conn": 0,
+        "hex": "0101140109622d323032362d313006646566732d310000"
+      },
+      {
+        "atMs": 0,
+        "dir": "s2c",
+        "conn": 0,
+        "hex": "01221b011741206e65772076657273696f6e2069732072656164792e0000"
+      }
+    ],
+    "b": [
+      {
+        "atMs": 0,
+        "dir": "c2s",
+        "conn": 0,
+        "hex": "0101140109622d323032362d313106646566732d300000"
+      },
+      {
+        "atMs": 0,
+        "dir": "s2c",
+        "conn": 0,
+        "hex": "01221b021741206e65772076657273696f6e2069732072656164792e0000"
+      }
+    ]
+  }
+}

@@ -16,8 +16,9 @@ import { TICKS_PER_SECOND, WIRE_CONSTANTS } from '@/core/contracts/net';
 import type { Vec3 } from '@/core/math/vec3';
 import { RateWindow } from './limits';
 
-/** The repeat window in ticks. */
+/** The repeat window and the gateway's buffer span in ticks. */
 const REPEAT_TICKS = Math.round((WIRE_CONSTANTS.inputRepeatMs * TICKS_PER_SECOND) / 1000);
+const BUFFER_TICKS = Math.round((WIRE_CONSTANTS.inputBufferMs * TICKS_PER_SECOND) / 1000);
 
 export class InputWindow {
   private nextSeq: number;
@@ -29,10 +30,15 @@ export class InputWindow {
     this.nextSeq = firstSeq;
   }
 
-  /** Record the controls set at `applyTick`; returns the sample. */
+  /**
+   * Record the controls set at `applyTick`; returns the sample. Samples more than the gateway's buffer span
+   * older than it are forgotten unacknowledged (dropped by a rate limit, or of a stall that outlasted the
+   * buffer: they can steer nothing any more).
+   */
   add(controls: WireControls, applyTick: number, sasHold: Vec3 | null): InputSample {
     const s: InputSample = { seq: this.nextSeq++, applyTick, ...pickControls(controls), sasHold: sasHold ? { ...sasHold } : null };
     this.unacked.push(s);
+    if (this.unacked[0]!.applyTick < applyTick - BUFFER_TICKS) this.unacked = this.unacked.filter((x) => x.applyTick >= applyTick - BUFFER_TICKS);
     return s;
   }
 
@@ -44,10 +50,11 @@ export class InputWindow {
     return { type: 'input', samples };
   }
 
-  /** Every unacknowledged sample (sent again after a resume, within the 64 a message holds). */
-  resendMessage(): InputMessage | null {
-    if (this.unacked.length === 0) return null;
-    return { type: 'input', samples: this.unacked.slice(-64) };
+  /** Every unacknowledged sample, in messages of at most 64 (sent again after a resume). */
+  resendMessages(): InputMessage[] {
+    const out: InputMessage[] = [];
+    for (let i = 0; i < this.unacked.length; i += 64) out.push({ type: 'input', samples: this.unacked.slice(i, i + 64) });
+    return out;
   }
 
   /** Apply an acknowledgement. */
@@ -59,6 +66,11 @@ export class InputWindow {
       this.lateApplied.set(l.seq, l.appliedTick);
     }
     if (done.size) this.unacked = this.unacked.filter((s) => !done.has(s.seq));
+  }
+
+  /** Retire every sample up to `seq` (a resumed session says the universe applied them). */
+  retireThrough(seq: number): void {
+    this.unacked = this.unacked.filter((s) => s.seq > seq);
   }
 
   get pending(): readonly InputSample[] {

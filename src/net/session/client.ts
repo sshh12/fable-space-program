@@ -74,6 +74,8 @@ export type ClientAction =
 interface PendingRequest {
   id: number;
   message: ClientMessage;
+  /** Sent on a session (false: made before the first welcome, sent after it). */
+  sent: boolean;
 }
 
 const SYNC_BURST = 3;
@@ -122,6 +124,7 @@ export class ClientSession {
   private nextCandidate = false;
   private everWelcomed = false;
   private lastReason: string | null = null;
+  private standbyStreak = 0;
 
   constructor(cfg: ClientConfig) {
     this.cfg = { protocol: cfg.protocol ?? WIRE_PROTOCOL_VERSION, build: cfg.build, defsHash: cfg.defsHash, cpuScore: cfg.cpuScore, accountId: cfg.accountId, random: cfg.random, rules: cfg.rules ?? DEFAULT_UNIVERSE_RULES };
@@ -156,12 +159,14 @@ export class ClientSession {
       return;
     }
     if (!this.transportUp()) return;
-    if (nowMs - this.lastFrameAt >= this.lossMs()) {
+    // Deadlines are compared as `now >= base + interval`, exactly as nextDeadline() computes them (a
+    // difference can round below the interval and leave a timer that fires at once for ever).
+    if (nowMs >= this.lastFrameAt + this.lossMs()) {
       // Declared loss (U16): nothing for lossTimeout.
       this.dropTransport(CLOSE.lost, 'no frame for the loss timeout');
       return;
     }
-    if (nowMs - this.lastSentAt >= this.pingMs()) {
+    if (nowMs >= this.lastSentAt + this.pingMs()) {
       if (this.phase === 'online' && ++this.pingsSinceSync >= SYNC_EVERY_PINGS) {
         this.pingsSinceSync = 0;
         this.sendTimeSync();
@@ -188,6 +193,7 @@ export class ClientSession {
     }
     this.phase = 'closed';
     this.wakeAt = null;
+    this.failPending(this.finalReason());
     this.status();
   }
 
@@ -315,8 +321,10 @@ export class ClientSession {
         return;
       case 'takenOver':
         this.phase = 'takenOver';
+        this.wakeAt = null;
         this.out({ kind: 'close', code: CLOSE.takenOver, reason: 'taken over' });
         this.out({ kind: 'deliver', message: m });
+        this.failPending(this.finalReason());
         this.status();
         return;
       case 'bye':
@@ -341,6 +349,7 @@ export class ClientSession {
 
   private onWelcome(m: Extract<ServerMessage, { type: 'welcome' }>): void {
     const resumed = m.resumed !== null && this.session !== null;
+    const hadSession = this.session !== null;
     this.phase = 'online';
     this.session = m.session;
     this.accountId = m.accountId;
@@ -350,17 +359,21 @@ export class ClientSession {
     this.queuePosition = null;
     this.refusal = null;
     this.nextCandidate = false;
+    this.standbyStreak = 0;
     this.everWelcomed = true;
     if (m.resumed) {
       this.vesselId = m.resumed.vesselId;
       this.clockId = m.resumed.clockId;
       this.relevantSeq = m.resumed.relevantSeq;
+      this.inputs.retireThrough(m.resumed.lastInputSeq);
     } else {
-      // A new session: what the old one waited for is gone with it.
+      // A new session: what an old session waited for is gone with it.
       this.vesselId = null;
       this.clockId = null;
       this.relevantSeq = null;
-      this.failPending('the session was not resumed');
+      this.failPending('the session was not resumed', true);
+      // Inputs of an ended session steer nothing in the new one.
+      if (hadSession) this.inputs.retireThrough(this.inputs.next - 1);
     }
     this.samples = addSample(this.samples, { clientSendMs: this.now, serverRecvMs: m.serverMs, serverSendMs: m.serverMs, clientRecvMs: this.now, upMs: m.upMs });
     this.clock = estimateClock(this.samples);
@@ -368,9 +381,15 @@ export class ClientSession {
     for (let i = 0; i < SYNC_BURST; i++) this.sendTimeSync();
     if (Object.keys(this.subscriptions).length) this.subscriptionsDirty = true;
     this.flushSubscriptions();
-    if (resumed) {
-      for (const p of [...this.pending.values()].sort((a, b) => a.id - b.id)) this.send(p.message);
-      const im = this.inputs.resendMessage();
+    // Requests made before this welcome, and on a resume every request still waiting, go now.
+    for (const p of [...this.pending.values()].sort((a, b) => a.id - b.id)) {
+      if (p.sent && !resumed) continue;
+      p.sent = true;
+      this.send(p.message);
+    }
+    if (resumed) for (const im of this.inputs.resendMessages()) this.send(im);
+    else {
+      const im = this.inputs.message();
       if (im) this.send(im);
     }
     this.status();
@@ -430,19 +449,23 @@ export class ClientSession {
       case 'build':
       case 'defsHash':
       case 'auth':
-        // Final: a new version is ready, or the account cannot sign in. The app may connect again.
+        // Final: a new version is ready, or the account cannot sign in (the app may connect again later).
         this.phase = 'refused';
         this.wakeAt = null;
+        this.failPending(text);
         break;
       case 'resume':
         // The session is gone: start a new one at once.
         this.session = null;
-        this.failPending('the session ended');
+        this.failPending('the session ended', true);
+        this.inputs.retireThrough(this.inputs.next - 1);
         this.beginBackoff(0);
         break;
       case 'standby':
+        // The next candidate at once (a stage move, ARCHITECTURE 13.1); when that one is in standby too,
+        // the ordinary backoff, so a list of candidates all in standby is not hammered.
         this.nextCandidate = true;
-        this.beginBackoff(0);
+        this.beginBackoff(this.standbyStreak++ === 0 ? 0 : backoffMs(this.attempt++, this.cfg.random));
         break;
       default:
         this.beginBackoff(retryAfterMs ?? backoffMs(this.attempt++, this.cfg.random));
@@ -483,19 +506,32 @@ export class ClientSession {
   private request(build: (id: number) => ClientMessage): number {
     const id = this.nextId++;
     const message = build(id);
-    this.pending.set(id, { id, message });
-    if (this.phase === 'online') this.send(message);
+    const online = this.phase === 'online';
+    this.pending.set(id, { id, message, sent: online });
+    if (online) this.send(message);
+    // A session that cannot go on answers at once (taken over, left, refused for good).
+    else if (this.phase === 'takenOver' || this.phase === 'closed' || this.phase === 'refused') this.failPending(this.finalReason());
     return id;
   }
 
-  /** Requests that cannot be answered any more (a new session) are answered here, as refused. */
-  private failPending(reason: string): void {
-    for (const p of this.pending.values()) {
+  private finalReason(): string {
+    if (this.phase === 'takenOver') return 'the flight was taken over by another session';
+    if (this.phase === 'closed') return 'the session was left';
+    return this.refusal?.text ?? 'the session was refused';
+  }
+
+  /**
+   * Requests that cannot be answered any more (their session ended) are answered here, as refused; with
+   * `sentOnly`, only those that were sent (a request made while connecting waits for the new session).
+   */
+  private failPending(reason: string, sentOnly = false): void {
+    for (const p of [...this.pending.values()]) {
+      if (sentOnly && !p.sent) continue;
       const m = p.message;
       if (m.type === 'spawn' || m.type === 'attach') this.out({ kind: 'deliver', message: { type: 'seatResult', reqId: p.id, result: { ok: false, reason, alternative: null } } });
       else this.out({ kind: 'deliver', message: { type: 'commandResult', cmdId: p.id, ok: false, appliedTick: null, reason, alternative: null } });
+      this.pending.delete(p.id);
     }
-    this.pending.clear();
   }
 
   private flushSubscriptions(): void {

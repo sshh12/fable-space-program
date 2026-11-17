@@ -56,13 +56,32 @@ export class ClientDriver {
     this.enter(() => this.session.connect());
   }
 
-  /** Run any session entry point with the clock set and the actions carried out. */
+  /**
+   * Run any session entry point with the clock set and the actions carried out. A call made while the driver
+   * is carrying out actions (an app that reacts inside `onMessage`) runs right after.
+   */
   enter(fn: (s: ClientSession) => void): void {
     if (this.stopped) return;
-    this.session.tick(this.opts.scheduler.now());
-    fn(this.session);
-    this.run();
+    if (this.running) {
+      this.deferred.push(fn);
+      return;
+    }
+    this.running = true;
+    try {
+      let next: ((s: ClientSession) => void) | undefined = fn;
+      while (next) {
+        this.session.tick(this.opts.scheduler.now());
+        next(this.session);
+        this.run();
+        next = this.deferred.shift();
+      }
+    } finally {
+      this.running = false;
+    }
   }
+
+  private running = false;
+  private readonly deferred: ((s: ClientSession) => void)[] = [];
 
   /** Stop the driver: close the transport, cancel the timer. */
   stop(): void {
@@ -160,10 +179,14 @@ export class ClientDriver {
   }
 }
 
-/** What a gateway's driver asks of its host (the directory, the shard, the account store). */
+/**
+ * What a gateway's driver asks of its host (the directory, the shard, the account store). The two checks are
+ * answered by calling `driver.authResult` / `driver.resumeResult` when the answer is known (at once, after a
+ * database round trip, or never for a socket that closes first).
+ */
 export interface ServerHost {
-  verifyAuth(req: { accountId: string; signature: Uint8Array; nonce: Uint8Array; serverId: string; build: string }, driver: ServerDriver): AuthResult | Promise<AuthResult>;
-  resume(req: { session: string; relevantSeq: number | null }, driver: ServerDriver): ResumeResult | Promise<ResumeResult>;
+  verifyAuth(req: { accountId: string; signature: Uint8Array; nonce: Uint8Array; serverId: string; build: string }, driver: ServerDriver): void;
+  resume(req: { session: string; relevantSeq: number | null }, driver: ServerDriver): void;
   /** A client message for the universe (inputs: the accepted samples). */
   forward(message: ClientMessage, driver: ServerDriver): void;
   /** The socket was lost (declared loss or closed): U16 applies to the pilot. */
@@ -206,16 +229,45 @@ export class ServerDriver {
     return this.opts.transport;
   }
 
-  /** Run any session entry point (host answers, pushes) with the clock set and the actions carried out. */
+  /**
+   * Run any session entry point (host answers, pushes) with the clock set and the actions carried out. A call
+   * made while the driver is carrying out actions (a host that answers inside `forward`) runs right after.
+   */
   enter(fn: (s: ServerSession) => void): void {
-    this.session.tick(this.opts.scheduler.now(), this.opts.upMs());
-    fn(this.session);
-    this.run();
+    if (this.running) {
+      this.deferred.push(fn);
+      return;
+    }
+    this.running = true;
+    try {
+      let next: ((s: ServerSession) => void) | undefined = fn;
+      while (next) {
+        this.session.tick(this.opts.scheduler.now(), this.opts.upMs());
+        next(this.session);
+        this.run();
+        next = this.deferred.shift();
+      }
+    } finally {
+      this.running = false;
+    }
   }
+
+  private running = false;
+  private readonly deferred: ((s: ServerSession) => void)[] = [];
 
   /** Send a message downstream. */
   push(m: ServerMessage): void {
     this.enter((s) => s.push(m));
+  }
+
+  /** The host's answer to `verifyAuth`. */
+  authResult(r: AuthResult): void {
+    this.enter((s) => s.authResult(r));
+  }
+
+  /** The host's answer to `resume`. */
+  resumeResult(r: ResumeResult): void {
+    this.enter((s) => s.resumeResult(r));
   }
 
   private run(): void {
@@ -229,10 +281,10 @@ export class ServerDriver {
           this.opts.transport.close(a.code, a.reason);
           break;
         case 'verifyAuth':
-          later(this.opts.scheduler, this.opts.host.verifyAuth(a, this), (res) => this.enter((s) => s.authResult(res)));
+          this.opts.host.verifyAuth(a, this);
           break;
         case 'resume':
-          later(this.opts.scheduler, this.opts.host.resume(a, this), (res) => this.enter((s) => s.resumeResult(res)));
+          this.opts.host.resume(a, this);
           break;
         case 'forward':
           this.opts.host.forward(a.message, this);

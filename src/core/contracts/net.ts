@@ -1095,6 +1095,8 @@ export interface ResumedSeat {
   clockId: string | null;
   /** The relevant-set sequence number the server continues from (the client's, when it still had it; null = a full set follows). */
   relevantSeq: number | null;
+  /** The last input the universe applied for this pilot: the client retires every input up to it and sends the rest again. */
+  lastInputSeq: number;
 }
 
 /** Server -> client: the session is open. */

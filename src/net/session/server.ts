@@ -31,7 +31,8 @@ import type {
   SpawnQueuedMessage,
   UniverseRules,
 } from '@/core/contracts/net';
-import { WIRE_CONSTANTS, WIRE_PROTOCOL_VERSION } from '@/core/contracts/net';
+import { TICKS_PER_SECOND, WIRE_CONSTANTS, WIRE_PROTOCOL_VERSION } from '@/core/contracts/net';
+import { CONTROL_TICK_STEPS } from '@/core/contracts/sim';
 import type { SeatResult, Subscriptions } from '@/core/contracts/session';
 import type { DecodeError } from '../codec/bytes';
 import { HandleTableOut } from '../codec/handles';
@@ -45,6 +46,9 @@ import { InputBuffer } from './inputs';
 import { RateWindow } from './limits';
 
 export type ServerPhase = 'awaitHello' | 'challenged' | 'verifying' | 'resuming' | 'online' | 'closed';
+
+/** Longest an input acknowledgement waits for a key or a delta to ride with: one control tick, ms. */
+const ACK_MAX_DELAY_MS = (CONTROL_TICK_STEPS * 1000) / TICKS_PER_SECOND;
 
 export interface ServerConfig {
   protocol?: number;
@@ -68,7 +72,7 @@ export type AuthResult =
 
 /** The host's answer to `resume`. */
 export type ResumeResult =
-  | { ok: true; accountId: string; callsign: string; session: string; liveClock: ClockState; serverMs: number; upMs: number; seat: ResumedSeat; lastInputSeq: number }
+  | { ok: true; accountId: string; callsign: string; session: string; liveClock: ClockState; serverMs: number; upMs: number; seat: ResumedSeat }
   | { ok: false; text: string };
 
 export type ServerAction =
@@ -103,6 +107,7 @@ export class ServerSession {
   /** Inputs up to this seq were applied by the session this one resumes (the host says so). */
   private resumeAfterSeq = 0;
   private openedAt = 0;
+  private lastAckAt = 0;
   private lastFrameAt = 0;
   private lastSentAt = 0;
   private pingSeq = 0;
@@ -145,7 +150,8 @@ export class ServerSession {
     if (this.phase === 'closed') return null;
     const d = [this.lastFrameAt + this.cfg.rules.disconnect.lossTimeout * 1000, this.lastSentAt + this.cfg.rules.disconnect.pingInterval * 1000];
     if (this.phase !== 'online') d.push(this.openedAt + WIRE_CONSTANTS.handshakeTimeoutMs);
-    if (this.budget.waitingCount > 0) d.push(this.now + 1000 / 30);
+    if (this.budget.waitingCount > 0) d.push(this.now + ACK_MAX_DELAY_MS);
+    if (this.phase === 'online' && this.inputs.hasAck()) d.push(Math.max(this.now, this.lastAckAt + ACK_MAX_DELAY_MS));
     return Math.min(...d);
   }
 
@@ -154,18 +160,27 @@ export class ServerSession {
     this.now = nowMs;
     this.up = upMs;
     if (this.phase === 'closed') return;
-    if (this.phase !== 'online' && nowMs - this.openedAt >= WIRE_CONSTANTS.handshakeTimeoutMs) {
+    // Deadlines are compared as `now >= base + interval`, exactly as nextDeadline() computes them.
+    if (this.phase !== 'online' && nowMs >= this.openedAt + WIRE_CONSTANTS.handshakeTimeoutMs) {
       this.refuse('timeout', 'the handshake did not finish in time');
       return;
     }
-    if (nowMs - this.lastFrameAt >= this.cfg.rules.disconnect.lossTimeout * 1000) {
-      this.close(CLOSE.lost, 'no frame for the loss timeout');
-      this.out({ kind: 'lost', info: { code: CLOSE.lost, reason: 'declared loss', clean: false } });
+    if (nowMs >= this.lastFrameAt + this.cfg.rules.disconnect.lossTimeout * 1000) {
+      this.close(CLOSE.lost, 'declared loss: no frame for the loss timeout');
       return;
     }
-    if (nowMs - this.lastSentAt >= this.cfg.rules.disconnect.pingInterval * 1000) this.queue({ type: 'ping', seq: ++this.pingSeq });
+    if (nowMs >= this.lastSentAt + this.cfg.rules.disconnect.pingInterval * 1000) this.queue({ type: 'ping', seq: ++this.pingSeq });
+    // Acknowledgements ride with the next key or delta; with none within a control tick they go alone.
+    if (this.phase === 'online' && this.inputs.hasAck() && nowMs >= this.lastAckAt + ACK_MAX_DELAY_MS) this.queueAck();
     this.inputs.prune(nowMs);
     this.flush();
+  }
+
+  private queueAck(): void {
+    const ack = this.inputs.takeAck(this.now);
+    if (!ack) return;
+    this.lastAckAt = this.now;
+    this.queue(ack);
   }
 
   // ------------------------------------------------------------------------------------- client side
@@ -207,7 +222,7 @@ export class ServerSession {
       this.refuse('resume', r.text);
       return;
     }
-    this.resumeAfterSeq = r.lastInputSeq;
+    this.resumeAfterSeq = r.seat.lastInputSeq;
     this.welcome(r.accountId, r.callsign, r.session, r.liveClock, r.serverMs, r.upMs, r.seat);
   }
 
@@ -239,10 +254,7 @@ export class ServerSession {
   /** Send a message downstream (through the budget; keys and deltas take the input acknowledgement first). */
   push(m: ServerMessage): void {
     if (this.phase !== 'online') return;
-    if (m.type === 'islandKey' || m.type === 'islandDelta') {
-      const ack = this.inputs.takeAck(this.now);
-      if (ack) this.queue(ack);
-    }
+    if (m.type === 'islandKey' || m.type === 'islandDelta') this.queueAck();
     this.queue(m);
     this.flush();
   }
@@ -407,10 +419,13 @@ export class ServerSession {
     this.close(CLOSE.refused, reason);
   }
 
+  /** Close the socket; a pilot who was online has lost it (U16), unless the account moved to another session. */
   private close(code: number, reason: string): void {
     if (this.phase === 'closed') return;
+    const wasOnline = this.phase === 'online';
     this.setPhase('closed');
     this.out({ kind: 'close', code, reason });
+    if (wasOnline && code !== CLOSE.takenOver) this.out({ kind: 'lost', info: { code, reason, clean: code === CLOSE.normal } });
   }
 
   private setPhase(p: ServerPhase): void {

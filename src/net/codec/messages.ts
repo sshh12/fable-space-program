@@ -358,7 +358,7 @@ add(
     liveClock: clockState,
     serverMs: f64,
     upMs: f64,
-    resumed: nullable(struct<import('@/core/contracts/net').ResumedSeat>({ vesselId: id, clockId: nullable(id), relevantSeq: nullable(uint) })),
+    resumed: nullable(struct<import('@/core/contracts/net').ResumedSeat>({ vesselId: id, clockId: nullable(id), relevantSeq: nullable(uint), lastInputSeq: uint })),
   }),
 );
 add(

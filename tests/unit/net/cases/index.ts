@@ -4,5 +4,6 @@
  */
 import type { NetCase } from './assert';
 import { codecCases } from './codecCases';
+import { sessionCases } from './sessionCases';
 
-export const ALL_CASES: NetCase[] = [...codecCases];
+export const ALL_CASES: NetCase[] = [...codecCases, ...sessionCases];

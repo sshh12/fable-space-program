@@ -67,13 +67,25 @@ export class ManualScheduler implements Scheduler {
     return this.queue.length ? this.queue[0]!.at : null;
   }
 
-  /** Run every timer due at or before `t` (including timers they create inside the window), then set the clock to `t`. */
-  advanceTo(t: number): void {
+  /**
+   * Run every timer due at or before `t` (including timers they create inside the window), then set the clock
+   * to `t`. A livelock (more than `maxSameInstant` timers at one instant, each scheduling the next) throws
+   * instead of hanging the test.
+   */
+  advanceTo(t: number, maxSameInstant = 100_000): void {
+    let instant = -Infinity;
+    let runs = 0;
     for (;;) {
       const p = this.queue[0];
       if (!p || p.at > t) break;
       this.queue.shift();
       this.t = Math.max(this.t, p.at);
+      if (this.t === instant) {
+        if (++runs > maxSameInstant) throw new Error(`ManualScheduler: more than ${maxSameInstant} timers at t = ${this.t} ms (a livelock)`);
+      } else {
+        instant = this.t;
+        runs = 0;
+      }
       p.fn();
     }
     this.t = Math.max(this.t, t);
