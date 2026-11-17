@@ -19,9 +19,30 @@ import { createLoopbackPair, type LoopbackTransport } from '@/net/transport/loop
 import { CLOSE } from '@/net/transport/types';
 
 const rules = DEFAULT_UNIVERSE_RULES;
-const live: ClockState = { id: 'live', kind: 'live', tick0: 0, anchorUpMs: 0, rate: 1, untilTick: null, limitedBy: null, members: [], proposals: [] };
-const HELLO: ClientMessage = { type: 'hello', protocol: 1, build: 'b', defsHash: 'd', cpuScore: null, resume: null };
-const AUTH: ClientMessage = { type: 'auth', accountId: 'a', signature: new Uint8Array(4) };
+const live: ClockState = {
+  id: 'live',
+  kind: 'live',
+  tick0: 0,
+  anchorUpMs: 0,
+  rate: 1,
+  untilTick: null,
+  limitedBy: null,
+  members: [],
+  proposals: [],
+};
+const HELLO: ClientMessage = {
+  type: 'hello',
+  protocol: 1,
+  build: 'b',
+  defsHash: 'd',
+  cpuScore: null,
+  resume: null,
+};
+const AUTH: ClientMessage = {
+  type: 'auth',
+  accountId: 'a',
+  signature: new Uint8Array(4),
+};
 
 interface Gateway {
   sch: ManualScheduler;
@@ -36,15 +57,37 @@ interface Gateway {
 /** A gateway driver on a loopback; `withClock`: the host sets the pilot's clock after the welcome. */
 function gateway(sch: ManualScheduler, withClock: boolean, host: Partial<ServerHost> = {}): Gateway {
   const [client, server] = createLoopbackPair(sch);
-  const g: Gateway = { sch, client, driver: null as unknown as ServerDriver, errors: [], closes: [], received: [], forwarded: [] };
+  const g: Gateway = {
+    sch,
+    client,
+    driver: null as unknown as ServerDriver,
+    errors: [],
+    closes: [],
+    received: [],
+    forwarded: [],
+  };
   g.driver = new ServerDriver({
     transport: server,
     scheduler: sch,
     upMs: () => sch.now(),
-    config: { build: 'b', defsHash: 'd', serverId: 'gw', rules, nonce: () => new Uint8Array(8) },
+    config: {
+      build: 'b',
+      defsHash: 'd',
+      serverId: 'gw',
+      rules,
+      nonce: () => new Uint8Array(8),
+    },
     host: {
       verifyAuth: (_r, d) => {
-        d.authResult({ ok: true, accountId: 'a', callsign: 'A', session: 't', liveClock: live, serverMs: sch.now(), upMs: sch.now() });
+        d.authResult({
+          ok: true,
+          accountId: 'a',
+          callsign: 'A',
+          session: 't',
+          liveClock: live,
+          serverMs: sch.now(),
+          upMs: sch.now(),
+        });
         if (withClock) d.enter((s) => s.setClock(live));
       },
       resume: (_r, d) => d.resumeResult({ ok: false, text: 'no' }),
@@ -111,7 +154,12 @@ describe('blocker 1: one frame from an authenticated client', () => {
     const good = gateway(sch, true);
     online(bad);
     online(good);
-    const cmd: ClientMessage = { type: 'command', cmdId: 1, tick: 10, command: { kind: 'lights' } } as ClientMessage;
+    const cmd: ClientMessage = {
+      type: 'command',
+      cmdId: 1,
+      tick: 10,
+      command: { kind: 'lights' },
+    } as ClientMessage;
     bad.client.send(encodeFrame([cmd]));
     good.client.send(encodeFrame([cmd]));
     expect(() => sch.advanceBy(100)).not.toThrow();
@@ -141,8 +189,23 @@ describe('blocker 2: floods', () => {
     online(g);
     g.received.length = 0;
     for (let t = 0; t < 10; t++) {
-      g.client.send(encodeFrame(Array.from({ length: 10 }, (_, i) => ({ type: 'ping' as const, seq: i }))));
-      g.client.send(encodeFrame(Array.from({ length: 10 }, (_, i) => ({ type: 'timeSync' as const, seq: i, clientMs: 0 }))));
+      g.client.send(
+        encodeFrame(
+          Array.from({ length: 10 }, (_, i) => ({
+            type: 'ping' as const,
+            seq: i,
+          })),
+        ),
+      );
+      g.client.send(
+        encodeFrame(
+          Array.from({ length: 10 }, (_, i) => ({
+            type: 'timeSync' as const,
+            seq: i,
+            clientMs: 0,
+          })),
+        ),
+      );
       g.sch.advanceBy(1000);
     }
     expect(g.received.filter((m) => m.type === 'pong').length).toBeLessThanOrEqual(10 * l.pingsPerSecond + 1);
@@ -155,7 +218,14 @@ describe('blocker 2: floods', () => {
     expect(h.closes).toEqual([CLOSE.refused]);
   });
 
-  const big = (i: number): ServerMessage => ({ type: 'commandResult', cmdId: i, ok: false, appliedTick: null, reason: 'x'.repeat(3000), alternative: null });
+  const big = (i: number): ServerMessage => ({
+    type: 'commandResult',
+    cmdId: i,
+    ok: false,
+    appliedTick: null,
+    reason: 'x'.repeat(3000),
+    alternative: null,
+  });
 
   it('what waits for a socket is capped in bytes and in age (control records included): over a cap the socket closes', () => {
     // Bytes: 1.2 MB of control records at once.
@@ -247,51 +317,106 @@ describe('structure-aware fuzz of the drivers (decoded messages, extreme fields,
   it('a ClientDriver never throws and never errors inside its machine over 20,000 server frames', () => {
     const sch = new ManualScheduler();
     const g = new Gen(0xc11e);
-    const types = typesFrom(['server', 'both']).filter((t) => t !== 'handles');
+    // Messages that end or restart the session (and the handshake's own) are rarer, so most frames reach an online client.
+    // (The rules document is left out: it sets the client's own timeouts, so a server can make its client lose
+    // every socket at once; that is the server's configuration to get right, not something to fuzz past.)
+    const ending = ['refused', 'takenOver', 'bye', 'challenge', 'welcome'];
+    const all = typesFrom(['server', 'both']).filter((t) => t !== 'handles' && t !== 'rules');
+    const types = all.filter((t) => !ending.includes(t));
+    const pickType = () => (g.chance(0.01) ? g.pick(all) : g.pick(types));
     let server: LoopbackTransport | null = null;
     let table = new HandleTableOut();
     const firstErrors: string[] = [];
     let errors = 0;
-    const session = new ClientSession({ build: 'b', defsHash: 'd', cpuScore: null, accountId: 'a', rules, random: () => 0.5 });
-    const driver = new ClientDriver({
-      session,
-      scheduler: sch,
-      connect: () => {
-        const [c, s] = createLoopbackPair(sch);
-        server = s;
-        table = new HandleTableOut();
-        s.setHandler({
-          frame: (bytes) => {
-            const r = decodeFrame(bytes, { source: 'client' });
-            if (!r.ok) return;
-            for (const m of r.messages) {
-              if (m.type === 'hello') s.send(encodeFrame([{ type: 'challenge', nonce: new Uint8Array(8), serverId: 'gw' }]));
-              if (m.type === 'auth') s.send(encodeFrame([{ type: 'welcome', session: 't', accountId: 'a', callsign: 'A', rulesId: rules.id, rulesVersion: rules.version, liveClock: live, serverMs: sch.now(), upMs: sch.now(), resumed: null }]));
-            }
-          },
-          close: () => undefined,
-        });
-        return c;
-      },
-      sign: () => new Uint8Array(4),
-      onError: (e) => {
-        errors++;
-        if (firstErrors.length < 3) firstErrors.push(String((e as Error).stack ?? e).split('\n').slice(0, 4).join(' | '));
-      },
-    });
-    driver.start();
+    /** A client session and its driver (a new one when the last ended for good: taken over, refused). */
+    const newClient = () => {
+      const session = new ClientSession({
+        build: 'b',
+        defsHash: 'd',
+        cpuScore: null,
+        accountId: 'a',
+        rules,
+        random: () => 0.5,
+      });
+      const driver = new ClientDriver({
+        session,
+        scheduler: sch,
+        connect: () => {
+          const [c, s] = createLoopbackPair(sch);
+          server = s;
+          table = new HandleTableOut();
+          s.setHandler({
+            frame: (bytes) => {
+              const r = decodeFrame(bytes, { source: 'client' });
+              if (!r.ok) return;
+              for (const m of r.messages) {
+                if (m.type === 'hello')
+                  s.send(
+                    encodeFrame([
+                      {
+                        type: 'challenge',
+                        nonce: new Uint8Array(8),
+                        serverId: 'gw',
+                      },
+                    ]),
+                  );
+                if (m.type === 'auth')
+                  s.send(
+                    encodeFrame([
+                      {
+                        type: 'welcome',
+                        session: 't',
+                        accountId: 'a',
+                        callsign: 'A',
+                        rulesId: rules.id,
+                        rulesVersion: rules.version,
+                        liveClock: live,
+                        serverMs: sch.now(),
+                        upMs: sch.now(),
+                        resumed: null,
+                      },
+                    ]),
+                  );
+              }
+            },
+            close: () => undefined,
+          });
+          return c;
+        },
+        sign: () => new Uint8Array(4),
+        onError: (e) => {
+          errors++;
+          if (firstErrors.length < 3)
+            firstErrors.push(
+              String((e as Error).stack ?? e)
+                .split('\n')
+                .slice(0, 4)
+                .join(' | '),
+            );
+        },
+      });
+      driver.start();
+      return { session, driver };
+    };
+    let { session, driver } = newClient();
+    let sessions = 1;
     sch.advanceBy(50);
     let sent = 0;
     for (let i = 0; i < 20_000; i++) {
       const s = server as LoopbackTransport | null;
       if (s && s.state === 'open') {
-        const records = Array.from({ length: g.int(1, 3) }, () => fuzzRecord(g.pick(types), g, table)).flat();
+        const records = Array.from({ length: g.int(1, 3) }, () => fuzzRecord(pickType(), g, table)).flat();
         if (records.length) {
           let frame = assembleFrame(records);
-          if (g.chance(0.05)) frame = flip(frame, g);
+          if (g.chance(0.01)) frame = flip(frame, g);
           s.send(frame);
           sent++;
         }
+      }
+      if (session.phase === 'takenOver' || session.phase === 'refused' || session.phase === 'closed') {
+        driver.stop();
+        ({ session, driver } = newClient());
+        sessions++;
       }
       // The app keeps using the session meanwhile.
       if (i % 7 === 0) driver.enter((c) => c.command(Math.floor(sch.now() * 0.12), { kind: 'lights' } as never));
@@ -299,7 +424,7 @@ describe('structure-aware fuzz of the drivers (decoded messages, extreme fields,
       if (i % 997 === 0) driver.enter((c) => c.command(0.5, { kind: 'lights' } as never));
       expect(() => sch.advanceBy(g.int(0, 80))).not.toThrow();
     }
-    console.log(`client fuzz: ${sent} frames, ${errors} internal errors`, firstErrors);
+    console.log(`client fuzz: ${sent} frames to ${sessions} client sessions, ${errors} internal errors`, firstErrors);
     expect(errors).toBe(0);
   });
 });

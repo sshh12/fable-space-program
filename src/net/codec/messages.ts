@@ -329,6 +329,9 @@ function add<K extends WireMessageType>(type: K, code: number, sender: Sender, d
 
 
 // Client -> server.
+// FROZEN (version skew, review finding 15): the Hello (code 1) and `refused` (code 34) layouts and the order of
+// `refused.reason` never change, so a peer of any version can say and read why it was refused. A new reason is
+// appended at the end; tests/unit/net/review.test.ts holds their bytes.
 add('hello', 1, 'client', 'reliable', fieldsOf('hello', { protocol: uint, build: id, defsHash: id, cpuScore: nullable(f64), resume: resumeCodec }));
 add('auth', 2, 'client', 'reliable', fieldsOf('auth', { accountId: id, signature: blob(MAX_SIGNATURE_BYTES) }));
 add('spawn', 3, 'client', 'reliable', fieldsOf('spawn', { reqId: uint, request: spawnRequest }));

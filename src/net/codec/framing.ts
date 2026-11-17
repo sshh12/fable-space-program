@@ -166,6 +166,7 @@ export function decodeFrame(bytes: Uint8Array, opts: DecodeOptions): FrameResult
   for (let i = 0; i < n; i++) {
     const m = readOne(r, opts.source, opts.handles ?? null);
     if (m === null) return { ok: false, error: { ...(r.takeError() ?? { code: 'truncated', offset: r.pos, where: 'frame' }), index: i }, messages };
+    if (m === SKIPPED) continue;
     if (m.type === 'input' && (samples += m.samples.length) > maxSamples) return { ok: false, error: { code: 'badCount', offset: r.pos, where: 'input', index: i }, messages };
     messages.push(m);
   }
@@ -177,12 +178,35 @@ export function decodeFrame(bytes: Uint8Array, opts: DecodeOptions): FrameResult
   return { ok: true, messages };
 }
 
+/** What `readOne` returns for a record of a type this build does not know, skipped by its length. */
+const SKIPPED = { type: 'skipped' } as unknown as WireMessage;
+
+/**
+ * Version skew: a client may meet a NEWER server during a rollout. A record of a type this build does not
+ * know is skipped by its length when it comes from a server (every record is length-prefixed, and nothing
+ * the client needs depends on a type it cannot know); a server refuses one from a client ('badType'), whose
+ * build it checked at the Hello.
+ */
+function skippable(source: FrameSource): boolean {
+  return source === 'server';
+}
+
 function readOne(r: ByteReader, source: FrameSource, handles: HandleTableIn | null, into?: (spec: MessageSpec, sub: ByteReader) => WireMessage | null): WireMessage | null {
   const at = r.pos;
   const code = r.u8();
   if (r.failed) return null;
   const spec = specByCode(code);
   if (!spec) {
+    if (skippable(source)) {
+      const len = r.varUint();
+      if (r.failed) return null;
+      if (len > r.remaining()) {
+        r.fail('badLength');
+        return null;
+      }
+      r.pos += len;
+      return SKIPPED;
+    }
     r.pos = at;
     r.fail('badType');
     return null;
@@ -266,7 +290,7 @@ export class FrameReader {
     for (let i = 0; i < n; i++) {
       const m = readOne(r, this.source, this.handles, into);
       if (m === null) return r.takeError();
-      visit(m);
+      if (m !== SKIPPED) visit(m);
     }
     if (r.failed) return r.takeError();
     if (r.pos !== r.end) return { code: 'trailing', offset: r.pos, where: 'frame' };

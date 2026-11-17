@@ -9,6 +9,7 @@
  * Text frames are a protocol error (code 1003): the protocol is binary. Frames are copied on send, so a
  * caller may reuse its frame buffer at once.
  */
+import { WIRE_CONSTANTS } from '@/core/contracts/net';
 import type { CloseInfo, Transport, TransportHandler, TransportState } from './types';
 import { CLOSE } from './types';
 
@@ -96,6 +97,14 @@ export function connectWebSocket(url: string): Transport {
   return webSocketTransport(new Ctor(url));
 }
 
+/**
+ * The options a gateway gives the `ws` server (`new WebSocketServer({ ...WS_SERVER_OPTIONS, server })`): a
+ * client frame larger than `maxClientFrameBytes` is refused by `ws` itself before it is buffered (close 1009),
+ * and no per-message compression (a compression bomb costs nothing to send and the frames are small and
+ * dense; the CPU is better spent elsewhere).
+ */
+export const WS_SERVER_OPTIONS = { maxPayload: WIRE_CONSTANTS.maxClientFrameBytes, perMessageDeflate: false } as const;
+
 /** A socket of the `ws` package as far as the transport uses it. */
 export interface WsSocketLike {
   readonly readyState: number;
@@ -151,7 +160,9 @@ class WsTransport implements Transport {
 
   close(code: number = CLOSE.normal, reason = ''): void {
     if (this.closed) return;
-    this.ws.close(code, reason);
+    // A peer declared lost, or one that does not read, will not finish a close handshake: drop the socket.
+    if (code === CLOSE.lost || code === CLOSE.slowConsumer) this.ws.terminate();
+    else this.ws.close(code, reason);
   }
 
   private finish(info: CloseInfo): void {

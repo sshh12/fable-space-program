@@ -35,7 +35,7 @@ export { Gen } from './codec/schema';
 // Transports.
 export { CLOSE, type CloseInfo, type Transport, type TransportHandler, type TransportState } from './transport/types';
 export { createLoopbackPair, type LoopbackTransport } from './transport/loopback';
-export { connectWebSocket, nodeWsTransport, webSocketTransport, type WebSocketLike, type WsSocketLike } from './transport/websocket';
+export { connectWebSocket, nodeWsTransport, webSocketTransport, WS_SERVER_OPTIONS, type WebSocketLike, type WsSocketLike } from './transport/websocket';
 export { FrameAssembler, lengthPrefixed, streamTransport, type ByteStreamLike } from './transport/stream';
 export { recordsOf, Sender, type SenderOptions, type SenderStats } from './transport/sender';
 

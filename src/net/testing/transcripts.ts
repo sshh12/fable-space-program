@@ -80,6 +80,8 @@ export interface TranscriptClientConfig {
   accountId: string;
   build?: string;
   defsHash?: string;
+  /** The wire protocol version the client speaks (default: this build's). */
+  protocol?: number;
   seed: number;
 }
 
@@ -237,7 +239,7 @@ class DefaultClientHalf implements TranscriptClientHalf {
 
   constructor(cfg: TranscriptClientConfig, host: TranscriptHostConfig, ctx: ClientContext) {
     const prng = new Prng(cfg.seed);
-    this.session = new ClientSession({ build: cfg.build ?? host.build, defsHash: cfg.defsHash ?? host.defsHash, cpuScore: null, accountId: cfg.accountId, rules: ctx.rules, random: () => prng.next() });
+    this.session = new ClientSession({ protocol: cfg.protocol, build: cfg.build ?? host.build, defsHash: cfg.defsHash ?? host.defsHash, cpuScore: null, accountId: cfg.accountId, rules: ctx.rules, random: () => prng.next() });
     this.driver = new ClientDriver({
       session: this.session,
       scheduler: ctx.scheduler,

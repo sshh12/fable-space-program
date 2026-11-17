@@ -79,18 +79,24 @@ export interface LeadParams {
   maxPredictionMs: number;
   /** Fraction of the margin error corrected per report (0 < gain <= 1). */
   gain: number;
+  /**
+   * Most the lead shrinks per report, ms: half an input interval. A shrinking lead moves the stamps back, so it
+   * goes slower than the inputs (the stamps never reorder, and one early report cannot make the next inputs late).
+   */
+  maxDecreaseMs: number;
 }
 
 const CONTROL_TICK_MS = (CONTROL_TICK_STEPS * 1000) / TICKS_PER_SECOND;
 
 /** The loop's parameters from the rules in force. */
-export function leadParams(rules: Pick<UniverseRules, 'time'>, gain = 0.25): LeadParams {
+export function leadParams(rules: Pick<UniverseRules, 'time' | 'limits'>, gain = 0.25): LeadParams {
   return {
     jitterBufferMs: 2 * CONTROL_TICK_MS,
     targetMarginMs: CONTROL_TICK_MS,
     capMs: rules.time.roundTripAllowance * 1000,
     maxPredictionMs: WIRE_CONSTANTS.maxPredictionMs,
     gain,
+    maxDecreaseMs: 1000 / (2 * rules.limits.inputsPerSecond),
   };
 }
 
@@ -103,7 +109,10 @@ export function initialLead(rttMs: number, p: LeadParams): number {
 
 /** The next lead after the server reported `marginMs` (inputs arriving that early; negative = late). */
 export function nextLead(leadMs: number, marginMs: number, p: LeadParams): number {
-  return clampLead(leadMs - p.gain * (marginMs - p.targetMarginMs), p);
+  // Applied once per report (the server reports at most once per second, the earliest input of its window):
+  // the lead grows at once when inputs are late, and shrinks by at most `maxDecreaseMs` per report.
+  const step = -p.gain * (marginMs - p.targetMarginMs);
+  return clampLead(leadMs + Math.max(step, -p.maxDecreaseMs), p);
 }
 
 /** The tick a replica running `leadMs` ahead stamps an input with, from the server clock's tick now. */

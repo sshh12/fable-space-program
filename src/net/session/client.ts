@@ -303,6 +303,8 @@ export class ClientSession {
       this.status();
       return;
     }
+    // 4000 without its `refused` message: the reason is unknown, so it is a loss (backoff, then a resume).
+    if (info.code === CLOSE.refused) return this.afterLoss('the server closed the session');
     this.afterLoss(info.reason || `closed (${info.code})`);
   }
 

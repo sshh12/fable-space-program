@@ -496,7 +496,8 @@ export class ByteReader {
       result += (byte & 0x7f) * scale;
       if (byte < 0x80) {
         this.pos = p;
-        if (result > Number.MAX_SAFE_INTEGER) {
+        // Canonical only: a last byte of 0 after the first is padding (the same number has a shorter form).
+        if (result > Number.MAX_SAFE_INTEGER || (byte === 0 && i > 0)) {
           this.fail('badVarint');
           return 0;
         }

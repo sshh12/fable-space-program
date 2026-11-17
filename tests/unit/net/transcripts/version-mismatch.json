@@ -1,13 +1,14 @@
 {
   "name": "version-mismatch",
-  "description": "A client of an older build connects: the gateway refuses it ('build', \"a new version is ready\") before any challenge; the refusal is final (no reconnect), and a spawn made meanwhile is answered as refused without being sent. A second client with the right build but another definition library is refused ('defsHash').",
+  "description": "A client of an older build connects: the gateway refuses it ('build', \"a new version is ready\") before any challenge; the refusal is final (no reconnect), and a spawn made meanwhile is answered as refused without being sent. A second client with the right build but another definition library is refused ('defsHash'). A third client speaks another protocol version (2): refused ('protocol') before any challenge, final.",
   "host": {
     "build": "b-2026-11",
     "defsHash": "defs-1",
     "serverId": "gw-1",
     "accounts": {
       "acct-a": "ALPHA",
-      "acct-b": "BRAVO"
+      "acct-b": "BRAVO",
+      "acct-c": "CHARLIE"
     },
     "authDelayMs": 40,
     "seatDelayMs": 60,
@@ -26,6 +27,12 @@
       "accountId": "acct-b",
       "defsHash": "defs-0",
       "seed": 72
+    },
+    {
+      "id": "c",
+      "accountId": "acct-c",
+      "protocol": 2,
+      "seed": 73
     }
   ],
   "steps": [
@@ -38,6 +45,11 @@
       "atMs": 0,
       "do": "connect",
       "client": "b"
+    },
+    {
+      "atMs": 0,
+      "do": "connect",
+      "client": "c"
     },
     {
       "atMs": 100,
@@ -84,6 +96,19 @@
         "answers": [],
         "queuePlaces": [],
         "sentAfterTakenOver": 0
+      },
+      "c": {
+        "phase": "refused",
+        "accountId": null,
+        "vesselId": null,
+        "pendingRequests": [],
+        "unackedInputs": 0,
+        "subscriptions": {},
+        "refusal": "protocol",
+        "ownRefusal": null,
+        "answers": [],
+        "queuePlaces": [],
+        "sentAfterTakenOver": 0
       }
     },
     "host": {
@@ -103,11 +128,20 @@
           "subscriptions": {},
           "handled": [],
           "seat": null
+        },
+        "acct-c": {
+          "appliedInputs": 0,
+          "duplicateInputs": 0,
+          "lastInputSeq": 0,
+          "subscriptions": {},
+          "handled": [],
+          "seat": null
         }
       },
       "refusals": [
         "build",
-        "defsHash"
+        "defsHash",
+        "protocol"
       ]
     }
   },
@@ -138,6 +172,20 @@
         "dir": "s2c",
         "conn": 0,
         "hex": "01221b021741206e65772076657273696f6e2069732072656164792e0000"
+      }
+    ],
+    "c": [
+      {
+        "atMs": 0,
+        "dir": "c2s",
+        "conn": 0,
+        "hex": "0101140209622d323032362d313106646566732d310000"
+      },
+      {
+        "atMs": 0,
+        "dir": "s2c",
+        "conn": 0,
+        "hex": "01221b001741206e65772076657273696f6e2069732072656164792e0000"
       }
     ]
   }
