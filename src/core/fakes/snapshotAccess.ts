@@ -149,3 +149,72 @@ export function eventPartOf(vessel: VesselSnapshot, eventPartId: string): PartSn
   for (let i = 0; i < parts.length; i++) if (parts[i]!.instanceId === eventPartId) return parts[i]!;
   return null;
 }
+
+/**
+ * The lineage of craft, for whoever keeps presentation state per part across a separation (wear and soot of
+ * the vehicle feature, emitters and decals of the effects, voices of the audio engine).
+ *
+ * A part keeps its instance id when a separation moves it into a new craft (a piece of debris is a craft of
+ * its own whose `parent` is the craft it left), so the state of a part is filed under the LINEAGE KEY: the
+ * part key of the launched craft at the top of its craft's line of descent and its instance id. Two launched
+ * craft of one vehicle are two lineages, docked or not, so their parts never share a key; a piece and the
+ * part it was share one.
+ *
+ * The top of a line is found by following `CraftSnapshot.parent` while the parent is described: by this
+ * snapshot, or by an earlier one this table saw. A parent that has left the snapshot is still named by its
+ * piece, so the chain ends at the first craft nobody described. The answer for a craft is remembered, and so
+ * is the same in every later frame, whatever leaves the snapshot afterwards. No id is taken apart.
+ */
+export class CraftLineage {
+  private readonly roots = new Map<string, string>();
+
+  /** The craft at the top of the lineage of `craftId`: itself for a launched craft and for one nobody described. */
+  rootOf(snapshot: SimSnapshot, craftId: string): string {
+    const known = this.roots.get(craftId);
+    if (known !== undefined) return known;
+    let id = craftId;
+    // A lineage is as deep as a craft was cut into pieces of pieces; the bound only ends a malformed cycle.
+    for (let hops = 0; hops < 256; hops++) {
+      const resolved = this.roots.get(id);
+      if (resolved !== undefined) {
+        id = resolved;
+        break;
+      }
+      const parent = parentInSnapshot(snapshot, id);
+      if (parent === null) break;
+      id = parent;
+    }
+    this.roots.set(craftId, id);
+    return id;
+  }
+
+  /** As `rootOf` for a craft this table has resolved before; a craft it never saw is its own root. */
+  knownRootOf(craftId: string): string {
+    return this.roots.get(craftId) ?? craftId;
+  }
+
+  /** The lineage key of a part of a vessel of `snapshot`. */
+  keyOf(snapshot: SimSnapshot, vessel: VesselSnapshot, part: PartSnapshot): string {
+    return partKey(this.rootOf(snapshot, craftIdOf(vessel, part)), part.instanceId);
+  }
+
+  /** The lineage key of the part `instanceId` of the craft `craftId`, from what the table has resolved. */
+  knownKeyOf(craftId: string, instanceId: string): string {
+    return partKey(this.knownRootOf(craftId), instanceId);
+  }
+
+  clear(): void {
+    this.roots.clear();
+  }
+}
+
+/** `CraftSnapshot.parent` of the craft `craftId` where the snapshot holds that craft; null otherwise. */
+function parentInSnapshot(snapshot: SimSnapshot, craftId: string): string | null {
+  const vessels = snapshot.vessels;
+  for (let i = 0; i < vessels.length; i++) {
+    const crafts = vessels[i]!.crafts;
+    if (!crafts) continue;
+    for (let j = 0; j < crafts.length; j++) if (crafts[j]!.id === craftId) return crafts[j]!.parent ?? null;
+  }
+  return null;
+}

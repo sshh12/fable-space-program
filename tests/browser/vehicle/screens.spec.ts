@@ -74,12 +74,12 @@ function meanLuma(a: Buffer, x0: number, y0: number, x1: number, y1: number): nu
 const sootEverything = (): void => {
   const lab = window.__veh!;
   const id = lab.sim.vesselIds[0]!;
-  for (const p of lab.sim.partsOf(id)) Object.assign(lab.vehicle.anim(id, p.instanceId), { soot: 1, frost: 0 });
+  for (const p of lab.sim.partsOf(id)) Object.assign(lab.vehicle.anim(p.craftId ?? id, p.instanceId), { soot: 1, frost: 0 });
 };
 const noFrost = (): void => {
   const lab = window.__veh!;
   const id = lab.sim.vesselIds[0]!;
-  for (const p of lab.sim.partsOf(id)) lab.vehicle.anim(id, p.instanceId).frost = 0;
+  for (const p of lab.sim.partsOf(id)) lab.vehicle.anim(p.craftId ?? id, p.instanceId).frost = 0;
 };
 
 test.describe('vehicle and pad screenshots', () => {

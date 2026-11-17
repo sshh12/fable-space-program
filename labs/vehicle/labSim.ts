@@ -7,7 +7,7 @@
  */
 import type { PlayerCommands } from '@/core/contracts/controls';
 import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
-import type { ModuleState, PartSnapshot, Sim, SimDebug, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import type { CraftSnapshot, ModuleState, PartSnapshot, Sim, SimDebug, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
@@ -45,6 +45,27 @@ export type SunSpec =
   | { kind: 'local'; azDeg: number; elDeg: number }
   /** Direction in the vessel frame (VES axes). */
   | { kind: 'vessel'; dir: [number, number, number]; focus?: string };
+
+/**
+ * The craft blocks of an assembled vessel as a session states them (`VesselSnapshot.crafts`): the identity
+ * and the lineage of every craft, which is what the vessel feature files a part's wear under across a
+ * separation. The lab fires no stage stack of its own and shows no cabin, so a craft lists no stage figures
+ * and states no cockpit.
+ */
+function craftBlocks(defs: DefLibrary, vessel: Vessel, parts: readonly PartSnapshot[]): CraftSnapshot[] {
+  return vessel.crafts.map((c) => ({
+    id: c.craftId,
+    parent: c.parent,
+    vehicleId: c.vehicleId,
+    name: c.name,
+    ownerId: c.ownerId,
+    ownerCallsign: null,
+    commandPart: parts.find((p) => p.craftId === c.craftId && defs.parts[p.def]?.modules.some((m) => m.type === 'command'))?.instanceId ?? null,
+    staging: { nextStage: c.nextStage, stages: [], lockout: false },
+    chase: { ...c.vehicle.cameras.chase },
+    policy: c.policy,
+  }));
+}
 
 /** Stable number in [0, 1) from a vessel id (which way a piece on the axis drifts off it). */
 function hash01(text: string): number {
@@ -356,6 +377,8 @@ export class VehicleLabSim implements Sim {
         comLocal: v.mp.com,
         boundingRadius: radius,
         parts: lv.parts,
+        crafts: craftBlocks(this.defs, v, lv.parts),
+        links: [],
         thrust: 0,
         age: this.t - lv.t0,
       };

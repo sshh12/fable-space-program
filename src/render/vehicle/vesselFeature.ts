@@ -7,8 +7,12 @@
  *  - Articulation comes from each part visual's `pose`: engine gimbal, leg deployment and stroke, fairing
  *    petals (`<id>#panel<k>`), clamp arms, antennas, lamps, hot nozzle sections, window panes.
  *  - History the snapshot does not carry (nozzle temperature after a burn, soot from firing, frost that
- *    sheds after lift-off, arm retraction) is kept per part instance and survives staging, because part
- *    instance ids do.
+ *    sheds after lift-off, arm retraction) is kept per part and survives staging. A part is known by the part
+ *    key of its LINEAGE: the launched craft its craft descends from (`CraftSnapshot.parent`, followed while
+ *    the parent is known) and its instance id, which a separation does not change. Two craft of one vehicle,
+ *    docked or not, are two lineages: their parts never share state (ARCHITECTURE 18.7). No id is taken apart.
+ *  - The engines a part carries (their soot stains it) come from the part list (mounts.ts), never from a
+ *    vehicle definition.
  *  - Every vessel instance is a MOVING shadow caster: it is drawn only into cascades that are re-rendered
  *    every frame (ARCHITECTURE 10.1). `stats.staggeredSubmissions` counts the staggered cascades into which
  *    a shadow draw of this feature put any triangle (measured on the mesh batches), and stays 0.
@@ -20,12 +24,14 @@
  *    LOD 2, whatever LOD the camera sees. That keeps the shadow passes to a fraction of the stack's triangles.
  *  - A vessel that the simulation removes as expired is dither-faded over a second instead of popping.
  */
-import type { DefLibrary, PartDef, VehicleDef } from '@/core/contracts/defs';
+import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } from '@/core/contracts/render';
 import type { ModuleState, PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { CraftLineage, craftIdOf } from '@/core/fakes/snapshotAccess';
 import { quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle, type TemporalFeature } from '@/render/core';
 import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';
+import { engineMounts } from './mounts';
 import { generatePart } from './parts';
 import { NEUTRAL_ANIM, type PartAnim, type PartVisual, type PoseInput, type PoseOpts } from './parts/types';
 
@@ -67,8 +73,12 @@ export interface VesselVisualFeature extends RenderFeature, TemporalFeature {
   readonly stats: VesselVisualStats;
   /** The generated visual of a part definition (undefined before init or for a part without one). */
   partVisual(defId: string): PartVisual | undefined;
-  /** Presentation state of one part instance (labs and tests set it to show a history without waiting). */
-  anim(vesselId: string, instanceId: string): PartAnim;
+  /**
+   * Presentation state of one part (labs and tests set it to show a history without waiting): the part
+   * `instanceId` of the craft `craftId` (`CraftSnapshot.id`, `PartSnapshot.craftId`; in a snapshot without
+   * craft blocks the vessel's id). A piece that left the craft shares the state of the part it was.
+   */
+  anim(craftId: string, instanceId: string): PartAnim;
 }
 
 /** The models of one part visual: what the camera sees, and the two shadow casters of each model. */
@@ -90,6 +100,8 @@ interface PartModels {
 const FINE_CASTER_TEXEL = 0.1;
 
 interface PartEntry {
+  /** The part of the snapshot this entry draws: its craft and its instance id within that craft. */
+  craftId: string;
   instanceId: string;
   def: PartDef;
   models: PartModels;
@@ -116,12 +128,17 @@ interface Ghost {
   t0: number;
 }
 
-const rootOf = (vesselId: string): string => {
-  const i = vesselId.indexOf('~');
-  return i < 0 ? vesselId : vesselId.slice(0, i);
-};
-
+/**
+ * The petal of a fairing that a part of fairing debris is: the simulation gives each petal its own vessel and
+ * names the petal in the instance id (`<fairing instance id>#panel<k>`, src/sim/vessel/public.ts), and the
+ * snapshot states the index nowhere else (request presentation-sweep-2 asks for the field; this is the one
+ * place that reads it from the id until then). null for a whole part.
+ */
 const PANEL = /#panel(\d+)$/;
+export function fairingPanelOf(part: PartSnapshot): number | null {
+  const match = PANEL.exec(part.instanceId);
+  return match ? Number(match[1]) : null;
+}
 
 /** Temperature the radiatively cooled nozzle sections settle at for a throttle setting, K. */
 export const nozzleEquilibrium = (throttle: number): number => 560 + 900 * Math.sqrt(Math.max(0, Math.min(1, throttle)));
@@ -160,7 +177,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
   const visuals = new Map<string, PartModels>();
   const anims = new Map<string, PartAnim>();
   const plans = new Map<string, VesselPlan>();
-  const enginesOn = new Map<string, Map<string, string[]>>();
+  /** Whose parts a craft's parts continue: the state of a part is filed under its lineage key. */
+  const lineage = new CraftLineage();
   const reported = new Set<string>();
   let ghosts: Ghost[] = [];
   let lastUt = Number.NaN;
@@ -207,26 +225,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     return entry;
   };
 
-  /** Instance ids of the engine parts mounted on each part of a vehicle definition. */
-  const engineChildren = (vehicle: VehicleDef | undefined): Map<string, string[]> => {
-    if (!vehicle) return new Map();
-    let m = enginesOn.get(vehicle.id);
-    if (m) return m;
-    m = new Map();
-    for (const p of vehicle.parts) {
-      if (p.parent === null) continue;
-      const d = defs.parts[p.def];
-      if (!d?.modules.some((x) => x.type === 'engine')) continue;
-      const list = m.get(p.parent) ?? [];
-      list.push(p.id);
-      m.set(p.parent, list);
-    }
-    enginesOn.set(vehicle.id, m);
-    return m;
-  };
-
-  const animOf = (root: string, instanceId: string): PartAnim => {
-    const key = `${root}|${instanceId}`;
+  /** The presentation state filed under a lineage key (`CraftLineage.keyOf`). */
+  const animOf = (key: string): PartAnim => {
     let a = anims.get(key);
     if (!a) {
       a = { ...NEUTRAL_ANIM, frost: -1 };
@@ -235,24 +235,30 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     return a;
   };
 
-  const planKey = (parts: readonly PartSnapshot[]): string => (parts.length === 0 ? '0' : `${parts.length}|${parts[0]!.instanceId}|${parts[parts.length - 1]!.instanceId}`);
+  /** Changes when the part list of a vessel changes: its length and the part keys of its first and last part. */
+  const planKey = (vessel: VesselSnapshot): string => {
+    const parts = vessel.parts;
+    if (parts.length === 0) return '0';
+    const first = parts[0]!;
+    const last = parts[parts.length - 1]!;
+    return `${parts.length}|${craftIdOf(vessel, first)}/${first.instanceId}|${craftIdOf(vessel, last)}/${last.instanceId}`;
+  };
 
-  const buildPlan = (vessel: VesselSnapshot): VesselPlan => {
-    const root = rootOf(vessel.id);
-    const children = engineChildren(defs.vehicles[vessel.vehicleId]);
+  const buildPlan = (snapshot: SimSnapshot, vessel: VesselSnapshot): VesselPlan => {
+    const parts = vessel.parts;
+    const mounts = engineMounts(defs, parts, (part) => craftIdOf(vessel, part));
     const entries: PartEntry[] = [];
-    for (const part of vessel.parts) {
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]!;
       const v = visualOf(part.def);
       if (!v) continue;
       const def = defs.parts[part.def]!;
-      const match = PANEL.exec(part.instanceId);
-      const base = match ? part.instanceId.slice(0, match.index) : part.instanceId;
-      const anim = animOf(root, part.instanceId);
-      const engineAnims = (children.get(base) ?? []).map((id) => animOf(root, id));
-      const panel = match ? Number(match[1]) : null;
-      entries.push({ instanceId: part.instanceId, def, models: v, visual: v.visual, anim, lodStates: [], engineAnims, panel, input: { def, modules: part.modules, panel, anim }, seen: false });
+      const anim = animOf(lineage.keyOf(snapshot, vessel, part));
+      const engineAnims = (mounts.get(i) ?? []).map((e) => animOf(lineage.keyOf(snapshot, vessel, parts[e]!)));
+      const panel = fairingPanelOf(part);
+      entries.push({ craftId: craftIdOf(vessel, part), instanceId: part.instanceId, def, models: v, visual: v.visual, anim, lodStates: [], engineAnims, panel, input: { def, modules: part.modules, panel, anim }, seen: false });
     }
-    return { key: planKey(vessel.parts), entries };
+    return { key: planKey(vessel), entries };
   };
 
   /** Advance the presentation state of one part from its module states. */
@@ -332,8 +338,9 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     const parts = vessel.parts;
     let pi = 0;
     for (const e of plan.entries) {
-      // Entries skip parts without a visual; find this entry's snapshot part.
-      while (pi < parts.length && parts[pi]!.instanceId !== e.instanceId) pi++;
+      // Entries skip parts without a visual; find this entry's snapshot part (an instance id repeats between
+      // two craft of one vehicle, so the craft is part of the match).
+      while (pi < parts.length && (parts[pi]!.instanceId !== e.instanceId || craftIdOf(vessel, parts[pi]!) !== e.craftId)) pi++;
       const part = parts[pi];
       if (!part) break;
       pi++;
@@ -430,7 +437,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     order: 0,
     stats,
     partVisual: (defId) => visuals.get(defId)?.visual,
-    anim: (vesselId, instanceId) => animOf(rootOf(vesselId), instanceId),
+    anim: (craftId, instanceId) => animOf(lineage.knownKeyOf(craftId, instanceId)),
 
     init(c) {
       ctx = c;
@@ -464,8 +471,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
         if (!pose) continue;
         alive.add(vessel.id);
         let plan = plans.get(vessel.id);
-        if (!plan || plan.key !== planKey(vessel.parts)) {
-          plan = buildPlan(vessel);
+        if (!plan || plan.key !== planKey(vessel)) {
+          plan = buildPlan(snapshot, vessel);
           plans.set(vessel.id, plan);
         }
         drawVessel(frame, vessel, plan, pose, 1, dt, true);
@@ -534,6 +541,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       for (const v of visuals.values()) for (const list of Object.values(v.lods)) for (const h of list) h.destroy();
       visuals.clear();
       plans.clear();
+      lineage.clear();
     },
   };
   return feature;

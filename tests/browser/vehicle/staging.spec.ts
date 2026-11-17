@@ -39,8 +39,8 @@ test.describe('vehicle staging and shadows', () => {
         const flying = lab.sim.vesselIds[0]!;
         const engines = lab.sim.partsOf(flying).filter((p) => p.modules.some((m) => m.type === 'engine'));
         const foot = Math.min(...engines.map((p) => p.localPos.y));
-        for (const p of engines) if (p.localPos.y < foot + 1) lab.vehicle.anim(flying, p.instanceId).soot = 1;
-        for (const p of lab.sim.partsOf(flying)) lab.vehicle.anim(flying, p.instanceId).frost = 0;
+        for (const p of engines) if (p.localPos.y < foot + 1) lab.vehicle.anim(p.craftId ?? flying, p.instanceId).soot = 1;
+        for (const p of lab.sim.partsOf(flying)) lab.vehicle.anim(p.craftId ?? flying, p.instanceId).frost = 0;
         const fired = lab.sim.fireStage();
         // 1.5 s of drift: the pieces have come apart but are all still in view.
         for (let k = 0; k < 90; k++) lab.sim.advance(1 / 60);
