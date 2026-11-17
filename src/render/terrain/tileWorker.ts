@@ -11,6 +11,7 @@ import { decodeTileFile, IMAGE_TILE_SIZE } from '@/core/geo/tileCodec';
 import { createTerrainProvider, type TerrainAuthority } from '@/terrain';
 import { createTileSource } from '@/terrain/tileSource';
 import { buildNightImage } from './nightImage';
+import { settleAll } from './settle';
 import { IMAGE_DECODE_OPTIONS, type TileJob, type TileResult, type WorkerInit, type WorkerRequest, type WorkerResponse } from './workerProtocol';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
@@ -98,9 +99,18 @@ async function imageTile(tileset: string, layer: string, key: TileKey): Promise<
   const bytes = await source!.tile(tileset, layer, key);
   if (!bytes) return null;
   const bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/webp' }), IMAGE_DECODE_OPTIONS);
-  if (bitmap.width !== N || bitmap.height !== N) throw new Error(`${tileset}/${layer}/${key.face}/${key.level}/${key.x}/${key.y}: image is ${bitmap.width} x ${bitmap.height}`);
+  if (bitmap.width !== N || bitmap.height !== N) {
+    const size = `${bitmap.width} x ${bitmap.height}`;
+    bitmap.close();
+    throw new Error(`${tileset}/${layer}/${key.face}/${key.level}/${key.x}/${key.y}: image is ${size}`);
+  }
   return bitmap;
 }
+
+/** A decoded image is memory the garbage collector does not see until it is closed: what a failed job releases. */
+const closeBitmap = (value: unknown): void => {
+  if (value instanceof ImageBitmap) value.close();
+};
 
 let probe: OffscreenCanvasRenderingContext2D | null = null;
 /**
@@ -148,40 +158,50 @@ async function runJob(job: TileJob): Promise<void> {
     return b;
   });
   const aux: Uint8Array<ArrayBuffer> | null = job.image ? new Uint8Array(N * N * 2) : null;
-  const image = aux
-    ? Promise.all([
-        imageTile(job.tileset, TILE_LAYER.albedo, job.key),
-        auxChannel(job.tileset, manifest.layers[TILE_LAYER.watermask], TILE_LAYER.watermask, job.key, false, aux, 0),
-        auxChannel(job.tileset, manifest.layers[TILE_LAYER.landcover], TILE_LAYER.landcover, job.key, true, aux, 1),
-      ]).then(([bitmap]) => bitmap)
-    : null;
-  const nightImage = job.night ? buildNightImage(job.key, (k) => nightRed(job.tileset, k)) : null;
-  const [bake, albedo, night] = await Promise.all([baked, image, nightImage]);
+  // Every read is waited for, whatever becomes of the others: when one fails (the bake, a mask, the night
+  // image), the albedo bitmap another one decoded, before or after that failure, is closed before the job
+  // reports it (settle.ts).
+  const [bake, albedo, , , night] = await settleAll(
+    [
+      baked,
+      aux ? imageTile(job.tileset, TILE_LAYER.albedo, job.key) : null,
+      aux ? auxChannel(job.tileset, manifest.layers[TILE_LAYER.watermask], TILE_LAYER.watermask, job.key, false, aux, 0) : null,
+      aux ? auxChannel(job.tileset, manifest.layers[TILE_LAYER.landcover], TILE_LAYER.landcover, job.key, true, aux, 1) : null,
+      job.night ? buildNightImage(job.key, (k) => nightRed(job.tileset, k)) : null,
+    ],
+    closeBitmap,
+  );
   if (job.image && !albedo) throw new Error(`albedo tile ${job.key.face}/${job.key.level}/${job.key.x}/${job.key.y} of "${job.tileset}" does not exist`);
-  const nightDark = job.night && night === null;
-  const heights = bake.geometry.heights as Float32Array<ArrayBuffer>;
-  const normal = bake.normalMaterial.rgba as Uint8Array<ArrayBuffer>;
-  const result: TileResult = {
-    type: 'tile',
-    id: job.id,
-    heights,
-    hMin: bake.geometry.hMin,
-    hMax: bake.geometry.hMax,
-    normal,
-    slopeScale: bake.normalMaterial.slopeScale,
-    complete: bake.geometry.complete && bake.normalMaterial.complete,
-    albedo,
-    aux,
-    night,
-    nightDark,
-    bakeMs: t1 - t0,
-    imageMs: performance.now() - t1,
-  };
-  const transfer: Transferable[] = [heights.buffer, normal.buffer];
-  if (aux) transfer.push(aux.buffer);
-  if (albedo) transfer.push(albedo);
-  if (night) transfer.push(night.buffer);
-  post(result, transfer);
+  try {
+    const nightDark = job.night && night === null;
+    const heights = bake.geometry.heights as Float32Array<ArrayBuffer>;
+    const normal = bake.normalMaterial.rgba as Uint8Array<ArrayBuffer>;
+    const result: TileResult = {
+      type: 'tile',
+      id: job.id,
+      heights,
+      hMin: bake.geometry.hMin,
+      hMax: bake.geometry.hMax,
+      normal,
+      slopeScale: bake.normalMaterial.slopeScale,
+      complete: bake.geometry.complete && bake.normalMaterial.complete,
+      albedo,
+      aux,
+      night,
+      nightDark,
+      bakeMs: t1 - t0,
+      imageMs: performance.now() - t1,
+    };
+    const transfer: Transferable[] = [heights.buffer, normal.buffer];
+    if (aux) transfer.push(aux.buffer);
+    if (albedo) transfer.push(albedo);
+    if (night) transfer.push(night.buffer);
+    post(result, transfer);
+  } catch (e) {
+    // A result that could not be posted handed nothing over: the bitmap is still this worker's to close.
+    closeBitmap(albedo);
+    throw e;
+  }
 }
 
 scope.onmessage = (ev: MessageEvent<WorkerRequest>): void => {
