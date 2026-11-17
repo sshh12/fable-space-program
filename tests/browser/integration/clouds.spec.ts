@@ -232,7 +232,11 @@ test('(b) above an overcast deck neither the hull nor the cabin is in the shade 
   const aimed = await page.evaluate(() => {
     const lab = window.__integration!;
     const seats = lab.cockpitSeats();
-    const target = seats.find((x) => x.id !== lab.app.defs.vehicles[lab.app.snapshot().vessels[0]!.vehicleId]?.cameras.cockpit.seat) ?? seats[0];
+    // A couch other than the one the craft puts its camera in (the craft states that seat: `cabinOf`).
+    const snapshot = lab.app.snapshot();
+    const vessel = snapshot.vessels.find((v) => v.id === snapshot.activeVesselId);
+    const cameraSeat = vessel ? (lab.cabinOf(vessel)?.cameraSeat ?? null) : null;
+    const target = seats.find((x) => x.id !== cameraSeat) ?? seats[0];
     if (!target) return null;
     const sun = lab.sunThroughWindowOnto(target.pos);
     return sun ? { ...sun, seat: target.id, pos: target.pos, altitude: lab.app.snapshot().readouts.altitudeAsl } : null;

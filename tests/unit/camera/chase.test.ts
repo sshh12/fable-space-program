@@ -32,6 +32,7 @@ import type { CameraInput, CameraState } from '@/core/contracts/render';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
+import { padOf } from '@/core/defs/sites';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
@@ -274,9 +275,8 @@ describe('the default view at a launch pad with a flame trench (request vfx-11)'
   };
   const wrap = (a: number): number => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
   const siteTrenchDeg = (): number => {
-    const site = Object.values(defs.sites)[0]!;
-    const structures = site.pads && site.pads.length > 0 ? site.pads[0]!.structures : site.structures;
-    return structures.find((x) => CHASE_TRENCH_MODELS.includes(x.model))!.headingDeg;
+    // The first pad of the site, as the scenario start stands on it (`padOf`: a site without a pad list has its single pad as that pad).
+    return padOf(Object.values(defs.sites)[0]!).structures.find((x) => CHASE_TRENCH_MODELS.includes(x.model))!.headingDeg;
   };
 
   it('finds the trench of the pad the vessel stands on, and none where no pad is near', () => {

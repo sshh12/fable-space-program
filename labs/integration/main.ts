@@ -36,14 +36,14 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import { padOf } from '@/core/defs/sites';
 import { RENDER_FORMATS, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import type { LocalSession } from '@/core/contracts/session';
-import type { PartSnapshot, SimSnapshot } from '@/core/contracts/sim';
+import type { PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { PointerState } from '@/core/contracts/controls';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
 import { FakeSession } from '@/core/fakes/fakeSession';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
-import { cabinOf } from '@/core/access/snapshotAccess';
+import { cabinOf, type CabinRef } from '@/core/access/snapshotAccess';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import { DEG, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';
@@ -172,6 +172,12 @@ export interface IntegrationLab {
   lookInThroughWindow(distance?: number, window?: string | Vec3): { window: string; centre: Vec3 } | null;
   /** Eye points of the seats of the cockpit camera's command part: id and position in the part frame, m. */
   cockpitSeats(): { id: string; pos: Vec3 }[];
+  /**
+   * The cabin the viewer looks out of in a vessel, as its craft state it: `cabinOf` of
+   * src/core/access/snapshotAccess.ts (the craft, its command part in the part list, the layout id, the craft's
+   * camera seat), for a spec that places a camera or the sun in the page. Null for a vessel without a cabin.
+   */
+  cabinOf(vessel: VesselSnapshot): CabinRef | null;
   /** The seat view aimed at a point of the cabin (part frame, m). False without a cockpit seat. */
   sitInCockpitAimedAt(pointPart: Vec3): boolean;
   /**
@@ -876,6 +882,7 @@ async function boot(): Promise<void> {
       return { window: w.id, centre: w.centre };
     },
     cockpitSeats: () => cabin()?.seats.map((x) => ({ id: x.id, pos: v3.fromTuple(x.pos) })) ?? [],
+    cabinOf,
     sitInCockpitAimedAt(pointPart) {
       const c = cabin();
       if (!c) return false;

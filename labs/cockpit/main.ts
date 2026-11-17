@@ -11,7 +11,7 @@
  *                                        through the window (the sun's way in, reversed)
  *   look=<yawDeg>,<pitchDeg>             seat look direction (yaw right, pitch up), fov=<deg>
  *   seat=cdr|plt|ms                      the seat the eye is at (default: the cockpit layout's camera.defaultSeat,
- *                                        else the vehicle's cockpit camera seat)
+ *                                        else the craft's own camera seat)
  *   eye=<right>,<headUp>,<forward>       eye offset from that seat's eye point in its axes, m (a crew member
  *                                        leaning over or lifting the head off the head rest); at=<x>,<y>,<z>
  *                                        places the eye anywhere in the cabin (part frame, m), seat axes kept
@@ -32,7 +32,7 @@ import type { LocalSession } from '@/core/contracts/session';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { getSection } from '@/core/defs/loader';
-import { revisionOf } from '@/core/access/snapshotAccess';
+import { activeVesselOf, cabinOf, revisionOf, type CabinRef } from '@/core/access/snapshotAccess';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { createLabApp, createLabPlanetFeature, enuAt, lookRotation } from '@/render/core/lab';
@@ -119,10 +119,10 @@ declare global {
   }
 }
 
-/** Wraps the FakeSim: tags the vessel with the real vehicle, pins the sun, applies lab decorations. */
-function labSim(inner: LocalSession, defs: DefLibrary, vehicleId: string, sun: () => SunSpec, deco: { g: number | null }, partSun: (s: SimSnapshot, spec: { window: string; target: string }) => Vec3 | null, attitude: (s: SimSnapshot) => Quat | null): LocalSession {
+/** Wraps the FakeSim: tags the vessel with the real vehicle (its id and its name), pins the sun, applies lab decorations. */
+function labSim(inner: LocalSession, defs: DefLibrary, vehicle: { id: string; name: string }, sun: () => SunSpec, deco: { g: number | null }, partSun: (s: SimSnapshot, spec: { window: string; target: string }) => Vec3 | null, attitude: (s: SimSnapshot) => Quat | null): LocalSession {
   const fix = (raw: SimSnapshot): SimSnapshot => {
-    let s: SimSnapshot = { ...raw, vessels: raw.vessels.map((v) => (v.id === raw.activeVesselId ? { ...v, vehicleId, name: defs.vehicles[vehicleId]!.name } : v)) };
+    let s: SimSnapshot = { ...raw, vessels: raw.vessels.map((v) => (v.id === raw.activeVesselId ? { ...v, vehicleId: vehicle.id, name: vehicle.name } : v)) };
     if (deco.g !== null) s = { ...s, readouts: { ...s.readouts, gLoad: deco.g }, vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, gLoad: deco.g! } : v)) };
     const q = attitude(s);
     if (q) s = { ...s, vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, q } : v)) };
@@ -174,6 +174,18 @@ function labSim(inner: LocalSession, defs: DefLibrary, vehicleId: string, sun: (
   };
 }
 
+/**
+ * The cabin of the lab's vessel as its craft states it (`cabinOf`: the command part in the part list, the
+ * layout id, the craft's own camera seat). The lab's vessel always has one: it is built of a vehicle with a
+ * cabin, and the fake is published as that vehicle.
+ */
+function labCabin(s: SimSnapshot): CabinRef {
+  const vessel = activeVesselOf(s);
+  const cabin = vessel ? cabinOf(vessel) : null;
+  if (!cabin) throw new Error('cockpit lab: the craft of the lab vessel states no cabin');
+  return cabin;
+}
+
 /** Fly the FakeSim to an attitude (body-frame roll, then pitch, then yaw, degrees) with its own rate controls. */
 function flyAttitude(sim: LocalSession, att: LabScene['attitude']): void {
   if (!att) return;
@@ -194,7 +206,6 @@ function flyAttitude(sim: LocalSession, att: LabScene['attitude']): void {
 
 async function boot(): Promise<void> {
   const deco: { g: number | null } = { g: params.has('g') ? Number(params.get('g')) : null };
-  let vehicleId = '';
   let feature: CockpitFeature | null = null;
   const sunSpec: SunSpec = scene.sun;
   const app = await createLabApp({
@@ -202,34 +213,38 @@ async function boot(): Promise<void> {
     name: 'cockpit',
     autoReady: false,
     sim: (defs) => {
-      vehicleId = Object.values(defs.vehicles).find((v) => v.cockpit)!.id;
-      const parts = vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: scene.fired }));
-      // The fake is told its vehicle: the craft block then states the cabin of the command part, as a session does.
-      const fake = createFakeSim(defs, { scene: scene.fake, parts, vehicleId });
+      // The lab's vehicle: the first of the definitions that has a cabin.
+      const vehicle = Object.values(defs.vehicles).find((v) => v.cockpit)!;
+      const parts = vesselPartSnapshots(assembleVessel(defs, vehicle.id, { stagesAlreadyFired: scene.fired }));
+      // The fake is told its vehicle: the craft block then states the cabin of the command part, as a session
+      // does, and everything below reads the cabin from that block (`cabinOf`): its command part, its layout id
+      // and the craft's camera seat.
+      const fake = createFakeSim(defs, { scene: scene.fake, parts, vehicleId: vehicle.id });
       flyAttitude(fake, scene.attitude);
       if (scene.lights || params.get('lights') === '1') fake.commands.toggleLights();
       const partSun = (s: SimSnapshot, spec: { window: string; target: string }): Vec3 | null => {
-        const model = feature?.model(defs.vehicles[vehicleId]!.cockpit!);
         const vessel = s.vessels.find((v) => v.id === s.activeVesselId)!;
-        if (!model) return null;
+        const cabin = cabinOf(vessel);
+        const model = cabin ? feature?.model(cabin.cockpitId) : undefined;
+        if (!cabin || !model) return null;
         const w = model.windows.find((x) => x.id === spec.window);
         const target = targetPoint(model, spec.target);
         if (!w || !target) return null;
-        const part = vessel.parts.find((p) => p.instanceId === defs.vehicles[vehicleId]!.cameras.cockpit.part)!;
         const dPart = v3.normalize(v3.sub(w.centre, target));
-        return quat.rotate(quat.mul(vessel.q, part.localRot), dPart);
+        return quat.rotate(quat.mul(vessel.q, cabin.part.localRot), dPart);
       };
       // nadir=<window>: the vessel turned so that the body's centre lies along the window's outward axis,
       // the nose kept as close to the direction of flight as that allows.
       const np = params.get('nadir')?.split(',');
       const nadir = np ? { window: np[0]!, offNadirDeg: Number(np[1] ?? 0) } : scene.nadir;
       const attitude = (s: SimSnapshot): Quat | null => {
-        const model = feature?.model(defs.vehicles[vehicleId]!.cockpit!);
-        const w = nadir ? model?.windows.find((x) => x.id === nadir.window) : undefined;
-        if (!w || !nadir) return null;
         const vessel = s.vessels.find((v) => v.id === s.activeVesselId)!;
+        const cabin = cabinOf(vessel);
+        const model = cabin ? feature?.model(cabin.cockpitId) : undefined;
+        const w = nadir ? model?.windows.find((x) => x.id === nadir.window) : undefined;
+        if (!cabin || !w || !nadir) return null;
         const body = s.bodies.find((b) => b.id === vessel.bodyId)!;
-        const part = vessel.parts.find((p) => p.instanceId === defs.vehicles[vehicleId]!.cameras.cockpit.part)!;
+        const part = cabin.part;
         const out = quat.rotate(part.localRot, v3.neg(w.inward));
         const nose = v3.normalize(v3.reject(quat.rotate(part.localRot, v3.unitY()), out));
         const down = v3.normalize(v3.sub(body.rRoot, vessel.rRoot));
@@ -239,19 +254,19 @@ async function boot(): Promise<void> {
         const ahead = v3.normalize(v3.reject(v3.sub(ahead0, down), axis));
         return quat.normalize(quat.mul(lookRotation(axis, ahead), quat.conj(lookRotation(out, nose))));
       };
-      return labSim(fake, defs, vehicleId, () => sunSpec, deco, partSun, attitude);
+      return labSim(fake, defs, vehicle, () => sunSpec, deco, partSun, attitude);
     },
-    features: (defs) => {
-      const vehicle = Object.values(defs.vehicles).find((v) => v.cockpit)!;
-      const { layout, mould } = loadCockpitLayout(defs, vehicle.cockpit!);
+    features: (defs, sim) => {
+      const { layout, mould } = loadCockpitLayout(defs, labCabin(sim.peek()).cockpitId);
       // (&hull=0: without the exterior stand-in, for diagnostics: what the cabin alone shows.)
-      const hull = params.get('hull') === '0' ? [] : [createLabHullFeature(() => buildLabHull(layout, mould), vehicle.cameras.cockpit.part)];
+      const hull = params.get('hull') === '0' ? [] : [createLabHullFeature(() => buildLabHull(layout, mould))];
       return [createLabPlanetFeature(), createLabSkyFeature(defs), ...hull];
     },
   });
   const defs = app.defs;
-  const vehicle = defs.vehicles[vehicleId]!;
-  const mould = getSection<CapsuleMouldLineDef>(defs, loadCockpitLayout(defs, vehicle.cockpit!).layout.mouldLine);
+  // The cabin of the lab's vessel as its craft states it: the layout id and the craft's own camera seat.
+  const { cockpitId, cameraSeat } = labCabin(app.sim.peek());
+  const mould = getSection<CapsuleMouldLineDef>(defs, loadCockpitLayout(defs, cockpitId).layout.mouldLine);
   const navball = createNavballRenderer(app.gpu);
   // The shared painter, wrapped to record what each display's canvas drew (and the HUD's strings for the
   // same snapshot), so a test can compare the cockpit's own painting path with the HUD.
@@ -287,11 +302,11 @@ async function boot(): Promise<void> {
   if (params.has('ablate')) feature.setAblation(Number(params.get('ablate')), params.get('without')?.split(',') ?? []);
   const ballast = createBallastFeature(Number(params.get('ballast') ?? 0));
   if (params.has('ballast')) await app.renderer.addFeature(ballast);
-  const model = feature.model(vehicle.cockpit!)!;
+  const model = feature.model(cockpitId)!;
 
   // ---- seat camera
   // (The eye's seat: &seat=, else the layout's default seat, else the craft's own camera seat.)
-  const seat = seatFrames(mould).find((s) => s.id === (params.get('seat') ?? cockpitDefaultSeat(defs, vehicle.cockpit, vehicle.cameras.cockpit.seat)))!;
+  const seat = seatFrames(mould).find((s) => s.id === (params.get('seat') ?? cockpitDefaultSeat(defs, cockpitId, cameraSeat)))!;
   const qSeat = lookRotation(seat.L, seat.U);
   const eo = params.get('eye')?.split(',').map(Number) ?? [0, 0, 0];
   const at = params.get('at')?.split(',').map(Number);
@@ -312,7 +327,7 @@ async function boot(): Promise<void> {
   }
   const placeCamera = (s: SimSnapshot): void => {
     const vessel = s.vessels.find((v) => v.id === s.activeVesselId)!;
-    const part = vessel.parts.find((p) => p.instanceId === vehicle.cameras.cockpit.part)!;
+    const part = cabinOf(vessel)!.part;
     const qPart: Quat = quat.mul(vessel.q, part.localRot);
     if (mode === 'cockpit') {
       const qLook = quat.mul(quat.fromAxisAngle(v3.unitY(), -look.yaw * DEG), quat.fromAxisAngle(v3.unitX(), look.pitch * DEG));
@@ -422,7 +437,7 @@ async function boot(): Promise<void> {
     paintedText: () => painted.map((p) => (p ? { ...p, texts: p.texts.slice() } : null)),
     async occlusionCheck(count) {
       const device = app.gpu.device;
-      const src = feature!.occlusion(vehicle.cockpit!)!;
+      const src = feature!.occlusion(cockpitId)!;
       const buf = device.createBuffer({ size: src.size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
       const enc = device.createCommandEncoder();
       enc.copyBufferToBuffer(src, 0, buf, 0, src.size);

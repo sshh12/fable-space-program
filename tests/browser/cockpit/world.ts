@@ -89,18 +89,19 @@ export async function applyRecipe(page: Page, recipe: Recipe): Promise<Placed> {
     };
     const lab = window.__integration!;
     const app = lab.app;
-    const defs = app.defs;
     const snap = app.snapshot();
     const vessel = snap.vessels.find((v) => v.id === snap.activeVesselId)!;
-    const vehicle = Object.values(defs.vehicles).find((d) => d.cockpit && vessel.parts.some((p) => p.instanceId === d.cameras.cockpit.part));
-    const part = vessel.parts.find((p) => p.instanceId === vehicle?.cameras.cockpit.part);
+    // The cabin as the vessel's craft state it (the command part, the layout id, the craft's camera seat): no
+    // vehicle definition is read.
+    const cabin = lab.cabinOf(vessel);
+    const part = cabin?.part;
     type Model = { layout: { camera?: { defaultSeat: string } }; windows: { id: string; centre: V; inward: V }[]; displays: { frame: { o: V } }[]; mould: { seats: { id: string; pos: number[]; lookDir: number[]; upDir: number[] }[] } };
     const feature = (lab.handles['cockpit.createCockpitFeature'] as { feature?: { model(id: string): Model | undefined } } | undefined)?.feature;
-    const model = vehicle?.cockpit ? feature?.model(vehicle.cockpit) : undefined;
-    if (!vehicle || !part || !model) return { ok: false, why: 'no cockpit vessel or cabin model', layout: null };
+    const model = cabin ? feature?.model(cabin.cockpitId) : undefined;
+    if (!cabin || !part || !model) return { ok: false, why: 'no cockpit vessel or cabin model', layout: null };
     // The eye's seat: the cockpit layout's default seat (presentation data, the pilot's centre couch), else the
     // craft's own camera seat.
-    const seatDef = model.mould.seats.find((s) => s.id === (model.layout.camera?.defaultSeat ?? vehicle.cameras.cockpit.seat))!;
+    const seatDef = model.mould.seats.find((s) => s.id === (model.layout.camera?.defaultSeat ?? cabin.cameraSeat))!;
     const t3 = (a: number[]): V => ({ x: a[0]!, y: a[1]!, z: a[2]! });
     const L = norm(t3(seatDef.lookDir));
     const U = norm(sub(t3(seatDef.upDir), scale(L, dot(t3(seatDef.upDir), L))));
@@ -142,9 +143,9 @@ export async function applyRecipe(page: Page, recipe: Recipe): Promise<Placed> {
     if (r.lights !== undefined && r.lights !== snap.readouts.lightsOn) app.sim.commands.toggleLights();
     // ---- camera
     if (r.windowBelow !== undefined) {
-      if (!lab.sitAtWindowBelow(r.windowBelow)) return { ok: false, why: 'no window toward the body below', layout: vehicle.cockpit ?? null };
+      if (!lab.sitAtWindowBelow(r.windowBelow)) return { ok: false, why: 'no window toward the body below', layout: cabin.cockpitId };
     } else if (r.seat) {
-      if (!lab.sitInCockpit(r.seat.yaw, r.seat.pitch)) return { ok: false, why: 'no cockpit seat', layout: vehicle.cockpit ?? null };
+      if (!lab.sitInCockpit(r.seat.yaw, r.seat.pitch)) return { ok: false, why: 'no cockpit seat', layout: cabin.cockpitId };
     } else if (r.free) {
       lab.release();
       const eye = point(r.free.eye);
@@ -157,7 +158,7 @@ export async function applyRecipe(page: Page, recipe: Recipe): Promise<Placed> {
       app.camera.settings.kind = r.free.kind;
     }
     app.camera.settings.fovY = (r.fovDeg * Math.PI) / 180;
-    return { ok: true, why: '', layout: vehicle.cockpit ?? null };
+    return { ok: true, why: '', layout: cabin.cockpitId };
   }, recipe);
 }
 
@@ -198,15 +199,16 @@ export async function worldReport(page: Page): Promise<WorldReport> {
     const app = lab.app;
     const snap = app.snapshot();
     const vessel = snap.vessels.find((v) => v.id === snap.activeVesselId)!;
-    const vehicle = Object.values(app.defs.vehicles).find((d) => d.cockpit && vessel.parts.some((p) => p.instanceId === d.cameras.cockpit.part));
-    const part = vessel.parts.find((p) => p.instanceId === vehicle?.cameras.cockpit.part);
+    // The cabin as the vessel's craft state it: its command part and its layout id.
+    const cabin = lab.cabinOf(vessel);
+    const part = cabin?.part;
     type V = { x: number; y: number; z: number };
     type Q = { x: number; y: number; z: number; w: number };
     type Model = { windows: { id: string; centre: V }[] };
     const f = (lab.handles['cockpit.createCockpitFeature'] as { feature?: { stats(): { active: boolean; lod: string | null; inside: boolean; sunLit: boolean; covered?: string[] }; model(id: string): Model | undefined } } | undefined)?.feature;
     const windows: Record<string, { x: number; y: number } | null> = {};
     const fc = app.renderer.frameContext;
-    const model = vehicle?.cockpit ? f?.model(vehicle.cockpit) : undefined;
+    const model = cabin ? f?.model(cabin.cockpitId) : undefined;
     if (fc && model && part) {
       const qrot = (q: Q, v: V): V => {
         const tx = 2 * (q.y * v.z - q.z * v.y);

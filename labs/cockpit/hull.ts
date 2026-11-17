@@ -5,6 +5,7 @@
  * a moving caster. It exists so that the chase-camera view looks into the cabin through a real opening and
  * so that the sun reaches the cabin only through the windows, exactly as it will with the real exterior.
  */
+import { cabinOf } from '@/core/access/snapshotAccess';
 import type { CapsuleMouldLineDef } from '@/core/contracts/defs';
 import type { MeshData, ModelData, RenderContext, RenderFeature } from '@/core/contracts/render';
 import { quat, v3, type Vec3 } from '@/core/math';
@@ -80,8 +81,8 @@ export function buildLabHull(layout: CockpitLayoutDef, mould: CapsuleMouldLineDe
   return { name: 'lab-hull', lods: [toMeshData(ctx)], materials: [{ name: 'backshell', shading: 'standard', baseColor: [0.72, 0.73, 0.72], metallic: 0, roughness: 0.55 }] };
 }
 
-/** Draws the stand-in hull on the command part of the cockpit vessel. */
-export function createLabHullFeature(model: () => ModelData, partId: string): RenderFeature {
+/** Draws the stand-in hull on the command part of the cockpit vessel: the part of the cabin its craft states (`cabinOf`). */
+export function createLabHullFeature(model: () => ModelData): RenderFeature {
   let batch: MeshBatch;
   let handle: ModelHandle;
   return {
@@ -96,7 +97,7 @@ export function createLabHullFeature(model: () => ModelData, partId: string): Re
       const s = frame.snapshot;
       const v = s.vessels.find((x) => x.id === s.activeVesselId);
       const pose = v ? frame.vesselPose(v.id) : undefined;
-      const part = v?.parts.find((p) => p.instanceId === partId);
+      const part = v ? cabinOf(v)?.part : undefined;
       if (pose && part) batch.add(handle, instanceInFrame(pose, part.localPos as Vec3, part.localRot ?? quat.identity(), { bodyFixed: false }));
       batch.finish();
     },

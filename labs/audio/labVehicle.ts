@@ -9,8 +9,10 @@
  * Positions are in the VES frame of each lab stack (+Y nose); y = 0 is the nozzle-exit plane of the
  * lowest stage, so the capsule seat (the cockpit listener) sits at the top of the stack.
  */
+import { activeVesselOf, cabinOf } from '@/core/access/snapshotAccess';
 import type { DefLibrary, ModuleDef, PartDef } from '@/core/contracts/defs';
 import type { ModuleState, PartSnapshot } from '@/core/contracts/sim';
+import { createFakeSim } from '@/core/fakes/fakeSim';
 import { quat } from '@/core/math/quat';
 import { G0 } from '@/core/math/scalar';
 import type { Vec3 } from '@/core/math/vec3';
@@ -164,10 +166,14 @@ export function placeVehicle(lib: DefLibrary, vehicleId: string): { parts: LabPl
     return at;
   };
   const parts = v.parts.map((p) => ({ instanceId: p.id, def: p.def, pos: place(p.id) }));
-  const cockpit = v.cameras.cockpit;
-  const cmd = lib.parts[byId.get(cockpit.part)?.def ?? '']?.modules.find((m) => m.type === 'command');
-  const seat = cmd && cmd.type === 'command' ? cmd.seats.find((s) => s.id === cockpit.seat) : undefined;
-  const base = pos.get(cockpit.part) ?? { x: 0, y: 0, z: 0 };
+  // The listener's seat is the camera seat of the cabin, as a session states it for a craft of this vehicle
+  // (`CraftSnapshot.commandPart` and `.cockpit`, read through `cabinOf`): the fake is published as the vehicle
+  // and states that block the way a session does, so nothing here reads the vehicle's own camera fields.
+  const vessel = activeVesselOf(createFakeSim(lib, { scene: 'pad', parts: new LabEngines(parts, lib.parts).parts(0), vehicleId }).snapshot());
+  const cabin = vessel ? cabinOf(vessel) : null;
+  const cmd = cabin ? lib.parts[cabin.part.def]?.modules.find((m) => m.type === 'command') : undefined;
+  const seat = cabin && cmd && cmd.type === 'command' ? cmd.seats.find((s) => s.id === cabin.cameraSeat) : undefined;
+  const base = (cabin ? pos.get(cabin.part.instanceId) : undefined) ?? { x: 0, y: 0, z: 0 };
   return { parts, seat: seat ? { x: base.x + seat.pos[0], y: base.y + seat.pos[1], z: base.z + seat.pos[2] } : base };
 }
 

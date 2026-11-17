@@ -18,8 +18,9 @@
  *   glass=0|1                     opaque exterior window panes (default 1)
  *   stages=<n>&coast=<s>&hold=1   fire n stages at start, let the pieces drift s seconds, then freeze time
  *   solo=1                        with focus=: show that vessel alone (the others are parked 200 km away)
- *   focus=<text>                  vessel that eye= / at= refer to: the first whose id, or one of whose part instance ids,
- *                                 contains the text (default: the active vessel)
+ *   focus=<text>                  vessel that eye= / at= refer to: panel<k> = petal k of a jettisoned fairing (the sector
+ *                                 the snapshot states of the part); else the first whose id, or one of whose part
+ *                                 instance ids, contains the text (default: the active vessel)
  *   eye=<x,y,z>&at=<x,y,z>        camera and look-at point in the active vessel's frame with the nose (+Y) up
  *                                 (up=z for the dorsal side up); on the pad -Z is east and +X south
  *   ballast=<iterations>          GPU ballast pass for perf measurements
@@ -37,7 +38,7 @@ import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3 } from '@/core/math';
 import { enuAt, lookRotation } from '@/render/core/lab';
 import { createLabEnvFeature, type LabEnvKind } from './labEnv';
-import { VehicleLabSim, type LabPlace, type SunSpec } from './labSim';
+import { matchesFocus, VehicleLabSim, type LabPlace, type SunSpec } from './labSim';
 
 const params = new URLSearchParams(location.search);
 const scene = (params.get('scene') ?? 'pad') as FakeScene;
@@ -217,7 +218,7 @@ async function boot(): Promise<void> {
         // eye= / at= are given in the active vessel's frame with +Y (the nose) as "up": the view a person
         // standing by the stack has, which the lab's vessel camera (dorsal side up) does not give.
         const text = focus;
-        const v = (text ? snapshot.vessels.find((x) => x.id.includes(text) || x.parts.some((p) => p.instanceId.includes(text))) : undefined) ?? snapshot.vessels.find((x) => x.id === snapshot.activeVesselId)!;
+        const v = (text ? snapshot.vessels.find((x) => matchesFocus(text, x.id, x.parts)) : undefined) ?? snapshot.vessels.find((x) => x.id === snapshot.activeVesselId)!;
         const pos = v3.add(v.rRoot, quat.rotate(v.q, v3.fromTuple(eye)));
         const target = v3.add(v.rRoot, quat.rotate(v.q, v3.fromTuple(at)));
         const up = quat.rotate(v.q, upAxis === 'z' ? v3.unitZ() : v3.unitY());

@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { v3, type Vec3 } from '@/core/math';
 import { seatFrames } from '@/render/cockpit/cabin/context';
 import { EDGE_REACH_MAX, FLAG_LABEL, LABEL_REACH, VERTEX_STRIDE } from '@/render/cockpit/mesh';
-import { testDefs, testModel } from './helpers';
+import { testModel } from './helpers';
 
 interface ViewStats {
   triangles: number;
@@ -55,15 +55,16 @@ function viewStats(positions: Float32Array, indices: Uint32Array, start: number,
 
 describe('cockpit raster load from the seat', () => {
   it('reports triangles per assembly and their size on screen; the full detail level stays within its budget', async () => {
-    const defs = await testDefs();
     const model = await testModel();
     const mesh = model.mesh;
     const f32 = new Float32Array(mesh.vertices);
     const positions = new Float32Array(mesh.vertexCount * 3);
     for (let i = 0; i < mesh.vertexCount; i++) positions.set(f32.subarray((i * VERTEX_STRIDE) / 4, (i * VERTEX_STRIDE) / 4 + 3), i * 3);
-    const vehicle = Object.values(defs.vehicles).find((v) => v.cockpit)!;
-    const seat = seatFrames(model.mould).find((s) => s.id === (model.layout.camera?.defaultSeat ?? vehicle.cameras.cockpit.seat))!;
     // The perf spec's view (cockpit lab, scene leo): the rest view from the layout's default seat, pitched 20 degrees up.
+    // (The lab sits in the craft's own camera seat only for a layout that names no default seat; this one names it.)
+    const defaultSeat = model.layout.camera?.defaultSeat;
+    expect(defaultSeat, 'the layout names the seat the cockpit view starts in').toBeDefined();
+    const seat = seatFrames(model.mould).find((s) => s.id === defaultSeat)!;
     const yaw = 0;
     const pitch = (20 * Math.PI) / 180;
     const fwd = v3.normalize(v3.add(v3.add(v3.scale(seat.L, Math.cos(pitch) * Math.cos(yaw)), v3.scale(seat.R, Math.cos(pitch) * Math.sin(yaw))), v3.scale(seat.U, Math.sin(pitch))));

@@ -15,6 +15,7 @@ import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { enuAt } from '@/render/core/lab';
 import { legPose } from '@/render/vehicle';
+import { fairingPanelOf } from '@/render/vehicle/vesselFeature';
 import { assembleVessel, setModuleStateForLab, splitForStage, vesselPartSnapshots, type Vessel } from '@/sim/vessel/public';
 
 export type LabPlace =
@@ -67,6 +68,22 @@ function craftBlocks(defs: DefLibrary, vessel: Vessel, parts: readonly PartSnaps
     chase: { ...c.vehicle.cameras.chase },
     policy: c.policy,
   }));
+}
+
+/**
+ * Whether a vessel is the one a focus text of the lab names (`focus=`, `setSolo`, a sun given in a vessel's
+ * frame). `panel<k>` is petal k of a jettisoned fairing, found as the presentation finds it: by the sector
+ * the snapshot states of the part (`PartSnapshot.panel`, `fairingPanelOf`), never by the petal's instance id.
+ * Any other text is a piece of the vessel's id or of the instance id of one of its parts; a petal answers to
+ * the instance id of the fairing it came from (`panel.of`).
+ */
+export function matchesFocus(text: string, vesselId: string, parts: readonly PartSnapshot[]): boolean {
+  const petal = /^panel(\d+)$/.exec(text);
+  if (petal) {
+    const index = Number(petal[1]);
+    return parts.some((p) => fairingPanelOf(p) === index);
+  }
+  return vesselId.includes(text) || parts.some((p) => (p.panel ? p.panel.of : p.instanceId).includes(text));
 }
 
 /** Stable number in [0, 1) from a vessel id (which way a piece on the axis drifts off it). */
@@ -235,9 +252,9 @@ export class VehicleLabSim implements LocalSession {
   }
 
   /**
-   * Show one vessel alone: every vessel whose id and part instance ids do not contain the text is parked
-   * 200 km away (null = everything where it is). For pictures of one separated piece with nothing of the
-   * rest of the stack in the frame or between it and the sun.
+   * Show one vessel alone: every vessel the text does not name (`matchesFocus`) is parked 200 km away
+   * (null = everything where it is). For pictures of one separated piece with nothing of the rest of the
+   * stack in the frame or between it and the sun.
    */
   setSolo(text: string | null): void {
     this.solo = text;
@@ -327,7 +344,7 @@ export class VehicleLabSim implements LocalSession {
       } else {
         // In the frame of the main vessel, or of the separated vessel named by `focus` (which may be tumbling).
         const text = this.sun.focus;
-        const lv = text ? this.list.find((x) => x.vessel.id.includes(text) || x.parts.some((p) => p.instanceId.includes(text))) : undefined;
+        const lv = text ? this.list.find((x) => matchesFocus(text, x.vessel.id, x.parts)) : undefined;
         const q = lv ? quat.normalize(quat.mul(a0.q, quat.normalize(quat.mul(lv.vessel.q, quat.fromRotVec(v3.scale(lv.vessel.w, this.drift ? this.t - lv.t0 : 0)))))) : a0.q;
         dir = quat.rotate(q, v3.normalize(v3.fromTuple(this.sun.dir)));
       }
@@ -350,7 +367,7 @@ export class VehicleLabSim implements LocalSession {
       const v = lv.vessel;
       const dt = this.drift ? this.t - lv.t0 : 0;
       const solo = this.solo;
-      const parked = solo !== null && !(v.id.includes(solo) || lv.parts.some((p) => p.instanceId.includes(solo)));
+      const parked = solo !== null && !matchesFocus(solo, v.id, lv.parts);
       const rA = v3.add(v3.addScaled(v.r, v.v, dt), v3.new(0, parked ? 2e5 : 0, 0));
       const qA = quat.normalize(quat.mul(v.q, quat.fromRotVec(v3.scale(v.w, dt))));
       const rRoot = v3.add(a.origin, quat.rotate(a.q, rA));
