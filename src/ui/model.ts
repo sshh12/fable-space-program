@@ -591,8 +591,17 @@ export interface ResourceGroupView {
  * part: the group is the part's `stageGroup` WITHIN ITS CRAFT and the label its `stageLabel`, so no vehicle
  * definition is read, a design that is not in the library has its bars, and two craft of one vehicle in one
  * vessel never merge theirs (in a vessel of several craft a group is known by `craftId/stageGroup` and its
- * label is led by the craft's name). Groups are in the order of the part list, which is the order of the
- * stack. Parts without a stated group (a hand-built snapshot) are one group per craft under the vessel's name.
+ * label is led by the craft's name). Parts without a stated group (a hand-built snapshot) are one group per
+ * craft under the vessel's name.
+ *
+ * ORDER. The groups come in the order in which the part list first shows a part of each that holds a
+ * resource. Before the sweep they came in the order of `VehicleDef.stageGroups`. A snapshot does not state
+ * that order (a part states its group and the group's label, nothing about the list), so it cannot be
+ * followed here without looking the vehicle up by an id of the snapshot. The two orders are the same for
+ * every vehicle of the library through every stage of its stack: tests/unit/flight-ui/resources.test.ts holds
+ * each of them, in the real session, to the computation of before, field for field, and fails for a vehicle
+ * file that lists its groups in another order than its parts carry them. Request presentation-sweep-10 asks
+ * for the order to be stated; with it the groups are sorted by it.
  */
 export function describeResources(s: SimSnapshot, defs: DefLibrary): ResourceGroupView[] {
   const v = activeVesselOf(s);
