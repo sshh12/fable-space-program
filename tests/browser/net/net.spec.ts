@@ -26,6 +26,11 @@ test('the shared wire-layer cases pass in Chrome', async ({ page, pageLog }) => 
   server.onConnection = (c) => {
     c.onBinary = (b) => c.sendBinary(b);
   };
+  // Name any resource that fails to load (a console 404 does not say which).
+  const missing: string[] = [];
+  page.on('response', (r) => {
+    if (r.status() >= 400) missing.push(`${r.status()} ${r.url()}`);
+  });
   await page.goto(appUrl(`/tests/browser/net/runner.html?ws=${server.port}`));
   await page.waitForFunction(() => window.__netResults?.done === true, undefined, { timeout: 9 * 60_000 });
   const report = await page.evaluate(() => window.__netResults!);
@@ -35,6 +40,7 @@ test('the shared wire-layer cases pass in Chrome', async ({ page, pageLog }) => 
   expect(failed, 'failed cases').toEqual([]);
   const expected = [...ALL_CASES.map((c) => c.name), ...FIXTURE_FILES.map((f) => `fixture ${f}: every frame re-encodes identically, every message round-trips`), 'the WHATWG WebSocket transport exchanges binary frames with an RFC 6455 server'];
   expect(report.results.map((r) => r.name)).toEqual(expected);
+  expect(missing, 'resources that failed to load').toEqual([]);
   const errors = pageLog.messages.filter((m) => !/favicon/i.test(m));
   expect(errors, 'console errors and warnings').toEqual([]);
 });
