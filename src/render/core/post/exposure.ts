@@ -404,10 +404,10 @@ export interface MeterResult {
  *    (lit pixels over METER2_SCENE_LIT_FROM to _FULL of it: the sea, the ground), not for a lit subject in
  *    a dark frame (a capsule against the night: its bright part is what the picture is of).
  * 3. A SMALL EMITTER DOES NOT SET THE EXPOSURE EITHER. An emitter hint that covers up to
- *    METER2_EMITTER_SMALL of the frame (a thruster's flash is told with its glare, 1.1 %) may raise the
+ *    METER2_EMITTER_SMALL of the frame (a thruster's flash is told with its glare, 1.1 to 1.8 %) may raise the
  *    target by METER2_EMITTER_SMALL_EV over what the frame without emitters asks for; from
  *    METER2_EMITTER_FREE it is not bounded (a flame beside the camera, a plasma sheath). The bound holds by
- *    what that frame has to show (its histogram's weight, and none where its target is the dark floor: a
+ *    what that frame has to show (lit pixels over 2 % of it, and none where its target is the dark floor: a
  *    frame that is dark but for the emitter follows the emitter, METER2_CONTENT_EV stops over the floor
  *    the bound is whole). Before, each thruster pulse of a night entry took the target from 1.7 to 11.8
  *    and back.
@@ -424,8 +424,8 @@ export const METER2_SKY_SHARE_FULL = 0.1;
 export const METER2_SUBJECT_PERCENTILE = 0.75;
 export const METER2_SUBJECT_STOPS = 2;
 export const METER2_HIGHLIGHT_MAX_EV = 1;
-export const METER2_EMITTER_SMALL = 0.015;
-export const METER2_EMITTER_FREE = 0.05;
+export const METER2_EMITTER_SMALL = 0.02;
+export const METER2_EMITTER_FREE = 0.06;
 export const METER2_EMITTER_SMALL_EV = 2;
 export const METER2_CONTENT_EV = 4;
 export const METER2_SCENE_LIT_FROM = 0.1;
@@ -539,7 +539,7 @@ function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
       // (Towards "not bounded" over the range of the scale: 24 stops.) The bound holds by what the frame
       // without the emitter has to show: a frame that is dark but for the emitter follows the emitter.
       const bound = none.targetEv100 + METER2_EMITTER_SMALL_EV + free * (EV_MAX - EV_MIN);
-      const content = none.histogramWeight * smooth(EV_DARK_FLOOR, EV_DARK_FLOOR + METER2_CONTENT_EV, none.targetEv100);
+      const content = smooth(LIT_PRIOR_ONLY, LIT_FULL_BRIGHT, none.litFraction) * smooth(EV_DARK_FLOOR, EV_DARK_FLOOR + METER2_CONTENT_EV, none.targetEv100);
       return all.targetEv100 > bound ? { ...all, targetEv100: all.targetEv100 + (bound - all.targetEv100) * content } : all;
     }
   }

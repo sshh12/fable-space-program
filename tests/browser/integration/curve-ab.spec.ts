@@ -379,6 +379,8 @@ test('curve A/B: 10-entry (the real app, scenario qa-entry flown by the test pil
     const b = await page.evaluate(() => (window as unknown as { __app: AppHooks }).__app.brief());
     const core = await readCore(page);
     samples.push({ label: stop ? `stop ${stop}` : `${(b.altitudeAsl / 1000).toFixed(1)} km`, t, ev100: core.ev100, input: core.input });
+    // Before the sheath, while the thrusters hold the attitude: the frame as the camera has it then (not held).
+    if (shots.length === 0 && !stop && b.altitudeAsl < 135_000) shots.push(await shotOf(page, `before the sheath, thrusters holding the attitude (${(b.altitudeAsl / 1000).toFixed(0)} km, in flight)`));
     if (stop) {
       await exposureSettled(page, 0.1, 600);
       const s = await shotOf(page, `${stop === 'peak-heating' ? 'peak heating' : 'peak g'} (${(b.altitudeAsl / 1000).toFixed(1)} km)`);
