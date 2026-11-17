@@ -95,7 +95,11 @@ export interface FrameTimings {
   /**
    * The display's frame intervals: `ms` between this frame's requestAnimationFrame time and the one before
    * (the callback's own time stamp, which steps by whole display periods: an interval of two periods IS a
-   * frame the display showed twice). Kept since the last reset, the last 8192 at most.
+   * frame the display showed twice). Kept since the last reset, the last 8192 at most. The first interval after
+   * a reset began before it: a caller that stalled the page just before (a screenshot) lets a frame or two pass
+   * before it resets, or that stall is the new window's first interval (the flight of 2026-11-17: 166.7 ms at
+   * index 0 of the first window after the pad's picture). It is not dropped here: a late frame that falls on a
+   * window's boundary is a late frame.
    */
   interval(ms: number): void;
   intervals(): number[];

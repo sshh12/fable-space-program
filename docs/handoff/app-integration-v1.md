@@ -671,6 +671,142 @@ Added 2026-11-12 14:49 (phase 2, first half; all looked at):
 
 ## Browser mission (ARCHITECTURE 18.2)
 
+### Flight of 2026-11-17 (09:59-10:45): the whole mission on the swept tree (createSession)
+
+**Result: the flight passes every gate on the code of the presentation sweep (sub-wave 3.2, HEAD `55dd2d1`); it
+is the flight of 2026-11-12 again, to the bit through the parking orbit; the spec ends red on frame-time lines
+only, the ones of 2026-11-12, and nothing in the pictures is new and wrong.** 45.6 minutes from `ready` to
+splashdown (45.6 on 2026-11-12), all seventeen milestones in order, `cheatCounter` 0 at every milestone and at
+the end, pad start, crew alive, `terrain.incompleteQueries` 0, `window.__test.errors` empty, the console with
+the known `powerPreference` warning only, 36 of 36 picture stops, 40 pictures, none of the seven "no body in
+the frame" failures of 2026-11-12 (the correction of `bodiesInFrame` holds in a browser). Record:
+`docs/qa/mission/browser-mission-2026-11-17.json` (gates, the 79 phase rows with the frame-interval verdict of
+each, `comparison` with every milestone field against 2026-11-12, `pictureComparison`, `notes`).
+
+Every milestone's numbers against 2026-11-12 (the record's `comparison.milestones` has every field):
+
+| Milestone | time | fields identical | what moved (now minus then) |
+|---|---|---|---|
+| LIFTOFF | identical | 38 of 38 | identical |
+| MAX_Q | identical | 41 of 41 | identical |
+| STAGE_SEP_1 | identical | 38 of 38 | identical |
+| FAIRING_JETTISON | identical | 34 of 34 | identical |
+| STAGE_SEP_2 | identical | 32 of 32 | identical |
+| EARTH_ORBIT | identical | 35 of 35 | identical |
+| TLI_COMPLETE | identical | 15 of 32 | altitude -0.07841; latitudeDeg +1.708e-07; longitudeDeg +1.765e-07; speedOrbital -2.466e-05; mass -0.02474; predictedSoiUt -11.61 |
+| MOON_SOI_ENTER | +2.0 s | 12 of 31 | altitude +4.523; latitudeDeg +2.966e-05; longitudeDeg +0.0005177; speedOrbital -0.01358; mass -0.2615; predictedSoiUt +1.979 |
+| LUNAR_ORBIT | +2.5 s | 11 of 33 | altitude -19.68; latitudeDeg +0.001078; longitudeDeg +0.0004832; speedOrbital +0.006193; mass +0.1845; periapsisAltitude -71.18 |
+| LUNAR_TOUCHDOWN | +1.7 s | 25 of 46 | altitude +0.004078; latitudeDeg +5.583e-07; longitudeDeg -6.305e-06; speedOrbital +1.035e-08; mass +2.519; touchdownVerticalSpeed -3.331e-07 |
+| LUNAR_LIFTOFF | +1.7 s | 13 of 28 | altitude +0.01219; latitudeDeg -4.363e-06; longitudeDeg -9.711e-06; speedOrbital -0.008828; mass -1.218 |
+| MOON_SOI_EXIT | -50.3 s | 10 of 29 | altitude +1.155e+04; latitudeDeg +0.0001528; longitudeDeg +0.2018; speedOrbital -0.2895; mass +0.8748; predictedSoiUt -50.3 |
+| EARTH_PERIGEE_TARGETED | -50.3 s | 9 of 32 | altitude +1.171e+04; latitudeDeg +0.0001485; longitudeDeg +0.2018; speedOrbital -0.3075; mass +0.8795; predictedPeriapsisAltitude -614.8 |
+| ENTRY_INTERFACE | -1.4 s | 11 of 25 | altitude -0.8651; latitudeDeg -0.006425; longitudeDeg -0.003408; speedOrbital -0.01807; mass -0.005874 |
+| DROGUE_DEPLOY | -1.2 s | 9 of 29 | altitude +2.659; latitudeDeg -0.01857; longitudeDeg +0.003874; speedOrbital -1.075; mass -0.07208; peakG -0.005236 |
+| MAIN_DEPLOY | -1.2 s | 9 of 29 | altitude +0.5662; latitudeDeg -0.0186; longitudeDeg +0.003789; speedOrbital +0.009454; mass -0.07208; peakG -0.005236 |
+| SPLASHDOWN | -1.1 s | 22 of 42 | altitude -0.07739; latitudeDeg -0.0186; longitudeDeg +0.003787; speedOrbital +0.04266; mass -0.07208; peakG -0.005236 |
+
+(Altitudes in metres, speeds in m/s, masses in kg, angles in degrees, times in seconds.)
+
+The flight is the same to the last bit through EARTH_ORBIT (every field of six milestone records and their
+times), the time of TLI_COMPLETE is the same and its state differs in the fifth to eighth digit, and from the
+Moon's sphere of influence on it is the pilot's closed loop: 1 to 3 s and metres apart, 50 s at the sphere of
+influence on the way back. Gates (the words of the spec's table; "same" = the same words as on 2026-11-12):
+
+| Milestone | Measured | 2026-11-12 |
+|---|---|---|
+| LIFTOFF | surface speed 0.017 m/s, inertial 439.3 m/s | same |
+| MAX_Q | 28.35 kPa at 11.0 km | same |
+| STAGE_SEP_1 | 77.1 km, 2067 m/s, 1 debris vessel(s) | same |
+| FAIRING_JETTISON | 96.0 km, 5 debris vessels | same |
+| STAGE_SEP_2 | 183.8 km, 7819 m/s, 1 debris vessel(s) | same |
+| EARTH_ORBIT | 181.0 km x 257.2 km, incl. 20.89 deg | same |
+| TLI_COMPLETE | Moon encounter predicted 67.6 h ahead | same |
+| MOON_SOI_ENTER | 0.000 s from the predicted time | same |
+| LUNAR_ORBIT | 102.3 km x 113.7 km, e 0.0031 | 102.4 km x 113.7 km, e 0.0031 |
+| LUNAR_TOUCHDOWN | 0.65 m from the target; data level 12 resident of 12 available (deepest 12); 1.00 m/s down, 0.016 m/s across, tilt 0.36 deg (1.38 at the record), 4 of 4 legs intact; 911 s on the surface | 0.82 m from the target; data level 12 resident of 12 available (deepest 12); 1.00 m/s down, 0.016 m/s across, tilt 0.36 deg (1.43 at the record), 4 of 4 legs intact; 911 s on the surface |
+| LUNAR_LIFTOFF | after 916 s on the surface; "Heron descent stage" still landed at the end | same |
+| MOON_SOI_EXIT | 0.000 s from the predicted time | same |
+| EARTH_PERIGEE_TARGETED | vacuum perigee 37.5 km | vacuum perigee 38.1 km |
+| ENTRY_INTERFACE | 122.0 km, 11.010 km/s; peak 5.87 g, g-dose 0.00, ablator left 58.0 %, capsule RCS left at drogues 93.0 % | same |
+| DROGUE_DEPLOY | 7447 m, Mach 0.43, 4.91 kPa | 7445 m, Mach 0.43, 4.91 kPa |
+| MAIN_DEPLOY | 3175 m, 49.6 m/s, 1.10 kPa | same |
+| SPLASHDOWN | 15.31 deg, -141.59 deg on water, 1159.3 km from the centre of "Central Pacific" (radius 2000.0 km); 7.82 m/s; upright at 8.8 deg after 30 s | 15.33 deg, -141.59 deg on water, 1161.4 km from the centre of "Central Pacific" (radius 2000.0 km); 7.82 m/s; upright at 10.3 deg after 30 s |
+| budgets | 7.87 days from lift-off to splashdown; 45.6 minutes of real time from ready to splashdown | same |
+
+Frame time (2560 x 1440, render scale 1, governor off; harness clock 60.00 / 59.99 Hz; the frame-interval line
+of ARCHITECTURE 29 on the display's intervals of each phase, period 16.668 ms). By segment, with the worst
+phase of each; "then" is 2026-11-12 (GPU p99 / main-thread p99 / phases failing the line):
+
+| Segment | min | frames | GPU p99 (line 11) | main thread p99 (line 6) | phases over 6 ms | frame-interval line | then |
+|---|---|---|---|---|---|---|---|
+| pad | 0.6 | 2071 | 6.13 (prelaunch) | 5.67 (prelaunch) | none | prelaunch: 1 dropped, 1 of 33 ms or more (longest 166.7 ms) | 6.45 / 4.83 / prelaunch |
+| ignition and lift-off | 0.2 | 511 | 7.01 (ignition) | 12.44 (vertical) | ignition 8.55; vertical 12.44 | ignition: 1 dropped, 1 of 33 ms or more (longest 33.3 ms) | 7.00 / 12.49 / ignition |
+| ascent | 2.6 | 8733 | 3.91 (pitchProgramme) | 8.29 (pitchProgramme) | pitchProgramme 8.29; m1Separation 7.31 | holds | 3.94 / 8.07 / holds |
+| parking orbit | 2.8 | 9541 | 2.76 (parkingCoast) | 3.91 (parkingCoast) | none | holds | 2.79 / 3.62 / holds |
+| parking orbit, cockpit | 0.0 | 241 | 2.42 (parkingCoast (cockpit)) | 4.50 (parkingCoast (cockpit)) | none | holds | 2.50 / 4.10 / holds |
+| translunar injection | 4.7 | 17011 | 2.94 (tli:tail) | 5.82 (tli:plan) | none | holds | 3.05 / 4.83 / holds |
+| coast to the Moon | 5.1 | 18271 | 3.05 (mcc2:align) | 6.54 (mcc1:trim) | mcc1:trim 6.54 | moonArrival: 1 dropped, 1 of 33 ms or more (longest 466.7 ms) | 3.37 / 3.70 / moonArrival |
+| lunar orbit | 7.9 | 28411 | 2.18 (loi:tail) | 5.24 (deorbit:trim) | none | holds | 2.96 / 5.69 / holds |
+| powered descent | 4.0 | 13598 | 2.91 (terminal) | 14.27 (terminal) | approach 6.59; terminal 14.27; touchdown 7.12 | holds | 2.94 / 12.27 / holds |
+| lunar surface | 0.5 | 1620 | 3.22 (surface) | 5.41 (surface) | none | holds | 3.17 / 3.85 / holds |
+| lunar surface, cockpit | 0.0 | 240 | 2.04 (touchdown (cockpit)) | 11.76 (touchdown (cockpit)) | touchdown (cockpit) 11.76 | holds | 2.12 / 9.82 / holds |
+| lunar ascent | 3.5 | 12570 | 3.42 (lunarLiftoff) | 6.09 (lunarAscent) | lunarAscent 6.09 | holds | 3.61 / 4.95 / holds |
+| return to the Earth | 8.0 | 28746 | 3.62 (tec1:burn) | 5.72 (entryPrep) | none | holds | 4.35 / 5.26 / holds |
+| entry | 3.2 | 11405 | 2.74 (entry) | 5.30 (entry) | none | holds | 2.74 / 4.90 / holds |
+| chutes | 0.6 | 1980 | 4.29 (chutes) | 4.89 (chutes) | none | holds | 4.16 / 4.75 / holds |
+| splashdown | 1.7 | 5730 | 5.06 (splashdown) | 5.02 (splashdown) | none | holds | 5.25 / 5.02 / holds |
+
+- GPU: no phase over 11 ms, the worst 7.01 (7.00 then); the phases' medians 0.04 ms apart on average.
+- Frame-interval line: the median holds in all 79 phases (0.19 % off at most), 3 dropped frames in 160,679.
+  As flown it failed in the three phases of 2026-11-12:
+  - `prelaunch`: one interval of 166.7 ms. **The spec's own**: index 0 of the first window after the pad's
+    picture, with a slowest frame of 6.0 ms and a largest draw-to-draw time of 17.3 ms in that window: the stall
+    of the screenshot, which ended after the window had been started (the sweep's part flight met the same
+    "167 ms frame on the pad"). The spec now lets two frames pass after its own pictures before it starts a
+    window; a part flight to MAX_Q afterwards: 2071 intervals on the pad, the longest 16.9 ms, the line holds.
+  - `ignition`: one interval of 33.3 ms in 181 frames (0.55 %; line 0.5 %): the lift-off frame, 24.1 ms on the
+    main thread (simulation 11.2, render 10.6 with the terrain's hooks 5.2), missed one display frame. Real,
+    and the frame of 2026-11-12 (request -13). In the part flight afterwards the frame stayed inside its period
+    (the longest interval 16.9 ms).
+  - `moonArrival`: one frame of 466.7 ms: **`sky.prepare` 474.8 ms** in the frame the Moon's sphere of
+    influence is entered (452 ms on 2026-11-12, then without a breakdown; this flight's windows keep their
+    slowest frames). The sky package's; not new.
+- Main thread: 10 phases over 6 ms (6 then): the six of 2026-11-12 and `mcc1:trim` 6.54, `approach` 6.59,
+  `touchdown` 7.12, `lunarAscent` 6.09. The machine was busier in the first half hour of this flight (the
+  sweep's reviewer worked beside it) and quieter in the last ten minutes than on 2026-11-12: the phases' medians
+  are 1.0 to 1.4 ms higher from the pad to the lunar surface (prelaunch 3.17 -> 4.18, surface 2.76 -> 4.16) and
+  1.0 to 1.6 ms lower from the trans-Earth coast to the splashdown (entry 3.39 -> 2.39, splashdown 3.78 ->
+  2.69); a part flight an hour later read 2.62 ms on the pad (p99 4.58), under 2026-11-12. One thing is higher
+  in every phase, busy or not: the simulation stage, by 0.1 to 0.2 ms at p99 (0.92 -> 1.09 ms in the splashdown
+  phase, 0.56 -> 0.65 on the pad): the session over the simulation. Inside the line.
+
+Pictures (`out/screens/mission/`; the set of 2026-11-12 was copied aside before the run and each new picture
+looked at beside the old one of the same name; `pictureComparison` in the record):
+- 00-pad to 07-tli-complete (15): the same pictures, frame for frame (mean difference 0.3 to 4.3 of 255, no
+  HUD panel changed; a toast caught at another moment of its fade in two of them).
+- 08-moon-soi-enter to 16-main-deploy-plus-8s (20): the same scenes, framing, effects and HUD words, with the
+  closed loop's differences (attitudes and headings a few degrees apart, last digits).
+- 17-splashdown, five pictures: from one second after the splash the foam round the capsule is smaller and
+  dimmer and at +10 s and +34 s a faint grey trace, the sea reads black, the meter stops down sooner. Not the
+  sweep: the ocean's change of 2026-11-16 before it (`cff94bd`: a hull churns wake foam by its speed, not by
+  the time it lies in the water) and the known meter fault (request ocean-13) with a canopy that fell nearer
+  the camera this time.
+- No sound bus that was heard at a picture on 2026-11-12 is silent now, or the other way round.
+- **Nothing new and wrong.** The known faults are all still in the pictures.
+
+The app suite before the flight (`tests/browser/app`, 09:42-09:58): functional 10 of 10; perf 2 of 3 (the
+1440p climb's main thread 6.20 ms p99 on the busy machine; the frame-interval line held at all seven
+checkpoints).
+
+What the sweep changed in `src/app` and the mission spec, read (`git diff pre-sweep-2026-11-16..HEAD`):
+`createSession` for `createSim` and `LocalSession` for the types, the seat's name from the craft blocks
+(`cabinOf`), the simulation's statistics through `diagnosticsOf`, the pause on the `flightMenu` action (Esc / P),
+`MISSION_UNTIL=<milestone>` for a part of the flight, and the frame intervals read before the reset that clears
+them (the error was this package's, of the evening of 2026-11-12: every window's list had been empty). All as
+this package would have it, with one remark: the key-help sheet calls Esc / P "Flight menu" (the binding table's
+words) while the offline game answers the key with a pause; until the menu exists the sheet says something the
+key does not do.
+
 ### Flight of 2026-11-12 (16:13-16:59): the re-flight with picture stops
 
 **Result: the flight passes every gate; the spec fails softly on frame-time lines and on seven "no body in the
@@ -1128,7 +1264,8 @@ switch), both in `83c80f1`.
 
 ## Known limits
 
-- The browser mission flies and passes every gate (2026-11-11 and 2026-11-12). Missed in the flight of
+- The browser mission flies and passes every gate (2026-11-11, 2026-11-12 and, on the swept tree, 2026-11-17:
+  what that flight missed is under "Flight of 2026-11-17"). Missed in the flight of
   2026-11-12: main-thread p99 in 6 of 80 phases (lift-off, the first kilometres, the last 600 m over the Moon:
   the terrain's hooks), and the frame-interval line as restated on 2026-11-12 in 3 of 80 (`ignition`: one
   dropped frame in 182; `prelaunch` and `moonArrival`: one frame of 33 ms or more each). See "Browser mission".
@@ -1149,9 +1286,10 @@ switch), both in `83c80f1`.
   its Earth-orbit cockpit picture and does not zoom out for the chutes.
 - The `qa-leo` scenario starts heads-up (`data/defs/scenarios/qa-leo.json`, not the app's): left as it is; the
   low-orbit test rolls the stack heads-down through the keys before its cockpit pictures.
-- Corrected after the flight of 2026-11-12 and not run in a browser since: `bodiesInFrame()` below a body's
-  reference radius, the mission spec's read-out of a window's slowest frames, and the mission spec's
-  frame-interval line on the app's recorded intervals (the app perf spec runs the same code and holds it).
+- The corrections after the flight of 2026-11-12 (`bodiesInFrame()` below a body's reference radius, a window's
+  slowest frames, the frame-interval line on the app's recorded intervals) ran in the flight of 2026-11-17. The
+  correction after that one (two frames after the spec's own pictures before a window starts) ran in a part
+  flight to MAX_Q, not in a whole flight.
 - The frozen start runs the camera to rest with neutral input: in a page opened with it a view switch has no
   blend, and a rig that never comes to rest (none does today on the pad or in the cockpit) would keep the page
   busy. It is for captures, not for play.

@@ -244,12 +244,22 @@ const closeWindow = (page: Page, phase: string): Promise<PerfWindow> =>
     };
   }, phase);
 
-/** Start a new perf window; returns the frame counter at its start. */
-const resetPerf = (page: Page): Promise<number> =>
-  page.evaluate(() => {
+/**
+ * Start a new perf window; returns the frame counter at its start. `settleFrames`: frames to let pass first.
+ * After the spec's own pictures (AFTER_PICTURES) the page's first frame comes late, by the screenshot: in the
+ * flight of 2026-11-17 the first window after the pad's picture began with an interval of 166.7 ms and the pad
+ * failed the frame-interval line on it, with a slowest frame of 6 ms. Two frames later the stall is behind.
+ * A window that follows another without pictures in between is not started here (closeWindow has started it):
+ * a late frame on the boundary of two windows stays in the record.
+ */
+const resetPerf = (page: Page, settleFrames = 0): Promise<number> =>
+  page.evaluate(async (n) => {
+    if (n > 0) await window.__test!.waitFrames(n);
     window.__test!.resetPerf();
     return window.__app!.frames();
-  });
+  }, settleFrames);
+const AFTER_PICTURES = 2;
+const frameCount = (page: Page): Promise<number> => page.evaluate(() => window.__app!.frames());
 
 /** Small projection of the presented snapshot (state() copies everything: only at milestones and at the end). */
 const stateFacts = (page: Page) =>
@@ -432,7 +442,7 @@ test(`lunar-direct flown by the test pilot in the page, pad to ${UNTIL ?? 'splas
         if (suffix === '' && COCKPIT_AT.has(milestone)) {
           // The cockpit column of ARCHITECTURE 17.1: one window in the cabin with the flight running again.
           await resume();
-          await resetPerf(page);
+          await resetPerf(page, AFTER_PICTURES);
           await page.evaluate((n) => window.__test!.waitFrames(n), WINDOW_FRAMES);
           windows.push(await closeWindow(page, `${phase ?? '?'} (cockpit)`));
         }
@@ -485,7 +495,7 @@ test(`lunar-direct flown by the test pilot in the page, pad to ${UNTIL ?? 'splas
     const handled = new Set<string>();
     let lastFrames = p.frames;
     let lastFramesAt = Date.now();
-    let windowFrames0 = await resetPerf(page);
+    let windowFrames0 = await resetPerf(page, AFTER_PICTURES);
 
     for (;;) {
       p = await poll(page);
@@ -512,7 +522,10 @@ test(`lunar-direct flown by the test pilot in the page, pad to ${UNTIL ?? 'splas
       const full = p.frames - windowFrames0 >= WINDOW_FRAMES;
       const held = await heldStop();
       if (fresh.length > 0 || phaseChanged || full || held) {
-        if (p.frames - windowFrames0 >= MIN_WINDOW_FRAMES) windows.push(await closeWindow(page, phase));
+        // A window of MIN_WINDOW_FRAMES or more is read and the next one starts in the same step; a shorter one
+        // is thrown away below.
+        const closed = p.frames - windowFrames0 >= MIN_WINDOW_FRAMES;
+        if (closed) windows.push(await closeWindow(page, phase));
         if (phaseChanged) {
           console.log(`[${((now - t0) / 60_000).toFixed(1)} min] phase ${phase} -> ${phaseNow} (MET ${(p.b.met / 3600).toFixed(2)} h, ${km(p.b.altitudeAsl)}, warp ${p.b.warpFactor}x)`);
           phase = phaseNow;
@@ -526,8 +539,10 @@ test(`lunar-direct flown by the test pilot in the page, pad to ${UNTIL ?? 'splas
         }
         // The pictures: the game holds at one stop at a time (a milestone's own stop is due in the frame the
         // milestone is recorded, so it is the one held when the milestone is first seen here).
-        if (held) await shootStop(held, p.phase);
-        windowFrames0 = await resetPerf(page);
+        if (held) {
+          await shootStop(held, p.phase);
+          windowFrames0 = await resetPerf(page, AFTER_PICTURES);
+        } else windowFrames0 = closed ? await frameCount(page) : await resetPerf(page);
       }
       if (p.done && scenarioMilestones.every((id) => handled.has(id))) break;
       // A part of the flight ends with its last milestone (its pictures were taken above, at its own stop).

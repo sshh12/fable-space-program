@@ -89,6 +89,10 @@ describe('frame intervals', () => {
     expect(t.intervals()).toEqual([16.7, 16.6, 33.4]);
     t.reset();
     expect(t.intervals()).toEqual([]);
+    // The first interval after a reset is kept like any other: a late frame on a window's boundary is a late frame.
+    t.interval(33.3);
+    expect(t.intervals()).toEqual([33.3]);
+    t.reset();
     for (let i = 0; i < 8192 + 5; i++) t.interval(i);
     const kept = t.intervals();
     expect(kept).toHaveLength(8192);
