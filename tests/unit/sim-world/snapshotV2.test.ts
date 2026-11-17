@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
+import { describeStages } from '@/core/defs/stageWords';
 import { FrameEpochTracker, rebasePoint, rebaseVelocity } from '@/core/math/frame';
 import { v3 } from '@/core/math/vec3';
 import { createSession, diagnosticsOf } from '@/session';
@@ -169,8 +170,15 @@ describe('craft blocks and part keys', () => {
     const craft = v.crafts![0]!;
     expect(craft.id).toBe(v.id);
     expect(craft).toMatchObject({ vehicleId: 'meridian-lunar', name: vehicle.name, ownerId: null, ownerCallsign: null, commandPart: 'capsule', chase: vehicle.cameras.chase });
-    // The cockpit of the command part, resolved: the interior id and the camera seat the vehicle names for it.
-    expect(craft.cockpit).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit.seat, sensorMount: null });
+    // The cockpit of the command part, resolved: the interior id and the camera seat the vehicle names for it,
+    // and the crew by seat as the vehicle lists them (request presentation-sweep-3).
+    expect(craft.cockpit).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit.seat, sensorMount: null, crew: vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) });
+    // The staging panel says what each stage burns and what its chute actions do: the session's whole path
+    // (the world's snapshot, not only the vessel's facade) carries the words of the vehicle the craft was built from.
+    const words = describeStages(vehicle, (id) => defs.parts[id]);
+    expect(s.staging.stages.map((st) => ({ burnLabel: st.burnLabel, thrustVac: st.thrustVac, weightFlowVac: st.weightFlowVac, actionChutes: st.actionChutes, chuteEnvelopes: st.chuteEnvelopes }))).toEqual(words);
+    // No part of the stack is a fairing petal.
+    expect(v.parts.every((p) => p.panel === null)).toBe(true);
     expect(craft.policy).toEqual({ lendAttitude: true, lendEngines: false, lendPropellant: false, helm: 'crew' });
     expect(craft.staging.nextStage).toBe(s.staging.nextStage);
     expect(craft.staging.lockout).toBe(s.staging.lockout);

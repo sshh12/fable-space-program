@@ -4,6 +4,7 @@
  * stages that are considered already fired. Two docking ports mated in the vehicle file become a dock link.
  */
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
+import { rememberStages } from '@/core/defs/stageWords';
 import type { DefLibrary, ModuleDef, PartDef, VehicleDef, VehiclePartPlacement } from '@/core/contracts/defs';
 import { DEFAULT_UNIVERSE_RULES, type LendPolicy } from '@/core/contracts/net';
 import type { ModuleState } from '@/core/contracts/sim';
@@ -299,6 +300,9 @@ export function buildVehicle(defs: DefLibrary, vehicleId: string, identity: Craf
   if (roots.length !== 1) throw new VesselAssemblyError(vehicleId, `expected exactly one root part (parent null), found ${roots.length}`);
   const groups = new Set(vehicle.stageGroups.map((g) => g.id));
   const craft = createCraft(vehicle, identity);
+  // What the vehicle's stages say about themselves is read from the library once, here, where it is at hand
+  // (the snapshot's `StageInfo` words: src/core/defs/stageWords.ts). Not state: nothing of it is saved or hashed.
+  rememberStages(vehicle, (id) => defs.parts[id]);
   assertIssuedId(craft.craftId, `craft of vehicle "${vehicleId}"`);
   for (const pl of vehicle.parts) assertIssuedId(pl.id, `vehicles/${vehicleId}.json: part instance id`);
   const vessel = emptyVessel(craft.craftId, craft.name, craft);

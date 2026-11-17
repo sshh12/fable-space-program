@@ -45,7 +45,7 @@ import type { FrameEpochOrigin, FrameRebase } from '../math/frame';
 import type { Quat } from '../math/quat';
 import type { Vec3, Vec3Tuple } from '../math/vec3';
 import type { ControlInputs, NavballMode, SasMode } from './controls';
-import type { ScenarioDef } from './defs';
+import type { ParachuteEnvelope, ScenarioDef } from './defs';
 import type { LendPolicy, Presence, TargetRef, TimeOffer, TimeView } from './net';
 import type { LocalSession, SessionDebug } from './session';
 
@@ -268,6 +268,15 @@ export interface PartSnapshot {
   modules: ModuleState[];
   /** True while hidden inside a closed fairing (no aero/heating; still rendered). */
   shielded: boolean;
+  /**
+   * v2 (request presentation-sweep-2), optional until the tighten step: set on the one part of a jettisoned
+   * fairing PETAL, which is a vessel and a craft of its own: sector `index` (0-based) of `count`, and `of`,
+   * the instance id of the fairing part it was a petal of. That fairing was a part of the craft this petal's
+   * craft left (`CraftSnapshot.parent`), and it is the part a `fairingJettisoned` event names. null for
+   * every other part. Absent = not stated (a producer that does not fill it yet). With it nothing reads a
+   * petal's instance id, which is opaque like every other id.
+   */
+  panel?: { index: number; count: number; of: string } | null;
 }
 
 export interface VesselAeroState {
@@ -311,6 +320,14 @@ export interface CraftCockpit {
    * derived from the part's nose.
    */
   sensorMount: { pos: Vec3Tuple; lookDir: Vec3Tuple; upDir: Vec3Tuple } | null;
+  /**
+   * v2 (request presentation-sweep-3), optional until the tighten step: the crew of the craft by seat, as
+   * the vehicle the craft was built from lists them (`VehicleDef.crew`): `seat` is the id of a seat of the
+   * command part (`command.seats`), `name` the crew member's. Empty for a craft without crew. Absent = not
+   * stated. A seat's readable name is the cockpit layout's label where it has one, else this name, else
+   * the seat's id; nothing looks a vehicle up for it.
+   */
+  crew?: { seat: string; name: string }[];
 }
 
 /** One craft of a vessel (v2; ARCHITECTURE 7.2). A vessel that never docked has exactly one. */
@@ -517,6 +534,38 @@ export interface StageInfo {
   propellantFraction: number | null;
   /** Icons of the individual actions (engine, decoupler, chute...). */
   actionKinds: string[];
+  // v2 (request presentation-sweep-3), all optional until the tighten step: what the stage says about itself
+  // that does not change during a flight, from the vehicle the craft was built from and its parts'
+  // definitions (src/core/defs/stageWords.ts, `describeStages`: one derivation for every producer). Absent =
+  // not stated (a producer that does not fill them yet): a consumer then says less, and never looks the
+  // vehicle up by a runtime id.
+  /**
+   * What the stage burns: the labels of the stage groups of the engines its ignite actions light, each group
+   * once, in the order the actions name them, joined with ' + ' ("Meridian M-3"). null for a stage that
+   * ignites none.
+   */
+  burnLabel?: string | null;
+  /**
+   * The engines the stage ignites, fixed-burn motors and engines without a vacuum Isp left out: their thrust
+   * in vacuum, N, and their propellant's weight flow at standard gravity, N/s (the sum of thrustVac /
+   * ispVac: mass flow times g0). Both 0 for a stage that ignites none. The full-throttle acceleration at the
+   * stage's present mass is ve (1 - exp(-deltaVVac / ve)) / burnTime with ve = g0 thrustVac / weightFlowVac:
+   * a figure that does not depend on local gravity (request flight-ui-8).
+   */
+  thrustVac?: number;
+  weightFlowVac?: number;
+  /**
+   * One entry per entry of `actionKinds`: for a 'deployParachute' action the kind of canopy it deploys; for
+   * a 'cutParachute' action the kind it releases (what the latest deploy action before it put out; null
+   * when nothing was deployed before it); null for every other action.
+   */
+  actionChutes?: ('drogue' | 'main' | null)[];
+  /**
+   * The envelopes of the canopy the stage's first deploy action puts out (`safe` and `destroy` of that
+   * parachute's definition); null when the stage deploys none. The chute envelope light
+   * (`Readouts.chuteEnvelope`) is about the first stage from `nextStage` on that deploys a parachute.
+   */
+  chuteEnvelopes?: { safe: ParachuteEnvelope; destroy: ParachuteEnvelope } | null;
 }
 
 /** Everything numeric the HUD, the cockpit MFDs and pilots display/read. Active vessel only. */

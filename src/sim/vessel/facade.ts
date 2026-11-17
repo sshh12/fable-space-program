@@ -6,13 +6,14 @@ import type { TimedStageAction } from '@/core/contracts/defs';
 import type { ChuteEnvelope, CraftSnapshot, FidelityTier, PartSnapshot, Readouts, StageInfo, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import { quat } from '@/core/math/quat';
+import { describeStages, rememberedStages, type StageWords } from '@/core/defs/stageWords';
 import { G0 } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { rcsTranslationActive } from '../control/allocation';
 import { partSkinTemperature } from '../dynamics/thermal';
 import { cloneModuleState } from './assemble';
 import { stateHash } from './codec';
-import { partKeyOf } from './ids';
+import { fairingOfPanel, partKeyOf } from './ids';
 import { computeMassProps, isGroundFixed, partDryMass } from './massProps';
 import { anyEngineBurning, ispAt } from './modules/engine';
 import { anyChuteDeployed, chuteEnvelope } from './modules/parachute';
@@ -44,6 +45,8 @@ export function vesselPartSnapshots(vessel: Vessel): PartSnapshot[] {
       resources,
       modules: p.modules.map(cloneModuleState),
       shielded: p.shielded,
+      // A jettisoned fairing petal says which one it is and of which fairing (nothing reads its id for that).
+      panel: p.panel ? { index: p.panel.index, count: p.panel.count, of: fairingOfPanel(p) ?? p.instanceId } : null,
     };
   });
 }
@@ -89,7 +92,11 @@ export function craftSnapshots(vessel: Vessel, stages?: (craft: number) => Stage
       ownerCallsign: null,
       commandPart: command ? command.instanceId : null,
       // The cockpit of the command part, as the part carries it (ARCHITECTURE 7.2): nothing looks it up in the library.
-      cockpit: command && command.command ? { id: command.command.cockpit, cameraSeat: command.command.cameraSeat, sensorMount: command.command.sensorCamera } : null,
+      // The crew by seat is the list of the vehicle the craft was built from (labels: nothing of it is state).
+      cockpit:
+        command && command.command
+          ? { id: command.command.cockpit, cameraSeat: command.command.cameraSeat, sensorMount: command.command.sensorCamera, crew: c.vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) }
+          : null,
       staging: { nextStage: nextLiveStage(vessel, ci), stages: stages ? stages(ci) : [], lockout: c.stageLockout > 0 },
       chase: { defaultDistance: chase.defaultDistance, minDistance: chase.minDistance, maxDistance: chase.maxDistance },
       policy: { lendAttitude: c.policy.lendAttitude, lendEngines: c.policy.lendEngines, lendPropellant: c.policy.lendPropellant, helm: typeof c.policy.helm === 'string' ? c.policy.helm : c.policy.helm.slice() },
@@ -457,6 +464,22 @@ function burnModel(m: Model, pressure: number): BurnResult {
 }
 
 /**
+ * What the stages of a craft's vehicle say about themselves (`StageInfo.burnLabel`, `thrustVac`,
+ * `weightFlowVac`, `actionChutes`, `chuteEnvelopes`): the answer kept when the craft was made from its
+ * vehicle with the part library at hand (the assembly, the decoder). A craft made without one (a test that
+ * builds a vessel by hand) is described from the definitions of the parts it still carries, which is the
+ * same answer while the parts its stages name are aboard; that answer is not kept.
+ */
+function stageWordsOf(vessel: Vessel, craft: number): StageWords[] {
+  const vehicle = vessel.crafts[craft]!.vehicle;
+  const kept = rememberedStages(vehicle);
+  if (kept) return kept;
+  const byDef = new Map<string, Vessel['parts'][number]['def']>();
+  for (const p of vessel.parts) if (p.craft === craft) byDef.set(p.def.id, p.def);
+  return describeStages(vehicle, (id) => byDef.get(id));
+}
+
+/**
  * Per-stage information for the staging stack.
  *
  * Delta-v is Tsiolkovsky with current masses. For a stage that has not fired yet, the stages before it
@@ -476,6 +499,8 @@ export function stagingInfo(vessel: Vessel, env: VesselEnvironment, craft: numbe
   applyToModel(model, record.pending.map((p) => p.action));
   // Stages the next press will pass over (nothing left for them to do, e.g. after an abort) show as done.
   const next = nextLiveStage(vessel, craft);
+  // What a stage burns and what its chute actions do, from the definitions (never from the vessel's state).
+  const words = stageWordsOf(vessel, craft);
   const infos: StageInfo[] = stages.map((s, i) => ({
     label: s.label,
     icon: s.icon,
@@ -486,6 +511,11 @@ export function stagingInfo(vessel: Vessel, env: VesselEnvironment, craft: numbe
     burnTime: 0,
     propellantFraction: null,
     actionKinds: s.actions.map((a) => a.kind),
+    burnLabel: words[i]!.burnLabel,
+    thrustVac: words[i]!.thrustVac,
+    weightFlowVac: words[i]!.weightFlowVac,
+    actionChutes: words[i]!.actionChutes.slice(),
+    chuteEnvelopes: words[i]!.chuteEnvelopes,
   }));
   const fill = (i: number, b: BurnResult): void => {
     const info = infos[i]!;

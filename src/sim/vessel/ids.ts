@@ -119,6 +119,20 @@ export function findCraftPart(vessel: Vessel, craft: number, instanceId: string)
  * it by its part key, the only unambiguous form there. (The presentation sweep moves the consumers to part
  * keys; from then on this can return the key always.)
  */
+/** Instance id of petal `k` of the fairing part `fairingInstanceId` (the one part of a vessel of its own). */
+export const panelInstanceId = (fairingInstanceId: string, k: number): string => `${fairingInstanceId}#panel${k}`;
+
+/**
+ * The instance id of the fairing a petal part came from: the inverse of `panelInstanceId` for the petal's
+ * own index. The simulation states it in the snapshot (`PartSnapshot.panel.of`), so that no consumer takes
+ * the petal's id apart. null for a part that is not such a petal.
+ */
+export function fairingOfPanel(part: PartRuntime): string | null {
+  if (!part.panel) return null;
+  const suffix = `#panel${part.panel.index}`;
+  return part.instanceId.endsWith(suffix) ? part.instanceId.slice(0, -suffix.length) : null;
+}
+
 export function eventPartId(vessel: Vessel, part: PartRuntime): string {
   return vessel.crafts.length === 1 ? part.instanceId : partKey(vessel.crafts[part.craft]!.craftId, part.instanceId);
 }

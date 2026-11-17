@@ -29,6 +29,7 @@
 import { SAS_MODES } from '@/core/contracts/controls';
 import type { ControlInputs } from '@/core/contracts/controls';
 import type { DefLibrary, PartDef, VehicleDef } from '@/core/contracts/defs';
+import { rememberStages } from '@/core/defs/stageWords';
 import { hashU32 } from '@/core/math/hash';
 import { cloneModuleState, createCraft, createModuleRt, createModuleState, createPart, emptyVessel } from './assemble';
 import { pieceCraftId } from './ids';
@@ -946,6 +947,8 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
       vehicle = embeddedDesign(utf8Decoder.decode(cr.bytes(cr.uint())), craftId);
     } else throw new VesselDecodeError('format', `craft "${craftId}": unknown vehicle reference kind ${kind}`);
     const c = createCraft(vehicle, { craftId });
+    // The stage words of the craft's vehicle, from the part definitions the resolver has (not state).
+    rememberStages(vehicle, (id) => options.resolver.part(id));
     if (lineage) {
       c.parent = lineage.parent;
       c.root = lineage.root;

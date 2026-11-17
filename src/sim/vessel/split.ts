@@ -10,7 +10,7 @@ import { TICKS_PER_SECOND } from '@/core/contracts/net';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import { cloneVessel, createPart, defaultControlPart, emptyVessel } from './assemble';
-import { ASSEMBLY_ID_PREFIX, craftRootInstanceId, pieceCraft, singleCraftVesselId } from './ids';
+import { ASSEMBLY_ID_PREFIX, craftRootInstanceId, panelInstanceId, pieceCraft, singleCraftVesselId } from './ids';
 import { computeMassProps, partMass } from './massProps';
 import { invalidateStructure, panelCentroid, panelRadial } from './structure';
 import type { CraftRuntime, DockLink, PartRuntime, PendingAction, StepContext, Vessel } from './types';
@@ -393,7 +393,7 @@ export function jettisonPanels(vessel: Vessel, index: number, panels: number, im
   const frameW = quat.rotateInv(part.rot, vessel.w);
   for (let k = 0; k < panels; k++) {
     // A panel leaves the fairing's craft: it is a craft of its own (no queue of its own).
-    const panelId = `${part.instanceId}#panel${k}`;
+    const panelId = panelInstanceId(part.instanceId, k);
     const record = pieceCraft(craft, panelId, Math.round(ctx.ut * TICKS_PER_SECOND));
     record.stageLockout = 0;
     record.sinceStaging = Infinity;
