@@ -1714,13 +1714,23 @@ over the canvas is banned, ARCHITECTURE 18.8). Whoever owns the panels publishes
 
 ```ts
 import { UI_SCRIM_BYTES } from '@/core/contracts/render';
-import { packScrimRects, type UiScrimRect } from '@/render/core';
+import { writeScrimRects, type UiScrimRect } from '@/render/core';
 
 const buffer = device.createBuffer({ label: 'menu.scrimRects', size: UI_SCRIM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+writeScrimRects(device, buffer, []);                            // no panel yet
 renderer.resources.publish('ui.scrimRects', buffer);            // once
-// whenever a panel moves, fades or closes (also every frame of an animation):
-device.queue.writeBuffer(buffer, 0, packScrimRects(rects));     // rects: readonly UiScrimRect[], at most UI_SCRIM_SLOTS = 8
+// whenever a panel moves, fades or closes (also every frame of an animation), before the frame is rendered:
+writeScrimRects(device, buffer, rects);                         // rects: readonly UiScrimRect[], at most UI_SCRIM_SLOTS = 8
 ```
+
+`writeScrimRects` is `packScrimRects` and `queue.writeBuffer` in one, and it remembers what it wrote. The
+core cannot read a GPU buffer while it encodes a frame, and it can draw the scrim only where the rectangles
+are if it knows them (Cost, below). Two rules follow. A buffer written through `writeScrimRects` is ALWAYS
+written through it: after a direct `queue.writeBuffer` the core would draw the scrim where the old
+rectangles were. And it is written before `render`, not from a hook of the frame. A buffer that is only ever
+written with `queue.writeBuffer(buffer, 0, packScrimRects(rects))`, as this section first described, still
+gives the same picture: the core does not know its contents and draws the scrim over the whole frame, at
+the flat cost of the sweep's pass in the table below.
 
 `UiScrimRect { x0, y0, x1, y1, cornerRadius, blur, dim, opacity }`: the rectangle in DEVICE pixels of the
 canvas, origin top-left (CSS pixels times the canvas's device pixel ratio); `cornerRadius` in device pixels
@@ -1734,7 +1744,35 @@ the contract's (`UI_SCRIM_SLOTS`, `UI_SCRIM_BYTES` in `src/core/contracts/render
 **Where it happens.** In the tonemap pass (`core.tonemap`, `src/render/core/post/tonemap.ts`), on the
 scene-linear, pre-exposed image after sharpening and the bloom mix and BEFORE the display transform, so a
 backdrop is toned, dithered and exposed like the scene around it; overlays (`drawOverlay`) are drawn after
-it and are not blurred. `c = mix(c, backdrop(uv, blur) * dim, coverage * opacity)` per rectangle.
+it and are not blurred. `c = mix(c, backdrop(uv, blur) * dim, coverage * opacity)` per rectangle, in the
+order of the list.
+
+**How it is drawn** (since 2026-11-17; finding 12 of the sweep's review). The pass has two shaders made of one
+text. `TONEMAP_BASE_WGSL` is the pass without the scrim: no scrim binding, no scrim branch, to the character
+the text the pass had before the scrim existed. It is drawn over the whole frame. `TONEMAP_WGSL` is the same
+text with the scrim step in it; it is drawn after it, with the same triangle, inside scissor rectangles
+only, and writes those pixels anew. The scissors (`scrimScissors`) are the boxes of the rectangles that can
+change a pixel, grown to whole pixels and by one pixel more (the one-pixel ramp of the edge lies inside with
+a pixel to spare), cut to the canvas, and made disjoint, so a pixel under two panels is shaded once; the
+shader composes all rectangles in their order in whichever scissor a pixel lies. A rectangle without an
+area, one of opacity 0 and one off the canvas have no scissor. So:
+
+- no rectangle (the default of the key, an empty list, or only rectangles that cannot change a pixel): the
+  pass before the scrim, one draw, nothing of the scrim bound;
+- rectangles: that draw, then the scrim shader over the pixels of their scissors;
+- scissors that hold more than `SCRIM_SPLIT_MAX_SHARE` = 60 % of the frame, or a buffer whose contents the
+  core does not know: the scrim shader in ONE draw over the whole frame, which is the pass as the sweep
+  built it.
+
+The picture is the same in all three, to the bit. `tests/browser/render-core/scrim.spec.ts` captures the
+page frame-exactly under the pass as it runs and under the one draw and compares the two: no rectangle
+(also against the pass before the scrim), one rounded rectangle with its edges between pixels, two
+overlapping rectangles in both orders, rectangles partly off the canvas, eight rectangles, a rectangle over
+89 % of the frame with the scissors forced, a buffer written directly; no rectangle, the rounded one and the
+two overlapping ones again under look 2 of the display curve; and the pad at noon and the low orbit of the
+integration lab with no rectangle and under a menu's four panels. 0 pixels differ in every comparison
+(2026-11-17, at 1280 x 720). An overlay drawn after the scrim is not cut by the scissors (the pass sets the
+scissor back to the whole canvas).
 
 **What `blur` is.** The backdrop is read from the DOWN chain of the bloom, which the frame builds anyway
 (level `l` = the resolved image at `1 / 2^(l + 1)` of the display size, each a 13-tap average of the one
@@ -1745,21 +1783,61 @@ that the texel grid of a small level does not show. The chain is counted from th
 the level is 1/360 of the frame height (the image softened by two pixels at 720p, four at 1440p), at 0.6
 1/45 of it (frosted glass), at 1 it is 1/11 of it (shapes and colours only).
 
-**Cost** (`tests/browser/render-core/scrim.perf.spec.ts`, 2560 x 1440, RTX 5090, GPU at the load of a real
-frame; the line of ARCHITECTURE is 0.1 ms with four rectangles). No rectangle (a zero header: the default of
-the key, or `packScrimRects([])`): one branch on a uniform; `core.tonemap` takes 0.032 ms, the same in two
-alternating series; the reference images do not move and the budget table's rows are unchanged. Four
-rectangles covering 57 % of the frame: 0.109 ms, so the scrim costs **0.077 ms**. One rectangle WITHOUT AN
-AREA: 0.104 ms. The cost is therefore that of having ANY rectangle, not of the area covered or of their
-number: once the header is not zero the compiled shader evaluates the taps of all eight slots for every
-pixel (the conditions inside the loop are flattened by the shader compiler; only the branch on the header is
-a real one). It scales with the display's pixels (about 0.17 ms at 4K). A menu that fades its last panel out
-should publish an empty list (or reset the key) when the fade is done, not leave rectangles of opacity 0.
+**Cost** (`tests/browser/render-core/scrim.perf.spec.ts`, measured 2026-11-17: 2560 x 1440, RTX 5090, the GPU
+at the load of a real frame (a ballast of 7.0 ms), GPU timestamps of `core.tonemap`, p50 / p99 in ms, each
+the median of 8 windows of 180 frames; every series in one run on one page, the windows alternating;
+the line of ARCHITECTURE is 0.1 ms for four rectangles). "Before the scrim" is the pass of 038cf6f, "the
+sweep's pass" the one draw of 9c6d674; both are still in the tree, behind the lab's switch (below).
+
+| rectangles | before the scrim | the sweep's pass | the pass now |
+|---|---|---|---|
+| none | 0.0315 / 0.0318 | 0.0326 / 0.0329 | 0.0315 / 0.0318 |
+| one without an area | 0.0315 / 0.0319 | 0.1042 / 0.1053 | 0.0315 / 0.0319 |
+| one over 5 % of the frame | 0.0315 / 0.0319 | 0.1050 / 0.1062 | 0.0376 / 0.0381 |
+| one over 40 % | 0.0315 / 0.0319 | 0.1055 / 0.1067 | 0.0818 / 0.0832 |
+| a menu's four panels, 57 % | - | 0.1096 / 0.1108 | 0.1004 / 0.1018 |
+| one over 60 % | - | 0.1057 / 0.1068 | 0.1007 / 0.1018 |
+| one over the whole frame | - | 0.1059 / 0.1072 | 0.1060 / 0.1071 (the one draw; with the scissors forced 0.1380 / 0.1413) |
+
+- **No rectangle costs nothing**: the pass is the pass before the scrim, the same draw (0.0315 ms against
+  0.0315). The sweep's pass took 0.0326: its branch on the header and its seven more bindings cost
+  0.0011 ms (0.0004 ms in a first run of the same day, `out/core-support/scrim/run-1.log`).
+- **A rectangle that cannot change a pixel costs nothing**: 0.0315 ms with one rectangle without an area
+  (one of opacity 0 or off the canvas has no scissor either: the same draw). In the sweep's pass it cost
+  0.073 ms, as much as any rectangle.
+- **A rectangle costs by its area**: 0.006 ms for 5 % of the frame, 0.050 ms for 40 %, 0.069 ms for a
+  menu's four panels (the sweep's pass: 0.078), that is 0.12 to 0.13 ms for a whole 1440p frame of
+  scissors. A pixel inside a scissor is shaded twice: by the pass without the scrim, then by the scrim
+  shader (which costs 0.106 ms for a whole frame in one draw).
+- **Above 60 % of the frame the pass is the sweep's one draw again**, 0.074 ms over the pass without the
+  scrim for the whole frame, where scissors would cost 0.107. At 60 % the two ways cost 0.069 ms
+  (scissors) and 0.074 ms (one draw).
+- A buffer the core does not know the contents of costs what the sweep's pass cost for the same rectangles.
+
+A scissor's cost is per pixel, so it grows with the pixels of the display; no other size was measured.
+
+**What the sweep's pass paid** was a flat 0.073 ms as soon as the header counted a rectangle, whatever
+their number and area: 0.1042 ms with one rectangle without an area, 0.1059 with one over the whole
+frame (every pixel reading its backdrop), 0.1096 with four panels. This section explained it by the
+compiled shader evaluating "the taps of all eight slots for every pixel". That was an inference, not a
+measurement, and it would be eight slots of at least eight filtered texture reads on each of 3.7 million
+pixels, 2.4 x 10^8 reads in 0.07 ms. What is measured is only that the shader with the scrim step
+costs that much more per frame of pixels than the shader without it once its loop is entered, with or
+without coverage; which of its instructions that is was not isolated. The pass no longer depends on the
+answer: the scrim shader runs inside the scissors only.
 
 **Lab.** `window.__lab.setScrim(rects | null)` on every `createLabApp` page publishes rectangles as a menu
-will. Spec and pictures over the live pad scene: `tests/browser/integration/menu-core.spec.ts`
-(`out/screens/presentation-sweep/menu-core/scrim-*.png`). Unit tests of the layout, the levels and the
-coverage: `tests/unit/render-core/scrim.test.ts`.
+will (through `writeScrimRects`); `setScrim(rects, 'raw')` writes the buffer directly instead (the core does
+not know its contents). `window.__lab.setTonemapPath('auto' | 'split' | 'single' | 'base')` is the switch
+of the specs: `'auto'` the pass as it runs, `'single'` the sweep's one draw, `'base'` the pass before the
+scrim whatever is published, `'split'` the scissors also above 60 % of the frame;
+`window.__lab.tonemapDraw()` says what the pass drew in the last frame. Specs: the comparisons above
+(`tests/browser/render-core/scrim.spec.ts`, pictures in `out/screens/render-core/scrim/`), the cost
+(`tests/browser/render-core/scrim.perf.spec.ts`, the table in `out/core-support/scrim/scrim-perf.json`), and
+the scrim over the live pad (`tests/browser/integration/menu-core.spec.ts`,
+`out/screens/presentation-sweep/menu-core/scrim-*.png`). Unit tests of the layout, the levels, the coverage,
+the scissors and the two shader texts: `tests/unit/render-core/scrim.test.ts`; of what the pass draws:
+`tests/unit/render-core/tonemapDraw.test.ts`.
 
 ### 19.4 `CameraState.exposureHint`
 
@@ -1877,6 +1955,7 @@ packs needs them moved to `TileSource.file(set, path)`; `RenderContext` has no t
 | The previous frame's snapshot and camera are rebased at a new frame epoch (19.1) | every feature that reads `frame.prevSnapshot` / `prevEyeOffset`; holders of ROOT positions | A holder rebases with `observeFrame` / `rebaseHeldAt` |
 | `CoreRenderer.readVelocity()` (19.2) | tests | None |
 | UI scrim step in `core.tonemap`; `packScrimRects`, `UiScrimRect`, `SCRIM_LEVELS`, `scrimLevelIndices`, `scrimLevelOf`, `scrimCoverage`; `LabApp.setScrim` (19.3) | the menu and settings packages | None without rectangles |
+| The scrim is drawn inside the scissors of the rectangles, and with no rectangle the tonemap pass is the pass before the scrim (2026-11-17; 19.3): `writeScrimRects`, `scrimScissors`, `ScrimScissor`; `TONEMAP_BASE_WGSL`, `tonemapBaseWgsl`; `PostOutputs.scrimLevels` carries the display size; `LabApp.setScrim(rects, 'raw')`, `setTonemapPath`, `tonemapDraw` | whoever publishes `'ui.scrimRects'` | Write the buffer with `writeScrimRects(device, buffer, rects)` instead of `queue.writeBuffer(buffer, 0, packScrimRects(rects))`, always and before `render`; a buffer written the old way keeps the picture and the flat cost |
 | `CameraState.exposureHint` honoured; `exposureHintOf`, `followExposureHint`; `ExposureInfo.hint` (19.4) | camera rigs | None without a hint |
 | `CameraState.lensShift` honoured; `FrameUniforms.lensShift` (the struct grew by one vec4: `OFFSET.bodies` 164 -> 168, 3024 -> 3040 bytes); chunk function `ndcRay(ndc)`; `lensShiftOf`, `frustumTangents`; `buildProjection(..., lensShift)`, `Projection.lensShift` (19.5) | every feature that forms rays or culls by hand | Rays through `viewRay` / `ndcRay`; culling through `frustumTangents` |
 | `TerrainFeatureOptions.tileSource`; `WorkerInit.source` replaces `tilesUrl`; `TileStreamer(ctx, defs, bodyIds, options, source?)`; `loadLowResAlbedo(source, manifest, meanColor)` (was `tilesUrl`); `TileResult.bakeMs` / `imageMs` are the job's time until the bake is done and what the images took beyond it (19.6) | the app shell, the terrain lab | None for the default |

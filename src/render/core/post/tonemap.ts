@@ -363,9 +363,10 @@ export const tonemapDebug: { path: TonemapPath; last: TonemapDrawInfo | null } =
  * scrim over most of the frame is cheaper in one draw. The picture is the same either way.
  *
  * As measured (tests/browser/render-core/scrim.perf.spec.ts, 2026-11-17, RTX 5090, 2560 x 1440, p50 of
- * `core.tonemap`): the pass without the scrim 0.032 ms; the one draw 0.104 to 0.109 ms with any rectangle;
- * with scissors 0.038 ms at 5 % of the frame, 0.082 at 40 %, 0.101 at 57 % (four panels), 0.138 at 100 %.
- * The two cross between 60 % and 65 %.
+ * `core.tonemap`): the pass without the scrim 0.032 ms; the one draw 0.104 to 0.110 ms with any rectangle;
+ * with scissors 0.038 ms at 5 % of the frame, 0.082 at 40 %, 0.100 at 57 % (four panels), 0.101 at 60 %
+ * (the one draw: 0.106) and 0.138 at 100 % (0.106). At 60 % the scissors are still the cheaper way; where
+ * between 60 % and 100 % the two cross was not measured.
  */
 export const SCRIM_SPLIT_MAX_SHARE = 0.6;
 

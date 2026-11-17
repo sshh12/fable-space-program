@@ -27,6 +27,17 @@
  *   node tools/dev/heavy.mjs --class=gpu --label=core-scrim -- npx playwright test tests/browser/render-core/scrim.perf.spec.ts --project=perf
  *
  * The table is also written to out/core-support/scrim/scrim-perf.json.
+ *
+ * As measured on 2026-11-17 (RTX 5090, ballast 7.0 ms; out/core-support/scrim/run-2.log), p50 / p99 ms:
+ *
+ *   rectangles          before the scrim   as the sweep made it   as it runs
+ *   none                0.0315 / 0.0318    0.0326 / 0.0329        0.0315 / 0.0318
+ *   one without area    0.0315 / 0.0319    0.1042 / 0.1053        0.0315 / 0.0319
+ *   one, 5 %            0.0315 / 0.0319    0.1050 / 0.1062        0.0376 / 0.0381
+ *   one, 40 %           0.0315 / 0.0319    0.1055 / 0.1067        0.0818 / 0.0832
+ *   four panels, 57 %   -                  0.1096 / 0.1108        0.1004 / 0.1018
+ *   one, 60 %           -                  0.1057 / 0.1068        0.1007 / 0.1018
+ *   one, 100 %          -                  0.1059 / 0.1072        0.1060 / 0.1071 (the one draw; scissors forced 0.1380 / 0.1413)
  */
 import fs from 'node:fs';
 import path from 'node:path';
