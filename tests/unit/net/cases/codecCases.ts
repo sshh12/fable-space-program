@@ -161,6 +161,7 @@ export const codecCases: NetCase[] = [
         maxVel = Math.max(maxVel, Math.abs(back.vel.x - cur.vel.x), Math.abs(back.vel.y - cur.vel.y), Math.abs(back.vel.z - cur.vel.z));
         maxAtt = Math.max(maxAtt, quatAngle(back.att, cur.att));
       }
+      console.log(`delta quantisation over 20,000 poses: position ${(maxPos * 1e6).toFixed(2)} um, velocity ${(maxVel * 1e6).toFixed(3)} um/s, attitude ${maxAtt.toExponential(2)} rad`);
       ok(maxPos <= 16e-6, `position error ${maxPos} m above 16 um`);
       ok(maxVel <= 1e-6, `velocity error ${maxVel} m/s above 1 um/s`);
       ok(maxAtt <= 5e-10, `attitude error ${maxAtt} rad above 5e-10`);
