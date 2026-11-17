@@ -380,29 +380,58 @@ export interface MeterResult {
 /** The sky counts in an exterior view from the end of nautical twilight (the sun 12 degrees under the horizon) and fully from the end of civil twilight (6 degrees). */
 /**
  * The meter's rules of look 2 (the switch RendererOptions.look; requests ocean-13 and ocean-10), for exterior
- * and map views; with look 1 none of them is evaluated.
+ * and map views. With look 1 none of them is evaluated; the cabin's metering has none.
  *
  * 1. THE SKY'S BULK DOES NOT CLIP. Inside an atmosphere the target is at least the exposure at which the
  *    sky's METER2_BULK_PERCENTILE (its 90th percentile: the glow about the sun is the rest) is shown at
- *    METER2_SKY_MAX pre-exposed, the level of sunlit white paper (0.88 of display white with the camera
- *    curve), by how much of the frame is sky (none under METER2_SKY_SHARE_FROM, full from _FULL). By day it
- *    never binds (a clear sky stands at 0.1 to 0.2 at the daylight exposure). Under a low sun it is what
- *    holds the frame: the sun's light on the ground dies in the last degrees while the sky has lost a stop,
- *    and a frame exposed for the ground alone puts the sky at two to four (white with the camera curve,
- *    where the present curve still showed a gradient at 0.8).
- * 2. WHERE THE SKY COUNTS (twilight: `withSky`), a small bright subject does not set the exposure. There the
- *    rules under the sun are off, and the brightest per cent of the frame (two sunlit canopies over a dawn
- *    sea) raised the target by four stops. With look 2 what stands more than METER2_SUBJECT_STOPS over the
- *    90th percentile of the metered pixels counts at that level in the mean, and the highlight term may
- *    raise the target by METER2_HIGHLIGHT_MAX_EV at most over what the mean and the prior ask for; what is
- *    brighter clips, as it does by day (SUNLIT_SPOT_MAX_EV holds it tighter there).
+ *    METER2_SKY_MAX pre-exposed (253 of 255 with the camera curve), by how much of the frame is sky (none
+ *    under METER2_SKY_SHARE_FROM, full from _FULL). By day it never binds (a clear sky stands at 0.1 to 0.2
+ *    at the daylight exposure). Under a low sun it is what holds the frame: the sun's light on the ground
+ *    dies in the last degrees while the sky has lost a stop, and a frame exposed for the ground alone puts
+ *    the sky at three to four (white with the camera curve; the present curve still showed 0.8 there).
+ * 2. UNDER A LOW SUN, A SMALL BRIGHT SUBJECT DOES NOT SET THE EXPOSURE. By day the highlight term is held
+ *    to a quarter stop over the frame's mean and the prior (SUNLIT_SPOT_MAX_EV), and the prior is the frame
+ *    (sunny 16). Under a low sun the prior is still sunny 16 for THAT sun, three stops over a sea that the
+ *    sky lights: two sunlit canopies, one per cent of the frame, took the target there (8.9 -> 12.5, the
+ *    sea black for eight seconds). And where the sky counts (twilight) the rules under the sun are off
+ *    altogether. So, inside an atmosphere, with the sun between METER2_LOW_SUN (full under 10 degrees, none
+ *    from 25: where the bound from below, SUNLIT_ELEVATION_*, takes over) and the end of twilight, and
+ *    wherever the sky counts: what stands more than METER2_SUBJECT_STOPS over the METER2_SUBJECT_PERCENTILE
+ *    of the metered pixels (their 75th percentile: the canopies were 13 % of the lit pixels) counts at that
+ *    level in the mean, and the highlight term may raise the target by
+ *    METER2_HIGHLIGHT_MAX_EV at most over what the mean and the prior ask for (their blend by the
+ *    histogram's weight). What is brighter clips, as it does by day. It holds for a frame that is a scene
+ *    (lit pixels over METER2_SCENE_LIT_FROM to _FULL of it: the sea, the ground), not for a lit subject in
+ *    a dark frame (a capsule against the night: its bright part is what the picture is of).
+ * 3. A SMALL EMITTER DOES NOT SET THE EXPOSURE EITHER. An emitter hint that covers up to
+ *    METER2_EMITTER_SMALL of the frame (a thruster's flash is told with its glare, 1.1 %) may raise the
+ *    target by METER2_EMITTER_SMALL_EV over what the frame without emitters asks for; from
+ *    METER2_EMITTER_FREE it is not bounded (a flame beside the camera, a plasma sheath). The bound holds by
+ *    what that frame has to show (its histogram's weight, and none where its target is the dark floor: a
+ *    frame that is dark but for the emitter follows the emitter, METER2_CONTENT_EV stops over the floor
+ *    the bound is whole). Before, each thruster pulse of a night entry took the target from 1.7 to 11.8
+ *    and back.
+ * 4. AN EMITTER THAT FILLS THE FRAME IS THE SCENE, whatever the sun. The rules under the sun (the cap half
+ *    a stop over sunny 16, the quarter stop for what is over white) assume that nothing in the frame is
+ *    brighter than what the sun lights. From METER2_EMITTER_SCENE_FROM to _FULL of the frame covered by one
+ *    emitter they let go: a sheath a quarter of the frame wide under a sun that has just come over the limb
+ *    (3,000 lux) is exposed for, not held at that sun's sunny 16, ten stops too open.
  */
 export const METER2_BULK_PERCENTILE = 0.9;
-export const METER2_SKY_MAX = 0.93;
+export const METER2_SKY_MAX = 1.3;
 export const METER2_SKY_SHARE_FROM = 0.02;
 export const METER2_SKY_SHARE_FULL = 0.1;
+export const METER2_SUBJECT_PERCENTILE = 0.75;
 export const METER2_SUBJECT_STOPS = 2;
 export const METER2_HIGHLIGHT_MAX_EV = 1;
+export const METER2_EMITTER_SMALL = 0.015;
+export const METER2_EMITTER_FREE = 0.05;
+export const METER2_EMITTER_SMALL_EV = 2;
+export const METER2_CONTENT_EV = 4;
+export const METER2_SCENE_LIT_FROM = 0.1;
+export const METER2_SCENE_LIT_FULL = 0.3;
+export const METER2_EMITTER_SCENE_FROM = 0.1;
+export const METER2_EMITTER_SCENE_FULL = 0.2;
 
 export const TWILIGHT_SKY_FROM = Math.sin((-12 * Math.PI) / 180);
 export const TWILIGHT_SKY_FULL = Math.sin((-6 * Math.PI) / 180);
@@ -499,6 +528,25 @@ export function meterExposure(m: MeterInput): MeterResult {
 
 /** One metering: `withSky` counts the sky's pixels as lit ones and lets the rules under the sun go (exterior and map views at twilight). */
 function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
+  if (m.look === 2 && m.kind !== 'interior') {
+    // Look 2, rule 3: a small emitter may raise the target by METER2_EMITTER_SMALL_EV over the frame without emitters.
+    let largest = 0;
+    for (const e of m.emissive ?? []) if (!e.inside && e.luminance >= LUMINANCE_FLOOR && e.coverage > 0) largest = Math.max(largest, Math.min(1, e.coverage));
+    const free = smooth(METER2_EMITTER_SMALL, METER2_EMITTER_FREE, largest);
+    if (largest > 0 && free < 1) {
+      const all = meterFrame(m, withSky);
+      const none = meterFrame({ ...m, emissive: (m.emissive ?? []).filter((e) => e.inside) }, withSky);
+      // (Towards "not bounded" over the range of the scale: 24 stops.) The bound holds by what the frame
+      // without the emitter has to show: a frame that is dark but for the emitter follows the emitter.
+      const bound = none.targetEv100 + METER2_EMITTER_SMALL_EV + free * (EV_MAX - EV_MIN);
+      const content = none.histogramWeight * smooth(EV_DARK_FLOOR, EV_DARK_FLOOR + METER2_CONTENT_EV, none.targetEv100);
+      return all.targetEv100 > bound ? { ...all, targetEv100: all.targetEv100 + (bound - all.targetEv100) * content } : all;
+    }
+  }
+  return meterFrame(m, withSky);
+}
+
+function meterFrame(m: MeterInput, withSky: boolean): MeterResult {
   const interior = m.kind === 'interior';
   // Interior: what lies beyond the cabin (the far histogram), for the key, the far exposure and the window rule.
   let far: HistogramStats | null = null;
@@ -527,6 +575,7 @@ function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
   }
   let histogram = m.histogram;
   let emitterCoverage = 0;
+  let emitterLargest = 0;
   let emitterLuminance = 0;
   if (!interior && m.emissive && m.emissive.length > 0) {
     const h = Float64Array.from(m.histogram);
@@ -535,6 +584,7 @@ function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
       const coverage = Math.min(1, e.coverage);
       h[luminanceBin(e.luminance)] = h[luminanceBin(e.luminance)]! + coverage * m.sampleCount;
       emitterCoverage += coverage;
+      emitterLargest = Math.max(emitterLargest, coverage);
       emitterLuminance = Math.max(emitterLuminance, e.luminance);
     }
     histogram = h;
@@ -559,19 +609,23 @@ function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
       histogram = h;
     }
   }
-  // Look 2, where the sky counts: what stands far over the frame's bulk counts at a bound (METER2, rule 2).
+  const stats = interior ? histogramStats(m.histogramNear, m.sampleCount, Infinity) : histogramStats(histogram, m.sampleCount);
+  // Look 2, rule 2: under a low sun and where the sky counts, the frame's bulk (what stands far over it counts at a bound).
   const look2 = m.look === 2 && !interior;
-  if (look2 && skyWeight > 0) {
+  let bulkWeight = 0;
+  let bulk: HistogramStats | null = null;
+  if (look2) {
+    const lowSun = m.sunElevationSin === undefined ? 0 : Math.min(1, m.skyInAir ?? 0) * (1 - smooth(SUNLIT_ELEVATION_MIN, SUNLIT_ELEVATION_FULL, m.sunElevationSin)) * smooth(TWILIGHT_SKY_FROM, TWILIGHT_SKY_FULL, m.sunElevationSin);
+    bulkWeight = Math.max(skyWeight, lowSun) * smooth(METER2_SCENE_LIT_FROM, METER2_SCENE_LIT_FULL, stats.litFraction) * (1 - smooth(METER2_EMITTER_SCENE_FROM, METER2_EMITTER_SCENE_FULL, emitterLargest));
     let counted = 0;
     for (let i = 0; i < HISTOGRAM_BINS; i++) counted += histogram[i]!;
-    if (counted > 0) {
-      const top = Math.min(HISTOGRAM_BINS - 1, percentileBin(histogram, 0, counted, METER2_BULK_PERCENTILE) + Math.round((METER2_SUBJECT_STOPS * HISTOGRAM_BINS) / HISTOGRAM_RANGE_LOG2));
+    if (bulkWeight > 0 && counted > 0) {
+      const top = Math.min(HISTOGRAM_BINS - 1, percentileBin(histogram, 0, counted, METER2_SUBJECT_PERCENTILE) + Math.round((METER2_SUBJECT_STOPS * HISTOGRAM_BINS) / HISTOGRAM_RANGE_LOG2));
       const h = new Float64Array(HISTOGRAM_BINS);
       for (let i = 0; i < HISTOGRAM_BINS; i++) h[Math.min(i, top)] = h[Math.min(i, top)]! + histogram[i]!;
-      histogram = h;
+      bulk = histogramStats(h, m.sampleCount);
     }
   }
-  const stats = interior ? histogramStats(m.histogramNear, m.sampleCount, Infinity) : histogramStats(histogram, m.sampleCount);
   const all = interior ? histogramStats(m.histogram, m.sampleCount) : stats;
 
   // Photometric prior: sunny-16 scaled by the sun's visibility when something lit is in view, else the dark
@@ -580,7 +634,8 @@ function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
   const evSun = sunny16Ev(m.sunIlluminance * m.sunVisibility);
   // Highlight protection under the sun ends half a stop above sunny 16 (not in a cabin, not without the sun).
   const sunlitOutside = somethingLit ? smooth(SUNLIT_VISIBILITY_MIN, SUNLIT_VISIBILITY_FULL, m.sunVisibility) : 0;
-  const sunlit = interior ? 0 : sunlitOutside * (1 - skyWeight);
+  // (Look 2, rule 4: not where one emitter fills the frame.)
+  const sunlit = interior ? 0 : sunlitOutside * (1 - skyWeight) * (1 - (look2 ? smooth(METER2_EMITTER_SCENE_FROM, METER2_EMITTER_SCENE_FULL, emitterLargest) : 0));
   const evSunlitMax = evSun + SUNLIT_HIGHLIGHT_MAX_EV;
   const underTheSun = (evHighlight: number, weight = sunlit): number => (weight > 0 && evHighlight > evSunlitMax ? evHighlight + (evSunlitMax - evHighlight) * weight : evHighlight);
   let evPrior = somethingLit ? Math.max(EV_DARK_FLOOR, evSun) : EV_DARK_FLOOR;
@@ -637,9 +692,16 @@ function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
       // alone (a few per cent of the frame near white: a white launch mount, the apron round a flame, a hull)
       // may raise the target by SUNLIT_SPOT_MAX_EV over what the frame's mean and the prior ask for; only a
       // frame that is bright as a whole (cloud tops, snow) takes the whole half stop (request vfx-8).
-      const evMeanTerm = evHistogram;
+      let evMeanTerm = evHistogram;
       let evHighlight = Math.log2(stats.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K));
-      if (look2 && skyWeight > 0) evHighlight = Math.min(evHighlight, Math.max(evMeanTerm, evPrior) + METER2_HIGHLIGHT_MAX_EV);
+      if (bulk && bulk.mean > 0) {
+        const evBulkMean = ev100ForMidGrey(bulk.mean);
+        const evBulk = evBulkMean - exposureCompensationCurve(evBulkMean);
+        const evBase = evPrior + (evBulk - evPrior) * smooth(LIT_PRIOR_ONLY, evBulk > evPrior ? LIT_FULL_BRIGHT : LIT_FULL, stats.litFraction);
+        const evBulkHighlight = Math.min(Math.log2(bulk.p99 / (HIGHLIGHT_CAP * MID_GREY * EXPOSURE_K)), evBase + METER2_HIGHLIGHT_MAX_EV);
+        evMeanTerm += (evBulk - evMeanTerm) * bulkWeight;
+        evHighlight += (evBulkHighlight - evHighlight) * bulkWeight;
+      }
       evHistogram = underTheSun(Math.max(evMeanTerm, spot(evHighlight, Math.max(evMeanTerm, evPrior))));
       // The same frame without what is brighter than the sun can make it: it sets the level, the rest clips.
       const first = luminanceBin(overWhite) + 1;
@@ -657,6 +719,8 @@ function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
         evHistogram = spot(evHistogram, evLit);
       }
     }
+    // (Look 2: lit pixels that carry no light say "dark", not 25 stops under the dark floor.)
+    if (look2 && evHistogram < EV_DARK_FLOOR) evHistogram = EV_DARK_FLOOR;
     w = smooth(LIT_PRIOR_ONLY, evHistogram > evPrior ? LIT_FULL_BRIGHT : LIT_FULL, stats.litFraction);
   }
   let ev = evPrior + (evHistogram - evPrior) * w;
