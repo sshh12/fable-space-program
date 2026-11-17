@@ -699,6 +699,7 @@ export class ClientSession {
       inputMarginMs: this.inputMarginMs,
       graceRemaining: grace,
       queuePosition: state === 'queued' ? (this.admissionQueue?.position ?? null) : null,
+      queueEtaSeconds: state === 'queued' ? (this.admissionQueue?.etaSeconds ?? null) : null,
       durableTick: this.durableTick,
       reason,
     };
