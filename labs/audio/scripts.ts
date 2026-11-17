@@ -8,7 +8,7 @@ import type { PartSnapshot, SimEvent, SimEventType, VesselSnapshot } from '@/cor
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { isFixedBurn, LAB_PARTS, LabEngines, labStack, placeVehicle, type LabPlacement, type LabStackId } from './labVehicle';
-import { SEA_LEVEL, baseSnapshot, externalAt, frames, labEngines, makeEvent, seatOf, steadyEngines, type ListenerSpec, type Script } from './scenes';
+import { SEA_LEVEL, baseSnapshot, externalAt, frames, labEngines, labVesselId, makeEvent, seatOf, steadyEngines, type ListenerSpec, type Script } from './scenes';
 
 /** US76-like pressure for the clip scenes, Pa. */
 const pressureAt = (h: number): number => SEA_LEVEL * Math.exp(-h / 7400);
@@ -49,12 +49,12 @@ function liftoff(lib: DefLibrary, name: 'liftoff-pad' | 'liftoff-cabin', mode = 
         const h = height(t);
         if (name === 'liftoff-cabin') return { kind: 'interior', mode: 'cockpit', position: seatOf(lib, 'booster'), pressure: pressureAt(h) };
         // The pad camera stands on the ground; any other mode is a rig that follows the vehicle.
-        return { kind: 'external', mode, attachedVesselId: mode === 'pad-camera' ? null : base.activeVesselId, position: v3.sub(pad, { x: 0, y: h, z: 0 }), lookAt: { x: 0, y: 30, z: 0 }, pressure: SEA_LEVEL };
+        return { kind: 'external', mode, attachedVesselId: mode === 'pad-camera' ? null : labVesselId(base), position: v3.sub(pad, { x: 0, y: h, z: 0 }), lookAt: { x: 0, y: 30, z: 0 }, pressure: SEA_LEVEL };
       },
       state: (t) => {
         if (t >= ignite && prev < ignite) e.activate(isBoosterEngine);
         stepEngines(e, last, t, t >= ignite ? 1 : 0);
-        const evs = eventsBetween([{ t: release, type: 'clampsReleased' }], prev, t, base.ut, base.activeVesselId, base);
+        const evs = eventsBetween([{ t: release, type: 'clampsReleased' }], prev, t, base.ut, labVesselId(base), base);
         prev = t;
         const h = height(t);
         const v = t > release ? 3 * (t - release) : 0;
@@ -137,7 +137,7 @@ function staging(lib: DefLibrary): Script {
           prev,
           t,
           base.ut,
-          base.activeVesselId,
+          labVesselId(base),
           base,
         );
         prev = t;
@@ -185,7 +185,7 @@ function vacuumBurn(lib: DefLibrary): Script {
           prev,
           t,
           base.ut,
-          base.activeVesselId,
+          labVesselId(base),
           base,
         );
         prev = t;
@@ -217,7 +217,7 @@ function reentry(lib: DefLibrary): Script {
           prev,
           t,
           base.ut,
-          base.activeVesselId,
+          labVesselId(base),
           base,
         );
         prev = t;
@@ -254,7 +254,7 @@ function chuteDeploy(lib: DefLibrary): Script {
           prev,
           t,
           base.ut,
-          base.activeVesselId,
+          labVesselId(base),
           base,
         );
         prev = t;
@@ -279,7 +279,7 @@ function splashdown(lib: DefLibrary): Script {
       base,
       listen: () => ({ kind: 'external', mode: 'chase', position: { x: 26, y: 8, z: 22 }, lookAt: { x: 0, y: 1, z: 0 }, pressure: SEA_LEVEL }),
       state: (t) => {
-        const evs = eventsBetween([{ t: impact, type: 'splash', extra: { speed: 8.6 } }], prev, t, base.ut, base.activeVesselId, base);
+        const evs = eventsBetween([{ t: impact, type: 'splash', extra: { speed: 8.6 } }], prev, t, base.ut, labVesselId(base), base);
         prev = t;
         const afloat = t >= impact;
         const speed = afloat ? 0.5 : 8.6;
@@ -414,7 +414,7 @@ export function eventsScript(lib: DefLibrary, types: SimEventType[], spacing = 1
       base,
       listen: () => ({ kind: 'interior', mode: 'cockpit', position: seatOf(lib, 'capsule'), pressure: SEA_LEVEL }),
       state: (t) => {
-        const evs = schedule.filter((s) => s.t > prev && s.t <= t).map((s) => makeEvent(s.type, base.ut + s.t, base.activeVesselId, base));
+        const evs = schedule.filter((s) => s.t > prev && s.t <= t).map((s) => makeEvent(s.type, base.ut + s.t, labVesselId(base), base));
         prev = t;
         return { parts: e.parts(SEA_LEVEL), aero: { pressure: SEA_LEVEL }, airVelocityVes: v3.zero(), events: evs, boundingRadius: 5 };
       },
@@ -445,7 +445,7 @@ export function maximumScript(lib: DefLibrary, kind: 'interior' | 'external'): S
       listen: () => l,
       state: (t) => {
         e.step(t - Math.max(0, prev), 1);
-        const evs = t >= 1 && prev < 1 ? LOUD_EVENTS.map((type) => makeEvent(type, base.ut + t, base.activeVesselId, base, { speed: 30, energy: 1e12, partId: 'atlas-c' })) : [];
+        const evs = t >= 1 && prev < 1 ? LOUD_EVENTS.map((type) => makeEvent(type, base.ut + t, labVesselId(base), base, { speed: 30, energy: 1e12, partId: 'atlas-c' })) : [];
         prev = t;
         return {
           parts: e.parts(SEA_LEVEL),
@@ -479,7 +479,7 @@ export function loudScripts(lib: DefLibrary): Script[] {
         base,
         listen: () => l,
         state: (t) => {
-          const evs = t >= 0.5 && prev < 0.5 ? LOUD_EVENTS.map((type) => makeEvent(type, base.ut + t, base.activeVesselId, base, { speed: 30, energy: 1e12, partId: 'atlas-c' })) : [];
+          const evs = t >= 0.5 && prev < 0.5 ? LOUD_EVENTS.map((type) => makeEvent(type, base.ut + t, labVesselId(base), base, { speed: 30, energy: 1e12, partId: 'atlas-c' })) : [];
           prev = t;
           return { parts: e.parts(SEA_LEVEL), aero: { pressure: SEA_LEVEL }, airVelocityVes: v3.zero(), events: evs, boundingRadius: 55 };
         },

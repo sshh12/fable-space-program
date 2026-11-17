@@ -661,7 +661,9 @@ export function createSyntheticFixture(defs: DefLibrary, opts: SyntheticOptions 
   const snapshot: SimSnapshot = {
     ut,
     simUt: ut,
+    // (`tick` is the deprecated twin of `revision`, required of a producer until the tighten step.)
     tick: 1,
+    revision: 1,
     warp: { index: 0, factor: 1, maxIndex: 10, limitedBy: null, onRails: true },
     scenario: { id: 'synthetic', startKind: 'state', stagesAlreadyFired: 0 },
     surfaceTargets: targets,

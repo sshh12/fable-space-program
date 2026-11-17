@@ -6,6 +6,8 @@
  * canopies), preTransparent (half-resolution volumes), drawTransparent (composite, foam, lines, particles).
  */
 import type { FrameContext, LocalLight, RenderContext, RenderFeature } from '@/core/contracts/render';
+import type { VesselSnapshot } from '@/core/contracts/sim';
+import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import { coreOf, sunVisibilityAt } from '@/render/core';
 import { ChuteSystem } from './chutes';
@@ -113,6 +115,29 @@ const GROUND_LIGHT_MAX_HEIGHT = 30;
  */
 const GROUND_LIGHT_POINTS = 3;
 const GROUND_LIGHT_RING = 1;
+
+/**
+ * The vessel the effects are computed around (the effect domain rides with it, the focus probe stands on
+ * it): the vessel the viewer flies; without one (a spectator, between ships) the vessel the camera follows,
+ * else the vessel nearest to the camera. Null in a world without vessels.
+ */
+function focusVesselOf(frame: FrameContext): VesselSnapshot | null {
+  const snap = frame.snapshot;
+  const active = activeVesselOf(snap);
+  if (active) return active;
+  const followed = frame.camera.focusVesselId;
+  let nearest: VesselSnapshot | null = null;
+  let nearestDistance = Infinity;
+  for (const v of snap.vessels) {
+    if (v.id === followed) return v;
+    const d = v3.dist(v.rRoot, frame.camera.positionRoot);
+    if (d < nearestDistance) {
+      nearestDistance = d;
+      nearest = v;
+    }
+  }
+  return nearest;
+}
 
 /**
  * The vfx feature. `ctx` is optional: the feature receives its RenderContext in `init` (pass
@@ -388,7 +413,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
 
       // ---- effect domain, director, particles
       const g = common.globals;
-      const focus = snap.vessels.find((v) => v.id === snap.activeVesselId) ?? snap.vessels[0];
+      const focus = focusVesselOf(frame);
       const renderSize = frame.renderSize.join('x');
       const depthUsable = frame.frameIndex > 0 && renderSize === lastRenderSize;
       lastRenderSize = renderSize;
@@ -516,8 +541,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       if (simDt > 0) stepCount = (stepCount + 1) % 4096;
       g[G.misc] = stepCount;
       g[G.misc + 1] = depthUsable ? 1 : 0;
-      const active = frame.vesselPose(snap.activeVesselId);
-      common.setProbe(PROBE_FOCUS, active ? active.originRelCam : v3.zero());
+      const focusPose = focus ? frame.vesselPose(focus.id) : undefined;
+      common.setProbe(PROBE_FOCUS, focusPose ? focusPose.originRelCam : v3.zero());
       common.upload();
 
       stats.plumeInstances = plumes.instanceCount;

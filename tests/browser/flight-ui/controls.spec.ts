@@ -79,7 +79,7 @@ test.describe('flight-ui controls', () => {
     const during = await state(page);
     expect(during.readouts.sasEnabled).toBe(!before.readouts.sasEnabled);
     expect(during.appliedControls.throttle).toBe(0);
-    expect(during.tick).toBeGreaterThan(before.tick);
+    expect(during.revision!).toBeGreaterThan(before.revision!);
     expect(await page.evaluate(() => window.__flightUi!.heldCodes().sort())).toEqual(['KeyF', 'KeyT', 'KeyW']);
     await page.keyboard.up('KeyT');
     await page.keyboard.up('KeyW');

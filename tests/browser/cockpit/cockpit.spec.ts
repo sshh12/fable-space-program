@@ -193,8 +193,8 @@ test('the MFDs paint the HUD strings: what the cockpit displays themselves drew'
   await page.evaluate(() => window.__cockpit!.setPage(0, 'flight'));
   await page.waitForFunction(() => window.__cockpit!.paintedText()[0]?.page === 'flight', undefined, { timeout: 30_000, polling: 50 });
   // Two paints later, so the record is from the regular 15 Hz cadence, not only the page change.
-  const tick0 = await page.evaluate(() => window.__cockpit!.paintedText()[0]!.tick);
-  await page.waitForFunction((t) => window.__cockpit!.paintedText()[0]!.tick > t, tick0, { timeout: 30_000, polling: 50 });
+  const revision0 = await page.evaluate(() => window.__cockpit!.paintedText()[0]!.revision);
+  await page.waitForFunction((r) => window.__cockpit!.paintedText()[0]!.revision > r, revision0, { timeout: 30_000, polling: 50 });
   const rec = await page.evaluate(() => window.__cockpit!.paintedText()[0]!);
   // The HUD's strings for the very snapshot the display painted: every one of them was drawn, verbatim.
   for (const [field, value] of Object.entries(rec.hud)) expect(rec.texts, `flight page draws the HUD ${field} "${value}"`).toContain(value);

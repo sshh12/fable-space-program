@@ -9,7 +9,7 @@
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimEvent, SimEventType } from '@/core/contracts/sim';
 import profileJson from './entryProfile.json';
-import { baseSnapshot, frames, labEngines, makeEvent, seatOf, type ListenerSpec, type Script } from './scenes';
+import { baseSnapshot, frames, labEngines, labVesselId, makeEvent, seatOf, type ListenerSpec, type Script } from './scenes';
 
 export interface EntryProfile {
   perigeeKm: number;
@@ -91,7 +91,7 @@ export function missionEntryScript(lib: DefLibrary, o: EntryScriptOptions, profi
         const s = entryStateAt(profile, now);
         const events: SimEvent[] = profile.events
           .filter((x) => x.t > prev && x.t <= now && SOUNDING.includes(x.type))
-          .map((x) => makeEvent(x.type as SimEventType, base.ut + x.t, base.activeVesselId, base, { ...(x.mode ? { mode: x.mode } : {}), ...(x.speed !== undefined ? { speed: x.speed } : {}) }));
+          .map((x) => makeEvent(x.type as SimEventType, base.ut + x.t, labVesselId(base), base, { ...(x.mode ? { mode: x.mode } : {}), ...(x.speed !== undefined ? { speed: x.speed } : {}) }));
         prev = now;
         // A thruster pulse of the pilot lasts about a quarter of a second.
         e.rcsLevels = pulses.some((p) => now >= p && now < p + 0.25) ? [0, 1, 1, 0] : [];

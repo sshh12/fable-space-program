@@ -4,7 +4,8 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
-import type { VesselSnapshot } from '@/core/contracts/sim';
+import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { findEventPart, partKey, partKeyOf } from '@/core/access/snapshotAccess';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { DefError, getSection, loadDefs } from '@/core/defs/loader';
@@ -26,6 +27,7 @@ import {
   VFX_SECTION,
   type VfxData,
 } from '@/render/vfx';
+import { canopyKey } from '@/render/vfx/chutes';
 import { lowestPoint } from '@/render/vfx/director';
 import { assembleVessel, setModuleStateForLab, vesselPartSnapshots } from '@/sim/vessel/public';
 
@@ -245,5 +247,86 @@ describe('plume clusters from the real vehicle', () => {
     expect(lowestPoint(defs, stack, { x: 0, y: 1, z: 0 })).toBeCloseTo(-101, 0);
     // Lying on its side: the largest radius.
     expect(lowestPoint(defs, stack, { x: 0, y: 0, z: 1 })).toBeLessThan(-4.4);
+  });
+});
+
+describe('two craft of one vehicle in one vessel (their parts carry the same instance ids)', () => {
+  /** The lander twice in one vessel: craft `a` as built, craft `b` beside it. */
+  const twoCraft = (): VesselSnapshot => {
+    const one = vesselOf(6);
+    const other = vesselOf(6);
+    return {
+      ...one,
+      parts: [...one.parts.map((p) => ({ ...p, craftId: 'a' })), ...other.parts.map((p) => ({ ...p, craftId: 'b', localPos: v3.add(p.localPos, { x: 12, y: 0, z: 0 }) }))],
+    };
+  };
+
+  it('the RCS jets of each craft are clusters of their own: no key is shared, and a jet of one craft says nothing about the other', () => {
+    const vessel = twoCraft();
+    const idx = defs.parts['heron-descent-stage']!.modules.findIndex((m) => m.type === 'rcs');
+    const stages = vessel.parts.filter((p) => p.def === 'heron-descent-stage');
+    expect(stages.map((p) => p.craftId)).toEqual(['a', 'b']);
+    expect(stages[0]!.instanceId).toBe(stages[1]!.instanceId);
+    const levels = (on: number[]): number[] => {
+      const l = new Array(16).fill(0);
+      for (const i of on) l[i] = 1;
+      return l;
+    };
+    // The same thruster fires on both craft, and one more on craft b only.
+    Object.assign(stages[0]!.modules[idx]!, { enabled: true, levels: levels([0]) });
+    Object.assign(stages[1]!.modules[idx]!, { enabled: true, levels: levels([0, 3]) });
+    const clusters = gatherPlumeClusters(defs, data, vessel);
+    expect(clusters).toHaveLength(3);
+    expect(new Set(clusters.map((c) => c.key)).size).toBe(3);
+    const keyOf = (part: (typeof stages)[number], thruster: number): string => `${vessel.id}|rcs|${partKeyOf(vessel, part)}|${idx}|${thruster}`;
+    expect(clusters.map((c) => c.key).sort()).toEqual([keyOf(stages[0]!, 0), keyOf(stages[1]!, 0), keyOf(stages[1]!, 3)].sort());
+    // The two jets of thruster 0 stand 12 m apart: one per craft, neither drawn for the other.
+    const first = clusters.filter((c) => c.key.endsWith(`|${idx}|0`));
+    expect(first).toHaveLength(2);
+    expect(Math.abs(first[0]!.nozzles[0]!.posVes.x - first[1]!.nozzles[0]!.posVes.x)).toBeCloseTo(12, 6);
+  });
+
+  it('a canopy is kept under the part key of the part that carries it', () => {
+    const vessel = twoCraft();
+    const chutes = vessel.parts.filter((p) => p.modules.some((m) => m.type === 'parachute'));
+    const byInstance = new Map<string, typeof chutes>();
+    for (const p of chutes) byInstance.set(p.instanceId, [...(byInstance.get(p.instanceId) ?? []), p]);
+    for (const [, pair] of byInstance) {
+      expect(pair).toHaveLength(2);
+      expect(canopyKey(vessel.id, partKeyOf(vessel, pair[0]!), 0, 0)).not.toBe(canopyKey(vessel.id, partKeyOf(vessel, pair[1]!), 0, 0));
+    }
+    expect(canopyKey('v', partKey('a', 'chute'), 1, 2)).toBe('v|a/chute|1|2');
+  });
+
+  it('the part an event names is found by its instance id in a vessel of one craft and by its part key in an assembly, also after it left with a piece', () => {
+    const vessel = twoCraft();
+    const base = createFakeSim(defs, { scene: 'pad' }).peek();
+    const crafts = [
+      { ...base.vessels[0]!.crafts![0]!, id: 'a', parent: null },
+      { ...base.vessels[0]!.crafts![0]!, id: 'b', parent: null },
+    ];
+    const snap: SimSnapshot = { ...base, vessels: [{ ...vessel, crafts }] };
+    const stage = vessel.parts.find((p) => p.def === 'heron-descent-stage')!.instanceId;
+    // Instance-id form: the first part with that id (a vessel of one craft has only one).
+    expect(findEventPart(snap, stage)?.part.craftId).toBe('a');
+    // Part-key form: the part of the craft the key names, never its twin.
+    expect(findEventPart(snap, partKey('a', stage))?.part.craftId).toBe('a');
+    expect(findEventPart(snap, partKey('b', stage))?.part.craftId).toBe('b');
+    expect(findEventPart(snap, partKey('c', stage))).toBeNull();
+    // The stage of craft b left as a piece (a craft of its own, in a vessel of its own): the event still names it by craft b.
+    const pieceId = 'piece-of-b';
+    const left = vessel.parts.filter((p) => p.craftId === 'b' && p.instanceId === stage).map((p) => ({ ...p, craftId: pieceId }));
+    const kept = vessel.parts.filter((p) => !(p.craftId === 'b' && p.instanceId === stage));
+    const after: SimSnapshot = {
+      ...base,
+      vessels: [
+        { ...vessel, parts: kept, crafts },
+        { ...vessel, id: 'debris', parts: left, crafts: [{ ...crafts[1]!, id: pieceId, parent: 'b' }] },
+      ],
+    };
+    const hit = findEventPart(after, partKey('b', stage));
+    expect(hit?.vessel.id).toBe('debris');
+    expect(hit?.part.craftId).toBe(pieceId);
+    expect(findEventPart(after, partKey('a', stage))?.vessel.id).toBe(vessel.id);
   });
 });

@@ -6,6 +6,7 @@
  */
 import type { DefLibrary, ModuleDef, PartDef } from '@/core/contracts/defs';
 import type { ModuleState, PartSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { partKeyOf } from '@/core/access/snapshotAccess';
 import { quat, v3, type Vec3 } from '@/core/math';
 import type { PlumeLookDef, VfxData } from './data';
 import { DEFAULT_VISIBLE_FRACTION, engineEmissionState, farVisibleAngle, jetBoundaryRadius, jetBulkRadius, jetShape, type JetShape, type NozzleGeometry } from './plumeModel';
@@ -273,7 +274,8 @@ export function gatherPlumeClusters(defs: DefLibrary, data: VfxData, vessel: Ves
             chamberPressure: data.rcs.chamberPressure,
           };
           const cluster: PlumeCluster = {
-            key: `${vessel.id}|rcs|${part.instanceId}|${mi}|${ti}`,
+            // (By part key: two craft of one vehicle in a vessel carry parts with the same instance ids.)
+            key: `${vessel.id}|rcs|${partKeyOf(vessel, part)}|${mi}|${ti}`,
             kind: 'rcs',
             vesselId: vessel.id,
             lookId: data.rcs.plume,

@@ -10,6 +10,7 @@
  */
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type ShadowCascadeView } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
+import { partKeyOf } from '@/core/access/snapshotAccess';
 import { mat3, quat, v3, type Vec3 } from '@/core/math';
 import type { Tracked } from '@/render/core';
 import { buildCanopyMesh, buildProfileTable, canopyProfile, canopyRadius, clusterAngle, PROFILE_LEVELS, PROFILE_SAMPLES, type CanopyProfile } from './canopyModel';
@@ -274,8 +275,11 @@ interface CanopyPlacement {
   lineFade?: number;
   /** For the hand-over to a drifting canopy: velocity in domain axes, and who it belongs to. */
   velDom: Vec3;
-  owner: { vesselId: string; partId: string; module: number };
+  owner: { vesselId: string; partKey: string; module: number };
 }
+
+/** The key a canopy's state is kept under: its vessel, the part key of the part that carries it, the parachute module and the canopy's index in the cluster. */
+export const canopyKey = (vesselId: string, ownerPartKey: string, module: number, canopy: number): string => `${vesselId}|${ownerPartKey}|${module}|${canopy}`;
 
 interface Drifting {
   placement: CanopyPlacement;
@@ -462,8 +466,10 @@ export class ChuteSystem {
           const cur = frameAt(pose.originRelCam, pose.q);
           const prev = frameAt(pose.prevOriginRelCam, pose.prevQ);
           const rp = R * canopyRadius(style, state.inflation);
+          // (By part key: two craft of one vehicle in a vessel carry parts with the same instance ids.)
+          const ownerKey = partKeyOf(vessel, part);
           for (let k = 0; k < md.count; k++) {
-            const key = `${vessel.id}|${part.instanceId}|${mi}|${k}`;
+            const key = canopyKey(vessel.id, ownerKey, mi, k);
             const seed = ((k * 37 + mi * 11) % 97) / 97;
             const psi = (2 * Math.PI * k) / md.count + 0.08 * Math.sin(effectTime * 0.35 + k * 2.1);
             // The canopies of a cluster lean on each other and never pass through each other: they stand apart
@@ -500,7 +506,7 @@ export class ChuteSystem {
               seed,
               flutter: 1,
               velDom: quat.rotateInv(dom.q, v3.sub(vessel.vRoot, dom.velocityRoot)),
-              owner: { vesselId: vessel.id, partId: part.instanceId, module: mi },
+              owner: { vesselId: vessel.id, partKey: ownerKey, module: mi },
             });
           }
         }
@@ -511,7 +517,7 @@ export class ChuteSystem {
     for (const [key, old] of this.live) {
       if (now.has(key)) continue;
       const vessel = snap.vessels.find((v) => v.id === old.owner.vesselId);
-      const module = vessel?.parts.find((p) => p.instanceId === old.owner.partId)?.modules[old.owner.module];
+      const module = vessel?.parts.find((p) => partKeyOf(vessel, p) === old.owner.partKey)?.modules[old.owner.module];
       if (module?.type !== 'parachute' || (module.state !== 'cut' && module.state !== 'failed')) continue;
       if (this.drifting.length >= MAX_CANOPIES) this.drifting.shift();
       this.drifting.push({ placement: old, mode: module.state, start: effectTime, pos: toDom(old.origin), X: dirDom(old.X), Y: dirDom(old.Y), Z: dirDom(old.Z), vel: old.velDom, inflation0: old.inflation, down: false, downAt: -1 });

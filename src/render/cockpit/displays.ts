@@ -13,6 +13,7 @@
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { PerfRecorder } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
+import { revisionOf } from '@/core/access/snapshotAccess';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { mipCount } from '@/render/core';
 import { DisplayPacer, type PacingRule } from './pacing';
@@ -83,8 +84,8 @@ export class MfdDisplays {
   private readonly mipGroups: GPUBindGroup[][] = [];
   /** When each display is painted (the rule is pacing.ts's). */
   readonly pacer: DisplayPacer;
-  /** Page each layer shows and the snapshot tick it was painted from. */
-  readonly painted: { page: MfdPage | null; tick: number; at: number }[] = [];
+  /** Page each layer shows and the revision of the snapshot it was painted from. */
+  readonly painted: { page: MfdPage | null; revision: number; at: number }[] = [];
   stats: DisplayStats = { paints: 0, cpuMs: 0, paintMs: 0, copyMs: 0, mipMs: 0, frames: 0, perDisplay: [] };
 
   constructor(
@@ -131,7 +132,7 @@ export class MfdDisplays {
       if (!ctx) throw new Error('cockpit displays: no 2D context for an OffscreenCanvas');
       this.canvases.push(c);
       this.contexts.push(ctx);
-      this.painted.push({ page: null, tick: -1, at: -1 });
+      this.painted.push({ page: null, revision: -1, at: -1 });
       const views: GPUTextureView[] = [];
       const groups: GPUBindGroup[] = [];
       for (let l = 0; l < levels; l++) views.push(this.texture.createView({ dimension: '2d', baseArrayLayer: i, arrayLayerCount: 1, baseMipLevel: l, mipLevelCount: 1 }));
@@ -228,7 +229,7 @@ export class MfdDisplays {
       this.stats.paintMs += b - a;
       this.stats.copyMs += c - b;
       this.stats.mipMs += performance.now() - c;
-      this.painted[i] = { page, tick: snapshot.tick, at: time };
+      this.painted[i] = { page, revision: revisionOf(snapshot), at: time };
       this.stats.paints++;
       this.stats.perDisplay[i] = (this.stats.perDisplay[i] ?? 0) + 1;
       // (Frozen time: the pacing takes no measured cost, every page is at the plain rate.)

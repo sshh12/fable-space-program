@@ -31,6 +31,7 @@ import type { CapsuleMouldLineDef, DefLibrary } from '@/core/contracts/defs';
 import type { Sim, SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { getSection } from '@/core/defs/loader';
+import { revisionOf } from '@/core/access/snapshotAccess';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { createLabApp, createLabPlanetFeature, enuAt, lookRotation } from '@/render/core/lab';
@@ -77,7 +78,8 @@ const scene = SCENES[sceneName] ?? SCENES.leo!;
 /** What the cockpit's own MFDs painted (the lab wraps the shared painter): text per display and the HUD's. */
 interface PaintRecord {
   page: MfdPage;
-  tick: number;
+  /** Revision of the snapshot the display was painted from. */
+  revision: number;
   texts: string[];
   hud: { altitude: string; verticalSpeed: string; pitch: string; heading: string; roll: string; throttle: string; gLoad: string; met: string };
 }
@@ -88,7 +90,7 @@ interface CockpitLabApi {
   aim(target: string, fovDeg?: number): [number, number];
   chase(windowId: string, distance: number, offsetDeg?: number, target?: string): void;
   cockpit(): void;
-  stats(): ReturnType<CockpitFeature['stats']> & { displays: { paints: number; cpuMs: number; frames: number; perDisplay: number[] }; painted: { page: MfdPage | null; tick: number; at: number }[] };
+  stats(): ReturnType<CockpitFeature['stats']> & { displays: { paints: number; cpuMs: number; frames: number; perDisplay: number[] }; painted: { page: MfdPage | null; revision: number; at: number }[] };
   resetDisplayStats(): void;
   page(i: number): MfdPage;
   setPage(i: number, p: MfdPage): void;
@@ -273,7 +275,7 @@ async function boot(): Promise<void> {
         delete (c2d as { fillText?: unknown }).fillText;
       }
       const f = describeFlight(snap);
-      painted[k] = { page, tick: snap.tick, texts, hud: { altitude: f.altitude, verticalSpeed: f.verticalSpeed, pitch: f.pitch, heading: f.heading, roll: f.roll, throttle: f.throttle, gLoad: f.gLoad, met: formatMet(snap.readouts.met) } };
+      painted[k] = { page, revision: revisionOf(snap), texts, hud: { altitude: f.altitude, verticalSpeed: f.verticalSpeed, pitch: f.pitch, heading: f.heading, roll: f.roll, throttle: f.throttle, gLoad: f.gLoad, met: formatMet(snap.readouts.met) } };
     },
   };
   const created = createCockpitFeature(app.renderer.context, { navball, mfdPainter });

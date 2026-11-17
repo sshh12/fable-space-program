@@ -6,6 +6,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { FrameContext, ModelData, PbrMaterialDef, RenderContext, RenderFeature } from '@/core/contracts/render';
+import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { quat, v3, type Quat, type Vec3Tuple } from '@/core/math';
 import { boxMesh, coreOf, cylinderMesh, instanceInFrame, planeMesh, sphereMesh, type MeshBatch, type ModelHandle, type ParentPose } from '@/render/core';
 import { sitePoseOf, type Site } from './world';
@@ -205,7 +206,8 @@ export function createStandFeature(options: StandOptions): StandFeature {
 
     prepare(frame: FrameContext) {
       const site = sitePoseOf(options.site, frame, options.defs);
-      const active = frame.vesselPose(frame.snapshot.activeVesselId);
+      const flown = activeVesselOf(frame.snapshot);
+      const active = flown ? frame.vesselPose(flown.id) : undefined;
       const vesselParent: ParentPose | null = active ? { originRelCam: active.originRelCam, q: active.q, prevOriginRelCam: active.prevOriginRelCam, prevQ: active.prevQ } : null;
       batch.begin(frame);
       placed.forEach((p, i) => {

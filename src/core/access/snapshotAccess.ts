@@ -162,6 +162,36 @@ export function eventPartOf(vessel: VesselSnapshot, eventPartId: string): PartSn
 }
 
 /**
+ * The part an EVENT names, looked for in every vessel of the snapshot, with the vessel that holds it now. A
+ * separation in the tick of the event may already have moved the part into a piece, which is a craft of its
+ * own (`CraftSnapshot.parent` names the craft it left), while the event still names the part by the craft it
+ * was a part of: so in the part-key form a part answers to the key of its own craft and of every craft up
+ * its line of descent that the snapshot describes. Keys are composed and compared; no id is taken apart.
+ */
+export function findEventPart(snapshot: SimSnapshot, eventPartId: string): { vessel: VesselSnapshot; part: PartSnapshot } | null {
+  const keyed = eventPartId.includes('/');
+  const vessels = snapshot.vessels;
+  for (let i = 0; i < vessels.length; i++) {
+    const vessel = vessels[i]!;
+    const parts = vessel.parts;
+    for (let j = 0; j < parts.length; j++) {
+      const part = parts[j]!;
+      if (!keyed) {
+        if (part.instanceId === eventPartId) return { vessel, part };
+        continue;
+      }
+      let craftId: string | null = craftIdOf(vessel, part);
+      // (The bound only ends a malformed cycle of parents.)
+      for (let hops = 0; craftId !== null && hops < 256; hops++) {
+        if (partKey(craftId, part.instanceId) === eventPartId) return { vessel, part };
+        craftId = parentInSnapshot(snapshot, craftId);
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * The lineage of craft, for whoever keeps presentation state per part across a separation (wear and soot of
  * the vehicle feature, emitters and decals of the effects, voices of the audio engine).
  *

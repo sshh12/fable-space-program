@@ -44,8 +44,11 @@ export function baseSnapshot(lib: DefLibrary, scene: FakeScene): SimSnapshot {
   return createFakeSim(lib, { scene }).snapshot();
 }
 
-/** A copy of `base` with the lab's overrides applied to the active vessel. */
-export function compose(base: SimSnapshot, s: Partial<SceneState>, t: number, tick: number): SimSnapshot {
+/** The id of the vessel the lab's scenes are heard from: the one vessel of the base snapshot (`compose` rebuilds it). */
+export const labVesselId = (base: SimSnapshot): string => base.vessels[0]!.id;
+
+/** A copy of `base` with the lab's overrides applied to the active vessel; `revision` counts the lab's frames. */
+export function compose(base: SimSnapshot, s: Partial<SceneState>, t: number, revision: number): SimSnapshot {
   const v = base.vessels[0]!;
   const aero: VesselAeroState = { ...v.aero, ...s.aero };
   if (s.airVelocityVes) aero.airVelocity = quat.rotate(v.q, s.airVelocityVes);
@@ -65,7 +68,9 @@ export function compose(base: SimSnapshot, s: Partial<SceneState>, t: number, ti
     ...base,
     ut: base.ut + t,
     simUt: base.ut + t,
-    tick,
+    // (`tick` is the deprecated twin of `revision`, required of a producer until the tighten step.)
+    tick: revision,
+    revision,
     vessels: [vessel, ...(s.extraVessels ?? [])],
     events: s.events ?? [],
     readouts: { ...base.readouts, ...s.readouts, gLoad: s.gLoad ?? base.readouts.gLoad },
@@ -152,10 +157,10 @@ interface FrameOpts {
 }
 
 export function frames(o: FrameOpts): FrameFn {
-  let tick = 0;
+  let revision = 0;
   return (t, dt) => {
-    const snapshot = compose(o.base, o.state(t, dt), t, tick++);
-    return { snapshot, listener: listener(o.listen(t), snapshot.activeVesselId), realDt: dt, warpFactor: o.warpFactor?.(t) ?? 1, paused: o.paused?.(t) ?? false };
+    const snapshot = compose(o.base, o.state(t, dt), t, revision++);
+    return { snapshot, listener: listener(o.listen(t), labVesselId(snapshot)), realDt: dt, warpFactor: o.warpFactor?.(t) ?? 1, paused: o.paused?.(t) ?? false };
   };
 }
 

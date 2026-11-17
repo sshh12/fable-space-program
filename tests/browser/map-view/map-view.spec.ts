@@ -309,7 +309,7 @@ test.describe('map view on the FakeSim', () => {
   test('lines are pixel-stable with a static camera from 200 km to 1e9 m', async ({ page, pageLog }) => {
     await openLab(page, 'scene=lowOrbit&paused=1&quiet=1');
     const s = await state(page);
-    await lab(page, (l) => l.setFocus({ vesselId: window.__test!.state()!.activeVesselId }));
+    await lab(page, (l) => l.setFocus({ vesselId: window.__test!.state()!.activeVesselId! }));
     await frames(page, 2);
     const W = s.patches.current[0]!.conic.W;
     for (const distance of [2e5, 2e6, 2e7, 2e8, 1e9]) {
@@ -343,7 +343,7 @@ test.describe('map view on the FakeSim', () => {
       await openLab(page, `scene=${sceneName}&paused=1&quiet=1`);
       const s0 = await state(page);
       const vid = s0.activeVesselId;
-      await lab(page, (l) => l.setFocus({ vesselId: window.__test!.state()!.activeVesselId }));
+      await lab(page, (l) => l.setFocus({ vesselId: window.__test!.state()!.activeVesselId! }));
       const W = s0.patches.current[0]!.conic.W;
       await lookAlong(page, { x: W.x + 0.3, y: W.y - 0.2, z: W.z + 0.1 }, 1e5);
       const offsets: number[] = [];

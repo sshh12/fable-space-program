@@ -9,7 +9,7 @@ import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { v3 } from '@/core/math/vec3';
 import { LAB_PARTS, LabEngines, placeVehicle } from '../../../labs/audio/labVehicle';
-import { baseSnapshot, compose, externalAt, frames, labEngines, listener, makeEvent, SEA_LEVEL, seatOf, steadyEngines, type ListenerSpec, type SceneState } from '../../../labs/audio/scenes';
+import { baseSnapshot, compose, externalAt, frames, labEngines, labVesselId, listener, makeEvent, SEA_LEVEL, seatOf, steadyEngines, type ListenerSpec, type SceneState } from '../../../labs/audio/scenes';
 import { eventsScript, modeScript, steadyScript } from '../../../labs/audio/scripts';
 
 let lib: DefLibrary;
@@ -68,7 +68,7 @@ describe('engine clusters', () => {
       e.step(t - last, t >= 0.5 ? 1 : 0);
       last = t;
       const snap = compose(base, { parts: e.parts(SEA_LEVEL), aero: { pressure: SEA_LEVEL } }, t, 0);
-      const out = m.update({ snapshot: snap, listener: listener(l, snap.activeVesselId), realDt: DT, warpFactor: 1, paused: false });
+      const out = m.update({ snapshot: snap, listener: listener(l, labVesselId(snap)), realDt: DT, warpFactor: 1, paused: false });
       for (const v of out.engines) if (v.ignition) {
         transients++;
         offset = v.ignition.offset;
@@ -91,7 +91,7 @@ describe('engine clusters', () => {
     const base = baseSnapshot(lib, 'pad');
     const e = labEngines(lib, 'booster');
     const m = new SoundModel(cfg, lib);
-    const l = listener(externalAt(100), base.activeVesselId);
+    const l = listener(externalAt(100), labVesselId(base));
     const counts: number[] = [];
     let last = 0;
     for (let t = 0; t < 8; t += DT) {
@@ -125,7 +125,7 @@ describe('engine clusters', () => {
     const e = new LabEngines(v.parts, lib.parts);
     const base = baseSnapshot(lib, 'pad');
     const m = new SoundModel(cfg, lib);
-    const l = listener(externalAt(100), base.activeVesselId);
+    const l = listener(externalAt(100), labVesselId(base));
     const frame = (t: number): ModelOutput => m.update({ snapshot: compose(base, { parts: e.parts(SEA_LEVEL), aero: { pressure: SEA_LEVEL } }, t, 0), listener: l, realDt: DT, warpFactor: 1, paused: false });
     const before = frame(0);
     // Every (vessel, profile) cluster of the stack, each once, under the configured count.
@@ -134,7 +134,7 @@ describe('engine clusters', () => {
     expect(before.standby.length).toBe(Math.min(profiles.size, cfg.engines.standbyVoices));
     expect(new Set(before.standby.map((s) => s.profileId)).size).toBe(before.standby.length);
     for (const s of before.standby) {
-      expect(s.key).toBe(`${base.activeVesselId}|${s.profileId}`);
+      expect(s.key).toBe(`${labVesselId(base)}|${s.profileId}`);
       expect(profiles.has(s.profileId)).toBe(true);
     }
     expect(frame(DT).standby).toEqual(before.standby);
@@ -160,7 +160,7 @@ describe('engine clusters', () => {
   it('a burnt-out cluster, RCS that is switched off, another vessel and a count of 0 stand nothing by', () => {
     const base = baseSnapshot(lib, 'pad');
     const parts = labEngines(lib, 'booster').parts(SEA_LEVEL);
-    const l = listener(externalAt(100), base.activeVesselId);
+    const l = listener(externalAt(100), labVesselId(base));
     const standby = (snapshot: ReturnType<typeof compose>, config = cfg): string[] =>
       new SoundModel(config, lib).update({ snapshot, listener: l, realDt: DT, warpFactor: 1, paused: false }).standby.map((s) => s.profileId);
     const all = standby(compose(base, { parts, aero: { pressure: SEA_LEVEL } }, 0, 0));
@@ -332,8 +332,8 @@ describe('time warp, rails and pause', () => {
   it('events are suppressed on rails and while paused', () => {
     const base = baseSnapshot(lib, 'lowOrbit');
     const m = new SoundModel(cfg, lib);
-    const ev = makeEvent('decoupled', base.ut, base.activeVesselId, base);
-    const l = listener({ kind: 'interior', mode: 'cockpit', position: seatOf(lib, 'capsule'), pressure: 0 }, base.activeVesselId);
+    const ev = makeEvent('decoupled', base.ut, labVesselId(base), base);
+    const l = listener({ kind: 'interior', mode: 'cockpit', position: seatOf(lib, 'capsule'), pressure: 0 }, labVesselId(base));
     const onRails = compose(base, { events: [ev], warp: { onRails: true, factor: 1000 } }, 0, 1);
     expect(m.update({ snapshot: onRails, listener: l, realDt: DT, warpFactor: 1000, paused: false }).oneShots.filter((o) => o.cause === 'decoupled')).toHaveLength(0);
     const paused = compose(base, { events: [ev] }, 1, 2);
@@ -357,9 +357,9 @@ describe('events', () => {
   it('touchdown picks the hard variant and a higher level at higher speed; water touchdown is the splash', () => {
     const base = baseSnapshot(lib, 'lunarSurface');
     const m = new SoundModel(cfg, lib);
-    const l = listener({ kind: 'interior', mode: 'cockpit', position: seatOf(lib, 'capsule'), pressure: 0 }, base.activeVesselId);
+    const l = listener({ kind: 'interior', mode: 'cockpit', position: seatOf(lib, 'capsule'), pressure: 0 }, labVesselId(base));
     const at = (speed: number, i: number, surface = 'land') => {
-      const snap = compose(base, { events: [makeEvent('touchdown', base.ut + i, base.activeVesselId, base, { speed, surface })] }, i, i);
+      const snap = compose(base, { events: [makeEvent('touchdown', base.ut + i, labVesselId(base), base, { speed, surface })] }, i, i);
       return m.update({ snapshot: snap, listener: l, realDt: 1, warpFactor: 1, paused: false }).oneShots.find((o) => o.cause === 'touchdown');
     };
     const soft = at(1, 1)!;
@@ -402,12 +402,65 @@ describe('cabin and ui', () => {
   });
 });
 
+describe('no active vessel, and two craft of one vehicle', () => {
+  it('without an active vessel the flight world is silent and nothing is reported; the player still hears a click', () => {
+    const base = baseSnapshot(lib, 'pad');
+    const parts = steadyEngines(lib, 'booster', 1).parts(SEA_LEVEL);
+    const m = new SoundModel(cfg, lib);
+    const l = listener(externalAt(80), labVesselId(base));
+    const flown = m.update({ snapshot: compose(base, { parts, aero: { pressure: SEA_LEVEL } }, 0, 0), listener: l, realDt: DT, warpFactor: 1, paused: false });
+    expect(flown.engines.length).toBeGreaterThan(0);
+    const unseated = { ...compose(base, { parts, aero: { pressure: SEA_LEVEL }, events: [makeEvent('decoupled', base.ut, labVesselId(base), base)] }, DT, 1), activeVesselId: null as unknown as string };
+    const out = m.update({ snapshot: unseated, listener: { ...l, attachedVesselId: null, ambientPressure: 0 }, realDt: DT, warpFactor: 1, paused: false });
+    expect(out.problems).toEqual([]);
+    expect(out.engines).toEqual([]);
+    expect(out.standby).toEqual([]);
+    expect(out.interior).toBe(false);
+    expect([out.aero.wind.gain, out.aero.noise.gain, out.aero.buffet.gain, out.aero.paths.air.gain, out.aero.paths.body.gain]).toEqual([0, 0, 0, 0, 0]);
+    expect([out.reentry.roar.gain, out.reentry.hiss.gain, out.reentry.crackle.gain, out.reentry.rumble.gain]).toEqual([0, 0, 0, 0]);
+    expect(Object.values(out.ambience.gains).every((g) => g === 0)).toBe(true);
+    expect(out.cabin).toEqual({ ambience: 0, airflow: 0, hum: 0 });
+    expect(out.oneShots.every((o) => o.bus === 'ui')).toBe(true);
+    // Seated again: the engines sound as before.
+    const again = m.update({ snapshot: compose(base, { parts, aero: { pressure: SEA_LEVEL } }, 2 * DT, 2), listener: l, realDt: DT, warpFactor: 1, paused: false });
+    expect(again.engines.length).toBe(flown.engines.length);
+  });
+
+  it('the ignition of an engine is judged by its own history: the unlit twin on a second craft starts no transient', () => {
+    const base = baseSnapshot(lib, 'pad');
+    const running = steadyEngines(lib, 'booster', 1);
+    const cold = labEngines(lib, 'booster');
+    const m = new SoundModel(cfg, lib);
+    const l = listener(externalAt(100), labVesselId(base));
+    let transients = 0;
+    let engines = 0;
+    let runningNow = 0;
+    for (let i = 0; i < 30; i++) {
+      running.step(DT, 1);
+      cold.step(DT, 0);
+      // Craft a burns, craft b (the same vehicle: the same instance ids) never lit its engines.
+      const parts = [...running.parts(SEA_LEVEL).map((p) => ({ ...p, craftId: 'a' })), ...cold.parts(SEA_LEVEL).map((p) => ({ ...p, craftId: 'b' }))];
+      const out = m.update({ snapshot: compose(base, { parts, aero: { pressure: SEA_LEVEL } }, i * DT, i), listener: l, realDt: DT, warpFactor: 1, paused: false });
+      for (const v of out.engines) {
+        if (v.ignition || v.shutdown) transients++;
+        if (v.profileId === 'engine.methalox-booster') {
+          engines = v.engines;
+          runningNow = v.running;
+        }
+      }
+    }
+    expect(engines).toBe(18);
+    expect(runningNow).toBe(9);
+    expect(transients).toBe(0);
+  });
+});
+
 describe('robustness', () => {
   it('reports a part without a definition once instead of failing', () => {
     const base = baseSnapshot(lib, 'pad');
     const parts = steadyEngines(lib, 'lander', 1).parts(SEA_LEVEL).map((p) => ({ ...p, def: p.def === LAB_PARTS.descent ? 'no-such-part' : p.def }));
     const m = new SoundModel(cfg, lib);
-    const l = listener(externalAt(30), base.activeVesselId);
+    const l = listener(externalAt(30), labVesselId(base));
     const a = m.update({ snapshot: compose(base, { parts }, 0, 0), listener: l, realDt: DT, warpFactor: 1, paused: false });
     const b = m.update({ snapshot: compose(base, { parts }, DT, 1), listener: l, realDt: DT, warpFactor: 1, paused: false });
     expect(a.problems.length).toBe(1);

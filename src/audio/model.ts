@@ -18,6 +18,7 @@
 import type { AudioFrame } from '@/core/contracts/audio';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { ModuleState, PartSnapshot, SimEvent, SimEventType, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { activeVesselOf, eventPartOf, partKeyOf, revisionOf } from '@/core/access/snapshotAccess';
 import { Prng } from '@/core/math/hash';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
@@ -250,8 +251,10 @@ export class SoundModel {
     this.time += dt;
     const snap = frame.snapshot;
     const problems: string[] = [];
-    const geom = this.listenerGeometry(frame, problems);
     const continuous = continuousAudible(frame.warpFactor, this.config.mix.warp.threshold) ? 1 : 0;
+    const active = activeVesselOf(snap);
+    if (!active) return this.withoutVessel(frame, continuous, problems);
+    const geom = this.listenerGeometry(frame, active, problems);
     const eventsAllowed = !snap.warp.onRails && !frame.paused;
 
     const standby: EngineStandby[] = [];
@@ -286,14 +289,44 @@ export class SoundModel {
     return out;
   }
 
+  /**
+   * No vessel to be heard from (the menu, a spectator, between ships; `activeVesselId` names none): every
+   * source of the flight world is placed about the active vessel, so without one the flight world is silent.
+   * What the player does still clicks, and the alarm reads the readouts as they are (the neutral blocks).
+   */
+  private withoutVessel(frame: AudioFrame, continuous: number, problems: string[]): ModelOutput {
+    const env = this.config.environment;
+    const vacuum = pressureCutoff(0, this.config.mix.propagation);
+    const silent = (bodyCutoff: number): SourcePaths => ({ air: { gain: 0, cutoff: vacuum, delay: 0, jump: true, pan: { x: 0, y: 0, z: -1 } }, body: { gain: 0, cutoff: bodyCutoff } });
+    const gains: Record<string, number> = {};
+    for (const id of this.ambienceAssets) gains[id] = 0;
+    const out: ModelOutput = {
+      interior: false,
+      continuous,
+      paused: frame.paused,
+      engines: [],
+      standby: [],
+      aero: { wind: { gain: 0, cutoff: env.aero.wind.cutoffHz[0] }, noise: { gain: 0, lowHz: env.aero.noise.bandHz[0], highHz: env.aero.noise.bandHz[1] }, buffet: { gain: 0 }, paths: silent(env.aero.hullCutoffHz) },
+      reentry: { roar: { gain: 0 }, hiss: { gain: 0 }, crackle: { gain: 0, rate: env.reentry.crackle.rateHz[0] }, rumble: { gain: 0 }, paths: silent(env.reentry.hullCutoffHz) },
+      ambience: { gains, cutoff: vacuum },
+      cabin: { ambience: 0, airflow: 0, hum: 0 },
+      oneShots: [],
+      alarm: this.alarm(frame.snapshot),
+      problems,
+    };
+    this.clicks(frame.snapshot, out.oneShots, !frame.paused);
+    this.tracks.clear();
+    this.touched.clear();
+    this.prevG = null;
+    this.prevSun = null;
+    return out;
+  }
+
   // ------------------------------------------------------------------------------------------ geometry
 
-  private listenerGeometry(frame: AudioFrame, problems: string[]): ListenerGeometry {
+  private listenerGeometry(frame: AudioFrame, active: VesselSnapshot, problems: string[]): ListenerGeometry {
     const snap = frame.snapshot;
     const l = frame.listener;
-    const active = snap.vessels.find((v) => v.id === snap.activeVesselId) ?? snap.vessels[0];
-    if (!active) throw new Error('audio: snapshot has no vessels');
-    if (active.id !== snap.activeVesselId) this.report(problems, `active vessel ${snap.activeVesselId} is not in the snapshot`);
     let position = l.positionVes;
     let forward = l.forwardVes;
     let upHint = l.upVes;
@@ -479,7 +512,8 @@ export class SoundModel {
             const nozzle = md.nozzles.length > 0 ? v3.scale(md.nozzles.reduce((s, n) => v3.add(s, v3.fromTuple(n.pos)), v3.zero()), 1 / md.nozzles.length) : v3.zero();
             const pos = v3.add(part.localPos, quat.rotate(part.localRot, nozzle));
             const lever = throttleLever(m.throttleActual, md.minThrottle, md.throttleable && md.fixedBurn === undefined);
-            this.addEngine(c, `${vessel.id}|${part.instanceId}|${i}`, m, lever, pos, seen);
+            // (By part key: two craft of one vehicle in a vessel carry parts with the same instance ids.)
+            this.addEngine(c, `${vessel.id}|${partKeyOf(vessel, part)}|${i}`, m, lever, pos, seen);
           } else if (m.type === 'rcs' && md.type === 'rcs') {
             const c = cluster(vessel, engines.rcsModuleProfile);
             c.engines += md.thrusters.length;
@@ -734,7 +768,7 @@ export class SoundModel {
     if (def.source === 'part') {
       if (e.type === 'partDestroyed') return this.relative(geom, vessel, e.posVes);
       const partId = (e as { partId?: string }).partId;
-      const part: PartSnapshot | undefined = partId === undefined ? undefined : vessel.parts.find((p) => p.instanceId === partId);
+      const part: PartSnapshot | null = partId === undefined ? null : eventPartOf(vessel, partId);
       if (part) return this.relative(geom, vessel, part.localPos);
     }
     return this.relative(geom, vessel, vessel.comLocal);
@@ -764,7 +798,7 @@ export class SoundModel {
     this.watchInitialised = true;
     if (!changed || !audible || this.time - this.lastClick < c.minInterval) return;
     this.lastClick = this.time;
-    const h = hashString(`click|${snap.tick}|${snap.ut}`);
+    const h = hashString(`click|${revisionOf(snap)}|${snap.ut}`);
     out.push({ bus: 'ui', cause: 'click', asset: c.assets[h % c.assets.length]!, gain: dbToGain(c.gainDb), rate: 1, direct: true, air: null, body: null });
   }
 

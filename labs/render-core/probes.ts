@@ -23,6 +23,7 @@
 import type { DefLibrary } from '@/core/contracts/defs';
 import { OCEAN_WETNESS_BYTES, RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
+import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { dirToLatLon } from '@/core/geo/cubeSphere';
 import { quat, v3, type Vec3 } from '@/core/math';
 import { boxMesh, coreOf, createSolidTexture, instanceInFrame, sphereMesh, type CoreApi, type ManagedTarget, type MeshBatch, type ModelHandle, type SceneBindings, type Tracked } from '@/render/core';
@@ -825,7 +826,8 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
       },
       prepare(frame) {
         batch.begin(frame);
-        const v = frame.vesselPose(frame.snapshot.activeVesselId);
+        const active = activeVesselOf(frame.snapshot);
+        const v = active ? frame.vesselPose(active.id) : undefined;
         if (v) batch.add(model, instanceInFrame(v, { x: 0, y: 0, z: 0 }, null, { bodyFixed: false }));
         batch.finish();
       },
@@ -856,7 +858,8 @@ export function createProbes(query: URLSearchParams, site: Site, defs: DefLibrar
       },
       prepare(frame) {
         batch.begin(frame);
-        const v = frame.vesselPose(frame.snapshot.activeVesselId);
+        const active = activeVesselOf(frame.snapshot);
+        const v = active ? frame.vesselPose(active.id) : undefined;
         if (v) {
           if (names.has('ball')) batch.add(white, instanceInFrame(v, { x: 0, y: 0, z: 0 }, null, { bodyFixed: false }));
           if (names.has('mirror')) batch.add(mirror, instanceInFrame(v, { x: 12, y: 0, z: 0 }, null, { bodyFixed: false }));

@@ -58,7 +58,7 @@ import { fetchDefSource } from '@/core/defs/fetchSource';
 import { padOf } from '@/core/defs/sites';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
-import { bodyTarget } from '@/core/access/snapshotAccess';
+import { activeVesselOf, bodyTarget } from '@/core/access/snapshotAccess';
 import { acquireGpu } from '@/core/gpu/device';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG, G0 } from '@/core/math/scalar';
@@ -577,7 +577,7 @@ async function boot(): Promise<void> {
     if (milestoneParam !== null) {
       s = { ...s, scenario: { ...s.scenario, id: params.get('scenarioId') ?? 'lunar-direct' } };
       if (++decorated === 5) {
-        const base = { ut: s.ut, vesselId: s.activeVesselId };
+        const base = { ut: s.ut, vesselId: activeVesselOf(s)!.id };
         const soi = soiParam && soiParam.length === 2 ? [{ ...base, type: 'soiChange' as const, fromBodyId: soiParam[0]!, toBodyId: soiParam[1]! }] : [];
         s = { ...s, events: [...s.events, ...soi, { ...base, type: 'milestone' as const, milestone: { id: milestoneParam, ut: s.ut, data: {} } }] };
       }

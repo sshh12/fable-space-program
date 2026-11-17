@@ -6,6 +6,7 @@
 import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext } from '@/core/contracts/render';
 import type { PartSnapshot, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { findEventPart } from '@/core/access/snapshotAccess';
 import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, hashToUnit, hashU32, quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
@@ -332,13 +333,8 @@ export class EffectDirector {
   ): void {
     const P = this.data.particles;
     const S = this.data.staging;
-    const findPart = (instanceId: string): { vessel: VesselSnapshot; part: PartSnapshot } | null => {
-      for (const vessel of snap.vessels) {
-        const part = vessel.parts.find((p) => p.instanceId === instanceId);
-        if (part) return { vessel, part };
-      }
-      return null;
-    };
+    // (The part an event names may by now be in another vessel: a decoupler leaves with the stage it dropped.)
+    const findPart = (eventPartId: string): { vessel: VesselSnapshot; part: PartSnapshot } | null => findEventPart(snap, eventPartId);
     const vessel = snap.vessels.find((v) => v.id === ev.vesselId);
     const seed = hashSeed(ev.type, ev.vesselId, ev.ut);
 

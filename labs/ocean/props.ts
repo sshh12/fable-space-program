@@ -6,6 +6,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { FrameContext, MeshData, RenderContext, RenderFeature } from '@/core/contracts/render';
+import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, instanceInFrame, sphereMesh, type MeshBatch, type ModelHandle, type ParentPose } from '@/render/core';
 import { enuAt } from '@/render/core/lab';
@@ -274,7 +275,8 @@ export function createLabPropsFeature(world: OceanLabWorld, defs: DefLibrary): L
         batch.add(marker, inst);
         props.lastMarkerDirs.push(d);
       }
-      const v = world.floating ? frame.vesselPose(frame.snapshot.activeVesselId) : undefined;
+      const floating = world.floating ? activeVesselOf(frame.snapshot) : null;
+      const v = floating ? frame.vesselPose(floating.id) : undefined;
       if (v) batch.add(capsule, instanceInFrame(v, { x: 0, y: 0, z: 0 }, null, { bodyFixed: false }));
       batch.finish();
     },
