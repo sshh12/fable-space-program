@@ -1143,7 +1143,7 @@ each reports to the lead first):
    committed. The lead pushes `data/baselines` to the private repository on an orphan branch after the last
    re-recording.
 
-## 24. The reference images finished: all 33 recorded, 30 exact (2026-11-16, 22:10 to 2026-11-17, 00:10)
+## 24. The reference images finished: all 33 recorded, 30 exact (2026-11-16, 22:10-23:50)
 
 After the three determinism fixes (request lead-5: cockpit 327a9a4 and 19ab596; lead-6: app shell 8c0f2cb;
 lead-7: ocean 39dacd5; then ocean cff94bd). The tree was quiet (only `wire-protocol` was working, in
@@ -1228,7 +1228,7 @@ nothing changed, ocean-12 is where to look.
 `reentry-peak-heating.png`, `sweep-app-cockpit.png`, `sweep-app-pad.png`, `sweep-cockpit-leo.png`. The
 manifest holds the sha256 of all 33.
 
-## 25. The lead step of sub-wave 3.2: the contract changes that could not be additive (2026-11-17, 00:00-00:40; commit 31e67fa)
+## 25. The lead step of sub-wave 3.2: the contract changes that could not be additive (2026-11-16 23:50 to 2026-11-17 00:05; commit 31e67fa)
 
 **What changed, by contract file** (`src/core/contracts`; `net.ts` is not touched):
 
