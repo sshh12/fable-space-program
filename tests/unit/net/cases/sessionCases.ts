@@ -6,15 +6,16 @@
  */
 import { roundTripProfile } from '@/net/injector/model';
 import { parseTranscript, runTranscript, type Transcript } from '@/net/testing/transcripts';
-import handshake from '../transcripts/handshake-spawn-inputs.json';
-import malformed from '../transcripts/malformed-and-out-of-order.json';
-import outage from '../transcripts/outage-beyond-grace.json';
-import stall from '../transcripts/stall-and-declared-loss.json';
-import resumeInputs from '../transcripts/resume-inputs-in-flight.json';
-import resumeHandshake from '../transcripts/resume-mid-handshake.json';
-import resumeSubscription from '../transcripts/resume-mid-subscription.json';
-import takenOver from '../transcripts/taken-over.json';
-import versionMismatch from '../transcripts/version-mismatch.json';
+// JSON modules with the import attribute: Vite, vitest and Node's own loader (the Playwright spec) all read it.
+import handshake from '../transcripts/handshake-spawn-inputs.json' with { type: 'json' };
+import malformed from '../transcripts/malformed-and-out-of-order.json' with { type: 'json' };
+import outage from '../transcripts/outage-beyond-grace.json' with { type: 'json' };
+import stall from '../transcripts/stall-and-declared-loss.json' with { type: 'json' };
+import resumeInputs from '../transcripts/resume-inputs-in-flight.json' with { type: 'json' };
+import resumeHandshake from '../transcripts/resume-mid-handshake.json' with { type: 'json' };
+import resumeSubscription from '../transcripts/resume-mid-subscription.json' with { type: 'json' };
+import takenOver from '../transcripts/taken-over.json' with { type: 'json' };
+import versionMismatch from '../transcripts/version-mismatch.json' with { type: 'json' };
 import { diff, ok, type NetCase } from './assert';
 
 export const TRANSCRIPTS: Transcript[] = [handshake, resumeHandshake, resumeSubscription, resumeInputs, takenOver, malformed, versionMismatch, stall, outage].map(parseTranscript);
