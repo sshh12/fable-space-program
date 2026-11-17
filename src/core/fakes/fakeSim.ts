@@ -4,12 +4,20 @@
  * described there; new code takes `createFakeSession`, which also gives the scenes of the shared universe and
  * the fake's own handles (`setRenderRoot`, `portStates`).
  *
- * One difference, and only where the caller does not say: THE RENDER ROOT. `createFakeSim` keeps the origin of
- * ROOT positions at the library's root body, where v1's FakeSim had it (`renderRoot: 'rootBody'`), so every
- * lab and spec written on it draws from the numbers it drew from before; `createFakeSession` puts it at the
- * active vessel's SOI body as a session does. The two differ in the scenes at the Moon only, and there the
- * same picture comes from positions 384,000 km larger: the reference images of those scenes were recorded on
- * the v1 origin (docs/handoff/presentation-sweep.md, D7). Pass `renderRoot` to choose.
+ * Two differences, and only where the caller does not say, both so that every lab and spec written on the v1
+ * name draws from the numbers it drew from before (the integration lab's reference images were recorded on them):
+ *
+ * THE RENDER ROOT. `createFakeSim` keeps the origin of ROOT positions at the library's root body, where v1's
+ * FakeSim had it (`renderRoot: 'rootBody'`); `createFakeSession` puts it at the active vessel's SOI body as a
+ * session does. The two differ in the scenes at the Moon only, and there the same picture comes from positions
+ * 384,000 km larger (docs/handoff/presentation-sweep.md, D7). Pass `renderRoot` to choose.
+ *
+ * THE FIGURES. `createFakeSim` states v1's stand-in constants whatever parts and vehicle it is given
+ * (`figures: 'standIn'`: 50 t, a 55 m bounding radius, the centre of mass at the origin, the stack of
+ * `stageLabels` with a burn figure for every stage, the constant fractions and lights of the read-outs);
+ * `createFakeSession` derives them from the parts and the vehicle as a session does (fakeSession.ts,
+ * "Figures"). The renderer reads the mass and the bounding radius (shadow cascades, the cabin's motion, the
+ * ocean's wake, the plasma sheath), so a derived figure would move a recorded picture. Pass `figures` to choose.
  */
 import type { DefLibrary } from '../contracts/defs';
 import type { LocalSession } from '../contracts/session';
@@ -25,4 +33,4 @@ export const FAKE_SIM_DEFAULT_UT = FAKE_SESSION_DEFAULT_UT;
 
 export { FakeSession as FakeSim };
 
-export const createFakeSim = (defs: DefLibrary, opts: FakeSimOptions): LocalSession => new FakeSession(defs, { renderRoot: 'rootBody', ...opts });
+export const createFakeSim = (defs: DefLibrary, opts: FakeSimOptions): LocalSession => new FakeSession(defs, { renderRoot: 'rootBody', figures: 'standIn', ...opts });

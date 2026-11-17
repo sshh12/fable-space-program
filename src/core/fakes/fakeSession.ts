@@ -46,6 +46,25 @@
  * the chase distances, the helm, part keys, `Readouts.target`. The deprecated fields are filled beside them
  * until the contract tighten removes them.
  *
+ * Figures. What a session derives from the vessel's parts and its vehicle, the fake derives from them too
+ * (`figures: 'derived'`, the default), so that a consumer sees a vessel that agrees with itself and with the
+ * session in the same situation (tests/unit/fakes/fakeSession.test.ts holds every field against one, with the
+ * simplifications in one table):
+ *   from the parts      the mass, the centre of mass and the bounding radius (the simulation's own sums), of
+ *                       every craft and of a vessel of several; the ablator, the hottest skin, the thruster
+ *                       propellant and whether there are legs, in the read-outs; the orbit a standing vessel
+ *                       has; the ground's reaction it feels;
+ *   from the vehicle    the stage stack with its labels and icons, the stages fired at the start
+ *                       (`stagesAlreadyFired`), which stages state burn figures (the burn under way and
+ *                       every engine stage still to fire; the others state zeros), the sum of them as the
+ *                       remaining delta-v, and the light of the next parachute stage against its envelopes;
+ *   from the scene      the relative inclination to a body target, the launch site's target by its pad.
+ * Without `parts` (or without a vehicle, for the stack) there is nothing to derive from and the stand-in
+ * values hold: 50 t, 55 m, a generic stack. `figures: 'standIn'` states those constants WHATEVER the parts,
+ * as v1's FakeSim did: it is what `createFakeSim` asks for, because the renderer draws from the mass and the
+ * bounding radius and the labs' reference images were recorded with them. Still stand-ins in both: the burn
+ * figures of a stage (the fake runs no staging analysis) and everything about the flight itself.
+ *
  * The render root. Like a session, the fake states ROOT positions relative to the centre of the active
  * vessel's SOI body (`renderRoot: 'focusBody'`, the default). `renderRoot: 'rootBody'` keeps the origin at
  * the library's root body, which is where v1's FakeSim had it (for the Moon's scenes that is 384,000 km
@@ -54,7 +73,7 @@
  * history of every later snapshot.
  */
 import { NEUTRAL_CONTROLS, SAS_MODES, type CommandResult, type ControlInputs, type NavballMode, type NodeEdit, type PlayerCommands, type SasMode } from '../contracts/controls';
-import { MAX_PHYSICS_WARP_INDEX, PHYSICS_DT, WARP_LEVELS, type BodyDef, type DefLibrary, type ScenarioDef } from '../contracts/defs';
+import { MAX_PHYSICS_WARP_INDEX, PHYSICS_DT, WARP_LEVELS, type BodyDef, type DefLibrary, type ParachuteEnvelope, type ScenarioDef, type VehicleDef } from '../contracts/defs';
 import {
   DEFAULT_UNIVERSE_RULES,
   TICKS_PER_SECOND,
@@ -77,6 +96,7 @@ import {
 import type { ClientStores, LaunchQueueEntry, LocalSession, SeatResult, SessionDebug, Store, UniverseCommands } from '../contracts/session';
 import type {
   BodySnapshot,
+  ChuteEnvelope,
   CraftCockpit,
   CraftSnapshot,
   DockingPortState,
@@ -97,7 +117,7 @@ import type {
   TargetReadout,
   VesselSnapshot,
 } from '../contracts/sim';
-import { padOf, padsOf } from '../defs/sites';
+import { padLocationOf, padOf, padsOf, padTitle } from '../defs/sites';
 import { dirToLatLon, latLonToDir } from '../geo/cubeSphere';
 import { conicApsides, conicFromState, conicPosition, conicTrueAnomaly, timeSincePeriapsis, type ConicElements } from '../math/conic';
 import { FRAME_HISTORY_EPOCHS, type FrameEpochOrigin, type FrameRebase } from '../math/frame';
@@ -165,8 +185,32 @@ export interface FakeSessionOptions {
    * (default 0: standing; a launch mount's clamp height; a hover height).
    */
   ground?: { height: number; originHeight: number; clearance?: number };
-  /** Stage labels for the staging stack (default: a generic 4-entry stack). */
+  /**
+   * Stage labels for the staging stack. Default: with derived figures (`figures`) and a vehicle, the stages of
+   * that vehicle with their labels and icons, as a session lists them; else a generic 4-entry stack. Labels
+   * given here are the stack whatever the figures.
+   */
   stageLabels?: string[];
+  /**
+   * Stages of the stack already fired at the start, as `ScenarioDef.stagesAlreadyFired` (default 0): a scene
+   * in the middle of a flight then lists them fired, as a session started from such a scenario does, the next
+   * press fires the one after them, and `SimSnapshot.scenario` says so. It says nothing about `parts`: give the
+   * part list of that state of the vehicle (`assembleVessel(defs, id, { stagesAlreadyFired })`).
+   */
+  stagesAlreadyFired?: number;
+  /**
+   * The target selected at the start, as `commands.setTarget` would be given it (a scenario's target body:
+   * `{ kind: 'body', id }`; null = none). Default: the scene's own (the other vessel of 'rendezvous',
+   * 'timeLive' and 'echoes', the station's port of 'dockingApproach'; none in every other scene). A target the
+   * scene does not have is an error.
+   */
+  target?: TargetRef | null;
+  /**
+   * The scenario's suggested landing (`ScenarioDef.suggestedLanding`; null = none), listed first among the
+   * surface targets as a session lists it, whatever body it is on. Default: the fake's own point, and only in
+   * the scenes at the moon.
+   */
+  landing?: ScenarioDef['suggestedLanding'];
   /**
    * Landing legs of the active vessel deployed from the start (default false: stowed, as at launch). A landed
    * scene stands on them (request vehicle-pad-5); `toggleLegs` works from there as usual.
@@ -176,6 +220,12 @@ export interface FakeSessionOptions {
   vesselName?: string;
   /** Where the origin of ROOT positions is (the file header). Default 'focusBody', as a session. */
   renderRoot?: 'focusBody' | 'rootBody';
+  /**
+   * Where the figures come from that a session derives from the vessel's parts and its vehicle (the file
+   * header, "Figures"). 'derived' (the default of `createFakeSession`): from `parts` and the vehicle, as a
+   * session derives them. 'standIn' (the default of `createFakeSim`): v1's constants whatever the parts.
+   */
+  figures?: 'derived' | 'standIn';
 }
 
 const OBLIQUITY = 23.4392911 * DEG;
@@ -332,6 +382,10 @@ export class FakeSession implements LocalSession {
   private target: TargetRef | null = null;
   private nextStage = 0;
   private readonly stageLabels: string[];
+  /** The figures a session derives from the parts and the vehicle are derived (true) or v1's stand-in constants (false). */
+  private readonly derived: boolean;
+  /** The stack is the one of the vehicle the fake is published as: its stages state their own icons and figures. */
+  private readonly vehicleStack: boolean;
   /** What each stage of the vehicle the fake is published as says about itself (`describeStages`); empty without a vehicle. */
   private stageWords: StageWords[] | null = null;
   private nodes: ManeuverNode[] = [];
@@ -401,7 +455,7 @@ export class FakeSession implements LocalSession {
     this.orbitPhase0 = 0.6;
     this.navballMode = this.spec.kind === 'orbit' ? 'orbit' : 'surface';
     this.parts = opts.parts ?? [];
-    this.stageLabels = opts.stageLabels ?? ['Launch', 'Stage separation', 'Fairing jettison', 'Parachutes'];
+    this.derived = (opts.figures ?? 'derived') === 'derived';
     this.originBodyId = (opts.renderRoot ?? 'focusBody') === 'rootBody' ? root : this.spec.bodyId;
     this.scenario = {
       id: `fake-${opts.scene}`,
@@ -410,11 +464,19 @@ export class FakeSession implements LocalSession {
       site: site?.id ?? '',
       startUt: this.ut0,
       start: { kind: 'state', bodyId: this.spec.bodyId, r: [0, 0, 0], v: [0, 0, 0] },
-      stagesAlreadyFired: 0,
+      stagesAlreadyFired: opts.stagesAlreadyFired ?? 0,
       target: null,
-      suggestedLanding: this.spec.bodyId === moon && moon !== root ? { bodyId: moon, latDeg: 0.674, lonDeg: 23.473, name: 'Tranquility Base' } : null,
+      suggestedLanding: opts.landing !== undefined ? opts.landing : this.spec.bodyId === moon && moon !== root ? { bodyId: moon, latDeg: 0.674, lonDeg: 23.473, name: 'Tranquility Base' } : null,
       milestones: [],
     };
+    // The stack: the labels given; else, where the figures are derived, the stages of the vehicle the fake is
+    // published as; else the generic four. The stages a scenario starts with fired are fired.
+    const vehicle = this.scenario.vehicle !== '' ? this.defs.vehicles[this.scenario.vehicle] : undefined;
+    this.vehicleStack = opts.stageLabels === undefined && this.derived && vehicle !== undefined;
+    this.stageLabels = opts.stageLabels ?? (this.vehicleStack ? vehicle!.stages.map((s) => s.label) : ['Launch', 'Stage separation', 'Fairing jettison', 'Parachutes']);
+    const fired = this.scenario.stagesAlreadyFired;
+    if (!Number.isInteger(fired) || fired < 0 || fired > this.stageLabels.length) throw new Error(`FakeSession: stagesAlreadyFired is ${fired}, and the stack has ${this.stageLabels.length} stages`);
+    this.nextStage = fired;
     // A dock link and a port name PARTS: the two scenes about them are built from the part list.
     if ((opts.scene === 'dockingApproach' || opts.scene === 'assembly') && this.parts.length === 0) throw new Error(`FakeSession: the scene '${opts.scene}' needs a part list (options.parts): its ports, links and control point name parts of it`);
     this.port = opts.scene === 'dockingApproach' ? this.findPort() : null;
@@ -501,6 +563,11 @@ export class FakeSession implements LocalSession {
       },
       cycleActiveVessel: () => ({ ok: false, reason: 'No other controllable vessel' }),
     };
+    // A target given for the start is selected as the command would select it.
+    if (opts.target !== undefined) {
+      const selected = this.commands.setTarget(opts.target);
+      if (!selected.ok) throw new Error(`FakeSession: the scene '${opts.scene}' cannot start with the target ${JSON.stringify(opts.target)}: ${selected.reason}`);
+    }
     const cheat = (): void => {
       this.cheatCounter++;
     };
@@ -1061,7 +1128,11 @@ export class FakeSession implements LocalSession {
     if (l) out.push({ id: 'landing', name: l.name, bodyId: l.bodyId, kind: 'landing', latitude: l.latDeg * DEG, longitude: l.lonDeg * DEG, radius: 0 });
     const site = this.defs.sites[this.scenario.site];
     if (site) {
-      out.push({ id: `site:${site.id}`, name: site.name, bodyId: site.bodyId, kind: 'site', latitude: site.location.latDeg * DEG, longitude: site.location.lonDeg * DEG, radius: padOf(site).flatRadius });
+      // The launch site as a target is its first pad: with derived figures by the pad's full name and its own
+      // coordinates, as a session states it; v1 named the site and stated the site's.
+      const pad = padOf(site);
+      const where = this.derived ? padLocationOf(site, pad.id) : site.location;
+      out.push({ id: `site:${site.id}`, name: this.derived ? padTitle(site, pad.id) : site.name, bodyId: site.bodyId, kind: 'site', latitude: where.latDeg * DEG, longitude: where.lonDeg * DEG, radius: pad.flatRadius });
       site.recoveryZones.forEach((z, i) =>
         out.push({ id: `recovery:${i}`, name: z.name, bodyId: site.bodyId, kind: 'recovery', latitude: z.latDeg * DEG, longitude: z.lonDeg * DEG, radius: z.radiusKm * 1000 }),
       );
@@ -1133,6 +1204,92 @@ export class FakeSession implements LocalSession {
       // (No part of the fake is a fairing petal unless the given part says it is one.)
       return { ...p, panel: p.panel ?? null, craftId, ...(pose ? { localPos: v3.add(pose.pos, quat.rotate(pose.rot, p.localPos)), localRot: quat.normalize(quat.mul(pose.rot, p.localRot)) } : {}), modules };
     });
+  }
+
+  /**
+   * Mass (kg), centre of mass (VES) and bounding radius about the VES origin (m) of a part list, derived as
+   * the simulation derives them (src/sim/vessel: `computeMassProps`, the structure's bounding sphere): each
+   * part's dry mass at its centre-of-mass offset and each tank's content as a column from the tank's bottom,
+   * a launch clamp that still holds counting nothing (it is ground structure); the radius reaches the far
+   * rim of every part's envelope. A jettisoned fairing petal weighs its share of the fairing, taken at the
+   * fairing's own centre. null when there is nothing to derive from: no parts, or a part whose definition the
+   * library does not have (the sums cannot be made, and a part of them would be a wrong figure).
+   */
+  private bodyOf(parts: readonly PartSnapshot[]): { mass: number; com: Vec3; radius: number } | null {
+    let mass = 0;
+    let radius = 0;
+    const moment = v3.zero();
+    const add = (m: number, at: Vec3): void => {
+      mass += m;
+      moment.x += m * at.x;
+      moment.y += m * at.y;
+      moment.z += m * at.z;
+    };
+    for (const p of parts) {
+      const def = this.defs.parts[p.def];
+      if (!def) return null;
+      const at = (x: number, y: number, z: number): Vec3 => v3.add(p.localPos, quat.rotate(p.localRot, v3.new(x, y, z)));
+      const b = def.bounds;
+      radius = Math.max(radius, v3.len(at(0, (b.yMin + b.yMax) / 2, 0)) + Math.hypot(b.radius, (b.yMax - b.yMin) / 2));
+      if (p.modules.some((m) => m.type === 'launchClamp' && !m.released)) continue;
+      const dry = p.panel ? def.dryMass / p.panel.count : def.dryMass;
+      if (dry > 0) add(dry, at(def.comOffset[0], def.comOffset[1], def.comOffset[2]));
+      for (const tank of def.resources ?? []) {
+        const amount = p.resources[tank.resource] ?? 0;
+        if (amount <= 0) continue;
+        const fill = tank.capacity > 0 ? amount / tank.capacity : 0;
+        add(amount, at(0, tank.tankBottomY + (fill * tank.tankHeight) / 2, 0));
+      }
+    }
+    return mass > 0 ? { mass, com: v3.scale(moment, 1 / mass), radius } : null;
+  }
+
+  /**
+   * The stages of the vehicle's stack that state burn figures, as a session's staging analysis decides it
+   * (src/sim/vessel/facade.ts, `stagingInfo`): `owner`, the latest fired stage that ignited an engine which is
+   * aboard and armed (lit by staging, not flamed out, with an ignition left or running): the burn under way;
+   * and every stage still to fire that ignites an engine aboard. A fixed-burn motor is no such engine.
+   */
+  private burningStages(stack: VehicleDef['stages']): { stages: Set<number>; owner: number } {
+    const aboard = new Map(this.parts.map((p) => [p.instanceId, p]));
+    const engineOn = (id: string, armed: boolean): boolean => {
+      const part = aboard.get(id);
+      const modules = part ? this.defs.parts[part.def]?.modules : undefined;
+      if (!part || !modules) return false;
+      return modules.some((md, k) => {
+        if (md.type !== 'engine' || md.fixedBurn) return false;
+        const ms = part.modules[k];
+        return !armed || (ms?.type === 'engine' && ms.active && !ms.flameout && (ms.ignitionsLeft === null || ms.ignitionsLeft > 0 || ms.throttleActual > 0));
+      });
+    };
+    const ignites = (i: number, armed: boolean): boolean => stack[i]!.actions.some((a) => a.kind === 'igniteEngines' && a.parts.some((id) => engineOn(id, armed)));
+    let owner = -1;
+    for (let i = Math.min(this.nextStage, stack.length) - 1; i >= 0 && owner < 0; i--) if (ignites(i, true)) owner = i;
+    const stages = new Set<number>(owner >= 0 ? [owner] : []);
+    for (let i = this.nextStage; i < stack.length; i++) if (ignites(i, false)) stages.add(i);
+    return { stages, owner };
+  }
+
+  /**
+   * Relative inclination to the orbit plane of a body target, rad: the angle between the vessel's orbit plane
+   * and the plane the target moves in about the same body. Standing on that body it is the least a launch
+   * from the vessel's latitude reaches: the plane's inclination to the equator less the latitude, not below
+   * zero. null when the target does not orbit the vessel's body (the contract: "not about the same body").
+   */
+  private planeAngleTo(bodyId: string, st: { r: Vec3; v: Vec3 }, ut: number): number | null {
+    const target = this.defs.bodies[bodyId];
+    if (!target || target.parent !== this.spec.bodyId) return null;
+    const t = this.bodyState(bodyId, ut);
+    const p = this.bodyState(target.parent, ut);
+    const normal = v3.cross(v3.sub(t.r, p.r), v3.sub(t.v, p.v));
+    if (v3.len(normal) === 0) return null;
+    if (this.spec.kind === 'surface' && (this.spec.climbRate ?? 0) === 0) {
+      const pole = quat.rotate(this.bodyOrientation(this.spec.bodyId, ut).q, v3.unitZ());
+      const latitude = Math.asin(clamp(v3.dot(v3.normalize(st.r), pole), -1, 1));
+      return Math.max(0, v3.angle(normal, pole) - Math.abs(latitude));
+    }
+    const own = v3.cross(st.r, st.v);
+    return v3.len(own) > 0 ? v3.angle(own, normal) : null;
   }
 
   /** The instance id of the part of the given list that holds the craft's command module; null without one. */
@@ -1283,7 +1440,7 @@ export class FakeSession implements LocalSession {
         rangeRate: range > 0 ? v3.dot(dr, dv) / range : 0,
         relVelocity: null,
         relSpeed: null,
-        relativeInclination: 0.01,
+        relativeInclination: this.derived ? this.planeAngleTo(t.id, st, ut) : 0.01,
         closestApproaches: [],
         lvlh: null,
         offer: null,
@@ -1419,7 +1576,138 @@ export class FakeSession implements LocalSession {
     let thrust = 0;
     for (const p of parts) for (const m of p.modules) if (m.type === 'engine') thrust += m.thrust;
     if (parts.length === 0) thrust = this.throttleActual * 2.0e6;
-    const mass = 50000;
+
+    // What a stage says about itself (what it burns, its chutes, the engines it ignites) is the vehicle's that
+    // the fake is published as, stage by stage, through the derivation a session uses; with those words go the
+    // stage's action kinds (the two lists are parallel). A fake of no vehicle, and a stage the vehicle does not
+    // have, state the neutral values.
+    const vehicle = this.scenario.vehicle !== '' ? this.defs.vehicles[this.scenario.vehicle] : undefined;
+    this.stageWords ??= vehicle ? describeStages(vehicle, (id) => this.defs.parts[id]) : [];
+    const stageWords = this.stageWords;
+    // With the vehicle's own stack (derived figures) a stage states its icon, and its burn figures where a
+    // session states any: the fired stage whose armed engines are aboard (the burn under way) and every stage
+    // still to fire that ignites an engine aboard; every other stage states the zeros and no propellant. The
+    // figures themselves are stand-ins (the fake runs no staging analysis); v1's stack states them for every stage.
+    const stack = this.vehicleStack && vehicle ? vehicle.stages : null;
+    const burning = stack ? this.burningStages(stack) : null;
+    const stages: StageInfo[] = this.stageLabels.map((label, i) => {
+      const words = stageWords[i];
+      const actionKinds = words && vehicle ? vehicle.stages[i]!.actions.map((a): string => a.kind) : ['engine'];
+      const burns = burning === null || burning.stages.has(i);
+      const underWay = burning === null ? i < this.nextStage : i === burning.owner;
+      return {
+        label,
+        icon: stack ? stack[i]!.icon : i === this.stageLabels.length - 1 ? 'parachute' : 'engine',
+        fired: i < this.nextStage,
+        deltaVVac: burns ? 3000 : 0,
+        deltaVNow: burns ? 2800 : 0,
+        twr: burns ? 1.3 : 0,
+        burnTime: burns ? 160 : 0,
+        propellantFraction: !burns ? null : underWay ? 1 - this.throttleActual * 0.5 : 1,
+        actionKinds,
+        burnLabel: words ? words.burnLabel : null,
+        thrustVac: words ? words.thrustVac : 0,
+        weightFlowVac: words ? words.weightFlowVac : 0,
+        actionChutes: words ? [...words.actionChutes] : actionKinds.map(() => null),
+        chuteEnvelopes: words ? words.chuteEnvelopes : null,
+      };
+    });
+    const staging = { nextStage: this.nextStage, stages, lockout: false };
+
+    // The figures of one craft built from the part list (every craft of a scene is that craft): derived from
+    // the parts as the simulation derives them, or the stand-in constants (v1's, and a craft without parts).
+    const body1 = this.derived ? this.bodyOf(parts) : null;
+    const craftMass = body1?.mass ?? 50000;
+    const single = body1?.radius ?? 55;
+    // The craft of the viewer's vessel: one; three side by side in the assembly scene (60 m apart, or with a
+    // gap of a fifth of their size where that is derived); two once the docking scene has docked. A scene of
+    // the shared universe with other owners in it names the viewer.
+    const assembly = this.scene === 'assembly';
+    const docked = this.port !== null && this.dockPhase === 'hard';
+    const named = assembly || this.port !== null;
+    const spacing = body1 ? 2.2 * body1.radius : 60;
+    const noStack: CraftSnapshot['staging'] = { nextStage: 0, stages: [], lockout: false };
+    const ownCraft = this.craftBlock(craftId, this.vesselName, named ? FAKE_ACCOUNT : null, named ? FAKE_CALLSIGN : null, staging, single);
+    let crafts: CraftSnapshot[] = [ownCraft];
+    const links: DockLinkSnapshot[] = [];
+    let allParts = parts;
+    // The vessel's own frame: the viewer's craft is its base, except docked to the station (below).
+    let rigid = { name: this.vesselName, r: st.r, v: st.v, q: quat.clone(this.q), w: v3.clone(this.w), mass: craftMass, com: body1?.com ?? v3.zero(), radius: single };
+    if (assembly) {
+      const aboard: [string, string, string | null, string | null, number][] = [
+        ['fake-craft-b', 'Vega 2', OTHER_ACCOUNT, OTHER_CALLSIGN, spacing],
+        ['fake-craft-c', 'Derelict', null, null, -spacing],
+      ];
+      for (const [id, name, ownerId, callsign, x] of aboard) {
+        crafts.push(this.craftBlock(id, name, ownerId, callsign, noStack, single));
+        links.push({ a: this.linkKey(craftId, links.length > 0), b: this.linkKey(id), roll: x > 0 ? 0 : Math.PI / 2 });
+        allParts = [...allParts, ...this.buildParts(pressure, id, false, { pos: v3.new(x, 0, 0), rot: quat.identity() })];
+      }
+      rigid = { ...rigid, mass: 3 * craftMass, radius: spacing + single };
+    } else if (docked) {
+      // Hard dock (ARCHITECTURE 7.5; the simulation's `dockMerge`): the station is the base, so the vessel is in
+      // ITS frame and has its name, its craft comes first, and the arriving craft's parts are re-expressed there
+      // as their own tree: half a turn about the facing axis, the two port faces on each other. The link names
+      // the base's port first. The vessel moves with the viewer's craft, which now flies it.
+      const station = this.others[0]!;
+      const port = this.port!;
+      const offset = v3.scale(port.dir, this.portStandoff);
+      const arm = quat.rotate(this.q, offset);
+      crafts = [this.craftBlock(station.craftId, station.name, station.ownerId, station.ownerCallsign, noStack, single), ownCraft];
+      links.push({ a: partKey(station.craftId, port.instanceId), b: partKey(craftId, port.instanceId), roll: 0 });
+      allParts = [...this.buildParts(0, station.craftId, false, null), ...this.buildParts(pressure, craftId, true, { pos: offset, rot: this.facing })];
+      rigid = {
+        name: station.name,
+        r: v3.add(st.r, arm),
+        v: v3.add(st.v, v3.cross(quat.rotate(this.q, this.w), arm)),
+        q: quat.normalize(quat.mul(this.q, quat.conj(this.facing))),
+        w: quat.rotate(this.facing, this.w),
+        mass: 2 * craftMass,
+        com: v3.scale(offset, 0.5),
+        radius: this.portStandoff + single,
+      };
+    }
+    // A vessel of several craft: its figures are those of all its parts in its frame, where they are derived.
+    const bodyAll = body1 !== null && crafts.length > 1 ? this.bodyOf(allParts) : null;
+    if (bodyAll) rigid = { ...rigid, mass: bodyAll.mass, com: bodyAll.com, radius: bodyAll.radius };
+
+    // What the read-outs take from the parts, where the figures are derived from them (a session reads them
+    // there): the least ablator of the heat shields, the hottest skin against its limit, the thruster propellant
+    // against its capacity, and whether there are legs at all.
+    const fromParts = body1 !== null;
+    let ablator: number | null = null;
+    let hottest = 0;
+    let rcsLeft = 0;
+    let rcsCapacity = 0;
+    let hasLegs = false;
+    if (fromParts) {
+      const rcsResources = new Set<string>();
+      for (const p of parts) for (const md of this.defs.parts[p.def]?.modules ?? []) if (md.type === 'rcs') rcsResources.add(md.resource);
+      for (const p of parts) {
+        for (const m of p.modules) {
+          if (m.type === 'heatShield') ablator = ablator === null ? m.ablatorFraction : Math.min(ablator, m.ablatorFraction);
+          if (m.type === 'legs') hasLegs = true;
+        }
+        if (p.maxTemp > 0) hottest = Math.max(hottest, p.tempSkin / p.maxTemp);
+        for (const tank of this.defs.parts[p.def]?.resources ?? []) {
+          if (!rcsResources.has(tank.resource)) continue;
+          rcsLeft += p.resources[tank.resource] ?? 0;
+          rcsCapacity += tank.capacity;
+        }
+      }
+    }
+    const mach = hasAir ? speedSurf / 300 : 0;
+    // The light of the next parachute stage, as a session judges it (the vehicle's own stack): none where there
+    // is no air or no such stage is left, else the flight condition against the canopy's two envelopes.
+    let chuteLight: ChuteEnvelope | null = this.spec.chutes ? 'safe' : null;
+    if (stack) {
+      chuteLight = null;
+      const within = (env: ParachuteEnvelope): boolean => !(env.maxAlt !== undefined && st.altitude > env.maxAlt) && !(env.maxMach !== undefined && mach > env.maxMach) && !(env.maxSpeed !== undefined && speedSurf > env.maxSpeed) && q <= env.maxQ;
+      const next = hasAir ? stages.slice(this.nextStage).find((s) => s.chuteEnvelopes)?.chuteEnvelopes : null;
+      if (next) chuteLight = !within(next.destroy) ? 'unsafe' : within(next.safe) ? 'safe' : 'risky';
+    }
+
+    const mass = rigid.mass;
     const landed = this.spec.kind === 'surface' && (this.spec.climbRate ?? 0) === 0;
     const nose = quat.rotate(this.q, v3.unitY());
     const time = this.timeView(ut);
@@ -1462,7 +1750,9 @@ export class FakeSession implements LocalSession {
     // Positive roll = rotation about +Y (the nose): the dorsal side tips toward starboard = cross(nose, upRef).
     const rollDeg = Math.atan2(v3.dot(dorsal, v3.cross(nose, upRef)), v3.dot(dorsal, upRef)) / DEG;
 
-    const conic = landed ? null : conicFromState(body.mu, st.r, st.v, ut);
+    // The osculating orbit; a session states it standing too (the orbit of a point that turns with the ground),
+    // which v1's figures leave out.
+    const conic = landed && !this.derived ? null : conicFromState(body.mu, st.r, st.v, ut);
     const aps = conic ? conicApsides(conic) : { rp: body.radius, ra: body.radius };
     const current: Patch[] = conic && this.spec.kind === 'orbit' ? [this.patchFor(conic, body.id, ut, st.r)] : [];
     const planned: Patch[] = [];
@@ -1480,7 +1770,11 @@ export class FakeSession implements LocalSession {
 
     const verticalSpeed = v3.dot(vSurf, u);
     const gLocal = body.mu / v3.lenSq(st.r);
-    const qFixedToRoot = this.bodyOrientation(body.id, ut).q;
+    const turning = this.bodyOrientation(body.id, ut);
+    const qFixedToRoot = turning.q;
+    // The inclination a session states is to the body's equator; v1's figures state the conic's own, to the axes of ROOT.
+    const pole = v3.len(turning.spin) > 0 ? v3.normalize(turning.spin) : v3.unitZ();
+    const inclination = conic === null ? 0 : this.derived ? v3.angle(v3.cross(st.r, st.v), pole) : conic.inc;
     const subDir = quat.rotateInv(qFixedToRoot, u);
     const subLatLon = dirToLatLon(subDir);
     const vHorizontal = v3.reject(vSurf, u);
@@ -1507,7 +1801,7 @@ export class FakeSession implements LocalSession {
       periapsisAltitude: aps.rp - body.radius,
       timeToApoapsis: conic?.period ? this.timeToNu(conic, conicTrueAnomaly(conic, st.r), Math.PI) : null,
       timeToPeriapsis: conic?.period ? this.timeToNu(conic, conicTrueAnomaly(conic, st.r), 0) : null,
-      inclination: conic?.inc ?? 0,
+      inclination,
       eccentricity: conic?.e ?? 0,
       period: conic?.period ?? null,
       throttle: this.controls.throttle,
@@ -1518,21 +1812,23 @@ export class FakeSession implements LocalSession {
       gDose: 0,
       gDoseLimit: 15,
       dynamicPressure: q,
-      mach: hasAir ? speedSurf / 300 : 0,
+      mach,
       angleOfAttack: speedSurf > 1 ? v3.angle(nose, vSurf) : 0,
       heatFlux: (this.spec.plasma ?? 0) * 2.5e6,
-      ablatorFraction: this.spec.plasma !== undefined ? 0.8 : null,
-      maxTempFraction: this.spec.plasma !== undefined ? 0.55 : 0.15,
+      ablatorFraction: fromParts ? ablator : this.spec.plasma !== undefined ? 0.8 : null,
+      maxTempFraction: fromParts ? hottest : this.spec.plasma !== undefined ? 0.55 : 0.15,
       sasEnabled: this.sasEnabled,
       sasMode: this.sasMode,
       sasModesAvailable,
       rcsEnabled: this.rcsEnabled,
       fineControl: this.fineControl,
-      legsDeployed: this.legsDeployed,
+      // A vessel without legs states none (null), as a session does.
+      legsDeployed: fromParts && !hasLegs ? null : this.legsDeployed,
       lightsOn: this.lightsOn,
-      chuteEnvelope: this.spec.chutes ? 'safe' : null,
-      rcsFraction: 0.9,
-      deltaVTotal: 3000,
+      chuteEnvelope: chuteLight,
+      rcsFraction: fromParts ? (rcsCapacity > 0 ? rcsLeft / rcsCapacity : null) : 0.9,
+      // What the stages still to burn add up to, as a session sums it; v1's constant without the vehicle's stack.
+      deltaVTotal: stack ? stages.reduce((sum, s) => sum + s.deltaVVac, 0) : 3000,
       // The deprecated pair, filled until the contract tighten removes it: what `target` states for a body.
       targetBodyId,
       targetRelativeInclination: nav.target ? nav.target.relativeInclination : null,
@@ -1546,83 +1842,6 @@ export class FakeSession implements LocalSession {
       landingTarget: this.landingTargetReadout(surfaceTargets, subDir, groundTrackDir, body.radius),
     };
 
-    // What a stage says about itself (what it burns, its chutes, the engines it ignites) is the vehicle's that
-    // the fake is published as, stage by stage, through the derivation a session uses; with those words go the
-    // stage's action kinds (the two lists are parallel). A fake of no vehicle, and a stage the vehicle does not
-    // have, state the neutral values.
-    const vehicle = this.scenario.vehicle !== '' ? this.defs.vehicles[this.scenario.vehicle] : undefined;
-    this.stageWords ??= vehicle ? describeStages(vehicle, (id) => this.defs.parts[id]) : [];
-    const stageWords = this.stageWords;
-    const stages: StageInfo[] = this.stageLabels.map((label, i) => {
-      const words = stageWords[i];
-      const actionKinds = words && vehicle ? vehicle.stages[i]!.actions.map((a): string => a.kind) : ['engine'];
-      return {
-        label,
-        icon: i === this.stageLabels.length - 1 ? 'parachute' : 'engine',
-        fired: i < this.nextStage,
-        deltaVVac: 3000,
-        deltaVNow: 2800,
-        twr: 1.3,
-        burnTime: 160,
-        propellantFraction: i < this.nextStage ? 1 - this.throttleActual * 0.5 : 1,
-        actionKinds,
-        burnLabel: words ? words.burnLabel : null,
-        thrustVac: words ? words.thrustVac : 0,
-        weightFlowVac: words ? words.weightFlowVac : 0,
-        actionChutes: words ? [...words.actionChutes] : actionKinds.map(() => null),
-        chuteEnvelopes: words ? words.chuteEnvelopes : null,
-      };
-    });
-    const staging = { nextStage: this.nextStage, stages, lockout: false };
-
-    // The craft of the viewer's vessel: one; three side by side in the assembly scene (60 m apart); two once the
-    // docking scene has docked. A scene of the shared universe with other owners in it names the viewer.
-    const single = 55;
-    const assembly = this.scene === 'assembly';
-    const docked = this.port !== null && this.dockPhase === 'hard';
-    const named = assembly || this.port !== null;
-    const spacing = 60;
-    const noStack: CraftSnapshot['staging'] = { nextStage: 0, stages: [], lockout: false };
-    const ownCraft = this.craftBlock(craftId, this.vesselName, named ? FAKE_ACCOUNT : null, named ? FAKE_CALLSIGN : null, staging, single);
-    let crafts: CraftSnapshot[] = [ownCraft];
-    const links: DockLinkSnapshot[] = [];
-    let allParts = parts;
-    // The vessel's own frame: the viewer's craft is its base, except docked to the station (below).
-    let rigid = { name: this.vesselName, r: st.r, v: st.v, q: quat.clone(this.q), w: v3.clone(this.w), mass, com: v3.zero(), radius: single };
-    if (assembly) {
-      const aboard: [string, string, string | null, string | null, number][] = [
-        ['fake-craft-b', 'Vega 2', OTHER_ACCOUNT, OTHER_CALLSIGN, spacing],
-        ['fake-craft-c', 'Derelict', null, null, -spacing],
-      ];
-      for (const [id, name, ownerId, callsign, x] of aboard) {
-        crafts.push(this.craftBlock(id, name, ownerId, callsign, noStack, single));
-        links.push({ a: this.linkKey(craftId, links.length > 0), b: this.linkKey(id), roll: x > 0 ? 0 : Math.PI / 2 });
-        allParts = [...allParts, ...this.buildParts(pressure, id, false, { pos: v3.new(x, 0, 0), rot: quat.identity() })];
-      }
-      rigid = { ...rigid, mass: 3 * mass, radius: spacing + single };
-    } else if (docked) {
-      // Hard dock (ARCHITECTURE 7.5; the simulation's `dockMerge`): the station is the base, so the vessel is in
-      // ITS frame and has its name, its craft comes first, and the arriving craft's parts are re-expressed there
-      // as their own tree: half a turn about the facing axis, the two port faces on each other. The link names
-      // the base's port first. The vessel moves with the viewer's craft, which now flies it.
-      const station = this.others[0]!;
-      const port = this.port!;
-      const offset = v3.scale(port.dir, this.portStandoff);
-      const arm = quat.rotate(this.q, offset);
-      crafts = [this.craftBlock(station.craftId, station.name, station.ownerId, station.ownerCallsign, noStack, single), ownCraft];
-      links.push({ a: partKey(station.craftId, port.instanceId), b: partKey(craftId, port.instanceId), roll: 0 });
-      allParts = [...this.buildParts(0, station.craftId, false, null), ...this.buildParts(pressure, craftId, true, { pos: offset, rot: this.facing })];
-      rigid = {
-        name: station.name,
-        r: v3.add(st.r, arm),
-        v: v3.add(st.v, v3.cross(quat.rotate(this.q, this.w), arm)),
-        q: quat.normalize(quat.mul(this.q, quat.conj(this.facing))),
-        w: quat.rotate(this.facing, this.w),
-        mass: 2 * mass,
-        com: v3.scale(offset, 0.5),
-        radius: this.portStandoff + single,
-      };
-    }
     const vesselId = this.vesselId();
     const vessel: VesselSnapshot = {
       id: vesselId,
@@ -1664,7 +1883,9 @@ export class FakeSession implements LocalSession {
         plasmaIntensity: this.spec.plasma ?? 0,
       },
       gLoad: readouts.gLoad,
-      properAccel: v3.new(0, thrust / mass, 0),
+      // What is felt aboard: the thrust along the nose; standing, the ground's reaction, which is the local
+      // gravity upward (v1's figures state the thrust only).
+      properAccel: landed && this.derived ? quat.rotateInv(this.q, v3.scale(u, gLocal)) : v3.new(0, thrust / mass, 0),
       contact: { anyContact: landed, maxForce: landed ? mass * gLocal : 0, waterSubmersion: 0 },
       sunVisibility: 1,
       thrust,
@@ -1698,8 +1919,8 @@ export class FakeSession implements LocalSession {
         vRoot: v3.add(bodyState.v, os.v),
         q: this.port !== null && o.id === FAKE_STATION_ID ? quat.normalize(quat.mul(this.portAttitude(ut), this.facing)) : quat.clone(this.q0),
         w: v3.zero(),
-        mass,
-        comLocal: v3.zero(),
+        mass: craftMass,
+        comLocal: body1?.com ?? v3.zero(),
         boundingRadius: single,
         parts: this.buildParts(0, o.craftId, false, null),
         gLoad: 0,
@@ -1718,7 +1939,7 @@ export class FakeSession implements LocalSession {
       frame: this.frameBlock(ut, drain),
       time,
       warp: { index: this.warpIndex, factor: WARP_LEVELS[this.warpIndex]!, maxIndex: this.maxWarpIndex(), limitedBy: this.needsIntegration ? 'under acceleration or in atmosphere' : null, onRails: !this.needsIntegration },
-      scenario: { id: this.scenario.id, startKind: this.scenario.start.kind, stagesAlreadyFired: 0 },
+      scenario: { id: this.scenario.id, startKind: this.scenario.start.kind, stagesAlreadyFired: this.scenario.stagesAlreadyFired },
       surfaceTargets,
       terrain: { complete: true, pending: false, incompleteQueries: 0 },
       bodies,
