@@ -1958,7 +1958,12 @@ function sameTime(a: SimSnapshot, b: SimSnapshot): boolean {
   }) && a.patches.current.length === b.patches.current.length && a.patches.planned.length === b.patches.planned.length && sameTarget(targetOf(a.readouts)?.ref ?? null, targetOf(b.readouts)?.ref ?? null);
 }
 
-function sameCamera(a: CameraState, b: CameraState): boolean {
+/**
+ * Two cameras give the same picture of a scene: pose, field of view and lens shift (`CameraState.lensShift`;
+ * absent = [0, 0]). The shift moves the centre of the projection (`Projector.cx` / `cy`), so a view whose only
+ * change is its shift is another view: the menu's panel slides the picture aside with nothing else moving.
+ */
+export function sameCamera(a: CameraState, b: CameraState): boolean {
   return (
     a.positionRoot.x === b.positionRoot.x &&
     a.positionRoot.y === b.positionRoot.y &&
@@ -1967,6 +1972,8 @@ function sameCamera(a: CameraState, b: CameraState): boolean {
     a.qViewToRoot.y === b.qViewToRoot.y &&
     a.qViewToRoot.z === b.qViewToRoot.z &&
     a.qViewToRoot.w === b.qViewToRoot.w &&
-    a.fovY === b.fovY
+    a.fovY === b.fovY &&
+    (a.lensShift?.[0] ?? 0) === (b.lensShift?.[0] ?? 0) &&
+    (a.lensShift?.[1] ?? 0) === (b.lensShift?.[1] ?? 0)
   );
 }

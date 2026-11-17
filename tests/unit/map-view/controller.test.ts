@@ -18,7 +18,7 @@ import { conicPosition, conicTrueAnomaly } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import { PANEL_HEIGHT_PX, PANEL_WIDTH_PX } from '@/map/constants';
-import { dragDelta, MapController, modifierFactor } from '@/map/controller';
+import { dragDelta, MapController, modifierFactor, sameCamera } from '@/map/controller';
 import { occlusionWeight } from '@/map/occlusion';
 import { lookAtCamera, orbitCamera } from '@/map/testing/camera';
 import { trueAnomalyAt } from '@/map/testing/kepler';
@@ -687,5 +687,34 @@ describe('surface targets and occlusion', () => {
     expect(behindAt(1)).toBeGreaterThan(0);
     expect(behindAt(1)).toBeLessThan(0.5);
     expect(behindAt(7)).toBe(1);
+  });
+});
+
+describe('the scene cache and the lens shift (CameraState.lensShift)', () => {
+  it('a camera whose only change is the lens shift is another view: the scene is built again about the shifted centre', () => {
+    const r = rig();
+    const pose = (extra: Partial<CameraState> = {}): CameraState => ({ ...r.camera, ...extra });
+    // The same pose in another object is the view that was drawn: the cached scene.
+    expect(sameCamera(r.camera, pose())).toBe(true);
+    const plain = r.map.sceneFor(r.snap, pose(), CSS);
+    expect(r.map.sceneFor(r.snap, pose(), CSS)).toBe(plain);
+    expect(plain.proj.cx).toBe(plain.proj.width / 2);
+    // No shift stated and a shift of zero are the same view.
+    expect(sameCamera(pose(), pose({ lensShift: [0, 0] }))).toBe(true);
+    expect(r.map.sceneFor(r.snap, pose({ lensShift: [0, 0] }), CSS)).toBe(plain);
+    // The shift alone changes: every other number of the camera is the same, and the picture is not.
+    expect(sameCamera(pose(), pose({ lensShift: [0.25, 0] }))).toBe(false);
+    expect(sameCamera(pose({ lensShift: [0.25, 0] }), pose({ lensShift: [0.25, -0.1] }))).toBe(false);
+    expect(sameCamera(pose({ lensShift: [0.25, -0.1] }), pose({ lensShift: [0.25, -0.1] }))).toBe(true);
+    const shifted = r.map.sceneFor(r.snap, pose({ lensShift: [0.25, -0.1] }), CSS);
+    expect(shifted).not.toBe(plain);
+    expect(shifted.proj.cx).toBeCloseTo((plain.proj.width / 2) * 1.25, 9);
+    expect(shifted.proj.cy).toBeCloseTo((plain.proj.height / 2) * 1.1, 9);
+    // What is drawn moved with the centre: the vessel's icon stands a quarter of the half width further right.
+    const at = (scene: typeof plain): { x: number; y: number } => scene.vessels.find((v) => v.active)!;
+    expect(at(shifted).x - at(plain).x).toBeCloseTo(0.25 * (plain.proj.width / 2), 6);
+    expect(at(shifted).y - at(plain).y).toBeCloseTo(0.1 * (plain.proj.height / 2), 6);
+    // And back: the shift going away is a change as well.
+    expect(r.map.sceneFor(r.snap, pose(), CSS)).not.toBe(shifted);
   });
 });
