@@ -138,9 +138,12 @@ export interface DecodeOptions {
 
 const frameReader = new ByteReader();
 
+/** Most messages a client frame may hold (a client sends a handful per send tick). */
+export const MAX_CLIENT_FRAME_MESSAGES = 256;
+
 /** Read the frame header: the message count, bounded by the bytes (each message takes at least 2). */
-function readCount(r: ByteReader): number {
-  return r.count(2, 1_000_000);
+function readCount(r: ByteReader, source: FrameSource = 'server'): number {
+  return r.count(2, source === 'client' ? MAX_CLIENT_FRAME_MESSAGES : 1_000_000);
 }
 
 /**
@@ -155,7 +158,7 @@ export function decodeFrame(bytes: Uint8Array, opts: DecodeOptions): FrameResult
   r.reset(bytes);
   r.table = opts.handles ?? null;
   r.where = 'frame';
-  const n = readCount(r);
+  const n = readCount(r, opts.source);
   for (let i = 0; i < n; i++) {
     const m = readOne(r, opts.source, opts.handles ?? null);
     if (m === null) return { ok: false, error: { ...(r.takeError() ?? { code: 'truncated', offset: r.pos, where: 'frame' }), index: i }, messages };
@@ -253,7 +256,7 @@ export class FrameReader {
     r.reset(bytes);
     r.table = this.handles as StringTableIn | null;
     r.where = 'frame';
-    const n = readCount(r);
+    const n = readCount(r, this.source);
     const into = this.into;
     for (let i = 0; i < n; i++) {
       const m = readOne(r, this.source, this.handles, into);

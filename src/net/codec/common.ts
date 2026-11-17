@@ -37,7 +37,7 @@ import type { SeatResult, SpawnRequest, SpawnSlot, Subscriptions } from '@/core/
 import type { Quat } from '@/core/math/quat';
 import type { Vec3 } from '@/core/math/vec3';
 import type { ByteReader, ByteWriter } from './bytes';
-import { WireEncodeError } from './bytes';
+import { FrameVec3, WireEncodeError } from './bytes';
 import {
   array,
   axis8,
@@ -193,10 +193,8 @@ export function readControlStateInto(r: ByteReader, out: WireControlState): void
   out.fineControl = (flags & CS_FINE) !== 0;
   out.sasMode = sasMode.read(r);
   if (flags & CS_HOLD) {
-    const h = out.sasHold ?? { x: 0, y: 0, z: 0 };
-    h.x = r.finiteF32();
-    h.y = r.finiteF32();
-    h.z = r.finiteF32();
+    const h = out.sasHold ?? new FrameVec3();
+    r.vec3f32Into(h);
     out.sasHold = h;
   } else out.sasHold = null;
 }

@@ -37,7 +37,7 @@ import type {
   WireControlState,
 } from '@/core/contracts/net';
 import type { ChuteState } from '@/core/contracts/sim';
-import { MAX_VARINT_SIGNED, WireEncodeError, type ByteReader, type ByteWriter } from './bytes';
+import { FrameQuat, FrameVec3, MAX_VARINT_SIGNED, WireEncodeError, type ByteReader, type ByteWriter } from './bytes';
 import { controlState, exhaustive, handle, randomControls, readControlStateInto, readControls, writeControls } from './common';
 import { Gen, type Codec } from './schema';
 
@@ -61,14 +61,14 @@ const isUint = (v: number): boolean => Number.isSafeInteger(v) && v >= 0;
 const isSint = (v: number): boolean => Number.isSafeInteger(v) && Math.abs(v) <= MAX_VARINT_SIGNED;
 
 function writeVecF64(w: ByteWriter, x: number, y: number, z: number, what: string): void {
-  check(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z), `${what}: not finite`);
+  if (!(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z))) throw new WireEncodeError(`${what}: not finite`);
   w.f64(x);
   w.f64(y);
   w.f64(z);
 }
 
 function writeF32(w: ByteWriter, v: number, what: string): void {
-  check(Number.isFinite(Math.fround(v)), `${what}: not a finite float32`);
+  if (!Number.isFinite(Math.fround(v))) throw new WireEncodeError(`${what}: not a finite float32`);
   w.f32(v);
 }
 
@@ -98,14 +98,14 @@ export class InputFrame implements InputMessage {
   readonly type = 'input' as const;
   samples: InputSample[] = [];
   readonly pool = new Pool<InputSample>(() => ({ seq: 0, applyTick: 0, throttle: 0, pitch: 0, yaw: 0, roll: 0, tx: 0, ty: 0, tz: 0, sasHold: null }));
-  readonly holds = new Pool(() => ({ x: 0, y: 0, z: 0 }));
+  readonly holds = new Pool(() => new FrameVec3());
 }
 
 export const inputCodec: HotCodec<InputMessage> = {
   min: 1,
   write(w, m) {
     const n = m.samples.length;
-    check(n <= MAX_SAMPLES, `input: more than ${MAX_SAMPLES} samples`);
+    check(n <= MAX_SAMPLES, 'input: more than 64 samples');
     w.varUint(n);
     let prevSeq = 0;
     let prevTick = 0;
@@ -159,9 +159,7 @@ export const inputCodec: HotCodec<InputMessage> = {
       readControls(r, s);
       if (flags === 1) {
         const h = f.holds.at(i);
-        h.x = r.finiteF32();
-        h.y = r.finiteF32();
-        h.z = r.finiteF32();
+        r.vec3f32Into(h);
         s.sasHold = h;
       } else s.sasHold = null;
       f.samples[i] = s;
@@ -189,7 +187,7 @@ export const inputCodec: HotCodec<InputMessage> = {
 // ------------------------------------------------------------------------------------------ islandKey
 
 function makeKeyVessel(): KeyVessel {
-  return { slot: 0, pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, att: { x: 0, y: 0, z: 0, w: 1 }, rate: { x: 0, y: 0, z: 0 }, controls: emptyControlState() };
+  return { slot: 0, pos: new FrameVec3(), vel: new FrameVec3(), att: new FrameQuat(), rate: new FrameVec3(), controls: emptyControlState() };
 }
 
 export class IslandKeyFrame implements IslandKeyMessage {
@@ -239,19 +237,10 @@ export const islandKeyCodec: HotCodec<IslandKeyMessage> = {
     for (let i = 0; i < n; i++) {
       const v = f.pool.at(i);
       v.slot = r.varUintMax(MAX_SLOT);
-      v.pos.x = r.finiteF64();
-      v.pos.y = r.finiteF64();
-      v.pos.z = r.finiteF64();
-      v.vel.x = r.finiteF64();
-      v.vel.y = r.finiteF64();
-      v.vel.z = r.finiteF64();
-      v.att.x = r.finiteF32();
-      v.att.y = r.finiteF32();
-      v.att.z = r.finiteF32();
-      v.att.w = r.finiteF32();
-      v.rate.x = r.finiteF32();
-      v.rate.y = r.finiteF32();
-      v.rate.z = r.finiteF32();
+      r.vec3f64Into(v.pos);
+      r.vec3f64Into(v.vel);
+      r.quatInto(v.att, true);
+      r.vec3f32Into(v.rate);
       readControlStateInto(r, v.controls);
       f.vessels[i] = v;
       if (r.failed) {
@@ -310,9 +299,26 @@ type Probe = ContactState['probes'][number];
 type Port = ContactState['ports'][number];
 
 class ContactSlot {
-  readonly state: ContactState = { pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, att: { x: 0, y: 0, z: 0, w: 1 }, rate: { x: 0, y: 0, z: 0 }, probes: [], ports: [] };
-  readonly probes = new Pool<Probe>(() => ({ probe: 0, touching: false, wet: false, anchor: { x: 0, y: 0, z: 0 } }));
-  readonly ports = new Pool<Port>(() => ({ part: 0, state: 'disabled', armed: false, progress: 0 }));
+  readonly state: ContactState = { pos: new FrameVec3(), vel: new FrameVec3(), att: new FrameQuat(), rate: new FrameVec3(), probes: [], ports: [] };
+  readonly probes = new Pool<Probe>(() => ({ probe: 0, touching: false, wet: false, anchor: new FrameVec3() }));
+  readonly ports = new Pool<Port>(() => new FramePort());
+}
+
+/** Reused port and engine entries: one shape each, doubles from the start (see `FrameVec3`). */
+class FramePort implements Port {
+  part = 0;
+  state: DockingPortStateName = 'disabled';
+  armed = false;
+  progress = -0;
+}
+
+class FrameEngine {
+  readonly kind = 'engine' as const;
+  part = 0;
+  ignited = false;
+  flameout = false;
+  gimbalX = -0;
+  gimbalZ = -0;
 }
 
 class DeltaSlot {
@@ -320,7 +326,7 @@ class DeltaSlot {
   readonly pose = makeDeltaPose();
   readonly controls = emptyControlState();
   readonly partFast: PartFastEntry[] = [];
-  readonly engines = new Pool<Extract<PartFastEntry, { kind: 'engine' }>>(() => ({ kind: 'engine', part: 0, ignited: false, flameout: false, gimbalX: 0, gimbalZ: 0 }));
+  readonly engines = new Pool<Extract<PartFastEntry, { kind: 'engine' }>>(() => new FrameEngine());
   readonly legs = new Pool<Extract<PartFastEntry, { kind: 'legs' }>>(() => ({ kind: 'legs', part: 0, deploy: 0, broken: false }));
   readonly chutes = new Pool<Extract<PartFastEntry, { kind: 'chute' }>>(() => ({ kind: 'chute', part: 0, state: 'stowed', inflation: 0 }));
   readonly contact = new ContactSlot();
@@ -367,7 +373,8 @@ function writePartFast(w: ByteWriter, list: readonly PartFastEntry[]): void {
 function readPartFast(r: ByteReader, slot: DeltaSlot): void {
   const n = r.count(3, 4096);
   const list = slot.partFast;
-  list.length = 0;
+  // Entries are assigned by index (truncating the array to 0 and pushing would give up and re-allocate its storage).
+  if (list.length !== n) list.length = n;
   let ne = 0;
   let nl = 0;
   let nc = 0;
@@ -383,14 +390,14 @@ function readPartFast(r: ByteReader, slot: DeltaSlot): void {
       e.flameout = (head & 8) !== 0;
       e.gimbalX = r.i16() / GIMBAL_SCALE;
       e.gimbalZ = r.i16() / GIMBAL_SCALE;
-      list.push(e);
+      list[i] = e;
     } else if (kind === 1) {
       if (head > 7) r.fail('badEnum');
       const l = slot.legs.at(nl++);
       l.part = part;
       l.broken = (head & 4) !== 0;
       l.deploy = r.u8();
-      list.push(l);
+      list[i] = l;
     } else if (kind === 2) {
       const s = head >> 2;
       if (s >= CHUTE_STATES.length) r.fail('badEnum');
@@ -398,9 +405,10 @@ function readPartFast(r: ByteReader, slot: DeltaSlot): void {
       c.part = part;
       c.state = CHUTE_STATES[s] ?? 'stowed';
       c.inflation = r.u8();
-      list.push(c);
+      list[i] = c;
     } else r.fail('badEnum');
   }
+  if (r.failed) list.length = 0;
 }
 
 function writeContact(w: ByteWriter, c: ContactState): void {
@@ -430,19 +438,10 @@ function writeContact(w: ByteWriter, c: ContactState): void {
 
 function readContact(r: ByteReader, slot: ContactSlot): void {
   const c = slot.state;
-  c.pos.x = r.finiteF64();
-  c.pos.y = r.finiteF64();
-  c.pos.z = r.finiteF64();
-  c.vel.x = r.finiteF64();
-  c.vel.y = r.finiteF64();
-  c.vel.z = r.finiteF64();
-  c.att.x = r.finiteF64();
-  c.att.y = r.finiteF64();
-  c.att.z = r.finiteF64();
-  c.att.w = r.finiteF64();
-  c.rate.x = r.finiteF64();
-  c.rate.y = r.finiteF64();
-  c.rate.z = r.finiteF64();
+  r.vec3f64Into(c.pos);
+  r.vec3f64Into(c.vel);
+  r.quatInto(c.att, false);
+  r.vec3f64Into(c.rate);
   const np = r.count(26, 4096);
   c.probes.length = np;
   for (let i = 0; i < np && !r.failed; i++) {
@@ -452,9 +451,7 @@ function readContact(r: ByteReader, slot: ContactSlot): void {
     if (fl > 3) r.fail('badEnum');
     p.touching = (fl & 1) !== 0;
     p.wet = (fl & 2) !== 0;
-    p.anchor.x = r.finiteF64();
-    p.anchor.y = r.finiteF64();
-    p.anchor.z = r.finiteF64();
+    r.vec3f64Into(p.anchor);
     c.probes[i] = p;
   }
   const nq = r.count(10, 4096);
@@ -676,7 +673,12 @@ const MARGIN_SCALE = 10;
 
 export class InputAckFrame implements InputAckMessage {
   readonly type = 'inputAck' as const;
-  marginMs: number | null = null;
+  /** The margin in 0.1 ms units, kept as an integer so decoding stores no fractional double. */
+  marginTenths = 0;
+  hasMargin = false;
+  get marginMs(): number | null {
+    return this.hasMargin ? this.marginTenths / MARGIN_SCALE : null;
+  }
   stamped: { from: number; to: number }[] = [];
   late: { seq: number; appliedTick: number }[] = [];
   readonly ranges = new Pool(() => ({ from: 0, to: 0 }));
@@ -702,7 +704,8 @@ export const inputAckCodec: HotCodec<InputAckMessage> = {
       prevTo = s.to;
     }
     w.varUint(m.late.length);
-    for (const l of m.late) {
+    for (let i = 0; i < m.late.length; i++) {
+      const l = m.late[i]!;
       check(isUint(l.seq) && isTick(l.appliedTick), 'inputAck: late entry');
       w.varUint(l.seq);
       w.f64(l.appliedTick);
@@ -717,7 +720,8 @@ export const inputAckCodec: HotCodec<InputAckMessage> = {
     const f = out as InputAckFrame;
     const flags = r.u8();
     if (flags > 1) r.fail('badEnum');
-    f.marginMs = flags === 1 ? r.varInt() / MARGIN_SCALE : null;
+    f.hasMargin = flags === 1;
+    f.marginTenths = flags === 1 ? r.varInt() : 0;
     const n = r.count(2, 4096);
     f.stamped.length = n;
     let prevTo = 0;

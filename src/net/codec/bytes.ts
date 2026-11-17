@@ -279,9 +279,29 @@ export function utf8Length(s: string): number {
   return n;
 }
 
+/**
+ * The vector and quaternion objects of the reusable frames: one class each, so the readers' stores into
+ * them see one object shape (a store site that sees many shapes boxes every double it stores, which is an
+ * allocation per field), with fields that start as doubles (-0 is not a small integer).
+ */
+export class FrameVec3 {
+  x = -0;
+  y = -0;
+  z = -0;
+}
+
+export class FrameQuat {
+  x = -0;
+  y = -0;
+  z = -0;
+  w = -0;
+}
+
 export class ByteReader {
   buf: Uint8Array = new Uint8Array(0);
+  /** A view of the whole underlying buffer (kept while frames arrive in the same buffer) and `buf`'s offset in it. */
   private view: DataView = new DataView(this.buf.buffer);
+  private base = 0;
   pos = 0;
   end = 0;
   error: DecodeErrorCode | null = null;
@@ -297,10 +317,9 @@ export class ByteReader {
 
   /** Read `buf[start, end)`. */
   reset(buf: Uint8Array, start = 0, end = buf.length): void {
-    if (buf !== this.buf) {
-      this.buf = buf;
-      this.view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    }
+    this.buf = buf;
+    if (buf.buffer !== this.view.buffer) this.view = new DataView(buf.buffer);
+    this.base = buf.byteOffset;
     this.pos = start;
     this.end = end;
     this.error = null;
@@ -345,32 +364,32 @@ export class ByteReader {
   }
   u16(): number {
     if (!this.need(2)) return 0;
-    const v = this.view.getUint16(this.pos, true);
+    const v = this.view.getUint16(this.base + this.pos, true);
     this.pos += 2;
     return v;
   }
   i16(): number {
     if (!this.need(2)) return 0;
-    const v = this.view.getInt16(this.pos, true);
+    const v = this.view.getInt16(this.base + this.pos, true);
     this.pos += 2;
     return v;
   }
   u32(): number {
     if (!this.need(4)) return 0;
-    const v = this.view.getUint32(this.pos, true);
+    const v = this.view.getUint32(this.base + this.pos, true);
     this.pos += 4;
     return v;
   }
   /** A float32 (any value, NaN and infinities included: see `finiteF32`). */
   f32(): number {
     if (!this.need(4)) return 0;
-    const v = this.view.getFloat32(this.pos, true);
+    const v = this.view.getFloat32(this.base + this.pos, true);
     this.pos += 4;
     return v;
   }
   f64(): number {
     if (!this.need(8)) return 0;
-    const v = this.view.getFloat64(this.pos, true);
+    const v = this.view.getFloat64(this.base + this.pos, true);
     this.pos += 8;
     return v;
   }
@@ -390,6 +409,65 @@ export class ByteReader {
     }
     return v;
   }
+  /**
+   * Three finite float64 values into `out.x`, `out.y`, `out.z` (the high-rate decoders store doubles here,
+   * inside the reader, so no double is returned through a call: a returned double is a heap allocation when
+   * the call is not inlined).
+   */
+  vec3f64Into(out: { x: number; y: number; z: number }): void {
+    if (!this.need(24)) return;
+    const p = this.base + this.pos;
+    const x = this.view.getFloat64(p, true);
+    const y = this.view.getFloat64(p + 8, true);
+    const z = this.view.getFloat64(p + 16, true);
+    this.pos += 24;
+    if (!(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z))) {
+      this.fail('nonFinite');
+      return;
+    }
+    out.x = x;
+    out.y = y;
+    out.z = z;
+  }
+
+  /** Three finite float32 values into `out`. */
+  vec3f32Into(out: { x: number; y: number; z: number }): void {
+    if (!this.need(12)) return;
+    const p = this.base + this.pos;
+    const x = this.view.getFloat32(p, true);
+    const y = this.view.getFloat32(p + 4, true);
+    const z = this.view.getFloat32(p + 8, true);
+    this.pos += 12;
+    if (!(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z))) {
+      this.fail('nonFinite');
+      return;
+    }
+    out.x = x;
+    out.y = y;
+    out.z = z;
+  }
+
+  /** Four finite float32 (`f32`) or float64 values into a quaternion `out` (x, y, z, w). */
+  quatInto(out: { x: number; y: number; z: number; w: number }, f32: boolean): void {
+    const n = f32 ? 4 : 8;
+    if (!this.need(4 * n)) return;
+    const p = this.base + this.pos;
+    const v = this.view;
+    const x = f32 ? v.getFloat32(p, true) : v.getFloat64(p, true);
+    const y = f32 ? v.getFloat32(p + n, true) : v.getFloat64(p + n, true);
+    const z = f32 ? v.getFloat32(p + 2 * n, true) : v.getFloat64(p + 2 * n, true);
+    const w = f32 ? v.getFloat32(p + 3 * n, true) : v.getFloat64(p + 3 * n, true);
+    this.pos += 4 * n;
+    if (!(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(w))) {
+      this.fail('nonFinite');
+      return;
+    }
+    out.x = x;
+    out.y = y;
+    out.z = z;
+    out.w = w;
+  }
+
   /** A tick: an integer float64 within the safe integer range. */
   tick(): number {
     const v = this.f64();
@@ -477,32 +555,28 @@ export class ByteReader {
       return '';
     }
     const b = this.buf;
-    let p = this.pos;
-    const end = p + n;
-    let s = '';
+    const start = this.pos;
+    const end = start + n;
+    // Validate first (strict UTF-8: no overlong forms, no surrogates, nothing above U+10FFFF), allocating
+    // nothing; then build the string in one piece.
+    let p = start;
+    let ascii = true;
     while (p < end) {
       const c = b[p]!;
       if (c < 0x80) {
-        // ASCII run.
-        let q = p + 1;
-        while (q < end && b[q]! < 0x80) q++;
-        s += asciiChunk(b, p, q);
-        p = q;
+        p++;
         continue;
       }
-      let cp: number;
+      ascii = false;
       if (c >= 0xc2 && c <= 0xdf) {
-        if (p + 1 >= end) break;
-        const c1 = b[p + 1]!;
-        if ((c1 & 0xc0) !== 0x80) break;
-        cp = ((c & 0x1f) << 6) | (c1 & 0x3f);
+        if (p + 1 >= end || (b[p + 1]! & 0xc0) !== 0x80) break;
         p += 2;
       } else if (c >= 0xe0 && c <= 0xef) {
         if (p + 2 >= end) break;
         const c1 = b[p + 1]!;
         const c2 = b[p + 2]!;
         if ((c1 & 0xc0) !== 0x80 || (c2 & 0xc0) !== 0x80) break;
-        cp = ((c & 0x0f) << 12) | ((c1 & 0x3f) << 6) | (c2 & 0x3f);
+        const cp = ((c & 0x0f) << 12) | ((c1 & 0x3f) << 6) | (c2 & 0x3f);
         if (cp < 0x800 || (cp >= 0xd800 && cp <= 0xdfff)) break;
         p += 3;
       } else if (c >= 0xf0 && c <= 0xf4) {
@@ -511,14 +585,10 @@ export class ByteReader {
         const c2 = b[p + 2]!;
         const c3 = b[p + 3]!;
         if ((c1 & 0xc0) !== 0x80 || (c2 & 0xc0) !== 0x80 || (c3 & 0xc0) !== 0x80) break;
-        cp = ((c & 0x07) << 18) | ((c1 & 0x3f) << 12) | ((c2 & 0x3f) << 6) | (c3 & 0x3f);
+        const cp = ((c & 0x07) << 18) | ((c1 & 0x3f) << 12) | ((c2 & 0x3f) << 6) | (c3 & 0x3f);
         if (cp < 0x10000 || cp > 0x10ffff) break;
         p += 4;
       } else break;
-      if (cp >= 0x10000) {
-        const u = cp - 0x10000;
-        s += String.fromCharCode(0xd800 + (u >> 10), 0xdc00 + (u & 0x3ff));
-      } else s += String.fromCharCode(cp);
     }
     if (p !== end) {
       this.pos = p;
@@ -526,7 +596,8 @@ export class ByteReader {
       return '';
     }
     this.pos = end;
-    return s;
+    if (n === 0) return '';
+    return ascii ? asciiString(b, start, end) : utf8Decoder().decode(b.subarray(start, end));
   }
 
   /** A length-prefixed byte string of at most `maxBytes`, copied out of the input. */
@@ -550,8 +621,18 @@ export class ByteReader {
 
 const EMPTY = new Uint8Array(0);
 
-function asciiChunk(b: Uint8Array, from: number, to: number): string {
+/** An ASCII string from bytes, in chunks small enough for `apply`. */
+function asciiString(b: Uint8Array, from: number, to: number): string {
+  if (to - from <= 4096) return String.fromCharCode.apply(null, b.subarray(from, to) as unknown as number[]);
   let s = '';
-  for (let i = from; i < to; i++) s += String.fromCharCode(b[i]!);
+  for (let i = from; i < to; i += 4096) s += String.fromCharCode.apply(null, b.subarray(i, Math.min(to, i + 4096)) as unknown as number[]);
   return s;
+}
+
+type Utf8Decoder = InstanceType<typeof TextDecoder>;
+let decoder: Utf8Decoder | null = null;
+/** The UTF-8 decoder for validated input (keeps a leading U+FEFF: a string is data, not a document). */
+function utf8Decoder(): Utf8Decoder {
+  decoder ??= new TextDecoder('utf-8', { ignoreBOM: true });
+  return decoder;
 }
