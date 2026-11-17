@@ -506,8 +506,11 @@ describe('the fake session: scenes of the shared universe', () => {
     const site = defs.sites[first.request.site]!;
     expect(site).toBeDefined();
     expect(first.padClass).toBe('heavy');
-    // Every pad is taken, which is why the request waits.
-    expect(session.stores.pads.get().every((p) => p.state === 'occupied')).toBe(true);
+    // Every pad is taken (the viewer's own vessel stands on the first of its site), which is why the request waits.
+    const pads = session.stores.pads.get();
+    expect(pads.every((p) => p.state === 'occupied')).toBe(true);
+    expect(pads.filter((p) => p.vesselId !== null).map((p) => [p.siteId, p.padId, p.vesselId])).toEqual([[first.request.site, first.request.pad, FAKE_VESSEL_ID]]);
+    expect(session.stores.presence.get().summary.queued).toBe(1);
     let changes = 0;
     const off = store.subscribe(() => changes++);
     const version = store.version;
@@ -516,12 +519,46 @@ describe('the fake session: scenes of the shared universe', () => {
     expect(store.get()!.etaSeconds).toBeLessThan(first.etaSeconds);
     expect(store.version).toBeGreaterThan(version);
     expect(changes).toBe(store.version - version);
+    // The request is the session's one spawn in flight: its promise is pending, and a second spawn is refused.
+    const waiting = session.pendingSpawn!;
+    expect(waiting).not.toBeNull();
+    let settled = false;
+    void waiting.then(() => (settled = true));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(await session.universe.spawn(first.request)).toEqual({ ok: false, reason: 'A launch request of this session is already waiting for a pad', alternative: null });
+    expect(store.get()!.position).toBe(2);
+    // Leaving the queue (session.ts, LaunchQueueEntry, "left"): the store is null and the waiting spawn resolves
+    // refused, with a reason that says the player left and no alternative.
     expect(await session.universe.cancelSpawn()).toEqual({ ok: true });
     expect(store.get()).toBeNull();
-    expect((await session.universe.cancelSpawn()).ok).toBe(false);
+    expect(session.pendingSpawn).toBeNull();
+    expect(await waiting).toEqual({ ok: false, reason: 'Left the launch queue', alternative: null });
+    expect(session.stores.presence.get().summary.queued).toBe(0);
+    // Nothing waits now: cancelSpawn reports it with a reason, as in a LocalSession.
+    const none = await session.universe.cancelSpawn();
+    expect(none.ok).toBe(false);
+    expect(none.ok === false && none.reason).toBe('No launch request is waiting');
+    // Asking again joins the queue again (every pad is still taken): the same promise is pending until it is left.
+    const again = session.universe.spawn({ ...first.request, name: 'Second try' });
+    expect(session.pendingSpawn).toBe(again);
+    expect(store.get()).toMatchObject({ request: { name: 'Second try', pad: first.request.pad }, padClass: 'heavy', position: 3, etaSeconds: 540 });
+    expect(session.stores.presence.get().summary.queued).toBe(1);
+    for (let i = 0; i < 61 * 10; i++) session.advance(0.1);
+    expect(store.get()!.position).toBe(2);
+    expect(await session.universe.cancelSpawn()).toEqual({ ok: true });
+    expect(await again).toEqual({ ok: false, reason: 'Left the launch queue', alternative: null });
+    // A request for a pad the site does not have is refused at once and never waits.
+    expect(await session.universe.spawn({ ...first.request, pad: 'no-such-pad' })).toEqual({ ok: false, reason: 'No such pad', alternative: null });
+    expect(store.get()).toBeNull();
+    expect(session.pendingSpawn).toBeNull();
     off();
-    // A session that is not waiting has no entry, as a LocalSession never has.
-    expect(v2('rendezvous').stores.launchQueue.get()).toBeNull();
-    expect(v2('rendezvous').stores.link.get().state).toBe('local');
+    // A session that is not waiting has no entry and no spawn in flight, launches nothing and has nothing to leave.
+    const other = v2('rendezvous');
+    expect(other.stores.launchQueue.get()).toBeNull();
+    expect(other.pendingSpawn).toBeNull();
+    expect(await other.universe.spawn(first.request)).toEqual({ ok: false, reason: 'The fake session launches nothing', alternative: null });
+    expect((await other.universe.cancelSpawn()).ok).toBe(false);
+    expect(other.stores.link.get().state).toBe('local');
   });
 });

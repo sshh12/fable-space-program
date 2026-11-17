@@ -23,7 +23,12 @@
  *   timeLive / timeAhead / timeBehind   the time strip for each `TimeView.relation`: a shared clock with a
  *                     member who has not agreed and an open proposal, a private clock ahead of the live one,
  *                     an island held behind it;
- *   launchQueue       the pad scene with a launch request waiting for a pad (`stores.launchQueue`).
+ *   launchQueue       the pad scene with the session's next launch waiting for a pad, as the contract of the
+ *                     visible launch queue has it (session.ts, `LaunchQueueEntry`): the request's `spawn` is
+ *                     pending (`pendingSpawn`) while `stores.launchQueue` holds its entry, the place moves up,
+ *                     and `universe.cancelSpawn()` leaves the queue: the store is null and the pending spawn
+ *                     resolves refused with the reason that the player left. A `spawn` while nothing waits
+ *                     joins the queue again; a second one while one waits is refused.
  *
  * The snapshot is the v2 snapshot as `createSession` gives it (tests/unit/fakes holds the two against each
  * other): `revision`, `frame` with the history of earlier origins, `time`, craft blocks with the cockpit and
@@ -58,7 +63,7 @@ import {
   type TimeView,
   type UniverseRules,
 } from '../contracts/net';
-import type { ClientStores, LaunchQueueEntry, LocalSession, SessionDebug, Store, UniverseCommands } from '../contracts/session';
+import type { ClientStores, LaunchQueueEntry, LocalSession, SeatResult, SessionDebug, Store, UniverseCommands } from '../contracts/session';
 import type {
   BodySnapshot,
   CraftCockpit,
@@ -320,6 +325,10 @@ export class FakeSession implements LocalSession {
   /** The docking of the 'dockingApproach' scene: 'approach' until the ports touch, then soft capture, then docked. */
   private dockPhase: 'approach' | 'soft' | 'hard' = 'approach';
   private softCaptureAge = 0;
+  /** The launch request that waits for a pad: the promise `universe.spawn` gave for it and what resolves it; null when none waits. */
+  private spawnInFlight: { promise: Promise<SeatResult>; resolve: (result: SeatResult) => void } | null = null;
+  /** When the waiting request joined the queue, seconds since J2000 (its place moves up from then). */
+  private queuedAt: number;
   /** The render root: its body, the frame epoch, the rebase the next snapshot() carries, and the earlier origins. */
   private originBodyId: string;
   private frameEpoch = 0;
@@ -331,6 +340,7 @@ export class FakeSession implements LocalSession {
     this.scene = opts.scene;
     const flight: FakeScene = isV2Scene(opts.scene) ? FLIGHT_OF[opts.scene] : opts.scene;
     this.ut0 = this.ut = opts.ut ?? DEFAULT_UT;
+    this.queuedAt = this.ut0;
     const site = defs.sites[opts.siteId ?? Object.keys(defs.sites)[0] ?? ''];
     const siteLat = opts.location?.latDeg ?? site?.location.latDeg ?? 19.1;
     const siteLon = opts.location?.lonDeg ?? site?.location.lonDeg ?? -155.5;
@@ -454,11 +464,29 @@ export class FakeSession implements LocalSession {
     this.fakeStores = this.buildStores(opts.scene, site?.id ?? '');
     this.stores = this.fakeStores;
     const refused = (what: string): CommandResult => ({ ok: false, reason: `The fake session cannot ${what}` });
+    // The queue scene starts with its launch request in flight: the entry in the store and the promise that waits.
+    if (this.fakeStores.launchQueue.get() !== null) void this.waitInQueue();
     this.universe = {
-      spawn: () => Promise.resolve({ ok: false, reason: 'The fake session launches nothing', alternative: null }),
+      // Every pad of the queue scene is taken, so a launch asked for there waits (one at a time: a session has at
+      // most one spawn in flight); in every other scene the fake launches nothing and says so at once.
+      spawn: (request) => {
+        if (this.scene !== 'launchQueue') return Promise.resolve({ ok: false, reason: 'The fake session launches nothing', alternative: null });
+        if (this.spawnInFlight !== null) return Promise.resolve({ ok: false, reason: 'A launch request of this session is already waiting for a pad', alternative: null });
+        const pad = this.defs.sites[request.site] ? padsOf(this.defs.sites[request.site]!).find((p) => p.id === request.pad) : undefined;
+        if (!pad) return Promise.resolve({ ok: false, reason: 'No such pad', alternative: null });
+        this.queuedAt = this.ut;
+        this.fakeStores.launchQueue.set({ request: { ...request, slot: { ...request.slot } }, padClass: pad.class, ...this.queuePlace(this.ut) });
+        this.setQueuedCount(1);
+        return this.waitInQueue();
+      },
+      // Leaving the queue ends the waiting spawn as the contract says: refused, with the reason that the player left.
       cancelSpawn: () => {
-        if (this.fakeStores.launchQueue.get() === null) return Promise.resolve({ ok: false, reason: 'No launch request is waiting' });
+        const waiting = this.spawnInFlight;
+        if (waiting === null) return Promise.resolve({ ok: false, reason: 'No launch request is waiting' });
+        this.spawnInFlight = null;
         this.fakeStores.launchQueue.set(null);
+        this.setQueuedCount(0);
+        waiting.resolve({ ok: false, reason: 'Left the launch queue', alternative: null });
         return Promise.resolve(ok());
       },
       attach: () => Promise.resolve({ ok: false, reason: 'The fake session has one seat', alternative: null }),
@@ -628,13 +656,45 @@ export class FakeSession implements LocalSession {
     }
   }
 
-  /** The waiting launch request of the queue scene: one place nearer every minute, the estimate with it. */
+  /**
+   * The spawn that waits in the launch queue: the very promise `universe.spawn` returned for it, pending while
+   * `stores.launchQueue` holds its entry (the queue scene starts with one, as if the menu had asked for the
+   * launch before the scene began). It resolves when the request ends, which in the fake is `cancelSpawn()`
+   * only: the fake's pads never come free. null when nothing waits.
+   */
+  get pendingSpawn(): Promise<SeatResult> | null {
+    return this.spawnInFlight?.promise ?? null;
+  }
+
+  /** A launch request starts to wait: the promise its `spawn` stays pending on. */
+  private waitInQueue(): Promise<SeatResult> {
+    let resolve!: (result: SeatResult) => void;
+    const promise = new Promise<SeatResult>((r) => {
+      resolve = r;
+    });
+    this.spawnInFlight = { promise, resolve };
+    return promise;
+  }
+
+  /** The place of the waiting request and its estimate at `ut`: third at first, one place nearer every minute. */
+  private queuePlace(ut: number): { position: number; etaSeconds: number } {
+    const waited = ut - this.queuedAt;
+    const position = Math.max(1, 3 - Math.floor(waited / 60));
+    return { position, etaSeconds: Math.max(0, 180 * position - Math.floor(waited % 60)) };
+  }
+
+  /** The waiting launch request of the queue scene moves up: a new entry whenever the place or the estimate changes. */
   private advanceQueue(): void {
     const entry = this.fakeStores.launchQueue.get();
     if (entry === null) return;
-    const position = Math.max(1, 3 - Math.floor((this.ut - this.ut0) / 60));
-    const etaSeconds = Math.max(0, 180 * position - Math.floor((this.ut - this.ut0) % 60));
-    if (position !== entry.position || etaSeconds !== entry.etaSeconds) this.fakeStores.launchQueue.set({ ...entry, position, etaSeconds });
+    const place = this.queuePlace(this.ut);
+    if (place.position !== entry.position || place.etaSeconds !== entry.etaSeconds) this.fakeStores.launchQueue.set({ ...entry, ...place });
+  }
+
+  /** The presence summary counts the requests that wait for a pad. */
+  private setQueuedCount(queued: number): void {
+    const presence = this.fakeStores.presence.get();
+    if (presence.summary.queued !== queued) this.fakeStores.presence.set({ ...presence, summary: { ...presence.summary, queued } });
   }
 
   private body(id: string): BodyDef {
@@ -1578,9 +1638,10 @@ export class FakeSession implements LocalSession {
     const pads: PadState[] = [];
     for (const site of Object.values(this.defs.sites)) {
       padsOf(site).forEach((pad, i) => {
-        // In the pad scenes the viewer's vessel stands on the first pad of its site; in the queue scene every pad is taken.
-        const own = site.id === siteId && i === 0 && active.situation === 'prelaunch' && scene !== 'launchQueue';
-        const taken = scene === 'launchQueue';
+        // In the pad scenes the viewer's vessel stands on the first pad of its site, which it holds; in the queue
+        // scene every other pad is taken too, which is why the request for the next launch waits.
+        const own = site.id === siteId && i === 0 && active.situation === 'prelaunch';
+        const taken = scene === 'launchQueue' && !own;
         pads.push({
           siteId: site.id,
           padId: pad.id,
@@ -1636,7 +1697,7 @@ export class FakeSession implements LocalSession {
     const site = this.defs.sites[siteId];
     const queued: LaunchQueueEntry | null =
       scene === 'launchQueue' && site
-        ? { request: { vehicleId: this.scenario.vehicle, site: site.id, pad: padOf(site).id, slot: { kind: 'live' }, name: this.vesselName }, padClass: padOf(site).class, position: 3, etaSeconds: 540 }
+        ? { request: { vehicleId: this.scenario.vehicle, site: site.id, pad: padOf(site).id, slot: { kind: 'live' }, name: this.vesselName }, padClass: padOf(site).class, ...this.queuePlace(this.ut0) }
         : null;
     return {
       census: new FakeStore<ReadonlyMap<string, CensusEntry>>(census),
