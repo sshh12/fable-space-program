@@ -43,6 +43,13 @@ export const MARKER_ICONS = {
 
 export type MarkerIconName = keyof typeof MARKER_ICONS;
 
+/**
+ * The SAS hold "port alignment" (the own control port's axis anti-parallel to the targeted port's): two port
+ * faces opposite each other on one axis, each a plate on its stem, and the axis point between them. It is a
+ * mode button's icon and no navball marker, so it is not in the marker atlas.
+ */
+export const PORT_ALIGN_ICON: IconDef = { stroke: 'M2.6,12H8.2M8.2,6.2V17.8M21.4,12H15.8M15.8,6.2V17.8', fill: dot(12, 12, 1.4) };
+
 /** Marker colours (sRGB hex) shared by the navball, the SAS buttons and the MFD. */
 export const MARKER_COLORS: Record<MarkerIconName, string> = {
   prograde: '#d8f25a',

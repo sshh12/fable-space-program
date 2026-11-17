@@ -2,7 +2,7 @@
  * SharedResources registry with a neutral default for every key, so that every feature (and the core's own
  * lighting) works when nobody has published anything.
  */
-import { OCEAN_WETNESS_BYTES, PLASMA_WINDOW_BYTES, type SharedResourceKey, type SharedResourceMap, type SharedResources } from '@/core/contracts/render';
+import { OCEAN_WETNESS_BYTES, PLASMA_WINDOW_BYTES, UI_SCRIM_BYTES, type SharedResourceKey, type SharedResourceMap, type SharedResources } from '@/core/contracts/render';
 import { SHADOW_MAX_CASCADES } from './shaders/chunksLighting';
 import { createSolidTexture } from './util/gpu';
 
@@ -72,6 +72,8 @@ export function createSharedResources(device: GPUDevice): CoreSharedResources {
     'vfx.plasmaWindow': uniform('plasmaWindow', new Uint8Array(PLASMA_WINDOW_BYTES)),
     'ui.navball': tex2d('navball', 'rgba8unorm', [0, 0, 0, 1]),
     'ui.mfd': texArray('mfd', 'rgba8unorm', [0, 0, 0, 1]),
+    // A zero header: no rectangle, so the tonemap pass runs without its scrim step.
+    'ui.scrimRects': uniform('uiScrimRects', new Uint8Array(UI_SCRIM_BYTES)),
     'scene.depthOpaque': depthDefault('sceneDepthOpaque', 1, false, 0),
     'scene.depth': depthDefault('sceneDepth', 1, false, 0),
     'scene.depthHalf': tex2d('sceneDepthHalf', 'rg32float', [0, 0]),

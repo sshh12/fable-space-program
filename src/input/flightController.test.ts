@@ -99,12 +99,12 @@ describe('flight controller', () => {
     expect(messages).toContain('No other controllable vessel');
   });
 
-  it('does not act on view, HUD, pause or cockpit actions', () => {
+  it('does not act on view, HUD, flight menu, roster, prompt, comms or cockpit actions', () => {
     const sim = createFakeSim(defs, { scene: 'pad' });
     const c = createFlightController();
     const snap = sim.snapshot();
     const before = sim.stateHash();
-    c.update(frame({}, ['toggleMap', 'cycleCamera', 'toggleHud', 'pause', 'mfdCycle:0']), snap, sim.commands, 1 / 60, { view: 'external', pointerCaptured: false });
+    c.update(frame({}, ['toggleMap', 'cycleCamera', 'toggleHud', 'flightMenu', 'toggleRoster', 'dockingView', 'openQuickComms', 'acceptPrompt', 'cycleTarget', 'mfdCycle:0']), snap, sim.commands, 1 / 60, { view: 'external', pointerCaptured: false });
     expect(sim.stateHash()).toBe(before);
   });
 });

@@ -7,8 +7,10 @@
  *   typing in the node panel) the throttleRate axis is ignored, so the node editor's Shift/Ctrl drag
  *   modifiers can never move the throttle.
  * - Fine control only toggles the sim flag; the input scaling is the simulation's job.
- * - View, HUD, pause and cockpit-display actions are not the controller's: the app routes them to the view
- *   manager, HUD and cockpit.
+ * - View, HUD, flight-menu and cockpit-display actions are not the controller's: the app routes them to the view
+ *   manager, HUD and cockpit. Nor are the actions of the shared universe that no session serves yet (the next
+ *   target of the relevant set, the roster, the docking view, quick comms, prompts): the HUD and the shell of
+ *   the multiplayer waves take them from `InputFrame.pressed`.
  * - Refused commands (warp limits, staging lockout, no node for maneuver hold...) are reported through
  *   `notify`, which the app connects to Hud.notify.
  */

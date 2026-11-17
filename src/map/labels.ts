@@ -3,6 +3,7 @@
  */
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
+import { targetNameOf } from '@/core/fakes/snapshotAccess';
 import { formatAngleDeg, formatDistance, formatLatLon, formatSpeed, formatTimeTo } from './format';
 import type { LabelSource, MarkerItem } from './scene';
 
@@ -16,6 +17,7 @@ const NAMES: Record<MarkerItem['kind'], string> = {
   impact: 'Impact',
   atmosphereEntry: 'Atmosphere entry',
   closestApproach: 'Closest approach',
+  targetApproach: 'Target approach',
   maneuverNode: 'Maneuver node',
   impactSurface: 'Impact point',
   entrySurface: 'Entry point',
@@ -32,6 +34,7 @@ const SHORT: Record<MarkerItem['kind'], string> = {
   impact: 'Impact',
   atmosphereEntry: 'Entry',
   closestApproach: 'Closest',
+  targetApproach: 'Target',
   maneuverNode: 'Node',
   impactSurface: 'Impact',
   entrySurface: 'Entry',
@@ -102,9 +105,22 @@ export const markerLabels: LabelSource = {
       case 'closestApproach':
         if (m.value !== undefined) {
           head += ` ${formatDistance(m.value)}`;
-          details.push(`Separation ${formatDistance(m.value)}${snapshot.readouts.targetBodyId ? ` from ${bodyName(defs, snapshot.readouts.targetBodyId)}` : ''}`);
+          const from = targetNameOf(snapshot, defs);
+          details.push(`Separation ${formatDistance(m.value)}${from !== null ? ` from ${from}` : ''}`);
         }
         break;
+      case 'targetApproach': {
+        // The closest approach to a targeted vessel: the separation, the relative speed there, and whether the
+        // target's place then is its forecast and not committed history.
+        const other = m.otherVesselId !== undefined ? (snapshot.vessels.find((v) => v.id === m.otherVesselId)?.name ?? targetNameOf(snapshot, defs)) : targetNameOf(snapshot, defs);
+        if (m.value !== undefined) {
+          head += ` ${formatDistance(m.value)}`;
+          details.push(`Separation ${formatDistance(m.value)}${other !== null ? ` from ${other}` : ''}`);
+        }
+        if (m.relSpeed !== undefined) details.push(`Relative speed ${formatSpeed(m.relSpeed)}`);
+        if (m.onForecast) details.push('Target position forecast');
+        break;
+      }
       case 'maneuverNode':
         break;
     }

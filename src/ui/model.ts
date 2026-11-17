@@ -4,6 +4,7 @@
  */
 import type { DefLibrary, ParachuteEnvelope } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { activeVesselOf, targetNameOf } from '@/core/fakes/snapshotAccess';
 import {
   formatAltitude,
   formatApsis,
@@ -31,9 +32,7 @@ import {
   type VerticalTrend,
 } from './format';
 
-export function activeVesselOf(s: SimSnapshot): VesselSnapshot | null {
-  return s.vessels.find((v) => v.id === s.activeVesselId) ?? null;
-}
+export { activeVesselOf };
 
 /** True while the vessel rests on a surface (pad, landed, splashed). */
 export function isLanded(v: VesselSnapshot | null): boolean {
@@ -963,6 +962,9 @@ export interface PadView {
   launchAzimuth: string | null;
 }
 
+/** The name of the selected target as the HUD and the displays show it; null without a target. */
+export const targetName = targetNameOf;
+
 /** Target and launch-opportunity readouts while landed (shown on the pad). */
 export function describePad(s: SimSnapshot, defs: DefLibrary): PadView | null {
   const v = activeVesselOf(s);
@@ -970,7 +972,7 @@ export function describePad(s: SimSnapshot, defs: DefLibrary): PadView | null {
   const r = s.readouts;
   const lw = r.launchWindow;
   return {
-    target: r.targetBodyId ? (defs.bodies[r.targetBodyId]?.name ?? r.targetBodyId) : 'No target',
+    target: targetName(s, defs) ?? 'No target',
     relativeInclination: r.targetRelativeInclination !== null ? formatRadAsDeg(r.targetRelativeInclination, 2) : null,
     planeCrossing: lw ? formatCountdown(lw.timeToPlaneCrossing) : null,
     launchAzimuth: lw ? formatBearing(lw.launchAzimuthDeg) : null,

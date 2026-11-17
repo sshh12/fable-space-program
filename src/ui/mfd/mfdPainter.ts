@@ -17,6 +17,9 @@
  *   ENT  entry rows, g / dose / ablator / temperature gauges with scales, zones, redlines and readouts, and the
  *        landing-target rows;
  *   LND  landing rows and target rows beside a full-height north-up landing scope.
+ * Two more pages exist for a session with vessel and port targets (the navigation of wave 4): TGT, the
+ * selected target's readout, and DCK, the docking instrument's numbers, both as rows. They are not in the
+ * page cycle (`MFD_PAGES`): a display shows one when its page is set to it.
  *
  * `buildMfdPage` returns the text content of a page (title, label/value rows, status); `paint` draws it with
  * the page's instruments. The landing and entry pages carry the landing-target rows verbatim.
@@ -25,9 +28,14 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { WARP_LEVELS } from '@/core/contracts/defs';
+import { targetOf } from '@/core/fakes/snapshotAccess';
 import { drawIcon, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor, TREND_ICONS } from '../icons';
 import {
   formatApsis,
+  formatCountdown,
+  formatDeg,
+  formatDistance,
+  formatSpeed,
   formatBearing,
   formatDeltaV,
   formatG,
@@ -63,13 +71,17 @@ import {
   isLanded,
   landingScope,
   landingTargetRows,
+  targetName,
   zoneStatus,
 } from '../model';
 
 export const MFD_PAGES: readonly MfdPage[] = ['flight', 'orbit', 'systems', 'staging', 'entry', 'landing'];
 
-const TAB: Record<MfdPage, string> = { flight: 'FLT', orbit: 'ORB', systems: 'SYS', staging: 'STG', entry: 'ENT', landing: 'LND' };
-const TITLE: Record<MfdPage, string> = { flight: 'Flight', orbit: 'Orbit', systems: 'Systems', staging: 'Staging', entry: 'Entry', landing: 'Landing' };
+/** The two pages of a vessel or port target, which the painter draws beside the cycle of `MFD_PAGES`. */
+export const MFD_TARGET_PAGES: readonly MfdPage[] = ['target', 'docking'];
+
+const TAB: Record<MfdPage, string> = { flight: 'FLT', orbit: 'ORB', systems: 'SYS', staging: 'STG', entry: 'ENT', landing: 'LND', target: 'TGT', docking: 'DCK' };
+const TITLE: Record<MfdPage, string> = { flight: 'Flight', orbit: 'Orbit', systems: 'Systems', staging: 'Staging', entry: 'Entry', landing: 'Landing', target: 'Target', docking: 'Docking' };
 
 export type Tone = 'normal' | 'accent' | 'good' | 'caution' | 'warning' | 'dim';
 
@@ -119,6 +131,9 @@ const SAS_TEXT: Record<string, string> = {
   radialOut: 'RADIAL OUT',
   radialIn: 'RADIAL IN',
   maneuver: 'MANEUVER',
+  target: 'TARGET',
+  antiTarget: 'ANTI-TARGET',
+  portAlign: 'PORT ALIGN',
 };
 
 const toneOf = (t: 'normal' | 'caution' | 'warning'): Tone => t;
@@ -271,6 +286,56 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       ];
       return { page, title: TITLE[page], rows, section: ltSection, status };
     }
+    case 'target': {
+      const t = targetOf(r);
+      if (t === null) return { page, title: TITLE[page], rows: [{ label: 'Target', value: 'none', tone: 'dim' }], status };
+      // The navigation readout of a session that produces it; a body target of today's session has the rows below it.
+      const nav = r.target ?? null;
+      const rows: MfdRow[] = [{ label: 'Target', value: targetName(s, defs) ?? '—', tone: 'accent' }];
+      if (nav) {
+        if (nav.presence !== 'solid') rows.push({ label: 'Presence', value: nav.presence === 'recordedEcho' ? 'RECORDED ECHO' : 'PROJECTED ECHO', tone: 'caution' });
+        rows.push({ label: 'Range', value: formatDistance(nav.range) });
+        rows.push({ label: 'Range rate', value: formatSpeed(nav.rangeRate), tone: nav.rangeRate < 0 ? 'good' : 'normal' });
+        if (nav.relSpeed !== null) rows.push({ label: 'Rel. speed', value: formatSpeed(nav.relSpeed) });
+      }
+      rows.push({ label: 'Rel. inclination', value: t.relativeInclination !== null ? formatRadAsDeg(t.relativeInclination, 2) : '—', tone: t.relativeInclination !== null ? 'normal' : 'dim' });
+      if (t.closestApproaches.length === 0) rows.push({ label: 'Closest approach', value: '—', tone: 'dim' });
+      t.closestApproaches.forEach((a, i) => {
+        rows.push({ label: i === 0 ? 'Closest approach' : `Approach ${i + 1}`, value: formatDistance(a.distance) });
+        rows.push({ label: i === 0 ? 'Time to approach' : `Time to ${i + 1}`, value: formatCountdown(a.ut - s.ut) });
+        if (a.relSpeed !== undefined) rows.push({ label: i === 0 ? 'Speed at approach' : `Speed at ${i + 1}`, value: formatSpeed(a.relSpeed) });
+      });
+      const lvlh = nav?.lvlh ?? null;
+      const section = lvlh
+        ? {
+            heading: 'Position about the target',
+            rows: [
+              { label: 'Radial', value: formatDistance(lvlh.radial) },
+              { label: 'Along track', value: formatDistance(lvlh.along) },
+              { label: 'Cross track', value: formatDistance(lvlh.cross) },
+            ],
+          }
+        : undefined;
+      return { page, title: TITLE[page], rows, section, status };
+    }
+    case 'docking': {
+      const d = r.docking ?? null;
+      if (d === null) return { page, title: TITLE[page], rows: [{ label: 'Docking', value: 'no port targeted', tone: 'dim' }], status };
+      const lim = (ok: boolean): Tone => (ok ? 'good' : 'caution');
+      const phase = { far: 'FAR', approach: 'APPROACH', soft: 'SOFT CAPTURE', hard: 'DOCKED' }[d.phase];
+      const rows: MfdRow[] = [
+        { label: 'Phase', value: phase, tone: d.phase === 'hard' ? 'good' : 'accent' },
+        { label: 'Target port', value: !d.compatible ? 'INCOMPATIBLE' : d.targetArmed ? 'ARMED' : 'NOT ARMED', tone: d.compatible && d.targetArmed ? 'good' : 'warning' },
+        { label: 'Distance', value: formatDistance(d.axial) },
+        { label: 'Lateral', value: `${formatNumber(d.lateral[0], 2)} / ${formatNumber(d.lateral[1], 2)}${NBSP}m`, tone: lim(d.within.lateral) },
+        { label: 'Angle', value: `${formatDeg(d.angleDeg[0])} / ${formatDeg(d.angleDeg[1])}`, tone: lim(d.within.angle) },
+        { label: 'Roll', value: formatDeg(d.rollDeg), tone: lim(d.within.roll) },
+        { label: 'Closing', value: formatSpeed(d.closing), tone: lim(d.within.closing) },
+        { label: 'Lateral speed', value: formatSpeed(d.lateralSpeed), tone: lim(d.within.lateralSpeed) },
+        { label: 'Rotation', value: `${formatNumber(d.rateDegPerS, 2)}${NBSP}°/s`, tone: lim(d.within.rate) },
+      ];
+      return { page, title: TITLE[page], rows, status };
+    }
   }
 }
 
@@ -359,8 +424,10 @@ function drawHeader(ctx: Ctx, w: number, h: number, page: MfdPage, s: SimSnapsho
   const hh = Math.round(h * 0.085);
   ctx.fillStyle = PANEL;
   ctx.fillRect(0, 0, w, hh);
-  const tabW = (w * 0.66) / MFD_PAGES.length;
-  MFD_PAGES.forEach((p, i) => {
+  // The tabs are the page cycle; a page outside it (target, docking) is one more tab while it is up.
+  const tabs = MFD_PAGES.includes(page) ? MFD_PAGES : [...MFD_PAGES, page];
+  const tabW = (w * 0.66) / tabs.length;
+  tabs.forEach((p, i) => {
     const x = i * tabW;
     const on = p === page;
     if (on) {
@@ -1687,6 +1754,18 @@ function drawScope(ctx: Ctx, f: Frame, cx: number, cy: number, r: number, s: Sim
   } else drawIcon(ctx, MARKER_ICONS.target, cx, cy, r * 0.15, MARKER_COLORS.target);
 }
 
+/** A page of rows over the whole width (target, docking): the rows, then the section under its heading. */
+function paintRowsPage(ctx: Ctx, f: Frame, model: MfdPageModel): void {
+  const n = model.rows.length + (model.section ? model.section.rows.length + 1.3 : 0);
+  const rowH = Math.min(f.h * 0.075, (f.bottom - f.top) / n);
+  const w = f.w - f.pad * 2;
+  const y = drawRows(ctx, f, model.rows, f.pad, f.top, w, rowH, model.rows.length);
+  if (model.section) {
+    sectionHeading(ctx, f, model.section.heading, f.pad, y + rowH * 0.65, w);
+    drawRows(ctx, f, model.section.rows, f.pad, y + rowH * 1.3, w, rowH, model.section.rows.length);
+  }
+}
+
 function paintLanding(ctx: Ctx, f: Frame, s: SimSnapshot, model: MfdPageModel): void {
   const leftW = f.w * 0.42;
   const n = model.rows.length + (model.section ? model.section.rows.length + 1.3 : 0);
@@ -1734,6 +1813,10 @@ export function createMfdPainter(opts: MfdPainterOptions = {}): MfdPainter & { b
           break;
         case 'landing':
           paintLanding(ctx, f, s, model);
+          break;
+        case 'target':
+        case 'docking':
+          paintRowsPage(ctx, f, model);
           break;
       }
       drawFooter(ctx, width, height, model, s);

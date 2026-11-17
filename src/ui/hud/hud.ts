@@ -34,14 +34,15 @@
  * same frame, so labels and their numbers never disagree.
  */
 import type { ButtonAction, PlayerCommands, SasMode } from '@/core/contracts/controls';
-import { SAS_MODES } from '@/core/contracts/controls';
+import { SAS_MODES, SAS_TARGET_MODES } from '@/core/contracts/controls';
 import { WARP_LEVELS, MAX_PHYSICS_WARP_INDEX, type DefLibrary } from '@/core/contracts/defs';
 import type { CameraState, ViewKind } from '@/core/contracts/render';
 import type { SimEvent, SimSnapshot } from '@/core/contracts/sim';
 import type { Hud } from '@/core/contracts/ui';
+import { bodyTarget, targetBodyOf, targetOf } from '@/core/fakes/snapshotAccess';
 import type { GpuHandle } from '@/core/gpu/device';
 import { formatHeatFlux, formatMach, formatMet, formatPercent, formatPressure, formatRadAsDeg, formatUt, type VerticalTrend } from '../format';
-import { LOCK_ICON, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor, svgIcon, TREND_ICONS } from '../icons';
+import { LOCK_ICON, MARKER_COLORS, MARKER_ICONS, PORT_ALIGN_ICON, STAGE_ICONS, stageIconFor, svgIcon, TREND_ICONS, type IconDef } from '../icons';
 import {
   ablatorTone,
   activeVesselOf,
@@ -189,7 +190,32 @@ const SAS_NAMES: Record<SasMode, string> = {
   radialOut: 'Radial out',
   radialIn: 'Radial in',
   maneuver: 'Maneuver',
+  target: 'Target',
+  antiTarget: 'Anti-target',
+  portAlign: 'Port alignment',
 };
+
+/**
+ * The icon of every SAS hold on its mode button: the navball marker the hold keeps on the nose (the plain
+ * reticle for stability). Port alignment has no navball marker; its icon is the two port faces.
+ */
+const SAS_ICONS: Record<SasMode, { icon: IconDef; color: string }> = {
+  stability: { icon: MARKER_ICONS.stability, color: MARKER_COLORS.stability },
+  prograde: { icon: MARKER_ICONS.prograde, color: MARKER_COLORS.prograde },
+  retrograde: { icon: MARKER_ICONS.retrograde, color: MARKER_COLORS.retrograde },
+  normal: { icon: MARKER_ICONS.normal, color: MARKER_COLORS.normal },
+  antinormal: { icon: MARKER_ICONS.antinormal, color: MARKER_COLORS.antinormal },
+  radialOut: { icon: MARKER_ICONS.radialOut, color: MARKER_COLORS.radialOut },
+  radialIn: { icon: MARKER_ICONS.radialIn, color: MARKER_COLORS.radialIn },
+  maneuver: { icon: MARKER_ICONS.maneuver, color: MARKER_COLORS.maneuver },
+  target: { icon: MARKER_ICONS.target, color: MARKER_COLORS.target },
+  antiTarget: { icon: MARKER_ICONS.antiTarget, color: MARKER_COLORS.antiTarget },
+  portAlign: { icon: PORT_ALIGN_ICON, color: MARKER_COLORS.target },
+};
+
+/** The mode buttons in HUD order: the eight holds that need no target, then the three that need a vessel or port target. */
+const SAS_BUTTON_MODES: readonly SasMode[] = [...SAS_MODES, ...SAS_TARGET_MODES];
+const SAS_TARGET_MODE_SET: ReadonlySet<SasMode> = new Set<SasMode>(SAS_TARGET_MODES);
 
 /**
  * Key caps show the key's own glyph, as printed on the keyboard: punctuation drawn large (a "." at the text size is
@@ -569,8 +595,8 @@ export function createHud(opts: HudOptions): HudImpl {
       const toggle = (): void => {
         const c = commands();
         if (!c) return;
-        const current = lastSnapshot?.readouts.targetBodyId ?? null;
-        const r = c.setTarget(current === b.id ? null : b.id);
+        const current = lastSnapshot ? targetBodyOf(lastSnapshot.readouts) : null;
+        const r = c.setTarget(current === b.id ? null : bodyTarget(b.id));
         if (!r.ok) notify(r.reason ?? 'Target refused');
       };
       const btn = hudButton([el('span', 'pfx', ['Target']), b.name], '', `Target: ${b.name} (click to clear)`, toggle);
@@ -620,16 +646,20 @@ export function createHud(opts: HudOptions): HudImpl {
   const lightsOn = classFlag(lightsBtn, 'on');
   const fineOn = classFlag(fineBtn, 'on');
   const gearAvail = new Flag((on) => gearBtn.setAttribute('aria-disabled', on ? 'false' : 'true'));
-  const modeButtons = new Map<SasMode, { on: Flag; enabled: Flag }>();
+  const modeButtons = new Map<SasMode, { on: Flag; enabled: Flag; show: Flag | null }>();
   const modes = el('div', 'modes');
-  SAS_MODES.forEach((mode, i) => {
-    const icon = MARKER_ICONS[mode === 'stability' ? 'stability' : mode];
+  SAS_BUTTON_MODES.forEach((mode, i) => {
+    const { icon, color } = SAS_ICONS[mode];
     const key = keyFor(`sas:${mode}`) ?? String(i + 1);
     // The icon fills the button (the marker shapes differ by small strokes); the key is in the tooltip and the
     // key help, as on KSP's mode buttons.
-    const b = hudButton([svgIcon(icon, { color: MARKER_COLORS[mode === 'stability' ? 'stability' : mode] })], '', `Hold ${SAS_NAMES[mode]} (${key})`, () => dispatch(`sas:${mode}`));
+    const b = hudButton([svgIcon(icon, { color })], '', `Hold ${SAS_NAMES[mode]} (${key})`, () => dispatch(`sas:${mode}`));
     modes.append(b);
-    modeButtons.set(mode, { on: classFlag(b, 'on'), enabled: new Flag((on) => b.setAttribute('aria-disabled', on ? 'false' : 'true')) });
+    // A hold against a vessel or port target is in the row only while the session offers it (a third row
+    // under the eight); the others are always there and dimmed while unavailable.
+    const show = SAS_TARGET_MODE_SET.has(mode) ? hiddenFlag(b) : null;
+    show?.set(false);
+    modeButtons.set(mode, { on: classFlag(b, 'on'), enabled: new Flag((on) => b.setAttribute('aria-disabled', on ? 'false' : 'true')), show });
   });
   const sasCaption = new TextSlot('');
   const sasPanel = el('div', 'panel sas bl', [toggles, modes, el('div', 'modecap', [sasCaption.node])], { 'data-show': 'external map' });
@@ -1084,17 +1114,21 @@ export function createHud(opts: HudOptions): HudImpl {
     // The lift vector is flown while the entry heats up (the hypersonic part); under chutes it means nothing.
     const liftRelevant = r.liftVectorUp !== null && heating;
     const showEntry = heating || chuteRelevant || liftRelevant || thermalWarn;
+    // The launch panel offers bodies: `targetBody` is the targeted body (null for a vessel or port target, which
+    // the panel neither shows as a body nor offers to replace), `noTarget` that nothing is targeted.
+    const targetBody = targetBodyOf(r);
+    const noTarget = targetOf(r) === null;
     let targetButtonsShown = 0;
     for (const [id, b] of targetButtons) {
       // The body the vessel sits on cannot be its target.
       const allowed = id !== v?.bodyId;
-      b.show.set(allowed && r.targetBodyId === id);
-      b.offer.set(allowed && r.targetBodyId === null);
+      b.show.set(allowed && targetBody === id);
+      b.offer.set(allowed && noTarget);
       if (allowed) targetButtonsShown++;
     }
     const onGround = v !== null && (v.situation === 'prelaunch' || v.situation === 'landed');
     // The launch panel shows only with something in it: a target to pick, a target, or a launch window.
-    const showPad = onGround && (targetButtonsShown > 0 || r.targetBodyId !== null || r.targetRelativeInclination !== null || r.launchWindow !== null);
+    const showPad = onGround && (targetButtonsShown > 0 || !noTarget || r.targetRelativeInclination !== null || r.launchWindow !== null);
     const nb = r.nodeBurn;
     const tBurn = nb?.timeToBurnStart ?? null;
     const ltExpanded = landingTargetExpanded(s, defs);
@@ -1113,15 +1147,15 @@ export function createHud(opts: HudOptions): HudImpl {
     ltLineShow.set(!ltExpanded);
     if (r.landingTarget === null) ltCurrentRows = null;
     padShow.set(showPad);
-    padTargetsShow.set(targetButtonsShown > 0 && r.targetBodyId !== null);
-    padNoneShow.set(targetButtonsShown > 0 && r.targetBodyId === null);
-    padSuggestShow.set(targetButtonsShown > 0 && r.targetBodyId === null);
+    padTargetsShow.set(targetButtonsShown > 0 && targetBody !== null);
+    padNoneShow.set(targetButtonsShown > 0 && noTarget);
+    padSuggestShow.set(targetButtonsShown > 0 && noTarget);
     padNameShow.set(targetButtonsShown === 0);
-    padHintShow.set(targetButtonsShown > 0 && r.targetBodyId === null);
+    padHintShow.set(targetButtonsShown > 0 && noTarget);
     relIncShow.set(r.targetRelativeInclination !== null);
     crossShow.set(r.launchWindow !== null);
     azShow.set(r.launchWindow !== null);
-    for (const [id, b] of targetButtons) b.on.set(r.targetBodyId === id);
+    for (const [id, b] of targetButtons) b.on.set(targetBody === id);
     nodeShow.set(nb !== null);
     nodeImminent.set(tBurn !== null && tBurn >= 0 && tBurn < 10);
     noticeShow.set(s.terrain.pending && r.altitudeRadar < RADAR_ALTITUDE_SWITCH);
@@ -1149,9 +1183,11 @@ export function createHud(opts: HudOptions): HudImpl {
     gearOn.set(r.legsDeployed === true);
     lightsOn.set(r.lightsOn);
     fineOn.set(r.fineControl);
-    for (const mode of SAS_MODES) {
+    for (const mode of SAS_BUTTON_MODES) {
       const b = modeButtons.get(mode)!;
-      b.enabled.set(r.sasModesAvailable.includes(mode));
+      const available = r.sasModesAvailable.includes(mode);
+      b.enabled.set(available);
+      b.show?.set(available);
       b.on.set(r.sasEnabled && r.sasMode === mode);
     }
     sasCaptionOn.set(r.sasEnabled);
@@ -1164,7 +1200,7 @@ export function createHud(opts: HudOptions): HudImpl {
     const lt = r.landingTarget;
     const st = s.staging;
     const activeStage = describeActiveStage(s);
-    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${phase.suborbital}|${r.periapsisAltitude < 0}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.gDose > 0}|${liftRelevant && r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${ltExpanded}|${hasGroundTrack(r.horizontalSpeed, r.verticalSpeed)}|${showPad}|${r.targetBodyId}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${st.nextStage}|${st.lockout}|${st.stages.length}|${activeStage}|${s.mission.failed}`;
+    const sig = `${kind}|${altMode}|${altSrc}|${landed}|${s.navball.mode}|${r.sasEnabled}|${r.sasMode}|${w.index}|${w.maxIndex}|${w.onRails}|${w.limitedBy}|${v?.bodyId}|${showOrbit}|${phase.periapsisTone}|${phase.suborbital}|${r.periapsisAltitude < 0}|${inAir}|${showEntry}|${heating}|${r.ablatorFraction !== null}|${r.gDose > 0}|${liftRelevant && r.liftVectorUp}|${r.chuteEnvelope}|${lt?.targetId}|${lt?.predicted?.kind}|${ltExpanded}|${hasGroundTrack(r.horizontalSpeed, r.verticalSpeed)}|${showPad}|${targetBody}|${noTarget}|${r.launchWindow !== null}|${nb === null ? '-' : tBurn === null ? 'n' : tBurn < 0 ? 'b' : 'w'}|${nb?.insufficientDeltaV}|${st.nextStage}|${st.lockout}|${st.stages.length}|${activeStage}|${s.mission.failed}`;
     textClock += dt;
     const due = textClock >= TEXT_PERIOD - 1e-4;
     if (forceText || due || sig !== lastSig) {

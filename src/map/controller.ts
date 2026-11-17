@@ -14,9 +14,11 @@
  */
 import type { PlayerCommands, PointerState } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
+import type { TargetRef } from '@/core/contracts/net';
 import type { CameraState } from '@/core/contracts/render';
 import type { ManeuverNode, Patch, SimSnapshot } from '@/core/contracts/sim';
 import type { MapElementInfo, MapUpdateResult, MapView } from '@/core/contracts/ui';
+import { bodyTarget, revisionOf, targetBodyOf, targetOf } from '@/core/fakes/snapshotAccess';
 import { utAtTrueAnomaly } from './anomalyTime';
 import {
   ARM_ALPHA,
@@ -515,7 +517,10 @@ export class MapController implements MapView {
     const t = this.pendingTarget;
     if (t && tMs >= t.due && !pointer.released && !pointer.doubleClick && this.pending?.type !== 'body') {
       this.pendingTarget = null;
-      if (snapshot.readouts.targetBodyId !== t.bodyId) commands.setTarget(t.bodyId);
+      // A click on the body being orbited clears whatever is targeted; on another body it targets that body.
+      if (t.bodyId === null) {
+        if (targetOf(snapshot.readouts) !== null) commands.setTarget(null);
+      } else if (targetBodyOf(snapshot.readouts) !== t.bodyId) commands.setTarget(bodyTarget(t.bodyId));
     }
 
     // ---- hover (for consumption, tooltips and the add-maneuver preview)
@@ -1939,11 +1944,18 @@ function shapeIcon(s: MarkerShape): IconId {
   }
 }
 
+/** Two target references name the same thing (a reference is compared by its fields, never taken apart). */
+function sameTarget(a: TargetRef | null, b: TargetRef | null): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.kind === 'port') return b.kind === 'port' && a.vesselId === b.vesselId && a.portId === b.portId;
+  return b.kind === a.kind && a.id === b.id;
+}
+
 function sameTime(a: SimSnapshot, b: SimSnapshot): boolean {
-  return a.ut === b.ut && a.tick === b.tick && a.nodes.length === b.nodes.length && a.nodes.every((n, i) => {
+  return a.ut === b.ut && revisionOf(a) === revisionOf(b) && a.nodes.length === b.nodes.length && a.nodes.every((n, i) => {
     const m = b.nodes[i]!;
     return n.id === m.id && n.ut === m.ut && n.dv.prograde === m.dv.prograde && n.dv.normal === m.dv.normal && n.dv.radial === m.dv.radial;
-  }) && a.patches.current.length === b.patches.current.length && a.patches.planned.length === b.patches.planned.length && a.readouts.targetBodyId === b.readouts.targetBodyId;
+  }) && a.patches.current.length === b.patches.current.length && a.patches.planned.length === b.patches.planned.length && sameTarget(targetOf(a.readouts)?.ref ?? null, targetOf(b.readouts)?.ref ?? null);
 }
 
 function sameCamera(a: CameraState, b: CameraState): boolean {

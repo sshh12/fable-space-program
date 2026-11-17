@@ -507,7 +507,9 @@ export async function createGame(deps: GameDeps): Promise<Game> {
       if (seat !== null && vessel) hud.notify(`Seat: ${seatName(defs, vessel, seat)}`, 'info');
     }
     if (f.pressed.has('toggleHud')) hud.setVisible(!hud.visible);
-    if (f.pressed.has('pause')) setPaused(!paused);
+    // Esc / P: the flight menu. Until the shell brings its menu (nothing pauses in a shared universe) the
+    // offline game answers the key with its local pause, which holds this session's simulation.
+    if (f.pressed.has('flightMenu')) setPaused(!paused);
     timings.mark('input');
     const mapActive = view.camera.kind === 'map';
     features.map.setActive(mapActive);

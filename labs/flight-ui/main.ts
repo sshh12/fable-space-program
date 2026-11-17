@@ -57,6 +57,7 @@ import type { MfdPage } from '@/core/contracts/ui';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
+import { bodyTarget } from '@/core/fakes/snapshotAccess';
 import { acquireGpu } from '@/core/gpu/device';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG, G0 } from '@/core/math/scalar';
@@ -341,7 +342,8 @@ async function boot(): Promise<void> {
     ...(start !== null && FAKE_CLIMB[scene] ? { altitude: start } : {}),
   });
   for (let i = 0; i < fired; i++) sim.commands.stage();
-  if (params.get('target')) sim.commands.setTarget(params.get('target'));
+  const targetParam = params.get('target');
+  if (targetParam) sim.commands.setTarget(bodyTarget(targetParam));
   if (params.get('sas')) sim.commands.setSasMode(params.get('sas') as SasMode);
   if (setup.navball) sim.commands.setNavballMode(setup.navball);
   if (params.get('node') === '1') {
@@ -823,7 +825,7 @@ async function boot(): Promise<void> {
     if (f.pointer.pressed && f.pointer.overUi) edges.uiPressed++;
     if (f.pointer.wheel !== 0 && f.pointer.overUi) edges.uiWheelFrames++;
     if (f.pressed.has('toggleHud')) hud.setVisible(!hud.visible);
-    if (f.pressed.has('pause')) paused = !paused;
+    if (f.pressed.has('flightMenu')) paused = !paused;
 
     const ctl = controller.update(f, snapshot, sim.commands, realDt, { view: camera?.kind ?? 'external', pointerCaptured });
     sim.setControls({

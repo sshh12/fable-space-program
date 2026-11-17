@@ -89,6 +89,24 @@ describe('default binding table (ARCHITECTURE section 11)', () => {
     expect(code('mfdCycle:0')).toEqual(['Digit9']);
     expect(code('mfdCycle:1')).toEqual(['Digit0']);
     expect(code('mfdCycle:2')).toEqual(['Minus']);
+    // v2 (ARCHITECTURE 19): the flight menu on Esc and P, the next target, the roster, prompts, quick comms.
+    expect(code('flightMenu')).toEqual(['Escape', 'KeyP']);
+    expect(code('cycleTarget')).toEqual(['KeyB']);
+    expect(code('toggleRoster')).toEqual(['KeyO']);
+    expect(code('acceptPrompt')).toEqual(['KeyY']);
+    expect(code('openQuickComms')).toEqual(['Enter']);
+    // The docking view is not on V (the next couch has it, request core-6) but right of the display keys.
+    expect(code('dockingView')).toEqual(['Equal']);
+    // The holds against a vessel or port target: the three keys right of L.
+    expect(['target', 'antiTarget', 'portAlign'].map((m) => code(`sas:${m}`))).toEqual([['Semicolon'], ['Quote'], ['Backslash']]);
+  });
+
+  it('lists no retired action: the pause key is the flight menu', () => {
+    expect((ALL_BUTTON_ACTIONS as readonly string[]).includes('pause')).toBe(false);
+    expect(DEFAULT_BINDINGS.some((b) => (b.action as string) === 'pause')).toBe(false);
+    const entries = keyHelpEntries(DEFAULT_BINDINGS);
+    expect(entries.find((e) => e.text === 'Flight menu')).toMatchObject({ group: 'Time & navigation', keys: ['Esc', 'P'] });
+    expect(entries.find((e) => e.text === 'Hold Port alignment')).toMatchObject({ group: 'SAS', keys: ['\\'] });
   });
 
   it('validateBindings catches unsafe or conflicting tables', () => {

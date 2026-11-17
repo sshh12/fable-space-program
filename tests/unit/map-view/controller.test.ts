@@ -11,6 +11,7 @@ import type { Sim, SimSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim } from '@/core/fakes/fakeSim';
+import { bodyTarget, targetBodyOf } from '@/core/fakes/snapshotAccess';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { conicPosition, conicTrueAnomaly } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';
@@ -359,22 +360,22 @@ describe('focus requests', () => {
     r.frame(pointer({ x: moon.x, y: moon.y, pressed: true, released: true }));
     // Not before the double-click interval has passed without a second click...
     idle(r, moon, 8);
-    expect(r.snap.readouts.targetBodyId).toBeNull();
+    expect(targetBodyOf(r.snap.readouts)).toBeNull();
     // ... then it is set.
     idle(r, moon, 4);
-    expect(r.snap.readouts.targetBodyId).toBe(moonId);
+    expect(targetBodyOf(r.snap.readouts)).toBe(moonId);
     const earth = el(r.map, 'body', earthId);
     r.frame(pointer({ x: earth.x, y: earth.y, pressed: true, released: true }));
     idle(r, earth, 12);
-    expect(r.snap.readouts.targetBodyId).toBeNull();
+    expect(targetBodyOf(r.snap.readouts)).toBeNull();
   });
 
   it('a double click focuses a body and leaves the target alone (orbited body and another body)', () => {
     const { r, earthId, moonId } = twoBodies();
-    r.sim.commands.setTarget(moonId);
+    r.sim.commands.setTarget(bodyTarget(moonId));
     r.snap = r.sim.snapshot();
     r.map.frame(r.snap, r.camera, CSS);
-    expect(r.snap.readouts.targetBodyId).toBe(moonId);
+    expect(targetBodyOf(r.snap.readouts)).toBe(moonId);
     // Double click on the Earth (the body being orbited: a single click would clear the target).
     const earth = el(r.map, 'body', earthId);
     const results = [r.frame(pointer({ x: earth.x, y: earth.y, pressed: true, released: true }))];
@@ -384,7 +385,7 @@ describe('focus requests', () => {
     results.push(r.frame(pointer({ x: earth.x, y: earth.y, pressed: true, released: true, doubleClick: true })));
     idle(r, earth, 30);
     expect(results.filter((x) => x.focus).map((x) => x.focus)).toEqual([{ bodyId: earthId }]);
-    expect(r.snap.readouts.targetBodyId).toBe(moonId);
+    expect(targetBodyOf(r.snap.readouts)).toBe(moonId);
     // Double click on the Moon after clearing the target: focus, and still no target.
     r.sim.commands.setTarget(null);
     r.snap = r.sim.snapshot();
@@ -399,7 +400,7 @@ describe('focus requests', () => {
     const second = r.frame(pointer({ x: moon.x, y: moon.y, released: true, doubleClick: true }));
     expect(second.focus).toEqual({ bodyId: moonId });
     idle(r, moon, 30);
-    expect(r.snap.readouts.targetBodyId).toBeNull();
+    expect(targetBodyOf(r.snap.readouts)).toBeNull();
   });
 });
 

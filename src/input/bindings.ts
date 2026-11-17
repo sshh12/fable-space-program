@@ -14,7 +14,7 @@
  * the throttle-up key, so Shift+W must still pitch). A binding with modifiers matches only while all of them
  * are held, and the most specific matching binding of a code wins.
  */
-import { SAS_MODES, type AxisAction, type ButtonAction, type SasMode } from '@/core/contracts/controls';
+import { SAS_MODES, SAS_TARGET_MODES, type AxisAction, type ButtonAction, type SasMode, type SasTargetMode } from '@/core/contracts/controls';
 
 export type ModifierKey = 'Shift' | 'Control' | 'Alt' | 'Meta';
 
@@ -64,7 +64,14 @@ export const ALL_AXIS_ACTIONS = [
   'cameraZoom',
 ] as const satisfies readonly AxisAction[];
 
-/** Every ButtonAction of src/core/contracts/controls.ts (compile-time checked below). */
+/**
+ * The member of the contract's ButtonAction that no table lists any more: the flight menu took its key
+ * (nothing pauses in a shared universe; MIGRATION_V2 section 4). It stays in the union until the tighten step
+ * after sub-wave 3.2, which removes it from the contract and this type with it.
+ */
+type RetiredButtonAction = Extract<ButtonAction, 'pause'>;
+
+/** Every ButtonAction of src/core/contracts/controls.ts that a table may bind (compile-time checked below). */
 export const ALL_BUTTON_ACTIONS = [
   'stage',
   'abort',
@@ -84,7 +91,12 @@ export const ALL_BUTTON_ACTIONS = [
   'nextVessel',
   'prevVessel',
   'toggleHud',
-  'pause',
+  'flightMenu',
+  'cycleTarget',
+  'toggleRoster',
+  'dockingView',
+  'openQuickComms',
+  'acceptPrompt',
   'mfdCycle:0',
   'mfdCycle:1',
   'mfdCycle:2',
@@ -96,11 +108,14 @@ export const ALL_BUTTON_ACTIONS = [
   'sas:radialOut',
   'sas:radialIn',
   'sas:maneuver',
+  'sas:target',
+  'sas:antiTarget',
+  'sas:portAlign',
 ] as const satisfies readonly ButtonAction[];
 
 // Exhaustiveness: a member added to the contract unions without being listed above fails to compile here.
 type MissingAxis = Exclude<AxisAction, (typeof ALL_AXIS_ACTIONS)[number]>;
-type MissingButton = Exclude<ButtonAction, (typeof ALL_BUTTON_ACTIONS)[number]>;
+type MissingButton = Exclude<ButtonAction, (typeof ALL_BUTTON_ACTIONS)[number] | RetiredButtonAction>;
 const axisListIsComplete: MissingAxis extends never ? true : MissingAxis = true;
 const buttonListIsComplete: MissingButton extends never ? true : MissingButton = true;
 void axisListIsComplete;
@@ -110,6 +125,12 @@ const axis = (code: string, action: AxisAction, value: number, extra: Partial<Ax
 const button = (code: string, action: ButtonAction | UiAction, extra: Partial<ButtonBinding> = {}): ButtonBinding => ({ kind: 'button', code, action, ...extra });
 
 const SAS_KEYS: readonly SasMode[] = SAS_MODES;
+
+/**
+ * Keys of the three SAS modes that hold against a vessel or port target. The digit row is full (1-8 are the
+ * modes without a target, 9 0 - the cockpit displays), so they take the three keys right of L, in HUD order.
+ */
+const SAS_TARGET_KEYS: Readonly<Record<SasTargetMode, string>> = { target: 'Semicolon', antiTarget: 'Quote', portAlign: 'Backslash' };
 
 /** Default bindings (ARCHITECTURE section 11 supersedes sim-design section 20). */
 export const DEFAULT_BINDINGS: readonly Binding[] = Object.freeze([
@@ -153,6 +174,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = Object.freeze([
   button('KeyU', 'toggleLights'),
   button('CapsLock', 'toggleFineControl'),
   ...SAS_KEYS.map((mode, i) => button(`Digit${i + 1}`, `sas:${mode}`)),
+  ...SAS_TARGET_MODES.map((mode) => button(SAS_TARGET_KEYS[mode], `sas:${mode}`)),
   // Navigation, time and views.
   button('Tab', 'toggleNavballMode'),
   button('Period', 'warpUp'),
@@ -163,7 +185,18 @@ export const DEFAULT_BINDINGS: readonly Binding[] = Object.freeze([
   button('BracketRight', 'nextVessel'),
   button('BracketLeft', 'prevVessel'),
   button('F2', 'toggleHud'),
-  button('KeyP', 'pause'),
+  // The flight menu over the live flight (ARCHITECTURE 19: Esc and P; P stays so that an Esc the browser took
+  // to leave fullscreen can never trap the player).
+  button('Escape', 'flightMenu'),
+  button('KeyP', 'flightMenu'),
+  // Targets, the roster, prompts and quick comms (ARCHITECTURE 19).
+  button('KeyB', 'cycleTarget'),
+  button('KeyO', 'toggleRoster'),
+  button('KeyY', 'acceptPrompt'),
+  button('Enter', 'openQuickComms'),
+  // The view at the control port. ARCHITECTURE 19 proposed V, which the next couch of the cabin has taken since
+  // (request core-6, 'ui:nextSeat'), and every letter is bound: it sits right of the three display keys.
+  button('Equal', 'dockingView'),
   // Cockpit multi-function displays (left, centre, right).
   button('Digit9', 'mfdCycle:0'),
   button('Digit0', 'mfdCycle:1'),
@@ -270,6 +303,9 @@ const SAS_LABEL: Record<SasMode, string> = {
   radialOut: 'Radial out',
   radialIn: 'Radial in',
   maneuver: 'Maneuver',
+  target: 'Target',
+  antiTarget: 'Anti-target',
+  portAlign: 'Port alignment',
 };
 
 export type BindingGroup = 'Attitude' | 'Translation' | 'Throttle & staging' | 'SAS' | 'Systems' | 'Time & navigation' | 'Views' | 'Cockpit displays';
@@ -287,7 +323,7 @@ const AXIS_TEXT: Record<AxisAction, { group: BindingGroup; pos: string; neg: str
   cameraZoom: { group: 'Views', pos: 'Zoom out', neg: 'Zoom in' },
 };
 
-const BUTTON_TEXT: Record<Exclude<ButtonAction, `sas:${string}`> | UiAction, { group: BindingGroup; text: string }> = {
+const BUTTON_TEXT: Record<Exclude<ButtonAction, `sas:${string}` | RetiredButtonAction> | UiAction, { group: BindingGroup; text: string }> = {
   stage: { group: 'Throttle & staging', text: 'Fire next stage' },
   abort: { group: 'Throttle & staging', text: 'Abort' },
   throttleFull: { group: 'Throttle & staging', text: 'Full throttle' },
@@ -306,7 +342,12 @@ const BUTTON_TEXT: Record<Exclude<ButtonAction, `sas:${string}`> | UiAction, { g
   nextVessel: { group: 'Views', text: 'Next vessel' },
   prevVessel: { group: 'Views', text: 'Previous vessel' },
   toggleHud: { group: 'Views', text: 'Hide / show HUD' },
-  pause: { group: 'Time & navigation', text: 'Pause' },
+  flightMenu: { group: 'Time & navigation', text: 'Flight menu' },
+  cycleTarget: { group: 'Time & navigation', text: 'Next target' },
+  toggleRoster: { group: 'Views', text: 'Roster' },
+  dockingView: { group: 'Views', text: 'Docking view' },
+  openQuickComms: { group: 'Systems', text: 'Quick comms' },
+  acceptPrompt: { group: 'Systems', text: 'Accept prompt' },
   'mfdCycle:0': { group: 'Cockpit displays', text: 'Left display page' },
   'mfdCycle:1': { group: 'Cockpit displays', text: 'Centre display page' },
   'mfdCycle:2': { group: 'Cockpit displays', text: 'Right display page' },

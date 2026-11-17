@@ -58,8 +58,10 @@ function staticSim(snapshot: SimSnapshot): LabSim {
     addNode: () => '',
     setNode: () => refuse,
     removeNode: () => refuse,
-    setTarget: (bodyId) => {
-      snap = { ...snap, readouts: { ...snap.readouts, targetBodyId: bodyId } };
+    setTarget: (ref) => {
+      // The synthetic snapshots have body targets only, stated in the form their fixture is built in.
+      if (ref !== null && ref.kind !== 'body') return { ok: false, reason: 'The map lab has body targets only' };
+      snap = { ...snap, readouts: { ...snap.readouts, targetBodyId: ref === null ? null : ref.id } };
       return { ok: true };
     },
     cycleActiveVessel: () => refuse,

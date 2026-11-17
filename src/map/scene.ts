@@ -11,6 +11,7 @@
 import type { CameraState } from '@/core/contracts/render';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { ManeuverNode, Marker, MarkerKind, Patch, SimSnapshot, SurfaceTarget, VesselSnapshot } from '@/core/contracts/sim';
+import { targetNameOf } from '@/core/fakes/snapshotAccess';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { conicFromState, conicMaxTrueAnomaly, conicPosition, conicRadiusCrossing, conicTrueAnomaly, timeSincePeriapsis, type ConicElements } from '@/core/math/conic';
 import { quat } from '@/core/math/quat';
@@ -551,6 +552,8 @@ const MARKER_STYLE: Record<MarkerKind, { shape: MarkerShape; color: Rgba; priori
   impact: { shape: 'impact', color: COLORS.impact, priority: 8 },
   atmosphereEntry: { shape: 'entry', color: COLORS.entry, priority: 8 },
   closestApproach: { shape: 'closest', color: COLORS.closest, priority: 4 },
+  // The closest approach to a targeted vessel: the same mark, ahead of a body's (it is the one a rendezvous is flown to).
+  targetApproach: { shape: 'closest', color: COLORS.closest, priority: 5 },
   maneuverNode: { shape: 'node', color: COLORS.node, priority: 9 },
 };
 
@@ -725,8 +728,8 @@ export class SceneBuilder {
     this.suppressCoincident(scene, firstNodeUt);
 
     // ---------------------------------------------------------------------------------- markers
-    const target = snapshot.readouts.targetBodyId;
-    // Label text reads the time, the target (closest approach) and the landing-target prediction (miss).
+    // Label text reads the time, the target's name (closest approach) and the landing-target prediction (miss).
+    const target = targetNameOf(snapshot, this.defs);
     const landing = snapshot.readouts.landingTarget;
     const landingId = landing?.targetId ?? null;
     const miss = landing?.predicted ? landing.predicted.missDistance : -1;

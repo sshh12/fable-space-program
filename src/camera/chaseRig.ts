@@ -41,6 +41,7 @@
  * Terrain: with a TerrainProvider the eye stays `clearance` metres above the collision surface (or above the
  * sea where the body has an ocean); without one, above the body's datum sphere (and its sea level).
  */
+import type { NavballMode } from '@/core/contracts/controls';
 import type { DefLibrary, SiteStructureDef } from '@/core/contracts/defs';
 import type { CameraInput, CameraState } from '@/core/contracts/render';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
@@ -122,6 +123,13 @@ export const CHASE_PAD_RANGE = 12_000;
 const MAX_ELEVATION = 89 * DEG;
 
 type RefMode = 'surface' | 'orbit';
+
+/**
+ * The camera's azimuth reference for a navball mode. Relative to a target the vessel is flown in orbit, and
+ * the camera keeps its place relative to the track as in orbit mode: a reference that turned with the line
+ * to a passing target would swing the view round the vessel.
+ */
+const refModeOf = (mode: NavballMode): RefMode => (mode === 'surface' ? 'surface' : 'orbit');
 
 /** Reference frame -> ROOT. Frame axes: X = azimuth zero, Y = Z x X, Z = up (away from the vessel's body). */
 export function chaseReferenceFrame(s: SimSnapshot, v: VesselSnapshot, mode: RefMode): Quat {
@@ -374,7 +382,7 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
 
   const init = (s: SimSnapshot, v: VesselSnapshot): void => {
     vesselId = v.id;
-    refMode = s.navball.mode;
+    refMode = refModeOf(s.navball.mode);
     refBody = v.bodyId;
     swing = null;
     lastDir = null;
@@ -458,15 +466,15 @@ export function createChaseRig(opts: ChaseRigOptions): ChaseRig {
       const auto = autoDistance;
 
       // Navball-mode change: the two frames share their vertical; the azimuth is re-expressed and nothing moves.
-      if (s.navball.mode !== refMode && v.bodyId === refBody) {
+      if (refModeOf(s.navball.mode) !== refMode && v.bodyId === refBody) {
         const dir = offsetDir(chaseReferenceFrame(s, v, refMode), azimuth, 0);
-        refMode = s.navball.mode;
+        refMode = refModeOf(s.navball.mode);
         azimuth = anglesOf(chaseReferenceFrame(s, v, refMode), dir).azimuth;
       }
       // Another body (sphere of influence): the same angles in its frame, reached in a swing.
       if (v.bodyId !== refBody) {
         refBody = v.bodyId;
-        refMode = s.navball.mode;
+        refMode = refModeOf(s.navball.mode);
         startSwing(CHASE_BODY_BLEND_SECONDS);
       }
 
