@@ -137,15 +137,17 @@ describe('a manifest in which every checkpoint is framed and can be captured fra
   const manifest = (checkpoints: Record<string, BaselineCheckpoint>): BaselineManifest => ({ version: 1, dir: 'data/baselines', viewport: [1280, 720], floor: { meanAbs: 0.02, p999: 1 }, checkpoints });
   const problems = (c: Partial<BaselineCheckpoint>): string[] => manifestProblems(manifest({ view: { ...framed, ...c } }));
 
-  it('accepts a frozen lab page and an app page that its setup freezes', () => {
+  it('accepts a frozen lab page, an app page opened frozen and an app page that its setup freezes', () => {
     expect(problems({})).toEqual([]);
+    expect(problems({ page: '/?scenario=lunar-direct&governor=off&deterministic=1&paused=1', setup: [{ waitIdle: true }] })).toEqual([]);
+    expect(problems({ page: '/?scenario=lunar-direct&governor=off&deterministic=1', setup: [{ waitIdle: true }] })).toHaveLength(1);
     expect(problems({ page: '/?scenario=lunar-direct&governor=off', setup: [{ call: '__test.setDeterministic', args: [true] }, { call: '__test.setPaused', args: [true] }, { waitIdle: true }] })).toEqual([]);
   });
 
   it('names what is wrong: no page, a lab page that is not frozen, an app page nobody freezes, too few frames, a bad name, a bad step', () => {
     expect(problems({ page: null })).toEqual(['view: not framed: it has no page']);
     expect(problems({ page: '/labs/integration/?scene=lowOrbit&deterministic=1' })).toEqual(['view: a lab page is opened frozen: deterministic=1&paused=1 in its query']);
-    expect(problems({ page: '/?scenario=lunar-direct' })).toEqual(['view: a page of the app is frozen by its setup: __test.setDeterministic(true) and __test.setPaused(true)']);
+    expect(problems({ page: '/?scenario=lunar-direct' })).toEqual(['view: a page of the app is opened frozen (deterministic=1&paused=1 in its query) or frozen by its setup: __test.setDeterministic(true) and __test.setPaused(true)']);
     expect(problems({ page: '/?scenario=lunar-direct', setup: [{ call: '__test.setDeterministic', args: [true] }, { call: '__test.setPaused', args: [false] }] })).toHaveLength(2);
     expect(problems({ page: 'labs/integration/' })).toEqual(['view: "page" must be a path from the site root']);
     expect(problems({ frames: 8 })).toEqual(['view: "frames" must be a whole number from 16']);
@@ -192,7 +194,8 @@ describe('a manifest in which every checkpoint is framed and can be captured fra
     // Both, or the wrong one for what the loads did.
     expect(one({ ...base, exact: true, notExact: reason })).toEqual(['view: it is marked exact and carries a reason for not being exact']);
     expect(one({ ...base, ...differing, exact: true })).toEqual(['view: it is marked exact, but the loads of its recording differ']);
-    expect(one({ ...base, notExact: reason })).toEqual(['view: the loads of its recording are identical: it is exact, not "notExact"']);
+    // Three loads that agree do not unsay a reason: the lead may have seen another state on other loads.
+    expect(one({ ...base, notExact: reason })).toEqual([]);
     expect(one({ ...base, exact: false as unknown as true })).toEqual(['view: "exact" is true or absent']);
     // The reason is a sentence and the request is a file of docs/requests.
     expect(one({ ...base, ...differing, notExact: { reason: 'noise', request: 'lead-8' } })).toEqual(['view: "notExact.reason" must say in one line why the loads differ']);

@@ -165,6 +165,14 @@ export interface IntegrationLab {
   /** The seat view aimed at a point of the cabin (part frame, m). False without a cockpit seat. */
   sitInCockpitAimedAt(pointPart: Vec3): boolean;
   /**
+   * A free camera inside the cabin (kind 'interior'): the eye at `eyePart`, looking at `lookPart` (both in
+   * the command part's frame, m; the point looked at may lie far outside the cabin), the head up along the
+   * seat's own up ('seat', the default) or along the capsule's nose ('nose', the part's +Y: the horizon is
+   * level when the capsule stands upright), with a vertical field of view of `fovDeg` (default: unchanged).
+   * The head off the head rest: at a window's pane, looking out along its well. False without a cockpit seat.
+   */
+  cabinView(eyePart: Vec3, lookPart: Vec3, up?: 'seat' | 'nose', fovDeg?: number): boolean;
+  /**
    * Pin the sun so that it shines through a cabin window onto a point of the cabin (part frame, m): of all
    * windows the one through which the sun then stands highest above the local horizon. Returns that window
    * and the sun's elevation, or null without a cockpit model.
@@ -858,6 +866,26 @@ async function boot(): Promise<void> {
       if (!c) return false;
       const d = v3.normalize(v3.sub(pointPart, c.eye));
       return lab.sitInCockpit(Math.atan2(v3.dot(d, c.R), v3.dot(d, c.L)) / DEG, Math.asin(clampUnit(v3.dot(d, c.U))) / DEG);
+    },
+    cabinView(eyePart, lookPart, up = 'seat', fovDeg) {
+      if (!cabin()) return false;
+      place((snapshot) => {
+        const v = snapshot.vessels.find((x) => x.id === snapshot.activeVesselId);
+        const found = v ? findCockpitSeat(defs, v) : null;
+        if (!v || !found) return;
+        const { part, seat } = found;
+        const qPart = quat.mul(v.q, part.localRot);
+        const lookDir = v3.normalize(v3.fromTuple(seat.lookDir));
+        const upPart = up === 'nose' ? v3.unitY() : v3.normalize(v3.reject(v3.fromTuple(seat.upDir), lookDir));
+        app.camera.spec = {
+          type: 'free',
+          positionRoot: v3.add(v.rRoot, quat.rotate(v.q, v3.add(part.localPos, quat.rotate(part.localRot, eyePart)))),
+          qViewToRoot: lookRotation(quat.rotate(qPart, v3.sub(lookPart, eyePart)), quat.rotate(qPart, upPart)),
+        };
+      });
+      app.camera.settings.kind = 'interior';
+      if (fovDeg !== undefined && Number.isFinite(fovDeg) && fovDeg > 0) app.camera.settings.fovY = fovDeg * DEG;
+      return true;
     },
     sunThroughWindowOnto(pointPart) {
       const c = cabin();

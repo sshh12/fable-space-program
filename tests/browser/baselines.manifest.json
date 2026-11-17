@@ -537,7 +537,7 @@
    "frames": 64,
    "status": "recorded",
    "file": "leo-terminator.png",
-   "sha256": "3a1182c1219f0d54384e379192a2546af816dc8c847399e82e7a4d8c630b3288",
+   "sha256": "997ab6ce7924d50cf3eebeaa62c0dfc3cbf7c924b61c2b20c6d76fc1b0dd8548",
    "width": 1280,
    "height": 720,
    "tolerance": {
@@ -545,17 +545,13 @@
     "p999": 1
    },
    "selfDifference": {
-    "meanAbs": 3.616898148148148e-7,
+    "meanAbs": 0,
     "p999": 0
    },
    "loads": 3,
-   "notExact": {
-    "reason": "one pixel on the capsule's hull differs by one level in one load of four (the vessel's light from the sky's environment probe, as request core-7 describes)",
-    "request": "core-7"
-   },
    "recorded": {
-    "at": "2026-11-13T01:06:41.333Z",
-    "commit": "f1f58b4",
+    "at": "2026-11-17T06:55:42.956Z",
+    "commit": "9b5ee22",
     "chrome": "157.0.8103.78",
     "adapter": "nvidia NVIDIA GeForce RTX 5090",
     "tiles": {
@@ -587,19 +583,20 @@
      "umbriel": "2d09b6b2ecd217ce",
      "venus": "20c75de9c36047e4"
     },
-    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "note": "lead (lead-baseline-v2), 2026-11-16: RE-RECORDED on the tree as it stands (9b5ee22): the capsule's three cabin windows differ from the recording of 2026-11-12 in 48 pixels by up to 28 levels, moved by the cockpit's work on request lead-5 (327a9a4, 19ab596); nothing else in the picture moved",
     "leadInDifferingPixels": [
      0,
      0,
      0
     ]
-   }
+   },
+   "exact": true
   },
   "leo-night": {
    "what": "Low Earth orbit over the night side, with city lights and stars",
-   "page": "/labs/integration/?scene=lowOrbit&orbit=210,15,60&hud=0&governor=off&deterministic=1&paused=1",
+   "page": "/labs/integration/?scene=lowOrbit&orbit=30,15,60&hud=0&governor=off&deterministic=1&paused=1",
    "scene": "FakeSim low orbit; the sun pinned straight below the vessel, behind the Earth",
-   "camera": "the lab's orbit of the active vessel: yaw 210, pitch 15, 60 m: from the side on which the capsule's lit cabin windows face away (seen from yaw 30 they change by a level between captures: request lead-5)",
+   "camera": "the lab's orbit of the active vessel: yaw 30, pitch 15, 60 m: the capsule's lit cabin windows in view (identical between captures and loads since the cockpit's fix of request lead-5)",
    "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "setup": [
     {
@@ -618,8 +615,9 @@
    ],
    "frames": 64,
    "status": "recorded",
+   "exact": true,
    "file": "leo-night.png",
-   "sha256": "e8bc7e2e5fbad836a25db606e2e1ffb9d766eff79c63ea87637c9443d925e38c",
+   "sha256": "e09f1ab6c69c83db3f62ce8d01dccdbde71b06381cc20b112be3bd6980efea69",
    "width": 1280,
    "height": 720,
    "tolerance": {
@@ -631,10 +629,9 @@
     "p999": 0
    },
    "loads": 3,
-   "exact": true,
    "recorded": {
-    "at": "2026-11-13T02:05:26.822Z",
-    "commit": "9a873e0",
+    "at": "2026-11-17T06:35:28.186Z",
+    "commit": "9b5ee22",
     "chrome": "157.0.8103.78",
     "adapter": "nvidia NVIDIA GeForce RTX 5090",
     "tiles": {
@@ -666,11 +663,11 @@
      "umbriel": "2d09b6b2ecd217ce",
      "venus": "20c75de9c36047e4"
     },
-    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "note": "lead (lead-baseline-v2), 2026-11-16: recorded on the tree as it stands (9b5ee22) after the determinism fixes of requests lead-5 (cockpit 327a9a4, 19ab596), lead-6 (app shell 8c0f2cb) and lead-7 (ocean 39dacd5), as the regression gate of the presentation sweep",
     "leadInDifferingPixels": [
-     2,
-     2,
-     1
+     0,
+     0,
+     0
     ]
    }
   },
@@ -1293,32 +1290,48 @@
    }
   },
   "lunar-surface-cockpit": {
-   "what": "The lunar surface from the cockpit",
-   "page": "/labs/integration/?scene=lunarSurface&sun=100,15&sunsite=moon,0.661471,23.435999&hud=0&governor=off&deterministic=1&paused=1",
-   "scene": "FakeSim lunar surface: the lander standing on its pads at the landing target, the sun 15 degrees up",
-   "camera": "the cockpit seat of the vehicle, aimed at the cabin window through which the ground shows most",
+   "what": "The lunar surface from the cockpit: the ground and the horizon through the left side window",
+   "page": "/labs/integration/?scene=lunarSurface&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim lunar surface, the lander standing on its legs; the sun pinned in the vessel's frame (0.35, 0.3, 0.89): 17 degrees up on the far side of the capsule and across the view, long shadows on the ground, this window's well in the capsule's own shade (the cockpit's recipe world-moon-horizon, tests/browser/cockpit/world.ts)",
+   "camera": "a free camera in the cabin (the lab's cabinView): the head 30 cm inside the left side window, at (-0.84, 1.13, 0) m of the command part, looking 8 degrees down through the pane along its well, head-up along the capsule's nose; 62 degree field of view",
    "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "setup": [
     {
-     "call": "__integration.sitAtWindowBelow"
+     "call": "__integration.setSunInVesselFrame",
+     "args": [
+      {
+       "x": 0.35,
+       "y": 0.3,
+       "z": 0.89
+      }
+     ]
+    },
+    {
+     "call": "__integration.cabinView",
+     "args": [
+      {
+       "x": -0.84,
+       "y": 1.13,
+       "z": 0
+      },
+      {
+       "x": -11,
+       "y": -0.45,
+       "z": 0.6
+      },
+      "nose",
+      62
+     ]
     },
     {
      "waitIdle": true
     }
    ],
    "frames": 64,
-   "status": "pending"
-  },
-  "reentry-peak-heating": {
-   "what": "The capsule in the plasma sheath at peak heating",
-   "page": "/labs/integration/?scene=reentry&orbit=20,10,30&hud=0&governor=off&deterministic=1&paused=1",
-   "scene": "FakeSim entry at peak heating",
-   "camera": "the lab's orbit of the active vessel: yaw 20, pitch 10, 30 m: from ahead of the heat shield, no cabin window facing the camera (seen from yaw 160 the window flickers by a level between captures: request lead-5)",
-   "exposure": "auto (the core's meter, restarted with the capture's frames)",
-   "frames": 64,
    "status": "recorded",
-   "file": "reentry-peak-heating.png",
-   "sha256": "1c18c646176c20191dab81b840e659ed053399377e747cf1102034955f8b202c",
+   "exact": true,
+   "file": "lunar-surface-cockpit.png",
+   "sha256": "0c040ee6b3b0e522ff6d45aacf4763877f5b3beb13e9b72bcb4b0a23aaea5f6c",
    "width": 1280,
    "height": 720,
    "tolerance": {
@@ -1330,10 +1343,9 @@
     "p999": 0
    },
    "loads": 3,
-   "exact": true,
    "recorded": {
-    "at": "2026-11-13T02:10:27.093Z",
-    "commit": "9a873e0",
+    "at": "2026-11-17T06:36:32.360Z",
+    "commit": "9b5ee22",
     "chrome": "157.0.8103.78",
     "adapter": "nvidia NVIDIA GeForce RTX 5090",
     "tiles": {
@@ -1365,7 +1377,71 @@
      "umbriel": "2d09b6b2ecd217ce",
      "venus": "20c75de9c36047e4"
     },
-    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12); framing corrected after the first recording run",
+    "note": "lead (lead-baseline-v2), 2026-11-16: recorded on the tree as it stands (9b5ee22) after the determinism fixes of requests lead-5 (cockpit 327a9a4, 19ab596), lead-6 (app shell 8c0f2cb) and lead-7 (ocean 39dacd5), as the regression gate of the presentation sweep",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "reentry-peak-heating": {
+   "what": "The capsule in the plasma sheath at peak heating",
+   "page": "/labs/integration/?scene=reentry&orbit=160,10,30&hud=0&governor=off&deterministic=1&paused=1",
+   "scene": "FakeSim entry at peak heating",
+   "camera": "the lab's orbit of the active vessel: yaw 160, pitch 10, 30 m: the capsule from its side, a cabin window facing the camera (identical between captures and loads since the cockpit's fix of request lead-5)",
+   "exposure": "auto (the core's meter, restarted with the capture's frames)",
+   "frames": 64,
+   "status": "recorded",
+   "exact": true,
+   "file": "reentry-peak-heating.png",
+   "sha256": "61472497b1796ecf4713fd82918ab1615d5d55789f4be2247b2718e639af71a4",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "recorded": {
+    "at": "2026-11-17T06:37:31.439Z",
+    "commit": "9b5ee22",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-16: recorded on the tree as it stands (9b5ee22) after the determinism fixes of requests lead-5 (cockpit 327a9a4, 19ab596), lead-6 (app shell 8c0f2cb) and lead-7 (ocean 39dacd5), as the regression gate of the presentation sweep",
     "leadInDifferingPixels": [
      0,
      0,
@@ -1523,8 +1599,8 @@
    },
    "loads": 3,
    "notExact": {
-    "reason": "the near sea and the surf differ from load to load in about 0.2 % of the pixels by up to 3 levels (the ocean keeps a history that a capture does not restart)",
-    "request": "lead-7"
+    "reason": "the same far sea as pad-noon: some loads end in another state, up to 0.2 % of the pixels just under the horizon by up to 3 levels; not a history (the ocean restarts its own and it stays)",
+    "request": "lead-9"
    },
    "recorded": {
     "at": "2026-11-13T01:22:15.809Z",
@@ -1985,7 +2061,62 @@
     }
    ],
    "frames": 64,
-   "status": "pending"
+   "status": "recorded",
+   "exact": true,
+   "file": "sweep-cockpit-leo.png",
+   "sha256": "0d9793625ef6c9591df281efc9a3dc979ca311c73301a1711b3370988d02e065",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "recorded": {
+    "at": "2026-11-17T06:38:32.643Z",
+    "commit": "9b5ee22",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-16: recorded on the tree as it stands (9b5ee22) after the determinism fixes of requests lead-5 (cockpit 327a9a4, 19ab596), lead-6 (app shell 8c0f2cb) and lead-7 (ocean 39dacd5), as the regression gate of the presentation sweep",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
   },
   "sweep-separation-debris": {
    "what": "SWEEP: a separation with debris: the third stage three seconds after it left the lander stack, both in frame, with the HUD's staging after the event",
@@ -2278,49 +2409,34 @@
   },
   "sweep-app-pad": {
    "what": "SWEEP: the game itself on the pad: the stack with the site's structures in the chase view, the HUD as the app shell mounts it",
-   "page": "/?scenario=lunar-direct&governor=off&mute=1&capturepill=0",
-   "scene": "the app at the mission scenario, on the pad before the first stage; frozen by its setup",
+   "page": "/?scenario=lunar-direct&governor=off&mute=1&capturepill=0&deterministic=1&paused=1",
+   "scene": "the app itself, scenario lunar-direct on the pad: the app's own start at the scenario's first instant, opened frozen by its query (deterministic=1&paused=1: the simulation never leaves that instant and the camera stands in its final pose from the first frame; request lead-6)",
    "camera": "the app's chase rig at its default distance",
    "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "setup": [
-    {
-     "call": "__test.setDeterministic",
-     "args": [
-      true
-     ]
-    },
-    {
-     "call": "__test.setPaused",
-     "args": [
-      true
-     ]
-    },
     {
      "waitIdle": true
     }
    ],
    "frames": 64,
    "status": "recorded",
+   "exact": true,
    "file": "sweep-app-pad.png",
-   "sha256": "3678d9aab1ecc7f44de28b992fc3017c3d916538a4d61d3584063d365835bce2",
+   "sha256": "a6d41427d883a3051873e981abab22324008e9f63888065a6e09dda11087ab14",
    "width": 1280,
    "height": 720,
    "tolerance": {
-    "meanAbs": 0.25336154513888887,
-    "p999": 21
+    "meanAbs": 0.02,
+    "p999": 1
    },
    "selfDifference": {
-    "meanAbs": 0.08445384837962963,
-    "p999": 7
+    "meanAbs": 0,
+    "p999": 0
    },
    "loads": 3,
-   "notExact": {
-    "reason": "the app runs from its reveal until the test hooks freeze it, so its scene differs from load to load in about 100,000 pixels by up to 31 levels",
-    "request": "lead-6"
-   },
    "recorded": {
-    "at": "2026-11-13T01:36:16.029Z",
-    "commit": "9a873e0",
+    "at": "2026-11-17T06:40:07.362Z",
+    "commit": "9b5ee22",
     "chrome": "157.0.8103.78",
     "adapter": "nvidia NVIDIA GeForce RTX 5090",
     "tiles": {
@@ -2352,39 +2468,82 @@
      "umbriel": "2d09b6b2ecd217ce",
      "venus": "20c75de9c36047e4"
     },
-    "note": "lead (lead-baseline-v2), 2026-11-12: recorded on the tree as it stands, as the regression gate of the presentation sweep (lead decision of 2026-11-12)",
+    "note": "lead (lead-baseline-v2), 2026-11-16: recorded on the tree as it stands (9b5ee22) after the determinism fixes of requests lead-5 (cockpit 327a9a4, 19ab596), lead-6 (app shell 8c0f2cb) and lead-7 (ocean 39dacd5), as the regression gate of the presentation sweep",
     "leadInDifferingPixels": [
-     413,
-     624,
-     367
+     0,
+     0,
+     0
     ]
    }
   },
   "sweep-app-cockpit": {
    "what": "SWEEP: the game itself on the pad, in the cockpit view: the app's cockpit rig and the displays as the app shell paints them",
-   "page": "/?scenario=lunar-direct&view=cockpit&governor=off&mute=1&capturepill=0",
-   "scene": "the app at the mission scenario, on the pad; frozen by its setup",
+   "page": "/?scenario=lunar-direct&view=cockpit&governor=off&mute=1&capturepill=0&deterministic=1&paused=1",
+   "scene": "the app itself, scenario lunar-direct on the pad, in the cockpit view: the app's own start at the scenario's first instant, opened frozen by its query (deterministic=1&paused=1: the simulation never leaves that instant and the camera stands in its final pose from the first frame; request lead-6)",
    "camera": "the app's cockpit rig in the vehicle's cockpit seat",
    "exposure": "auto (the core's meter, restarted with the capture's frames)",
    "setup": [
-    {
-     "call": "__test.setDeterministic",
-     "args": [
-      true
-     ]
-    },
-    {
-     "call": "__test.setPaused",
-     "args": [
-      true
-     ]
-    },
     {
      "waitIdle": true
     }
    ],
    "frames": 64,
-   "status": "pending"
+   "status": "recorded",
+   "exact": true,
+   "file": "sweep-app-cockpit.png",
+   "sha256": "66d4c77cdec312c0ab7aeb27924fbe880e0aa20a665eefe099f19ad7e9b47871",
+   "width": 1280,
+   "height": 720,
+   "tolerance": {
+    "meanAbs": 0.02,
+    "p999": 1
+   },
+   "selfDifference": {
+    "meanAbs": 0,
+    "p999": 0
+   },
+   "loads": 3,
+   "recorded": {
+    "at": "2026-11-17T06:41:44.388Z",
+    "commit": "9b5ee22",
+    "chrome": "157.0.8103.78",
+    "adapter": "nvidia NVIDIA GeForce RTX 5090",
+    "tiles": {
+     "ariel": "950675dcd9901e65",
+     "callisto": "587c2b7ad34feb5b",
+     "ceres": "b6eaab0b89ba7fe6",
+     "charon": "9510b3515eca6466",
+     "deimos": "676a0f9f122f1ca7",
+     "dione": "c22b18294808bd98",
+     "earth": "f5e6ef420bda7cea",
+     "enceladus": "1308da806d610b1e",
+     "europa": "c8abb218237ba48b",
+     "ganymede": "93a5de28998b1cc4",
+     "iapetus": "18b5e1cafdae9de6",
+     "io": "eea8111816a84917",
+     "mars": "5007e42ba39df96a",
+     "mercury": "45f4563f62640c2a",
+     "mimas": "03b86f80e275add8",
+     "miranda": "618b22e7aa41a94c",
+     "moon": "597c5d666b132450",
+     "oberon": "3db3eb0a04150a79",
+     "phobos": "ea80f45352b86469",
+     "pluto": "287403cc6766d438",
+     "rhea": "eed1db418f308196",
+     "tethys": "575223da1b58060a",
+     "titan": "9eb04e3c9786ba74",
+     "titania": "f0d011f9967c2c67",
+     "triton": "5d796a5dfc79110c",
+     "umbriel": "2d09b6b2ecd217ce",
+     "venus": "20c75de9c36047e4"
+    },
+    "note": "lead (lead-baseline-v2), 2026-11-16: recorded on the tree as it stands (9b5ee22) after the determinism fixes of requests lead-5 (cockpit 327a9a4, 19ab596), lead-6 (app shell 8c0f2cb) and lead-7 (ocean 39dacd5), as the regression gate of the presentation sweep",
+    "leadInDifferingPixels": [
+     0,
+     0,
+     0
+    ]
+   }
   }
  }
 }

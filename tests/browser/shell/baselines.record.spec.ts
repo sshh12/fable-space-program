@@ -31,6 +31,13 @@
  * once more, from a fresh load, and must compare clean against its own reference. Every one is compared,
  * whatever the one before it did; the test fails at the end with the list of those that differ or are not
  * frame-exact. Skipped while nothing is recorded or data/baselines is not on this machine.
+ *
+ * AN EXACT CHECKPOINT GETS UP TO THREE LOADS (BASELINE_EXACT_TRIES) and passes when one of them is its
+ * reference to the bit. The reason is a finding of 2026-11-16 (request lead-9): on one and the same tree a
+ * picture with the far sea under the horizon ends, about one load in eight, with a thin line of that sea
+ * drawn differently; with some nine such pictures in the set, a run that asked every first load to match
+ * failed two times in three with nothing changed. A change in the code moves every load, so it still
+ * fails; a load that was another state is printed as OTHER STATE and listed at the end, for the lead.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -42,6 +49,8 @@ const manifest = readBaselineManifest();
 const note = process.env.BASELINE_RECORD ?? '';
 const only = (process.env.BASELINE_ONLY ?? '').split(',').map((s) => s.trim()).filter((s) => s !== '');
 const [width, height] = manifest.viewport;
+/** Fresh loads an exact checkpoint gets in the self-check before it counts as moved (BASELINE_EXACT_TRIES; 1 = the first load decides). */
+const EXACT_TRIES = Math.max(1, Number(process.env.BASELINE_EXACT_TRIES ?? 3));
 
 test.use({ viewport: { width, height }, deviceScaleFactor: 1 });
 
@@ -65,7 +74,7 @@ test.describe('reference images: record', () => {
       if (entry.exact) console.log(`[baseline] ${name}: EXACT: the ${loads} loads are one picture; a comparison passes only when no pixel differs`);
       else {
         const why = entry.notExact?.reason.trim() ? `"${entry.notExact.reason}" (request ${entry.notExact.request})` : 'NO REASON IS WRITTEN YET: the lead names the element and its owner\'s request in the manifest ("notExact") before the manifest is committed';
-        console.log(`[baseline] ${name}: NOT EXACT: the loads differ by up to ${selfDifference.maxAbs} level(s) in ${(selfDifference.differingFraction * 100).toFixed(3)} % of the pixels; compared within its tolerance; ${why}`);
+        console.log(`[baseline] ${name}: NOT EXACT: ${selfDifference.maxAbs === 0 ? 'these loads agree, but the manifest says the picture has another state on other loads' : `the loads differ by up to ${selfDifference.maxAbs} level(s) in ${(selfDifference.differingFraction * 100).toFixed(3)} % of the pixels`}; compared within its tolerance; ${why}`);
       }
     });
   }
@@ -83,20 +92,43 @@ test.describe('reference images: every recorded checkpoint compares clean agains
     test.setTimeout(chosen.length * 5 * 60_000);
     // Every chosen checkpoint is compared, whatever the one before it did: the run ends with the whole list
     // of the pictures that moved, not with the first of them.
+    //
+    // An EXACT checkpoint gets up to EXACT_TRIES fresh loads and passes when one of them is the reference to
+    // the bit. A few pictures have more than one state on one and the same tree (the far sea under the
+    // horizon: about one load in eight, request lead-9); a change in the code moves every load. A load that
+    // was another state is printed and listed at the end as OTHER STATE: it does not fail the run, and it is
+    // reported to the lead. A checkpoint that is compared within a tolerance gets one load.
     const failed: string[] = [];
-    for (const [name] of chosen) {
-      try {
-        await openCheckpoint(page, name);
-        const result = await compareToBaseline(page, name);
-        console.log(`[baseline] ${result.pass ? 'same' : 'DIFFERS'}: ${describeComparison(result)}`);
-        if (!result.pass) failed.push(`${describeComparison(result)}. Re-recording needs a note signed by the lead.`);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        console.log(`[baseline] FAILED: ${name}: ${message}`);
-        failed.push(`${name}: ${message}`);
+    const otherStates: string[] = [];
+    for (const [name, c] of chosen) {
+      const tries = c.exact ? EXACT_TRIES : 1;
+      const earlier: string[] = [];
+      for (let attempt = 1; attempt <= tries; attempt++) {
+        let done = true;
+        try {
+          await openCheckpoint(page, name);
+          const result = await compareToBaseline(page, name);
+          if (result.pass) {
+            console.log(`[baseline] same${attempt > 1 ? ` on load ${attempt}` : ''}: ${describeComparison(result)}`);
+            if (earlier.length > 0) otherStates.push(`${name}: the reference on load ${attempt}; before it ${earlier.join(' | ')}`);
+          } else if (attempt < tries) {
+            console.log(`[baseline] OTHER STATE OR MOVED (load ${attempt} of ${tries}, loading again): ${describeComparison(result)}`);
+            earlier.push(`load ${attempt}: ${Math.round(result.differingFraction * result.width * result.height)} pixels by up to ${result.maxAbs} level(s)`);
+            done = false;
+          } else {
+            console.log(`[baseline] DIFFERS${tries > 1 ? ` on every one of ${tries} loads` : ''}: ${describeComparison(result)}`);
+            failed.push(`${describeComparison(result)}${tries > 1 ? ` (and on the ${tries - 1} load(s) before: ${earlier.join(' | ')})` : ''}. Re-recording needs a note signed by the lead.`);
+          }
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          console.log(`[baseline] FAILED: ${name}: ${message}`);
+          failed.push(`${name}: ${message}`);
+        }
+        await page.goto('about:blank');
+        if (done) break;
       }
-      await page.goto('about:blank');
     }
+    for (const o of otherStates) console.log(`[baseline] OTHER STATE, to be reported to the lead (a picture with more than one state on this tree): ${o}`);
     expect(failed, `${failed.length} of ${chosen.length} reference images do not compare clean`).toEqual([]);
   });
 });

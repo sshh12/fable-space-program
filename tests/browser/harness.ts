@@ -745,7 +745,12 @@ export async function recordBaseline(
   const manifestFile = opts.manifestFile ?? BASELINE_MANIFEST_FILE;
   const m = readBaselineManifest(opts);
   const entry = baselineEntry(m, name);
-  const problems = manifestProblems({ ...m, checkpoints: { [name]: { ...entry, status: 'pending' } } });
+  // The framing is judged as a pending checkpoint's; what an earlier recording left on the entry (exact, or
+  // the reason it was not) is not part of the framing and is decided again below.
+  const { exact: _exactBefore, notExact: _reasonBefore, ...framing } = entry;
+  void _exactBefore;
+  void _reasonBefore;
+  const problems = manifestProblems({ ...m, checkpoints: { [name]: { ...framing, status: 'pending' } } });
   if (problems.length > 0) throw new Error(`checkpoint "${name}" cannot be recorded as the manifest frames it: ${problems.join('; ')}`);
   const captures: Buffer[] = [];
   const leadInDifferingPixels: number[] = [];
@@ -775,14 +780,15 @@ export async function recordBaseline(
   fs.writeFileSync(path.join(dir, file), first);
   const env = await environmentOf(page);
   const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' });
-  // Exact when the loads are one picture; otherwise the entry keeps the lead's reason, or gets an empty one
-  // that the manifest's validation rejects until the lead has written it.
+  // Exact when the loads are one picture and the lead has not said otherwise (a reason on the entry stands,
+  // whatever these three loads did: the lead has seen another state on other loads). Loads that differ keep
+  // the lead's reason, or get an empty one that the manifest's validation rejects until the lead has written it.
   const identical = self.maxAbs === 0;
   const { exact: _wasExact, notExact: reasonBefore, ...kept } = entry;
   void _wasExact;
   const recorded: BaselineCheckpoint = {
     ...kept,
-    ...(identical ? { exact: true } : { notExact: reasonBefore ?? { reason: '', request: '' } }),
+    ...(identical && !reasonBefore ? { exact: true } : { notExact: reasonBefore ?? { reason: '', request: '' } }),
     status: 'recorded',
     file,
     sha256: sha256(first),

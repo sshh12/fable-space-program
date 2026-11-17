@@ -64,7 +64,10 @@ export interface BaselineCheckpoint {
   /**
    * A recorded checkpoint that is not exact: why its loads differ, in one line, and the request to the
    * owner whose fix would make it exact (the name of the file in docs/requests, without ".md"). It is
-   * compared within its tolerance until then. The lead writes this; the recorder keeps it.
+   * compared within its tolerance until then. The lead writes this; the recorder keeps it, also when the
+   * three loads of a recording agree: a picture that takes another state one load in eight is not exact
+   * because three loads happened to agree. To make such a checkpoint exact again the lead removes this
+   * and records it.
    */
   notExact?: { reason: string; request: string };
   recorded?: {
@@ -222,7 +225,11 @@ export function manifestProblems(m: BaselineManifest): string[] {
     else if (c.page.startsWith('/labs/')) {
       if (!hasParam(c.page, 'deterministic', '1') || !hasParam(c.page, 'paused', '1')) bad('a lab page is opened frozen: deterministic=1&paused=1 in its query');
     } else if (Array.isArray(setup)) {
-      if (!callsWith(setup, '__test.setDeterministic', true) || !callsWith(setup, '__test.setPaused', true)) bad('a page of the app is frozen by its setup: __test.setDeterministic(true) and __test.setPaused(true)');
+      // The app honours the labs' two parameters from its first frame (request lead-6): the scenario's first
+      // instant is then the picture on every load. Freezing it afterwards, by the test hooks, still counts.
+      const byQuery = hasParam(c.page, 'deterministic', '1') && hasParam(c.page, 'paused', '1');
+      const bySetup = callsWith(setup, '__test.setDeterministic', true) && callsWith(setup, '__test.setPaused', true);
+      if (!byQuery && !bySetup) bad('a page of the app is opened frozen (deterministic=1&paused=1 in its query) or frozen by its setup: __test.setDeterministic(true) and __test.setPaused(true)');
     }
     if (Array.isArray(setup)) {
       // What the setup leaves behind: the last call of each switch decides.
@@ -247,7 +254,6 @@ export function manifestProblems(m: BaselineManifest): string[] {
       else {
         if (typeof c.notExact.reason !== 'string' || c.notExact.reason.trim().length < 20) bad('"notExact.reason" must say in one line why the loads differ');
         if (typeof c.notExact.request !== 'string' || !/^[a-z][a-z0-9]*(-[a-z0-9]+)*-\d+$/.test(c.notExact.request)) bad('"notExact.request" names the request to the owner, as its file in docs/requests is called (for example "lead-6")');
-        if (c.selfDifference && c.selfDifference.meanAbs === 0 && c.selfDifference.p999 === 0) bad('the loads of its recording are identical: it is exact, not "notExact"');
       }
     } else if (c.exact !== undefined || c.notExact !== undefined) {
       bad('"exact" and "notExact" belong to a recorded checkpoint');
