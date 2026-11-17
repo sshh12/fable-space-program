@@ -1,0 +1,367 @@
+{
+ "version": 1,
+ "note": "lead (lead-baseline-v2), 2026-11-12 18:41: the pre-sweep baseline of the summed GPU budget table, tree at 9a873e0, every gate slot free during the run",
+ "method": "p99 GPU ms per package, 2560 x 1440 internal, qualityScale 1, attribution mode, ballast to about 9 ms per frame; the median over 6 windows of 240 frames of the window's p99; the frame is the sum of the packages' p99s",
+ "rows": {
+  "pad lift-off": {
+   "kind": "lines",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 0.8629920000000001,
+    "terrain": 2.3475520000000003,
+    "vehicle": 0.113008,
+    "ocean": 0.36152000000000006,
+    "sky": 0.0452,
+    "atmosphere": 1.518592,
+    "vfx": 0.8286720000000001,
+    "cockpit": 0.07696
+   },
+   "budget": {
+    "core": 3,
+    "terrain": 2.15,
+    "vehicle": 1.7000000000000002,
+    "cockpit": 0,
+    "atmosphere": 1.7000000000000002,
+    "ocean": 0.8,
+    "sky": 0.2,
+    "vfx": 1.3,
+    "ui": 0.1
+   },
+   "frame": {
+    "sum": 6.1744959999999995,
+    "typical": 5.143312
+   },
+   "at": "2026-11-13T02:42:20.452Z",
+   "commit": "9a873e0"
+  },
+  "ascent 10-40 km": {
+   "kind": "lines",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 0.5243200000000001,
+    "terrain": 0.8111200000000001,
+    "vehicle": 0.008704,
+    "ocean": 0.000096,
+    "sky": 0.046655999999999996,
+    "atmosphere": 1.6336,
+    "vfx": 0.288064,
+    "cockpit": 0.07055999999999998
+   },
+   "budget": {
+    "core": 3,
+    "terrain": 2,
+    "vehicle": 1.3000000000000003,
+    "cockpit": 0,
+    "atmosphere": 2.2,
+    "ocean": 0.3,
+    "sky": 0.2,
+    "vfx": 1,
+    "ui": 0.1
+   },
+   "frame": {
+    "sum": 3.40312,
+    "typical": 2.856528
+   },
+   "at": "2026-11-13T02:43:26.098Z",
+   "commit": "9a873e0"
+  },
+  "LEO": {
+   "kind": "lines",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 0.683216,
+    "terrain": 0.6708000000000001,
+    "vehicle": 0.013951999999999999,
+    "ocean": 0.000096,
+    "sky": 0.039855999999999996,
+    "atmosphere": 1.5054400000000001,
+    "vfx": 0.005056,
+    "cockpit": 0.097376
+   },
+   "budget": {
+    "core": 3,
+    "terrain": 1.9,
+    "vehicle": 0.8999999999999999,
+    "cockpit": 0,
+    "atmosphere": 2.2,
+    "ocean": 0.1,
+    "sky": 0.3,
+    "vfx": 0.6,
+    "ui": 0.1
+   },
+   "frame": {
+    "sum": 3.0357920000000003,
+    "typical": 2.440112
+   },
+   "at": "2026-11-13T02:44:29.050Z",
+   "commit": "9a873e0"
+  },
+  "LEO cockpit": {
+   "kind": "lines",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 1.024416,
+    "terrain": 1.0556480000000001,
+    "vehicle": 0.035488000000000006,
+    "ocean": 0.000096,
+    "sky": 0.030992000000000002,
+    "atmosphere": 0.758896,
+    "vfx": 0.004848,
+    "cockpit": 0.643984
+   },
+   "budget": {
+    "core": 3,
+    "terrain": 1.3,
+    "vehicle": 0.6,
+    "cockpit": 1.2,
+    "atmosphere": 2.2,
+    "ocean": 0.1,
+    "sky": 0.3,
+    "vfx": 0.6,
+    "ui": 0.1
+   },
+   "frame": {
+    "sum": 3.574368,
+    "typical": 2.7264320000000017
+   },
+   "at": "2026-11-13T02:45:33.050Z",
+   "commit": "9a873e0"
+  },
+  "lunar descent": {
+   "kind": "lines",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 0.869712,
+    "terrain": 2.147728,
+    "vehicle": 0.015376,
+    "ocean": 0.000096,
+    "sky": 0.037456,
+    "atmosphere": 0,
+    "vfx": 0.22825600000000001,
+    "cockpit": 0.10425600000000002
+   },
+   "budget": {
+    "core": 3,
+    "terrain": 2.6999999999999997,
+    "vehicle": 0.8,
+    "cockpit": 0,
+    "atmosphere": 0,
+    "ocean": 0,
+    "sky": 0.3,
+    "vfx": 0.9,
+    "ui": 0.1
+   },
+   "frame": {
+    "sum": 3.4228799999999997,
+    "typical": 2.8380319999999997
+   },
+   "at": "2026-11-13T02:46:39.685Z",
+   "commit": "9a873e0"
+  },
+  "reentry": {
+   "kind": "lines",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 0.862592,
+    "terrain": 0.27556800000000004,
+    "vehicle": 0.005823999999999999,
+    "ocean": 0.000096,
+    "sky": 0.040256,
+    "atmosphere": 1.4251679999999998,
+    "vfx": 0.28414400000000006,
+    "cockpit": 0.10796800000000001
+   },
+   "budget": {
+    "core": 3,
+    "terrain": 1.6,
+    "vehicle": 0.5,
+    "cockpit": 0,
+    "atmosphere": 2.2,
+    "ocean": 0.1,
+    "sky": 0.2,
+    "vfx": 1.2,
+    "ui": 0.1
+   },
+   "frame": {
+    "sum": 3.0216160000000003,
+    "typical": 2.3958400000000006
+   },
+   "at": "2026-11-13T02:47:44.326Z",
+   "commit": "9a873e0"
+  },
+  "splashdown": {
+   "kind": "lines",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 0.887952,
+    "terrain": 1.6387040000000002,
+    "vehicle": 0.00272,
+    "ocean": 1.309072,
+    "sky": 0.045152,
+    "atmosphere": 1.39664,
+    "vfx": 0.25915200000000005,
+    "cockpit": 0.10108800000000001
+   },
+   "budget": {
+    "core": 3,
+    "terrain": 1.9,
+    "vehicle": 0.5,
+    "cockpit": 0,
+    "atmosphere": 2,
+    "ocean": 0.9,
+    "sky": 0.2,
+    "vfx": 0.9,
+    "ui": 0.1
+   },
+   "frame": {
+    "sum": 5.66048,
+    "typical": 4.342080000000002
+   },
+   "at": "2026-11-13T02:48:53.392Z",
+   "commit": "9a873e0"
+  },
+  "stony ground": {
+   "kind": "frame",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 0.8495359999999998,
+    "terrain": 3.5795519999999996,
+    "vehicle": 0.005136,
+    "ocean": 0.161968,
+    "sky": 0.045904,
+    "atmosphere": 1.5151839999999999,
+    "vfx": 0.00544,
+    "cockpit": 0.0744
+   },
+   "budget": {},
+   "frame": {
+    "sum": 6.257119999999999,
+    "typical": 5.253568
+   },
+   "at": "2026-11-13T02:50:09.986Z",
+   "commit": "9a873e0"
+  },
+  "among kiawe": {
+   "kind": "frame",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 0.7294879999999999,
+    "terrain": 2.615888,
+    "vehicle": 0.005456,
+    "ocean": 0.26196800000000003,
+    "sky": 0.078032,
+    "atmosphere": 1.814352,
+    "vfx": 0.00528,
+    "cockpit": 0.06862399999999999
+   },
+   "budget": {},
+   "frame": {
+    "sum": 5.599087999999999,
+    "typical": 4.611727999999999
+   },
+   "at": "2026-11-13T02:51:28.375Z",
+   "commit": "9a873e0"
+  },
+  "thickets from 120 m": {
+   "kind": "frame",
+   "loaded": [
+    "terrain",
+    "vehicle",
+    "cockpit",
+    "ocean",
+    "sky",
+    "atmosphere",
+    "vfx"
+   ],
+   "measured": {
+    "core": 0.966656,
+    "terrain": 3.736592,
+    "vehicle": 0.00808,
+    "ocean": 0.189216,
+    "sky": 0.039984,
+    "atmosphere": 1.6073120000000003,
+    "vfx": 0.005472,
+    "cockpit": 0.07358400000000001
+   },
+   "budget": {},
+   "frame": {
+    "sum": 6.646896,
+    "typical": 5.59
+   },
+   "at": "2026-11-13T02:52:40.588Z",
+   "commit": "9a873e0"
+  }
+ }
+}
