@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agxDisplayLinear, CAMERA_BLEND_FROM, CAMERA_GAIN, CAMERA_SHOULDER_FROM, CAMERA_WHITE, displayLinear, srgbEncode, TOE_FULL_STOPS, TOE_GAIN, TOE_START_STOPS, TONEMAP_WGSL, tonemapWgsl } from '@/render/core/post/tonemap';
+import { agxDisplayLinear, CAMERA_BLEND_FROM, CAMERA_GAIN, CAMERA_SHOULDER_FROM, CAMERA_WHITE, displayLinear, srgbEncode, TOE_FULL_STOPS, TOE_GAIN, TOE_START_STOPS, TONEMAP_BASE_WGSL, TONEMAP_WGSL, tonemapBaseWgsl, tonemapWgsl } from '@/render/core/post/tonemap';
 
 const MID = 0.18;
 const grey = (stops: number): [number, number, number] => [MID * 2 ** stops, MID * 2 ** stops, MID * 2 ** stops];
@@ -194,5 +194,21 @@ describe("the camera curve (look 2; request ocean-10): the scene's own line abov
     expect(wgsl.length).toBeGreaterThan(TONEMAP_WGSL.length);
     // Everything but the curve is the present pass.
     expect(wgsl.split('fn displayTransform')[1]).toBe(TONEMAP_WGSL.split('fn displayTransform')[1]);
+  });
+
+  it('both shaders of the pass (with the scrim step and without it) carry the same curve under each look', () => {
+    // The pass draws a pixel with one or the other (post/tonemap.ts Tonemap.draw): the display transform must be one.
+    expect(tonemapBaseWgsl(1)).toBe(TONEMAP_BASE_WGSL);
+    const base = tonemapBaseWgsl(2);
+    expect(base).not.toBe(TONEMAP_BASE_WGSL);
+    expect(base).toContain('camGrey');
+    expect(base).not.toMatch(/scrim/i);
+    expect(base.split('fn displayTransform')[1]).toBe(TONEMAP_BASE_WGSL.split('fn displayTransform')[1]);
+    const curve = (t: string): string => t.slice(t.indexOf('fn agxContrast'), t.indexOf('fn compress'));
+    for (const look of [1, 2] as const) {
+      expect(curve(tonemapBaseWgsl(look)).length).toBeGreaterThan(1500);
+      expect(curve(tonemapBaseWgsl(look))).toBe(curve(tonemapWgsl(look)));
+    }
+    expect(curve(tonemapWgsl(2))).not.toBe(curve(tonemapWgsl(1)));
   });
 });

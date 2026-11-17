@@ -5,12 +5,19 @@
  *
  * The UI scrim step (scrim.ts; ARCHITECTURE 18.8) is part of this pass: inside the rectangles of
  * 'ui.scrimRects' the scene, before the display transform, is cross-faded to a blurred and dimmed copy of
- * itself read from the bloom's down chain. With no rectangle (a zero header, the default) the pass takes one
- * branch on a uniform and does the arithmetic it always did.
+ * itself read from the bloom's down chain.
+ *
+ * The pass has two shaders (finding 12 of the presentation sweep's review). TONEMAP_BASE_WGSL is the pass
+ * without the scrim, the text it had before the scrim existed: no scrim binding, no scrim branch. It is drawn
+ * over the whole frame. TONEMAP_WGSL is the same text with the scrim step in it (the one draw of the pass as
+ * the sweep made it); it is drawn afterwards, with the same triangle, inside the scissor rectangles of the
+ * published rectangles only (scrim.ts `scrimScissors`), where it writes the pixel anew. So with no rectangle
+ * the pass is the pass before the scrim, and a rectangle costs by its area. See `Tonemap.draw` for when the
+ * pass falls back to the one draw over the whole frame.
  */
 import { UI_SCRIM_BYTES, UI_SCRIM_SLOTS, type RenderContext } from '@/core/contracts/render';
 import type { CoreShaderLibrary, Tracked } from '../shaders/library';
-import { SCRIM_LEVELS } from './scrim';
+import { SCRIM_LEVELS, scrimRectsOf, scrimScissors, type ScrimLevels, type ScrimScissor } from './scrim';
 
 // --------------------------------------------------------------------------- the display transform on the CPU
 // The same arithmetic as the WGSL below, for the unit tests and for the constant of the toe.
@@ -132,7 +139,8 @@ export const srgbEncode = (x: number): number => (x <= 0.0031308 ? x * 12.92 : 1
 const SCRIM_LEVEL_BINDING = 4;
 const scrimLevels = Array.from({ length: SCRIM_LEVELS }, (_, i) => i);
 
-export const TONEMAP_WGSL = /* wgsl */ `
+// The shader text in pieces: the pass without the scrim is the pieces that are not the scrim's, in order.
+const WGSL_HEAD = /* wgsl */ `
 #include "frame"
 #include "fullscreen"
 struct TonemapUniforms {
@@ -142,7 +150,8 @@ struct TonemapUniforms {
 @group(1) @binding(0) var<uniform> tm: TonemapUniforms;
 @group(1) @binding(1) var sceneTex: texture_2d<f32>;
 @group(1) @binding(2) var bloomTex: texture_2d<f32>;
-// The UI scrim ('ui.scrimRects', layout in the render contract): rect = x0, y0, x1, y1 in device pixels of the
+`;
+const WGSL_SCRIM_BINDINGS = /* wgsl */ `// The UI scrim ('ui.scrimRects', layout in the render contract): rect = x0, y0, x1, y1 in device pixels of the
 // canvas (origin top-left); look = corner radius (px), blur 0..1, dim 0..1, opacity 0..1.
 struct ScrimRect { rect: vec4f, look: vec4f }
 struct ScrimUniforms {
@@ -151,7 +160,8 @@ struct ScrimUniforms {
 }
 @group(1) @binding(3) var<uniform> scrim: ScrimUniforms;
 ${scrimLevels.map((i) => `@group(1) @binding(${SCRIM_LEVEL_BINDING + i}) var scrimLevel${i}: texture_2d<f32>;`).join('\n')}
-
+`;
+const WGSL_DISPLAY = /* wgsl */ `
 fn agxContrast(x: vec3f) -> vec3f {
   let x2 = x * x;
   let x4 = x2 * x2;
@@ -191,7 +201,8 @@ fn srgbOetf(c: vec3f) -> vec3f {
 }
 fn compress(c: vec3f) -> vec3f { return c / (1.0 + max(c.r, max(c.g, c.b))); }
 fn expand(c: vec3f) -> vec3f { return c / max(1.0 - max(c.r, max(c.g, c.b)), 1e-4); }
-
+`;
+const WGSL_SCRIM_FUNCTIONS = /* wgsl */ `
 /// One level of the bloom's down chain at 'uv' through a four-tap tent (half a texel each way): the texel
 /// grid of a level a few dozen texels across does not show in the backdrop.
 fn scrimTent(level: texture_2d<f32>, uv: vec2f) -> vec3f {
@@ -226,7 +237,8 @@ fn scrimCover(r: ScrimRect, px: vec2f) -> f32 {
   let sd = length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - radius;
   return clamp(0.5 - sd, 0.0, 1.0);
 }
-
+`;
+const WGSL_FS_HEAD = /* wgsl */ `
 @fragment fn fs(in: FullscreenOut) -> @location(0) vec4f {
   let size = vec2i(textureDimensions(sceneTex));
   let ip = clamp(vec2i(in.uv * vec2f(size)), vec2i(0), size - 1);
@@ -248,7 +260,8 @@ fn scrimCover(r: ScrimRect, px: vec2f) -> f32 {
   }
   let bloom = textureSampleLevel(bloomTex, linearClamp, in.uv, 0.0).rgb;
   c = mix(c, bloom, tm.params.x);
-  // The UI scrim: scene-linear, before the display transform, so a panel's backdrop is toned like the scene.
+`;
+const WGSL_SCRIM_STEP = /* wgsl */ `  // The UI scrim: scene-linear, before the display transform, so a panel's backdrop is toned like the scene.
   let scrimCount = min(u32(scrim.header.x), ${UI_SCRIM_SLOTS}u);
   if (scrimCount > 0u) {
     for (var i = 0u; i < scrimCount; i++) {
@@ -259,7 +272,8 @@ fn scrimCover(r: ScrimRect, px: vec2f) -> f32 {
       }
     }
   }
-  var o = srgbOetf(displayTransform(c));
+`;
+const WGSL_FS_TAIL = /* wgsl */ `  var o = srgbOetf(displayTransform(c));
   let n = blueNoise(vec2u(in.position.xy));
   o += vec3f((n.x + n.y - 1.0) * tm.params.z / 255.0);
   return vec4f(o, 1.0);
@@ -267,12 +281,25 @@ fn scrimCover(r: ScrimRect, px: vec2f) -> f32 {
 `;
 
 /**
- * The pass's shader with the camera curve (look 2): the present text with the three lines of `agx` that
- * apply its curve replaced. The present text itself is not touched, so with the switch off the pass
- * compiles what it always compiled. Throws if the lines are not there (a unit test holds it).
+ * The pass with its scrim step, in one shader (the text of the pass as the presentation sweep made it, to
+ * the character). Drawn over the whole frame it is that pass; the tonemap pass draws it inside the scissors
+ * of the published rectangles.
  */
-export function tonemapWgsl(look: Look): string {
-  if (look === 1) return TONEMAP_WGSL;
+export const TONEMAP_WGSL = WGSL_HEAD + WGSL_SCRIM_BINDINGS + WGSL_DISPLAY + WGSL_SCRIM_FUNCTIONS + WGSL_FS_HEAD + WGSL_SCRIM_STEP + WGSL_FS_TAIL;
+
+/**
+ * The pass without the scrim: no scrim binding, no scrim function, no scrim branch. It is TONEMAP_WGSL
+ * without its scrim pieces and, to the character, the text of the pass before the scrim existed: RCAS, the
+ * bloom mix, the display transform, the OETF and the dither, the same statements in the same order.
+ */
+export const TONEMAP_BASE_WGSL = WGSL_HEAD + WGSL_DISPLAY + WGSL_FS_HEAD + WGSL_FS_TAIL;
+
+/**
+ * A text of the pass with the camera curve (look 2): the three lines of `agx` that apply its curve replaced.
+ * With look 1 the text is returned as it is. Throws if the lines are not there (a unit test holds it).
+ */
+function withLook(text: string, look: Look): string {
+  if (look === 1) return text;
   const from = `  var v = inset * max(c, vec3f(0.0));
   v = (clamp(log2(max(v, vec3f(1e-10))), vec3f(minEv), vec3f(maxEv)) - minEv) / (maxEv - minEv);
   v = agxContrast(v);
@@ -287,19 +314,80 @@ export function tonemapWgsl(look: Look): string {
   let camMix = smoothstep(vec3f(${CAMERA_BLEND_FROM.toFixed(1)}), vec3f(${CAMERA_BLEND_TO.toFixed(1)}), log2(max(lin, vec3f(1e-10)) / 0.18));
   v = mix(v, pow(max(camGrey, vec3f(0.0)), vec3f(${(1 / AGX_GREY_POWER).toFixed(9)})), camMix);
 `;
-  if (TONEMAP_WGSL.split(from).length !== 2) throw new Error('tonemap: the lines of agx() that look 2 replaces are not in the shader text');
-  return TONEMAP_WGSL.replace(from, to);
+  if (text.split(from).length !== 2) throw new Error('tonemap: the lines of agx() that look 2 replaces are not in the shader text');
+  return text.replace(from, to);
 }
 
+/**
+ * The pass's shader with its scrim step under a look: look 1 is TONEMAP_WGSL itself (with the switch off the
+ * pass compiles the present text), look 2 the camera curve.
+ */
+export function tonemapWgsl(look: Look): string {
+  return withLook(TONEMAP_WGSL, look);
+}
+
+/** The pass's shader without the scrim under a look: look 1 is TONEMAP_BASE_WGSL itself. */
+export function tonemapBaseWgsl(look: Look): string {
+  return withLook(TONEMAP_BASE_WGSL, look);
+}
+
+/**
+ * How the pass is drawn.
+ *   'auto'    the pass as it runs (`Tonemap.draw`)
+ *   'split'   as 'auto', but never the one draw on account of the rectangles' area
+ *   'single'  TONEMAP_WGSL in one draw over the whole frame: the pass as the presentation sweep made it
+ *   'base'    TONEMAP_BASE_WGSL alone, whatever is published: the pass before the scrim existed
+ * Everything but 'auto' is for tests and measurements (LabApp.setTonemapPath).
+ */
+export type TonemapPath = 'auto' | 'split' | 'single' | 'base';
+
+/** What the last draw of the pass did. */
+export interface TonemapDrawInfo {
+  /**
+   * 'base': the pass without the scrim alone; 'split': that, then the scrim shader inside the scissors;
+   * 'single': the scrim shader over the whole frame.
+   */
+  drawn: 'base' | 'split' | 'single';
+  /** The scissor rectangles the scrim shader was drawn in ('split'), and the pixels inside them. */
+  scissors: number;
+  scissorPixels: number;
+  look: Look;
+}
+
+/** The switch of tests and measurements, for every Tonemap of the page, and what the last draw did. */
+export const tonemapDebug: { path: TonemapPath; last: TonemapDrawInfo | null } = { path: 'auto', last: null };
+
+/**
+ * Above this share of the frame inside the scissors the pass is the one draw of the scrim shader again:
+ * inside a scissor a pixel is shaded twice (by the pass without the scrim, then by the scrim shader), so a
+ * scrim over most of the frame is cheaper in one draw. The picture is the same either way.
+ *
+ * As measured (tests/browser/render-core/scrim.perf.spec.ts, 2026-11-17, RTX 5090, 2560 x 1440, p50 of
+ * `core.tonemap`): the pass without the scrim 0.032 ms; the one draw 0.104 to 0.109 ms with any rectangle;
+ * with scissors 0.038 ms at 5 % of the frame, 0.082 at 40 %, 0.101 at 57 % (four panels), 0.138 at 100 %.
+ * The two cross between 60 % and 65 %.
+ */
+export const SCRIM_SPLIT_MAX_SHARE = 0.6;
+
 export class Tonemap {
-  private readonly layout: GPUBindGroupLayout;
-  private readonly pipeline: Tracked<GPURenderPipeline>;
+  private readonly baseLayout: GPUBindGroupLayout;
+  private readonly scrimLayout: GPUBindGroupLayout;
+  private readonly basePipeline: Tracked<GPURenderPipeline>;
+  private readonly scrimPipeline: Tracked<GPURenderPipeline>;
   private readonly uniform: GPUBuffer;
-  private group: GPUBindGroup | null = null;
+  private baseGroup: GPUBindGroup | null = null;
+  private scrimGroup: GPUBindGroup | null = null;
   private scene: GPUTextureView | null = null;
   private bloom: GPUTextureView | null = null;
   private scrimRects: GPUBuffer | null = null;
   private scrimViews: readonly GPUTextureView[] = [];
+  /** The scissors of the rectangles last seen (null: over the whole frame), and what they were made from. */
+  private scissors: readonly ScrimScissor[] | null = null;
+  private scissorPixels = 0;
+  private scissorsOf: Float32Array | null = null;
+  private scissorsWidth = 0;
+  private scissorsHeight = 0;
+  private readonly info: TonemapDrawInfo;
 
   constructor(
     private readonly ctx: RenderContext,
@@ -308,68 +396,157 @@ export class Tonemap {
     look: Look = 1,
   ) {
     const device = ctx.device;
-    const wgsl = tonemapWgsl(look);
-    this.layout = device.createBindGroupLayout({
-      label: 'tonemap',
+    this.info = { drawn: 'base', scissors: 0, scissorPixels: 0, look };
+    const baseEntries: GPUBindGroupLayoutEntry[] = [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+    ];
+    this.baseLayout = device.createBindGroupLayout({ label: 'tonemap', entries: baseEntries });
+    this.scrimLayout = device.createBindGroupLayout({
+      label: 'tonemap.scrim',
       entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        ...baseEntries,
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: UI_SCRIM_BYTES } },
         ...scrimLevels.map((i): GPUBindGroupLayoutEntry => ({ binding: SCRIM_LEVEL_BINDING + i, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } })),
       ],
     });
     this.uniform = device.createBuffer({ label: 'tonemap', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    this.pipeline = shaders.tracked(() => {
-      const module = shaders.createModule('core.tonemap', wgsl);
-      return device.createRenderPipeline({
-        label: 'core.tonemap',
-        layout: device.createPipelineLayout({ bindGroupLayouts: [ctx.frameBindGroupLayout, this.layout] }),
-        vertex: { module, entryPoint: 'fullscreenVs' },
-        fragment: { module, entryPoint: 'fs', targets: [{ format: ctx.canvasFormat }] },
+    const pipeline = (label: string, wgsl: string, layout: GPUBindGroupLayout): Tracked<GPURenderPipeline> =>
+      shaders.tracked(() => {
+        const module = shaders.createModule(label, wgsl);
+        return device.createRenderPipeline({
+          label,
+          layout: device.createPipelineLayout({ bindGroupLayouts: [ctx.frameBindGroupLayout, layout] }),
+          vertex: { module, entryPoint: 'fullscreenVs' },
+          fragment: { module, entryPoint: 'fs', targets: [{ format: ctx.canvasFormat }] },
+        });
       });
-    });
+    // Both under the same look: the display transform of a pixel is the same whichever of them shades it.
+    this.basePipeline = pipeline('core.tonemap', tonemapBaseWgsl(look), this.baseLayout);
+    this.scrimPipeline = pipeline('core.tonemap.scrim', tonemapWgsl(look), this.scrimLayout);
   }
 
-  /** The stage's tracked pipelines, for `shaders.warm`. */
+  /** The stage's tracked pipelines, for `shaders.warm`: both, so the first frame of a menu compiles nothing. */
   pipelines(): Tracked<unknown>[] {
-    return [this.pipeline];
+    return [this.basePipeline, this.scrimPipeline];
   }
 
   /**
    * `scene`: pre-exposed linear image at any resolution; `bloom`: blurred image to mix in (or a black texture);
-   * `scrim`: the buffer published as 'ui.scrimRects' and the SCRIM_LEVELS levels of the bloom's down chain the
-   * scrim reads, finest first (PostOutputs.scrimLevels).
+   * `scrim`: the buffer published as 'ui.scrimRects' and the levels of the bloom's down chain the scrim reads
+   * with the size of the canvas (PostOutputs.scrimLevels).
+   *
+   * What is drawn:
+   * - The core knows what is in the buffer (its own default, or a buffer written through `writeScrimRects`):
+   *   the pass without the scrim over the whole frame; then, if a rectangle can change a pixel, the scrim
+   *   shader with the same triangle inside the scissors of the rectangles (`scrimScissors`), where it writes
+   *   the pixel anew from the same inputs. No rectangle, rectangles without an area, of opacity 0 or off the
+   *   canvas: the pass without the scrim and nothing else. The scissor is the whole canvas again afterwards
+   *   (the overlays are drawn in this pass).
+   * - The core does not know what is in the buffer (written with `queue.writeBuffer` directly), or the
+   *   scissors hold more than SCRIM_SPLIT_MAX_SHARE of the frame: the scrim shader in one draw over the whole
+   *   frame, the pass as the presentation sweep made it.
+   * The picture is the same in every case: inside a scissor a pixel is what the scrim shader makes of it,
+   * outside it no rectangle covers it and the two shaders do the same arithmetic.
    */
   draw(
     pass: GPURenderPassEncoder,
     scene: GPUTextureView,
     bloom: GPUTextureView,
     params: { bloomMix: number; sharpness: number; dither: number },
-    scrim: { rects: GPUBuffer; levels: readonly GPUTextureView[] },
+    scrim: { rects: GPUBuffer; levels: ScrimLevels },
   ): void {
     const device = this.ctx.device;
-    if (scrim.levels.length !== SCRIM_LEVELS) throw new Error(`tonemap: ${scrim.levels.length} scrim levels, the pass binds ${SCRIM_LEVELS}`);
+    const levels = scrim.levels;
+    if (levels.views.length !== SCRIM_LEVELS) throw new Error(`tonemap: ${levels.views.length} scrim levels, the pass binds ${SCRIM_LEVELS}`);
     device.queue.writeBuffer(this.uniform, 0, new Float32Array([params.bloomMix, params.sharpness, params.dither, 0]));
-    if (!this.group || this.scene !== scene || this.bloom !== bloom || this.scrimRects !== scrim.rects || scrim.levels.some((v, i) => v !== this.scrimViews[i])) {
+    if (this.scene !== scene || this.bloom !== bloom) {
       this.scene = scene;
       this.bloom = bloom;
-      this.scrimRects = scrim.rects;
-      this.scrimViews = [...scrim.levels];
-      this.group = device.createBindGroup({
-        label: 'tonemap',
-        layout: this.layout,
-        entries: [
-          { binding: 0, resource: { buffer: this.uniform } },
-          { binding: 1, resource: scene },
-          { binding: 2, resource: bloom },
-          { binding: 3, resource: { buffer: scrim.rects } },
-          ...scrim.levels.map((view, i): GPUBindGroupEntry => ({ binding: SCRIM_LEVEL_BINDING + i, resource: view })),
-        ],
-      });
+      this.baseGroup = null;
+      this.scrimGroup = null;
     }
-    pass.setPipeline(this.pipeline.get());
-    pass.setBindGroup(1, this.group);
+    if (this.scrimRects !== scrim.rects || levels.views.some((v, i) => v !== this.scrimViews[i])) {
+      this.scrimRects = scrim.rects;
+      this.scrimViews = [...levels.views];
+      this.scrimGroup = null;
+    }
+
+    const path = tonemapDebug.path;
+    const scissors = path === 'single' ? null : path === 'base' ? [] : this.scissorsFor(scrim.rects, levels, path === 'auto');
+    const info = this.info;
+    tonemapDebug.last = info;
+    info.scissors = 0;
+    info.scissorPixels = 0;
+    if (scissors === null) {
+      info.drawn = 'single';
+      pass.setPipeline(this.scrimPipeline.get());
+      pass.setBindGroup(1, this.scrimBindGroup());
+      pass.draw(3);
+      return;
+    }
+    info.drawn = 'base';
+    pass.setPipeline(this.basePipeline.get());
+    pass.setBindGroup(1, this.baseBindGroup());
     pass.draw(3);
+    if (scissors.length === 0) return;
+    info.drawn = 'split';
+    info.scissors = scissors.length;
+    info.scissorPixels = this.scissorPixels;
+    pass.setPipeline(this.scrimPipeline.get());
+    pass.setBindGroup(1, this.scrimBindGroup());
+    for (const s of scissors) {
+      pass.setScissorRect(s.x, s.y, s.width, s.height);
+      pass.draw(3);
+    }
+    pass.setScissorRect(0, 0, levels.width, levels.height);
+  }
+
+  /**
+   * The scissors of the rectangles in `rects`, or null when the scrim shader is to be drawn over the whole
+   * frame: the contents or the canvas size are not known here, or (`bounded`) the scissors hold too much of
+   * the frame.
+   */
+  private scissorsFor(rects: GPUBuffer, levels: ScrimLevels, bounded: boolean): readonly ScrimScissor[] | null {
+    const packed = scrimRectsOf(rects);
+    if (!packed || !(levels.width > 0 && levels.height > 0)) return null;
+    if (packed !== this.scissorsOf || levels.width !== this.scissorsWidth || levels.height !== this.scissorsHeight) {
+      this.scissorsOf = packed;
+      this.scissorsWidth = levels.width;
+      this.scissorsHeight = levels.height;
+      this.scissors = scrimScissors(packed, levels.width, levels.height);
+      this.scissorPixels = (this.scissors ?? []).reduce((a, s) => a + s.width * s.height, 0);
+    }
+    if (bounded && this.scissorPixels > SCRIM_SPLIT_MAX_SHARE * levels.width * levels.height) return null;
+    return this.scissors;
+  }
+
+  private baseBindGroup(): GPUBindGroup {
+    this.baseGroup ??= this.ctx.device.createBindGroup({
+      label: 'tonemap',
+      layout: this.baseLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.uniform } },
+        { binding: 1, resource: this.scene! },
+        { binding: 2, resource: this.bloom! },
+      ],
+    });
+    return this.baseGroup;
+  }
+
+  private scrimBindGroup(): GPUBindGroup {
+    this.scrimGroup ??= this.ctx.device.createBindGroup({
+      label: 'tonemap.scrim',
+      layout: this.scrimLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.uniform } },
+        { binding: 1, resource: this.scene! },
+        { binding: 2, resource: this.bloom! },
+        { binding: 3, resource: { buffer: this.scrimRects! } },
+        ...this.scrimViews.map((view, i): GPUBindGroupEntry => ({ binding: SCRIM_LEVEL_BINDING + i, resource: view })),
+      ],
+    });
+    return this.scrimGroup;
   }
 }

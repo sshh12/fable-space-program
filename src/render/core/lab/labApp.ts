@@ -19,7 +19,8 @@ import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { acquireGpu, type GpuHandle } from '@/core/gpu/device';
 import { v3 } from '@/core/math';
 import { installTestApi, type TestApiController } from '@/core/testing/testApi';
-import { packScrimRects, type UiScrimRect } from '../post/scrim';
+import { packScrimRects, writeScrimRects, type UiScrimRect } from '../post/scrim';
+import { tonemapDebug, type TonemapDrawInfo, type TonemapPath } from '../post/tonemap';
 import { createRenderer, type CoreRenderer, type RendererOptions } from '../renderer';
 import { labCameraFromQuery, type LabCamera, type LabCameraSettings, type LabCameraSpec } from './camera';
 
@@ -72,9 +73,16 @@ export interface LabApp {
   setLoop(running: boolean): void;
   /**
    * Publish panel rectangles for the core's UI scrim step ('ui.scrimRects'; device pixels of the canvas,
-   * origin top-left), as a menu will; null or an empty list restores the default (no rectangle).
+   * origin top-left), as a menu will: the buffer written through `writeScrimRects`, so the core draws the
+   * scrim inside the rectangles' scissors. null or an empty list restores the default (no rectangle).
+   * `how` = 'raw' writes another buffer with `queue.writeBuffer` directly, as a publisher that does not use
+   * `writeScrimRects`: the core does not know its contents and draws the scrim shader over the whole frame.
    */
-  setScrim(rects: readonly UiScrimRect[] | null): void;
+  setScrim(rects: readonly UiScrimRect[] | null, how?: 'tracked' | 'raw'): void;
+  /** Tests and measurements: how the tonemap pass of this page is drawn (post/tonemap.ts TonemapPath). */
+  setTonemapPath(path: TonemapPath): void;
+  /** What the tonemap pass did in the frame last rendered. */
+  tonemapDraw(): TonemapDrawInfo | null;
   dispose(): void;
 }
 
@@ -126,8 +134,9 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
     if (options.camera && !queryPlaces) camera.spec = typeof options.camera === 'function' ? options.camera(snapshot, defs) : options.camera;
     let cameraState = camera.state(snapshot);
     let paused = query.get('paused') === '1';
-    /** The buffer of setScrim, created with the first rectangle. */
+    /** The buffers of setScrim, each created with its first rectangle: the one the core knows the contents of, and the raw one. */
     let scrimBuffer: GPUBuffer | null = null;
+    let scrimBufferRaw: GPUBuffer | null = null;
     let deterministic = false;
     let onFrame = options.onFrame ?? null;
     let looping = true;
@@ -200,15 +209,26 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
       query,
       snapshot: () => snapshot,
       cameraState: () => cameraState,
-      setScrim(rects) {
+      setScrim(rects, how = 'tracked') {
         if (!rects || rects.length === 0) {
           renderer.resources.reset('ui.scrimRects');
           return;
         }
-        scrimBuffer ??= gpu.device.createBuffer({ label: 'lab.scrimRects', size: UI_SCRIM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-        gpu.device.queue.writeBuffer(scrimBuffer, 0, packScrimRects(rects) as Float32Array<ArrayBuffer>);
+        const usage = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST;
+        if (how === 'raw') {
+          scrimBufferRaw ??= gpu.device.createBuffer({ label: 'lab.scrimRects.raw', size: UI_SCRIM_BYTES, usage });
+          gpu.device.queue.writeBuffer(scrimBufferRaw, 0, packScrimRects(rects) as Float32Array<ArrayBuffer>);
+          renderer.resources.publish('ui.scrimRects', scrimBufferRaw);
+          return;
+        }
+        scrimBuffer ??= gpu.device.createBuffer({ label: 'lab.scrimRects', size: UI_SCRIM_BYTES, usage });
+        writeScrimRects(gpu.device, scrimBuffer, rects);
         renderer.resources.publish('ui.scrimRects', scrimBuffer);
       },
+      setTonemapPath(path) {
+        tonemapDebug.path = path;
+      },
+      tonemapDraw: () => (tonemapDebug.last ? { ...tonemapDebug.last } : null),
       setPaused(p) {
         paused = p;
       },

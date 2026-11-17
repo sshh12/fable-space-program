@@ -3,6 +3,7 @@
  * lighting) works when nobody has published anything.
  */
 import { OCEAN_WETNESS_BYTES, PLASMA_WINDOW_BYTES, UI_SCRIM_BYTES, type SharedResourceKey, type SharedResourceMap, type SharedResources } from '@/core/contracts/render';
+import { writeScrimRects } from './post/scrim';
 import { SHADOW_MAX_CASCADES } from './shaders/chunksLighting';
 import { createSolidTexture } from './util/gpu';
 
@@ -47,6 +48,11 @@ export function createSharedResources(device: GPUDevice): CoreSharedResources {
     return b;
   };
 
+  // No rectangle, written as a publisher writes its own buffer: the core knows what is in it (post/scrim.ts),
+  // so the tonemap pass is the pass without the scrim.
+  const scrimRects = device.createBuffer({ label: 'default.uiScrimRects', size: UI_SCRIM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  writeScrimRects(device, scrimRects, []);
+
   const nearField = new ArrayBuffer(16);
   new Int32Array(nearField, 0, 1)[0] = -1;
 
@@ -73,7 +79,7 @@ export function createSharedResources(device: GPUDevice): CoreSharedResources {
     'ui.navball': tex2d('navball', 'rgba8unorm', [0, 0, 0, 1]),
     'ui.mfd': texArray('mfd', 'rgba8unorm', [0, 0, 0, 1]),
     // A zero header: no rectangle, so the tonemap pass runs without its scrim step.
-    'ui.scrimRects': uniform('uiScrimRects', new Uint8Array(UI_SCRIM_BYTES)),
+    'ui.scrimRects': scrimRects,
     'scene.depthOpaque': depthDefault('sceneDepthOpaque', 1, false, 0),
     'scene.depth': depthDefault('sceneDepth', 1, false, 0),
     'scene.depthHalf': tex2d('sceneDepthHalf', 'rg32float', [0, 0]),

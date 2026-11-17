@@ -48,5 +48,5 @@ export { boxMesh, cylinderMesh, planeMesh, sphereMesh, triangleCount } from './m
 export { CASCADE_RADII, MAX_CASCADES } from './shadows/cascadeMath';
 export { EV_DARK_FLOOR, EV_MAX, EV_MIN, EXPOSURE_K, MID_GREY, exposureFromEv100, exposureHintOf, ev100ForMidGrey, followExposureHint, sunny16Ev } from './post/exposure';
 export { DEFAULT_GOVERNOR, type GovernorConfig } from './post/governor';
-export { SCRIM_LEVELS, packScrimRects, scrimCoverage, scrimLevelIndices, scrimLevelOf, type UiScrimRect } from './post/scrim';
+export { SCRIM_LEVELS, packScrimRects, scrimCoverage, scrimLevelIndices, scrimLevelOf, scrimScissors, writeScrimRects, type ScrimScissor, type UiScrimRect } from './post/scrim';
 export { MipGenerator, createSolidTexture, createTextureChecked, f16ToF32, f32ToF16, mipCount, readTexturePixels } from './util/gpu';
