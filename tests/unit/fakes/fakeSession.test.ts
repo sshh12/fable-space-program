@@ -12,7 +12,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import { TICKS_PER_SECOND } from '@/core/contracts/net';
-import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import type { DockingPortState, PartSnapshot, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import {
@@ -30,7 +30,7 @@ import {
 import { activeVesselOf, craftIdOf, partKeyOf, revisionOf, targetOf } from '@/core/access/snapshotAccess';
 import { FRAME_HISTORY_EPOCHS, FrameEpochTracker, rebasePoint, rebaseVelocity } from '@/core/math/frame';
 import { quat } from '@/core/math/quat';
-import { v3 } from '@/core/math/vec3';
+import { v3, type Vec3 } from '@/core/math/vec3';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { flatTerrain, loadLibrary, makeSim } from '../sim-world/helpers';
 
@@ -86,6 +86,73 @@ function fieldDifferences(a: unknown, b: unknown, path = ''): string[] {
   return out;
 }
 
+/** The part of a vessel that a part key names. Keys are compared with the keys of the part list, never taken apart. */
+const partByKey = (v: VesselSnapshot, key: string): PartSnapshot | undefined => v.parts.find((p) => partKeyOf(v, p) === key);
+
+/** The vessel and the part a part key names in a snapshot; null when no part list has it. */
+function findKey(s: SimSnapshot, key: string): { vessel: VesselSnapshot; part: PartSnapshot } | null {
+  for (const vessel of s.vessels) {
+    const part = partByKey(vessel, key);
+    if (part) return { vessel, part };
+  }
+  return null;
+}
+
+/** Origin of a part in the ROOT frame, and the centre of its top face (the mating face of the fake's port part). */
+const partRoot = (v: VesselSnapshot, p: PartSnapshot): Vec3 => v3.add(v.rRoot, quat.rotate(v.q, p.localPos));
+const faceRoot = (v: VesselSnapshot, p: PartSnapshot): Vec3 => v3.add(v.rRoot, quat.rotate(v.q, v3.add(p.localPos, quat.rotate(p.localRot, v3.new(0, defs.parts[p.def]!.bounds.yMax, 0)))));
+const faceAxisRoot = (v: VesselSnapshot, p: PartSnapshot): Vec3 => quat.rotate(v.q, quat.rotate(p.localRot, v3.unitY()));
+
+/**
+ * Ids are opaque and consistent (contracts/sim.ts, "Ids"): every part id that a helm, a dock link, the docking
+ * instrument, a port state or an event states names a part that is in a part list of the snapshot, in the
+ * vessel the field is about.
+ */
+function expectNamedParts(s: SimSnapshot, ports: readonly { partKey: string; state: DockingPortState }[], label: string): void {
+  for (const v of s.vessels) {
+    const helm = v.helm!;
+    expect(v.crafts!.some((c) => c.id === helm.craftId), `${label} ${v.id}: the helm's craft is aboard`).toBe(true);
+    // A vessel without parts has no control point (the empty string); every other names one of its parts, of the helm's craft.
+    if (v.parts.length === 0) expect(helm.controlPart, `${label} ${v.id}`).toBe('');
+    else expect(craftIdOf(v, partByKey(v, helm.controlPart)!), `${label} ${v.id}: the control part ${helm.controlPart} is a part of the helm's craft`).toBe(helm.craftId);
+    for (const l of v.links ?? []) {
+      const a = partByKey(v, l.a);
+      const b = partByKey(v, l.b);
+      expect(a && b, `${label} ${v.id}: the link ${l.a} - ${l.b} joins two parts of the vessel`).toBeTruthy();
+      expect(craftIdOf(v, a!), `${label} ${v.id}: a dock link joins two craft`).not.toBe(craftIdOf(v, b!));
+    }
+    // Every craft of a vessel of several is joined to the others by its links (the forest of a docked vessel).
+    const crafts = v.crafts!;
+    const joined = new Set([crafts[0]!.id]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const l of v.links ?? []) {
+        const [a, b] = [craftIdOf(v, partByKey(v, l.a)!), craftIdOf(v, partByKey(v, l.b)!)];
+        if (joined.has(a) !== joined.has(b)) {
+          joined.add(a).add(b);
+          grew = true;
+        }
+      }
+    }
+    expect([...joined].sort(), `${label} ${v.id}: the links join every craft`).toEqual(crafts.map((c) => c.id).sort());
+  }
+  const active = activeVesselOf(s)!;
+  const docking = s.readouts.docking;
+  if (docking) {
+    expect(partByKey(active, docking.ownPort), `${label}: the own port ${docking.ownPort} is a part of the active vessel`).toBeDefined();
+    expect(findKey(s, docking.targetPort), `${label}: the target port ${docking.targetPort} is a part of a vessel`).not.toBeNull();
+  }
+  for (const p of ports) {
+    expect(findKey(s, p.partKey), `${label}: the port ${p.partKey} is a part of a vessel`).not.toBeNull();
+    if (p.state.peer) expect(partByKey(s.vessels.find((v) => v.id === p.state.peer!.vesselId)!, p.state.peer.partKey), `${label}: the peer of ${p.partKey} is a part of the vessel it names`).toBeDefined();
+  }
+  for (const e of s.events) {
+    if (e.type !== 'dockCapture' && e.type !== 'docked') continue;
+    expect(s.vessels.some((v) => v.id === e.vesselId), `${label}: the vessel of ${e.type} is in the snapshot`).toBe(true);
+    for (const key of [e.partId, e.otherPartId]) expect(findKey(s, key), `${label}: ${e.type} names the part ${key}`).not.toBeNull();
+  }
+}
+
 const isUnit = (v: { x: number; y: number; z: number }): boolean => Math.abs(v3.len(v) - 1) < 1e-9;
 const isUnitQuat = (q: { x: number; y: number; z: number; w: number }): boolean => Math.abs(Math.hypot(q.x, q.y, q.z, q.w) - 1) < 1e-9;
 
@@ -133,7 +200,7 @@ function expectContract(s: SimSnapshot, label: string): void {
       expect(c.id.includes('/') || c.id.includes('~'), label).toBe(false);
     }
     expect(crafts.some((c) => c.id === v.helm!.craftId), `${label} ${v.id}: the helm's craft is aboard`).toBe(true);
-    for (const l of v.links ?? []) for (const key of [l.a, l.b]) expect(craftIds.has(key.slice(0, key.lastIndexOf('/'))), `${label}: a dock link joins craft of the vessel`).toBe(true);
+    for (const l of v.links ?? []) for (const key of [l.a, l.b]) expect(partByKey(v, key), `${label}: the dock link's port ${key} is a part of the vessel`).toBeDefined();
   }
   // The singleton blocks describe the active vessel: unit marker directions in the vessel frame.
   const m = s.navball.markers;
@@ -272,9 +339,11 @@ describe('the fake session: frames', () => {
   });
 
   it('is deterministic: the same options and calls give the same snapshots, bit for bit', () => {
+    const parts = vesselPartSnapshots(assembleVessel(defs, VEHICLE, { stagesAlreadyFired: 6 }));
     for (const scene of [...FAKE_SCENES, ...FAKE_V2_SCENES]) {
       const run = (): string => {
-        const s = createFakeSession(defs, { scene });
+        // The scenes about ports and links need a part list; the flight scenes run without one as well.
+        const s = createFakeSession(defs, (FAKE_V2_SCENES as readonly string[]).includes(scene) ? { scene, vehicleId: VEHICLE, parts } : { scene });
         const out: SimSnapshot[] = [s.snapshot()];
         s.setControls({ pitch: 0.3, yaw: -0.1, roll: 0, translate: v3.zero(), throttle: 0.5 });
         for (let i = 0; i < 20; i++) s.advance(1 / 60);
@@ -382,42 +451,12 @@ describe('the fake session: scenes of the shared universe', () => {
     expect(session.snapshot().readouts.target).toBeNull();
   });
 
-  it('dockingApproach: the docking readout, the port states, soft capture and hard dock as events', () => {
-    const session = v2('dockingApproach');
-    const s = session.snapshot();
-    expect(s.vessels.map((v) => v.id)).toEqual([FAKE_VESSEL_ID, FAKE_STATION_ID]);
-    const d = s.readouts.docking!;
-    expect(s.readouts.target!.ref.kind).toBe('port');
-    expect(d.ownPort).toBe(`${FAKE_VESSEL_ID}/port`);
-    expect(d.targetPort).toBe(`${FAKE_STATION_ID}/port`);
-    expect(s.vessels[0]!.helm!.controlPart).toBe(d.ownPort);
-    expect(d.phase).toBe('approach');
-    expect(d.axial).toBeCloseTo(v3.dist(s.vessels[0]!.rRoot, s.vessels[1]!.rRoot) - 1.2, 6);
-    expect(d.closing).toBeCloseTo(0.1, 2);
-    // Outside the lateral limit at first (0.4 m against 0.3), inside every other.
-    expect(d.within).toEqual({ lateral: false, angle: true, roll: true, closing: true, lateralSpeed: true, rate: true });
-    expect(s.readouts.sasModesAvailable).toContain('portAlign');
-    expect(session.portStates().map((p) => [p.partKey, p.state.state, p.state.armed, p.state.peer])).toEqual([
-      [d.ownPort, 'ready', true, null],
-      [d.targetPort, 'ready', true, null],
-    ]);
-    // Fly the approach: 13.8 m at 0.1 m/s, then ten seconds of soft capture.
-    const events: string[] = [];
-    let last = s;
-    for (let i = 0; i < 160 * 10 && last.readouts.docking?.phase !== 'hard'; i++) {
-      session.advance(0.1);
-      last = session.snapshot();
-      for (const e of last.events) events.push(e.type);
-    }
-    expect(events).toEqual(['dockCapture', 'docked']);
-    expect(last.readouts.docking!.phase).toBe('hard');
-    expect(last.readouts.docking!.axial).toBeCloseTo(0, 6);
-    expect(last.readouts.docking!.within.lateral).toBe(true);
-    // Docked: the station's own vessel is gone, and each port names the other as its peer.
-    expect(last.vessels.map((v) => v.id)).toEqual([FAKE_VESSEL_ID]);
-    expect(session.portStates().map((p) => p.state.state)).toEqual(['hard', 'hard']);
-    expect(session.portStates()[0]!.state.peer).toEqual({ vesselId: FAKE_STATION_ID, partKey: d.targetPort });
+  it('a scene about ports and links is built from a part list and says so when it is given none', () => {
+    expect(() => createFakeSession(defs, { scene: 'dockingApproach' })).toThrow(/needs a part list/);
+    expect(() => createFakeSession(defs, { scene: 'assembly' })).toThrow(/needs a part list/);
     expect(v2('lowOrbit' as never).portStates()).toEqual([]);
+    // A vessel without parts has no control point, and states none (a session states the empty string).
+    for (const scene of ['rendezvous', 'echoes', 'timeLive'] as const) for (const v of createFakeSession(defs, { scene }).snapshot().vessels) expect(v.helm!.controlPart, `${scene} ${v.id}`).toBe('');
   });
 
   it('assembly: three craft of one vehicle in one vessel, links, the helm, a radius that spans them, the store', () => {
@@ -431,7 +470,10 @@ describe('the fake session: scenes of the shared universe', () => {
     expect(new Set(v.crafts!.map((c) => c.vehicleId))).toEqual(new Set([VEHICLE]));
     expect(v.crafts!.map((c) => c.ownerCallsign)).toEqual(['YOU', 'VEGA', null]);
     expect(v.links!.length).toBe(2);
-    expect(v.helm).toEqual({ accountId: 'fake-account', callsign: 'YOU', craftId: FAKE_VESSEL_ID, controlPart: `${FAKE_VESSEL_ID}/${v.parts[0]!.instanceId}` });
+    // Every link joins two parts of two craft, each port part holds one craft, and the links reach every craft.
+    expectNamedParts(s, session.portStates(), 'assembly');
+    expect(new Set(v.links!.flatMap((l) => [l.a, l.b])).size).toBe(4);
+    expect(v.helm).toEqual({ accountId: 'fake-account', callsign: 'YOU', craftId: FAKE_VESSEL_ID, controlPart: partKeyOf(v, v.parts[0]!) });
     // Three times the parts, the same instance ids in each craft, every part key once.
     const perCraft = v.parts.length / 3;
     expect(v.parts.slice(0, perCraft).map((p) => p.instanceId)).toEqual(v.parts.slice(perCraft, 2 * perCraft).map((p) => p.instanceId));
@@ -445,7 +487,20 @@ describe('the fake session: scenes of the shared universe', () => {
     expect(view.vesselId).toBe(FAKE_ASSEMBLY_ID);
     expect(view.crafts.map((c) => c.craftId)).toEqual(v.crafts!.map((c) => c.id));
     expect(view.links).toEqual(v.links!.map((l) => ({ a: l.a, b: l.b })));
+    // The panel lists the ports the links name, each with the craft docked there; the pilots aboard are seated.
+    expect(view.crafts.map((c) => c.ports.map((p) => [p.portId, p.state, p.peerCraftId]))).toEqual([
+      [
+        [v.links![0]!.a, 'hard', 'fake-craft-b'],
+        [v.links![1]!.a, 'hard', 'fake-craft-c'],
+      ],
+      [[v.links![0]!.b, 'hard', FAKE_VESSEL_ID]],
+      [[v.links![1]!.b, 'hard', FAKE_VESSEL_ID]],
+    ]);
+    expect(view.crafts.map((c) => c.attended)).toEqual([true, true, false]);
+    expect(view.anchorCraftId).toBe(FAKE_VESSEL_ID);
+    expect(view.helm).toEqual({ accountId: v.helm!.accountId, callsign: v.helm!.callsign, craftId: v.helm!.craftId, request: null });
     expect(session.stores.census.get().get(FAKE_ASSEMBLY_ID)!.kind).toBe('assembly');
+    expect(session.stores.ships.get().map((r) => [r.vesselId, r.isAssembly, r.members])).toEqual([[FAKE_ASSEMBLY_ID, true, ['VEGA']]]);
   });
 
   it('echoes: a recorded echo behind the clock and a projected one ahead of it, each with the offer that reaches it', () => {
@@ -560,5 +615,238 @@ describe('the fake session: scenes of the shared universe', () => {
     expect(await other.universe.spawn(first.request)).toEqual({ ok: false, reason: 'The fake session launches nothing', alternative: null });
     expect((await other.universe.cancelSpawn()).ok).toBe(false);
     expect(other.stores.link.get().state).toBe('local');
+  });
+});
+
+/**
+ * The docking scene, step by step (review finding 3). What a docked vessel is, is the simulation's definition
+ * (docs/handoff/sim-core-v2.md, step 3; ARCHITECTURE 7.5): the heavier vessel is the base (equal mass: the
+ * lower id), its craft come first, its helm stays (a vacant one is granted to the pilot aboard), the arriving
+ * craft's parts are re-expressed in the base's frame as their own tree, a link joins the two port parts, the
+ * vessel has an assembly id and the absorbed one is a tombstone.
+ */
+describe('the fake session: the docking approach, step by step', () => {
+  type Session = ReturnType<typeof createFakeSession>;
+  const start = (): Session => createFakeSession(defs, { scene: 'dockingApproach', vehicleId: VEHICLE, parts: vesselPartSnapshots(assembleVessel(defs, VEHICLE, { stagesAlreadyFired: 6 })) });
+
+  /** Fly until an event of the type arrives: the snapshot that carries it, the one before it, and every event on the way. */
+  function flyTo(session: Session, type: SimEvent['type']): { before: SimSnapshot; at: SimSnapshot; events: SimEvent[] } {
+    const events: SimEvent[] = [];
+    let before = session.snapshot();
+    events.push(...before.events);
+    for (let i = 0; i < 200 * 10; i++) {
+      session.advance(0.1);
+      const at = session.snapshot();
+      events.push(...at.events);
+      if (at.events.some((e) => e.type === type)) return { before, at, events };
+      before = at;
+    }
+    throw new Error(`no ${type} event within 200 s`);
+  }
+
+  /** Every part of the snapshot by its key, as its offset from the origin of one part (the viewer's port part): the shape of the scene. */
+  function shape(s: SimSnapshot, originKey: string): Map<string, Vec3> {
+    const origin = findKey(s, originKey)!;
+    const o = partRoot(origin.vessel, origin.part);
+    const out = new Map<string, Vec3>();
+    for (const v of s.vessels) for (const p of v.parts) out.set(partKeyOf(v, p), v3.sub(partRoot(v, p), o));
+    return out;
+  }
+
+  it('before capture: two vessels of one craft each, the two ports name parts and face each other, the station is parked', () => {
+    const session = start();
+    const s = session.snapshot();
+    expectContract(s, 'approach');
+    expectNamedParts(s, session.portStates(), 'approach');
+    expect(s.vessels.map((v) => v.id)).toEqual([FAKE_VESSEL_ID, FAKE_STATION_ID]);
+    const [own, station] = s.vessels as [VesselSnapshot, VesselSnapshot];
+    expect(s.vessels.map((v) => v.crafts!.map((c) => c.id))).toEqual([[FAKE_VESSEL_ID], [FAKE_STATION_ID]]);
+    expect(s.vessels.map((v) => v.links)).toEqual([[], []]);
+    const d = s.readouts.docking!;
+    const t = s.readouts.target!;
+    // The target is the station's port and the control point is the own one: both are parts, the first of each craft here.
+    expect(t.ref).toEqual({ kind: 'port', vesselId: FAKE_STATION_ID, portId: d.targetPort });
+    expect(d.ownPort).toBe(partKeyOf(own, own.parts[0]!));
+    expect(d.targetPort).toBe(partKeyOf(station, station.parts[0]!));
+    expect(own.helm).toEqual({ accountId: 'fake-account', callsign: 'YOU', craftId: FAKE_VESSEL_ID, controlPart: d.ownPort });
+    // The station is another owner's and nobody is aboard: its helm is vacant and its owner is not in the roster.
+    expect(station.crafts![0]!.ownerCallsign).toBe('VEGA');
+    expect(station.helm).toEqual({ accountId: null, callsign: null, craftId: FAKE_STATION_ID, controlPart: d.targetPort });
+    expect(session.stores.roster.get()).toEqual([]);
+    // The two port faces look at each other along the line between them, 13.8 m apart; that gap is the instrument's.
+    const ownPort = partByKey(own, d.ownPort)!;
+    const theirPort = partByKey(station, d.targetPort)!;
+    const gap = v3.sub(faceRoot(station, theirPort), faceRoot(own, ownPort));
+    expect(v3.len(gap)).toBeCloseTo(13.8, 6);
+    expect(v3.dot(faceAxisRoot(own, ownPort), v3.normalize(gap))).toBeGreaterThan(1 - 1e-9);
+    expect(v3.dot(faceAxisRoot(station, theirPort), v3.normalize(gap))).toBeLessThan(-1 + 1e-9);
+    expect(d.phase).toBe('approach');
+    expect(d.axial).toBeCloseTo(13.8, 6);
+    expect(t.range).toBeCloseTo(d.axial, 9);
+    expect(t.rangeRate).toBeCloseTo(-0.1, 3);
+    expect(d.closing).toBeCloseTo(0.1, 2);
+    // Outside the lateral limit at first (0.4 m against 0.3), inside every other.
+    expect(d.within).toEqual({ lateral: false, angle: true, roll: true, closing: true, lateralSpeed: true, rate: true });
+    expect(s.readouts.sasModesAvailable).toContain('portAlign');
+    expect(s.readouts.sasMode).toBe('portAlign');
+    expect(session.portStates().map((p) => [p.partKey, p.state.state, p.state.armed, p.state.peer, p.state.progress])).toEqual([
+      [d.ownPort, 'ready', true, null, 0],
+      [d.targetPort, 'ready', true, null, 0],
+    ]);
+    // The stores: two ships in the census, the viewer's one a single craft, no assembly.
+    const census = session.stores.census.get();
+    expect([...census.keys()]).toEqual([FAKE_VESSEL_ID, FAKE_STATION_ID]);
+    expect([...census.values()].map((c) => [c.kind, c.craftIds])).toEqual([
+      ['ship', [FAKE_VESSEL_ID]],
+      ['ship', [FAKE_STATION_ID]],
+    ]);
+    expect(session.stores.assembly.get()).toBeNull();
+    expect(session.stores.ships.get().map((r) => [r.craftId, r.vesselId, r.isAssembly, r.members])).toEqual([[FAKE_VESSEL_ID, FAKE_VESSEL_ID, false, []]]);
+    // Half-way in, nothing has happened yet.
+    for (let i = 0; i < 600; i++) session.advance(0.1);
+    const mid = session.snapshot();
+    expect(mid.events).toEqual([]);
+    expect(mid.readouts.docking!.phase).toBe('approach');
+    expect(mid.readouts.docking!.axial).toBeCloseTo(13.8 - 60 * 0.1, 3);
+    expectNamedParts(mid, session.portStates(), 'half-way');
+  });
+
+  it('captured: the faces meet, one event with the two port parts, soft capture between two vessels that stay two', () => {
+    const session = start();
+    const d0 = session.peek().readouts.docking!;
+    const { at, events } = flyTo(session, 'dockCapture');
+    expect(events).toEqual([{ type: 'dockCapture', ut: at.ut, vesselId: FAKE_VESSEL_ID, partId: d0.ownPort, otherVesselId: FAKE_STATION_ID, otherPartId: d0.targetPort }]);
+    // 13.8 m at 0.1 m/s.
+    expect(at.readouts.met).toBeGreaterThan(137.5);
+    expect(at.readouts.met).toBeLessThan(138.5);
+    expectContract(at, 'captured');
+    expectNamedParts(at, session.portStates(), 'captured');
+    expect(at.vessels.map((v) => v.id)).toEqual([FAKE_VESSEL_ID, FAKE_STATION_ID]);
+    expect(at.vessels.map((v) => [v.crafts!.length, v.links!.length])).toEqual([
+      [1, 0],
+      [1, 0],
+    ]);
+    const [own, station] = at.vessels as [VesselSnapshot, VesselSnapshot];
+    const d = at.readouts.docking!;
+    expect([d.ownPort, d.targetPort]).toEqual([d0.ownPort, d0.targetPort]);
+    expect(d.phase).toBe('soft');
+    expect(d.axial).toBe(0);
+    expect(d.closing).toBe(0);
+    expect(at.readouts.target!.range).toBe(0);
+    expect(d.within).toEqual({ lateral: true, angle: true, roll: true, closing: true, lateralSpeed: true, rate: true });
+    // The faces lie on each other (the port hold kept the own axis on the station's).
+    expect(v3.dist(faceRoot(own, partByKey(own, d.ownPort)!), faceRoot(station, partByKey(station, d.targetPort)!))).toBeLessThan(0.02);
+    expect(session.portStates().map((p) => [p.partKey, p.state.state, p.state.peer])).toEqual([
+      [d.ownPort, 'soft', { vesselId: FAKE_STATION_ID, partKey: d.targetPort }],
+      [d.targetPort, 'soft', { vesselId: FAKE_VESSEL_ID, partKey: d.ownPort }],
+    ]);
+    // The soft capture makes its way to the hard dock: the progress grows, nothing else changes.
+    expect(session.portStates()[0]!.state.progress).toBe(0);
+    for (let i = 0; i < 50; i++) session.advance(0.1);
+    const later = session.snapshot();
+    expect(later.events).toEqual([]);
+    expect(later.readouts.docking!.phase).toBe('soft');
+    expect(session.portStates().map((p) => p.state.progress)).toEqual([0.5, 0.5].map((x) => expect.closeTo(x, 2)));
+    expect(later.vessels.length).toBe(2);
+    expect([...session.stores.census.get().keys()]).toEqual([FAKE_VESSEL_ID, FAKE_STATION_ID]);
+    expect(session.stores.assembly.get()).toBeNull();
+  });
+
+  it('docked: one vessel of two craft in the frame of the base, a link between the port parts, the helm, the events, the stores', () => {
+    const session = start();
+    const d0 = session.peek().readouts.docking!;
+    const seen = { census: 0, ships: 0, assembly: 0 };
+    session.stores.census.subscribe(() => seen.census++);
+    session.stores.ships.subscribe(() => seen.ships++);
+    session.stores.assembly.subscribe(() => seen.assembly++);
+    const { before, at, events } = flyTo(session, 'docked');
+    expect(events.map((e) => e.type)).toEqual(['dockCapture', 'docked', 'helmChanged']);
+    // Ten seconds of soft capture after the faces met.
+    expect(at.ut - events[0]!.ut).toBeGreaterThan(9.9);
+    expect(at.ut - events[0]!.ut).toBeLessThan(10.2);
+    expectContract(at, 'docked');
+    expectNamedParts(at, session.portStates(), 'docked');
+
+    // One vessel is left. Its id is new (an assembly's) and neither of the two it was made of; the event says which
+    // one was absorbed (the arriving vessel: the station is the base, the lower id of two equal masses).
+    expect(at.vessels.length).toBe(1);
+    const merged = at.vessels[0]!;
+    expect(at.activeVesselId).toBe(merged.id);
+    expect([FAKE_VESSEL_ID, FAKE_STATION_ID]).not.toContain(merged.id);
+    expect(merged.id.includes('/')).toBe(false);
+    expect(at.events).toEqual([
+      { type: 'docked', ut: at.ut, vesselId: merged.id, partId: d0.targetPort, otherPartId: d0.ownPort, absorbedVesselId: FAKE_VESSEL_ID },
+      { type: 'helmChanged', ut: at.ut, vesselId: merged.id, accountId: 'fake-account', callsign: 'YOU', craftId: FAKE_VESSEL_ID },
+    ]);
+
+    // The craft: the base's first, each with its id, its owner and its own stack (the station's lists none).
+    expect(merged.crafts!.map((c) => [c.id, c.ownerCallsign, c.staging.stages.length > 0])).toEqual([
+      [FAKE_STATION_ID, 'VEGA', false],
+      [FAKE_VESSEL_ID, 'YOU', true],
+    ]);
+    expect(merged.name).toBe(before.vessels[1]!.name);
+    expect(merged.links).toEqual([{ a: d0.targetPort, b: d0.ownPort, roll: 0 }]);
+    // The base's helm stayed, and it was vacant: the pilot aboard has it, from the own port.
+    expect(merged.helm).toEqual({ accountId: 'fake-account', callsign: 'YOU', craftId: FAKE_VESSEL_ID, controlPart: d0.ownPort });
+    expect(merged.revision).toBe(before.vessels[0]!.revision! + 1);
+
+    // The parts: every part of both vessels, the base's first and where they were in its frame; nothing vanished.
+    const [own, station] = before.vessels as [VesselSnapshot, VesselSnapshot];
+    expect(merged.parts.map((p) => partKeyOf(merged, p))).toEqual([...station.parts.map((p) => partKeyOf(station, p)), ...own.parts.map((p) => partKeyOf(own, p))]);
+    expect(merged.parts.slice(0, station.parts.length).map((p) => [p.localPos, p.localRot])).toEqual(station.parts.map((p) => [p.localPos, p.localRot]));
+    expect(merged.mass).toBeCloseTo(own.mass + station.mass, 6);
+    for (const p of merged.parts) expect(v3.len(p.localPos), p.instanceId).toBeLessThanOrEqual(merged.boundingRadius);
+    // The merge moved nothing: the shape of the scene (every part against the viewer's port part) is what it was
+    // one snapshot earlier, to the few millimetres the port hold lagged; and the two faces are exactly on each other.
+    const was = shape(before, d0.ownPort);
+    const is = shape(at, d0.ownPort);
+    expect([...is.keys()].sort()).toEqual([...was.keys()].sort());
+    for (const [key, offset] of is) expect(v3.dist(offset, was.get(key)!), key).toBeLessThan(0.03);
+    const ownPort = partByKey(merged, d0.ownPort)!;
+    const basePort = partByKey(merged, d0.targetPort)!;
+    expect(v3.dist(faceRoot(merged, ownPort), faceRoot(merged, basePort))).toBeLessThan(1e-6);
+    expect(v3.dot(faceAxisRoot(merged, ownPort), faceAxisRoot(merged, basePort))).toBeCloseTo(-1, 9);
+
+    // The instrument and the ports: docked, each port the other's peer in the one vessel.
+    expect(at.readouts.target!.ref).toEqual({ kind: 'port', vesselId: FAKE_STATION_ID, portId: d0.targetPort });
+    expect(at.readouts.target!.range).toBe(0);
+    expect(at.readouts.docking).toMatchObject({ ownPort: d0.ownPort, targetPort: d0.targetPort, phase: 'hard', axial: 0, closing: 0 });
+    expect(session.portStates().map((p) => [p.partKey, p.state.state, p.state.peer, p.state.progress])).toEqual([
+      [d0.ownPort, 'hard', { vesselId: merged.id, partKey: d0.targetPort }, 0],
+      [d0.targetPort, 'hard', { vesselId: merged.id, partKey: d0.ownPort }, 0],
+    ]);
+
+    // The stores state the merged vessel and no longer the two: each changed once, at the dock.
+    expect(seen).toEqual({ census: 1, ships: 1, assembly: 1 });
+    const census = session.stores.census.get();
+    expect([...census.keys()]).toEqual([merged.id]);
+    expect(census.get(merged.id)).toMatchObject({ kind: 'assembly', craftIds: [FAKE_STATION_ID, FAKE_VESSEL_ID], name: merged.name, ownerCallsigns: ['VEGA', 'YOU'], radius: merged.boundingRadius, revision: merged.revision });
+    expect(session.stores.ships.get().map((r) => [r.craftId, r.vesselId, r.isAssembly, r.members])).toEqual([[FAKE_VESSEL_ID, merged.id, true, ['VEGA']]]);
+    const view = session.stores.assembly.get()!;
+    expect(view.vesselId).toBe(merged.id);
+    expect(view.crafts.map((c) => [c.craftId, c.attended, c.seniority, c.ports.map((p) => [p.portId, p.state, p.peerCraftId])])).toEqual([
+      [FAKE_STATION_ID, false, 0, [[d0.targetPort, 'hard', FAKE_VESSEL_ID]]],
+      [FAKE_VESSEL_ID, true, 1, [[d0.ownPort, 'hard', FAKE_STATION_ID]]],
+    ]);
+    expect(view.links).toEqual([{ a: d0.targetPort, b: d0.ownPort }]);
+    // The anchor is the most senior craft with an owner (the station); the helm is the viewer's.
+    expect(view.anchorCraftId).toBe(FAKE_STATION_ID);
+    expect(view.helm).toEqual({ accountId: 'fake-account', callsign: 'YOU', craftId: FAKE_VESSEL_ID, request: null });
+    expect(session.stores.roster.get()).toEqual([]);
+
+    // It stays docked, and the viewer flies the assembly: the helm's inputs turn the one vessel, the faces stay joined.
+    session.commands.setSasEnabled(false);
+    session.setControls({ pitch: 1, yaw: 0, roll: 0, translate: v3.zero(), throttle: 0 });
+    for (let i = 0; i < 10; i++) session.advance(0.1);
+    const flown = session.snapshot();
+    expect(flown.events).toEqual([]);
+    expect(flown.vessels.map((v) => v.id)).toEqual([merged.id]);
+    const turned = flown.vessels[0]!;
+    expect(quat.angleBetween(turned.q, merged.q)).toBeGreaterThan(0.2);
+    expect(v3.len(turned.w)).toBeGreaterThan(0.1);
+    expect(v3.dist(faceRoot(turned, partByKey(turned, d0.ownPort)!), faceRoot(turned, partByKey(turned, d0.targetPort)!))).toBeLessThan(1e-6);
+    expect(flown.readouts.docking!.phase).toBe('hard');
+    expect(seen).toEqual({ census: 1, ships: 1, assembly: 1 });
+    expectNamedParts(flown, session.portStates(), 'flown docked');
   });
 });

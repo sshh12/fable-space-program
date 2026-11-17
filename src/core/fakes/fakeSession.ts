@@ -14,10 +14,21 @@
  * otherwise:
  *   rendezvous        two craft; the other is the selected target: `Readouts.target` with range, rates, the
  *                     local-vertical position and the next closest approach; the navball's target markers;
- *   dockingApproach   a station 15 m ahead and closing; its port is the target: `Readouts.docking`, the two
- *                     port states (`portStates()`), soft capture and hard dock as events;
- *   assembly          three craft in one vessel: craft blocks, dock links, the helm, a bounding radius that
- *                     spans them, the assembly store;
+ *   dockingApproach   a parked station (another owner's, nobody aboard) ahead on the track and closing, its port
+ *                     the target and the own port the control point: `Readouts.docking`, the two port states
+ *                     (`portStates()`), `dockCapture` when the faces meet, ten seconds of soft capture, then
+ *                     the hard dock. The ports are PARTS of the part list (the first part with an attach node
+ *                     of kind 'dock', else the craft's first part and the top of its envelope), the two faces
+ *                     look at each other, and the scene starts with the hold on the port engaged. The hard
+ *                     dock is the simulation's merge (ARCHITECTURE 7.5, docs/handoff/sim-core-v2.md step 3):
+ *                     ONE vessel with an assembly id, the base's craft first (the station: equal mass, the
+ *                     lower id) and the viewer's after it, every part of both in the base's frame, a link
+ *                     between the two port parts, the base's vacant helm granted to the viewer
+ *                     (`helmChanged` after `docked`, whose `absorbedVesselId` is the viewer's former
+ *                     vessel), and the census, the ships, the assembly panel and the roster restated;
+ *   assembly          three craft in one vessel: craft blocks, dock links between parts of the craft, the
+ *                     helm, a bounding radius that spans them, the assembly store with its ports.
+ *                     (These two scenes are about parts: they need `parts` and say so without them.)
  *   echoes            a recorded echo behind the viewer's clock and a projected one ahead of it, with their
  *                     time offsets and the offers that make them reachable;
  *   timeLive / timeAhead / timeBehind   the time strip for each `TimeView.relation`: a shared clock with a
@@ -179,8 +190,6 @@ export const FAKE_STATION_ID = 'fake-station';
 export const FAKE_ASSEMBLY_ID = `a~${FAKE_VESSEL_ID}~0`;
 export const FAKE_ECHO_RECORDED_ID = 'fake-echo-recorded';
 export const FAKE_ECHO_PROJECTED_ID = 'fake-echo-projected';
-/** The instance id the fake names a docking port by where the vessel has no part list. */
-export const FAKE_PORT_INSTANCE = 'port';
 const FAKE_ACCOUNT = 'fake-account';
 const FAKE_CALLSIGN = 'YOU';
 const OTHER_ACCOUNT = 'fake-account-vega';
@@ -189,9 +198,13 @@ const OTHER_CALLSIGN = 'VEGA';
 /** The capture envelope of the fake's ports (what `DockingReadout.within` is judged against), and its soft-capture time. */
 const FAKE_ENVELOPE = { lateral: 0.3, angleDeg: 5, rollDeg: 5, closing: 0.3, lateralSpeed: 0.1, rateDegPerS: 0.5 };
 const FAKE_SOFT_CAPTURE_SECONDS = 10;
-/** Distance between the two vessel origins when the ports touch, m, and the closing speed of the approach, m/s. */
+/** The least distance between the two vessel origins when the ports touch, m (a port face at its craft's origin), and the closing speed of the approach, m/s. */
 const FAKE_PORT_STANDOFF = 1.2;
 const FAKE_CLOSING_SPEED = 0.1;
+/** Where the station of the docking scene starts: the gap between the two port faces, m. */
+const FAKE_APPROACH_GAP = 13.8;
+/** The port type the fake's ports state in the assembly store (the two types of ARCHITECTURE 7.5 are C and H). */
+const FAKE_PORT_TYPE = 'C';
 
 interface SceneSpec {
   bodyId: string;
@@ -221,6 +234,18 @@ interface OtherVessel {
   presence: Presence;
   /** The vessel's time minus the viewer's clock, ticks. */
   timeOffset: number;
+  /** A pilot is seated in it (it has its owner at the helm and the owner is in the roster); false = parked, the helm vacant. */
+  attended: boolean;
+}
+
+/**
+ * The docking port of a craft built from the fake's part list: the part that carries it, and the mating face
+ * in the craft's VES frame (its centre and the outward axis).
+ */
+interface FakePort {
+  instanceId: string;
+  pos: Vec3;
+  dir: Vec3;
 }
 
 function rotX(v: Vec3, a: number): Vec3 {
@@ -325,6 +350,16 @@ export class FakeSession implements LocalSession {
   /** The docking of the 'dockingApproach' scene: 'approach' until the ports touch, then soft capture, then docked. */
   private dockPhase: 'approach' | 'soft' | 'hard' = 'approach';
   private softCaptureAge = 0;
+  /** The universe tick of the hard dock, which the assembly's id carries; -1 before it. */
+  private dockTick = -1;
+  /** The docking port of the craft the part list builds (the docking scene; null in every other). */
+  private readonly port: FakePort | null;
+  /** Distance between the two vessel origins when the two port faces lie on each other, m. */
+  private readonly portStandoff: number;
+  /** The half-turn that faces one port at the other: about an axis of the VES frame across the port axis. */
+  private readonly facing: Quat;
+  /** The attitude the viewer's vessel started in: the other vessels of a scene keep it. */
+  private readonly q0: Quat;
   /** The launch request that waits for a pad: the promise `universe.spawn` gave for it and what resolves it; null when none waits. */
   private spawnInFlight: { promise: Promise<SeatResult>; resolve: (result: SeatResult) => void } | null = null;
   /** When the waiting request joined the queue, seconds since J2000 (its place moves up from then). */
@@ -380,12 +415,21 @@ export class FakeSession implements LocalSession {
       suggestedLanding: this.spec.bodyId === moon && moon !== root ? { bodyId: moon, latDeg: 0.674, lonDeg: 23.473, name: 'Tranquility Base' } : null,
       milestones: [],
     };
-    this.q = this.initialAttitude();
+    // A dock link and a port name PARTS: the two scenes about them are built from the part list.
+    if ((opts.scene === 'dockingApproach' || opts.scene === 'assembly') && this.parts.length === 0) throw new Error(`FakeSession: the scene '${opts.scene}' needs a part list (options.parts): its ports, links and control point name parts of it`);
+    this.port = opts.scene === 'dockingApproach' ? this.findPort() : null;
+    this.portStandoff = this.port ? Math.max(FAKE_PORT_STANDOFF, 2 * v3.dot(this.port.pos, this.port.dir)) : 0;
+    this.facing = quat.fromAxisAngle(v3.anyOrthogonal(this.port?.dir ?? v3.unitY()), Math.PI);
+    // The approach starts with the own port looking along the track at the station's, and with the hold that keeps it there.
+    this.q = this.port ? this.portAttitude(this.ut) : this.initialAttitude();
+    this.q0 = quat.clone(this.q);
     this.others = this.sceneVessels(opts.scene);
     // The scenes about another vessel start with it selected: their readouts are there without a command.
     if (opts.scene === 'rendezvous' || opts.scene === 'timeLive') this.target = { kind: 'vessel', id: FAKE_TARGET_ID };
-    else if (opts.scene === 'dockingApproach') this.target = { kind: 'port', vesselId: FAKE_STATION_ID, portId: partKey(FAKE_STATION_ID, FAKE_PORT_INSTANCE) };
-    else if (opts.scene === 'echoes') this.target = { kind: 'vessel', id: FAKE_ECHO_RECORDED_ID };
+    else if (this.port) {
+      this.target = { kind: 'port', vesselId: FAKE_STATION_ID, portId: partKey(FAKE_STATION_ID, this.port.instanceId) };
+      this.sasMode = 'portAlign';
+    } else if (opts.scene === 'echoes') this.target = { kind: 'vessel', id: FAKE_ECHO_RECORDED_ID };
     const ok = (): CommandResult => ({ ok: true });
     const needsTarget = { ok: false, reason: 'No vessel or port target' } as const;
     this.commands = {
@@ -446,7 +490,7 @@ export class FakeSession implements LocalSession {
       setTarget: (ref) => {
         if (ref !== null && ref.kind === 'body' && !this.defs.bodies[ref.id]) return { ok: false, reason: 'Unknown body' };
         if (ref !== null && ref.kind === 'vessel' && !this.others.some((o) => o.id === ref.id)) return { ok: false, reason: 'No such vessel in this scene' };
-        if (ref !== null && ref.kind === 'port' && !(this.scene === 'dockingApproach' && ref.vesselId === FAKE_STATION_ID && ref.portId === partKey(FAKE_STATION_ID, FAKE_PORT_INSTANCE))) return { ok: false, reason: 'No such port in this scene' };
+        if (ref !== null && ref.kind === 'port' && !(this.port !== null && ref.vesselId === FAKE_STATION_ID && ref.portId === partKey(FAKE_STATION_ID, this.port.instanceId))) return { ok: false, reason: 'No such port in this scene' };
         this.target = ref;
         // A hold or a navball mode that needs what is no longer selected falls back, as a session's does.
         if (ref === null || ref.kind === 'body') {
@@ -558,27 +602,55 @@ export class FakeSession implements LocalSession {
    * are not in the part list yet; empty in every other scene.
    */
   portStates(): { partKey: string; state: DockingPortState }[] {
-    if (this.scene !== 'dockingApproach') return [];
-    const own = partKey(FAKE_VESSEL_ID, FAKE_PORT_INSTANCE);
-    const theirs = partKey(FAKE_STATION_ID, FAKE_PORT_INSTANCE);
+    if (this.port === null) return [];
+    const own = partKey(FAKE_VESSEL_ID, this.port.instanceId);
+    const theirs = partKey(FAKE_STATION_ID, this.port.instanceId);
     const state = this.dockPhase === 'approach' ? 'ready' : this.dockPhase;
     const progress = this.dockPhase === 'soft' ? clamp(this.softCaptureAge / FAKE_SOFT_CAPTURE_SECONDS, 0, 1) : 0;
-    const captured = this.dockPhase !== 'approach';
+    // In soft capture each port names the other vessel; docked, the two are ports of the one merged vessel.
+    const peerOf = (vesselId: string, key: string): DockingPortState['peer'] => (this.dockPhase === 'approach' ? null : { vesselId: this.dockPhase === 'hard' ? this.vesselId() : vesselId, partKey: key });
     return [
-      { partKey: own, state: { type: 'dockingPort', state, armed: true, peer: captured ? { vesselId: FAKE_STATION_ID, partKey: theirs } : null, progress } },
-      { partKey: theirs, state: { type: 'dockingPort', state, armed: true, peer: captured ? { vesselId: this.vesselId(), partKey: own } : null, progress } },
+      { partKey: own, state: { type: 'dockingPort', state, armed: true, peer: peerOf(FAKE_STATION_ID, theirs), progress } },
+      { partKey: theirs, state: { type: 'dockingPort', state, armed: true, peer: peerOf(FAKE_VESSEL_ID, own), progress } },
     ];
   }
 
   // -------------------------------------------------------------------------------------------- kinematics
 
-  /** The id of the viewer's vessel: the craft's own id, or the assembly's in the assembly scene. */
+  /**
+   * The id of the viewer's vessel: the craft's own id while it is one launched craft; an assembly's id
+   * (`a~<lower vessel id>~<tick>`, contracts/sim.ts "Ids") in the assembly scene and once the docking scene
+   * has docked, where the lower of the two vessel ids is the station's and the tick is that of the hard dock.
+   */
   private vesselId(): string {
-    return this.scene === 'assembly' ? FAKE_ASSEMBLY_ID : FAKE_VESSEL_ID;
+    if (this.scene === 'assembly') return FAKE_ASSEMBLY_ID;
+    return this.dockPhase === 'hard' ? `a~${FAKE_STATION_ID}~${this.dockTick}` : FAKE_VESSEL_ID;
+  }
+
+  /**
+   * The docking port of the craft the part list builds: the first part with an attach node of kind 'dock'
+   * (its face is that node), else the craft's first part, whose face is the top of its envelope along its +Y.
+   */
+  private findPort(): FakePort {
+    const face = (p: PartSnapshot, pos: Vec3, dir: Vec3): FakePort => ({ instanceId: p.instanceId, pos: v3.add(p.localPos, quat.rotate(p.localRot, pos)), dir: v3.normalize(quat.rotate(p.localRot, dir)) });
+    for (const p of this.parts) {
+      const node = this.defs.parts[p.def]?.attachNodes.find((n) => n.kind === 'dock');
+      if (node) return face(p, v3.fromTuple(node.pos), v3.fromTuple(node.dir));
+    }
+    const first = this.parts[0]!;
+    return face(first, v3.new(0, this.defs.parts[first.def]?.bounds.yMax ?? 0, 0), v3.unitY());
+  }
+
+  /** The attitude of a craft whose port looks forward along the track at `ut` (the dorsal side away from the body). */
+  private portAttitude(ut: number): Quat {
+    const s = this.vesselState(ut);
+    const y = v3.normalize(s.v);
+    const z = v3.normalize(v3.reject(v3.normalize(s.r), y));
+    return quat.normalize(quat.mul(quat.fromBasis(v3.cross(y, z), y, z), quat.fromTo(this.port!.dir, v3.unitY())));
   }
 
   private sceneVessels(scene: FakeSessionScene): OtherVessel[] {
-    const other = (id: string, name: string, higher: number, ahead: number, presence: Presence = 'solid', timeOffset = 0, closing = 0, standoff = 0): OtherVessel => ({ id, craftId: id, name, ownerId: OTHER_ACCOUNT, ownerCallsign: OTHER_CALLSIGN, higher, ahead, closing, standoff, presence, timeOffset });
+    const other = (id: string, name: string, higher: number, ahead: number, presence: Presence = 'solid', timeOffset = 0, closing = 0, standoff = 0, attended = true): OtherVessel => ({ id, craftId: id, name, ownerId: OTHER_ACCOUNT, ownerCallsign: OTHER_CALLSIGN, higher, ahead, closing, standoff, presence, timeOffset, attended });
     switch (scene) {
       case 'rendezvous':
         // 150 m higher (slower) and 2 km ahead: the viewer catches up in about two hours and passes 150 m below.
@@ -586,7 +658,8 @@ export class FakeSession implements LocalSession {
       case 'timeLive':
         return [other(FAKE_TARGET_ID, 'Vega 2', 0, 3000)];
       case 'dockingApproach':
-        return [other(FAKE_STATION_ID, 'Harbour', 0, 15, 'solid', 0, FAKE_CLOSING_SPEED, FAKE_PORT_STANDOFF)];
+        // A parked station (its owner is not aboard: the helm is vacant), its port 13.8 m in front of the viewer's.
+        return [other(FAKE_STATION_ID, 'Harbour', 0, FAKE_APPROACH_GAP + this.portStandoff, 'solid', 0, FAKE_CLOSING_SPEED, this.portStandoff, false)];
       case 'echoes':
         // An hour behind the viewer's clock (what it did then, replayed), and two hours ahead of it (where it will be).
         return [
@@ -627,7 +700,8 @@ export class FakeSession implements LocalSession {
       if (this.sasEnabled && this.sasMode !== 'stability' && c.pitch === 0 && c.yaw === 0) {
         const target = this.holdDirection(this.sasMode);
         if (target) {
-          const nose = quat.rotate(this.q, v3.unitY());
+          // What a hold points: the nose, or the port's axis for the hold on a port.
+          const nose = quat.rotate(this.q, this.sasMode === 'portAlign' && this.port ? this.port.dir : v3.unitY());
           const fix = quat.fromTo(nose, target);
           this.q = quat.normalize(quat.mul(quat.slerp(quat.identity(), fix, Math.min(1, attitudeDt * 1.5)), this.q));
         }
@@ -638,20 +712,31 @@ export class FakeSession implements LocalSession {
     if (this.scene === 'launchQueue') this.advanceQueue();
   }
 
-  /** The docking of the station scene: the ports touch, hold in soft capture, and dock. Each change is an event. */
+  /**
+   * The docking of the station scene: the port faces meet, hold in soft capture, and dock. Each change is an
+   * event. The hard dock merges the two vessels as the simulation's `dockMerge` does (ARCHITECTURE 7.5,
+   * docs/handoff/sim-core-v2.md step 3; `build` has the merged vessel): the two are the same craft and so equal
+   * in mass, which makes the lower vessel id, the station, the base. Its helm stays, and being vacant (the
+   * station is parked) it is granted at once to the pilot aboard, the viewer; the stores follow.
+   */
   private advanceDocking(simDt: number): void {
     const station = this.others[0]!;
-    const own = partKey(FAKE_VESSEL_ID, FAKE_PORT_INSTANCE);
-    const theirs = partKey(FAKE_STATION_ID, FAKE_PORT_INSTANCE);
+    const own = partKey(FAKE_VESSEL_ID, this.port!.instanceId);
+    const theirs = partKey(FAKE_STATION_ID, this.port!.instanceId);
     if (this.dockPhase === 'approach' && this.aheadOf(station, this.ut) <= station.standoff) {
       this.dockPhase = 'soft';
       this.softCaptureAge = 0;
-      this.events.push({ type: 'dockCapture', ut: this.ut, vesselId: this.vesselId(), partId: own, otherVesselId: station.id, otherPartId: theirs });
+      this.events.push({ type: 'dockCapture', ut: this.ut, vesselId: FAKE_VESSEL_ID, partId: own, otherVesselId: station.id, otherPartId: theirs });
     } else if (this.dockPhase === 'soft') {
       this.softCaptureAge += simDt;
       if (this.softCaptureAge >= FAKE_SOFT_CAPTURE_SECONDS) {
         this.dockPhase = 'hard';
-        this.events.push({ type: 'docked', ut: this.ut, vesselId: this.vesselId(), partId: own, otherPartId: theirs, absorbedVesselId: station.id });
+        this.dockTick = Math.round(this.ut * TICKS_PER_SECOND);
+        const merged = this.vesselId();
+        // The merged vessel, the base's port and the arriving one's; the arriving vessel's id is the tombstone.
+        this.events.push({ type: 'docked', ut: this.ut, vesselId: merged, partId: theirs, otherPartId: own, absorbedVesselId: FAKE_VESSEL_ID });
+        this.events.push({ type: 'helmChanged', ut: this.ut, vesselId: merged, accountId: FAKE_ACCOUNT, callsign: FAKE_CALLSIGN, craftId: FAKE_VESSEL_ID });
+        this.publishVessels();
       }
     }
   }
@@ -1016,9 +1101,10 @@ export class FakeSession implements LocalSession {
   /**
    * The parts of one craft of the scene: the given part list with its module states following the fake's
    * throttle, legs and lights (`live`: the viewer's own craft; another craft is shown as it was given), every
-   * part stamped with the craft it belongs to, `shift` metres from the vessel's origin.
+   * part stamped with the craft it belongs to. `pose` is the craft's own frame in the vessel's VES frame (a
+   * craft that is not the vessel's base: its origin and its orientation there); null = the base craft.
    */
-  private buildParts(pressure: number, craftId: string, live: boolean, shift: Vec3 | null): PartSnapshot[] {
+  private buildParts(pressure: number, craftId: string, live: boolean, pose: { pos: Vec3; rot: Quat } | null): PartSnapshot[] {
     return this.parts.map((p) => {
       const def = this.defs.parts[p.def];
       const modules = !live
@@ -1045,7 +1131,7 @@ export class FakeSession implements LocalSession {
             return m;
           });
       // (No part of the fake is a fairing petal unless the given part says it is one.)
-      return { ...p, panel: p.panel ?? null, craftId, ...(shift ? { localPos: v3.add(p.localPos, shift) } : {}), modules };
+      return { ...p, panel: p.panel ?? null, craftId, ...(pose ? { localPos: v3.add(pose.pos, quat.rotate(pose.rot, p.localPos)), localRot: quat.normalize(quat.mul(pose.rot, p.localRot)) } : {}), modules };
     });
   }
 
@@ -1094,9 +1180,22 @@ export class FakeSession implements LocalSession {
     };
   }
 
-  /** The part key a dock link or a control point names on a craft: its first part, or the fake's port where it has none. */
-  private anchorKey(craftId: string): string {
-    return partKey(craftId, this.parts[0]?.instanceId ?? FAKE_PORT_INSTANCE);
+  /**
+   * The part key of a craft's control point: its docking port in the docking scene (the instrument is about
+   * the control port), else its command part, else its first part. A craft without parts has none and states
+   * the empty string, as a session does.
+   */
+  private controlKey(craftId: string): string {
+    if (this.parts.length === 0) return '';
+    return partKey(craftId, this.port?.instanceId ?? this.commandPartOf() ?? this.parts[0]!.instanceId);
+  }
+
+  /**
+   * The part key a dock link of the assembly scene names on a craft (the scene needs a part list): the craft's
+   * first part, or its last one for the second link of the craft in the middle (a port holds one craft).
+   */
+  private linkKey(craftId: string, second = false): string {
+    return partKey(craftId, this.parts[second ? this.parts.length - 1 : 0]!.instanceId);
   }
 
   /** The viewer's clock for the time strip: trivial like a session's on its own, or the scene's. */
@@ -1196,8 +1295,10 @@ export class FakeSession implements LocalSession {
     const os = this.otherState(o, ut);
     const dr = v3.sub(os.r, st.r);
     const range = v3.len(dr);
+    // In soft capture and docked the two craft are joined at the faces of their ports: nothing moves between them.
+    const joined = this.port !== null && o.id === FAKE_STATION_ID && this.dockPhase !== 'approach';
     // Velocity relative to the target: the viewer's minus the target's.
-    const rel = v3.sub(st.v, os.v);
+    const rel = joined ? v3.zero() : v3.sub(st.v, os.v);
     const relSpeed = v3.len(rel);
     // The target's local-vertical frame: radial out, along its track, across it.
     const radial = v3.normalize(os.r);
@@ -1224,7 +1325,7 @@ export class FakeSession implements LocalSession {
       name: o.name,
       presence: o.presence,
       timeOffset: o.timeOffset,
-      range: t.kind === 'port' ? Math.max(0, range - FAKE_PORT_STANDOFF) : range,
+      range: t.kind === 'port' ? (joined ? 0 : Math.max(0, range - this.portStandoff)) : range,
       rangeRate: range > 0 ? -v3.dot(dr, rel) / range : 0,
       relVelocity: quat.rotateInv(this.q, rel),
       relSpeed,
@@ -1235,9 +1336,10 @@ export class FakeSession implements LocalSession {
     };
     let docking: DockingReadout | null = null;
     if (t.kind === 'port') {
-      // The ports face each other along the track; the misalignments of the approach die away over a minute.
-      const settle = Math.exp(-(ut - this.ut0) / 60);
-      const axial = Math.max(0, range - FAKE_PORT_STANDOFF);
+      // The ports face each other along the track; the misalignments of the approach die away over a minute, and
+      // the hard dock leaves none.
+      const settle = this.dockPhase === 'hard' ? 0 : Math.exp(-(ut - this.ut0) / 60);
+      const axial = joined ? 0 : Math.max(0, range - this.portStandoff);
       const lateral: [number, number] = [0.35 * settle, -0.2 * settle];
       const angleDeg: [number, number] = [1.5 * settle, -0.8 * settle];
       const rollDeg = 4 * settle;
@@ -1245,7 +1347,7 @@ export class FakeSession implements LocalSession {
       const lateralSpeed = (Math.hypot(lateral[0], lateral[1]) / 60) * (this.dockPhase === 'approach' ? 1 : 0);
       const rateDegPerS = (Math.hypot(angleDeg[0], angleDeg[1], rollDeg) / 60) * (this.dockPhase === 'approach' ? 1 : 0);
       docking = {
-        ownPort: partKey(FAKE_VESSEL_ID, FAKE_PORT_INSTANCE),
+        ownPort: partKey(FAKE_VESSEL_ID, this.port!.instanceId),
         targetPort: t.portId,
         compatible: true,
         targetArmed: true,
@@ -1473,50 +1575,82 @@ export class FakeSession implements LocalSession {
     });
     const staging = { nextStage: this.nextStage, stages, lockout: false };
 
-    // The craft of the viewer's vessel: one, or three side by side in the assembly scene (60 m apart).
+    // The craft of the viewer's vessel: one; three side by side in the assembly scene (60 m apart); two once the
+    // docking scene has docked. A scene of the shared universe with other owners in it names the viewer.
     const single = 55;
     const assembly = this.scene === 'assembly';
+    const docked = this.port !== null && this.dockPhase === 'hard';
+    const named = assembly || this.port !== null;
     const spacing = 60;
-    const crafts: CraftSnapshot[] = [this.craftBlock(craftId, this.vesselName, assembly ? FAKE_ACCOUNT : null, assembly ? FAKE_CALLSIGN : null, staging, single)];
+    const noStack: CraftSnapshot['staging'] = { nextStage: 0, stages: [], lockout: false };
+    const ownCraft = this.craftBlock(craftId, this.vesselName, named ? FAKE_ACCOUNT : null, named ? FAKE_CALLSIGN : null, staging, single);
+    let crafts: CraftSnapshot[] = [ownCraft];
     const links: DockLinkSnapshot[] = [];
     let allParts = parts;
+    // The vessel's own frame: the viewer's craft is its base, except docked to the station (below).
+    let rigid = { name: this.vesselName, r: st.r, v: st.v, q: quat.clone(this.q), w: v3.clone(this.w), mass, com: v3.zero(), radius: single };
     if (assembly) {
       const aboard: [string, string, string | null, string | null, number][] = [
         ['fake-craft-b', 'Vega 2', OTHER_ACCOUNT, OTHER_CALLSIGN, spacing],
         ['fake-craft-c', 'Derelict', null, null, -spacing],
       ];
       for (const [id, name, ownerId, callsign, x] of aboard) {
-        crafts.push(this.craftBlock(id, name, ownerId, callsign, { nextStage: 0, stages: [], lockout: false }, single));
-        links.push({ a: this.anchorKey(craftId), b: this.anchorKey(id), roll: x > 0 ? 0 : Math.PI / 2 });
-        allParts = [...allParts, ...this.buildParts(pressure, id, false, v3.new(x, 0, 0))];
+        crafts.push(this.craftBlock(id, name, ownerId, callsign, noStack, single));
+        links.push({ a: this.linkKey(craftId, links.length > 0), b: this.linkKey(id), roll: x > 0 ? 0 : Math.PI / 2 });
+        allParts = [...allParts, ...this.buildParts(pressure, id, false, { pos: v3.new(x, 0, 0), rot: quat.identity() })];
       }
+      rigid = { ...rigid, mass: 3 * mass, radius: spacing + single };
+    } else if (docked) {
+      // Hard dock (ARCHITECTURE 7.5; the simulation's `dockMerge`): the station is the base, so the vessel is in
+      // ITS frame and has its name, its craft comes first, and the arriving craft's parts are re-expressed there
+      // as their own tree: half a turn about the facing axis, the two port faces on each other. The link names
+      // the base's port first. The vessel moves with the viewer's craft, which now flies it.
+      const station = this.others[0]!;
+      const port = this.port!;
+      const offset = v3.scale(port.dir, this.portStandoff);
+      const arm = quat.rotate(this.q, offset);
+      crafts = [this.craftBlock(station.craftId, station.name, station.ownerId, station.ownerCallsign, noStack, single), ownCraft];
+      links.push({ a: partKey(station.craftId, port.instanceId), b: partKey(craftId, port.instanceId), roll: 0 });
+      allParts = [...this.buildParts(0, station.craftId, false, null), ...this.buildParts(pressure, craftId, true, { pos: offset, rot: this.facing })];
+      rigid = {
+        name: station.name,
+        r: v3.add(st.r, arm),
+        v: v3.add(st.v, v3.cross(quat.rotate(this.q, this.w), arm)),
+        q: quat.normalize(quat.mul(this.q, quat.conj(this.facing))),
+        w: quat.rotate(this.facing, this.w),
+        mass: 2 * mass,
+        com: v3.scale(offset, 0.5),
+        radius: this.portStandoff + single,
+      };
     }
     const vesselId = this.vesselId();
     const vessel: VesselSnapshot = {
       id: vesselId,
-      name: this.vesselName,
+      name: rigid.name,
       vehicleId: this.scenario.vehicle,
       crafts,
       links,
-      // A session on its own has nobody at the helm by name; in the assembly the viewer holds it from the own craft.
-      helm: { accountId: assembly ? FAKE_ACCOUNT : null, callsign: assembly ? FAKE_CALLSIGN : null, craftId, controlPart: this.scene === 'dockingApproach' ? partKey(craftId, FAKE_PORT_INSTANCE) : this.anchorKey(craftId) },
+      // A session on its own has nobody at the helm by name; in the assembly, and from the docking scene on, the
+      // viewer holds it from the own craft (docked: the station's vacant helm was granted to the pilot aboard).
+      helm: { accountId: named ? FAKE_ACCOUNT : null, callsign: named ? FAKE_CALLSIGN : null, craftId, controlPart: this.controlKey(craftId) },
       presence: 'solid',
       timeOffset: 0,
-      revision: 0,
+      // The counter moves when the vessel's orbit or plan changes: a dock is such a change.
+      revision: docked ? 1 : 0,
       controllable: true,
       tier: 'full',
       situation: landed ? (body.id === root && this.nextStage === 0 ? 'prelaunch' : 'landed') : this.spec.kind === 'orbit' && !hasAir ? 'orbiting' : 'flying',
       translationMode: landed ? 'landed' : this.needsIntegration ? 'integrated' : 'rails',
       bodyId: body.id,
-      r: st.r,
-      v: st.v,
-      rRoot: v3.add(bodyState.r, st.r),
-      vRoot: v3.add(bodyState.v, st.v),
-      q: quat.clone(this.q),
-      w: v3.clone(this.w),
-      mass: assembly ? 3 * mass : mass,
-      comLocal: v3.zero(),
-      boundingRadius: assembly ? spacing + single : single,
+      r: rigid.r,
+      v: rigid.v,
+      rRoot: v3.add(bodyState.r, rigid.r),
+      vRoot: v3.add(bodyState.v, rigid.v),
+      q: rigid.q,
+      w: rigid.w,
+      mass: rigid.mass,
+      comLocal: rigid.com,
+      boundingRadius: rigid.radius,
       parts: allParts,
       aero: {
         q,
@@ -1537,22 +1671,24 @@ export class FakeSession implements LocalSession {
       age: ut - this.ut0,
     };
 
-    // The other vessels of the scene: on rails about the same body, shown as the craft the fake was given.
-    const docked = this.scene === 'dockingApproach' && this.dockPhase === 'hard';
+    // The other vessels of the scene: on rails about the same body, shown as the craft the fake was given, each
+    // in the attitude the viewer started in (the station: its port turned back along the track at the viewer's).
     const vessels: VesselSnapshot[] = [vessel];
     for (const o of this.others) {
-      // Once docked the station is part of the viewer's vessel; its own vessel is gone (the `docked` event names it).
+      // Once docked the station is the base craft of the viewer's vessel; neither of the two vessels is left.
       if (docked && o.id === FAKE_STATION_ID) continue;
       const os = this.otherState(o, ut);
       vessels.push({
         ...vessel,
         id: o.id,
         name: o.name,
-        crafts: [this.craftBlock(o.craftId, o.name, o.ownerId, o.ownerCallsign, { nextStage: 0, stages: [], lockout: false }, single)],
+        crafts: [this.craftBlock(o.craftId, o.name, o.ownerId, o.ownerCallsign, noStack, single)],
         links: [],
-        helm: { accountId: o.ownerId, callsign: o.ownerCallsign, craftId: o.craftId, controlPart: this.anchorKey(o.craftId) },
+        // A parked craft has nobody at the helm.
+        helm: { accountId: o.attended ? o.ownerId : null, callsign: o.attended ? o.ownerCallsign : null, craftId: o.craftId, controlPart: this.controlKey(o.craftId) },
         presence: o.presence,
         timeOffset: o.timeOffset,
+        revision: 0,
         controllable: false,
         situation: 'orbiting',
         translationMode: 'rails',
@@ -1560,8 +1696,10 @@ export class FakeSession implements LocalSession {
         v: os.v,
         rRoot: v3.add(bodyState.r, os.r),
         vRoot: v3.add(bodyState.v, os.v),
+        q: this.port !== null && o.id === FAKE_STATION_ID ? quat.normalize(quat.mul(this.portAttitude(ut), this.facing)) : quat.clone(this.q0),
         w: v3.zero(),
         mass,
+        comLocal: v3.zero(),
         boundingRadius: single,
         parts: this.buildParts(0, o.craftId, false, null),
         gLoad: 0,
@@ -1602,9 +1740,14 @@ export class FakeSession implements LocalSession {
 
   // ------------------------------------------------------------------------------------------------ stores
 
-  /** The client stores of the scene, as a directory would publish them for it. They are built from the start state. */
-  private buildStores(scene: FakeSessionScene, siteId: string): FakeStores {
-    const s = this.build(false);
+  /**
+   * What a directory publishes about the vessels of the snapshot `s`: the census, the account's ships, the
+   * assembly the viewer is aboard and the roster. They are stated from the snapshot, so the two agree: every
+   * vessel has its census entry with its craft, a vessel of several craft is an assembly with the links and
+   * the helm the snapshot states, and a vessel that is gone is in none of them.
+   */
+  private vesselStores(s: SimSnapshot): { census: Map<string, CensusEntry>; ships: ShipRecord[]; assembly: AssemblyView | null; roster: RosterEntry[] } {
+    const scene = this.scene;
     const myTick = s.time!.myTick;
     const active = s.vessels[0]!;
     const census = new Map<string, CensusEntry>();
@@ -1632,9 +1775,86 @@ export class FakeSession implements LocalSession {
         radius: v.boundingRadius,
         expiresWallMs: null,
         thrusting: false,
-        revision: 0,
+        revision: v.revision ?? 0,
       });
     }
+    const crafts = active.crafts ?? [];
+    const roster: RosterEntry[] = this.others
+      .filter((o) => o.attended && s.vessels.some((v) => v.id === o.id))
+      .map((o) => ({ accountId: o.ownerId ?? o.id, callsign: o.ownerCallsign ?? o.name, relation: 'nearby', vesselId: o.id, bodyId: active.bodyId, timeOffset: o.timeOffset, linked: scene === 'timeLive', blocked: false }));
+    if (scene === 'assembly') roster.push({ accountId: OTHER_ACCOUNT, callsign: OTHER_CALLSIGN, relation: 'docked', vesselId: active.id, bodyId: active.bodyId, timeOffset: 0, linked: true, blocked: false });
+    const orbiting = active.situation === 'orbiting';
+    const otherOwners = crafts.filter((c) => c.id !== FAKE_VESSEL_ID && c.ownerCallsign !== null && c.ownerCallsign !== FAKE_CALLSIGN).map((c) => c.ownerCallsign!);
+    const ships: ShipRecord[] = [
+      {
+        craftId: FAKE_VESSEL_ID,
+        vesselId: active.id,
+        name: this.vesselName,
+        vehicleId: this.scenario.vehicle,
+        isAssembly: crafts.length > 1,
+        members: [...new Set(otherOwners)],
+        situation: active.situation,
+        bodyId: active.bodyId,
+        orbit: orbiting ? { apoapsisAltitude: s.readouts.apoapsisAltitude, periapsisAltitude: s.readouts.periapsisAltitude, inclination: s.readouts.inclination } : null,
+        surface: orbiting ? null : { latitude: s.readouts.latitude, longitude: s.readouts.longitude },
+        crew: 3,
+        deltaVRemaining: s.readouts.deltaVTotal,
+        lastFlownWallMs: 0,
+        expiry: { atWallMs: null, rule: 'craftRetention', reasonText: 'Kept while it is flown', protectedBy: null },
+        nodesSaved: 0,
+        sessionState: 'flownHere',
+        flownBy: null,
+        headTick: myTick,
+        presence: 'solid',
+      },
+    ];
+    // The assembly panel: the craft in the order of their seniority (the snapshot's), each with the ports its
+    // links name; the anchor is the most senior craft that has an owner; the helm as the snapshot states it.
+    const craftOfKey = new Map(active.parts.map((p) => [partKey(p.craftId!, p.instanceId), p.craftId!]));
+    const portsOf = (craftId: string): AssemblyView['crafts'][number]['ports'] =>
+      (active.links ?? []).flatMap((l) => [
+        ...(craftOfKey.get(l.a) === craftId ? [{ portId: l.a, portType: FAKE_PORT_TYPE, state: 'hard' as const, armed: true, peerCraftId: craftOfKey.get(l.b) ?? null }] : []),
+        ...(craftOfKey.get(l.b) === craftId ? [{ portId: l.b, portType: FAKE_PORT_TYPE, state: 'hard' as const, armed: true, peerCraftId: craftOfKey.get(l.a) ?? null }] : []),
+      ]);
+    const assembly: AssemblyView | null =
+      crafts.length > 1
+        ? {
+            vesselId: active.id,
+            crafts: crafts.map((c, i) => ({
+              craftId: c.id,
+              name: c.name,
+              vehicleId: c.vehicleId,
+              ownerId: c.ownerId,
+              ownerCallsign: c.ownerCallsign,
+              // A pilot is seated in the viewer's craft, and in the craft of an owner who is aboard (the roster's 'docked').
+              attended: c.id === FAKE_VESSEL_ID || roster.some((r) => r.relation === 'docked' && r.accountId === c.ownerId),
+              seniority: i,
+              policy: c.policy,
+              ports: portsOf(c.id),
+            })),
+            links: (active.links ?? []).map((l) => ({ a: l.a, b: l.b })),
+            anchorCraftId: (crafts.find((c) => c.ownerId !== null) ?? crafts[0]!).id,
+            helm: { accountId: active.helm!.accountId, callsign: active.helm!.callsign, craftId: active.helm!.craftId, request: null },
+          }
+        : null;
+    return { census, ships, assembly, roster };
+  }
+
+  /** The vessels of the scene changed (a dock): the stores that list them state what the snapshot now states. */
+  private publishVessels(): void {
+    const now = this.vesselStores(this.build(false));
+    this.fakeStores.census.set(now.census);
+    this.fakeStores.ships.set(now.ships);
+    this.fakeStores.assembly.set(now.assembly);
+    this.fakeStores.roster.set(now.roster);
+  }
+
+  /** The client stores of the scene, as a directory would publish them for it: those about its vessels follow the snapshot, the others are built from the start state. */
+  private buildStores(scene: FakeSessionScene, siteId: string): FakeStores {
+    const s = this.build(false);
+    const myTick = s.time!.myTick;
+    const active = s.vessels[0]!;
+    const { census, ships, assembly: assemblyView, roster } = this.vesselStores(s);
     const pads: PadState[] = [];
     for (const site of Object.values(this.defs.sites)) {
       padsOf(site).forEach((pad, i) => {
@@ -1656,42 +1876,6 @@ export class FakeSession implements LocalSession {
         });
       });
     }
-    const orbiting = active.situation === 'orbiting';
-    const ships: ShipRecord[] = [
-      {
-        craftId: FAKE_VESSEL_ID,
-        vesselId: active.id,
-        name: this.vesselName,
-        vehicleId: active.vehicleId,
-        isAssembly: scene === 'assembly',
-        members: scene === 'assembly' ? [OTHER_CALLSIGN] : [],
-        situation: active.situation,
-        bodyId: active.bodyId,
-        orbit: orbiting ? { apoapsisAltitude: s.readouts.apoapsisAltitude, periapsisAltitude: s.readouts.periapsisAltitude, inclination: s.readouts.inclination } : null,
-        surface: orbiting ? null : { latitude: s.readouts.latitude, longitude: s.readouts.longitude },
-        crew: 3,
-        deltaVRemaining: s.readouts.deltaVTotal,
-        lastFlownWallMs: 0,
-        expiry: { atWallMs: null, rule: 'craftRetention', reasonText: 'Kept while it is flown', protectedBy: null },
-        nodesSaved: 0,
-        sessionState: 'flownHere',
-        flownBy: null,
-        headTick: myTick,
-        presence: 'solid',
-      },
-    ];
-    const assemblyView: AssemblyView | null =
-      scene === 'assembly'
-        ? {
-            vesselId: active.id,
-            crafts: (active.crafts ?? []).map((c, i) => ({ craftId: c.id, name: c.name, vehicleId: c.vehicleId, ownerId: c.ownerId, ownerCallsign: c.ownerCallsign, attended: i === 0, seniority: i, policy: c.policy, ports: [] })),
-            links: (active.links ?? []).map((l) => ({ a: l.a, b: l.b })),
-            anchorCraftId: FAKE_VESSEL_ID,
-            helm: { accountId: FAKE_ACCOUNT, callsign: FAKE_CALLSIGN, craftId: FAKE_VESSEL_ID, request: null },
-          }
-        : null;
-    const roster: RosterEntry[] = this.others.map((o) => ({ accountId: o.ownerId ?? o.id, callsign: o.ownerCallsign ?? o.name, relation: 'nearby', vesselId: o.id, bodyId: active.bodyId, timeOffset: o.timeOffset, linked: scene === 'timeLive', blocked: false }));
-    if (scene === 'assembly') roster.push({ accountId: OTHER_ACCOUNT, callsign: OTHER_CALLSIGN, relation: 'docked', vesselId: active.id, bodyId: active.bodyId, timeOffset: 0, linked: true, blocked: false });
     const prompts: Prompt[] = scene === 'timeLive' ? [{ id: 'fake-prompt-1', kind: 'warpProposal', fromCallsign: FAKE_CALLSIGN, text: `Waiting for ${OTHER_CALLSIGN} to agree to 50x`, expiresUpMs: 20_000, onExpire: 'decline' }] : [];
     const pilots = 1 + new Set(roster.map((r) => r.accountId)).size;
     const site = this.defs.sites[siteId];
