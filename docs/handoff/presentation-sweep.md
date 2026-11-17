@@ -80,7 +80,9 @@ buffer of `'ui.scrimRects'` (commit 1). Design, from reading the code:
 - the first minutes of the browser mission (pad to max-q) in the integrated app: the app is on
   `createSession` and both app checkpoints (`sweep-app-pad`, `sweep-app-cockpit`) are exact on it, but
   `tests/browser/mission` was not flown in this context;
-- the budget gate and the lab specs: see section 3 for what was run and what was not.
+- the budget gate and every lab spec WERE run on 94a3e01 (section 3): the budget within 3 % in every row,
+  489 lab specs pass, and the eight that fail are not the sweep's (six fail on the pre-sweep tree with the
+  same numbers, one has two states on both trees, one was a page load that timed out once).
 
 ## 2. Decisions taken, and why
 
@@ -199,10 +201,62 @@ SENSITIVITY: with the core's rebase switched off for one run, the same test fail
 384,399,018.52 m (control 20.02 m)"; pictures and velocity did not change, because nothing drawn today
 reads `prevEyeOffset` without a better source (the ocean has its own previous reference).
 
-**Budget gate** (`BUDGET_COMPARE=1`): NOT RUN at this writing.
+**Budget gate** (`BUDGET_COMPARE=1 ... budget.perf.spec.ts --project=perf`, on 94a3e01, nothing else of this
+package running): every row within 3 % of the recorded sum.
 
-**Lab specs** (`npx playwright test tests/browser/<dir> --project=functional`, one directory at a time):
-NOT RUN at this writing.
+| Row | Summed GPU time against the recorded | |
+|---|---|---|
+| pad lift-off | 6.02 ms against 6.17 (-2.5 %) | |
+| ascent 10-40 km | 3.38 against 3.40 (-0.7 %) | |
+| LEO | 3.01 against 3.04 (-0.7 %) | |
+| LEO cockpit | 3.59 against 3.57 (+0.3 %) | |
+| lunar descent | 3.54 against 3.42 (+3.5 %) in the first run; run again twice as the rule says: 3.40 (-0.7 %) and 3.39 (-1.1 %) | over by load once |
+| reentry | 3.02 against 3.02 (+0.1 %) | |
+| splashdown | 5.41 against 5.66 (-4.5 %) | the effects cost 0.041 ms where 0.259 was recorded |
+| stony ground (whole frame) | 6.07 against 6.26 (-3.0 %) | |
+| among kiawe (whole frame) | 5.36 against 5.60 (-4.3 %) | |
+| thickets from 120 m (whole frame) | 6.50 against 6.65 (-2.2 %) | |
+
+FOR THE LEAD: the effects' 0.259 -> 0.041 ms in `splashdown` is NOT this sweep's. The same row on the export
+of `pre-sweep-2026-11-16` gives 0.041 ms too (5.45 ms against 5.66, -3.7 %; lunar descent there 3.41, -0.3 %):
+the baseline was recorded on 9a873e0 (2026-11-13), and something between that commit and the tag stopped the
+effects from drawing what they drew in that scene (or made it free). Worth a look by the effects' owner.
+
+**Lab specs** (`npx playwright test tests/browser/<dir> --project=functional`, one directory at a time through
+the GPU gate, on 94a3e01; 2 h 10 min in all): 489 passed, 8 failed, 2 skipped. NONE OF THE EIGHT IS THE
+SWEEP'S: the eight tests were run on an export of the tag `pre-sweep-2026-11-16` (`git archive` into the
+scratch directory, the tiles linked in) and once more on this tree.
+
+| Directory | Passed | Failed |
+|---|---|---|
+| flight-ui | 94 | 1 |
+| cockpit | 41 | 0 |
+| map-view | 28 | 0 |
+| vehicle | 15 (1 skipped) | 0 |
+| vfx | 39 | 1 |
+| audio | 18 | 0 |
+| app (the integrated app on `createSession`) | 10 | 0 |
+| integration (with `origin.spec.ts`) | 45 | 5 |
+| render-core | 42 | 0 |
+| terrain | 22 | 0 |
+| sky | 33 | 0 |
+| ocean | 41 | 1 |
+| atmosphere | 61 (1 skipped) | 0 |
+
+| Failed test | This tree | The pre-sweep tree |
+|---|---|---|
+| `flight-ui/screens.spec.ts` "flight-ui screenshots 4k › cockpit view" | `cockpit-lowOrbit-4k: mostly black (0.050)` | the same, 0.050 |
+| `vfx/matrix.spec.ts` "lift-off from a chase camera at 150 m" | `inside-cloud-t6-day: a real image`: 5, expected > 6 | the same, 5 |
+| `integration/clouds.spec.ts` "(b) a plume and trail 50 km away take aerial perspective" | 0.1279, expected < 0.06 | the same, 0.1279 |
+| `integration/terrain.spec.ts` "(d) no line along the regional coverage boundary of earth" | 30 views with a line | the same, 30 |
+| `integration/terrain.spec.ts` "(e) image decode: the land of a coastal albedo tile" | correlation 0.652, expected > 0.7 | the same, 0.652 |
+| `integration/water.spec.ts` "(a) at fadeStart the forward water equals the deferred sheet" (6000 m up, heading 120) | 0.0518, expected < 0.02 | the same, 0.0518 |
+| `integration/shadows.spec.ts` "(c) the lunar terminator from 5000 km shows crater shadows" | "shadows only darken" 0.0830, expected < 0.002; PASSED on the second run | the same failure, 0.0830 (a test with two states on both trees) |
+| `ocean/screens.spec.ts` "ocean screenshot: midday" | the page did not initialise within 60 s (the first test of its file); PASSED on the second run (15.7 s) | passed (15.8 s) |
+
+Six of them fail on the tree as it stood before the sweep with the same numbers to the last digit, one has
+two states on both trees, one was a page load that timed out once. They are findings for the visual
+close-out, not for this package.
 
 ## 4. Public API added or changed (exact signatures)
 
@@ -292,7 +346,7 @@ offers and the three time strips.
 | Line | State |
 |---|---|
 | typecheck clean; the grep test | MET. `npm run typecheck` exit 0 at 94a3e01. `tests/unit/fakes/deprecated.test.ts` (9 tests): eight rules over 500+ files of the presentation, the labs, the browser tests and the presentation's unit tests; every exception listed with its reason (the access module, the fake as a producer, the retired member's type, the audio data's path, `scenario.vehicle` in `src/app/main.ts`, the lab vehicle sim, four tests of producers and of the origin); a stale exception fails. Outside its scan: section 6 |
-| every wave-2 unit and lab spec; every reference image; budget within 3 % | unit: 971 of 971 in the presentation suites; reference images: 33 of 33 on 94a3e01 (section 3); lab specs and budget: section 3 |
+| every wave-2 unit and lab spec; every reference image; budget within 3 % | unit: 971 of 971 in the presentation suites. Reference images: 33 of 33 on 94a3e01, the 30 exact at 0 pixels. Budget: every row within 3 % (lunar descent on its second and third run). Lab specs: 489 pass; NOT MET for eight tests, none of them moved by the sweep (section 3 has each with its number on the pre-sweep tree) |
 | the same frame at two origins under 1/255 per channel; a rebase without a step or a motion-vector spike | MET for the renderer: 0 pixels in four lunar frames under an exact translation of the origin. A frame COMPUTED about the other origin has a mean difference of 0.007 level and a 99.9th percentile of 1 (2 in `lunar-touchdown`); single pixels differ by up to 17 levels: the last bits of float64 at 384,000 km, not the renderer (D7 / D8, request 5). Rebase: three scenes, no step, velocity target equal to the control's, and the test fails without the core's rebase (section 3) |
 | two craft of one vehicle never mix; an assembly framed from its radius | MET: resource bars (`displays.test.ts`), wear and mounts (`mounts.test.ts`), RCS jets, canopies and event parts (`tests/unit/vfx/model.test.ts`), engine histories of the audio model (`tests/unit/audio/model.test.ts`); the chase rig on a three-craft assembly (`camera.test.ts`). Staging: the stage stack is per craft in the snapshot (`CraftSnapshot.staging`), the HUD reads the helm craft's |
 | the terrain lab through `fetch` and `pack` | NOT DONE (1.2 A) |
