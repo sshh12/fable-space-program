@@ -206,14 +206,16 @@ it holds 95 %, chute envelope "RISKY" while inside it, Mach shown in vacuum).
    a. Review that step, then start sub-wave 3.1 (`sim-core-v2`, `bodies-ephemeris`, `planet-bake`,
       `site-bake`, `platform-delivery`): they need nothing that is still open. They compile against the
       working tree, so the wave-2 fixers and the wave-3 packages must both keep it compiling.
-   b. DONE on 2026-11-12 (hand-off section 22): 30 of the 33 reference images recorded on the tree as it
-      stood, the budget table recorded as the pre-sweep baseline. Left of it: (1) the three cockpit
-      checkpoints, when request lead-5 is done:
-      `BASELINE_ONLY=lunar-surface-cockpit,sweep-cockpit-leo,sweep-app-cockpit BASELINE_RECORD="<note>" node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional`,
-      then LOOK at the three PNGs and commit the manifest; (2) the lead's decisions on the four rows of the
-      budget table that fail lines of their own, and on holding the sweep to "0.000 % of pixels differ" on
-      the 25 checkpoints whose loads are identical; (3) a second copy of `data/baselines` outside the
-      working tree.
+   b. DONE on 2026-11-16 (hand-off sections 22 to 24): all 33 reference images are recorded, 30 of them
+      `exact` (a comparison fails on any differing pixel), 3 within a tolerance with the reason and the
+      owner's request in the manifest (`shoreline` lead-9, `lunar-touchdown` lead-8, `sweep-lunar-orbit`
+      core-7). A finding of the last runs: a picture with the far sea under the horizon ends, about one
+      load in eight, with a thin line of that sea drawn differently (request lead-9, open), so the gate
+      gives an exact checkpoint up to three fresh loads. The three cockpit views and the app's two are in
+      the gate; the budget table is recorded as the pre-sweep baseline. The gate:
+      `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional`
+      (12 minutes; BASELINE_ONLY=a,b narrows it). Left: the lead pushes `data/baselines` to a baselines
+      branch (seven PNGs are new on 2026-11-16: hand-off section 24, item 8).
    c. At the start of sub-wave 3.2: join the v2 union members, change `setTarget` to `TargetRef`, add the
       `'ui.scrimRects'` key (hand-off section 2, "what is therefore still to do"), and hand the sweep the list
       of deprecated fields.

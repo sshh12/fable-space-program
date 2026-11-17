@@ -1142,3 +1142,88 @@ each reports to the lead first):
 4. Then ONE full gate run (the self-check of all recorded checkpoints) on the quiet tree, and the manifest
    committed. The lead pushes `data/baselines` to the private repository on an orphan branch after the last
    re-recording.
+
+## 24. The reference images finished: all 33 recorded, 30 exact (2026-11-16, 22:10 to 2026-11-17, 00:10)
+
+After the three determinism fixes (request lead-5: cockpit 327a9a4 and 19ab596; lead-6: app shell 8c0f2cb;
+lead-7: ocean 39dacd5; then ocean cff94bd). The tree was quiet (only `wire-protocol` was working, in
+`src/net` and its tests).
+
+**1. What the fixes moved.** The self-check of the 29 lab recordings of 2026-11-12 against the tree with
+the fixes: every one of the 25 exact checkpoints matched its recording to the bit (0 pixels), so neither
+the cockpit's nor the ocean's work, nor cff94bd, moved an exact picture. One tolerance checkpoint had
+moved inside its tolerance: `leo-terminator`, 48 pixels by up to 28 levels, every one of them in the
+capsule's three cabin windows: the cockpit's work on lead-5 (327a9a4 restarts the cabin's clock and far
+light in a capture, 19ab596 set the sunlit shoulder's key). It was RE-RECORDED with that note, not left
+inside a tolerance; its three loads, and eight more in a probe, are now one picture, so it is exact (the
+one hull pixel of 2026-11-12 has not shown again).
+
+**2. Recorded today** (three loads each, the lead-in 0 pixels in every load, every one exact):
+
+| Checkpoint | Framing | Note |
+|---|---|---|
+| `lunar-surface-cockpit` | NEW framing: the head 30 cm inside the left side window, looking 8 degrees down along its well, head-up along the nose; the sun pinned in the vessel's frame (the cockpit's recipe `world-moon-horizon`) | the first framing (`sitAtWindowBelow`) showed the cabin on its side and a sliver of ground in a window of sky, at every lean: the lab's seat views keep the couch's up |
+| `sweep-cockpit-leo` | unchanged (the seat's own view of the panel, the real simulation at `qa-leo`) | the three display pages, the caution and warning lamps, the mission clock |
+| `sweep-app-cockpit` | page `/?scenario=lunar-direct&view=cockpit&governor=off&mute=1&capturepill=0&deterministic=1&paused=1`, setup `[waitIdle]` | the app's frozen start; the head sway is at rest within the first frame |
+| `sweep-app-pad` | page `/?scenario=lunar-direct&governor=off&mute=1&capturepill=0&deterministic=1&paused=1`, setup `[waitIdle]` | was tolerance mean 0.253 / p99.9 21 (the app ran until the hooks froze it); now exact |
+| `leo-night` | back to orbit yaw 30: the capsule's lit cabin windows in view | exact there now (three loads in a probe, three in the recording) |
+| `reentry-peak-heating` | back to orbit yaw 160: the capsule from its side, a cabin window facing the camera | exact there now |
+| `leo-terminator` | unchanged | re-recorded (item 1) |
+
+**3. A FINDING in the full self-check: the far sea under the horizon has more than one state.** The first
+full run over all 33 failed on `pad-noon`, an exact checkpoint: 1,440 pixels by up to 3 levels, a thin
+sloped line across the far sea just under the horizon (x 0-623, y 206-238). The second full run failed on
+`ocean-climb-200m`, also exact: 652 pixels by up to 2 levels, two segments of such a line (the open
+Pacific, no land). No commit moved either: both had matched to the bit in every load before, and nothing
+of the presentation changed in between. A probe of sixteen loads of `pad-noon`: fourteen are the recorded
+picture, one differs in those 1,440 pixels, one in 276 of them (the right part of the line); every load is
+steady in itself. It is the second state the ocean reports for `shoreline` in its resolution of lead-7:
+request **lead-9** (ocean, with terrain-render if it is the tiles). With some nine pictures of the sea to
+the horizon in the set, a gate that asks every FIRST load to match fails two runs in three with nothing
+changed, which is what happened. So **the gate gives an exact checkpoint up to three fresh loads** and
+passes it when one of them is its reference to the bit; a load that was another state is printed as OTHER
+STATE and listed at the end for the lead (`BASELINE_EXACT_TRIES=1` is the gate as it was). The pixel
+rule is not loosened: a change in the code moves every load. `pad-noon` and `ocean-climb-200m` stay
+exact (their recording is the common state); `shoreline`, whose other states are frequent, stays within
+a tolerance and names lead-9. For that, `notExact` became the lead's statement: it may stand on a
+checkpoint whose recorded loads agree, and the recorder keeps it until the lead removes it.
+
+**4. The set.** 33 recorded; **30 exact** (a comparison fails when no load of three is the reference to
+the bit); 3 within a tolerance:
+
+| Checkpoint | Tolerance | Why it is not exact | Request |
+|---|---|---|---|
+| `shoreline` | mean 0.02, p99.9 3 | the far sea under the horizon: many loads end in another state, up to 0.2 % of the pixels by up to 3 levels | lead-9 (ocean; open) |
+| `lunar-touchdown` | mean 0.02, p99.9 3 | the dust particles under the burning descent engine fall differently from load to load: about 0.2 % of the pixels, up to 11 levels | lead-8 (vfx; open) |
+| `sweep-lunar-orbit` | mean 0.02, p99.9 1 | two pixels on the vessel's hull differ by one level in some loads | core-7 (sky-lighting; open) |
+
+**5. The full self-check of all 33** (the gate the sweep runs), under the manifest and the gate as
+committed: PASSED (23:37 to 23:49, 12.3 minutes): all 30 exact checkpoints matched their reference to the bit, every one on its first load; `shoreline` (0.183 % of the pixels, up to 3 levels), `lunar-touchdown` (0.909 %, up to 10 levels; a 99.9th percentile of 2 against 3) and `sweep-lunar-orbit` (one level in a pixel or two) are within their tolerance. The two full runs before it, which asked every first load to match, each failed on one exact checkpoint of the far sea (item 3).
+
+**6. What changed in the code.**
+- `labs/integration/main.ts` (core-support's file; one additive handle, by the lead's order to fix the
+  framing): `__integration.cabinView(eyePart, lookPart, up, fovDeg)`, a free interior camera with the eye
+  and the point looked at in the command part's frame and the head up along the seat or along the nose. It
+  is what the cockpit's recipe computes in the page; a checkpoint's setup can only call handles.
+- `tests/browser/baselineLogic.ts`: an app page may be frozen by its query (`deterministic=1&paused=1`,
+  request lead-6) as well as by its setup; `notExact` may stand on a checkpoint whose recorded loads agree.
+- `tests/browser/harness.ts`: a recorded checkpoint can be re-recorded (the recorder judged its framing
+  together with the `exact` / `notExact` of the earlier recording and refused; found when
+  `leo-terminator` was re-recorded); the recorder keeps a lead's `notExact`.
+- `tests/browser/shell/baselines.record.spec.ts`: the gate's three loads for an exact checkpoint (item 3).
+
+**7. Corrections to section 22 and request lead-7.** The near sea of the first corrected framing of
+`ascent-cloud-deck` differed from load to load, and I put that on the ocean. The ocean took it apart
+(lead-7, "Resolution"): without the atmosphere package that page is identical on every load, with it and
+without the ocean it still differs, from the top row down. It is the ATMOSPHERE's state after a stepped
+simulation (request ocean-12, open); the pixels gathered at the bottom because the sun's glitter on the
+near sea makes a small change of the light large. So no near-sea view goes back into `ascent-cloud-deck`
+yet, and no near-sea checkpoint with a stepped simulation is added: it would not be exact until ocean-12
+is done. The present framing (looking up at the vehicle among the clouds, stepped) has been one picture in
+every load so far, but it is a stepped page with clouds in it: if it ever fails on all three loads with
+nothing changed, ocean-12 is where to look.
+
+**8. For the baselines branch.** New PNGs in `data/baselines` on 2026-11-16 (the other 26 are those of
+2026-11-12): `leo-night.png`, `leo-terminator.png`, `lunar-surface-cockpit.png`,
+`reentry-peak-heating.png`, `sweep-app-cockpit.png`, `sweep-app-pad.png`, `sweep-cockpit-leo.png`. The
+manifest holds the sha256 of all 33.

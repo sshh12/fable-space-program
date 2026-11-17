@@ -117,3 +117,16 @@ stepped views are exact with every package but the atmosphere.
 - `ocean-climb-20km`, `reentry-peak-heating`, thin concentric arcs in the cloud gaps and in the glitter:
   RECOGNISED, finding 2 again (the same level lines from 3 to 100 km).
 All of these but the smear band are the first items of the ocean's next visual round (finding 2 above all).
+
+## Lead note (2026-11-16): what the recording does with this
+
+- The diagnosis in "Problem" was wrong for the stepped page, as the resolution shows: what differs there
+  from load to load is the atmosphere's state after a stepped simulation (request ocean-12), not the sea.
+  `ascent-cloud-deck` therefore stays framed without the sea, and no near-sea checkpoint with a stepped
+  simulation is added until ocean-12 is done.
+- The second state of `shoreline` (item 2 of "What still differs") has shown in `pad-noon` (2 loads of
+  16) and in `ocean-climb-200m` as well: a thin line across the far sea under the horizon drawn in full or
+  in part. It is request **lead-9** now, with that evidence; `shoreline` is `notExact` with it, and the
+  gate gives an exact checkpoint up to three loads.
+- No exact checkpoint moved with 39dacd5 or cff94bd: the 25 exact recordings of 2026-11-12 compared at 0
+  pixels on 2026-11-16. Hand-off `lead-baseline-v2` section 24.

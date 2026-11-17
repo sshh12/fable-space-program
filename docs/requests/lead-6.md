@@ -82,3 +82,10 @@ crossing T- 9:59, PAUSED), not the moment a test happened to pause at. The cockp
 sequences (requests lead-5, lead-7) did not show in these captures on the tree of 19:10. The app's own guard is
 the test "frozen start" in `tests/browser/app/app.spec.ts` (two loads of the pad, the cockpit's first capture
 against its second).
+
+## Lead note (2026-11-16): re-recorded with the switch
+
+`sweep-app-pad` and `sweep-app-cockpit` are recorded from the pages above with setup `[waitIdle]`: three
+loads of each are one picture, the lead-in differs in 0 pixels (it was 367 to 624), and both are `exact`
+in the manifest (`sweep-app-pad` had a tolerance of mean 0.253, p99.9 21). `manifestProblems` accepts an
+app page that is frozen by its query. Hand-off `lead-baseline-v2` section 24.

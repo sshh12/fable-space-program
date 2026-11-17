@@ -96,3 +96,16 @@ What was done, the proof numbers and what still differs: docs/handoff/cockpit.md
 - `sweep-app-cockpit`: unchanged, 770,062 falling to 251,185 pixels over the five pairs: the eye moves (the rig's head sway is integrated over frames and nothing restarts it), request `cockpit-22`.
 - The display pages are painted to their finished state within the frame while time is frozen (item 3), in the cockpit's own code; `src/ui/mfd/mfdPainter.ts` is unchanged.
 - `sitAtWindowBelow` is the integration lab's helper, not the cockpit's (section 13, last paragraph).
+
+## Lead note (2026-11-16): recorded
+
+The probe confirms the answer above on the tree as it stands: `lunar-surface-cockpit`, `sweep-cockpit-leo`
+and (with the app's frozen start of request lead-6, which puts the rig's head sway at rest)
+`sweep-app-cockpit` are one picture in every capture of three loads; so are the outside views with a
+cabin window in frame. All three cockpit checkpoints are recorded and exact; `leo-night` and
+`reentry-peak-heating` are back at the framings with the cabin windows in view (orbit yaw 30 and yaw 160)
+and exact. `leo-terminator` was re-recorded: its three cabin windows had moved by up to 28 levels in 48
+pixels with this work (327a9a4, 19ab596), nothing else in it. `lunar-surface-cockpit` has a new framing,
+this package's recipe `world-moon-horizon` (the head at the pane of the left side window, head-up along
+the nose), through a new handle of the integration lab, `cabinView`. Hand-off `lead-baseline-v2`
+section 24.
