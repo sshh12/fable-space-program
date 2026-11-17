@@ -320,6 +320,11 @@ export interface MeterInput {
    */
   skyInAir?: number;
   sunDirectShare?: number;
+  /**
+   * The rules in use (RendererOptions.look): 1 or absent = the meter as it is; 2 = with the bounds on small
+   * bright subjects and under a low sun (METER2_*, below).
+   */
+  look?: 1 | 2;
   /** Number of pixels the GPU sampled (lit or not). */
   sampleCount: number;
   /** Unoccluded illuminance of the star at the camera (lux) and the fraction of its disc visible there. */

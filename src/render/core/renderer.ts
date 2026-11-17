@@ -36,7 +36,7 @@ import { FarExposure } from './post/farExposure';
 import { CUT_ADAPT_SECONDS, CUT_ADAPT_TAU, EV_DARK_FLOOR, exposureFromEv100, exposureHintOf, followExposureHint, interiorFarGain, sunThroughAir, type EmissiveHint } from './post/exposure';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorConfig, type GovernorState } from './post/governor';
 import { PostProcess } from './post/postProcess';
-import { Tonemap } from './post/tonemap';
+import { Tonemap, type Look } from './post/tonemap';
 import { createSharedResources, type CoreSharedResources } from './resources';
 import { createSceneBindings } from './sceneBindings';
 import { BLUE_NOISE_SIZE, FRAME_WGSL, FULLSCREEN_WGSL, GBUFFER_WGSL, MAX_BODIES, NOISE_WGSL, SHINE_RECEIVERS } from './shaders/chunksFrame';
@@ -73,6 +73,14 @@ export interface RendererOptions {
    * (a test run that exercises a whole suite with it).
    */
   contactShader?: ContactShader;
+  /**
+   * The one switch of the display curve and the meter's bounds (requests ocean-10, ocean-13; RENDER_API
+   * section 13): 1 (the default) = both as they are, to the pixel; 2 = the camera curve above mid-grey
+   * (post/tonemap.ts) and the meter's bounds on small bright subjects and under a low sun (post/exposure.ts).
+   * Also by the page's address, `look=2`, and by the env of the page's server, VITE_CORE_LOOK=2 (a run that
+   * exercises a whole suite with it).
+   */
+  look?: Look;
 }
 
 /** The env of the page's Vite server (undefined where the module is not served by Vite). */
@@ -199,6 +207,8 @@ export interface CoreRenderer extends Renderer {
   contactShadow(): ContactShadowParams;
   /** The shader the contact shadow runs (`RendererOptions.contactShader`); with 'first' `setContactShadow` changes nothing. */
   readonly contactShader: ContactShader;
+  /** The display curve and meter rules in use (RendererOptions.look). */
+  readonly look: Look;
   /** Switches of the sun-shadow filter for A/B pictures (ShadowSystem.debugFlags: 1 = no per-pixel turn of the kernel, 2 = no dithered cross-fade between cascades). 0 in the game. */
   setShadowDebug(flags: number): void;
   exposureInfo(): ExposureInfo;
@@ -326,6 +336,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   const pipelineWarm = opts.pipelineWarm ?? pageQuery.get('warm') !== '0';
   const contactAsked = pageQuery.get('contact') ?? VITE_ENV?.VITE_CORE_CONTACT;
   const contactShader: ContactShader = opts.contactShader ?? (contactAsked === 'first' ? 'first' : 'near');
+  const look: Look = opts.look ?? ((pageQuery.get('look') ?? VITE_ENV?.VITE_CORE_LOOK) === '2' ? 2 : 1);
   const shadowSwitches = (pageQuery.get('shadowdebug') ?? VITE_ENV?.VITE_CORE_SHADOW_DEBUG) === '1';
   const shaders: CoreShaderLibrary = createShaderLibrary(device, reportError, { warm: pipelineWarm });
   shaders.register('hash', HASH_WGSL);
@@ -479,7 +490,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   const lighting = new DeferredLighting(ctx, shaders);
   lighting.setSpotShadows(spotShadows.arrayView, spotShadows.uniform);
   const ao = new AmbientOcclusion(ctx, shaders, core, contactShader);
-  const tonemap = new Tonemap(ctx, shaders);
+  const tonemap = new Tonemap(ctx, shaders, look);
   const post = new PostProcess(ctx, shaders, core, gpu.hasFeature('rg11b10ufloat-renderable'));
   const meter = new ExposureMeter(ctx, shaders);
   const farExposure = new FarExposure(ctx, shaders);
@@ -863,6 +874,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       sunVisibility,
       // The solar disc itself counts: a camera pointed at the unoccluded sun stops down to the daylight exposure.
       litObjectInView: litObjectInView(snapshot, camera, bodies, vessels, rh, rw / rh) || sunDiscInView,
+      look,
       ...(sunInFrame !== undefined ? { sunInFrame } : {}),
       ...(sunElevationSin !== undefined ? { sunElevationSin } : {}),
       // Where the direct sun is nearly gone the sky is what lights the frame (request atmosphere-clouds-11).
@@ -1311,6 +1323,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     contactShadow: () => ({ ...ao.contact }),
     contactShader: ao.shader,
+    look,
     setShadowDebug(flags) {
       shadows.debugFlags = flags >>> 0;
     },

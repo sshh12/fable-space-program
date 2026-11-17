@@ -36,10 +36,57 @@ const agxContrast = (x: number): number => {
 };
 const luma = (c: Rgb): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 
+/**
+ * Which display curve (the one switch of request ocean-10 and ocean-13, RendererOptions.look): 1 = the curve
+ * as it is; 2 = the camera curve above mid-grey (below) and, in the meter, the bounds of exposure.ts.
+ */
+export type Look = 1 | 2;
+
+/**
+ * The camera curve (look 2; lead decision in docs/requests/ocean-10.md). The present curve shows sunlit white
+ * paper at sunny 16 (0.93 pre-exposed) at 0.54 of display-linear white (193 of 255) and reaches 250 of 255
+ * only at ten times that: a daylight photograph has sunlit white at 235 to 245 and clips two to three times
+ * above it. Look 2 keeps the present curve from one stop under mid-grey down (shadows, the toe, every dark
+ * scene) and mid-grey itself where it is, and above it follows the SCENE: display-linear = scene-linear
+ * (through mid-grey: x CAMERA_GAIN) up to CAMERA_SHOULDER_FROM of display white, then a shoulder that reaches
+ * white at CAMERA_WHITE with no slope left (no hard clip). Sunlit white lands at 0.88 (241 of 255), 1.4
+ * times sunlit white at 0.98 (253), twice at white.
+ *
+ * It is applied where AgX applies its own curve: per channel, on the inset (desaturated) primaries, before
+ * the look and the outset. So greys follow the numbers above exactly, and a bright saturated colour still
+ * goes to white the way AgX takes it there (channel by channel, through the inset), not along a hue-true
+ * clip. Between CAMERA_BLEND_FROM and CAMERA_BLEND_TO stops about mid-grey the two curves are mixed by a
+ * smoothstep on the channel's own value; the present curve's log-log slope is 1 half a stop under mid-grey,
+ * the line's is 1 everywhere, so the join has no kink, and the mix is monotone (the line is above the
+ * present curve on both sides of mid-grey).
+ */
+export const CAMERA_WHITE = 2.33;
+export const CAMERA_SHOULDER_FROM = 0.75;
+export const CAMERA_BLEND_FROM = -1;
+export const CAMERA_BLEND_TO = 0;
+/** What the look does to a grey's display-linear value: (curve ^ 1.12) ^ 2.2. */
+const AGX_GREY_POWER = 1.12 * 2.2;
+const agxCurve = (x: number): number => agxContrast((Math.min(Math.max(Math.log2(Math.max(x, 1e-10)), AGX_MIN_EV), AGX_MAX_EV) - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV));
+/** Display-linear over scene-linear of the present curve at mid-grey (0.989): the line of look 2 goes through it. */
+export const CAMERA_GAIN = Math.max(agxCurve(0.18), 0) ** AGX_GREY_POWER / 0.18;
+const CAMERA_SHOULDER_X = CAMERA_SHOULDER_FROM / CAMERA_GAIN;
+/** Exponent of the shoulder: its slope where it leaves the line is the line's. */
+const CAMERA_SHOULDER_POWER = (CAMERA_GAIN * (CAMERA_WHITE - CAMERA_SHOULDER_X)) / (1 - CAMERA_SHOULDER_FROM);
+/** The camera curve's display-linear value of a grey (before the mix with the present curve). */
+export const cameraGrey = (x: number): number =>
+  x <= CAMERA_SHOULDER_X ? CAMERA_GAIN * x : 1 - (1 - CAMERA_SHOULDER_FROM) * (1 - Math.min((x - CAMERA_SHOULDER_X) / (CAMERA_WHITE - CAMERA_SHOULDER_X), 1)) ** CAMERA_SHOULDER_POWER;
+/** One channel through the curve of the look (the value AgX's look and outset then take). */
+const channelCurve = (x: number, look: Look): number => {
+  const present = agxCurve(x);
+  if (look === 1) return present;
+  const u = Math.min(Math.max((Math.log2(Math.max(x, 1e-10) / 0.18) - CAMERA_BLEND_FROM) / (CAMERA_BLEND_TO - CAMERA_BLEND_FROM), 0), 1);
+  return present + (cameraGrey(x) ** (1 / AGX_GREY_POWER) - present) * (u * u * (3 - 2 * u));
+};
+
 /** AgX with the pass's look: pre-exposed scene-linear sRGB -> display-linear sRGB (before the OETF). */
-export function agxDisplayLinear(c: Rgb): [number, number, number] {
+export function agxDisplayLinear(c: Rgb, look: Look = 1): [number, number, number] {
   let v = mul(AGX_INSET, [Math.max(c[0], 0), Math.max(c[1], 0), Math.max(c[2], 0)]);
-  v = v.map((x) => agxContrast((Math.min(Math.max(Math.log2(Math.max(x, 1e-10)), AGX_MIN_EV), AGX_MAX_EV) - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV))) as [number, number, number];
+  v = v.map((x) => channelCurve(x, look)) as [number, number, number];
   v = v.map((x) => Math.max(x, 0) ** 1.12) as [number, number, number];
   const l = luma(v);
   v = mul(AGX_OUTSET, [l + 1.15 * (v[0] - l), l + 1.15 * (v[1] - l), l + 1.15 * (v[2] - l)]);
@@ -69,9 +116,9 @@ const toeJoin = TOE_MID_GREY * 2 ** (0.5 * (TOE_START_STOPS + TOE_FULL_STOPS));
 export const TOE_GAIN = agxDisplayLinear([toeJoin, toeJoin, toeJoin])[1] / toeJoin;
 
 /** The whole display transform of the tonemap pass: pre-exposed scene-linear sRGB -> display-linear sRGB. */
-export function displayLinear(c: Rgb): [number, number, number] {
+export function displayLinear(c: Rgb, look: Look = 1): [number, number, number] {
   const p: Rgb = [Math.max(c[0], 0), Math.max(c[1], 0), Math.max(c[2], 0)];
-  const a = agxDisplayLinear(p);
+  const a = agxDisplayLinear(p, look);
   const stops = Math.log2(Math.max(luma(p), 1e-10) / TOE_MID_GREY);
   const t = Math.min(Math.max((stops - TOE_FULL_STOPS) / (TOE_START_STOPS - TOE_FULL_STOPS), 0), 1);
   const w = 1 - t * t * (3 - 2 * t);
@@ -219,6 +266,31 @@ fn scrimCover(r: ScrimRect, px: vec2f) -> f32 {
 }
 `;
 
+/**
+ * The pass's shader with the camera curve (look 2): the present text with the three lines of `agx` that
+ * apply its curve replaced. The present text itself is not touched, so with the switch off the pass
+ * compiles what it always compiled. Throws if the lines are not there (a unit test holds it).
+ */
+export function tonemapWgsl(look: Look): string {
+  if (look === 1) return TONEMAP_WGSL;
+  const from = `  var v = inset * max(c, vec3f(0.0));
+  v = (clamp(log2(max(v, vec3f(1e-10))), vec3f(minEv), vec3f(maxEv)) - minEv) / (maxEv - minEv);
+  v = agxContrast(v);
+`;
+  const to = `  let lin = inset * max(c, vec3f(0.0));
+  var v = (clamp(log2(max(lin, vec3f(1e-10))), vec3f(minEv), vec3f(maxEv)) - minEv) / (maxEv - minEv);
+  v = agxContrast(v);
+  // The camera curve above mid-grey (look 2; tonemap.ts, CAMERA_*): the scene's own line up to the shoulder,
+  // white at CAMERA_WHITE, mixed with the present curve over the stop under mid-grey, per channel.
+  let camU = clamp((lin - vec3f(${CAMERA_SHOULDER_X.toFixed(9)})) / ${(CAMERA_WHITE - CAMERA_SHOULDER_X).toFixed(9)}, vec3f(0.0), vec3f(1.0));
+  let camGrey = select(vec3f(1.0) - ${(1 - CAMERA_SHOULDER_FROM).toFixed(9)} * pow(vec3f(1.0) - camU, vec3f(${CAMERA_SHOULDER_POWER.toFixed(9)})), ${CAMERA_GAIN.toFixed(9)} * lin, lin <= vec3f(${CAMERA_SHOULDER_X.toFixed(9)}));
+  let camMix = smoothstep(vec3f(${CAMERA_BLEND_FROM.toFixed(1)}), vec3f(${CAMERA_BLEND_TO.toFixed(1)}), log2(max(lin, vec3f(1e-10)) / 0.18));
+  v = mix(v, pow(max(camGrey, vec3f(0.0)), vec3f(${(1 / AGX_GREY_POWER).toFixed(9)})), camMix);
+`;
+  if (TONEMAP_WGSL.split(from).length !== 2) throw new Error('tonemap: the lines of agx() that look 2 replaces are not in the shader text');
+  return TONEMAP_WGSL.replace(from, to);
+}
+
 export class Tonemap {
   private readonly layout: GPUBindGroupLayout;
   private readonly pipeline: Tracked<GPURenderPipeline>;
@@ -232,8 +304,11 @@ export class Tonemap {
   constructor(
     private readonly ctx: RenderContext,
     shaders: CoreShaderLibrary,
+    /** The display curve (RendererOptions.look): 1 = as it is, 2 = the camera curve. */
+    look: Look = 1,
   ) {
     const device = ctx.device;
+    const wgsl = tonemapWgsl(look);
     this.layout = device.createBindGroupLayout({
       label: 'tonemap',
       entries: [
@@ -246,7 +321,7 @@ export class Tonemap {
     });
     this.uniform = device.createBuffer({ label: 'tonemap', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.pipeline = shaders.tracked(() => {
-      const module = shaders.createModule('core.tonemap', TONEMAP_WGSL);
+      const module = shaders.createModule('core.tonemap', wgsl);
       return device.createRenderPipeline({
         label: 'core.tonemap',
         layout: device.createPipelineLayout({ bindGroupLayouts: [ctx.frameBindGroupLayout, this.layout] }),

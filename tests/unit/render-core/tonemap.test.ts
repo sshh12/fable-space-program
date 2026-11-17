@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agxDisplayLinear, displayLinear, srgbEncode, TOE_FULL_STOPS, TOE_GAIN, TOE_START_STOPS } from '@/render/core/post/tonemap';
+import { agxDisplayLinear, CAMERA_BLEND_FROM, CAMERA_GAIN, CAMERA_SHOULDER_FROM, CAMERA_WHITE, displayLinear, srgbEncode, TOE_FULL_STOPS, TOE_GAIN, TOE_START_STOPS, TONEMAP_WGSL, tonemapWgsl } from '@/render/core/post/tonemap';
 
 const MID = 0.18;
 const grey = (stops: number): [number, number, number] => [MID * 2 ** stops, MID * 2 ** stops, MID * 2 ** stops];
@@ -110,5 +110,89 @@ describe('display transform (tonemap pass): AgX with a linear, hue-preserving to
       last = d;
     }
     expect(last[2]!).toBeGreaterThan(0.85); // at six stops over the blue channel has nearly caught up: white
+  });
+});
+
+describe("the camera curve (look 2; request ocean-10): the scene's own line above mid-grey, a shoulder to white", () => {
+  /** Sunlit white paper (albedo 0.9) at the meter's daylight exposure, pre-exposed. */
+  const SUNLIT_WHITE = 0.93;
+  const g = (x: number, look: 1 | 2): number => displayLinear([x, x, x], look)[1];
+
+  it('is the present curve to the bit from one stop under mid-grey down, and with the switch off everywhere', () => {
+    for (let s = -14; s <= CAMERA_BLEND_FROM; s += 0.25) {
+      for (const tint of [[1, 1, 1], [1.25, 1, 0.75], [0.3, 0.8, 1.6]] as const) {
+        // (The tint's brightest channel stays under the blend: the mix is by each channel's own value.)
+        const y = (MID * 2 ** s) / 1.6;
+        const c: [number, number, number] = [y * tint[0], y * tint[1], y * tint[2]];
+        expect(displayLinear(c, 2)).toEqual(displayLinear(c, 1));
+      }
+    }
+    for (let s = -8; s <= 8; s += 0.5) expect(displayLinear(grey(s), 1)).toEqual(displayLinear(grey(s)));
+    expect(tonemapWgsl(1)).toBe(TONEMAP_WGSL);
+  });
+
+  it('keeps mid-grey where it is, puts sunlit white near 0.9 of display white and reaches white between two and three times sunlit white', () => {
+    // (To a millionth: AgX's inset and outset rows sum to 1 within 2e-4, which the line does not copy.)
+    expect(g(MID, 2)).toBeCloseTo(g(MID, 1), 5);
+    expect(255 * srgbEncode(g(MID, 2))).toBeCloseTo(117.3, 0);
+    // Sunlit white: 0.54 of display-linear white today (193 of 255); 0.88 (241) with the camera curve.
+    expect(g(SUNLIT_WHITE, 1)).toBeCloseTo(0.536, 2);
+    expect(g(SUNLIT_WHITE, 2)).toBeGreaterThan(0.85);
+    expect(g(SUNLIT_WHITE, 2)).toBeLessThan(0.92);
+    expect(Math.round(255 * srgbEncode(g(SUNLIT_WHITE, 2)))).toBe(241);
+    // The scene's own line up to the shoulder.
+    for (const x of [0.2, 0.3, 0.5, 0.7]) expect(g(x, 2)).toBeCloseTo(CAMERA_GAIN * x, 3);
+    expect(CAMERA_GAIN * 0.7).toBeLessThan(CAMERA_SHOULDER_FROM);
+    // The shoulder: not yet white at 1.4 times sunlit white, white (255 of 255) from twice, exactly 1 from CAMERA_WHITE.
+    expect(g(1.4 * SUNLIT_WHITE, 2)).toBeLessThan(0.99);
+    expect(Math.round(255 * srgbEncode(g(2 * SUNLIT_WHITE, 2)))).toBe(255);
+    expect(CAMERA_WHITE / SUNLIT_WHITE).toBeGreaterThan(2);
+    expect(CAMERA_WHITE / SUNLIT_WHITE).toBeLessThan(3);
+    // (AgX's own white: its outset rows sum to 0.9998, so display white is 0.9996, 255 of 255, on both curves.)
+    expect(g(CAMERA_WHITE, 2)).toBeGreaterThan(0.9995);
+    expect(g(50, 2)).toBe(g(CAMERA_WHITE, 2));
+    expect(g(50, 1)).toBeCloseTo(0.9966, 3);
+    // The present curve for comparison: 250 of 255 needs ten times sunlit white.
+    expect(255 * srgbEncode(g(8, 1))).toBeLessThan(248);
+  });
+
+  it('is monotone and has no kink from the toe to white: the log-log slope of a grey changes by under 0.15 per quarter stop below the shoulder', () => {
+    let prev = 0;
+    for (let s = -8; s <= 5; s += 0.01) {
+      const y = g(MID * 2 ** s, 2);
+      expect(y).toBeGreaterThanOrEqual(prev);
+      prev = y;
+    }
+    const slope = (s: number): number => Math.log2(g(MID * 2 ** (s + 0.01), 2) / g(MID * 2 ** (s - 0.01), 2)) / 0.02;
+    const shoulder = Math.log2(CAMERA_SHOULDER_FROM / CAMERA_GAIN / MID);
+    for (let s = -7; s + 0.25 <= shoulder; s += 0.05) expect(Math.abs(slope(s + 0.25) - slope(s)), `at ${s.toFixed(2)} stops`).toBeLessThan(0.15);
+    // In the shoulder the slope falls to nothing without a step: by under 0.5 per tenth of a stop.
+    for (let s = shoulder - 0.1; s < Math.log2(CAMERA_WHITE / MID); s += 0.02) expect(Math.abs(slope(s + 0.1) - slope(s)), `at ${s.toFixed(2)} stops`).toBeLessThan(0.5);
+  });
+
+  it("takes a bright saturated colour to white through AgX's primaries, channel by channel, and never reorders its channels", () => {
+    for (const tint of [[1, 0.45, 0.08], [0.1, 0.4, 1], [1, 0.9, 0.2]] as const) {
+      let last = displayLinear([0.05 * tint[0], 0.05 * tint[1], 0.05 * tint[2]], 2);
+      for (let s = -1; s <= 9; s += 0.25) {
+        const c = displayLinear([MID * 2 ** s * tint[0], MID * 2 ** s * tint[1], MID * 2 ** s * tint[2]], 2);
+        // (A channel at the clip settles from 1 to AgX's white, 0.9996, once all three are there.)
+        for (let i = 0; i < 3; i++) expect(c[i]!).toBeGreaterThanOrEqual(last[i]! - 5e-4);
+        const order = [0, 1, 2].sort((a, b) => tint[b]! - tint[a]!);
+        expect(c[order[0]!]!).toBeGreaterThanOrEqual(c[order[1]!]! - 5e-4);
+        expect(c[order[1]!]!).toBeGreaterThanOrEqual(c[order[2]!]! - 5e-4);
+        last = c;
+      }
+      // Nine stops over mid-grey: white.
+      expect(Math.min(...last)).toBeGreaterThan(0.97);
+    }
+  });
+
+  it('the shader of look 2 is the present text with the three lines of the curve replaced', () => {
+    const wgsl = tonemapWgsl(2);
+    expect(wgsl).not.toBe(TONEMAP_WGSL);
+    expect(wgsl).toContain('camGrey');
+    expect(wgsl.length).toBeGreaterThan(TONEMAP_WGSL.length);
+    // Everything but the curve is the present pass.
+    expect(wgsl.split('fn displayTransform')[1]).toBe(TONEMAP_WGSL.split('fn displayTransform')[1]);
   });
 });
