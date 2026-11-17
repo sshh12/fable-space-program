@@ -33,7 +33,7 @@ import { TextureManager } from './mesh/textures';
 import { Perf } from './perf';
 import { ExposureMeter } from './post/exposureMeter';
 import { FarExposure } from './post/farExposure';
-import { CUT_ADAPT_SECONDS, CUT_ADAPT_TAU, EV_DARK_FLOOR, exposureFromEv100, exposureHintOf, followExposureHint, interiorFarGain, sunThroughAir, type EmissiveHint } from './post/exposure';
+import { CUT_ADAPT_SECONDS, CUT_ADAPT_TAU, EV_DARK_FLOOR, exposureFromEv100, exposureHintOf, followExposureHint, interiorFarGain, sunThroughAir, type EmissiveHint, type MeterInput } from './post/exposure';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorConfig, type GovernorState } from './post/governor';
 import { PostProcess } from './post/postProcess';
 import { Tonemap, type Look } from './post/tonemap';
@@ -212,6 +212,11 @@ export interface CoreRenderer extends Renderer {
   /** Switches of the sun-shadow filter for A/B pictures (ShadowSystem.debugFlags: 1 = no per-pixel turn of the kernel, 2 = no dithered cross-fade between cascades). 0 in the game. */
   setShadowDebug(flags: number): void;
   exposureInfo(): ExposureInfo;
+  /**
+   * What the meter evaluated in the last frame, copied (histograms as arrays; null before the first frame):
+   * a recorded scene's metering can be replayed with `meterExposure` outside the page. A debug read-out.
+   */
+  meterInput(): MeterInput | null;
   /** Read back a rectangle of the HDR scene target ('hdr', before TAA) or of the resolved TAA output ('resolved'). */
   readHdrPixels(target?: 'hdr' | 'resolved', rect?: { x: number; y: number; width: number; height: number }): Promise<HdrPixels>;
   readHdrStats(target?: 'hdr' | 'resolved'): Promise<{ maxLuminance: number; meanLuminance: number; nanPixels: number }>;
@@ -1414,6 +1419,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
         throw e;
       }
     },
+    meterInput: () => meter.inputSnapshot(),
     exposureInfo() {
       const m = meter.last();
       return { ev100, targetEv100: m.targetEv100, exposure: exposureFromEv100(ev100), litFraction: m.litFraction, histogramWeight: m.histogramWeight, evPrior: m.evPrior, evHistogram: m.evHistogram, outsideFraction: m.outsideFraction, evOutside: m.evOutside, outsideWeight: m.outsideWeight, sunlitFloor: m.sunlitFloor, farGain, farLevel: m.farLevel, farWeight: m.farWeight, sunVisibility: meter.lastSunVisibility(), override: evOverride, hint: evHint };

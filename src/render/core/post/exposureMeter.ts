@@ -60,6 +60,7 @@ export class ExposureMeter {
   private histogramNear = new Uint32Array(HISTOGRAM_BINS);
   private histogramSky = new Uint32Array(HISTOGRAM_BINS);
   private sampleCount = 1;
+  private input: MeterInput | null = null;
   private result: MeterResult = { targetEv100: 0, litFraction: 0, histogramWeight: 0, evHistogram: 0, evPrior: 0, outsideFraction: 0, evOutside: 0, outsideWeight: 0, sunlitFloor: 0, farLevel: 0, farWeight: 0 };
   private sunVis = 1;
 
@@ -94,8 +95,19 @@ export class ExposureMeter {
   /** Target EV100 for this frame from the most recent histogram that has been read back. */
   evaluate(input: Omit<MeterInput, 'histogram' | 'histogramNear' | 'histogramSky' | 'sampleCount'>): MeterResult {
     this.sunVis = input.sunVisibility;
-    this.result = meterExposure({ ...input, histogram: this.histogram, histogramNear: this.histogramNear, histogramSky: this.histogramSky, sampleCount: this.sampleCount });
+    this.input = { ...input, histogram: this.histogram, histogramNear: this.histogramNear, histogramSky: this.histogramSky, sampleCount: this.sampleCount };
+    this.result = meterExposure(this.input);
     return this.result;
+  }
+
+  /**
+   * A copy of what the last evaluation metered (the three histograms as plain arrays): with it the meter's
+   * rules can be replayed outside the page (`meterExposure(input)`), on a recorded scene.
+   */
+  inputSnapshot(): MeterInput | null {
+    const m = this.input;
+    if (!m) return null;
+    return { ...m, emissive: m.emissive ? m.emissive.map((e) => ({ ...e })) : undefined, histogram: Array.from(m.histogram), histogramNear: Array.from(m.histogramNear), ...(m.histogramSky ? { histogramSky: Array.from(m.histogramSky) } : {}) } as MeterInput;
   }
 
   adapt(current: number, target: number, dt: number): number {
