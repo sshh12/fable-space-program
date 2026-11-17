@@ -15,6 +15,11 @@ import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 
 export const LAB_VEHICLE_ID = 'lab-meridian';
+/** The lab vehicle's cabin and chase distances: stated by its definition, and by the craft block of a tagged snapshot. */
+const LAB_COCKPIT_ID = 'lab';
+const LAB_CAMERA_SEAT = 'cdr';
+const LAB_COMMAND_PART = 'capsule';
+const LAB_CHASE = { defaultDistance: 95, minDistance: 30, maxDistance: 2500 } as const;
 
 const RESOURCES: ResourceDef[] = [
   { id: 'lab-rp1', name: 'RP-1', density: 810 },
@@ -165,8 +170,8 @@ export function withLabVehicle(defs: DefLibrary): DefLibrary {
     abort: [],
     actionGroups: {},
     crew: [{ seat: 'cdr', name: 'Commander' }],
-    cameras: { cockpit: { part: 'capsule', seat: 'cdr' }, chase: { defaultDistance: 95, minDistance: 30, maxDistance: 2500 } },
-    cockpit: 'lab',
+    cameras: { cockpit: { part: LAB_COMMAND_PART, seat: LAB_CAMERA_SEAT }, chase: { ...LAB_CHASE } },
+    cockpit: LAB_COCKPIT_ID,
   };
   return {
     ...defs,
@@ -231,7 +236,9 @@ export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<LabGroup,
 }
 
 /**
- * The FakeSim reports vehicleId ''; the lab tags its snapshots with the lab vehicle. The FakeSim also reports a
+ * The fake session reports vehicleId '' unless it is told one; the lab tags its snapshots with the lab vehicle:
+ * the vessel's vehicle id and name, and its craft block as a session states it for that vehicle (the vehicle id,
+ * the cabin of the command part and its camera seat, the chase distances). The fake also reports a
  * heat shield only in its plasma scenes; the lab vehicle always carries one, so its ablator is reported as the
  * sim reports it (readouts.ablatorFraction null only for a vessel without a heat shield) and the MFD entry page
  * agrees with the systems page in every scene.
@@ -244,7 +251,19 @@ export function tagLabVehicle(s: SimSnapshot): SimSnapshot {
   }
   return {
     ...s,
-    vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, vehicleId: LAB_VEHICLE_ID, name: 'Meridian 1' } : v)),
+    vessels: s.vessels.map((v) => {
+      if (v.id !== s.activeVesselId) return v;
+      const hasCabin = v.parts.some((p) => p.instanceId === LAB_COMMAND_PART);
+      const crafts = v.crafts?.map((c) => ({
+        ...c,
+        vehicleId: LAB_VEHICLE_ID,
+        name: 'Meridian 1',
+        commandPart: hasCabin ? LAB_COMMAND_PART : null,
+        cockpit: hasCabin ? { id: LAB_COCKPIT_ID, cameraSeat: LAB_CAMERA_SEAT, sensorMount: null } : null,
+        chase: { ...LAB_CHASE },
+      }));
+      return { ...v, vehicleId: LAB_VEHICLE_ID, name: 'Meridian 1', ...(crafts ? { crafts } : {}) };
+    }),
     readouts: ablator === s.readouts.ablatorFraction ? s.readouts : { ...s.readouts, ablatorFraction: ablator },
   };
 }

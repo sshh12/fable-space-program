@@ -202,7 +202,9 @@ describe('display models', () => {
     expect(stageBurnLabel(s, defs, 4)).toBe('Heron descent stage');
     // Stages that ignite nothing, and vessels without a vehicle definition, have no burn name.
     expect(stageBurnLabel(s, defs, 5)).toBeNull();
-    expect(stageBurnLabel({ ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle' })) }, defs, 0)).toBeNull();
+    expect(stageBurnLabel({ ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle', crafts: v.crafts?.map((c) => ({ ...c, vehicleId: 'no-such-vehicle' })) })) }, defs, 0)).toBeNull();
+    // The craft's vehicle is what counts (the helm craft's stage stack is the panel's), not the vessel's base craft label.
+    expect(stageBurnLabel({ ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle' })) }, defs, 0)).toBe('Meridian M-1');
     expect(describeStages(s, defs).tiles[3]!.burnName).toBe('Meridian M-3');
   });
 
@@ -746,7 +748,8 @@ describe('round-6 mission read-outs', () => {
     return {
       ...base,
       ...patch,
-      vessels: base.vessels.map((v) => (v.id === base.activeVesselId ? { ...v, vehicleId: MISSION_VEHICLE, parts } : v)),
+      // The vessel and its craft are of the mission vehicle (the craft's vehicle id is what words about a stage are looked up by).
+      vessels: base.vessels.map((v) => (v.id === base.activeVesselId ? { ...v, vehicleId: MISSION_VEHICLE, crafts: v.crafts?.map((c) => ({ ...c, vehicleId: MISSION_VEHICLE })), parts } : v)),
     };
   };
 

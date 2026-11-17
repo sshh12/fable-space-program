@@ -39,8 +39,8 @@ beforeAll(async () => {
 const IDLE: CameraInput = { yaw: 0, pitch: 0, zoom: 1 };
 const DT = 1 / 60;
 
-function sim(scene: FakeScene): { snap: () => SimSnapshot; advance: (dt: number) => void } {
-  const s = createFakeSim(defs, { scene, parts: labVehicleParts(defs) });
+function sim(scene: FakeScene, renderRoot: 'focusBody' | 'rootBody' = 'focusBody'): { snap: () => SimSnapshot; advance: (dt: number) => void } {
+  const s = createFakeSim(defs, { scene, parts: labVehicleParts(defs), renderRoot });
   return { snap: () => tagLabVehicle(s.snapshot()), advance: (dt) => s.advance(dt) };
 }
 
@@ -356,7 +356,7 @@ describe('cockpit rig', () => {
     const s = sim('lowOrbit').snap();
     const v = s.vessels[0]!;
     // A vessel of a design the library does not know, whose craft names the part and the seat itself.
-    const craft = { id: 'c1', vehicleId: 'not-in-the-library', commandPart: 'capsule', cockpit: { id: 'lab', cameraSeat: 'ms', sensorMount: null } } as unknown as NonNullable<typeof v.crafts>[number];
+    const craft = { ...v.crafts![0]!, vehicleId: 'not-in-the-library', commandPart: 'capsule', cockpit: { id: 'lab', cameraSeat: 'ms', sensorMount: null } };
     const flown = { ...v, vehicleId: 'not-in-the-library', crafts: [craft] };
     const host = cockpitHost(defs, flown)!;
     expect(host.part.instanceId).toBe('capsule');
@@ -478,7 +478,9 @@ describe('chase rig', () => {
 
 describe('map rig', () => {
   it('spans 100 km .. 2e9 m from the focus surface without precision loss', () => {
-    const src = sim('lunarOrbit');
+    // The render root at the library's root body: the focus is 384,000 km from the origin, the worst case for
+    // the precision of what the rig computes (a session's own root would have the Moon at the origin).
+    const src = sim('lunarOrbit', 'rootBody');
     const s = src.snap();
     const rig = createMapRig({ defs });
     rig.activate(null, s);
