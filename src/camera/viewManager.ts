@@ -98,6 +98,13 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
 
   let mode: ViewMode = opts.initialMode && byMode.has(opts.initialMode) ? opts.initialMode : rigs[0]!.mode;
   let lastFlightMode: ViewMode | null = null;
+  /**
+   * The flight view the manager had to leave for the map because no flight view was available (the viewer
+   * has no seat: every flight rig follows the active vessel). The map was not the player's choice then, so
+   * the manager goes back as soon as a flight view is available again; null while the view is where the
+   * player or the app put it.
+   */
+  let displaced: ViewMode | null = null;
   let activated = false;
   let last: CameraState | null = null;
   let lastSnapshot: SimSnapshot | null = null;
@@ -167,15 +174,22 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
 
   const flightModes = (s: SimSnapshot): ViewMode[] => rigs.filter((r) => kindOf(r, s) !== 'map').map((r) => r.mode);
 
+  /** A switch the player or the app asked for: the view is then where they put it. */
+  const choose = (next: ViewMode, s: SimSnapshot): boolean => {
+    if (!switchTo(next, s)) return false;
+    displaced = null;
+    return true;
+  };
+
   const handle = (pressed: ReadonlySet<ButtonAction>, s: SimSnapshot): void => {
     const current = byMode.get(mode)!;
     if (pressed.has('toggleMap')) {
       if (kindOf(current, s) === 'map') {
         const back = [lastFlightMode, ...flightModes(s)].find((m) => m !== null && byMode.has(m) && available(byMode.get(m)!, s));
-        if (back) switchTo(back, s);
+        if (back) choose(back, s);
       } else {
         const map = rigs.find((r) => kindOf(r, s) === 'map' && available(r, s));
-        if (map) switchTo(map.mode, s);
+        if (map) choose(map.mode, s);
       }
     }
     if (pressed.has('cycleCamera') && kindOf(byMode.get(mode)!, s) !== 'map') {
@@ -184,11 +198,35 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
       for (let k = 1; k <= list.length; k++) {
         const cand = list[(i + k) % list.length]!;
         if (cand !== mode && available(byMode.get(cand)!, s)) {
-          switchTo(cand, s);
+          choose(cand, s);
           break;
         }
       }
     }
+  };
+
+  /**
+   * The current rig is not available. Another flight view takes over (a vessel without a cabin is seen from
+   * outside); when there is none (no seat) the map does, as a stand-in that `regain` leaves again.
+   */
+  const fallBack = (s: SimSnapshot): void => {
+    const flight = flightModes(s).find((m) => available(byMode.get(m)!, s));
+    const alt = flight ?? rigs.find((r) => available(r, s))?.mode;
+    if (alt === undefined) return;
+    const was = mode;
+    const wasFlight = kindOf(byMode.get(was)!, s) !== 'map';
+    if (switchTo(alt, s) && flight === undefined && wasFlight) displaced = was;
+  };
+
+  /** Back from the stand-in map to the flight view that was left (or another one) once a seat is there again. */
+  const regain = (s: SimSnapshot): void => {
+    if (displaced === null) return;
+    if (kindOf(byMode.get(mode)!, s) !== 'map') {
+      displaced = null;
+      return;
+    }
+    const back = [displaced, ...flightModes(s)].find((m) => byMode.has(m) && available(byMode.get(m)!, s));
+    if (back !== undefined && switchTo(back, s)) displaced = null;
   };
 
   const mix = (from: Frozen, to: CameraState, k: number, v: VesselSnapshot): CameraState => {
@@ -235,7 +273,7 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
     rig: (m) => byMode.get(m),
     setMode: (m, s) => {
       followFrame(s);
-      return switchTo(m, s);
+      return choose(m, s);
     },
     update(s, input, realDt, pressed) {
       followFrame(s);
@@ -244,6 +282,9 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
         if (!available(rig, s)) {
           const alt = rigs.find((r) => available(r, s));
           if (!alt) throw new Error('createViewManager: no rig is available for this snapshot');
+          // A session that starts without a seat (the menu, a spectator) opens on the map in place of the
+          // flight view it was to start in, and takes that view when a seat is there.
+          if (kinds.get(rig.mode) !== 'map' && kindOf(alt, s) === 'map') displaced = mode;
           rig = alt;
           mode = alt.mode;
         }
@@ -251,11 +292,9 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
         activated = true;
       }
       if (pressed && pressed.size > 0) handle(pressed, s);
-      // The current rig can become unavailable (vessel switched to debris without a cockpit).
-      if (!available(byMode.get(mode)!, s)) {
-        const alt = flightModes(s).find((m) => available(byMode.get(m)!, s)) ?? rigs.find((r) => available(r, s))?.mode;
-        if (alt) switchTo(alt, s);
-      }
+      // The current rig can become unavailable (vessel switched to debris without a cockpit; the seat was left).
+      if (!available(byMode.get(mode)!, s)) fallBack(s);
+      else regain(s);
       const rig = byMode.get(mode)!;
       const target = rig.update(s, input, realDt);
       kinds.set(rig.mode, target.kind);
