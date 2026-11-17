@@ -384,7 +384,8 @@ export interface MeterResult {
  *
  * 1. THE SKY'S BULK DOES NOT CLIP. Inside an atmosphere the target is at least the exposure at which the
  *    sky's METER2_BULK_PERCENTILE (its 90th percentile: the glow about the sun is the rest) is shown at
- *    METER2_SKY_MAX pre-exposed (253 of 255 with the camera curve), by how much of the frame is sky (none
+ *    METER2_SKY_MAX pre-exposed (0.69 of display white, 217 of 255, with the camera curve: where an overcast
+ *    sky stands in a photograph, Y 0.62 to 0.68 over a sea at a fifth of it), by how much of the frame is sky (none
  *    under METER2_SKY_SHARE_FROM, full from _FULL). By day it never binds (a clear sky stands at 0.1 to 0.2
  *    at the daylight exposure). Under a low sun it is what holds the frame: the sun's light on the ground
  *    dies in the last degrees while the sky has lost a stop, and a frame exposed for the ground alone puts
@@ -418,7 +419,7 @@ export interface MeterResult {
  *    (3,000 lux) is exposed for, not held at that sun's sunny 16, ten stops too open.
  */
 export const METER2_BULK_PERCENTILE = 0.9;
-export const METER2_SKY_MAX = 1.3;
+export const METER2_SKY_MAX = 0.7;
 export const METER2_SKY_SHARE_FROM = 0.02;
 export const METER2_SKY_SHARE_FULL = 0.1;
 export const METER2_SUBJECT_PERCENTILE = 0.75;
