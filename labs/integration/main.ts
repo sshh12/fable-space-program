@@ -40,6 +40,7 @@ import type { PointerState } from '@/core/contracts/controls';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
+import { FakeSession } from '@/core/fakes/fakeSession';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { cabinOf } from '@/core/access/snapshotAccess';
 import { latLonToDir } from '@/core/geo/cubeSphere';
@@ -107,6 +108,12 @@ export interface IntegrationLab {
   setSun(site: Site | null, azDeg?: number, elDeg?: number): void;
   /** Pin the sun in a direction that is fixed in the active vessel's frame (VES axes), e.g. through a window. */
   setSunInVesselFrame(dirVes: Vec3): void;
+  /**
+   * Replace the origin of the fake session's ROOT positions by the centre of a body, as a change of the
+   * sphere of influence does (a new frame epoch with its rebase: FakeSession.setRenderRoot). False with the
+   * real simulation, whose origin is its own to replace.
+   */
+  setRenderRoot(bodyId: string): boolean;
   /**
    * A/B switch for the near cloud shadow (the optical-depth map around the camera): off = every reader of
    * the frame's near placement (deferred lighting, forward-lit shaders) sees no near map; the far term stays.
@@ -409,6 +416,7 @@ async function boot(): Promise<void> {
   }
   let simKind: 'fake' | 'real' = 'fake';
   let inner: Sim;
+  let fakeSession: FakeSession | null = null;
   const createSim = query.get('sim') === 'real' ? await importRealSim() : null;
   if (query.get('sim') === 'real' && !createSim) problems.push(`sim: the real Sim was asked for but ${realSimAvailable() ? 'src/sim/index.ts does not export createSim' : 'src/sim/index.ts is not in the tree'}; using the FakeSim`);
   if (createSim) {
@@ -432,7 +440,11 @@ async function boot(): Promise<void> {
       ...(real ? { parts: real.parts, stageLabels: real.stageLabels, vehicleId } : {}),
       ...(place ?? {}),
       ...(query.has('start') && Number.isFinite(Number(query.get('start'))) ? { altitude: Number(query.get('start')) } : {}),
+      // &origin=focus: ROOT positions about the centre of the vessel's SOI body, as a session states them;
+      // &origin=root: about the library's root body. The picture is the same (tests/browser/integration/origin.spec.ts).
+      ...(query.get('origin') === 'focus' ? { renderRoot: 'focusBody' as const } : query.get('origin') === 'root' ? { renderRoot: 'rootBody' as const } : {}),
     });
+    fakeSession = inner instanceof FakeSession ? inner : null;
     const throttle = Number(query.get('throttle') ?? 0);
     if (throttle > 0) inner.setControls({ ...NEUTRAL_CONTROLS, translate: v3.zero(), throttle: Math.min(1, throttle) });
   }
@@ -757,6 +769,11 @@ async function boot(): Promise<void> {
           return v ? quat.rotate(v.q, d) : null;
         },
       };
+    },
+    setRenderRoot(bodyId) {
+      if (!fakeSession) return false;
+      fakeSession.setRenderRoot(bodyId);
+      return true;
     },
     setNearCloudShadow(on) {
       nearCloudShadow = on;

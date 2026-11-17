@@ -27,7 +27,9 @@
 import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } from '@/core/contracts/render';
 import type { ModuleState, PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { observeFrame, rebaseHeldAt } from '@/core/access/frameAccess';
 import { CraftLineage, craftIdOf } from '@/core/access/snapshotAccess';
+import { FrameEpochTracker, rebasePoint, rebaseVelocity } from '@/core/math/frame';
 import { quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle, type TemporalFeature } from '@/render/core';
 import { DEFAULT_LOD_PIXELS, LodSelector, newLodState, type LodState } from './lod';
@@ -177,6 +179,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
   const lineage = new CraftLineage();
   const reported = new Set<string>();
   let ghosts: Ghost[] = [];
+  /** The epoch of the ROOT frame the ghosts' positions and velocities are held in. */
+  const frameEpochs = new FrameEpochTracker();
   let lastUt = Number.NaN;
   const stats: VesselVisualStats = {
     vessels: 0,
@@ -460,6 +464,18 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       stats.vessels = 0;
       stats.shadowTriangles = 0;
       lightBudget.n = 0;
+      // A ghost holds the ROOT position and velocity its vessel had when it left the snapshot. When the origin
+      // is replaced they are read in the new frame, as of the time they were taken (the ghost coasts on where it
+      // was going); a frame that cannot be reached from theirs leaves no ghost. (The ghosts of this frame come
+      // from the previous snapshot, which the core hands over in the new frame already.)
+      const frameChange = observeFrame(frameEpochs, snapshot.frame);
+      if (frameChange.kind === 'drop') ghosts = [];
+      else if (frameChange.kind === 'rebase') {
+        for (const g of ghosts) {
+          const held = rebaseHeldAt(frameChange.rebase, snapshot.ut - g.ut0);
+          g.vessel = { ...g.vessel, rRoot: rebasePoint(g.vessel.rRoot, held), vRoot: rebaseVelocity(g.vessel.vRoot, held) };
+        }
+      }
       collectGhosts(frame, snapshot);
       const alive = new Set<string>();
       for (const vessel of snapshot.vessels) {

@@ -21,7 +21,9 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraInput, CameraRig, CameraState, LodObserver, ViewKind, ViewMode } from '@/core/contracts/render';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
+import { observeFrame, rebaseHeldAt, rebaseSnapshot } from '@/core/access/frameAccess';
 import { activeVesselOf } from '@/core/access/snapshotAccess';
+import { FrameEpochTracker, rebasePoint } from '@/core/math/frame';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { slerpDir, smoothBlend, vesselComRoot, ZERO_CAMERA_INPUT } from './cameraMath';
@@ -93,6 +95,28 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
   let last: CameraState | null = null;
   let lastSnapshot: SimSnapshot | null = null;
   let blend: { from: Frozen; t: number } | null = null;
+  /** The epoch of the ROOT frame the presented camera (`last`) and its snapshot are held in. */
+  const frameEpochs = new FrameEpochTracker();
+
+  /**
+   * The presented camera is a ROOT position of the snapshot it was computed from. When the origin has been
+   * replaced since (a sphere-of-influence change), both are read in the new frame before a rig is activated
+   * from the camera or a blend starts from it; a frame that cannot be reached from theirs (another session)
+   * leaves nothing to start from, and the view cuts.
+   */
+  const followFrame = (s: SimSnapshot): void => {
+    const change = observeFrame(frameEpochs, s.frame);
+    if (change.kind === 'same' || !last) return;
+    if (change.kind === 'drop' || !lastSnapshot) {
+      last = null;
+      lastSnapshot = null;
+      blend = null;
+      return;
+    }
+    const held = rebaseHeldAt(change.rebase, s.ut - lastSnapshot.ut);
+    last = { ...last, positionRoot: rebasePoint(last.positionRoot, held) };
+    lastSnapshot = rebaseSnapshot(lastSnapshot, held);
+  };
 
   const available = (r: CameraRig, s: SimSnapshot): boolean => {
     const f = (r as { isAvailable?: (s: SimSnapshot) => boolean }).isAvailable;
@@ -198,8 +222,12 @@ export function createViewManager(rigs: readonly CameraRig[], opts: ViewManagerO
       return last;
     },
     rig: (m) => byMode.get(m),
-    setMode: (m, s) => switchTo(m, s),
+    setMode: (m, s) => {
+      followFrame(s);
+      return switchTo(m, s);
+    },
     update(s, input, realDt, pressed) {
+      followFrame(s);
       if (!activated) {
         let rig = byMode.get(mode)!;
         if (!available(rig, s)) {

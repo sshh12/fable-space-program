@@ -692,3 +692,60 @@ describe('chase rig on a surface (requests app-integration-3, vfx-11)', () => {
     expect(v3.dot(near, ventral)).toBeLessThan(Math.cos(50 * DEG));
   });
 });
+
+describe('the view manager across a replacement of the render root (presentation-sweep)', () => {
+  it('keeps its view where it was, and a view switched to in that frame starts from the camera, not from numbers of the old frame', () => {
+    const fake = createFakeSession(defs, { scene: 'lunarOrbit', vehicleId: LAB_VEHICLE_ID, parts: labVehicleParts(defs), renderRoot: 'rootBody' });
+    const views = createViewManager(rigs(), { defs });
+    let s = tagLabVehicle(fake.snapshot());
+    for (let i = 0; i < 30; i++) {
+      fake.advance(DT);
+      s = tagLabVehicle(fake.snapshot());
+      views.update(s, IDLE, DT);
+    }
+    expect(views.mode).toBe('chase');
+    const relBefore = v3.sub(views.camera!.positionRoot, vesselComRoot(s.vessels[0]!));
+    const bodyId = s.vessels[0]!.bodyId;
+    expect(s.frame!.origin).toEqual({ kind: 'body', bodyId: defs.rootBodyId });
+
+    // The origin goes from the root body to the Moon (384,000 km) between two frames.
+    fake.setRenderRoot(bodyId);
+    fake.advance(DT);
+    s = tagLabVehicle(fake.snapshot());
+    expect(s.frame!.epoch).toBe(1);
+    const next = views.update(s, IDLE, DT).camera;
+    expect(v3.dist(v3.sub(next.positionRoot, vesselComRoot(s.vessels[0]!)), relBefore)).toBeLessThan(0.05 * v3.len(relBefore));
+
+    // Back again, and the map is opened in the very frame that carries the new origin: the map rig starts on the
+    // ray through the previous eye. Read in the old frame that eye would be 384,000 km from the vessel.
+    fake.setRenderRoot(defs.rootBodyId);
+    fake.advance(DT);
+    s = tagLabVehicle(fake.snapshot());
+    expect(s.frame!.epoch).toBe(2);
+    expect(views.setMode('map', s)).toBe(true);
+    const first = views.update(s, IDLE, DT);
+    const vessel = vesselComRoot(s.vessels[0]!);
+    expect(views.blending).toBe(true);
+    expect(v3.dist(first.camera.positionRoot, vessel)).toBeLessThan(10 * v3.len(relBefore));
+    expect(v3.dist(first.target.positionRoot, vessel)).toBeLessThan(1e7);
+    // The map turns about the body the vessel orbits: its eye starts on the ray from that body through the chase camera.
+    const centre = s.bodies.find((b) => b.id === bodyId)!.rRoot;
+    expect(v3.dot(v3.normalize(v3.sub(first.target.positionRoot, centre)), v3.normalize(v3.sub(vessel, centre)))).toBeGreaterThan(0.9);
+  });
+
+  it('cuts when the frame cannot be reached from the one it last saw (another session)', () => {
+    const a = createFakeSession(defs, { scene: 'lunarOrbit', vehicleId: LAB_VEHICLE_ID, parts: labVehicleParts(defs), renderRoot: 'rootBody' });
+    a.setRenderRoot('moon');
+    const views = createViewManager(rigs(), { defs });
+    views.update(tagLabVehicle(a.snapshot()), IDLE, DT);
+    expect(views.camera).not.toBeNull();
+    // A new session starts at epoch 0 again: nothing of the old one is a place in it.
+    const b = createFakeSession(defs, { scene: 'lowOrbit', vehicleId: LAB_VEHICLE_ID, parts: labVehicleParts(defs) });
+    const sb = tagLabVehicle(b.snapshot());
+    expect(views.setMode('map', sb)).toBe(true);
+    expect(views.blending).toBe(false);
+    const frame = views.update(sb, IDLE, DT);
+    expect(frame.camera.kind).toBe('map');
+    expect(frame.camera).toBe(frame.target);
+  });
+});

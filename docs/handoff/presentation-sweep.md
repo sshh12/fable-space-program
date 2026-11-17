@@ -23,6 +23,11 @@ them: `npx tsc --noEmit -p tsconfig.json | grep -v "src/net\|tests/unit/net"` (e
 | 4 | adbddff | `FakeSession` (`src/core/fakes/fakeSession.ts`) with the scenes of the shared universe, client stores and a conformance test per scene; `createFakeSim` kept as its v1 name | run with the fake Moon-centred in every lab: see D7 and request presentation-sweep-4 |
 | 5 | 311feed | Camera rigs, cockpit feature, seat names on the craft blocks (`chaseDistanceLimits`, `cabinOf`, `labelVehicleOf`); the view manager, map rig and audio listener cope with no active vessel; `createFakeSim` keeps the v1 render root | THE FULL SET OF 33: section 3 |
 
+| 6 | 1c72140 | (second working context from here) The access module moves to `src/core/access/snapshotAccess.ts` (the lead's answer to request 1); no boundary entry was needed (`src/core` is one area) | not a pixel change |
+| 7 | 3b80cfc | Pads: every reader through `padsOf` / `padOf` / `padLocationOf`; the site feature keeps one runtime per pad; a structure generator is given its pad; a ground survey per pad; the terrain's ground plans, the pad smoke, the effects' flat disc and the chase rig's trench per pad | THE FULL SET: 33 of 33, the 30 exact at 0 pixels on the first load, no OTHER STATE line |
+| 8 | 08efeb3 | `tick` -> `revisionOf` everywhere; no active vessel in the audio model, the effects and the labs; effects and audio key per-part state by the part key; `findEventPart`; unit tests on the keys | with the gate of row 9 |
+| 9 | 22622c4 | The stage words, the crew and the fairing petal from the snapshot (`StageInfo.burnLabel`, `actionChutes`, `chuteEnvelopes`, `thrustVac`, `weightFlowVac`; `CraftCockpit.crew`; `PartSnapshot.panel`): `labelVehicleOf` is gone, no petal id is read or composed; the fake states the members through `describeStages` | THE FULL SET: section 3 |
+
 Unit suites at 311feed (`src/render src/ui src/input src/camera src/map src/audio src/core/fakes src/app`
 and `tests/unit/{atmosphere,audio,cockpit,flight-ui,map-view,ocean,render-core,sky,terrain-render,vehicle,vfx,camera,fakes}`,
 `tools/dev/boundaries.test.ts`): 78 files, 950 tests, all pass. `tests/unit/camera` (two files that no

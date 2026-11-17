@@ -19,7 +19,9 @@ import {
 } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { ExactFrame } from '@/core/contracts/testApi';
+import { observeFrame, rebaseHeldAt, rebaseSnapshot } from '@/core/access/frameAccess';
 import type { GpuHandle } from '@/core/gpu/device';
+import { FrameEpochTracker, rebasePoint } from '@/core/math/frame';
 import { HASH_WGSL, mat4, v3, type Mat4 } from '@/core/math';
 import { registerCore, type CoreApi, type FullscreenPipelineDesc, type ManagedTarget, type TemporalFeature } from './coreApi';
 import { atmosphereTransmittanceAlong, buildBodyPoses, buildProjection, buildVesselPoses, cameraBasis, jitterSequenceLength, nearestBody, planetshineAt, sunAt, sunVisibilityAt, taaJitter, type ShineLight } from './frame/math';
@@ -203,6 +205,8 @@ export interface CoreRenderer extends Renderer {
   readHdrStats(target?: 'hdr' | 'resolved'): Promise<{ maxLuminance: number; meanLuminance: number; nanPixels: number }>;
   /** Read back the reversed-Z scene depth copy ('scene.depth'), row 0 = top. */
   readDepth(): Promise<{ width: number; height: number; data: Float32Array }>;
+  /** Read back the velocity target of the last frame (RT3: UV-space velocity, current - previous; two floats per pixel, row 0 = top). For tests. */
+  readVelocity(): Promise<{ width: number; height: number; data: Float32Array }>;
   /**
    * Resolves when every pipeline that is being created ahead exists: the core's own (started when the
    * renderer is created; the lighting pipeline after every `addFeature`, because features replace chunks it
@@ -539,7 +543,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       albedo: tex('gbuffer.albedo', RENDER_FORMATS.gbufferAlbedo, w, h, RT),
       normal: tex('gbuffer.normal', RENDER_FORMATS.gbufferNormal, w, h, RT),
       material: tex('gbuffer.material', RENDER_FORMATS.gbufferMaterial, w, h, RT),
-      velocity: tex('gbuffer.velocity', RENDER_FORMATS.gbufferVelocity, w, h, RT),
+      velocity: tex('gbuffer.velocity', RENDER_FORMATS.gbufferVelocity, w, h, RT | COPY),
       extra: tex('gbuffer.extra', RENDER_FORMATS.gbufferExtra, w, h, RT),
       hdr: tex('scene.hdr', RENDER_FORMATS.hdr, w, h, RT | COPY),
       hdrAux: tex('scene.emissive', RENDER_FORMATS.hdr, w, h, RT | COPY),
@@ -596,6 +600,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   let realTime = 0;
   let prevSnapshot: SimSnapshot | null = null;
   let prevCamera: CameraState | null = null;
+  /** The epoch of the ROOT frame the previous frame's snapshot and camera are held in (ARCHITECTURE section 3). */
+  const frameEpochs = new FrameEpochTracker();
   let prevViewProj: Mat4 = mat4.identity();
   let frameContext: FrameContext | null = null;
   let ev100 = EV_DARK_FLOOR;
@@ -754,6 +760,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     // The first frame is its own predecessor, as the first frame of a session is.
     prevSnapshot = null;
     prevCamera = null;
+    frameEpochs.reset();
     emissiveHints = [];
     meteredKind = null;
     cutAdapt = 0;
@@ -778,6 +785,22 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       prevSnapshot = snapshot;
       prevCamera = camera;
       historyReset = true;
+    }
+    // The origin of ROOT positions was replaced since the previous frame (a sphere-of-influence change of the
+    // focus, another focus): the previous frame's snapshot and camera are read in the new frame, each as of
+    // its own time, so that what is formed from the two frames (prevEyeOffset, the poses of one frame ago,
+    // what a feature takes from frame.prevSnapshot) is what it would be had the origin always been the new
+    // one: no step, no motion-vector spike. A frame that cannot be reached from the one last drawn (another
+    // session) is the first frame of a new history.
+    const frameChange = observeFrame(frameEpochs, snapshot.frame);
+    if (frameChange.kind === 'drop') {
+      prevSnapshot = snapshot;
+      prevCamera = camera;
+      historyReset = true;
+    } else if (frameChange.kind === 'rebase' && prevSnapshot !== snapshot) {
+      const held = rebaseHeldAt(frameChange.rebase, snapshot.ut - prevSnapshot.ut);
+      prevSnapshot = rebaseSnapshot(prevSnapshot, held);
+      prevCamera = { ...prevCamera, positionRoot: rebasePoint(prevCamera.positionRoot, held) };
     }
     if (!bodiesKnown) {
       bodiesKnown = true;
@@ -1237,6 +1260,14 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       if (!targets) throw new Error('readDepth: nothing has been rendered yet');
       const { width, height } = targets;
       return { width, height, data: new Float32Array(await readTexturePixels(device, targets.depthCopy, { x: 0, y: 0, width, height }, 4)) };
+    },
+    async readVelocity() {
+      if (!targets) throw new Error('readVelocity: nothing has been rendered yet');
+      const { width, height } = targets;
+      const raw = new Uint16Array(await readTexturePixels(device, targets.velocity, { x: 0, y: 0, width, height }, 4));
+      const data = new Float32Array(raw.length);
+      for (let i = 0; i < raw.length; i++) data[i] = f16ToF32(raw[i]!);
+      return { width, height, data };
     },
     setDeterministic(on, o) {
       const cycle = on && Boolean(o?.cycleNoise);

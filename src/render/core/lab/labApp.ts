@@ -11,6 +11,7 @@ import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CameraState, RenderFeature } from '@/core/contracts/render';
 import type { Sim, SimSnapshot } from '@/core/contracts/sim';
+import { translateFrame } from './origin';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
@@ -146,6 +147,9 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
       { passive: false },
     );
 
+    // ?frameorigin=<body id>: the renderer is handed the frame stated about that body's centre (origin.ts);
+    // the page's own snapshot() and cameraState() stay as the simulation and the camera state them.
+    const frameOrigin = query.get('frameorigin');
     const renderFrame = (realDt = 1 / 60): void => {
       const dt = deterministic ? 1 / 60 : realDt;
       renderer.context.perf.cpuBegin('frame');
@@ -153,7 +157,8 @@ export async function createLabApp(options: LabAppOptions): Promise<LabApp> {
       snapshot = sim.snapshot();
       onFrame?.(snapshot, dt);
       cameraState = camera.state(snapshot);
-      renderer.render(snapshot, cameraState, [{ positionRoot: cameraState.positionRoot, radiusBias: 0 }], dt);
+      const drawn = frameOrigin ? translateFrame(snapshot, cameraState, frameOrigin) : { snapshot, camera: cameraState };
+      renderer.render(drawn.snapshot, drawn.camera, [{ positionRoot: drawn.camera.positionRoot, radiusBias: 0 }], dt);
       renderer.context.perf.cpuEnd('frame');
       testApi.frameDone();
     };
