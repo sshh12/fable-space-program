@@ -181,15 +181,34 @@ export function randomUnitF32(g: Gen): Vec3 {
 const CS_SAS = 1;
 const CS_RCS = 2;
 const CS_FINE = 4;
-const CS_HOLD = 8;
+/** Bits of the axis mask: one per control axis (throttle, pitch, yaw, roll, tx, ty, tz), then the hold. */
+const AXIS_HOLD = 0x80;
+/** The SAS mode index sits above the three flag bits of the second byte. */
+const MODE_SHIFT = 3;
+if (SAS_MODE_LIST.length > 256 >> MODE_SHIFT) throw new Error('controlState: the SAS modes no longer fit the packed byte');
 
-/** Applied control state: the control bytes, a flag byte (SAS, RCS, fine, hold present), the SAS mode, the hold vector. */
+/**
+ * Applied control state, packed (review of the sizes, 2026-11-17): an axis mask (bit i: axis i is non-zero, in
+ * the order throttle, pitch, yaw, roll, tx, ty, tz; bit 7: a hold vector follows), the non-zero axes only
+ * (throttle u8, the others -127..127), one byte of flags (SAS, RCS, fine) and SAS mode index, then the hold
+ * vector. A pilot steering on two axes costs 4 bytes instead of 9.
+ */
 export const controlState: Codec<WireControlState> = {
-  min: 9,
+  min: 2,
   write(w, v) {
-    writeControls(w, v);
-    w.u8((v.sasEnabled ? CS_SAS : 0) | (v.rcsEnabled ? CS_RCS : 0) | (v.fineControl ? CS_FINE : 0) | (v.sasHold ? CS_HOLD : 0));
-    sasMode.write(w, v.sasMode);
+    const t = v.throttle, p = v.pitch, y = v.yaw, r = v.roll, x = v.tx, yy = v.ty, z = v.tz;
+    const mask = (t !== 0 ? 1 : 0) | (p !== 0 ? 2 : 0) | (y !== 0 ? 4 : 0) | (r !== 0 ? 8 : 0) | (x !== 0 ? 16 : 0) | (yy !== 0 ? 32 : 0) | (z !== 0 ? 64 : 0) | (v.sasHold ? AXIS_HOLD : 0);
+    w.u8(mask);
+    if (mask & 1) u8.write(w, t);
+    if (mask & 2) axis8.write(w, p);
+    if (mask & 4) axis8.write(w, y);
+    if (mask & 8) axis8.write(w, r);
+    if (mask & 16) axis8.write(w, x);
+    if (mask & 32) axis8.write(w, yy);
+    if (mask & 64) axis8.write(w, z);
+    const mode = SAS_MODE_LIST.indexOf(v.sasMode);
+    if (mode < 0) throw new WireEncodeError(`sasMode: ${String(v.sasMode)} is not a SAS mode`);
+    w.u8((v.sasEnabled ? CS_SAS : 0) | (v.rcsEnabled ? CS_RCS : 0) | (v.fineControl ? CS_FINE : 0) | (mode << MODE_SHIFT));
     if (v.sasHold) {
       if (!isUnit(v.sasHold)) throw new WireEncodeError('sasHold: not a unit vector');
       unitF32.write(w, v.sasHold);
@@ -207,14 +226,24 @@ export const controlState: Codec<WireControlState> = {
 
 /** Read a control state into an existing object (no allocation when it already holds a hold vector). */
 export function readControlStateInto(r: ByteReader, out: WireControlState): void {
-  readControls(r, out);
+  const mask = r.u8();
+  // A present axis is never 0 (the canonical form leaves it out).
+  out.throttle = mask & 1 ? r.u8() : 0;
+  out.pitch = mask & 2 ? axis8.read(r) : 0;
+  out.yaw = mask & 4 ? axis8.read(r) : 0;
+  out.roll = mask & 8 ? axis8.read(r) : 0;
+  out.tx = mask & 16 ? axis8.read(r) : 0;
+  out.ty = mask & 32 ? axis8.read(r) : 0;
+  out.tz = mask & 64 ? axis8.read(r) : 0;
+  if (((mask & 1) && out.throttle === 0) || ((mask & 2) && out.pitch === 0) || ((mask & 4) && out.yaw === 0) || ((mask & 8) && out.roll === 0) || ((mask & 16) && out.tx === 0) || ((mask & 32) && out.ty === 0) || ((mask & 64) && out.tz === 0)) r.fail('badValue');
   const flags = r.u8();
-  if (flags > 15) r.fail('badEnum');
+  const mode = flags >> MODE_SHIFT;
+  if (mode >= SAS_MODE_LIST.length) r.fail('badEnum');
   out.sasEnabled = (flags & CS_SAS) !== 0;
   out.rcsEnabled = (flags & CS_RCS) !== 0;
   out.fineControl = (flags & CS_FINE) !== 0;
-  out.sasMode = sasMode.read(r);
-  if (flags & CS_HOLD) {
+  out.sasMode = SAS_MODE_LIST[mode] ?? 'stability';
+  if (mask & AXIS_HOLD) {
     const h = out.sasHold ?? new FrameVec3();
     r.vec3f32Into(h);
     if (!r.failed && !isUnit(h)) r.fail('badValue');

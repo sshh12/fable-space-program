@@ -205,7 +205,7 @@ export class IslandKeyFrame implements IslandKeyMessage {
   readonly pool = new Pool<KeyVessel>(makeKeyVessel);
 }
 
-const KEY_VESSEL_MIN = 1 + 48 + 16 + 12 + 9;
+const KEY_VESSEL_MIN = 1 + 48 + 16 + 12 + 2;
 
 export const islandKeyCodec: HotCodec<IslandKeyMessage> = {
   min: 10,
@@ -500,12 +500,16 @@ function writeResiduals(w: ByteWriter, p: DeltaPose): void {
 }
 
 export const islandDeltaCodec: HotCodec<IslandDeltaMessage> = {
-  min: 11,
+  min: 4,
   write(w, m) {
     check(isUint(m.island) && m.island <= MAX_ISLAND && isTick(m.tick) && isTick(m.keyTick) && m.tick >= m.keyTick, 'islandDelta: island, tick or keyTick');
     check(m.vessels.length <= MAX_VESSELS, 'islandDelta: too many vessels');
-    w.varUint(m.island);
-    w.f64(m.tick);
+    // The tick as a signed varint (3 to 6 bytes for the ticks of a universe's life) unless it is beyond 2^52,
+    // then as float64; the island's low bit says which.
+    const narrow = m.tick <= MAX_VARINT_SIGNED && m.tick >= -MAX_VARINT_SIGNED;
+    w.varUint(m.island * 2 + (narrow ? 0 : 1));
+    if (narrow) w.varInt(m.tick);
+    else w.f64(m.tick);
     w.varUint(m.tick - m.keyTick);
     w.varUint(m.vessels.length);
     for (const v of m.vessels) {
@@ -535,8 +539,14 @@ export const islandDeltaCodec: HotCodec<IslandDeltaMessage> = {
   },
   readInto(r, out) {
     const f = out as IslandDeltaFrame;
-    f.island = r.varUintMax(MAX_ISLAND);
-    f.tick = r.tick();
+    const head = r.varUintMax(MAX_ISLAND * 2 + 1);
+    f.island = Math.floor(head / 2);
+    if (head % 2 === 0) f.tick = r.varInt();
+    else {
+      f.tick = r.tick();
+      // Canonical: a tick that fits the varint never travels as float64.
+      if (!r.failed && f.tick <= MAX_VARINT_SIGNED && f.tick >= -MAX_VARINT_SIGNED) r.fail('badValue');
+    }
     f.keyTick = f.tick - r.varUint();
     if (!isTick(f.keyTick)) r.fail('badTick');
     const n = r.count(2, MAX_VESSELS);

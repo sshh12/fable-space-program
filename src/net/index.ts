@@ -44,7 +44,7 @@ export { ManualScheduler, RealScheduler, type Scheduler, type TimerHandle } from
 export { addSample, clockTickAt, estimateClock, initialLead, leadParams, nextLead, offsetOf, rttOf, stampTick, type LeadParams, type SyncEstimate, type SyncSample } from './time/sync';
 
 // Session layer.
-export { ClientSession, type ClientAction, type ClientConfig, type ClientPhase, type ClientRefusal } from './session/client';
+export { ClientSession, type LaunchQueueState, type ClientAction, type ClientConfig, type ClientPhase, type ClientRefusal } from './session/client';
 export { AccountLimits, budgetOptionsOf, ServerSession, type AuthResult, type IdentityProof, type ResumeResult, type ServerAction, type ServerConfig, type ServerPhase, type ServerRefusalRecord } from './session/server';
 export { ClientDriver, ServerDriver, type ClientDriverOptions, type ServerDriverOptions, type ServerHost } from './session/driver';
 export { InputBuffer, InputWindow, type InputBufferStats, type InputDrop } from './session/inputs';

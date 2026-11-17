@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type { IslandDeltaMessage, ServerMessage } from '@/core/contracts/net';
 import { DEFAULT_UNIVERSE_RULES, wireLimits } from '@/core/contracts/net';
-import { encodeMessage } from '@/net/codec/framing';
+import { encodeDocument, encodeMessage } from '@/net/codec/framing';
 import { HandleTableOut } from '@/net/codec/handles';
 import { obsoletedKeys, randomMessage, specOf, supersedeKey } from '@/net/codec/messages';
 import { Gen } from '@/net/codec/schema';
@@ -196,8 +196,34 @@ describe('the budget against real frames, per scenario', () => {
     const first = rec.length - encodeMessage(empty).length + (handles ? encodeMessage(handles).length : 0);
     const again = encodeMessage(entry, table).length - encodeMessage(empty).length;
     console.log(`ten vessels, all steering: ${(bytes / n).toFixed(0)} B per delta; a census entry: ${first} B on first sight (with its handles), ${again} B after`);
-    // Stated in the hand-off as measured (the first delivery's 282 B was two of ten steering while docking).
-    expect(bytes / n).toBeLessThan(520);
-    expect(first).toBeLessThan(170);
+    // At 3 g the residuals of a key-relative pose grow with the square of the time since the key; docking (the
+    // brief's case) is measured in the next test against the 300 B line.
+    expect(bytes / n).toBeLessThan(420);
+    expect(again).toBeLessThanOrEqual(90);
+    expect(first).toBeLessThan(150);
+  });
+
+  it('the size lines after the review of 2026-11-17: ten docking vessels ALL steering within 300 B; 10,000 census objects', () => {
+    // Worst of every 30 Hz send tick of a key interval, 20 seeds (the first delivery's method).
+    let worst = 0;
+    let sum = 0;
+    let n = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const p0 = scenePoses(10, seed, 1000, 'docking');
+      const key = keyOf(ISLAND, 1_000_000, p0, 'docking');
+      for (let dt = 4; dt <= 120; dt += 4) {
+        const b = encodeMessage(deltaOf(key, key.tick + dt, advance(p0, dt, 9 + seed, 'docking'), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])).length;
+        worst = Math.max(worst, b);
+        sum += b;
+        n++;
+      }
+    }
+    // The public census of one sphere: 10,000 coasting ships in one snapshot document (its own string table).
+    const entries = Array.from({ length: 10_000 }, (_, i) => coastingEntry(i, 1_000_000_000));
+    const doc = encodeDocument({ type: 'censusSnapshot', soi: 'earth', seq: 1, wallMs: 1_763_000_000_000, tick: 1_000_000_000, pollAfterS: 30, entries });
+    console.log(`ten docking vessels, all steering: worst ${worst} B, mean ${(sum / n).toFixed(1)} B; census of 10,000 objects: ${(doc.length / 1000).toFixed(0)} kB (${(doc.length / 10_000).toFixed(1)} B per object)`);
+    expect(worst).toBeLessThanOrEqual(300);
+    // Not the 840 kB of ARCHITECTURE 14: the hand-off states the floor (the unique strings) and the options.
+    expect(doc.length).toBeLessThanOrEqual(10_000 * 100);
   });
 });

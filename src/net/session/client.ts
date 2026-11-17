@@ -33,7 +33,7 @@ import type {
   WireControls,
 } from '@/core/contracts/net';
 import { DEFAULT_UNIVERSE_RULES, WIRE_PROTOCOL_VERSION, wireLimits } from '@/core/contracts/net';
-import type { SpawnRequest, Subscriptions } from '@/core/contracts/session';
+import type { LaunchQueueEntry, SpawnRequest, Subscriptions } from '@/core/contracts/session';
 import type { Vec3 } from '@/core/math/vec3';
 import type { DecodeError } from '../codec/bytes';
 import { encodeMessage } from '../codec/framing';
@@ -59,6 +59,14 @@ export interface ClientConfig {
   /** Random numbers in [0, 1) for the backoff jitter. */
   random: () => number;
 }
+
+/**
+ * The session's waiting launch request: `LaunchQueueEntry` of the session contract (what
+ * `ClientStores.launchQueue` holds), with the wire's request id and the server wall time the estimate was made
+ * at (`etaSeconds` counts from `serverMs`). It belongs to the session: a resume keeps it, a new session or a
+ * take-over does not.
+ */
+export type LaunchQueueState = LaunchQueueEntry & { reqId: number; serverMs: number };
 
 export type ClientAction =
   /** Open a transport to the gateway; `nextCandidate`: the last one is in standby, try the next of the endpoint list. */
@@ -110,7 +118,7 @@ export class ClientSession {
    * `queued`).
    */
   admissionQueue: { position: number; etaSeconds: number } | null = null;
-  launchQueue: { reqId: number; position: number; etaSeconds: number; serverMs: number; padClass: import('@/core/contracts/net').PadClass } | null = null;
+  launchQueue: LaunchQueueState | null = null;
   private readonly pendingCancels = new Set<number>();
   durableTick: number | null = null;
   inputMarginMs: number | null = null;
@@ -299,6 +307,7 @@ export class ClientSession {
     if (info.code === CLOSE.takenOver) {
       this.phase = 'takenOver';
       this.wakeAt = null;
+      this.launchQueue = null;
       this.failPending(this.finalReason());
       this.status();
       return;
@@ -353,6 +362,8 @@ export class ClientSession {
       case 'takenOver':
         this.phase = 'takenOver';
         this.wakeAt = null;
+        // The place in the launch queue is the session's: the tab that took over does not inherit it.
+        this.launchQueue = null;
         this.out({ kind: 'close', code: CLOSE.takenOver, reason: 'taken over' });
         this.out({ kind: 'deliver', message: m });
         this.failPending(this.finalReason());
@@ -397,7 +408,7 @@ export class ClientSession {
       this.vesselId = m.resumed.vesselId;
       this.clockId = m.resumed.clockId;
       this.relevantSeq = m.resumed.relevantSeq;
-      this.launchQueue = m.resumed.queued;
+      this.launchQueue = m.resumed.queued ? this.queueEntry(m.resumed.queued) : null;
       this.inputs.retireThrough(m.resumed.lastInputSeq);
     } else {
       // A new session: what an old session waited for is gone with it.
@@ -444,8 +455,7 @@ export class ClientSession {
         }
         break;
       case 'spawnQueued': {
-        const { type: _t, ...q } = m;
-        this.launchQueue = q;
+        this.launchQueue = this.queueEntry(m);
         break;
       }
       case 'rateLimited':
@@ -597,6 +607,13 @@ export class ClientSession {
   }
 
   /** Answer a request to the app as refused (a seat result or a command result, by kind). */
+  /** The launch-queue entry of a `spawnQueued` (or a resumed seat's `queued`), with the request as `spawn` was given it. */
+  private queueEntry(q: { reqId: number; position: number; etaSeconds: number; serverMs: number; padClass: LaunchQueueEntry['padClass'] }): LaunchQueueState | null {
+    const p = this.pending.get(q.reqId);
+    if (!p || p.message.type !== 'spawn') return null;
+    return { request: p.message.request, padClass: q.padClass, position: q.position, etaSeconds: q.etaSeconds, reqId: q.reqId, serverMs: q.serverMs };
+  }
+
   private deliverRefusal(p: PendingRequest, reason: string): void {
     const m = p.message;
     if (m.type === 'spawn' || m.type === 'attach') this.out({ kind: 'deliver', message: { type: 'seatResult', reqId: p.id, result: { ok: false, reason, alternative: null } } });

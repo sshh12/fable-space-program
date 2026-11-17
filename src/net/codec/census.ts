@@ -8,11 +8,13 @@
  * message's base tick (the head) and to the head (the other ticks of the entry), so a tick costs 3-5 bytes
  * instead of 8; the base tick itself is a float64.
  *
- * Conics travel in a canonical form (`writeConic` / `readConic`): six float64 elements (p, e, inc, lan,
- * argPe, tPeriapsis), `a` only when it is not p / (1 - e^2) computed as `conicFromState` computes it (the
- * (near-)radial orbits of src/sim/orbit, whose `a` is 1/alpha), and a closed flag. P, Q, W and the period are
- * recomputed from them with IEEE operations and the runtime's sin/cos: equal to the sender's to a few ulps,
- * and a decoded conic re-encodes to the same bytes.
+ * Conics travel in a canonical form (`writeConic` / `readConic`): p, e, inc, lan and argPe as 48-bit floats
+ * (float64 rounded to nearest at 37 mantissa bits: relative 7.3e-12, i.e. 0.05 mm on a low orbit and 3.4 m at
+ * 1 AU), tPeriapsis as float64, `a` (float64) only when it is not p / (1 - e^2) of the sender's own p and e as
+ * `conicFromState` computes it (the (near-)radial orbits of src/sim/orbit, whose `a` is 1/alpha), and a
+ * closed flag. P, Q, W and the period are recomputed from the received elements with IEEE operations and the
+ * runtime's sin/cos; a decoded conic re-encodes to the same bytes. `canonicalConic` gives the sender the
+ * conic its receivers will hold.
  */
 import type { CensusEntry, CensusKind, CensusPatch, OsculatingElements, WorldlineSegment } from '@/core/contracts/net';
 import type { ConicElements } from '@/core/math/conic';
@@ -84,15 +86,55 @@ export function expandConic(mu: number, p: number, e: number, inc: number, lan: 
   return { mu, p, e, a, P, Q, W, tPeriapsis, period, inc, lan, argPe };
 }
 
-/** The canonical form of a conic (what the receiver of `c` will hold). */
-export function canonicalConic(c: ConicElements): ConicElements {
-  return expandConic(c.mu, c.p, c.e, c.inc, c.lan, c.argPe, c.tPeriapsis, c.a, c.period !== null);
-}
-
 const CF_A = 1;
 const CF_CLOSED = 2;
 
 /** Write a conic's elements and flags; the frame (body, mu) is written by the caller. */
+const f48View = new DataView(new ArrayBuffer(8));
+
+/** A float64 rounded to nearest (ties to even) at 37 mantissa bits: what the wire's 48-bit float carries. */
+export function roundF48(v: number): number {
+  const dv = f48View;
+  dv.setFloat64(0, v, true);
+  const low = dv.getUint16(0, true);
+  let lo = dv.getUint32(0, true) - low;
+  let hi = dv.getUint32(4, true);
+  if (low > 0x8000 || (low === 0x8000 && (lo & 0x10000) !== 0)) {
+    lo += 0x10000;
+    if (lo >= 0x100000000) {
+      lo -= 0x100000000;
+      hi += 1;
+    }
+  }
+  dv.setUint32(0, lo, true);
+  dv.setUint32(4, hi >>> 0, true);
+  const r = dv.getFloat64(0, true);
+  return r === 0 ? 0 : r;
+}
+
+function writeF48(w: ByteWriter, v: number, what: string): void {
+  const r = roundF48(v);
+  if (!Number.isFinite(r)) throw new WireEncodeError(`conic.${what}: ${v} is not finite at 48 bits`);
+  f48View.setFloat64(0, r, true);
+  for (let i = 2; i < 8; i++) w.u8(f48View.getUint8(i));
+}
+
+function readF48(r: ByteReader): number {
+  f48View.setUint16(0, 0, true);
+  for (let i = 2; i < 8; i++) f48View.setUint8(i, r.u8());
+  const v = f48View.getFloat64(0, true);
+  if (!r.failed && !Number.isFinite(v)) r.fail('nonFinite');
+  return v === 0 ? 0 : v;
+}
+
+/** The conic a receiver holds after the wire (the sender can hold the same one). */
+export function canonicalConic(c: ConicElements): ConicElements {
+  const p = roundF48(c.p);
+  const e = roundF48(c.e);
+  const a = Object.is(derivedA(c.p, c.e), c.a) ? derivedA(p, e) : c.a;
+  return expandConic(c.mu, p, e, roundF48(c.inc), roundF48(c.lan), roundF48(c.argPe), c.tPeriapsis, a, c.period !== null);
+}
+
 export function writeConic(w: ByteWriter, c: ConicElements): void {
   for (const [k, v] of [
     ['p', c.p],
@@ -105,16 +147,17 @@ export function writeConic(w: ByteWriter, c: ConicElements): void {
     if (!Number.isFinite(v)) throw new WireEncodeError(`conic.${k}: ${v} is not finite`);
   }
   if (!(c.p >= 0) || !(c.e >= 0)) throw new WireEncodeError('conic: p and e must be non-negative');
+  // `a` is derived when it is the sender's own p / (1 - e^2); the receiver derives it from the rounded p and e.
   const dA = derivedA(c.p, c.e);
-  const sendA = !Object.is(dA, c.a);
+  const sendA = !Object.is(dA, c.a) && !Object.is(derivedA(roundF48(c.p), roundF48(c.e)), c.a);
   if (sendA && !Number.isFinite(c.a)) throw new WireEncodeError(`conic.a: ${c.a} is neither finite nor what p and e give`);
   if (c.period !== null && !Number.isFinite(c.a)) throw new WireEncodeError('conic: a closed conic needs a finite a');
   w.u8((sendA ? CF_A : 0) | (c.period !== null ? CF_CLOSED : 0));
-  w.f64(c.p);
-  w.f64(c.e);
-  w.f64(c.inc);
-  w.f64(c.lan);
-  w.f64(c.argPe);
+  writeF48(w, c.p, 'p');
+  writeF48(w, c.e, 'e');
+  writeF48(w, c.inc, 'inc');
+  writeF48(w, c.lan, 'lan');
+  writeF48(w, c.argPe, 'argPe');
   w.f64(c.tPeriapsis);
   if (sendA) w.f64(c.a);
 }
@@ -122,11 +165,11 @@ export function writeConic(w: ByteWriter, c: ConicElements): void {
 export function readConic(r: ByteReader, mu: number): ConicElements {
   const flags = r.u8();
   if (flags > 3) r.fail('badEnum');
-  const p = r.finiteF64();
-  const e = r.finiteF64();
-  const inc = r.finiteF64();
-  const lan = r.finiteF64();
-  const argPe = r.finiteF64();
+  const p = readF48(r);
+  const e = readF48(r);
+  const inc = readF48(r);
+  const lan = readF48(r);
+  const argPe = readF48(r);
   const tPeriapsis = r.finiteF64();
   const a = flags & CF_A ? r.finiteF64() : derivedA(p, e);
   if (!(p >= 0) || !(e >= 0)) r.fail('badValue');
@@ -141,7 +184,7 @@ export function randomConic(g: Gen, mu: number): ConicElements {
   const closed = e < 1 && g.chance(0.9);
   const a = g.chance(0.2) ? (g.next() + 0.5) * 7e6 : derivedA(p, e);
   const safeA = closed && !Number.isFinite(a) ? 7e6 : a;
-  return expandConic(mu, p, e, g.next() * Math.PI, (g.next() - 0.5) * 2 * Math.PI, (g.next() - 0.5) * 2 * Math.PI, (g.next() - 0.5) * 1e10, safeA, closed);
+  return canonicalConic(expandConic(mu, p, e, g.next() * Math.PI, (g.next() - 0.5) * 2 * Math.PI, (g.next() - 0.5) * 2 * Math.PI, (g.next() - 0.5) * 1e10, safeA, closed));
 }
 
 // ---------------------------------------------------------------------------------------------- entries
@@ -295,7 +338,7 @@ export function readEntry(r: ByteReader, ctx: EntryContext): CensusEntry {
   const revision = r.varUint();
   let landed: CensusEntry['landed'] = null;
   if (f1 & E_LANDED) landed = { bodyId: handle.read(r), latitude: r.finiteF64(), longitude: r.finiteF64(), altitude: r.finiteF64() };
-  const np = r.count(50, 1024);
+  const np = r.count(41, 1024);
   const patches: CensusPatch[] = [];
   let prevTo = headTick;
   for (let i = 0; i < np && !r.failed; i++) {
@@ -420,7 +463,7 @@ export function writeElements(w: ByteWriter, list: readonly OsculatingElements[]
 }
 
 export function readElements(r: ByteReader, frames: FrameTable): OsculatingElements[] {
-  const n = r.count(59, 100_000);
+  const n = r.count(49, 100_000);
   const out: OsculatingElements[] = [];
   for (let i = 0; i < n && !r.failed; i++) {
     const vesselId = handle.read(r);

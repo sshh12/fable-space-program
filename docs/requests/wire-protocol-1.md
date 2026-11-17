@@ -1,4 +1,6 @@
-Status: open
+Status: closed (2026-11-17): `ws` 8.23 and `@types/ws` installed by the lead; `fflate` dropped, because nothing in
+`src/net` uses it (the island blob is carried opaque; deflating it, if anyone does, is the application's). The
+real-`ws` tests are `tests/unit/net/ws.test.ts`.
 From: wire-protocol
 Owner path: package.json, package-lock.json (lead: root configuration)
 Blocking: no

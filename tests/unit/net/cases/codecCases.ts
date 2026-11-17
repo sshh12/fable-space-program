@@ -180,10 +180,14 @@ export const codecCases: NetCase[] = [
         const w = new ByteWriter();
         writeConic(w, c);
         const back = readConic(new ByteReader(w.bytes()), mu);
-        for (const k of ['p', 'e', 'a', 'inc', 'lan', 'argPe', 'tPeriapsis', 'mu'] as const) ok(Object.is(back[k], c[k]), `conic ${i}: ${k} changed`);
+        // The receiver holds exactly the canonical conic (p, e and the angles at 48 bits), and it is within
+        // 2^-37 of the sender's elements.
+        const canon = canonicalConic(c);
+        for (const k of ['p', 'e', 'a', 'inc', 'lan', 'argPe', 'tPeriapsis', 'mu'] as const) ok(Object.is(back[k], canon[k]), `conic ${i}: ${k} is not the canonical one`);
+        for (const k of ['p', 'e', 'inc', 'lan', 'argPe'] as const) ok(Math.abs(back[k] - c[k]) <= Math.abs(c[k]) * 2 ** -37, `conic ${i}: ${k} moved more than 2^-37`);
         ok((back.period === null) === (c.period === null), 'closed flag');
-        if (c.period !== null) worst = Math.max(worst, Math.abs(back.period! - c.period) / c.period);
-        for (const vec of ['P', 'Q', 'W'] as const) for (const k of ['x', 'y', 'z'] as const) worst = Math.max(worst, Math.abs(back[vec][k] - c[vec][k]));
+        if (c.period !== null) worst = Math.max(worst, Math.abs(back.period! - canon.period!) / canon.period!);
+        for (const vec of ['P', 'Q', 'W'] as const) for (const k of ['x', 'y', 'z'] as const) worst = Math.max(worst, Math.abs(back[vec][k] - canon[vec][k]));
         const w2 = new ByteWriter();
         writeConic(w2, back);
         equal(w2.bytes(), w.bytes(), `conic ${i} re-encodes differently`);
@@ -194,7 +198,7 @@ export const codecCases: NetCase[] = [
       const para = expandConic(mu, 1e7, 1, 0.1, 0.2, 0.3, 0, Infinity, false);
       const w = new ByteWriter();
       writeConic(w, para);
-      equal(readConic(new ByteReader(w.bytes()), mu), para, 'parabolic conic');
+      equal(readConic(new ByteReader(w.bytes()), mu), canonicalConic(para), 'parabolic conic');
     },
   },
   {
