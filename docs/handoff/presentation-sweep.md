@@ -33,7 +33,7 @@ whole tree at 0685bd0.
 | 14 | e481a23 | The browser mission flies a part of the flight (`MISSION_UNTIL=<milestone>`) and reads a window's frame intervals before the reset that clears them | (a spec) |
 | 15 | 0685bd0 | Requests 6 (terrain-render: ground plans for every pad) and 7 (the lead: `RenderContext` states the tile source) | (documents) |
 
-Unit suites at 0685bd0: 82 files, 994 tests, all pass (the suites of section 8), and the 5 tests of `tests/unit/render-core/lensShiftConsumers.test.ts`, added after that run, pass. At 94a3e01 (`src/render src/ui src/input src/camera src/map src/audio src/core/fakes
+Unit suites at 0685bd0: 83 files, 999 tests, all pass (the suites of section 8; 971 at the end of the second context). At 94a3e01 (`src/render src/ui src/input src/camera src/map src/audio src/core/fakes
 src/core/access src/app`, `tests/unit/{atmosphere,audio,cockpit,flight-ui,map-view,ocean,render-core,sky,terrain-render,vehicle,vfx,camera,fakes}`,
 `tools/dev/boundaries.test.ts`): 80 files, 971 tests, all pass.
 
@@ -61,8 +61,10 @@ measured before (section 3).
 
 ### 1.3 Not done, and known limits
 
-- **The lab specs' eight failures of section 3 are listed, not fixed** (none is the sweep's; the table says
-  what each does on the final tree).
+- **Eight lab specs fail on the final tree; none was fixed** (section 3). Six are the known failures of the
+  tree before the sweep. Two fail in some runs only: a cloud test on a noise maximum, and THE SWEEP'S OWN
+  origin test for the `leo` scene, whose precondition (two control runs agree) does not hold in some loads.
+  The origin test should take another control pair instead of failing; that was not done.
 - **The lens shift in `src/app/framing.ts`** (the app's test hooks `bodiesInFrame` / `groundSamples`): they
   project without a shift. No rig of the app states one today; the menu package that adds one adds it there.
 - **The lens flare under a shift** places its ghosts about the centre of the FRAME, not about the shifted
@@ -227,7 +229,7 @@ SENSITIVITY: with the core's rebase switched off for one run, the same test fail
 384,399,018.52 m (control 20.02 m)"; pictures and velocity did not change, because nothing drawn today
 reads `prevEyeOffset` without a better source (the ocean has its own previous reference).
 
-**The tile-source seam** (`tests/browser/terrain/source.spec.ts` inside the local stack, on 4f882d7):
+**The tile-source seam** (`tests/browser/terrain/source.spec.ts` inside the local stack, on 4f882d7 and again on the final tree 0685bd0 with the same result):
 each view captured frame-exactly through a `fetch` spec and, on a fresh page, through a `pack` spec.
 
 | View | fetch against pack |
@@ -302,7 +304,7 @@ flight will now judge the frame-interval line for the first time.
 | among kiawe (whole frame) | 5.47 against 5.60 (-2.3 %) | core 0.729 -> 0.705, ocean 0.262 -> 0.164 |
 | thickets from 120 m (whole frame) | 6.35 against 6.65 (-4.5 %) | core 0.967 -> 0.731 |
 
-All ten rows pass (10 passed, 10.1 min; nothing else of this package running; the user's two servers were up). No row rose by more than 3 %. The core's time moves by a tenth of a millisecond between runs of one tree in both directions (LEO +0.10, reentry -0.10, thickets -0.24 here; lunar descent 0.846 and 0.757 in two runs of 94a3e01), and the scrim cannot be in it: with no rectangle the whole tonemap pass is 0.032 ms at 1440p. THE TWO LEO ROWS WERE STARTED ONCE MORE when this file was committed; their numbers are in the next commit of this file.
+All ten rows pass (10 passed, 10.1 min; nothing else of this package running; the user's two servers were up). No row rose by more than 3 %. The core's time moves by a tenth of a millisecond between runs of one tree in both directions (LEO +0.10, reentry -0.10, thickets -0.24 here; lunar descent 0.846 and 0.757 in two runs of 94a3e01), and the scrim cannot be in it: with no rectangle the whole tonemap pass is 0.032 ms at 1440p. The two LEO rows run once more straight after: LEO 3.03 ms against 3.04 (-0.0 %), no package named as moved; LEO cockpit 3.48 against 3.57 (-2.8 %).
 
 On 94a3e01 (the second context; nothing else of this package running): every row within 3 % of the recorded sum.
 
@@ -324,11 +326,35 @@ of `pre-sweep-2026-11-16` gives 0.041 ms too (5.45 ms against 5.66, -3.7 %; luna
 the baseline was recorded on 9a873e0 (2026-11-13), and something between that commit and the tag stopped the
 effects from drawing what they drew in that scene (or made it free). Worth a look by the effects' owner.
 
-**Lab specs on the final tree** (0685bd0; one directory at a time through the GPU gate): RUNNING when this file was committed (started 2026-11-17 about 14:55 UTC, thirteen directories, about two hours); the table and the list of failing tests are in the next commit of this file.
+**Lab specs on the final tree** (0685bd0; one directory at a time through the GPU gate): 492 passed, 8 failed, 4 skipped, in 2 h 28 min.
 
-(not yet)
+| Directory | Passed | Failed |
+|---|---|---|
+| flight-ui | 94 | 1 |
+| cockpit | 41 | 0 |
+| map-view | 28 | 0 |
+| vehicle | 15 (1 skipped) | 0 |
+| vfx | 39 | 1 |
+| audio | 18 | 0 |
+| app (the integrated app on `createSession`) | 10 | 0 |
+| integration (with `origin.spec.ts` and `menu-core.spec.ts`) | 47 | 6 |
+| render-core | 42 | 0 |
+| terrain | 22 (2 skipped: `source.spec.ts` runs inside the stack, where it passed) | 0 |
+| sky | 33 | 0 |
+| ocean | 42 | 0 |
+| atmosphere | 61 (1 skipped) | 0 |
 
-(not yet)
+SIX of the eight are six of the eight of 94a3e01 with their numbers (`cockpit-lowOrbit-4k` mostly black 0.050;
+`inside-cloud-t6-day` 5; aerial perspective 0.1279; 30 views with a line; correlation 0.652; forward against
+deferred water 0.0523, which is 0.0518 or 0.0522 from run to run on this tree and in the second context's logs
+alike). The other two of 94a3e01 passed this time (`shadows.spec.ts` (c) 5000 km, the test with two states;
+`ocean/screens.spec.ts` midday, the page load that had timed out). TWO TESTS FAILED THAT HAD NOT, both in
+`integration`, both run three more times each afterwards:
+
+| Failed test | In the full run | Three more runs | What it is |
+|---|---|---|---|
+| `clouds.spec.ts` "(b) above an overcast deck of the real cloud map, plume and trail are hidden from the pad camera" | the largest change of any pixel from the pad 1.222 % of the mean luminance; the line is 1 % + 4 x the repeat noise = 1.122 % | passed 3 of 3: 0.911, 0.866, 0.838 % | The maximum over a frame of a noisy difference (the scene is a launch in flight, not a frozen frame: 32 to 35 trail segments from run to run); 0.907 % in the second context's run. One run in four over its line here. Not traced to a change; the cloud shaders compute what they computed (30 exact reference images at 0 pixels) |
+| `origin.spec.ts` "leo: a replacement of the origin between two frames leaves no step and no motion-vector spike" (THE SWEEP'S OWN TEST) | failed on its PRECONDITION: two control runs, without any replacement, differ by 154,151 pixels, up to 49 levels, 99.9th percentile 10 (the line for a meaningful comparison is 4) | passed 2 of 3 (controls 89,448 px / p99.9 3 and 96,578 px / 3; replaced against control 19,252 px, velocity target equal to the control's); failed once more the same way (158,739 px, p99.9 10) | The `leo` scene has a second state between two loads of one page, in which the test cannot compare anything. Not new: of the five runs in the second context's logs (on b46bf4d) one had it (202,054 px, up to 68 levels, p99.9 9). 2 of 4 runs here, 1 of 5 there: too few to say the rate changed. When the controls agree the test passes. The `sea` and `lunar-orbit` scenes and the four frames of part 1 passed in the full run. A finding for the visual close-out (what in the LEO view has two states), and a weakness of the test: it should take another control pair instead of failing |
 
 **Lab specs on 94a3e01** (the second context; `npx playwright test tests/browser/<dir> --project=functional`, one directory at a time through
 the GPU gate; 2 h 10 min in all): 489 passed, 8 failed, 2 skipped. NONE OF THE EIGHT IS THE
@@ -492,8 +518,8 @@ offers and the three time strips.
 | Line | State |
 |---|---|
 | typecheck clean; the grep test | MET. `npm run typecheck` exit 0 at 0685bd0 (and at 94a3e01). `tests/unit/fakes/deprecated.test.ts` (9 tests): eight rules over 500+ files of the presentation, the labs, the browser tests and the presentation's unit tests; every exception listed with its reason (the access module, the fake as a producer, the retired member's type, the audio data's path, `scenario.vehicle` in `src/app/main.ts`, the lab vehicle sim, four tests of producers and of the origin); a stale exception fails. Outside its scan: section 6 |
-| every wave-2 unit and lab spec; every reference image; budget within 3 % | On the final tree 0685bd0. Unit: 82 files, 994 tests, all pass (the suites of section 8), and the 5 tests of `tests/unit/render-core/lensShiftConsumers.test.ts`, added after that run, pass. Reference images: PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line; `lunar-touchdown` mean 0.0009, p99.9 1, max 6; `shoreline` mean 0.0010, p99.9 1, max 3; `sweep-lunar-orbit` mean 0.0000, max 4, 0.001 % of the pixels. Budget: all ten rows pass, none rose by more than 3 % (the largest rise: LEO +2.5 %; the others between -4.5 % and -0.7 %). Lab specs: running on the final tree when this row was written; on 94a3e01 489 passed and the eight that failed were not the sweep's (section 3) |
-| the same frame at two origins under 1/255 per channel; a rebase without a step or a motion-vector spike | MET for the renderer: 0 pixels in four lunar frames under an exact translation of the origin. A frame COMPUTED about the other origin has a mean difference of 0.007 level and a 99.9th percentile of 1 (2 in `lunar-touchdown`); single pixels differ by up to 17 levels: the last bits of float64 at 384,000 km, not the renderer (D7 / D8, request 5). Rebase: three scenes, no step, velocity target equal to the control's, and the test fails without the core's rebase (section 3) |
+| every wave-2 unit and lab spec; every reference image; budget within 3 % | On the final tree 0685bd0. Unit: 83 files, 999 tests, all pass (the suites of section 8; 971 at the end of the second context). Reference images: PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line; `lunar-touchdown` mean 0.0009, p99.9 1, max 6; `shoreline` mean 0.0010, p99.9 1, max 3; `sweep-lunar-orbit` mean 0.0000, max 4, 0.001 % of the pixels. Budget: all ten rows pass, none rose by more than 3 % (the largest rise: LEO +2.5 %, and -0.0 % when that row was run again; the others between -4.5 % and -0.7 %). Lab specs: 492 pass; NOT MET for eight tests: six are known failures of the tree before the sweep with unchanged numbers, two are tests that fail in some runs and pass in others (an effect-noise maximum over its line once in four runs; the origin test's `leo` scene, whose two control runs disagree in some loads, as they did in the second context) (section 3) |
+| the same frame at two origins under 1/255 per channel; a rebase without a step or a motion-vector spike | MET for the renderer: 0 pixels in four lunar frames under an exact translation of the origin. A frame COMPUTED about the other origin has a mean difference of 0.007 level and a 99.9th percentile of 1 (2 in `lunar-touchdown`); single pixels differ by up to 17 levels: the last bits of float64 at 384,000 km, not the renderer (D7 / D8, request 5). Rebase: three scenes, no step, velocity target equal to the control's, and the test fails without the core's rebase (section 3). ON THE FINAL TREE the origin test passed for the four frames of part 1 and for the `sea` and `lunar-orbit` replacements; the `leo` replacement passed in 2 of 4 runs and in the other two could not be judged, because two control runs of that scene disagreed (a second state of the scene between loads, also in the second context's logs: section 3) |
 | two craft of one vehicle never mix; an assembly framed from its radius | MET: resource bars (`displays.test.ts`), wear and mounts (`mounts.test.ts`), RCS jets, canopies and event parts (`tests/unit/vfx/model.test.ts`), engine histories of the audio model (`tests/unit/audio/model.test.ts`); the chase rig on a three-craft assembly (`camera.test.ts`). Staging: the stage stack is per craft in the snapshot (`CraftSnapshot.staging`), the HUD reads the helm craft's |
 | the terrain lab through `fetch` and `pack` | MET. Seven views of Earth and the Moon, each captured frame-exactly through a `fetch` spec and through a `pack` spec against the local stack: 0 differing pixels in every one; the pack page asked for no plain tile file (section 3) |
 | scrim step at most 0.1 ms with four rectangles, unmeasurable with none | MET. 0.077 ms with four rectangles at 2560 x 1440 (`core.tonemap` 0.0322 -> 0.1093 ms); with none the pass is 0.0322 ms in two alternating series (identical to a microsecond), the image gate is at 0 pixels on the 30 exact checkpoints and the budget table is as below. Stated plainly: the 0.077 ms is paid for ANY rectangle, also one of no area (1.3) |
