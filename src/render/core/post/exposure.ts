@@ -432,6 +432,12 @@ export const METER2_CONTENT_EV = 4;
 export const METER2_SCENE_LIT_FROM = 0.1;
 export const METER2_SCENE_LIT_FULL = 0.3;
 export const METER2_EMITTER_SCENE_FROM = 0.1;
+/**
+ * The top of the scale with look 2. The present top (EV_MAX, 16.5) left a sheath that asks for 19.6 three
+ * stops over where its hint puts it: the present curve still showed it with its streaks there (eight times
+ * over the cap is 0.93 of white), the camera curve shows one white ball.
+ */
+export const METER2_EV_MAX = 20;
 export const METER2_EMITTER_SCENE_FULL = 0.2;
 
 export const TWILIGHT_SKY_FROM = Math.sin((-12 * Math.PI) / 180);
@@ -772,7 +778,7 @@ function meterFrame(m: MeterInput, withSky: boolean): MeterResult {
   if (m.kind === 'external' && m.sunInFrame !== undefined && m.sunInFrame > 0) ev = Math.max(ev, sunny16Ev(m.sunInFrame) - SUN_IN_FRAME_MARGIN_EV);
 
   ev -= m.exposureCompensation;
-  ev = Math.max(EV_MIN, Math.min(EV_MAX, ev));
+  ev = Math.max(EV_MIN, Math.min(look2 ? METER2_EV_MAX : EV_MAX, ev));
   if (m.minEv100 !== null) ev = Math.max(ev, m.minEv100);
   return { targetEv100: ev, litFraction: stats.litFraction, histogramWeight: w, evHistogram, evPrior, outsideFraction, evOutside, outsideWeight, sunlitFloor, farLevel, farWeight };
 }
