@@ -1411,3 +1411,36 @@ G-buffer 0.178 + shadows 0.175 = 0.353 of 2.0 at 1.7 M triangles (0.351 with the
 0 (was a flat 0.073); 5 % of the frame + 0.006, 40 % + 0.050, a menu's four panels + 0.069 (was + 0.078);
 0 differing pixels against the sweep's single pass in every comparison (out/core-support/scrim/run-2.log).
 I did not run the per-checkpoint table (`budget.perf.spec.ts`).
+
+## 15. Shared-code maintainer, 2026-11-24 (evening): the flip to look 2, the pulse, my suites under the new default
+
+By the lead's decision in docs/requests/ocean-10.md ("Lead decision on the A/B (2026-11-24)").
+
+- **The default is look 2** since `1d91c88` (`DEFAULT_LOOK` in `post/tonemap.ts`): the renderer's option, the
+  tonemap pass, `displayLinear` / `agxDisplayLinear` and a `MeterInput` without a look. Look 1 stays for one
+  round: `corelook=1` in a page's address, `RendererOptions.look`, `VITE_CORE_LOOK=1`. I did not edit the
+  manifest or the baselines: the lead's records agent re-records the reference images and the budget
+  baseline.
+- **The thruster pulse in a dark frame** (the lead's item 3) was contained in the meter and is fixed in the
+  same commit: the frame without the emitter counts as no darker than EV100 2 (`METER2_EMITTER_DARK_EV`), so
+  a pulse puts the target at 4 (12.07 before, from the dark floor); an emitter that lasts earns its
+  exposure at 4 EV/s (`METER2_EMITTER_FOLLOW_EV_PER_S`, `MeterInput.emitterHeldSeconds`, kept by the
+  `ExposureMeter` and forgotten at a frame-exact restart). Unit-tested on the recorded entry frames. Not
+  looked at in a picture: a pulse is now far over white for its fifth of a second, and what its glare
+  looks like in the dark is the vfx's to judge in its round.
+- **My suites under the new default.** Unit (render-core, camera, the boundary test): 339 of 339 after
+  eleven re-statements, each with its old and new value in the message of `1d91c88` (the curve: a grey
+  ramp's steepest step 2 -> 3.5 levels per twentieth of a stop above mid-grey, the cockpit's sun patch
+  under 246 -> 255, cloud tops through the cabin's gain under 225 -> 254 and up; the rules: a trail in a
+  dark frame exposed for once it has lasted, the twilight tests' dusk sky held at 10.69 by rule 1; the
+  default itself). Browser: render-core 47 of 47 (44 in the first run; the scrim spec re-stated and run again, 5 of 5); the lab's exposure, contact, exact and shadows
+  specs 18 of 18; no display level of mine had to be re-stated in a browser spec. The three failures of
+  the first run were the scrim spec asserting that the page runs look 1 (`f4bdda9`; its message lost the
+  words in backticks to the shell: "these three assertions of `look: 1`").
+- **The budget table's core lines under the new default** (out/core-support/flip1.log): AO + contact
+  0.118, lighting 0.196, TAA 0.111, bloom 0.051, tonemap and exposure 0.055, copies and pyramid 0.051;
+  core fixed 0.581 of 3.0.
+- **Expected red outside my paths** until each owner's next round: listed with reasons in
+  `docs/requests/NOTICE-core-7.md`, section "The flip". I ran nobody else's suite under look 2.
+- Open as before: `core-8` (vfx: the sheath's hint at the peak of g), `terrain-render-10` (not started),
+  the glint from orbit (option 2, decided after the ocean's round).

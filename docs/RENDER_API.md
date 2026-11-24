@@ -1202,12 +1202,14 @@ the lead's proof over the integration lab is `tests/browser/shell/baseline-tooli
 
 ### 13.1 The look switch: the camera curve and the meter's bounds (requests `ocean-10`, `ocean-13`)
 
-`RendererOptions.look` (1 or 2; default 1), `corelook=2` in a page's address, `VITE_CORE_LOOK=2` in the env
-of a run's page server. **With look 1 nothing is different from before the switch existed**: the tonemap
-pass compiles the text it always compiled and no rule of look 2 is evaluated (the lead's 33 reference
-images compare at 0 pixels; `tests/unit/render-core/exposureLook2.test.ts` holds the meter on recorded
-frames). Look 2 is built for the lead's decision on `ocean-10`; it is not the default and no package's
-level tests are stated for it.
+`RendererOptions.look` (1 or 2), `corelook=1|2` in a page's address, `VITE_CORE_LOOK=1|2` in the env of a
+run's page server. **Look 2 is the game's look since the lead's decision of 2026-11-24** (`DEFAULT_LOOK`;
+docs/requests/ocean-10.md): the option, the tonemap pass, `displayLinear` / `agxDisplayLinear` and a
+`MeterInput` without `look` default to it. **Look 1 is the game as it was, to the pixel** (the tonemap pass
+compiles the text it always compiled and no rule of look 2 is evaluated; the reference images as recorded
+before the flip compared at 0 pixels with it); it stays reachable for one round, as the comparison, and
+goes after it. Each package re-states its level-holding tests under look 2 in its next round
+(`NOTICE-core-7` lists what is expected to be red until then).
 
 **The curve of look 2** (`post/tonemap.ts`, `CAMERA_*`). The present curve from one stop under mid-grey
 down (shadows, the toe, every dark scene) and mid-grey itself where it is (117 of 255); above it the
@@ -1235,9 +1237,13 @@ is untouched):
    that is a scene (lit pixels over 10 to 30 % of it): what stands more than 2 stops over the 75th
    percentile of the metered pixels counts at that level in the mean, and the highlight term may raise the
    target by 1 EV at most over what the mean and the prior ask for.
-3. *A small emitter does not set the exposure.* A hint that covers up to 2 % of the frame may raise the
-   target by 2 EV over what the frame without emitters asks for (not bounded from 6 %), by what that frame
-   has to show (lit pixels over 2 % of it; a frame that is dark but for the emitter follows the emitter).
+3. *A small emitter does not set the exposure at once.* A hint that covers up to 2 % of the frame may raise
+   the target by 2 EV over what the frame without emitters asks for (not bounded from 6 %), and that frame
+   counts as no darker than EV100 2: a pulse in a frame that is dark but for it puts the target at 4 (it
+   was 12). An emitter that lasts earns its exposure: the bound rises by 4 EV for every second a small
+   emitter has stood in the frame and falls at the same rate while it is gone (`MeterInput.emitterHeldSeconds`,
+   kept by the meter and forgotten at a frame-exact restart), so a distant flame is exposed for after two
+   to three seconds and a train of pulses earns nothing.
 4. *An emitter that fills the frame is the scene.* From 10 to 20 % of the frame covered by one hint the
    rules under the sun let go.
 5. The scale ends at EV100 18 (16.5 with look 1).
