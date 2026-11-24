@@ -69,7 +69,7 @@ export function createShell(deps: ShellDeps): Shell {
   const prompts = el('div', 'sh-prompts');
   const banner = el('div', 'sh-banner');
   safe.append(top, mainCol, aside, status, prompts);
-  root.append(safe, banner, el('div', 'sh-small-window', 'Make the window larger to play'));
+  root.append(el('div', 'sh-vignette'), safe, banner, el('div', 'sh-small-window', 'Make the window larger to play'));
   deps.root.append(root);
 
   const practiceOn = (): boolean => machine.state().side.includes('practice');
@@ -249,7 +249,7 @@ export function createShell(deps: ShellDeps): Shell {
     const callsign = deps.identity?.callsign();
     right.replaceChildren(
       ...(callsign ? [el('b', '', callsign)] : []),
-      el('span', '', el('i', `sh-dot ${dot}`), practiceOn() ? 'Practice · offline' : link.rttMs !== null ? `${link.state} · ${link.rttMs} ms` : link.state),
+      el('span', '', el('i', `sh-dot ${dot}`), practiceOn() ? 'Practice · offline' : link.rttMs !== null ? `Link ${link.rttMs} ms` : link.state),
       ...(practiceOn() ? [] : [el('span', '', el('b', 'sh-num', deps.format.number(sum.online)), ' online')]),
     );
   };

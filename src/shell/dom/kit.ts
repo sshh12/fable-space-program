@@ -72,6 +72,12 @@ const SHELL_CSS = `
 .sh-root[data-motion="reduced"] { --t-fast: 0ms; --t-base: 160ms; --t-exit: 120ms; --t-screen: 200ms; }
 .sh-root[hidden] { display: none; }
 .sh-root * { box-sizing: border-box; }
+/* A gradient vignette behind the left columns and the bottom bands: free text (titles, the status line) stays
+   legible over a bright scene. A plain gradient over the canvas: no blur, no blend (frontend-ux fact 7). */
+.sh-vignette { position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(4, 7, 11, 0.66) 0%, rgba(4, 7, 11, 0.44) 30%, rgba(4, 7, 11, 0.12) 48%, rgba(4, 7, 11, 0) 60%),
+              linear-gradient(0deg, rgba(4, 7, 11, 0.55) 0%, rgba(4, 7, 11, 0) 16%); }
+.sh-title, .sh-subtitle, .sh-status, .sh-wordmark, .sh-begin, .sh-tab, .sh-top-right { text-shadow: 0 0 0.5em rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.6); }
 .sh-safe {
   position: absolute; left: 50%; top: 50%;
   width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16));
@@ -119,10 +125,10 @@ const SHELL_CSS = `
 .sh-prompts-plate { display: flex; gap: calc(0.6 * var(--u)); background: var(--fill); border: 1px solid var(--line); border-radius: 2px; padding: calc(0.4 * var(--u)) calc(0.6 * var(--u)); pointer-events: auto; }
 
 .sh-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: calc(1.4 * var(--u)); }
-.sh-card { text-align: left; color: var(--ink); background: var(--fill); border: 1px solid var(--line); border-radius: 2px; padding: calc(1.8 * var(--u)) calc(1.8 * var(--u)) calc(1.6 * var(--u)); min-height: calc(15 * var(--u)); display: flex; flex-direction: column; justify-content: flex-end; gap: calc(0.6 * var(--u)); cursor: pointer; pointer-events: auto; position: relative; transition: transform var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); font: inherit; }
+.sh-card { text-align: left; color: var(--ink); background: var(--fill); border: 1px solid var(--line); border-radius: 2px; padding: calc(1.8 * var(--u)) calc(1.8 * var(--u)) calc(1.6 * var(--u)); min-height: calc(17 * var(--u)); display: flex; flex-direction: column; justify-content: flex-start; gap: calc(0.6 * var(--u)); cursor: pointer; pointer-events: auto; position: relative; transition: transform var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); font: inherit; }
 .sh-card .sh-card-title { font-family: ${SHELL_FONTS.display}; font-weight: 600; font-size: max(20px, calc(2.6 * var(--u))); letter-spacing: 0.01em; text-transform: uppercase; line-height: 1; }
 .sh-card .sh-card-text { font-size: max(13px, calc(1.35 * var(--u))); color: var(--ink-2); }
-.sh-card .sh-card-kicker { font-family: ${SHELL_FONTS.label}; font-weight: 600; font-size: max(11px, calc(1.15 * var(--u))); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); position: absolute; top: calc(1.6 * var(--u)); left: calc(1.8 * var(--u)); }
+.sh-card .sh-card-kicker { font-family: ${SHELL_FONTS.label}; font-weight: 600; font-size: max(11px, calc(1.15 * var(--u))); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: auto; padding-bottom: calc(1.2 * var(--u)); }
 .sh-card.is-focus, .sh-row.is-focus { background: var(--fill-focus); }
 .sh-card.is-focus { transform: scale(1.03); }
 .sh-card.is-focus::before, .sh-row.is-focus::before { content: ''; position: absolute; left: -1px; top: -1px; bottom: -1px; width: max(3px, calc(0.3 * var(--u))); background: var(--accent); }
@@ -281,7 +287,7 @@ export function scrimRectsOf(root: HTMLElement, canvasRect: DOMRect, dpr: number
     const x1 = Math.min(canvasRect.width * dpr, (r.right - canvasRect.left) * dpr);
     const y1 = Math.min(canvasRect.height * dpr, (r.bottom - canvasRect.top) * dpr);
     if (x1 - x0 < 1 || y1 - y0 < 1) continue;
-    out.push({ x0, y0, x1, y1, cornerRadius: 2 * dpr, blur: Number(e.dataset['scrim'] || '0.6'), dim: 0.42, opacity });
+    out.push({ x0, y0, x1, y1, cornerRadius: 2 * dpr, blur: Number(e.dataset['scrim'] || '0.6'), dim: Number(e.dataset['scrimDim'] || '0.42'), opacity });
   }
   out.sort((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0));
   if (out.length <= SCRIM_SLOTS) return out;

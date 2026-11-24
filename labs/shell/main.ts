@@ -89,10 +89,10 @@ async function boot(): Promise<void> {
     if (s === 'site') {
       const up = quat.rotate(earth.qFixedToRoot, v3.new(Math.cos(loc.latDeg * (Math.PI / 180)) * Math.cos(loc.lonDeg * (Math.PI / 180)), Math.cos(loc.latDeg * (Math.PI / 180)) * Math.sin(loc.lonDeg * (Math.PI / 180)), Math.sin(loc.latDeg * (Math.PI / 180))));
       const north = v3.normalize(v3.reject(quat.rotate(earth.qFixedToRoot, v3.new(0, 0, 1)), up));
-      const pos = v3.add(earth.rRoot, v3.add(v3.scale(up, radius + SITE_VIEW_ALTITUDE), v3.scale(north, -SITE_VIEW_ALTITUDE * 0.9)));
+      const pos = v3.add(earth.rRoot, v3.add(v3.scale(up, radius + SITE_VIEW_ALTITUDE), v3.scale(north, -SITE_VIEW_ALTITUDE * 0.35)));
       return { positionRoot: pos, qViewToRoot: lookAt(pos, v3.add(earth.rRoot, v3.scale(up, radius)), up) };
     }
-    return menuEye(earth, radius, { altitude: MENU_ALTITUDE, sunBehindLimbDeg: 10, t: (performance.now() - t0) / 1000, drift: !reduced });
+    return menuEye(earth, radius, { altitude: MENU_ALTITUDE, sunBehindLimbDeg: 2, t: (performance.now() - t0) / 1000, drift: !reduced });
   };
   const current = (): EyePose => {
     const c = app.camera.spec;
@@ -261,7 +261,8 @@ async function boot(): Promise<void> {
   });
   // Esc / P in flight open the flight menu (the flight table's action; this lab has no flight controller).
   window.addEventListener('keydown', (e) => {
-    if (shell.hooks().main === 'flight' && (e.code === 'Escape' || e.code === 'KeyP')) {
+    // The shell's own listener runs first and marks a key it used (Esc closing the flight menu): never reopen it here.
+    if (!e.defaultPrevented && shell.hooks().main === 'flight' && (e.code === 'Escape' || e.code === 'KeyP')) {
       e.preventDefault();
       shell.openFlightMenu();
     }

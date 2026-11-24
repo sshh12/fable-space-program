@@ -57,15 +57,17 @@ export function menuEye(body: Pick<BodySnapshot, 'rRoot' | 'sunDir' | 'spinRoot'
   const yaw = opts.drift ? 0.2 * DEG * opts.t : 0;
   const breathe = opts.drift ? 1 + 0.03 * Math.sin((2 * Math.PI * opts.t) / 40) : 1;
   const r = radius + opts.altitude * breathe;
-  // Stand over the night side of the terminator, so the limb ahead is the sunrise arc with the sun behind it.
-  const back = 12 * DEG;
+  // Stand over the night side, as far from the terminator as the horizon's depression plus the sun's offset, so
+  // the sun sits just behind the limb ahead: the sunrise arc, the airglow and the night side's lights.
+  const dip0 = Math.acos(clamp(radius / r, -1, 1));
+  const back = dip0 + opts.sunBehindLimbDeg * DEG;
   const up0 = v3.normalize(v3.add(v3.scale(dawn, Math.cos(back)), v3.scale(sun, -Math.sin(back))));
   const up = quat.rotate(quat.fromAxisAngle(dawn, yaw), up0);
   const eyeRel = v3.scale(up, r);
-  // Look toward the limb on the sun's side: the horizon direction toward the sun, dipped by the horizon's depression and raised by the sun's offset.
+  // Look toward the limb on the sun's side, raised above the horizon so the limb sits in the lower part of the frame.
   const toSun = v3.normalize(v3.reject(sun, up));
   const dip = Math.acos(clamp(radius / r, -1, 1));
-  const lift = opts.sunBehindLimbDeg * DEG * 0.5;
+  const lift = 14 * DEG;
   const dir = v3.normalize(v3.add(v3.scale(toSun, Math.cos(dip - lift)), v3.scale(up, -Math.sin(dip - lift))));
   const positionRoot = v3.add(body.rRoot, eyeRel);
   return { positionRoot, qViewToRoot: lookAt(positionRoot, v3.add(positionRoot, dir), up) };
