@@ -1588,3 +1588,28 @@ of the data plugin does the same for definitions in a temporary directory. The p
 - Seen on the way, not the lead's: `tests/unit/fakes/deprecated.test.ts` is red on `labs/shell/main.ts:160`
   and `tests/unit/fakes/menuStores.test.ts:77` (a vehicle looked up by a value: shell-menu) and on
   `index.html:106` (a module script written into the page, `data-fsp-gate`: capability-settings).
+
+**The look-1 proof, third run (2026-11-24, 15:22-15:50; the frozen page server; HEAD 89b78c6 at its start).**
+Custody: look 1 on both pages. 39 files were saved and 6 commits made under the run; the pages saw none.
+24 of 33 the same (the 21 exact ones at 0 pixels, the three tolerance ones inside theirs). Nine differ:
+- KA LAE'S GROUND (fleet-data's pad list, c441308): `pad-noon` (5,073 px by up to 55 levels, the band of
+  ground toward the horizon right of the pad), `pad-sunset` (6,381 px by up to 29, the same band),
+  `ascent-10km` (5 px by 1 level at the lower edge) and 188 px at the left edge of `sweep-app-pad`.
+- THE HUD'S WARP LADDER (step 4.1c, c56ea35: two more chevrons; a strip at x 43-159, y 62-69 of 595 to 633
+  px): `sweep-hud-leo`, `sweep-separation-debris`, `sweep-rails-warp`, `sweep-app-cockpit`, `sweep-app-pad`
+  and 625 px of `sweep-map-translunar`.
+- A THIRD CAUSE, WHICH HOLDS THE RECORDING: `sweep-map-translunar`, about 21,600 px in the map. The
+  prediction draws an encounter on a later revolution (a second "Enter Moon" 28 days ahead, an apoapsis of
+  671.5 Mm, one more outer patch, "+4" where it said "+2"): solar-system-sim's three-period encounter
+  search (commit 9346808, request solar-system-sim-1 item 1; the same change the view reference lists as
+  by design for the `patches` block of twelve qa-translunar states). No vessel, sky, Moon or sea moved
+  in any checkpoint.
+The recording under look 2 waits for the lead's word on that third cause. Tools: `diff-where.cjs` (count,
+box and grid of the differing pixels, and a half-size sheet) beside `look-compare.cjs` in the scratchpad.
+
+**The trajectory guard (the lead, 15:40): do not re-record and do not count yet.** island-core's fix round
+moved the golden to `27dd19a26303c181` (b9f1e8d) and a third builder moves it once more; island-core hands
+over a FINAL debris table when it closes, and the audit and the one re-record are made from that tree. To
+ask in that audit: why the Lyra-A engine no longer exists as a piece (the tier, or a lost break-up). The
+EXACT comparison of mission records excludes `LUNAR_ORBIT.data.radarAltitude` until request island-core-3
+(the band-limited terrain height depends on the resident tiles) is answered.
