@@ -222,13 +222,15 @@ export type ModuleState =
     }
   | { type: 'heatShield'; ablatorFraction: number; surfaceTemp: number }
   | { type: 'light'; on: boolean }
-  | { type: 'antenna'; deployed: boolean };
+  | { type: 'antenna'; deployed: boolean }
+  /** v2: a docking port (ARCHITECTURE 7.5); a member since the first port parts exist (request fleet-data-1, 2026-11-24). */
+  | DockingPortState;
 
 /**
  * v2: runtime state of a `dockingPort` module (ARCHITECTURE 7.5).
  *
- * Not yet a member of `ModuleState`: it joins together with `DockingPortModuleDef` joining `ModuleDef`
- * (defs.ts), in the lead step before wave 4.1.
+ * A member of `ModuleState` since 2026-11-24 (request fleet-data-1), with `DockingPortModuleDef` in
+ * `ModuleDef` (defs.ts).
  */
 export type DockingPortState = {
   type: 'dockingPort';

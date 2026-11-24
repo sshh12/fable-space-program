@@ -140,6 +140,8 @@ function restingState(md: ModuleDef): ModuleState {
       return { type: 'light', on: false };
     case 'antenna':
       return { type: 'antenna', deployed: false };
+    case 'dockingPort':
+      return { type: 'dockingPort', state: 'disabled', armed: false, peer: null, progress: 0 };
     case 'engine':
     case 'rcs':
       throw new Error('propulsion modules are synthesised by LabEngines');

@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (lead, 2026-11-24: the docking port is a member of `ModuleDef` and of `ModuleState`)
 From: fleet-data
 Owner path: src/core/contracts/defs.ts, src/core/contracts/sim.ts (the lead)
 Blocking: no
@@ -28,3 +28,14 @@ or `ModuleState['type']` elsewhere then gain a `dockingPort` case (none exists i
 `createModuleState`, which already handles it). After the join fleet-data removes the cast in
 `asModuleState` and the wider type in `createModuleState`. Must NOT change: any existing part, the codec layout,
 the golden hash.
+
+## Resolution (lead, 2026-11-24)
+
+`DockingPortModuleDef` is a member of `ModuleDef` (defs.ts) and `DockingPortState` of `ModuleState`
+(sim.ts); the two "Not yet a member" paragraphs are gone. Two switches over the module types gained the
+case: `createModuleState` in `src/sim/vessel/assemble.ts` (`case 'dockingPort': return initialPortState()`;
+the wider type and the cast are gone from that function) and `restingState` in `labs/audio/labVehicle.ts`.
+`asModuleState` and the wider type in `src/sim/vessel/modules/dockingPortState.ts` and `staging.ts` are
+yours to simplify; they still compile. No existing part, no codec layout and no hash changed: the mission
+flew 36 of 36 at the golden 72c0893583aa427d on a clean worktree of HEAD (06b05ba) with this change and the
+class limits of request fleet-data-4.

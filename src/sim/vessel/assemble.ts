@@ -13,7 +13,7 @@ import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { INITIAL_PART_TEMP, type CommandRuntime, type CraftRuntime, type ModuleRt, type PartRuntime, type Vessel } from './types';
 import { assemblyId, assertIssuedId, type CraftIdSource } from './ids';
-import { asModuleState, initialPortState, refreshPortStates } from './modules/dockingPortState';
+import { initialPortState, refreshPortStates } from './modules/dockingPortState';
 
 export class VesselAssemblyError extends Error {
   constructor(vehicleId: string, message: string) {
@@ -23,10 +23,11 @@ export class VesselAssemblyError extends Error {
 }
 
 export function createModuleState(def: ModuleDef): ModuleState {
-  // The docking port (DockingPortModuleDef) is a module the part data states before the contract's ModuleDef
-  // union names it (request fleet-data-1); its state is DockingPortState (modules/dockingPortState.ts).
-  if ((def as ModuleDef | DockingPortModuleDef).type === 'dockingPort') return asModuleState(initialPortState());
   switch (def.type) {
+    // A docking port: its state is DockingPortState (modules/dockingPortState.ts), a member of ModuleState
+    // since the join of request fleet-data-1.
+    case 'dockingPort':
+      return initialPortState();
     case 'command':
       return { type: 'command', crew: 0, crewAlive: true };
     case 'engine':

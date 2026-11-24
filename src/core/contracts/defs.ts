@@ -592,14 +592,16 @@ export type ModuleDef =
     }
   | { type: 'heatShield'; ablatorResource: ResourceId; area: number; qThreshold: number; heff: number; conductFraction: number }
   | { type: 'light'; params: Record<string, number> }
-  | { type: 'antenna'; params: Record<string, number> };
+  | { type: 'antenna'; params: Record<string, number> }
+  /** v2: a docking port (ARCHITECTURE 7.5); a member since the first port parts exist (request fleet-data-1, 2026-11-24). */
+  | DockingPortModuleDef;
 
 /**
  * v2: a docking port (ARCHITECTURE 7.5). The part carries an attach node of kind 'dock'.
  *
- * Not yet a member of `ModuleDef`: the assembler creates one module state per `ModuleDef` member
- * (src/sim/vessel/assemble.ts), so the lead joins this type to `ModuleDef` (and `DockingPortState` to
- * `ModuleState`, sim.ts) in the lead step before wave 4.1, when the first port parts are written.
+ * A member of `ModuleDef` since 2026-11-24 (request fleet-data-1: the first port parts are written), as
+ * `DockingPortState` is of `ModuleState` (sim.ts): the assembler creates one module state per module of a
+ * part, and a switch over the module types has a `dockingPort` case.
  */
 export type DockingPortModuleDef = {
   type: 'dockingPort';
