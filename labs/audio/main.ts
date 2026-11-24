@@ -13,12 +13,11 @@ import type { ViewKind } from '@/core/contracts/render';
 import type { SimEvent, SimEventType } from '@/core/contracts/sim';
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
-import { revisionOf } from '@/core/access/snapshotAccess';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { acquireGpu } from '@/core/gpu/device';
 import { installTestApi } from '@/core/testing/testApi';
 import { createLabApi, type AudioLabApi } from './labApi';
-import { LabEngines, labStack, placeVehicle, type LabPlacement, type LabStackId } from './labVehicle';
+import { LabEngines, labPartKey, labStack, placeVehicle, type LabPlacement, type LabStackId } from './labVehicle';
 import { compose, externalAt, labVesselId, listener, makeEvent, SEA_LEVEL, type ListenerSpec } from './scenes';
 
 declare global {
@@ -354,7 +353,7 @@ async function boot(): Promise<void> {
     }
     const base = sim.snapshot();
     const vesselId = labVesselId(base);
-    const events: SimEvent[] = pending.splice(0).map((type) => makeEvent(type, base.ut, vesselId, base, { partId: 'capsule' }));
+    const events: SimEvent[] = pending.splice(0).map((type) => makeEvent(type, base.ut, vesselId, base, { partId: labPartKey('capsule') }));
     const snapshot = compose(
       base,
       {
@@ -367,7 +366,7 @@ async function boot(): Promise<void> {
         boundingRadius: 10,
       },
       0,
-      revisionOf(base),
+      base.revision,
     );
     snapshot.ut = base.ut;
     const az = (state.azimuthDeg * Math.PI) / 180;

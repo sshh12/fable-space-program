@@ -28,7 +28,6 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { WARP_LEVELS } from '@/core/contracts/defs';
-import { targetOf } from '@/core/access/snapshotAccess';
 import { drawIcon, MARKER_COLORS, MARKER_ICONS, STAGE_ICONS, stageIconFor, TREND_ICONS } from '../icons';
 import {
   formatApsis,
@@ -71,7 +70,6 @@ import {
   isLanded,
   landingScope,
   landingTargetRows,
-  targetName,
   zoneStatus,
 } from '../model';
 
@@ -287,25 +285,21 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       return { page, title: TITLE[page], rows, section: ltSection, status };
     }
     case 'target': {
-      const t = targetOf(r);
+      const t = r.target;
       if (t === null) return { page, title: TITLE[page], rows: [{ label: 'Target', value: 'none', tone: 'dim' }], status };
-      // The navigation readout of a session that produces it; a body target of today's session has the rows below it.
-      const nav = r.target ?? null;
-      const rows: MfdRow[] = [{ label: 'Target', value: targetName(s, defs) ?? '—', tone: 'accent' }];
-      if (nav) {
-        if (nav.presence !== 'solid') rows.push({ label: 'Presence', value: nav.presence === 'recordedEcho' ? 'RECORDED ECHO' : 'PROJECTED ECHO', tone: 'caution' });
-        rows.push({ label: 'Range', value: formatDistance(nav.range) });
-        rows.push({ label: 'Range rate', value: formatSpeed(nav.rangeRate), tone: nav.rangeRate < 0 ? 'good' : 'normal' });
-        if (nav.relSpeed !== null) rows.push({ label: 'Rel. speed', value: formatSpeed(nav.relSpeed) });
-      }
+      const rows: MfdRow[] = [{ label: 'Target', value: t.name, tone: 'accent' }];
+      if (t.presence !== 'solid') rows.push({ label: 'Presence', value: t.presence === 'recordedEcho' ? 'RECORDED ECHO' : 'PROJECTED ECHO', tone: 'caution' });
+      rows.push({ label: 'Range', value: formatDistance(t.range) });
+      rows.push({ label: 'Range rate', value: formatSpeed(t.rangeRate), tone: t.rangeRate < 0 ? 'good' : 'normal' });
+      if (t.relSpeed !== null) rows.push({ label: 'Rel. speed', value: formatSpeed(t.relSpeed) });
       rows.push({ label: 'Rel. inclination', value: t.relativeInclination !== null ? formatRadAsDeg(t.relativeInclination, 2) : '—', tone: t.relativeInclination !== null ? 'normal' : 'dim' });
       if (t.closestApproaches.length === 0) rows.push({ label: 'Closest approach', value: '—', tone: 'dim' });
       t.closestApproaches.forEach((a, i) => {
         rows.push({ label: i === 0 ? 'Closest approach' : `Approach ${i + 1}`, value: formatDistance(a.distance) });
         rows.push({ label: i === 0 ? 'Time to approach' : `Time to ${i + 1}`, value: formatCountdown(a.ut - s.ut) });
-        if (a.relSpeed !== undefined) rows.push({ label: i === 0 ? 'Speed at approach' : `Speed at ${i + 1}`, value: formatSpeed(a.relSpeed) });
+        rows.push({ label: i === 0 ? 'Speed at approach' : `Speed at ${i + 1}`, value: formatSpeed(a.relSpeed) });
       });
-      const lvlh = nav?.lvlh ?? null;
+      const lvlh = t.lvlh;
       const section = lvlh
         ? {
             heading: 'Position about the target',
@@ -319,7 +313,7 @@ export function buildMfdPage(page: MfdPage, s: SimSnapshot, defs: DefLibrary): M
       return { page, title: TITLE[page], rows, section, status };
     }
     case 'docking': {
-      const d = r.docking ?? null;
+      const d = r.docking;
       if (d === null) return { page, title: TITLE[page], rows: [{ label: 'Docking', value: 'no port targeted', tone: 'dim' }], status };
       const lim = (ok: boolean): Tone => (ok ? 'good' : 'caution');
       const phase = { far: 'FAR', approach: 'APPROACH', soft: 'SOFT CAPTURE', hard: 'DOCKED' }[d.phase];

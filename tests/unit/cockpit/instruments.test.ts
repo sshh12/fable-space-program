@@ -188,7 +188,8 @@ describe('seven-segment readouts', () => {
     const mem: InstrumentMemory = { lastStageUt: null };
     const evt: ReadoutDef = { label: 'EVT', binding: 'eventTimer', digits: 4, colons: [1], color: [1, 0, 0], luminance: 100 };
     const s0 = snapshot('lowOrbit', 4);
-    updateMemory(mem, { ...s0, events: [{ type: 'stageFired', ut: s0.ut - 75, vesselId: s0.activeVesselId, stageIndex: 4, label: 'x' }] }, s0.activeVesselId);
+    const vesselId = s0.activeVesselId!;
+    updateMemory(mem, { ...s0, events: [{ type: 'stageFired', ut: s0.ut - 75, vesselId, stageIndex: 4, label: 'x' }] }, vesselId);
     expect(readoutText(evt, act(s0), mem)).toBe('0115');
     const s1 = { ...s0, readouts: { ...s0.readouts, nodeBurn: { nodeId: 'n', dvRemaining: v3.zero(), dvRemainingMag: 10, burnTime: 4, timeToBurnStart: 42, timeToNode: 44, insufficientDeltaV: false } } };
     expect(readoutText(evt, act(s1), mem)).toBe('-042');

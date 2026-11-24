@@ -7,6 +7,7 @@ import { loadDefs } from '../defs/loader';
 import { conicPosition } from '../math/conic';
 import { quat } from '../math/quat';
 import { v3 } from '../math/vec3';
+import { FAKE_VESSEL_ID } from './fakeSession';
 import { createFakeSim, type FakeScene } from './fakeSim';
 
 const SCENES: FakeScene[] = ['pad', 'ascent', 'lowOrbit', 'translunar', 'lunarOrbit', 'lunarSurface', 'reentry', 'chutes'];
@@ -47,7 +48,7 @@ describe('FakeSim', () => {
     expect(Math.asin(noseHorizon.z) * (180 / Math.PI)).toBeCloseTo(s.navball.pitchDeg, 6);
     expect(s.readouts.throttle).toBe(0.7);
     expect(s.cheatCounter).toBe(0);
-    expect(s.scenario.startKind).toBe('state');
+    expect(s.scenario?.startKind).toBe('state');
   });
 
   it('moves along its orbit, draws a closed patch through the vessel and supports node editing', () => {
@@ -81,6 +82,10 @@ describe('FakeSim', () => {
     const engineAt = engineDef.modules.findIndex((m) => m.type === 'engine');
     const part = (id: string, active: boolean): PartSnapshot => ({
       instanceId: id,
+      craftId: FAKE_VESSEL_ID,
+      stageGroup: 'test',
+      stageLabel: 'Test stage',
+      stageOrder: -1,
       def: engineDef.id,
       localPos: v3.zero(),
       localRot: { x: 0, y: 0, z: 0, w: 1 },
@@ -93,6 +98,7 @@ describe('FakeSim', () => {
           : ({ type: m.type } as unknown as ModuleState),
       ),
       shielded: false,
+      panel: null,
     });
     const sim = createFakeSim(defs, { scene: 'lowOrbit', parts: [part('burning', true), part('idle', false)] });
     const engine = (id: string): Extract<ModuleState, { type: 'engine' }> => sim.snapshot().vessels[0]!.parts.find((p) => p.instanceId === id)!.modules[engineAt] as Extract<ModuleState, { type: 'engine' }>;

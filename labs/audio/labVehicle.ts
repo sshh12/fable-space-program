@@ -9,15 +9,25 @@
  * Positions are in the VES frame of each lab stack (+Y nose); y = 0 is the nozzle-exit plane of the
  * lowest stage, so the capsule seat (the cockpit listener) sits at the top of the stack.
  */
-import { activeVesselOf, cabinOf } from '@/core/access/snapshotAccess';
+import { activeVesselOf, cabinOf, partKey } from '@/core/access/snapshotAccess';
 import type { DefLibrary, ModuleDef, PartDef } from '@/core/contracts/defs';
 import type { ModuleState, PartSnapshot } from '@/core/contracts/sim';
+import { FAKE_VESSEL_ID } from '@/core/fakes/fakeSession';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { quat } from '@/core/math/quat';
 import { G0 } from '@/core/math/scalar';
 import type { Vec3 } from '@/core/math/vec3';
 
 type EngineModuleDef = Extract<ModuleDef, { type: 'engine' }>;
+
+/**
+ * The craft of the lab's vessel: the one craft of the fake's vessel (a launched craft: the vessel has its id).
+ * `LabEngines.parts` states it of every part, and an event of the lab names a part by its key in it.
+ */
+export const LAB_CRAFT_ID = FAKE_VESSEL_ID;
+
+/** The part key of the part `instanceId` of a lab stack: how an event names it (`SimEvent`, `partId`). */
+export const labPartKey = (instanceId: string): string => partKey(LAB_CRAFT_ID, instanceId);
 
 /** The real part definitions the lab stacks are built from. */
 export const LAB_PARTS = {
@@ -302,6 +312,11 @@ export class LabEngines {
       });
       return {
         instanceId: p.instanceId,
+        craftId: LAB_CRAFT_ID,
+        // A lab stack is of no vehicle: its parts are one flow group that no vehicle lists.
+        stageGroup: 'stack',
+        stageLabel: 'Lab stack',
+        stageOrder: -1,
         def: p.def,
         localPos: { ...p.pos },
         localRot: quat.identity(),
@@ -310,6 +325,7 @@ export class LabEngines {
         resources: {},
         modules,
         shielded: false,
+        panel: null,
       };
     });
   }

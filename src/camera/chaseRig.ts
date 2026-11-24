@@ -201,7 +201,6 @@ const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > 
  *    craft aboard allows when that is farther. A craft's default and nearest distance are not read: they
  *    frame that craft as it was launched (two docked capsules that each state their launch stack's 140 m
  *    are 10 m across, and are shown from 2.4 radii, not from 140 m).
- *  - No craft block (a hand-built snapshot): the bounding radius alone.
  * `defs` is not read; the parameter stays for the callers of the earlier signature.
  */
 export function chaseDistanceLimits(_defs: DefLibrary, v: VesselSnapshot): { def: number; min: number; max: number } {

@@ -410,7 +410,7 @@ describe('no active vessel, and two craft of one vehicle', () => {
     const l = listener(externalAt(80), labVesselId(base));
     const flown = m.update({ snapshot: compose(base, { parts, aero: { pressure: SEA_LEVEL } }, 0, 0), listener: l, realDt: DT, warpFactor: 1, paused: false });
     expect(flown.engines.length).toBeGreaterThan(0);
-    const unseated = { ...compose(base, { parts, aero: { pressure: SEA_LEVEL }, events: [makeEvent('decoupled', base.ut, labVesselId(base), base)] }, DT, 1), activeVesselId: null as unknown as string };
+    const unseated = { ...compose(base, { parts, aero: { pressure: SEA_LEVEL }, events: [makeEvent('decoupled', base.ut, labVesselId(base), base)] }, DT, 1), activeVesselId: null };
     const out = m.update({ snapshot: unseated, listener: { ...l, attachedVesselId: null, ambientPressure: 0 }, realDt: DT, warpFactor: 1, paused: false });
     expect(out.problems).toEqual([]);
     expect(out.engines).toEqual([]);

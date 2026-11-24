@@ -12,6 +12,7 @@ import type { CapsuleMouldLineDef, DefLibrary, ModuleDef, PartDef, ResourceDef, 
 import type { ModuleState, PartSnapshot, SimSnapshot, StageInfo } from '@/core/contracts/sim';
 import { getSection } from '@/core/defs/loader';
 import { describeStages, type StageWords } from '@/core/defs/stageWords';
+import { FAKE_VESSEL_ID } from '@/core/fakes/fakeSession';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 
@@ -256,9 +257,12 @@ export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<LabGroup,
     });
     return {
       instanceId: placement.id,
-      // The flow group and its label, as a session states them for every part.
+      // The craft the fake puts the part list in (it stamps every part with its craft).
+      craftId: FAKE_VESSEL_ID,
+      // The flow group, its label and its place in the vehicle's list of groups, as a session states them for every part.
       stageGroup: placement.stageGroup,
       stageLabel: vehicle.stageGroups.find((g) => g.id === placement.stageGroup)?.label ?? placement.stageGroup,
+      stageOrder: vehicle.stageGroups.findIndex((g) => g.id === placement.stageGroup),
       def: placement.def,
       localPos: v3.new(0, (STACK_BASE[placement.id] ?? 0) - base - def.bounds.yMin, 0),
       localRot: quat.identity(),
@@ -267,6 +271,7 @@ export function labVehicleParts(defs: DefLibrary, fill: Partial<Record<LabGroup,
       resources: Object.fromEntries((def.resources ?? []).map((r) => [r.resource, r.capacity * f])),
       modules,
       shielded: false,
+      panel: null,
     };
   });
 }
@@ -296,7 +301,7 @@ export function tagLabVehicle(s: SimSnapshot): SimSnapshot {
     vessels: s.vessels.map((v) => {
       if (v.id !== s.activeVesselId) return v;
       const hasCabin = v.parts.some((p) => p.instanceId === LAB_COMMAND_PART);
-      const crafts = v.crafts?.map((c) => ({
+      const crafts = v.crafts.map((c) => ({
         ...c,
         vehicleId: LAB_VEHICLE_ID,
         name: 'Meridian 1',
@@ -305,7 +310,7 @@ export function tagLabVehicle(s: SimSnapshot): SimSnapshot {
         staging,
         chase: { ...LAB_CHASE },
       }));
-      return { ...v, vehicleId: LAB_VEHICLE_ID, name: 'Meridian 1', ...(crafts ? { crafts } : {}) };
+      return { ...v, vehicleId: LAB_VEHICLE_ID, name: 'Meridian 1', crafts };
     }),
     readouts: ablator === s.readouts.ablatorFraction ? s.readouts : { ...s.readouts, ablatorFraction: ablator },
   };

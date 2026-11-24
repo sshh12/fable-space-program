@@ -38,6 +38,7 @@ const craftBlock = (id: string, parent: string | null, vehicleId: string): Craft
   ownerId: null,
   ownerCallsign: null,
   commandPart: null,
+  cockpit: null,
   staging: { nextStage: 0, stages: [], lockout: false },
   chase: { defaultDistance: 100, minDistance: 10, maxDistance: 1000 },
   policy: { lendAttitude: true, lendEngines: true, lendPropellant: true, helm: 'owner' },
@@ -179,12 +180,10 @@ describe('the lineage key of a part', () => {
     // A table that first sees the shard after its parent has gone ends the chain at the craft nobody described.
     const fresh = new CraftLineage();
     expect(fresh.keyOf(later, shard, shard.parts[0]!)).toBe('ship.tank/nozzle');
-    // A craft the table never saw is its own root; a snapshot without craft blocks files a part under its vessel.
+    // A craft the table never saw is its own root, and so is the craft of a part that no craft block of the snapshot describes.
     expect(fresh.knownKeyOf('other', 'x')).toBe('other/x');
-    const bare: VesselSnapshot = { ...base.vessels[0]!, id: 'bare', parts: [{ ...base.vessels[0]!.parts[0]!, instanceId: 'p' }] };
-    delete bare.crafts;
-    delete bare.parts[0]!.craftId;
-    expect(craftIdOf(bare, bare.parts[0]!)).toBe('bare');
-    expect(fresh.keyOf(snapshotOf([bare]), bare, bare.parts[0]!)).toBe('bare/p');
+    const stray = vesselOf('stray', [part('p', 'nobody')], [craftBlock('stray', null, 'v')]);
+    expect(craftIdOf(stray, stray.parts[0]!)).toBe('nobody');
+    expect(fresh.keyOf(snapshotOf([stray]), stray, stray.parts[0]!)).toBe('nobody/p');
   });
 });

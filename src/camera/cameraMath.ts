@@ -31,13 +31,11 @@ export function activeVessel(s: SimSnapshot): VesselSnapshot {
 
 /**
  * The body a view falls back to when it has nothing else to look at: the active vessel's SOI body, else the
- * body at the render root, else the library's root body.
+ * body at the render root. `defs` is not read; the parameter stays for the callers of the earlier signature.
  */
-export function fallbackBodyId(defs: DefLibrary, s: SimSnapshot): string {
+export function fallbackBodyId(_defs: DefLibrary, s: SimSnapshot): string {
   const v = activeVesselOf(s);
-  if (v) return v.bodyId;
-  const origin = s.frame?.origin;
-  return origin ? origin.bodyId : defs.rootBodyId;
+  return v ? v.bodyId : s.frame.origin.bodyId;
 }
 
 export function bodyById(s: SimSnapshot, id: string): BodySnapshot {

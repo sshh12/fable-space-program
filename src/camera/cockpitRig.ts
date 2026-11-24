@@ -82,8 +82,8 @@ const commandSeats = (partDef: PartDef): CockpitSeat[] => {
  * The command part the cockpit camera sits in: the snapshot's craft name it themselves (`CraftSnapshot.commandPart`
  * and `.cockpit`: the craft at the helm first, then the vessel's other craft with a cabin). No vehicle definition
  * is read, so a design that is not in the library has its cabin, and in an assembly of two craft of one vehicle
- * the part is the one of the craft that names it. A vessel whose craft state no cabin (debris, a probe, a
- * hand-built snapshot without craft blocks) has no cockpit view.
+ * the part is the one of the craft that names it. A vessel whose craft state no cabin (debris, a probe) has no
+ * cockpit view.
  */
 export function cockpitHost(defs: DefLibrary, vessel: VesselSnapshot): CockpitHost | null {
   const cabin = cabinOf(vessel);

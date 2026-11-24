@@ -5,7 +5,7 @@ import type { SimSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
-import { createFakeSession } from '@/core/fakes/fakeSession';
+import { createFakeSession, FAKE_VESSEL_ID } from '@/core/fakes/fakeSession';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
@@ -357,7 +357,7 @@ describe('cockpit rig', () => {
     const s = sim('lowOrbit').snap();
     const v = s.vessels[0]!;
     // A vessel of a design the library does not know, whose craft names the part and the seat itself.
-    const craft = { ...v.crafts![0]!, vehicleId: 'not-in-the-library', commandPart: 'capsule', cockpit: { id: 'lab', cameraSeat: 'ms', sensorMount: null } };
+    const craft = { ...v.crafts![0]!, vehicleId: 'not-in-the-library', commandPart: 'capsule', cockpit: { id: 'lab', cameraSeat: 'ms', sensorMount: null, crew: [] } };
     const flown = { ...v, vehicleId: 'not-in-the-library', crafts: [craft] };
     const host = cockpitHost(defs, flown)!;
     expect(host.part.instanceId).toBe('capsule');
@@ -368,7 +368,7 @@ describe('cockpit rig', () => {
     expect(findCockpitSeat(defs, flown, 'cdr')!.seatId).toBe('cdr');
     expect(findCockpitSeat(defs, flown, 'no-such-seat')).toBeNull();
     // A craft without a cabin, and a design the library does not know: no cockpit view.
-    expect(cockpitHost(defs, { ...flown, crafts: [{ ...craft, cockpit: { id: null, cameraSeat: null, sensorMount: null } }] })).toBeNull();
+    expect(cockpitHost(defs, { ...flown, crafts: [{ ...craft, cockpit: { id: null, cameraSeat: null, sensorMount: null, crew: [] } }] })).toBeNull();
   });
 
   it('limits mouse look and sways the head under a sudden acceleration, then settles', () => {
@@ -399,10 +399,25 @@ describe('cockpit rig', () => {
     const withCockpit = Object.values(defs.vehicles).filter((v) => v.cockpit !== null);
     expect(withCockpit.length).toBeGreaterThan(0);
     for (const vehicle of withCockpit) {
-      const parts = vehicle.parts.map((p) => ({ instanceId: p.id, def: p.def, localPos: v3.new(0, 10, 0), localRot: quat.identity(), tempSkin: 290, maxTemp: 1000, resources: {}, modules: [], shielded: false }));
+      const parts = vehicle.parts.map((p) => ({
+        instanceId: p.id,
+        craftId: FAKE_VESSEL_ID,
+        stageGroup: p.stageGroup,
+        stageLabel: vehicle.stageGroups.find((g) => g.id === p.stageGroup)?.label ?? p.stageGroup,
+        stageOrder: vehicle.stageGroups.findIndex((g) => g.id === p.stageGroup),
+        def: p.def,
+        localPos: v3.new(0, 10, 0),
+        localRot: quat.identity(),
+        tempSkin: 290,
+        maxTemp: 1000,
+        resources: {},
+        modules: [],
+        shielded: false,
+        panel: null,
+      }));
       // A session of that vehicle: the craft block states the cabin of its command part (which is where the rig finds it) and the crew by seat.
       const s = createFakeSim(defs, { scene: 'lowOrbit', vehicleId: vehicle.id, parts }).snapshot();
-      expect(s.vessels[0]!.crafts![0]!.cockpit, vehicle.id).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit.seat, sensorMount: null, crew: vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) });
+      expect(s.vessels[0]!.crafts[0]!.cockpit, vehicle.id).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit!.seat, sensorMount: null, crew: vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) });
       const pose = resolveSeatPose(defs, s.vessels[0]!);
       expect(pose, vehicle.id).not.toBeNull();
       expect(pose!.eyeVes.y).toBeGreaterThan(10);
@@ -440,10 +455,6 @@ describe('camera rigs without a vehicle definition and without an active vessel 
     // A vehicle definition plays no part: the same limits for craft whose design the library does not have.
     const unknown = { ...assembly, vehicleId: 'not-in-the-library', crafts: assembly.crafts!.map((c) => ({ ...c, vehicleId: 'not-in-the-library' })) };
     expect(chaseDistanceLimits(defs, unknown)).toEqual(all);
-    // A snapshot without craft blocks is framed from the radius alone.
-    const bare = { ...single };
-    delete bare.crafts;
-    expect(chaseDistanceLimits(defs, bare)).toEqual({ def: 2.4 * single.boundingRadius, min: 1.15 * single.boundingRadius, max: 60 * single.boundingRadius });
     // The rig itself: the camera stands outside the assembly, farther than it stands from one craft.
     const rigOne = createChaseRig({ defs });
     rigOne.activate(null, one);
@@ -459,7 +470,7 @@ describe('camera rigs without a vehicle definition and without an active vessel 
   it('copes with no active vessel: the flight rigs are unavailable, the map opens on the body at the render root, the listener is the camera', () => {
     const s = createFakeSession(defs, { scene: 'lunarOrbit', vehicleId: LAB_VEHICLE_ID, parts: labVehicleParts(defs) }).snapshot();
     // What a menu or a spectator's session states: the vessels are there, nobody is seated in one.
-    const unseated = { ...s, activeVesselId: null as unknown as string };
+    const unseated = { ...s, activeVesselId: null };
     expect(createChaseRig({ defs }).isAvailable(unseated)).toBe(false);
     expect(createCockpitRig({ defs }).isAvailable(unseated)).toBe(false);
     const map = createMapRig({ defs });

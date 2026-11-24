@@ -275,7 +275,7 @@ describe('the default view at a launch pad with a flame trench (request vfx-11)'
   };
   const wrap = (a: number): number => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
   const siteTrenchDeg = (): number => {
-    // The first pad of the site, as the scenario start stands on it (`padOf`: a site without a pad list has its single pad as that pad).
+    // The first pad of the site, as the scenario start stands on it (`padOf`).
     return padOf(Object.values(defs.sites)[0]!).structures.find((x) => CHASE_TRENCH_MODELS.includes(x.model))!.headingDeg;
   };
 

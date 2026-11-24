@@ -107,9 +107,7 @@ describe('default binding table (ARCHITECTURE section 11)', () => {
     expect(['target', 'antiTarget', 'portAlign'].map((m) => code(`sas:${m}`))).toEqual([['Semicolon'], ['Quote'], ['Backslash']]);
   });
 
-  it('lists no retired action: the pause key is the flight menu', () => {
-    expect((ALL_BUTTON_ACTIONS as readonly string[]).includes('pause')).toBe(false);
-    expect(DEFAULT_BINDINGS.some((b) => (b.action as string) === 'pause')).toBe(false);
+  it("the keys of v1's pause are the flight menu's (the retired action is gone from the contract: no list can name it)", () => {
     // On a page with the shell's flight menu the line names it, on both of its keys.
     const entries = keyHelpEntries(DEFAULT_BINDINGS, { flightMenu: true });
     expect(entries.find((e) => e.text === 'Flight menu')).toMatchObject({ group: 'Time & navigation', keys: ['Esc', 'P'] });

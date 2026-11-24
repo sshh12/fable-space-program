@@ -135,6 +135,8 @@ function offsetAttitude(s: SimSnapshot, yawDeg: number, pitchDeg: number, rollDe
     target: mv(m.target),
     antiTarget: mv(m.antiTarget),
     liftVector: mv(m.liftVector),
+    relativePrograde: mv(m.relativePrograde),
+    relativeRetrograde: mv(m.relativeRetrograde),
   };
   const nose = quat.rotate(q, v3.unitY());
   const dorsal = quat.rotate(q, v3.unitZ());
@@ -575,7 +577,8 @@ async function boot(): Promise<void> {
     if (params.get('terrainPending') === '1') s = { ...s, terrain: { ...s.terrain, pending: true, complete: false } };
     if (params.get('lockout') === '1') s = { ...s, staging: { ...s.staging, lockout: true } };
     if (milestoneParam !== null) {
-      s = { ...s, scenario: { ...s.scenario, id: params.get('scenarioId') ?? 'lunar-direct' } };
+      // (The fake states a scenario: its own. The lab gives it the id of one whose milestones the HUD can name.)
+      s = { ...s, scenario: { ...s.scenario!, id: params.get('scenarioId') ?? 'lunar-direct' } };
       if (++decorated === 5) {
         const base = { ut: s.ut, vesselId: activeVesselOf(s)!.id };
         const soi = soiParam && soiParam.length === 2 ? [{ ...base, type: 'soiChange' as const, fromBodyId: soiParam[0]!, toBodyId: soiParam[1]! }] : [];
@@ -779,7 +782,7 @@ async function boot(): Promise<void> {
     async navballProbe(att, points, columns) {
       probe ??= createNavballRenderer(gpu);
       const q = attitudeToQuat(att.pitchDeg, att.headingDeg, att.rollDeg);
-      const none = { prograde: { x: 0, y: -1, z: 0 }, retrograde: { x: 0, y: -1, z: 0 }, normal: { x: 0, y: -1, z: 0 }, antinormal: { x: 0, y: -1, z: 0 }, radialOut: { x: 0, y: -1, z: 0 }, radialIn: { x: 0, y: -1, z: 0 }, maneuver: null, target: null, antiTarget: null, liftVector: null };
+      const none = { prograde: { x: 0, y: -1, z: 0 }, retrograde: { x: 0, y: -1, z: 0 }, normal: { x: 0, y: -1, z: 0 }, antinormal: { x: 0, y: -1, z: 0 }, radialOut: { x: 0, y: -1, z: 0 }, radialIn: { x: 0, y: -1, z: 0 }, maneuver: null, target: null, antiTarget: null, liftVector: null, relativePrograde: null, relativeRetrograde: null };
       const enc = gpu.device.createCommandEncoder();
       probe.renderState(enc, { mode: 'surface', qVesselToHorizon: q, markers: none, pitchDeg: att.pitchDeg, headingDeg: att.headingDeg, rollDeg: att.rollDeg });
       const buf = gpu.device.createBuffer({ size: 512 * 512 * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });

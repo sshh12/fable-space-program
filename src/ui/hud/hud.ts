@@ -39,7 +39,7 @@ import { WARP_LEVELS, MAX_PHYSICS_WARP_INDEX, type DefLibrary } from '@/core/con
 import type { CameraState, ViewKind } from '@/core/contracts/render';
 import type { SimEvent, SimSnapshot } from '@/core/contracts/sim';
 import type { Hud } from '@/core/contracts/ui';
-import { bodyTarget, targetBodyOf, targetOf } from '@/core/access/snapshotAccess';
+import { bodyTarget, targetBodyOf } from '@/core/access/snapshotAccess';
 import type { GpuHandle } from '@/core/gpu/device';
 import { formatHeatFlux, formatMach, formatMet, formatPercent, formatPressure, formatRadAsDeg, formatUt, type VerticalTrend } from '../format';
 import { LOCK_ICON, MARKER_COLORS, MARKER_ICONS, PORT_ALIGN_ICON, STAGE_ICONS, stageIconFor, svgIcon, TREND_ICONS, type IconDef } from '../icons';
@@ -1132,7 +1132,7 @@ export function createHud(opts: HudOptions): HudImpl {
     // The launch panel offers bodies: `targetBody` is the targeted body (null for a vessel or port target, which
     // the panel neither shows as a body nor offers to replace), `noTarget` that nothing is targeted.
     const targetBody = targetBodyOf(r);
-    const noTarget = targetOf(r) === null;
+    const noTarget = r.target === null;
     let targetButtonsShown = 0;
     for (const [id, b] of targetButtons) {
       // The body the vessel sits on cannot be its target.

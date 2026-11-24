@@ -27,7 +27,7 @@ const bare = (): SimSnapshot => {
   const s = cabin();
   return { ...s, vessels: s.vessels.map((v) => ({ ...v, ...(v.crafts ? { crafts: v.crafts.map((c) => ({ ...c, cockpit: null })) } : {}) })) };
 };
-const unseated = (s: SimSnapshot): SimSnapshot => ({ ...s, activeVesselId: null as unknown as string });
+const unseated = (s: SimSnapshot): SimSnapshot => ({ ...s, activeVesselId: null });
 
 const rigs = (): CameraRig[] => [createChaseRig({ defs }), createCockpitRig({ defs }), createMapRig({ defs })];
 const frames = (views: ViewManager, s: SimSnapshot, n: number): void => {

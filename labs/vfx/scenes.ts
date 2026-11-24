@@ -2,12 +2,16 @@
  * Scene catalogue of the vfx lab. A scene chooses a site and a sun elevation, then builds vessels from the
  * real assembled parts and drives their module states with a script. Selected with ?scene=<name>.
  */
+import { partKey } from '@/core/access/snapshotAccess';
 import type { DefLibrary, ModuleDef } from '@/core/contracts/defs';
 import { padOf } from '@/core/defs/sites';
 import type { PartSnapshot } from '@/core/contracts/sim';
 import { DEG, quat, v3, type Vec3 } from '@/core/math';
 import { assembleVessel, splitForStage, vesselPartSnapshots, type Vessel } from '@/sim/vessel/public';
 import { labAtmosphere, noseAlong, noseUp, stillAir, type LabScript, type LabSim, type LabSite, type LabVessel } from './labSim';
+
+/** The part key of a part, `craftId/instanceId`: how an event names it (`SimEvent`: `partId`). */
+const keyOf = (part: PartSnapshot): string => partKey(part.craftId, part.instanceId);
 
 export interface SceneCamera {
   /** Point looked at, site ENU (m); yaw (deg, from north towards east) and pitch (deg) of the eye as seen from the target; distance (m). */
@@ -198,7 +202,7 @@ export function sceneFor(name: string, q: URLSearchParams, defs: DefLibrary): Sc
             s.radarAltitude = earth.clampHeight + z;
             if (age > 0 && !ignited) {
               ignited = true;
-              for (const e of boosters) s.emit({ type: 'engineIgnition', ut: s.ut, vesselId: v.id, partId: e.part.instanceId });
+              for (const e of boosters) s.emit({ type: 'engineIgnition', ut: s.ut, vesselId: v.id, partId: keyOf(e.part) });
               s.emit({ type: 'stageFired', ut: s.ut, vesselId: v.id, stageIndex: 0, label: 'Launch' });
             }
             if (tl > 0 && !released) {
@@ -351,7 +355,7 @@ function sceneExtra(name: string, q: URLSearchParams, defs: DefLibrary, h: Scene
             s.throttle = age > 0 ? 1 : 0;
             if (age > 0 && !lit) {
               lit = true;
-              for (const e of s.engines(v, main)) s.emit({ type: 'engineIgnition', ut: s.ut, vesselId: v.id, partId: e.part.instanceId });
+              for (const e of s.engines(v, main)) s.emit({ type: 'engineIgnition', ut: s.ut, vesselId: v.id, partId: keyOf(e.part) });
             }
           };
           script(sim, 0, 0);
@@ -448,7 +452,10 @@ function sceneExtra(name: string, q: URLSearchParams, defs: DefLibrary, h: Scene
                 boundingRadius: 60,
                 controllable: false,
               });
-              s.emit({ type: 'decoupled', ut: s.ut, vesselId: base.vessel.id, partId: 'interstage-1', newVesselIds: [sp.id] });
+              // The interstage is named by its part key where it is now: it left with the stage it dropped, which
+              // is a craft of its own (the lab states no lineage, so the key of the craft it left would find nothing).
+              const interstage = [...upper.parts, ...lowerParts].find((p) => p.instanceId === 'interstage-1')!;
+              s.emit({ type: 'decoupled', ut: s.ut, vesselId: base.vessel.id, partId: keyOf(interstage), newVesselIds: [sp.id] });
               s.emit({ type: 'stageFired', ut: s.ut, vesselId: base.vessel.id, stageIndex: 1, label: 'M-1 separation' });
             }
             if (lower) {
@@ -466,7 +473,7 @@ function sceneExtra(name: string, q: URLSearchParams, defs: DefLibrary, h: Scene
               top.velEnu = v3.addScaled(top.velEnu, dir, 7.8 * (1 - Math.exp(-ig / 0.8)) * dt);
               if (!lit) {
                 lit = true;
-                for (const e of s.engines(top, 'vela-2')) s.emit({ type: 'engineIgnition', ut: s.ut, vesselId: top.id, partId: e.part.instanceId });
+                for (const e of s.engines(top, 'vela-2')) s.emit({ type: 'engineIgnition', ut: s.ut, vesselId: top.id, partId: keyOf(e.part) });
               }
             }
             s.throttle = ig > 0 || age < 0 ? 1 : 0;
@@ -550,11 +557,11 @@ function sceneExtra(name: string, q: URLSearchParams, defs: DefLibrary, h: Scene
               inflation: (x: number) => set(x, x >= 1 ? 'full' : 'reefed'),
               cut: () => {
                 set(0, 'cut');
-                sim.emit({ type: 'chuteCut', ut: sim.ut, vesselId: v.id, partId: v.parts[0]!.instanceId });
+                sim.emit({ type: 'chuteCut', ut: sim.ut, vesselId: v.id, partId: keyOf(v.parts[0]!) });
               },
               fail: () => {
                 set(0, 'failed');
-                sim.emit({ type: 'chuteFailed', ut: sim.ut, vesselId: v.id, partId: v.parts[0]!.instanceId });
+                sim.emit({ type: 'chuteFailed', ut: sim.ut, vesselId: v.id, partId: keyOf(v.parts[0]!) });
               },
             },
             camera:
@@ -589,7 +596,7 @@ function sceneExtra(name: string, q: URLSearchParams, defs: DefLibrary, h: Scene
             if (tSplash < 0 && bottom <= 0) {
               tSplash = t;
               s.emit({ type: 'splash', ut: s.ut, vesselId: v.id, speed });
-              s.emit({ type: 'touchdown', ut: s.ut, vesselId: v.id, speed, surface: 'water', partId: v.parts[0]!.instanceId });
+              s.emit({ type: 'touchdown', ut: s.ut, vesselId: v.id, speed, surface: 'water', partId: keyOf(v.parts[0]!) });
             }
             if (tSplash >= 0) {
               const age = t - tSplash;
@@ -602,7 +609,7 @@ function sceneExtra(name: string, q: URLSearchParams, defs: DefLibrary, h: Scene
               if (age > 3 && !cut) {
                 cut = true;
                 s.setModule(v, main.id, main.index, { state: 'cut', inflation: 0 });
-                s.emit({ type: 'chuteCut', ut: s.ut, vesselId: v.id, partId: v.parts[0]!.instanceId });
+                s.emit({ type: 'chuteCut', ut: s.ut, vesselId: v.id, partId: keyOf(v.parts[0]!) });
               }
             }
             s.radarAltitude = Math.max(0, bottom);
@@ -634,7 +641,7 @@ function sceneExtra(name: string, q: URLSearchParams, defs: DefLibrary, h: Scene
               done = true;
               const centre = v3.add(v.enu, { x: 0, y: 0, z: -75 });
               s.emit({ type: 'explosion', ut: s.ut, vesselId: v.id, posRoot: s.enuToRoot(centre), energy });
-              for (const p of v.parts.slice(0, 12)) s.emit({ type: 'partDestroyed', ut: s.ut, vesselId: v.id, partId: p.instanceId, cause: 'explosion', posVes: p.localPos });
+              for (const p of v.parts.slice(0, 12)) s.emit({ type: 'partDestroyed', ut: s.ut, vesselId: v.id, partId: keyOf(p), cause: 'explosion', posVes: p.localPos });
               v.parts = v.parts.filter((p) => defs.parts[p.def]!.category === 'command');
               v.velEnu = { x: 3, y: 0, z: 45 };
             }

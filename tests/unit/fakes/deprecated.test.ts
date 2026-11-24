@@ -1,8 +1,15 @@
 /**
  * The presentation sweep's deprecation test (docs/WORK_PACKAGES_V2.json, `presentation-sweep`, acceptance line 1): no
- * file of the presentation, of the labs or of the browser tests reads a member of the contracts that the
- * tighten step removes, creates the simulation by its v1 name, looks a vehicle definition up by a runtime id,
- * takes the cockpit camera from a vehicle definition, or takes the origin of ROOT positions to be a body.
+ * file of the presentation, of the labs or of the browser tests looks a vehicle definition up by a runtime id,
+ * takes the cockpit camera from a vehicle definition, takes the origin of ROOT positions to be a body, or
+ * names the retired button action.
+ *
+ * SINCE THE TIGHTEN STEP after sub-wave 3.2 the members the sweep moved its readers away from are gone from
+ * the contracts (`SimSnapshot.tick`, `Readouts.targetBodyId` / `.targetClosestApproach`, `LaunchSiteDef.pad` /
+ * `.padAzimuthDeg` / `.structures`, the aliases `Sim` / `SimDebug`, the factory `createSim`): the compiler
+ * refuses a read of them, and their five rules (`tick`, `target`, `pad`, `createSim`, `Sim`) were taken out
+ * of this test with their exceptions and their lines of the self-test. What is left is what the compiler
+ * does not hold: the rules `vehicles`, `cockpitCamera`, `origin`, `pause` and `html`.
  *
  * HOW IT LOOKS. It walks the syntax tree of every scanned file and asks the type checker what each name is.
  * The tree and the checker are the compiler's own: TypeScript 7 has no parser in JavaScript, so the test
@@ -12,24 +19,24 @@
  * the `typescript` version this file is the one to run first; the tree shapes it reads are the compiler's
  * usual ones.)
  *
- * A READ OF A MEMBER (`SimSnapshot.tick`, `Readouts.targetBodyId` / `.targetClosestApproach`, `LaunchSiteDef.pad` /
- * `.padAzimuthDeg` / `.structures`, `DefLibrary.vehicles`, `VehicleDef.cameras.cockpit`) is found by the member's
- * NAME, whatever it is read from and in every form a name can be read in:
- *   - a property access `x.tick`, `x?.tick`, `x!.tick`;
- *   - an element access with a string, `x['tick']`;
+ * A READ OF A MEMBER (`DefLibrary.vehicles`, `VehicleDef.cameras.cockpit`) is found by the member's NAME,
+ * whatever it is read from and in every form a name can be read in:
+ *   - a property access `x.cockpit`, `x?.cockpit`, `x!.cockpit`;
+ *   - an element access with a string, `x['cockpit']`;
  *   - an object destructuring pattern, shorthand, renamed, nested, with a default, in a declaration, a parameter
- *     or an assignment: `const { tick } = x`, `{ readouts: { targetBodyId: id } }`, `({ tick: t } = x)`;
- *   - a type that reads it: `SimSnapshot['tick']`, `typeof x.tick`.
+ *     or an assignment: `const { cockpit } = x`, `{ cameras: { cockpit: c } }`, `({ cockpit: c } = x)`;
+ *   - a type that reads it: `VehicleDef['cameras']['cockpit']`, `typeof x.cockpit`.
  * Then the checker is asked what the name is. The read is dismissed only where the checker shows the name to
- * be ANOTHER declared member (`ScenarioDef.pad`, `PadDef.structures`, a private counter of a class). It stays a
- * finding where the name is the member of the contracts, where the value has no type that says what it is
- * (`any`, a key of a dictionary), and where the other declaration is written for a type assertion: inside one
- * (`(x as { pad: ... }).pad`) or in a type of the file's own that an assertion of the file names (`type Site =
- * { pad: ... }; (x as Site).pad`): the file restates the member and the compiler cannot see through it.
- * So an intermediate variable changes nothing: `const r = s.readouts; r.targetBodyId` is `Readouts.targetBodyId`.
- * Beside the walk, the compiler's own list of uses of a declaration marked `@deprecated` is read for the same
- * members (the suggestion diagnostics of every scanned file): it finds what no name shows, such as `x[key]`
- * with a key of a literal type.
+ * be ANOTHER declared member (`CraftSnapshot.cockpit`, `VehicleDef.cockpit`). It stays a finding where the
+ * name is the member of the contracts, where the value has no type that says what it is (`any`, a key of a
+ * dictionary), and where the other declaration is written for a type assertion: inside one
+ * (`(x as { cockpit: ... }).cockpit`) or in a type of the file's own that an assertion of the file names
+ * (`type Cameras = { cockpit: ... }; (x as Cameras).cockpit`): the file restates the member and the compiler
+ * cannot see through it. So an intermediate variable changes nothing: `const c = v.cameras; c.cockpit` is
+ * `VehicleDef.cameras.cockpit`. Beside the walk, the compiler's own list of uses of a declaration marked
+ * `@deprecated` is read for the members the rules name (the suggestion diagnostics of every scanned file): it
+ * finds what no name shows, such as `x[key]` with a key of a literal type. (No member of the rules left is
+ * marked today; the pass is there for the next one that is.)
  *
  * `defs.vehicles` may be used in three ways only: indexed by a constant of the code (a string, or a value whose
  * type is one string); its ids listed (`Object.keys(defs.vehicles)`: an id alone looks nothing up); and its
@@ -42,32 +49,27 @@
  * WHAT IS SCANNED: the trees the sweep owns (the render packages, the UI, input, the camera, the map, audio,
  * src/app, src/core/access, src/core/fakes, src/core/gpu, src/core/ui, the labs, the browser tests and the unit
  * tests of the presentation, tests/unit/camera among them). Not scanned: src/sim, src/session, src/universe and
- * the loader (src/core/defs), which produce the deprecated fields until the tighten step; the lead's own paths
- * (labs/template, labs/platform, tests/browser/shell, tests/browser/platform and the harness); and the
- * headless areas of other packages (src/pilot reads `readouts.targetBodyId` in missionPilot.ts: for the lead
- * at the tighten step).
+ * the loader (src/core/defs), which are the producers; the lead's own paths (labs/template, labs/platform,
+ * tests/browser/shell, tests/browser/platform and the harness); and the headless areas of other packages.
  *
  * EXCEPTIONS are per LINE: the file and the exact text of the line (without its indentation), each with its
  * reason. A finding on a line that is not listed fails the test, and so does an exception that no longer finds
  * anything (a stale one: take it out), and a rule whose member the contracts no longer declare.
  *
- * NOT A FINDING, by design: an object literal that STATES a deprecated field (a producer: the fake, a
- * hand-built snapshot of a lab or a test); the compiler names those when the field goes. THE LIMITS of the
- * walk: it follows types, not values. (1) A read through a type that restates a member and is given its value
- * WITHOUT an assertion in the same file (a variable of an interface of the file's own that is assigned from an
- * untyped value; an assertion to a restating type that another file declares) is the member of that type to
- * the checker, and is not found. (2) A member named only by a string that is not the index of an element access
- * (`Reflect.get(x, 'tick')`, a key in a variable of type `string`) is found for the three long names
- * (`targetBodyId`, `targetClosestApproach`, `padAzimuthDeg`: wherever a string names them), not for `tick`,
- * `pad`, `structures`, `vehicles` and `cockpit`, which are words of other things too.
+ * NOT A FINDING, by design: an object literal that STATES a member (a producer: a definition built in a lab
+ * or a test). THE LIMITS of the walk: it follows types, not values. (1) A read through a type that restates a
+ * member and is given its value WITHOUT an assertion in the same file (a variable of an interface of the
+ * file's own that is assigned from an untyped value; an assertion to a restating type that another file
+ * declares) is the member of that type to the checker, and is not found. (2) A member named only by a string
+ * that is not the index of an element access (`Reflect.get(x, 'cockpit')`, a key in a variable of type
+ * `string`) is not found: `vehicles` and `cockpit` are words of other things too.
  *
  * The test tests itself: the last block runs the same rules over small sources that exist only in this file
  * (a second project, served to the compiler from memory), in which every line that must be found is marked.
  *
- * AT THE TIGHTEN STEP a rule whose member is taken out of the contracts says so ("does not declare"): take the
- * rule out, with its exceptions and with the lines of the self-test's sources that are marked with its id
- * (they name the member, so they no longer compile). The rules `vehicles`, `cockpitCamera`, `origin`, `pause`
- * and `html` name nothing that is removed, and stay.
+ * A rule whose member is taken out of the contracts says so ("does not declare"): take the rule out, with its
+ * exceptions and with the lines of the self-test's sources that are marked with its id (they name the member,
+ * so they no longer compile).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -163,11 +165,9 @@ interface Rule {
   exceptions: readonly Exception[];
 }
 
-const SIM = 'src/core/contracts/sim.ts';
 const DEFS = 'src/core/contracts/defs.ts';
 
 /** Reasons that several lines share. */
-const TARGET_OF = '`targetOf`: the one place that derives the target from the deprecated pair while no session fills `Readouts.target`';
 const EVERY_VEHICLE = 'every vehicle of the definitions in turn: none is looked up by an id';
 const LAB_CHOICE = 'not a runtime id: the vehicle the lab was asked for in its URL, else the first of the definitions';
 const FAKE_CABIN = "a producer: the fake states the cabin of its craft (`CraftSnapshot.cockpit`) from the vehicle it is published as, as a session's assembler does";
@@ -176,74 +176,10 @@ const ORIGIN_OF_A_PRODUCER = 'the test of a producer: where the fake puts the or
 
 const RULES: readonly Rule[] = [
   {
-    id: 'tick',
-    what: 'reads `tick` of a snapshot (use `revisionOf` of src/core/access/snapshotAccess.ts)',
-    members: [{ file: SIM, path: ['SimSnapshot', 'tick'] }],
-    exceptions: [{ file: 'src/core/access/snapshotAccess.ts', line: 'return snapshot.revision ?? snapshot.tick;', reason: '`revisionOf`: the one reader, for a producer that does not state `revision` yet' }],
-  },
-  {
-    id: 'target',
-    what: 'reads `Readouts.targetBodyId` or `.targetClosestApproach` (use `targetOf` / `targetBodyOf` / `targetNameOf`)',
-    members: [
-      { file: SIM, path: ['Readouts', 'targetBodyId'] },
-      { file: SIM, path: ['Readouts', 'targetClosestApproach'] },
-    ],
-    words: ['targetBodyId', 'targetClosestApproach'],
-    exceptions: [
-      { file: 'src/core/access/snapshotAccess.ts', line: 'readouts.targetBodyId === null', reason: TARGET_OF },
-      { file: 'src/core/access/snapshotAccess.ts', line: "ref: { kind: 'body', id: readouts.targetBodyId },", reason: TARGET_OF },
-      { file: 'src/core/access/snapshotAccess.ts', line: 'closestApproaches: readouts.targetClosestApproach ? [readouts.targetClosestApproach] : [],', reason: TARGET_OF },
-      {
-        file: 'src/audio/config.ts',
-        line: "if (path === 'readouts.targetBodyId') return targetBodyOf(snapshot.readouts);",
-        reason: 'the PATH `readouts.targetBodyId` that the audio data may name for a click watch: `readSnapshotPath` answers it through `targetBodyOf`, the field itself is not read',
-      },
-      { file: 'tests/unit/fakes/fakeSession.test.ts', line: "expect(body.readouts.targetBodyId).toBe('moon');", reason: 'the test of a producer: the fake states the deprecated field beside `Readouts.target`, as a session does until the tighten step' },
-    ],
-  },
-  {
-    id: 'pad',
-    what: 'reads the single pad of a site, `LaunchSiteDef.pad` / `.padAzimuthDeg` / `.structures` (use `padsOf` / `padOf` / `padLocationOf` of src/core/defs/sites.ts)',
-    members: [
-      { file: DEFS, path: ['LaunchSiteDef', 'pad'] },
-      { file: DEFS, path: ['LaunchSiteDef', 'padAzimuthDeg'] },
-      { file: DEFS, path: ['LaunchSiteDef', 'structures'] },
-    ],
-    words: ['padAzimuthDeg'],
-    exceptions: [],
-  },
-  {
     id: 'pause',
-    what: "names the retired button action 'pause' (it is 'flightMenu')",
+    what: "names the retired button action 'pause' (it is 'flightMenu'; the contract's union no longer has it, and a string is not held by the compiler)",
     strings: ['pause'],
-    exceptions: [
-      {
-        file: 'src/input/bindings.ts',
-        line: "type RetiredButtonAction = Extract<ButtonAction, 'pause'>;",
-        reason: 'the retired member as a TYPE, so that the table of every button action compiles until the lead takes the member out of the union',
-      },
-      { file: 'src/audio/config.ts', line: "pause: { fadeTime: n.get('pause').get('fadeTime').num({ gt: 0, max: 5 }) },", reason: 'not the action: the `pause` block of the audio mix data (`mix.pause.fadeTime`)' },
-      { file: 'tests/unit/flight-ui/bindings.test.ts', line: "expect((ALL_BUTTON_ACTIONS as readonly string[]).includes('pause')).toBe(false);", reason: 'the test that the action is gone: no list of the actions names it' },
-      { file: 'tests/unit/flight-ui/bindings.test.ts', line: "expect(DEFAULT_BINDINGS.some((b) => (b.action as string) === 'pause')).toBe(false);", reason: 'the test that the action is gone: no binding names it' },
-    ],
-  },
-  {
-    id: 'createSim',
-    what: 'creates the simulation by its v1 name `createSim` (use `createSession` of src/session)',
-    members: [{ file: 'src/sim/world/sim.ts', path: ['createSim'] }],
-    identifiers: ['createSim'],
-    strings: ['createSim'],
-    exceptions: [],
-  },
-  {
-    id: 'Sim',
-    what: 'names the aliases `Sim` / `SimDebug` (they are `LocalSession` / `SessionDebug` of src/core/contracts/session.ts)',
-    members: [
-      { file: SIM, path: ['Sim'] },
-      { file: SIM, path: ['SimDebug'] },
-    ],
-    identifiers: ['Sim', 'SimDebug'],
-    exceptions: [],
+    exceptions: [{ file: 'src/audio/config.ts', line: "pause: { fadeTime: n.get('pause').get('fadeTime').num({ gt: 0, max: 5 }) },", reason: 'not the action: the `pause` block of the audio mix data (`mix.pause.fadeTime`)' }],
   },
   {
     id: 'vehicles',
@@ -267,6 +203,11 @@ const RULES: readonly Rule[] = [
       { file: 'labs/integration/main.ts', line: '...(defs.vehicles[vehicleId] ? { vesselName: defs.vehicles[vehicleId]!.name } : {}),', reason: `${LAB_CHOICE} (the name the fake's vessel is given)` },
       // A library with another vehicle in it: a producer of definitions.
       { file: 'labs/flight-ui/labVehicle.ts', line: 'vehicles: { ...defs.vehicles, [vehicle.id]: vehicle },', reason: 'a producer of definitions: the library with the lab vehicle added to it' },
+      {
+        file: 'tests/unit/flight-ui/resources.test.ts',
+        line: 'const library: DefLibrary = { ...defs, vehicles: { ...defs.vehicles, [vehicle.id]: swapped } };',
+        reason: 'a producer of definitions: the library with one vehicle whose groups are listed the other way round, flown by a session of its own (the order of the resource groups follows the file)',
+      },
       // Every vehicle of the definitions.
       { file: 'src/render/vehicle/vesselFeature.ts', line: 'for (const vehicle of Object.values(defs.vehicles)) for (const p of vehicle.parts) visualOf(p.def);', reason: `${EVERY_VEHICLE} (the models of every part are built at start)` },
       { file: 'tests/unit/audio/mapping.test.ts', line: 'const chase = Object.values(defs.vehicles).map((v) => v.cameras.chase);', reason: `${EVERY_VEHICLE} (the chase distances of each, for the range a camera is heard over)` },
@@ -293,7 +234,7 @@ const RULES: readonly Rule[] = [
       },
       {
         file: 'tests/unit/flight-ui/camera.test.ts',
-        line: 'expect(s.vessels[0]!.crafts![0]!.cockpit, vehicle.id).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit.seat, sensorMount: null, crew: vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) });',
+        line: 'expect(s.vessels[0]!.crafts[0]!.cockpit, vehicle.id).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit!.seat, sensorMount: null, crew: vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) });',
         reason: "the test of a producer: the fake's craft block states the cabin its vehicle's file authors",
       },
       { file: 'src/app/timing.test.ts', line: "const c = t.stats().features['cockpit']!;", reason: NOT_A_VEHICLE },
@@ -553,7 +494,7 @@ function scan(project: Project, files: readonly string[], rules: readonly Rule[]
   const located: Located[] = [];
   for (const rule of rules) {
     for (const member of rule.members ?? []) {
-      const gone = `rule "${rule.id}": ${member.file} does not declare ${member.path.join('.')} (when the tighten step has taken the member out, take it out of the rule)`;
+      const gone = `rule "${rule.id}": ${member.file} does not declare ${member.path.join('.')} (when the contracts have dropped the member, take the rule out)`;
       const sf = program.getSourceFile(`${ROOT}/${member.file}`);
       if (!sf) {
         // A module the program does not contain declares nothing its files could use (the self-test's project
@@ -804,11 +745,10 @@ function filesUnder(dir: string, out: string[], unread: string[]): void {
  */
 const SYNTHETIC = 'tests/unit/fakes/deprecated-synthetic';
 const HEAD = `
-import type { DefLibrary, LaunchSiteDef, PadDef, ScenarioDef, VehicleDef } from '@/core/contracts/defs';
-import type { CraftSnapshot, Readouts, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import type { DefLibrary, VehicleDef } from '@/core/contracts/defs';
+import type { CraftSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 declare const s: SimSnapshot;
 declare const defs: DefLibrary;
-declare const site: LaunchSiteDef;
 declare const vessel: VesselSnapshot;
 declare const vehicle: VehicleDef;
 declare const loose: any;
@@ -816,67 +756,52 @@ declare const loose: any;
 const SYNTHETIC_SOURCES: Record<string, string> = {
   // The evasions the review named, and their neighbours.
   'destructuring.ts': `${HEAD}
-export const { tick } = s; // flag: tick
-export const { tick: revision } = s; // flag: tick
-export const { readouts: { targetBodyId, targetClosestApproach: approach } } = s; // flag: target
-export function parameter({ readouts: { targetBodyId: body } }: SimSnapshot): string | null { // flag: target
-  return body;
-}
-export const { pad } = site; // flag: pad
-export const { padAzimuthDeg: azimuth = 0, structures: [first] } = site; // flag: pad
-export const { structures } = loose; // flag: pad untyped
-let t1: number;
-let t2: number;
-let t3: number;
-({ tick: t1 } = s); // flag: tick
-({ tick: t2 } = loose); // flag: tick untyped
-[{ tick: t3 }] = [s]; // flag: tick untyped
-export const assigned = [t1, t2, t3];
-export const { ['tick']: computed, 'readouts': { 'targetBodyId': quoted } } = s; // flag: tick, target
-export const { ['tick']: computedLoose } = loose; // flag: tick untyped
 export const { vehicles } = defs; // flag: vehicles
 export const { cameras: { cockpit } } = vehicle; // flag: cockpitCamera
+export const { cameras: { cockpit: camera } } = vehicle; // flag: cockpitCamera
+export function parameter({ cameras: { cockpit: seat } }: VehicleDef): unknown { // flag: cockpitCamera
+  return seat;
+}
+export const { cameras: { cockpit: fallback = null } } = vehicle; // flag: cockpitCamera
+export function untyped(): unknown {
+  const { cockpit } = loose; // flag: cockpitCamera untyped
+  return cockpit;
+}
+let k1: unknown;
+let k2: unknown;
+let k3: unknown;
+({ cockpit: k1 } = vehicle.cameras); // flag: cockpitCamera
+({ cockpit: k2 } = loose); // flag: cockpitCamera untyped
+[{ cockpit: k3 }] = [vehicle.cameras]; // flag: cockpitCamera untyped
+export const assigned = [k1, k2, k3];
+export const { ['cameras']: { 'cockpit': quoted } } = vehicle; // flag: cockpitCamera
+export const { ['cockpit']: computedLoose } = loose; // flag: cockpitCamera untyped
 export const { cameras: { chase } } = vehicle;
 `,
   'brackets.ts': `${HEAD}
-export const a1 = s['tick']; // flag: tick
-export const a2 = s.readouts['targetBodyId']; // flag: target
-export const a3 = site[\`pad\`]; // flag: pad
-export const a4 = site?.['structures']; // flag: pad
+export const a1 = vehicle.cameras['cockpit']; // flag: cockpitCamera
+export const a3 = vehicle.cameras[\`cockpit\`]; // flag: cockpitCamera
+export const a4 = vehicle?.cameras?.['cockpit']; // flag: cockpitCamera
 export const a5 = defs['vehicles'][vessel.vehicleId]; // flag: vehicles
 export const a6 = vehicle['cameras']['cockpit']; // flag: cockpitCamera
-export const a7 = (s as SimSnapshot)!.tick + s?.tick; // flag: tick
-export type T1 = SimSnapshot['tick']; // flag: tick
-export type T2 = typeof s.tick; // flag: tick
-export type T3 = Pick<Readouts, 'targetBodyId'>; // flag: target
+export const a7 = [(vehicle as VehicleDef)!.cameras.cockpit, vehicle?.cameras.cockpit]; // flag: cockpitCamera
+export type T1 = VehicleDef['cameras']['cockpit']; // flag: cockpitCamera
+export type T2 = typeof vehicle.cameras.cockpit; // flag: cockpitCamera
 `,
   'intermediate.ts': `${HEAD}
-const r = s.readouts;
-export const b1 = r.targetBodyId; // flag: target
-export const b2 = r.targetClosestApproach?.distance; // flag: target
-const again = s;
-export const b3 = again.tick; // flag: tick
-const key = 'tick' as const;
-export const b4 = s[key]; // flag: tick by the compiler
 const cams = vehicle.cameras;
-export const b5 = cams.cockpit.seat; // flag: cockpitCamera
-const sites = Object.values(defs.sites);
-export const b6 = sites[0]!.structures; // flag: pad
+export const b5 = cams.cockpit?.seat; // flag: cockpitCamera
+const library = defs;
+export const b6 = library.vehicles[vessel.vehicleId]; // flag: vehicles
 `,
   'untyped.ts': `${HEAD}
-export const c1 = loose.tick; // flag: tick untyped
-export const c2 = loose.readouts.targetBodyId; // flag: target untyped
-export const c3 = loose.site.pad; // flag: pad untyped
 export const c4 = loose.cameras.cockpit; // flag: cockpitCamera untyped
 export const c5 = loose.vehicles[loose.id]; // flag: vehicles
-export const c6 = (loose as { pad: { flatRadius: number } }).pad; // flag: pad asserted
-export const c7 = (<{ tick: number }>loose).tick; // flag: tick asserted
-type Restated = { tick: number; site: { pad: number } };
-export const c11 = (loose as Restated).tick; // flag: tick asserted
-export const c12 = (loose as Restated[])[0]!.site.pad; // flag: pad asserted
-export const c8 = 'readouts.targetBodyId'; // flag: target
-export const c9 = \`\${c8}.targetClosestApproach\`; // flag: target
-export const c10 = /padAzimuthDeg/; // flag: pad
+export const c6 = (loose as { cockpit: { seat: string } }).cockpit; // flag: cockpitCamera asserted
+export const c7 = (<{ cockpit: number }>loose).cockpit; // flag: cockpitCamera asserted
+type Restated = { cockpit: number; cameras: { cockpit: number } };
+export const c11 = (loose as Restated).cockpit; // flag: cockpitCamera asserted
+export const c12 = (loose as Restated[])[0]!.cameras.cockpit; // flag: cockpitCamera asserted
 `,
   'vehicles.ts': `${HEAD}
 export const v1 = defs.vehicles[vessel.vehicleId]; // flag: vehicles
@@ -895,71 +820,56 @@ export const v10 = Object.values(defs.vehicles).filter((d) => d.cockpit !== null
 export const v11 = Object.values(defs.vehicles).filter(() => true); // flag: vehicles
 export const v12 = Object.values(defs.vehicles).map((d) => d); // flag: vehicles
 export const v13 = Object.values(defs.vehicles)[Object.keys(defs.vehicles).indexOf(id)]; // flag: vehicles
-export const v14 = vehicle.cameras.cockpit.part; // flag: cockpitCamera
-export const v15 = defs.vehicles['a']!.cameras.cockpit.seat; // flag: cockpitCamera
+export const v14 = vehicle.cameras.cockpit?.part; // flag: cockpitCamera
+export const v15 = defs.vehicles['a']!.cameras.cockpit?.seat; // flag: cockpitCamera
 `,
   'names.ts': `${HEAD}
-import type { Sim, SimDebug } from '@/core/contracts/sim'; // flag: Sim
-import type { Sim as Renamed } from '@/core/contracts/sim'; // flag: Sim
-declare function createSim(): Renamed; // flag: createSim, Sim by the compiler
-export const made: Sim | SimDebug = createSim(); // flag: Sim, createSim
-export const dynamic = loose['createSim']; // flag: createSim
 export const action = 'pause'; // flag: pause
 declare function len(v: unknown): number;
 export const o1 = len(vessel.rRoot); // flag: origin
 export const o2 = vessel.rRoot.x === 0; // flag: origin
 export const o3 = 0 !== s.vessels[0]!.rRoot!.z; // flag: origin
 `,
-  // The reads the review found passing the line patterns, as they stood in the tree.
+  // The reads the review found passing the line patterns, as they stood in the tree (with `?.` where the
+  // member is optional today).
   'review.ts': `${HEAD}
 declare const lab: { app: { defs: DefLibrary; snapshot(): SimSnapshot }; cockpitSeats(): { id: string }[] };
 const seats = lab.cockpitSeats();
-export const target = seats.find((x) => x.id !== lab.app.defs.vehicles[lab.app.snapshot().vessels[0]!.vehicleId]?.cameras.cockpit.seat) ?? seats[0]; // flag: vehicles, cockpitCamera
-export const found = Object.values(defs.vehicles).find((d) => d.cockpit && vessel.parts.some((p) => p.instanceId === d.cameras.cockpit.part)); // flag: vehicles, cockpitCamera
-export const part = vessel.parts.find((p) => p.instanceId === found?.cameras.cockpit.part); // flag: cockpitCamera
+export const target = seats.find((x) => x.id !== lab.app.defs.vehicles[lab.app.snapshot().vessels[0]!.vehicleId]?.cameras.cockpit?.seat) ?? seats[0]; // flag: vehicles, cockpitCamera
+export const found = Object.values(defs.vehicles).find((d) => d.cockpit && vessel.parts.some((p) => p.instanceId === d.cameras.cockpit?.part)); // flag: vehicles, cockpitCamera
+export const part = vessel.parts.find((p) => p.instanceId === found?.cameras.cockpit?.part); // flag: cockpitCamera
 const vehicleId = vessel.vehicleId;
 export const model = defs.vehicles[vehicleId]!.cockpit!; // flag: vehicles
-export const own = vessel.parts.find((p) => p.instanceId === defs.vehicles[vehicleId]!.cameras.cockpit.part)!; // flag: vehicles, cockpitCamera
+export const own = vessel.parts.find((p) => p.instanceId === defs.vehicles[vehicleId]!.cameras.cockpit?.part)!; // flag: vehicles, cockpitCamera
 const v = defs.vehicles[vehicleId]; // flag: vehicles
 export const camera = v!.cameras.cockpit; // flag: cockpitCamera
-export const structures = site.pads && site.pads.length > 0 ? site.pads[0]!.structures : site.structures; // flag: pad
 `,
   // What must NOT be found.
   'clean.ts': `${HEAD}
-import { cabinOf, revisionOf, targetOf } from '@/core/access/snapshotAccess';
-import { padOf, padsOf } from '@/core/defs/sites';
-declare const scenario: ScenarioDef;
-declare const pad: PadDef;
+import { cabinOf } from '@/core/access/snapshotAccess';
 declare const craft: CraftSnapshot;
 declare function len(v: unknown): number;
-export const revision = revisionOf(s);
-export const target = targetOf(s.readouts);
-export const startPad = scenario.pad;
-export const padStructures = pad.structures;
-export const firstPad = padOf(site).structures;
-export const everyPad = padsOf(site).map((p) => p.structures.length);
-interface Frame {
-  pad: number;
-  tick: number;
-  structures: string[];
+interface Panel {
+  cockpit: number;
+  vehicles: string[];
 }
-declare const frame: Frame;
-export const inner = frame.pad + frame.tick + frame.structures.length;
-const { pad: padding, tick } = frame;
-const { nested: { structures: list } } = { nested: frame };
-let ticks: number;
-({ tick: ticks } = frame);
-export const sum = padding + tick + ticks + list.length + frame['pad'];
-export type Padding = Frame['pad'];
-export type Ticks = typeof frame.tick;
-class Counter {
-  private tick = 0;
+declare const panel: Panel;
+export const inner = panel.cockpit + panel.vehicles.length;
+const { cockpit: gauge, vehicles: listed } = panel;
+const { nested: { vehicles: list } } = { nested: panel };
+let gauges: number;
+({ cockpit: gauges } = panel);
+export const sum = gauge + gauges + listed.length + list.length + panel['cockpit'];
+export type Gauge = Panel['cockpit'];
+export type Gauges = typeof panel.cockpit;
+class Cabin {
+  private cockpit = 0;
   step(): number {
-    return ++this.tick;
+    return ++this.cockpit;
   }
 }
-export const counter = new Counter();
-export const stated = { ...s, tick: 1, readouts: { ...s.readouts, targetBodyId: null, targetClosestApproach: null } };
+export const counter = new Cabin();
+export const stated = { ...vehicle, cameras: { ...vehicle.cameras, cockpit: { part: 'capsule', seat: 'cdr' } } };
 const LAB_VEHICLE = 'lab-vehicle';
 export const byConstant = defs.vehicles[LAB_VEHICLE];
 export const byString = defs.vehicles['meridian-lunar']!;
@@ -976,7 +886,6 @@ export const layout = vehicle.cockpit;
 export const chase = vehicle.cameras.chase;
 export const seat = cabinOf(vessel)?.cameraSeat;
 export const paused = 'paused';
-export const word = 'Sim';
 export const apart = len({ x: vessel.rRoot.x - s.bodies[0]!.rRoot.x });
 export const above = vessel.r.x === 0;
 `,
@@ -1082,10 +991,10 @@ describe('deprecated reads (the presentation sweep)', () => {
     for (const [name, what] of [
       ['destructuring.ts', 'a destructuring pattern: shorthand, renamed, nested, in a parameter, with a default, in an assignment'],
       ['brackets.ts', 'bracket access with a string, and the types that read a member'],
-      ['intermediate.ts', 'an intermediate variable (`const r = s.readouts; r.targetBodyId`), and a key of a literal type'],
-      ['untyped.ts', 'a value without a type, a type assertion that restates the member, a path in a string'],
+      ['intermediate.ts', 'an intermediate variable (`const cams = vehicle.cameras; cams.cockpit`)'],
+      ['untyped.ts', 'a value without a type, a type assertion that restates the member'],
       ['vehicles.ts', 'a vehicle looked up by a value, by a nested index, through a variable, by `Object.values(...).find(...)`, by a loop; `cameras.cockpit`'],
-      ['names.ts', 'the aliases, the v1 factory, the retired action and the origin of ROOT positions'],
+      ['names.ts', 'the retired action and the origin of ROOT positions'],
       ['review.ts', 'the reads the review found passing the line patterns, as they stood'],
     ] as const) {
       it(`finds ${what}`, () => {
@@ -1101,11 +1010,11 @@ describe('deprecated reads (the presentation sweep)', () => {
 
     it('lists a finding unless an exception names its file and its line, and reports an exception that finds nothing', () => {
       const hits: Hit[] = [
-        { rule: 'tick', file: 'a.ts', line: 3, text: 'return s.tick;', why: '' },
-        { rule: 'tick', file: 'b.ts', line: 9, text: 'return s.tick;', why: '' },
+        { rule: 'vehicles', file: 'a.ts', line: 3, text: 'return defs.vehicles[id];', why: '' },
+        { rule: 'vehicles', file: 'b.ts', line: 9, text: 'return defs.vehicles[id];', why: '' },
       ];
-      expect(settle(hits, [{ file: 'a.ts', line: 'return s.tick;', reason: 'a reader' }])).toEqual({ unlisted: ['b.ts:9: return s.tick;\n    ()'], stale: [] });
-      expect(settle(hits.slice(0, 1), [{ file: 'a.ts', line: 'return s.tick + 1;', reason: 'the line as it was' }])).toEqual({ unlisted: ['a.ts:3: return s.tick;\n    ()'], stale: ['a.ts: return s.tick + 1;'] });
+      expect(settle(hits, [{ file: 'a.ts', line: 'return defs.vehicles[id];', reason: 'a reader' }])).toEqual({ unlisted: ['b.ts:9: return defs.vehicles[id];\n    ()'], stale: [] });
+      expect(settle(hits.slice(0, 1), [{ file: 'a.ts', line: 'return defs.vehicles[id]!;', reason: 'the line as it was' }])).toEqual({ unlisted: ['a.ts:3: return defs.vehicles[id];\n    ()'], stale: ['a.ts: return defs.vehicles[id]!;'] });
     });
 
     it('finds code and the retired action written into a page', () => {

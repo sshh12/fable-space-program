@@ -338,7 +338,8 @@ export async function createGame(deps: GameDeps): Promise<Game> {
   /** Axes held through the test API (like held keys); undefined = the keyboard's value. */
   const testAxes: Partial<Pick<ControlInputs, 'pitch' | 'yaw' | 'roll' | 'translate'>> = {};
 
-  const inFlight = (): boolean => !snapshot.mission.failed && (snapshot.scenario.startKind !== 'pad' || snapshot.staging.nextStage > 0);
+  // (A session without a scenario did not start on a pad: it counts as a flight under way.)
+  const inFlight = (): boolean => !snapshot.mission.failed && (snapshot.scenario === null || snapshot.scenario.startKind !== 'pad' || snapshot.staging.nextStage > 0);
   const removeGuard = installUnloadGuard(inFlight);
 
   // The status line shows PAUSED for as long as it lasts (a toast would fade while the game stays paused).

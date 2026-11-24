@@ -18,7 +18,7 @@ import type { TargetRef } from '@/core/contracts/net';
 import type { CameraState } from '@/core/contracts/render';
 import type { ManeuverNode, Patch, SimSnapshot } from '@/core/contracts/sim';
 import type { MapElementInfo, MapUpdateResult, MapView } from '@/core/contracts/ui';
-import { bodyTarget, revisionOf, targetBodyOf, targetOf } from '@/core/access/snapshotAccess';
+import { bodyTarget, targetBodyOf } from '@/core/access/snapshotAccess';
 import { utAtTrueAnomaly } from './anomalyTime';
 import {
   ARM_ALPHA,
@@ -519,7 +519,7 @@ export class MapController implements MapView {
       this.pendingTarget = null;
       // A click on the body being orbited clears whatever is targeted; on another body it targets that body.
       if (t.bodyId === null) {
-        if (targetOf(snapshot.readouts) !== null) commands.setTarget(null);
+        if (snapshot.readouts.target !== null) commands.setTarget(null);
       } else if (targetBodyOf(snapshot.readouts) !== t.bodyId) commands.setTarget(bodyTarget(t.bodyId));
     }
 
@@ -1952,10 +1952,10 @@ function sameTarget(a: TargetRef | null, b: TargetRef | null): boolean {
 }
 
 function sameTime(a: SimSnapshot, b: SimSnapshot): boolean {
-  return a.ut === b.ut && revisionOf(a) === revisionOf(b) && a.nodes.length === b.nodes.length && a.nodes.every((n, i) => {
+  return a.ut === b.ut && a.revision === b.revision && a.nodes.length === b.nodes.length && a.nodes.every((n, i) => {
     const m = b.nodes[i]!;
     return n.id === m.id && n.ut === m.ut && n.dv.prograde === m.dv.prograde && n.dv.normal === m.dv.normal && n.dv.radial === m.dv.radial;
-  }) && a.patches.current.length === b.patches.current.length && a.patches.planned.length === b.patches.planned.length && sameTarget(targetOf(a.readouts)?.ref ?? null, targetOf(b.readouts)?.ref ?? null);
+  }) && a.patches.current.length === b.patches.current.length && a.patches.planned.length === b.patches.planned.length && sameTarget(a.readouts.target?.ref ?? null, b.readouts.target?.ref ?? null);
 }
 
 /**

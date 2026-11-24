@@ -18,7 +18,7 @@
 import type { AudioFrame } from '@/core/contracts/audio';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { ModuleState, PartSnapshot, SimEvent, SimEventType, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
-import { activeVesselOf, eventPartOf, partKeyOf, revisionOf } from '@/core/access/snapshotAccess';
+import { activeVesselOf, eventPartOf, partKeyOf } from '@/core/access/snapshotAccess';
 import { Prng } from '@/core/math/hash';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
@@ -798,7 +798,7 @@ export class SoundModel {
     this.watchInitialised = true;
     if (!changed || !audible || this.time - this.lastClick < c.minInterval) return;
     this.lastClick = this.time;
-    const h = hashString(`click|${revisionOf(snap)}|${snap.ut}`);
+    const h = hashString(`click|${snap.revision}|${snap.ut}`);
     out.push({ bus: 'ui', cause: 'click', asset: c.assets[h % c.assets.length]!, gain: dbToGain(c.gainDb), rate: 1, direct: true, air: null, body: null });
   }
 

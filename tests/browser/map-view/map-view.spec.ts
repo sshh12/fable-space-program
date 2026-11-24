@@ -342,7 +342,7 @@ test.describe('map view on the FakeSim', () => {
     for (const sceneName of ['lowOrbit', 'lunarOrbit']) {
       await openLab(page, `scene=${sceneName}&paused=1&quiet=1`);
       const s0 = await state(page);
-      const vid = s0.activeVesselId;
+      const vid = s0.activeVesselId!;
       await lab(page, (l) => l.setFocus({ vesselId: window.__test!.state()!.activeVesselId! }));
       const W = s0.patches.current[0]!.conic.W;
       await lookAlong(page, { x: W.x + 0.3, y: W.y - 0.2, z: W.z + 0.1 }, 1e5);

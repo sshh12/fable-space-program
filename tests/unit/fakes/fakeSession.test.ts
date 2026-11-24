@@ -43,7 +43,7 @@ import {
   type FakeSession,
   type FakeSessionOptions,
 } from '@/core/fakes/fakeSession';
-import { activeVesselOf, craftIdOf, partKeyOf, revisionOf, targetOf } from '@/core/access/snapshotAccess';
+import { activeVesselOf, craftIdOf, partKeyOf } from '@/core/access/snapshotAccess';
 import { FRAME_HISTORY_EPOCHS, FrameEpochTracker, rebasePoint, rebaseVelocity } from '@/core/math/frame';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
@@ -224,7 +224,7 @@ function expectContract(s: SimSnapshot, label: string): void {
   expect(Array.isArray(s.frame!.previous), `${label}: the frame history is filled`).toBe(true);
   expect(s.simUt - s.ut).toBeGreaterThanOrEqual(0);
   expect(s.simUt - s.ut).toBeLessThan(1 / 120 + 1e-9);
-  expect(revisionOf(s), label).toBe(s.revision);
+  expect(Number.isInteger(s.revision) && s.revision >= 0, `${label}: the revision is a counter`).toBe(true);
   // The clock: ticks of 1/120 s of the snapshot's own time.
   expect(Math.abs(s.time!.myTick - s.simUt * TICKS_PER_SECOND), `${label}: myTick is the tick of simUt`).toBeLessThanOrEqual(1);
   expect(s.time!.myTick - s.time!.liveTick, label).toBe(s.time!.offset);
@@ -326,7 +326,7 @@ function expectStack(s: SimSnapshot, label: string): void {
   const vehicle = defs.vehicles[VEHICLE]!;
   const { stages, nextStage } = s.staging;
   expect(stages.map((x) => [x.label, x.icon, x.actionKinds]), `${label}: the stack is the vehicle's`).toEqual(vehicle.stages.map((x) => [x.label, x.icon, x.actions.map((a) => a.kind)]));
-  expect(nextStage, label).toBeGreaterThanOrEqual(s.scenario.stagesAlreadyFired);
+  expect(nextStage, label).toBeGreaterThanOrEqual(s.scenario!.stagesAlreadyFired);
   expect(nextStage, label).toBeLessThanOrEqual(stages.length);
   expect(stages.map((x) => x.fired), `${label}: fired stages`).toEqual(stages.map((_, i) => i < nextStage));
   for (const [i, x] of stages.entries()) {
@@ -364,7 +364,7 @@ function chuteLightOf(s: SimSnapshot): ChuteEnvelope | null {
  * `Readouts.target` and `.docking` are present exactly when the contract says, and what goes with a target
  * goes with it: navigation to the selected target and nothing without one; the docking instrument when a port
  * is targeted and an own port is the control point, else none; the navball's target markers, the holds and
- * the deprecated pair, which states what `target` states for a body and nothing for a vessel or a port.
+ * the relative inclination beside the readout, which is the readout's for a body and null without a target.
  */
 function expectTargets(s: SimSnapshot, selected: TargetRef | null, label: string): void {
   const r = s.readouts;
@@ -400,11 +400,9 @@ function expectTargets(s: SimSnapshot, selected: TargetRef | null, label: string
     expect(t.range, label).toBeGreaterThanOrEqual(0);
     expect(t.closestApproaches.length, label).toBeLessThanOrEqual(3);
   }
-  // The deprecated pair, read through the access module as every consumer reads it: taken alone it states the
-  // body target and its inclination, and no target at all for a vessel or a port.
-  const deprecated = targetOf({ ...r, target: undefined });
-  if (selected !== null && selected.kind === 'body') expect(deprecated, `${label}: the deprecated pair states the body target`).toMatchObject({ ref: selected, relativeInclination: t!.relativeInclination });
-  else expect(deprecated, `${label}: the deprecated pair states no body target`).toBeNull();
+  // The inclination beside the readout is the readout's for a body target, and null without a target.
+  if (t === null) expect(r.targetRelativeInclination, `${label}: no relative inclination without a target`).toBeNull();
+  else if (t.ref.kind === 'body') expect(r.targetRelativeInclination, `${label}: the relative inclination to a targeted body`).toBe(t.relativeInclination);
 }
 
 /**
@@ -534,7 +532,7 @@ const TOLERANCES: readonly Row[] = [
   { at: ['vessels(session only)'], scenes: ['ascent'], check: apart('named in the row'), why: 'the launch mount the session leaves standing on the pad at lift-off is a vessel of its own (ground structure); the fake starts in the climb and never had one' },
 
   // ---- clocks and counters
-  { at: ['tick', 'revision', 'vessels[].revision'], check: within(0, 1e7), why: 'counters: the session has taken its first step (and counted the rails it went on); the fake counts its own steps and its vessel never changes its orbit' },
+  { at: ['revision', 'vessels[].revision'], check: within(0, 1e7), why: 'counters: the session has taken its first step (and counted the rails it went on); the fake counts its own steps and its vessel never changes its orbit' },
   { at: ['vessels[].age', 'readouts.met'], check: within(0, 600), why: 's: each producer counts from its own start (the session has stepped once, or flown its ascent)' },
   { at: ['scenario.stagesAlreadyFired'], scenes: ['ascent'], check: within(0, 1), why: 'the session fired its first stage in flight (its scenario starts on the pad with none fired); the fake starts with it fired' },
   { at: ['scenario.startKind'], check: { is: 'among', values: ['pad', 'orbit', 'landed', 'state'] }, why: "every scene of the fake is published as a 'state' start: it has no scenario files" },
@@ -656,10 +654,11 @@ const TOLERANCES: readonly Row[] = [
   { at: ['readouts.landingTarget.predicted'], check: { is: 'shape' }, nullable: true, why: NO_PREDICTION },
 
   // ---- the target, the trajectory, what happened
-  { at: ['readouts.target*', 'readouts.docking'], check: apart('compare: through targetOf of the access module, as every consumer reads them; expectTargets'), why: '`target` and `docking` are v2 members no session states before wave 4, and the deprecated pair beside them is read through the access module only' },
-  { at: ['targetOf(readouts).relativeInclination'], scenes: ['pad', 'ascent'], check: close(0, 0.2), why: 'rad: the fake\'s Moon keeps the orbit plane of its definition\'s epoch (a session\'s precesses); standing, both state that plane\'s inclination less the latitude' },
-  { at: ['targetOf(readouts).relativeInclination'], check: within(0, Math.PI), why: `rad: the angle between the two orbit planes, and the fake's is its own (${FLIGHT})` },
-  { at: ['targetOf(readouts).closestApproaches'], check: apart('compare: the fake lists none'), why: NO_PREDICTION },
+  { at: ['readouts.target.range'], check: within(0, 6e8), why: `m, to the centre of the targeted body: ${FLIGHT}` },
+  { at: ['readouts.target.rangeRate'], check: within(-2e4, 2e4), why: `m/s, along the line to that centre: ${FLIGHT}` },
+  { at: ['readouts.target.relativeInclination', 'readouts.targetRelativeInclination'], scenes: ['pad', 'ascent'], check: close(0, 0.2), why: 'rad: the fake\'s Moon keeps the orbit plane of its definition\'s epoch (a session\'s precesses); standing, both state that plane\'s inclination less the latitude' },
+  { at: ['readouts.target.relativeInclination', 'readouts.targetRelativeInclination'], check: within(0, Math.PI), why: `rad: the angle between the two orbit planes, and the fake's is its own (${FLIGHT})` },
+  { at: ['readouts.target.closestApproaches'], check: apart('compare: the fake lists none'), why: NO_PREDICTION },
   { at: ['patches.current'], check: apart('compare: one closed patch about the session\'s body in an orbit scene, none on a surface scene; the contract of a patch for both'), why: 'the fake draws its own circle; a session its chain of patches to the next event' },
   { at: ['events', 'milestones'], scenes: ['ascent'], check: apart('named in the row'), why: 'what happened in the session\'s minute of flight (the ignitions, the release, lift-off); the fake starts in the climb' },
 ];
@@ -866,13 +865,9 @@ function compare(scene: FakeScene, fake: SimSnapshot, real: SimSnapshot, needed:
     else c.differences.push(`vessels: the session has ${real.vessels.length - 1} vessel(s) the fake has not: ${real.vessels.filter((v) => v !== rv).map((v) => v.id).join(', ')}`);
   }
 
-  // The target, as the access module reads it from either producer: the selection, the inclination, the approaches.
-  const view = (s: SimSnapshot): unknown => {
-    const t = targetOf(s.readouts);
-    return t === null ? null : { ref: t.ref, relativeInclination: t.relativeInclination, closestApproaches: t.closestApproaches };
-  };
-  hold(c, view(fake), view(real), 'targetOf(readouts)', 'targetOf(readouts)');
-  if ((targetOf(fake.readouts)?.closestApproaches.length ?? 0) !== 0) c.differences.push('targetOf(readouts).closestApproaches: the fake lists an approach to a body');
+  // The target readout is held field by field with the rest of the read-outs (the table has what differs by
+  // the flight); the approaches are not compared, and the fake lists none.
+  if ((fake.readouts.target?.closestApproaches.length ?? 0) !== 0) c.differences.push('readouts.target.closestApproaches: the fake lists an approach to a body');
 
   // The trajectory: the fake's circle about the session's body in an orbit, nothing on the ground or under a canopy.
   const orbit = fv !== null && fv.situation === 'orbiting';
@@ -940,8 +935,8 @@ describe('conformance: the fake session against createSession in the same situat
       if (scene !== 'ascent') expect(fake.staging.nextStage).toBe(scenario.stagesAlreadyFired);
       expect(fv.boundingRadius).toBeCloseTo(rv.boundingRadius, 9);
       expect(Math.abs(fv.mass - rv.mass) / rv.mass).toBeLessThan(scene === 'ascent' ? 1e-4 : 1e-12);
-      expect(targetOf(fake.readouts)!.ref).toEqual({ kind: 'body', id: scenario.target });
-      expect(targetOf(real.readouts)!.ref).toEqual({ kind: 'body', id: scenario.target });
+      expect(fake.readouts.target!.ref).toEqual({ kind: 'body', id: scenario.target });
+      expect(real.readouts.target!.ref).toEqual({ kind: 'body', id: scenario.target });
       if (scene === 'ascent') {
         // The session did climb: the comparison is of two vessels in the air under thrust, not of two on the pad.
         expect(real.readouts.altitudeAsl).toBeGreaterThan(2000);
@@ -996,9 +991,9 @@ describe('conformance: the comparison finds a wrong value', () => {
     ['a label of the generic stack', 'lowOrbit', (s) => (s.staging.stages[1]!.label = 'Stage separation'), /^staging\.stages\[1\]\.label: /],
     ['a burn figure for a stage that burns nothing', 'lowOrbit', (s) => (s.staging.stages[5]!.deltaVVac = 3000), /^staging\.stages\[5\]\.deltaVVac: 3000 against 0: zero on one side only$/],
     ['no burn figure for the stage that burns', 'lowOrbit', (s) => (s.staging.stages[3]!.burnTime = 0), /^staging\.stages\[3\]\.burnTime: 0 against 376\.\d+: zero on one side only$/],
-    ['no scenario stages fired', 'lowOrbit', (s) => (s.scenario.stagesAlreadyFired = 0), /^scenario\.stagesAlreadyFired: 0 against 4$/],
-    ['no target', 'lowOrbit', (s) => Object.assign(s.readouts, { target: null }), /^targetOf\(readouts\): null against /],
-    ['another body targeted', 'lowOrbit', (s) => (s.readouts.target!.ref = { kind: 'body', id: 'sun' }), /^targetOf\(readouts\)\.ref\.id: "sun" against "moon"$/],
+    ['no scenario stages fired', 'lowOrbit', (s) => (s.scenario!.stagesAlreadyFired = 0), /^scenario\.stagesAlreadyFired: 0 against 4$/],
+    ['no target', 'lowOrbit', (s) => Object.assign(s.readouts, { target: null }), /^readouts\.target: null against /],
+    ['another body targeted', 'lowOrbit', (s) => (s.readouts.target!.ref = { kind: 'body', id: 'sun' }), /^readouts\.target\.ref\.id: "sun" against "moon"$/],
     ['a parachute light on the pad that is not the session\'s', 'pad', (s) => (s.readouts.chuteEnvelope = null), /^readouts\.chuteEnvelope: null against "safe"$/],
     ['a parachute light in orbit', 'lowOrbit', (s) => (s.readouts.chuteEnvelope = 'safe'), /^readouts\.chuteEnvelope: "safe" against null$/],
     ['a part missing', 'lowOrbit', (s) => void vesselOf(s).parts.pop(), /^vessels\[active\]\.parts: 13 elements against 14$/],
@@ -1109,7 +1104,7 @@ describe('conformance: the comparison finds a wrong value', () => {
         'readouts.eccentricity',
         'readouts.period',
         'readouts.inclination',
-        // The target: the relative inclination to a body (in the read-out and its deprecated copy), the site by its pad.
+        // The target: the relative inclination to a body (in the target readout and beside it), the site by its pad.
         'readouts.target.relativeInclination',
         'readouts.targetRelativeInclination',
         'surfaceTargets[].name',
@@ -1187,7 +1182,7 @@ describe('the contract invariants of every scene: ids, the whole and its craft, 
       const s = session.snapshot();
       expectInvariants(session, s, null, scene);
       expect(s.staging.nextStage).toBe(fired[scene]);
-      expect(s.scenario.stagesAlreadyFired).toBe(fired[scene]);
+      expect(s.scenario!.stagesAlreadyFired).toBe(fired[scene]);
       // The next press fires the stage after those, and it is an event of that stage.
       const press = session.commands.stage();
       const after = session.snapshot();
@@ -1342,7 +1337,6 @@ describe('the fake session: scenes of the shared universe', () => {
     const [own, other] = s.vessels as [VesselSnapshot, VesselSnapshot];
     const t = s.readouts.target!;
     expect(t.ref).toEqual({ kind: 'vessel', id: FAKE_TARGET_ID });
-    expect(targetOf(s.readouts)).toBe(t);
     expect(t.name).toBe(other.name);
     expect(t.presence).toBe('solid');
     expect(t.range).toBeCloseTo(v3.dist(own.rRoot, other.rRoot), 6);
@@ -1375,7 +1369,6 @@ describe('the fake session: scenes of the shared universe', () => {
     expect(body.navball.mode).toBe('orbit');
     expect(body.readouts.target!.ref).toEqual({ kind: 'body', id: 'moon' });
     expect(body.readouts.target!.relVelocity).toBeNull();
-    expect(body.readouts.targetBodyId).toBe('moon');
     expect(session.commands.setTarget({ kind: 'vessel', id: 'no-such-vessel' }).ok).toBe(false);
     expect(session.commands.setTarget(null).ok).toBe(true);
     expect(session.snapshot().readouts.target).toBeNull();

@@ -118,6 +118,8 @@ describe('navball marker projection', () => {
       target: v3.normalize(v3.new(0.5, 0.5, -0.5)),
       antiTarget: v3.normalize(v3.new(-0.5, -0.5, 0.5)),
       liftVector: v3.normalize(v3.new(0, 0.6, 0.8)),
+      relativePrograde: null,
+      relativeRetrograde: null,
     };
     const inst = markerInstances(markers);
     expect(inst[inst.length - 1]!.name).toBe('reticle');

@@ -3,6 +3,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
+import { FAKE_VESSEL_ID } from '@/core/fakes/fakeSession';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import {
   buildMfdPage,
@@ -201,12 +202,13 @@ describe('display models', () => {
     expect(stageBurnLabel(s, 0)).toBe('Meridian M-1');
     expect(stageBurnLabel(s, 3)).toBe('Meridian M-3');
     expect(stageBurnLabel(s, 4)).toBe('Heron descent stage');
-    // Stages that ignite nothing have no burn name, and neither has a panel that does not state one.
+    // Stages that ignite nothing have no burn name, and neither has a stage whose panel states none or a stage the stack does not have.
     expect(stageBurnLabel(s, 5)).toBeNull();
-    const silent = { ...s, staging: { ...s.staging, stages: s.staging.stages.map(({ burnLabel: _b, ...rest }) => rest) } };
+    const silent = { ...s, staging: { ...s.staging, stages: s.staging.stages.map((stage) => ({ ...stage, burnLabel: null })) } };
     expect(stageBurnLabel(silent, 0)).toBeNull();
+    expect(stageBurnLabel(s, s.staging.stages.length)).toBeNull();
     // The vehicle ids of the vessel and its craft name no design the library has: the words are the panel's.
-    const unknown = { ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle', crafts: v.crafts?.map((c) => ({ ...c, vehicleId: 'no-such-vehicle' })) })) };
+    const unknown = { ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle', crafts: v.crafts.map((c) => ({ ...c, vehicleId: 'no-such-vehicle' })) })) };
     expect(stageBurnLabel(unknown, 0)).toBe('Meridian M-1');
     expect(describeStages(unknown, defs).tiles[3]!.burnName).toBe('Meridian M-3');
     expect(describeStages(s, defs).tiles[3]!.burnName).toBe('Meridian M-3');
@@ -285,9 +287,15 @@ describe('display models', () => {
     const s = sim.snapshot();
     const unknown = describeResources({ ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle' })) }, defs);
     expect(unknown).toEqual(groups);
-    // Parts that state no group (a hand-built snapshot) are one group under the vessel's name.
-    const bare = describeResources({ ...s, vessels: s.vessels.map((v) => ({ ...v, parts: v.parts.map(({ stageGroup: _g, stageLabel: _l, ...p }) => p) })) }, defs);
-    expect(bare.map((g) => g.label)).toEqual([s.vessels.find((v) => v.id === s.activeVesselId)!.name]);
+    // The order is that of the vehicle's list of groups, which every part states (`stageOrder`), whatever the
+    // order of the part list; a group the vehicle does not list (-1) comes after the listed ones.
+    const reversed = describeResources({ ...s, vessels: s.vessels.map((v) => ({ ...v, parts: [...v.parts].reverse() })) }, defs);
+    expect(reversed.map((g) => g.label)).toEqual(groups.map((g) => g.label));
+    const unlisted = describeResources({ ...s, vessels: s.vessels.map((v) => ({ ...v, parts: v.parts.map((p) => (p.stageGroup === 'upper' ? { ...p, stageOrder: -1 } : p)) })) }, defs);
+    expect(unlisted.map((g) => g.label)).toEqual(['Heron descent stage', 'Heron ascent stage', 'Kestrel capsule', 'Meridian M-2']);
+    // Parts of one place (a hand-built list that states no order: all -1) keep the order of the part list.
+    const unordered = describeResources({ ...s, vessels: s.vessels.map((v) => ({ ...v, parts: [...v.parts].reverse().map((p) => ({ ...p, stageOrder: -1 })) })) }, defs);
+    expect(unordered.map((g) => g.label)).toEqual([...groups].reverse().map((g) => g.label));
   });
 
   it('never merges the bars of two craft of one vehicle in one vessel', () => {
@@ -302,6 +310,7 @@ describe('display models', () => {
       ownerId: null,
       ownerCallsign: null,
       commandPart: 'capsule',
+      cockpit: null,
       staging: { nextStage: 0, stages: [], lockout: false },
       chase: { defaultDistance: 100, minDistance: 10, maxDistance: 1000 },
       policy: { lendAttitude: true, lendEngines: true, lendPropellant: true, helm: 'owner' },
@@ -738,8 +747,10 @@ describe('round-6 mission read-outs', () => {
       .filter((p) => groups.includes(p.stageGroup))
       .map((p) => ({
         instanceId: p.id,
+        craftId: FAKE_VESSEL_ID,
         stageGroup: p.stageGroup,
         stageLabel: vehicle.stageGroups.find((g) => g.id === p.stageGroup)?.label ?? p.stageGroup,
+        stageOrder: vehicle.stageGroups.findIndex((g) => g.id === p.stageGroup),
         def: p.def,
         localPos: v3.new(0, 0, 0),
         localRot: quat.identity(),
@@ -748,6 +759,7 @@ describe('round-6 mission read-outs', () => {
         resources: Object.fromEntries((defs.parts[p.def]!.resources ?? []).map((r) => [r.resource, fill(p.id, r.resource, r.capacity)])),
         modules: [],
         shielded: false,
+        panel: null,
       }));
     return {
       ...base,
@@ -755,7 +767,7 @@ describe('round-6 mission read-outs', () => {
       // The staging panel is the mission vehicle's as its session states it: every stage with its action kinds and
       // what it says about itself (the words about a stage are read from there).
       staging: vehicleStaging(vehicle, describeStageWords(vehicle, (id) => defs.parts[id]), patch.staging ?? base.staging),
-      vessels: base.vessels.map((v) => (v.id === base.activeVesselId ? { ...v, vehicleId: MISSION_VEHICLE, crafts: v.crafts?.map((c) => ({ ...c, vehicleId: MISSION_VEHICLE })), parts } : v)),
+      vessels: base.vessels.map((v) => (v.id === base.activeVesselId ? { ...v, vehicleId: MISSION_VEHICLE, crafts: v.crafts.map((c) => ({ ...c, vehicleId: MISSION_VEHICLE })), parts } : v)),
     };
   };
 
@@ -846,7 +858,7 @@ describe('round-6 mission read-outs', () => {
     const plain = { ...defs, scenarios: { ...defs.scenarios, 'lunar-direct': { ...scenario, milestones: scenario.milestones.map(({ title: _title, ...m }) => m) } } };
     // The staging panel of the mission vehicle as its session states it: a stage's label is read from there,
     // never from a vehicle definition.
-    const stages = defs.vehicles[MISSION_VEHICLE]!.stages.map((st) => ({ label: st.label, icon: st.icon, fired: false, deltaVVac: 0, deltaVNow: 0, twr: 0, burnTime: 0, propellantFraction: null, actionKinds: st.actions.map((a) => a.kind as string) }));
+    const stages = defs.vehicles[MISSION_VEHICLE]!.stages.map((st) => ({ label: st.label, icon: st.icon, fired: false, deltaVVac: 0, deltaVNow: 0, twr: 0, burnTime: 0, propellantFraction: null, actionKinds: st.actions.map((a) => a.kind as string), burnLabel: null, thrustVac: 0, weightFlowVac: 0, actionChutes: st.actions.map(() => null), chuteEnvelopes: null }));
     const s = missionSnap('lowOrbit', ['capsule'], (_p, _r, c) => c, { scenario: { id: 'lunar-direct', startKind: 'pad', stagesAlreadyFired: 0 }, staging: { nextStage: 0, stages, lockout: false } });
     const t = (id: string): string => n(milestoneTitle(id, s, plain));
     expect(n(milestoneTitle('STAGE_SEP_1', { ...s, vessels: s.vessels.map((v) => ({ ...v, vehicleId: 'no-such-vehicle' })) }, plain))).toBe('M-1 separation');

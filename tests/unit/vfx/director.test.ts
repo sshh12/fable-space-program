@@ -1,8 +1,8 @@
 /**
  * The part an event names (`findEventPart`) and the effects the director starts at it, with two vessels of
- * one vehicle in the snapshot. They carry the same instance ids, and an event of a vessel of one craft names
- * its part by instance id: the effect belongs to the vessel the event names (or to a vessel it made),
- * whichever of the two vehicles the snapshot lists first.
+ * one vehicle in the snapshot. They carry the same instance ids, and an event names its part by the part key
+ * `craftId/instanceId`: the effect belongs to the vessel that holds the part of that craft (or of a piece
+ * that left it), whichever of the two vehicles the snapshot lists first; an instance id alone names nothing.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -99,21 +99,26 @@ const bothOrders = (first: VesselSnapshot, second: VesselSnapshot[]): VesselSnap
 ];
 
 describe('the part an event names, with two vessels of one vehicle in the snapshot', () => {
-  it('is the part of the vessel the event names, in either order of the snapshot; without the event, the first in the snapshot as before', () => {
+  it('is the part of the craft its key names, in either order of the snapshot, with the event and without it; an instance id alone names no part', () => {
     const a = stackAt('A', 0);
     const b = stackAt('B', APART);
     const id = withModule(a, 'decoupler').instanceId;
     expect(withModule(b, 'decoupler').instanceId).toBe(id);
     for (const vessels of bothOrders(a, [b])) {
       const snap = snapshotOf(vessels);
-      expect(findEventPart(snap, id, { vesselId: 'B' })?.vessel.id).toBe('B');
-      expect(findEventPart(snap, id, { vesselId: 'A', newVesselIds: [] })?.vessel.id).toBe('A');
-      // A caller with nothing but the id gets the first match of the snapshot.
-      expect(findEventPart(snap, id)?.vessel.id).toBe(vessels[0]!.id);
+      expect(findEventPart(snap, partKey('craft-B', id), { vesselId: 'B' })?.vessel.id).toBe('B');
+      expect(findEventPart(snap, partKey('craft-A', id), { vesselId: 'A', newVesselIds: [] })?.vessel.id).toBe('A');
+      // A caller with nothing but the key finds the same part: a part key is unique in the snapshot.
+      expect(findEventPart(snap, partKey('craft-B', id))?.vessel.id).toBe('B');
+      expect(findEventPart(snap, partKey('craft-A', id))?.vessel.id).toBe('A');
+      // The instance id both vehicles carry is no key: it names a part of neither.
+      expect(findEventPart(snap, id, { vesselId: 'B' })).toBeNull();
+      expect(findEventPart(snap, id)).toBeNull();
+      expect(findEventPart(snap, partKey('craft-C', id), { vesselId: 'B' })).toBeNull();
     }
   });
 
-  it('is found in a vessel the event made, after its own; an instance id is not looked for in a vessel the event does not name', () => {
+  it('is found in a vessel the event made, after its own, by the key of the craft the part left; the same instance id in the other vehicle is not it', () => {
     const a = stackAt('A', 0);
     const whole = stackAt('B', APART);
     const decoupler = withModule(whole, 'decoupler');
@@ -122,15 +127,18 @@ describe('the part an event names, with two vessels of one vehicle in the snapsh
     const stage = vesselAt('B-stage', APART + 300, [{ ...decoupler, craftId: 'craft-B.stage' }], 'craft-B.stage', 'craft-B');
     for (const vessels of bothOrders(a, [b, stage])) {
       const snap = snapshotOf(vessels);
-      expect(findEventPart(snap, decoupler.instanceId, { vesselId: 'B', newVesselIds: ['B-stage'] })?.vessel.id).toBe('B-stage');
-      // The event names neither the stage nor A: the part of that instance id in A is not B's.
-      expect(findEventPart(snap, decoupler.instanceId, { vesselId: 'B' })).toBeNull();
-      expect(findEventPart(snap, decoupler.instanceId, { vesselId: 'B', newVesselIds: ['gone'] })).toBeNull();
-      expect(findEventPart(snap, decoupler.instanceId, { vesselId: 'gone' })).toBeNull();
-      // A part key is unique in the snapshot: it is found wherever the part is, through its line of descent.
+      // The event names the part by the craft it was a part of: the piece answers to that key through its line of descent.
+      expect(findEventPart(snap, partKey('craft-B', decoupler.instanceId), { vesselId: 'B', newVesselIds: ['B-stage'] })?.vessel.id).toBe('B-stage');
+      // A part key is unique in the snapshot: it is found wherever the part is, whichever vessels the event names.
       expect(findEventPart(snap, partKey('craft-B', decoupler.instanceId), { vesselId: 'B' })?.vessel.id).toBe('B-stage');
-      expect(findEventPart(snap, partKey('craft-A', decoupler.instanceId), { vesselId: 'B' })?.vessel.id).toBe('A');
+      expect(findEventPart(snap, partKey('craft-B', decoupler.instanceId), { vesselId: 'B', newVesselIds: ['gone'] })?.vessel.id).toBe('B-stage');
+      expect(findEventPart(snap, partKey('craft-B', decoupler.instanceId), { vesselId: 'gone' })?.vessel.id).toBe('B-stage');
       expect(findEventPart(snap, partKey('craft-B', decoupler.instanceId))?.vessel.id).toBe('B-stage');
+      // The piece answers to its own key too, and the part of that instance id in A to A's alone.
+      expect(findEventPart(snap, partKey('craft-B.stage', decoupler.instanceId), { vesselId: 'B' })?.vessel.id).toBe('B-stage');
+      expect(findEventPart(snap, partKey('craft-A', decoupler.instanceId), { vesselId: 'B' })?.vessel.id).toBe('A');
+      // The instance id alone is no key.
+      expect(findEventPart(snap, decoupler.instanceId, { vesselId: 'B', newVesselIds: ['B-stage'] })).toBeNull();
     }
   });
 });
@@ -146,13 +154,13 @@ describe('the effects of an event, with two vessels of one vehicle in the snapsh
     const b = stackAt('B', APART);
     const decoupler = withModule(b, 'decoupler');
     for (const vessels of bothOrders(a, [b])) {
-      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'decoupled', ut: 0, vesselId: 'B', partId: decoupler.instanceId, newVesselIds: [] }])), APART);
-      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'decoupled', ut: 0, vesselId: 'A', partId: decoupler.instanceId, newVesselIds: [] }])), 0);
+      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'decoupled', ut: 0, vesselId: 'B', partId: partKey('craft-B', decoupler.instanceId), newVesselIds: [] }])), APART);
+      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'decoupled', ut: 0, vesselId: 'A', partId: partKey('craft-A', decoupler.instanceId), newVesselIds: [] }])), 0);
     }
     const kept = { ...b, parts: b.parts.filter((p) => p !== decoupler) };
     const stage = vesselAt('B-stage', APART + 300, [{ ...decoupler, craftId: 'craft-B.stage' }], 'craft-B.stage', 'craft-B');
     for (const vessels of bothOrders(a, [kept, stage])) {
-      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'decoupled', ut: 0, vesselId: 'B', partId: decoupler.instanceId, newVesselIds: ['B-stage'] }])), APART + 300);
+      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'decoupled', ut: 0, vesselId: 'B', partId: partKey('craft-B', decoupler.instanceId), newVesselIds: ['B-stage'] }])), APART + 300);
     }
   });
 
@@ -163,8 +171,8 @@ describe('the effects of an event, with two vessels of one vehicle in the snapsh
     const chute = defs.parts[chutePart.def]!.modules.find((m) => m.type === 'parachute');
     if (chute?.type !== 'parachute') throw new Error('expected a parachute module');
     for (const vessels of bothOrders(a, [b])) {
-      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'chuteDeployed', ut: 0, vesselId: 'B', partId: chutePart.instanceId, mode: chute.mode }])), APART);
-      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'chuteDeployed', ut: 0, vesselId: 'A', partId: chutePart.instanceId, mode: chute.mode }])), 0);
+      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'chuteDeployed', ut: 0, vesselId: 'B', partId: partKey('craft-B', chutePart.instanceId), mode: chute.mode }])), APART);
+      expectAllNear(effectsAt(snapshotOf(vessels, [{ type: 'chuteDeployed', ut: 0, vesselId: 'A', partId: partKey('craft-A', chutePart.instanceId), mode: chute.mode }])), 0);
     }
   });
 
@@ -181,7 +189,7 @@ describe('the effects of an event, with two vessels of one vehicle in the snapsh
       return vesselAt(`B-petal-${index}`, APART + 400 + 50 * index, [part], craftId, 'craft-B');
     };
     const petals = [petal(1), petal(0)];
-    const event: SimEvent = { type: 'fairingJettisoned', ut: 0, vesselId: 'B', partId: fairing.instanceId, newVesselIds: petals.map((p) => p.id) };
+    const event: SimEvent = { type: 'fairingJettisoned', ut: 0, vesselId: 'B', partId: partKey('craft-B', fairing.instanceId), newVesselIds: petals.map((p) => p.id) };
     for (const vessels of bothOrders(a, [b, ...petals])) expectAllNear(effectsAt(snapshotOf(vessels, [event])), APART + 400);
   });
 });

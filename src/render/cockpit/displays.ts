@@ -13,7 +13,6 @@
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { PerfRecorder } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
-import { revisionOf } from '@/core/access/snapshotAccess';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { mipCount } from '@/render/core';
 import { DisplayPacer, type PacingRule } from './pacing';
@@ -229,7 +228,7 @@ export class MfdDisplays {
       this.stats.paintMs += b - a;
       this.stats.copyMs += c - b;
       this.stats.mipMs += performance.now() - c;
-      this.painted[i] = { page, revision: revisionOf(snapshot), at: time };
+      this.painted[i] = { page, revision: snapshot.revision, at: time };
       this.stats.paints++;
       this.stats.perDisplay[i] = (this.stats.perDisplay[i] ?? 0) + 1;
       // (Frozen time: the pacing takes no measured cost, every page is at the plain rate.)

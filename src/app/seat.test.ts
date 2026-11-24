@@ -21,6 +21,7 @@ function defs(label?: string): DefLibrary {
 const vessel = {
   id: 'v',
   vehicleId: 'craft',
+  helm: { accountId: null, callsign: null, craftId: 'v', controlPart: 'v/capsule-1' },
   crafts: [{ id: 'v', vehicleId: 'craft', commandPart: 'capsule-1', cockpit: { id: 'cabin', cameraSeat: 'cdr', sensorMount: null, crew: [{ seat: 'cdr', name: 'Ilse Marwen' }] } }],
   parts: [{ instanceId: 'capsule-1', craftId: 'v', def: 'capsule' }],
 } as unknown as VesselSnapshot;
@@ -41,8 +42,8 @@ describe('seatName', () => {
     // The craft with the cabin states the crew: the vessel's vehicle id is never looked up.
     const other = { ...vessel, vehicleId: 'unknown' } as unknown as VesselSnapshot;
     expect(seatName(defs(), other, 'cdr')).toBe('Ilse Marwen');
-    // A craft that states no crew (a producer older than the field) is named by its seat ids.
-    const silent = { ...vessel, crafts: [{ id: 'v', vehicleId: 'craft', commandPart: 'capsule-1', cockpit: { id: 'cabin', cameraSeat: 'cdr', sensorMount: null } }] } as unknown as VesselSnapshot;
+    // A craft without crew (it states none) is named by its seat ids.
+    const silent = { ...vessel, crafts: [{ id: 'v', vehicleId: 'craft', commandPart: 'capsule-1', cockpit: { id: 'cabin', cameraSeat: 'cdr', sensorMount: null, crew: [] } }] } as unknown as VesselSnapshot;
     expect(seatName(defs(), silent, 'cdr')).toBe('cdr');
   });
 });

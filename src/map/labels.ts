@@ -105,14 +105,14 @@ export const markerLabels: LabelSource = {
       case 'closestApproach':
         if (m.value !== undefined) {
           head += ` ${formatDistance(m.value)}`;
-          const from = targetNameOf(snapshot, defs);
+          const from = targetNameOf(snapshot);
           details.push(`Separation ${formatDistance(m.value)}${from !== null ? ` from ${from}` : ''}`);
         }
         break;
       case 'targetApproach': {
         // The closest approach to a targeted vessel: the separation, the relative speed there, and whether the
         // target's place then is its forecast and not committed history.
-        const other = m.otherVesselId !== undefined ? (snapshot.vessels.find((v) => v.id === m.otherVesselId)?.name ?? targetNameOf(snapshot, defs)) : targetNameOf(snapshot, defs);
+        const other = m.otherVesselId !== undefined ? (snapshot.vessels.find((v) => v.id === m.otherVesselId)?.name ?? targetNameOf(snapshot)) : targetNameOf(snapshot);
         if (m.value !== undefined) {
           head += ` ${formatDistance(m.value)}`;
           details.push(`Separation ${formatDistance(m.value)}${other !== null ? ` from ${other}` : ''}`);

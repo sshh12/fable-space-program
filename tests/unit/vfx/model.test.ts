@@ -238,20 +238,11 @@ describe('plume clusters from the real vehicle', () => {
     expect(expected).toHaveLength(2);
     expect(clusters.map((c) => c.key)).toEqual(expected);
     // The parts state one craft (not the one the vessel's craft block names: this vessel is put together as a
-    // lab's is). With no craft stated on the parts, and with no craft block either, every value is the same.
+    // lab's is). Whichever craft the parts of a vessel of one craft state, every value is the same.
     expect(new Set(vessel.parts.map((p) => p.craftId)).size).toBe(1);
     const asBuilt = JSON.stringify(clusters);
-    const bare: VesselSnapshot = {
-      ...vessel,
-      parts: vessel.parts.map((p) => {
-        const copy = { ...p };
-        delete copy.craftId;
-        return copy;
-      }),
-    };
-    expect(JSON.stringify(gatherPlumeClusters(defs, data, bare))).toBe(asBuilt);
-    delete bare.crafts;
-    expect(JSON.stringify(gatherPlumeClusters(defs, data, bare))).toBe(asBuilt);
+    const other: VesselSnapshot = { ...vessel, parts: vessel.parts.map((p) => ({ ...p, craftId: 'another-craft' })) };
+    expect(JSON.stringify(gatherPlumeClusters(defs, data, other))).toBe(asBuilt);
   });
 
   it('every firing RCS thruster is a small jet along its exhaust direction', () => {
@@ -374,7 +365,7 @@ describe('two craft of one vehicle in one vessel (their parts carry the same ins
     expect(canopyKey('v', partKey('a', 'chute'), 1, 2)).toBe('v|a/chute|1|2');
   });
 
-  it('the part an event names is found by its instance id in a vessel of one craft and by its part key in an assembly, also after it left with a piece', () => {
+  it('the part an event names is found by its part key, the part of the craft the key names, also after it left with a piece; an instance id alone names none', () => {
     const vessel = twoCraft();
     const base = createFakeSim(defs, { scene: 'pad' }).peek();
     const crafts = [
@@ -383,9 +374,9 @@ describe('two craft of one vehicle in one vessel (their parts carry the same ins
     ];
     const snap: SimSnapshot = { ...base, vessels: [{ ...vessel, crafts }] };
     const stage = vessel.parts.find((p) => p.def === 'heron-descent-stage')!.instanceId;
-    // Instance-id form: the first part with that id (a vessel of one craft has only one).
-    expect(findEventPart(snap, stage)?.part.craftId).toBe('a');
-    // Part-key form: the part of the craft the key names, never its twin.
+    // The instance id both craft carry is no key.
+    expect(findEventPart(snap, stage)).toBeNull();
+    // The part of the craft the key names, never its twin.
     expect(findEventPart(snap, partKey('a', stage))?.part.craftId).toBe('a');
     expect(findEventPart(snap, partKey('b', stage))?.part.craftId).toBe('b');
     expect(findEventPart(snap, partKey('c', stage))).toBeNull();

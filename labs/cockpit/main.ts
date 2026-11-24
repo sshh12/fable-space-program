@@ -32,7 +32,7 @@ import type { LocalSession } from '@/core/contracts/session';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage, MfdPainter } from '@/core/contracts/ui';
 import { getSection } from '@/core/defs/loader';
-import { activeVesselOf, cabinOf, revisionOf, type CabinRef } from '@/core/access/snapshotAccess';
+import { activeVesselOf, cabinOf, type CabinRef } from '@/core/access/snapshotAccess';
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { DEG, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { createLabApp, createLabPlanetFeature, enuAt, lookRotation } from '@/render/core/lab';
@@ -291,7 +291,7 @@ async function boot(): Promise<void> {
         delete (c2d as { fillText?: unknown }).fillText;
       }
       const f = describeFlight(snap);
-      painted[k] = { page, revision: revisionOf(snap), texts, hud: { altitude: f.altitude, verticalSpeed: f.verticalSpeed, pitch: f.pitch, heading: f.heading, roll: f.roll, throttle: f.throttle, gLoad: f.gLoad, met: formatMet(snap.readouts.met) } };
+      painted[k] = { page, revision: snap.revision, texts, hud: { altitude: f.altitude, verticalSpeed: f.verticalSpeed, pitch: f.pitch, heading: f.heading, roll: f.roll, throttle: f.throttle, gLoad: f.gLoad, met: formatMet(snap.readouts.met) } };
     },
   };
   const created = createCockpitFeature(app.renderer.context, { navball, mfdPainter });

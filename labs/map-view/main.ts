@@ -11,7 +11,9 @@
  * The lab's text boxes are passed to the map as obstacles (MapViewApi.setObstacles), as the HUD panels would be.
  * window.__mapLab: stats(), perf(), resetPerf(), setIntercept(on), setFocus(f), step(dt), results(), view.
  */
+import { activeVesselOf } from '@/core/access/snapshotAccess';
 import type { PlayerCommands } from '@/core/contracts/controls';
+import type { DefLibrary } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, ShaderLibrary } from '@/core/contracts/render';
 import type { LocalSession } from '@/core/contracts/session';
 import type { SimSnapshot } from '@/core/contracts/sim';
@@ -42,7 +44,7 @@ interface LabSim {
 }
 
 /** The synthetic snapshot is static (there is no predictor behind it): node edits are refused, targeting works. */
-function staticSim(snapshot: SimSnapshot): LabSim {
+function staticSim(defs: DefLibrary, snapshot: SimSnapshot): LabSim {
   const refuse = { ok: false, reason: 'The synthetic scene is static (no trajectory predictor)' };
   let snap = snapshot;
   const commands: PlayerCommands = {
@@ -60,9 +62,32 @@ function staticSim(snapshot: SimSnapshot): LabSim {
     setNode: () => refuse,
     removeNode: () => refuse,
     setTarget: (ref) => {
-      // The synthetic snapshots have body targets only, stated in the form their fixture is built in.
+      // The synthetic snapshots have body targets only, stated as their fixture states the Moon: the body's name,
+      // the range and its rate to the body's centre, the relative inclination the fixture has, no approach.
       if (ref !== null && ref.kind !== 'body') return { ok: false, reason: 'The map lab has body targets only' };
-      snap = { ...snap, readouts: { ...snap.readouts, targetBodyId: ref === null ? null : ref.id } };
+      let target: SimSnapshot['readouts']['target'] = null;
+      if (ref !== null) {
+        const body = snap.bodies.find((b) => b.id === ref.id);
+        const vessel = activeVesselOf(snap);
+        const d = body && vessel ? v3.sub(body.rRoot, vessel.rRoot) : v3.zero();
+        const dv = body && vessel ? v3.sub(body.vRoot, vessel.vRoot) : v3.zero();
+        const range = v3.len(d);
+        target = {
+          ref,
+          name: defs.bodies[ref.id]?.name ?? ref.id,
+          presence: 'solid',
+          timeOffset: 0,
+          range,
+          rangeRate: range > 0 ? v3.dot(d, dv) / range : 0,
+          relVelocity: null,
+          relSpeed: null,
+          relativeInclination: snap.readouts.targetRelativeInclination,
+          closestApproaches: [],
+          lvlh: null,
+          offer: null,
+        };
+      }
+      snap = { ...snap, readouts: { ...snap.readouts, target } };
       return { ok: true };
     },
     cycleActiveVessel: () => refuse,
@@ -98,7 +123,7 @@ async function boot(): Promise<void> {
   const perfScene = params.get('perf') === '1';
   let sim: LabSim;
   if (sceneName === 'synthetic') {
-    sim = staticSim(createSyntheticFixture(defs, { correctionNodes: perfScene ? 3 : 0 }).snapshot);
+    sim = staticSim(defs, createSyntheticFixture(defs, { correctionNodes: perfScene ? 3 : 0 }).snapshot);
   } else {
     // The craft carries the mission name of the synthetic scene (the FakeSim's default "Fake vessel" read as
     // placeholder text next to a finished interface; FakeSimOptions.vesselName, request map-view-7).

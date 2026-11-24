@@ -77,13 +77,6 @@ export const ALL_AXIS_ACTIONS = [
   'cameraZoom',
 ] as const satisfies readonly AxisAction[];
 
-/**
- * The member of the contract's ButtonAction that no table lists any more: the flight menu took its key
- * (nothing pauses in a shared universe; MIGRATION_V2 section 4). It stays in the union until the tighten step
- * after sub-wave 3.2, which removes it from the contract and this type with it.
- */
-type RetiredButtonAction = Extract<ButtonAction, 'pause'>;
-
 /** Every ButtonAction of src/core/contracts/controls.ts that a table may bind (compile-time checked below). */
 export const ALL_BUTTON_ACTIONS = [
   'stage',
@@ -128,7 +121,7 @@ export const ALL_BUTTON_ACTIONS = [
 
 // Exhaustiveness: a member added to the contract unions without being listed above fails to compile here.
 type MissingAxis = Exclude<AxisAction, (typeof ALL_AXIS_ACTIONS)[number]>;
-type MissingButton = Exclude<ButtonAction, (typeof ALL_BUTTON_ACTIONS)[number] | RetiredButtonAction>;
+type MissingButton = Exclude<ButtonAction, (typeof ALL_BUTTON_ACTIONS)[number]>;
 const axisListIsComplete: MissingAxis extends never ? true : MissingAxis = true;
 const buttonListIsComplete: MissingButton extends never ? true : MissingButton = true;
 void axisListIsComplete;
@@ -374,7 +367,7 @@ const AXIS_TEXT: Record<AxisAction, { group: BindingGroup; pos: string; neg: str
   cameraZoom: { group: 'Views', pos: 'Zoom out', neg: 'Zoom in' },
 };
 
-const BUTTON_TEXT: Record<Exclude<ButtonAction, `sas:${string}` | RetiredButtonAction> | UiAction, { group: BindingGroup; text: string }> = {
+const BUTTON_TEXT: Record<Exclude<ButtonAction, `sas:${string}`> | UiAction, { group: BindingGroup; text: string }> = {
   stage: { group: 'Throttle & staging', text: 'Fire next stage' },
   abort: { group: 'Throttle & staging', text: 'Abort' },
   throttleFull: { group: 'Throttle & staging', text: 'Full throttle' },

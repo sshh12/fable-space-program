@@ -21,7 +21,8 @@
  * exposed as `bodyPosition` so tests can check continuity in the ROOT frame.
  */
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
-import type { BodyDef, DefLibrary, KeplerOrbitDef } from '@/core/contracts/defs';
+import { WARP_LEVELS, type BodyDef, type DefLibrary, type KeplerOrbitDef } from '@/core/contracts/defs';
+import { DEFAULT_UNIVERSE_RULES, TICKS_PER_SECOND } from '@/core/contracts/net';
 import { padOf } from '@/core/defs/sites';
 import type { BodySnapshot, ManeuverNode, Marker, Patch, Readouts, SimSnapshot, SurfaceTarget, VesselSnapshot } from '@/core/contracts/sim';
 import { dirToLatLon, latLonToDir } from '@/core/geo/cubeSphere';
@@ -500,10 +501,33 @@ function buildChain(defs: DefLibrary, eph: Ephemeris, ut: number, corrections: n
 // -------------------------------------------------------------------------------------- the snapshot
 
 function vesselSnapshot(id: string, name: string, bodyId: string, r: Vec3, v: Vec3, bodyPos: Vec3, bodyVel: Vec3, controllable: boolean, situation: VesselSnapshot['situation']): VesselSnapshot {
+  const boundingRadius = controllable ? 20 : 3;
   return {
     id,
     name,
     vehicleId: '',
+    // One launched craft of no vehicle and without parts: it has the vessel's id, no cabin and no stage stack,
+    // and is framed from its size alone; nobody is at the helm, and a craft without parts has no control part.
+    crafts: [
+      {
+        id,
+        parent: null,
+        vehicleId: '',
+        name,
+        ownerId: null,
+        ownerCallsign: null,
+        commandPart: null,
+        cockpit: null,
+        staging: { nextStage: 0, stages: [], lockout: false },
+        chase: { defaultDistance: 2.4 * boundingRadius, minDistance: 1.15 * boundingRadius, maxDistance: 60 * boundingRadius },
+        policy: { ...DEFAULT_UNIVERSE_RULES.docking.defaultLendPolicy },
+      },
+    ],
+    links: [],
+    helm: { accountId: null, callsign: null, craftId: id, controlPart: '' },
+    presence: 'solid',
+    timeOffset: 0,
+    revision: 0,
     controllable,
     tier: 'rails',
     situation,
@@ -517,7 +541,7 @@ function vesselSnapshot(id: string, name: string, bodyId: string, r: Vec3, v: Ve
     w: v3.zero(),
     mass: controllable ? 30000 : 800,
     comLocal: v3.zero(),
-    boundingRadius: controllable ? 20 : 3,
+    boundingRadius,
     parts: [],
     aero: { q: 0, mach: 0, aoa: 0, airDensity: 0, pressure: 0, temperature: 4, airVelocity: v3.zero(), heatFlux: 0, plasmaIntensity: 0 },
     gLoad: 0,
@@ -592,6 +616,9 @@ export function createSyntheticFixture(defs: DefLibrary, opts: SyntheticOptions 
   const conic = built.current[0]!.conic;
   const aps = conicApsides(conic);
   const rNow = v3.len(built.vesselState.r);
+  const relativeInclination = v3.angle(conic.W, eph.moonConic.W);
+  const toMoon = v3.sub(eph.position(eph.moonId, ut), active.rRoot);
+  const moonRange = v3.len(toMoon);
   const readouts: Readouts = {
     met: 3 * 3600,
     altitudeAsl: rNow - earth.radius,
@@ -634,9 +661,24 @@ export function createSyntheticFixture(defs: DefLibrary, opts: SyntheticOptions 
     chuteEnvelope: 'safe',
     rcsFraction: 1,
     deltaVTotal: 4200,
-    targetBodyId: eph.moonId,
-    targetRelativeInclination: v3.angle(conic.W, eph.moonConic.W),
-    targetClosestApproach: null,
+    targetRelativeInclination: relativeInclination,
+    // The Moon is the target, as a session states a body target: the range and its rate to the body's centre,
+    // and no approach listed (the fixture's closest approach is a marker of its patches).
+    target: {
+      ref: { kind: 'body', id: eph.moonId },
+      name: moon.name,
+      presence: 'solid',
+      timeOffset: 0,
+      range: moonRange,
+      rangeRate: moonRange > 0 ? v3.dot(toMoon, v3.sub(eph.velocity(eph.moonId, ut), active.vRoot)) / moonRange : 0,
+      relVelocity: null,
+      relSpeed: null,
+      relativeInclination,
+      closestApproaches: [],
+      lvlh: null,
+      offer: null,
+    },
+    docking: null,
     launchWindow: null,
     nodeBurn: null,
     liftVectorUp: null,
@@ -661,9 +703,23 @@ export function createSyntheticFixture(defs: DefLibrary, opts: SyntheticOptions 
   const snapshot: SimSnapshot = {
     ut,
     simUt: ut,
-    // (`tick` is the deprecated twin of `revision`, required of a producer until the tighten step.)
-    tick: 1,
     revision: 1,
+    // ROOT positions are about the library's root body, and the clock is a private one at the live tick, as `warp` describes it.
+    frame: { epoch: 0, origin: { kind: 'body', bodyId: defs.rootBodyId }, rebase: null },
+    time: {
+      myTick: Math.round(ut * TICKS_PER_SECOND),
+      liveTick: Math.round(ut * TICKS_PER_SECOND),
+      rate: 1,
+      maxRate: WARP_LEVELS[10],
+      limitedBy: null,
+      relation: 'live',
+      offset: 0,
+      clockId: null,
+      clockKind: 'private',
+      members: [],
+      proposals: [],
+      offers: [],
+    },
     warp: { index: 0, factor: 1, maxIndex: 10, limitedBy: null, onRails: true },
     scenario: { id: 'synthetic', startKind: 'state', stagesAlreadyFired: 0 },
     surfaceTargets: targets,
@@ -687,6 +743,8 @@ export function createSyntheticFixture(defs: DefLibrary, opts: SyntheticOptions 
         target: null,
         antiTarget: null,
         liftVector: null,
+        relativePrograde: null,
+        relativeRetrograde: null,
       },
       pitchDeg: 0,
       headingDeg: 90,

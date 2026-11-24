@@ -23,6 +23,6 @@ export function seatName(defs: DefLibrary, vessel: VesselSnapshot, seatId: strin
     const label = listSections<LayoutSeatLabels>(defs, 'visuals/cockpits/')[cabin.cockpitId]?.couches?.seats?.[seatId]?.label;
     if (typeof label === 'string' && label !== '') return label;
   }
-  const crew = cabin?.craft.cockpit?.crew?.find((c) => c.seat === seatId)?.name;
+  const crew = cabin?.craft.cockpit?.crew.find((c) => c.seat === seatId)?.name;
   return crew ?? seatId;
 }

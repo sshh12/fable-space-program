@@ -53,7 +53,7 @@ export type SunSpec =
  * The craft blocks of an assembled vessel as a session states them (`VesselSnapshot.crafts`): the identity
  * and the lineage of every craft, which is what the vessel feature files a part's wear under across a
  * separation. The lab fires no stage stack of its own and shows no cabin, so a craft lists no stage figures
- * and states no cockpit.
+ * and states no cockpit (null).
  */
 function craftBlocks(defs: DefLibrary, vessel: Vessel, parts: readonly PartSnapshot[]): CraftSnapshot[] {
   return vessel.crafts.map((c) => ({
@@ -64,6 +64,7 @@ function craftBlocks(defs: DefLibrary, vessel: Vessel, parts: readonly PartSnaps
     ownerId: c.ownerId,
     ownerCallsign: null,
     commandPart: parts.find((p) => p.craftId === c.craftId && defs.parts[p.def]?.modules.some((m) => m.type === 'command'))?.instanceId ?? null,
+    cockpit: null,
     staging: { nextStage: c.nextStage, stages: [], lockout: false },
     chase: { ...c.vehicle.cameras.chase },
     policy: c.policy,

@@ -11,7 +11,7 @@ import type { PartSnapshot, Readouts, SimEvent, SimSnapshot, VesselAeroState, Ve
 import { createFakeSim, type FakeScene } from '@/core/fakes/fakeSim';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { isFixedBurn, LabEngines, labStack, type LabStackId } from './labVehicle';
+import { isFixedBurn, LabEngines, labPartKey, labStack, type LabStackId } from './labVehicle';
 
 export const SEA_LEVEL = 101325;
 /** Speed of sound the lab converts a scripted Mach number with (data/defs/audio/mix.json speedOfSound). */
@@ -68,8 +68,6 @@ export function compose(base: SimSnapshot, s: Partial<SceneState>, t: number, re
     ...base,
     ut: base.ut + t,
     simUt: base.ut + t,
-    // (`tick` is the deprecated twin of `revision`, required of a producer until the tighten step.)
-    tick: revision,
     revision,
     vessels: [vessel, ...(s.extraVessels ?? [])],
     events: s.events ?? [],
@@ -164,9 +162,13 @@ export function frames(o: FrameOpts): FrameFn {
   };
 }
 
-/** An event of the given type for the active vessel, with plausible payload fields. */
+/**
+ * An event of the given type for the active vessel, with plausible payload fields. The part it names
+ * (`partId`) is a part key, as in every event: give `labPartKey(<instance id>)` in `extra`; the default is
+ * the capsule of the lab's stack.
+ */
 export function makeEvent(type: SimEvent['type'], ut: number, vesselId: string, base: SimSnapshot, extra: Record<string, unknown> = {}): SimEvent {
-  const partId = (extra['partId'] as string | undefined) ?? 'capsule';
+  const partId = (extra['partId'] as string | undefined) ?? labPartKey('capsule');
   const common = { ut, vesselId };
   const v = base.vessels[0]!;
   const e: Record<string, unknown> = { ...common, type, partId };

@@ -6,10 +6,12 @@
  * Vessels live in the east / north / up frame of a "site": a point fixed on a body. They move with the
  * rotating body, so `velEnu` is the velocity relative to the air.
  */
+import { partKey } from '@/core/access/snapshotAccess';
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import type { DefLibrary, ModuleDef, ScenarioDef } from '@/core/contracts/defs';
+import { DEFAULT_UNIVERSE_RULES } from '@/core/contracts/net';
 import type { LocalSession, SessionDebug } from '@/core/contracts/session';
-import type { ModuleState, PartSnapshot, SimEvent, SimSnapshot, VesselAeroState, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
+import type { CraftSnapshot, ModuleState, PartSnapshot, SimEvent, SimSnapshot, VesselAeroState, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
 import { createFakeSim } from '@/core/fakes/fakeSim';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG, G0, quat, v3, type Quat, type Vec3 } from '@/core/math';
@@ -98,6 +100,30 @@ export function labAtmosphere(altitude: number): { pressure: number; density: nu
   }
   if (h > 140000) pressure = 0;
   return { pressure, density: pressure / (287.05 * temperature), temperature };
+}
+
+/**
+ * The craft blocks of a lab vessel (`VesselSnapshot.crafts`): one per craft its parts name, in the order in
+ * which the part list first shows them (the vessel facade stamps every part with its craft; a vessel without
+ * parts is one craft with the vessel's id). The lab shows no cabin, fires no stage stack and keeps no
+ * lineage: a craft states no cockpit, no stages and no parent, and is framed from the vessel's size alone.
+ */
+function craftBlocks(lv: LabVessel): CraftSnapshot[] {
+  const ids = [...new Set(lv.parts.map((p) => p.craftId))];
+  const r = Math.max(0.5, lv.boundingRadius);
+  return (ids.length > 0 ? ids : [lv.id]).map((id) => ({
+    id,
+    parent: null,
+    vehicleId: '',
+    name: lv.name,
+    ownerId: null,
+    ownerCallsign: null,
+    commandPart: null,
+    cockpit: null,
+    staging: { nextStage: 0, stages: [], lockout: false },
+    chase: { defaultDistance: 2.4 * r, minDistance: 1.15 * r, maxDistance: 60 * r },
+    policy: { ...DEFAULT_UNIVERSE_RULES.docking.defaultLendPolicy },
+  }));
 }
 
 export class LabSim implements LocalSession {
@@ -275,10 +301,19 @@ export class LabSim implements LocalSession {
       const v = v3.add(v3.cross(f.body.spinRoot, r), vAir);
       let thrust = 0;
       for (const p of lv.parts) for (const m of p.modules) if (m.type === 'engine') thrust += m.thrust;
+      const crafts = craftBlocks(lv);
+      const first = lv.parts[0];
       return {
         id: lv.id,
         name: lv.name,
         vehicleId: '',
+        crafts,
+        links: [],
+        // Nobody is at the helm by name; the control point is the first part of the list (none without parts).
+        helm: { accountId: null, callsign: null, craftId: crafts[0]!.id, controlPart: first ? partKey(first.craftId, first.instanceId) : '' },
+        presence: 'solid',
+        timeOffset: 0,
+        revision: 0,
         controllable: lv.controllable,
         tier: 'full',
         situation: lv.situation,

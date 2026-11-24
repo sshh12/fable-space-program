@@ -586,7 +586,7 @@ test('the scripted test pilot flies inside the page through the controls', async
   await page.evaluate(() => window.__test!.pilot!.stop());
   const s = await page.evaluate(() => window.__test!.state()!);
   expect(s.cheatCounter).toBe(0);
-  expect(s.scenario.startKind).toBe('pad');
+  expect(s.scenario?.startKind).toBe('pad');
   console.log(`pilot: phase ${phase}, ${(b.altitudeAsl / 1000).toFixed(2)} km at MET ${b.met.toFixed(1)} s`);
   await expectNoErrors(page, pageLog);
 });
@@ -739,7 +739,7 @@ test('in low orbit: the map takes the pointer, a node is added and Shift-dragged
   expect(s.appliedControls.throttle).toBe(0);
   expect(s.patches.planned.length).toBeGreaterThan(0);
   await shoot(page, 'leo-map-node', { minNonBlack: 0.05 });
-  expect(s.scenario.startKind).toBe('state');
+  expect(s.scenario?.startKind).toBe('state');
   expect(s.cheatCounter).toBe(0);
   await expectNoErrors(page, pageLog);
 });

@@ -730,7 +730,7 @@ export class SceneBuilder {
 
     // ---------------------------------------------------------------------------------- markers
     // Label text reads the time, the target's name (closest approach) and the landing-target prediction (miss).
-    const target = targetNameOf(snapshot, this.defs);
+    const target = targetNameOf(snapshot);
     const landing = snapshot.readouts.landingTarget;
     const landingId = landing?.targetId ?? null;
     const miss = landing?.predicted ? landing.predicted.missDistance : -1;
@@ -882,8 +882,8 @@ export class SceneBuilder {
     /** Distinct anchors in order of appearance, with their body and whether the current list meets them. */
     const distinct = new Map<Vec3, { bodyId: string; current: boolean }>();
     const root = this.defs.rootBodyId;
-    // The body at the origin of the snapshot's ROOT positions (no frame stated: the library's root body).
-    const originBody = s.frame === undefined ? root : s.frame.origin.kind === 'body' ? s.frame.origin.bodyId : null;
+    // The body at the origin of the snapshot's ROOT positions (none where the origin is a point on an orbit).
+    const originBody = s.frame.origin.kind === 'body' ? s.frame.origin.bodyId : null;
     const current = s.patches.current;
     const lists: [Patch[], boolean][] = [
       [current, true],

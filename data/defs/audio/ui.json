@@ -11,7 +11,7 @@
       "readouts.lightsOn",
       "readouts.fineControl",
       "readouts.legsDeployed",
-      "readouts.targetBodyId",
+      "readouts.target",
       "navball.mode",
       "warp.index"
     ]

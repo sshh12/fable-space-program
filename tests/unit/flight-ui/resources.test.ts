@@ -3,14 +3,14 @@
  *
  * Before the sweep `describeResources` read the vehicle definition: a part's group from `VehicleDef.parts`,
  * the groups in the order of `VehicleDef.stageGroups`, a group's label from that list. Since the sweep it
- * reads the snapshot alone (`PartSnapshot.stageGroup` / `stageLabel`), and the groups come in the order of
- * the part list, because a snapshot does not state the order of a craft's stage groups. The two orders are
- * the same for a vehicle whose file lists its groups in the order in which its parts first carry a resource.
+ * reads the snapshot alone: a part states its group, the group's label and the group's place in its vehicle's
+ * list (`PartSnapshot.stageGroup` / `stageLabel` / `stageOrder`; the order since the tighten step, request
+ * presentation-sweep-10), and the groups are sorted by that place.
  *
- * This test holds every vehicle of the library to that, in the real session (`createSession`), through
- * every stage of its stack and in every scenario of the library: what the HUD's resource panel and the MFD's
- * systems page are built from is equal, field for field, to what the computation of before gives. A vehicle
- * file whose groups are listed in another order fails here, and its HUD would list them in the other order.
+ * This test holds every vehicle of the library to the computation of before, in the real session
+ * (`createSession`), through every stage of its stack and in every scenario of the library: what the HUD's
+ * resource panel and the MFD's systems page are built from is equal to it, field for field. And it holds a
+ * vehicle whose file lists two groups the other way round than its parts carry them to the file's order.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary, VehicleDef } from '@/core/contracts/defs';
@@ -106,7 +106,7 @@ describe('resource groups of a single-craft vessel: the computation of before th
         const session = await makeSim(defs, orbitScenario(base!, `resources-${vehicle.id}-${fired}`, defs.rootBodyId, 300_000, 300_000, fired), terrain);
         const s = session.snapshot();
         const v = active(s);
-        expect(v.crafts?.length ?? 1, `${vehicle.id} after ${fired} stages`).toBe(1);
+        expect(v.crafts.length, `${vehicle.id} after ${fired} stages`).toBe(1);
         const now = describeResources(s, defs);
         const before = resourcesBefore(v, vehicle);
         expect(now.map((g) => g.id), `${vehicle.id} after ${fired} stages: the order of the groups`).toEqual(before.map((g) => g.id));
@@ -124,23 +124,25 @@ describe('resource groups of a single-craft vessel: the computation of before th
     expect(most).toBeGreaterThan(3);
   });
 
-  it('the comparison can fail: were two fuelled groups listed the other way round in the vehicle file, the order of before would follow the file and the order of today follows the parts', async () => {
+  it('the order is the vehicle file\'s and not the part list\'s: with two fuelled groups listed the other way round in the file, the groups of today follow the file, as the computation of before does', async () => {
     const vehicle = libraryVehicles()[0]!;
     const base = Object.values(defs.scenarios).find((x) => x.vehicle === vehicle.id)!;
-    const session = await makeSim(defs, orbitScenario(base, 'resources-whole', defs.rootBodyId, 300_000, 300_000, 0), terrain);
-    const s = session.snapshot();
-    const now = describeResources(s, defs);
-    const listed = now.map((g) => g.id);
+    const whole = (await makeSim(defs, orbitScenario(base, 'resources-whole', defs.rootBodyId, 300_000, 300_000, 0), terrain)).snapshot();
+    const listed = describeResources(whole, defs).map((g) => g.id);
     expect(listed.length).toBeGreaterThan(2);
-    // The file with its last two groups that hold a resource in each other's place. The session states the
-    // same snapshot for either file: a part names its group and the group's label, found by the group's id,
-    // and nothing in a snapshot says where a group stands in the list.
+    // The file with its last two groups that hold a resource in each other's place, flown by a session of its
+    // own: the part list is the same, and every part states its group's place in THAT list.
     const [a, b] = listed.slice(-2) as [string, string];
     const swapped: VehicleDef = { ...vehicle, stageGroups: vehicle.stageGroups.map((g) => (g.id === a ? vehicle.stageGroups.find((x) => x.id === b)! : g.id === b ? vehicle.stageGroups.find((x) => x.id === a)! : g)) };
+    const library: DefLibrary = { ...defs, vehicles: { ...defs.vehicles, [vehicle.id]: swapped } };
+    const s = (await makeSim(library, orbitScenario(base, 'resources-swapped', defs.rootBodyId, 300_000, 300_000, 0), terrain)).snapshot();
+    expect(active(s).parts.map((p) => [p.instanceId, p.stageGroup])).toEqual(active(whole).parts.map((p) => [p.instanceId, p.stageGroup]));
+    const now = describeResources(s, library);
     const before = resourcesBefore(active(s), swapped);
     expect(before.map((g) => g.id)).toEqual([...listed.slice(0, -2), b, a]);
-    // The same groups with the same bars either way: the order is all that differs.
-    expect([...now].sort((x, y) => x.id.localeCompare(y.id))).toEqual([...before].sort((x, y) => x.id.localeCompare(y.id)));
+    expect(now.map((g) => g.id)).toEqual(before.map((g) => g.id));
+    expect(now).toEqual(before);
+    expect(summarizeResources(now)).toEqual(summarizeResources(before));
   });
 
   it('every scenario of the library as its session starts it (the pad, the orbits, the lunar surface, the entry)', async () => {

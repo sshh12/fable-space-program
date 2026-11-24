@@ -43,8 +43,8 @@
  *
  * The snapshot is the v2 snapshot as `createSession` gives it (tests/unit/fakes holds the two against each
  * other): `revision`, `frame` with the history of earlier origins, `time`, craft blocks with the cockpit and
- * the chase distances, the helm, part keys, `Readouts.target`. The deprecated fields are filled beside them
- * until the contract tighten removes them.
+ * the chase distances, the helm, part keys (also in its events), `Readouts.target`. A part list given to it
+ * states every field of `PartSnapshot`; the fake stamps each part with the craft it puts it in (`craftId`).
  *
  * Figures. What a session derives from the vessel's parts and its vehicle, the fake derives from them too
  * (`figures: 'derived'`, the default), so that a consumer sees a vessel that agrees with itself and with the
@@ -1829,10 +1829,7 @@ export class FakeSession implements LocalSession {
       rcsFraction: fromParts ? (rcsCapacity > 0 ? rcsLeft / rcsCapacity : null) : 0.9,
       // What the stages still to burn add up to, as a session sums it; v1's constant without the vehicle's stack.
       deltaVTotal: stack ? stages.reduce((sum, s) => sum + s.deltaVVac, 0) : 3000,
-      // The deprecated pair, filled until the contract tighten removes it: what `target` states for a body.
-      targetBodyId,
       targetRelativeInclination: nav.target ? nav.target.relativeInclination : null,
-      targetClosestApproach: null,
       target: nav.target,
       docking: nav.docking,
       launchWindow: landed && body.id === root && targetBodyId ? { timeToPlaneCrossing: 600 - ((ut - this.ut0) % 600), launchAzimuthDeg: 81 } : null,
@@ -1934,7 +1931,6 @@ export class FakeSession implements LocalSession {
     return {
       ut,
       simUt: ut,
-      tick: this.tick,
       revision: this.tick,
       frame: this.frameBlock(ut, drain),
       time,
@@ -1969,11 +1965,11 @@ export class FakeSession implements LocalSession {
    */
   private vesselStores(s: SimSnapshot): { census: Map<string, CensusEntry>; ships: ShipRecord[]; assembly: AssemblyView | null; roster: RosterEntry[] } {
     const scene = this.scene;
-    const myTick = s.time!.myTick;
+    const myTick = s.time.myTick;
     const active = s.vessels[0]!;
     const census = new Map<string, CensusEntry>();
     for (const v of s.vessels) {
-      const crafts = v.crafts ?? [];
+      const crafts = v.crafts;
       const landed = v.situation === 'prelaunch' || v.situation === 'landed' || v.situation === 'splashed';
       const conic = landed ? null : conicFromState(this.body(v.bodyId).mu, v.r, v.v, s.ut);
       census.set(v.id, {
@@ -1987,19 +1983,19 @@ export class FakeSession implements LocalSession {
         bodyId: v.bodyId,
         patches: conic ? [{ bodyId: v.bodyId, conic, fromTick: myTick, toTick: myTick + Math.round((conic.period ?? 86400) * TICKS_PER_SECOND), forecast: false }] : [],
         landed: landed ? { bodyId: v.bodyId, latitude: s.readouts.latitude, longitude: s.readouts.longitude, altitude: s.readouts.altitudeAsl } : null,
-        headTick: myTick + (v.timeOffset ?? 0),
+        headTick: myTick + v.timeOffset,
         horizonTick: null,
         chainEndTick: myTick + Math.round((conic?.period ?? 86400) * TICKS_PER_SECOND),
-        clockId: v === active ? s.time!.clockId : null,
+        clockId: v === active ? s.time.clockId : null,
         reservedBy: null,
         limitTick: null,
         radius: v.boundingRadius,
         expiresWallMs: null,
         thrusting: false,
-        revision: v.revision ?? 0,
+        revision: v.revision,
       });
     }
-    const crafts = active.crafts ?? [];
+    const crafts = active.crafts;
     const roster: RosterEntry[] = this.others
       .filter((o) => o.attended && s.vessels.some((v) => v.id === o.id))
       .map((o) => ({ accountId: o.ownerId ?? o.id, callsign: o.ownerCallsign ?? o.name, relation: 'nearby', vesselId: o.id, bodyId: active.bodyId, timeOffset: o.timeOffset, linked: scene === 'timeLive', blocked: false }));
@@ -2031,9 +2027,9 @@ export class FakeSession implements LocalSession {
     ];
     // The assembly panel: the craft in the order of their seniority (the snapshot's), each with the ports its
     // links name; the anchor is the most senior craft that has an owner; the helm as the snapshot states it.
-    const craftOfKey = new Map(active.parts.map((p) => [partKey(p.craftId!, p.instanceId), p.craftId!]));
+    const craftOfKey = new Map(active.parts.map((p) => [partKey(p.craftId, p.instanceId), p.craftId]));
     const portsOf = (craftId: string): AssemblyView['crafts'][number]['ports'] =>
-      (active.links ?? []).flatMap((l) => [
+      active.links.flatMap((l) => [
         ...(craftOfKey.get(l.a) === craftId ? [{ portId: l.a, portType: FAKE_PORT_TYPE, state: 'hard' as const, armed: true, peerCraftId: craftOfKey.get(l.b) ?? null }] : []),
         ...(craftOfKey.get(l.b) === craftId ? [{ portId: l.b, portType: FAKE_PORT_TYPE, state: 'hard' as const, armed: true, peerCraftId: craftOfKey.get(l.a) ?? null }] : []),
       ]);
@@ -2053,9 +2049,9 @@ export class FakeSession implements LocalSession {
               policy: c.policy,
               ports: portsOf(c.id),
             })),
-            links: (active.links ?? []).map((l) => ({ a: l.a, b: l.b })),
+            links: active.links.map((l) => ({ a: l.a, b: l.b })),
             anchorCraftId: (crafts.find((c) => c.ownerId !== null) ?? crafts[0]!).id,
-            helm: { accountId: active.helm!.accountId, callsign: active.helm!.callsign, craftId: active.helm!.craftId, request: null },
+            helm: { accountId: active.helm.accountId, callsign: active.helm.callsign, craftId: active.helm.craftId, request: null },
           }
         : null;
     return { census, ships, assembly, roster };
@@ -2073,7 +2069,7 @@ export class FakeSession implements LocalSession {
   /** The client stores of the scene, as a directory would publish them for it: those about its vessels follow the snapshot, the others are built from the start state. */
   private buildStores(scene: FakeSessionScene, siteId: string): FakeStores {
     const s = this.build(false);
-    const myTick = s.time!.myTick;
+    const myTick = s.time.myTick;
     const active = s.vessels[0]!;
     const { census, ships, assembly: assemblyView, roster } = this.vesselStores(s);
     const pads: PadState[] = [];
@@ -2114,7 +2110,7 @@ export class FakeSession implements LocalSession {
       presence: new FakeStore<{ lobbies: readonly LobbySummary[]; summary: PresenceSummary }>({ lobbies: [], summary: { online: pilots, flying: pilots, byBody: { [active.bodyId]: pilots }, queued: queued ? 1 : 0 } }),
       feed: new FakeStore<readonly FeedEvent[]>([]),
       prompts: new FakeStore<readonly Prompt[]>(prompts),
-      link: new FakeStore<LinkState>({ state: 'local', rttMs: null, inputMarginMs: null, graceRemaining: null, queuePosition: null, durableTick: null, reason: null }),
+      link: new FakeStore<LinkState>({ state: 'local', rttMs: null, inputMarginMs: null, graceRemaining: null, queuePosition: null, queueEtaSeconds: null, durableTick: null, reason: null }),
       launchQueue: new FakeStore<LaunchQueueEntry | null>(queued),
     };
   }

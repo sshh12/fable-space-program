@@ -7,7 +7,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import type { PartSnapshot, SimEvent, SimEventType, VesselSnapshot } from '@/core/contracts/sim';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { isFixedBurn, LAB_PARTS, LabEngines, labStack, placeVehicle, type LabPlacement, type LabStackId } from './labVehicle';
+import { isFixedBurn, LAB_PARTS, LabEngines, labPartKey, labStack, placeVehicle, type LabPlacement, type LabStackId } from './labVehicle';
 import { SEA_LEVEL, baseSnapshot, externalAt, frames, labEngines, labVesselId, makeEvent, seatOf, steadyEngines, type ListenerSpec, type Script } from './scenes';
 
 /** US76-like pressure for the clip scenes, Pa. */
@@ -132,7 +132,7 @@ function staging(lib: DefLibrary): Script {
         const evs = eventsBetween(
           [
             { t: sep - 0.02, type: 'stageFired' },
-            { t: sep, type: 'decoupled', extra: { partId: 'capsule' } },
+            { t: sep, type: 'decoupled', extra: { partId: labPartKey('capsule') } },
           ],
           prev,
           t,
@@ -445,7 +445,7 @@ export function maximumScript(lib: DefLibrary, kind: 'interior' | 'external'): S
       listen: () => l,
       state: (t) => {
         e.step(t - Math.max(0, prev), 1);
-        const evs = t >= 1 && prev < 1 ? LOUD_EVENTS.map((type) => makeEvent(type, base.ut + t, labVesselId(base), base, { speed: 30, energy: 1e12, partId: 'atlas-c' })) : [];
+        const evs = t >= 1 && prev < 1 ? LOUD_EVENTS.map((type) => makeEvent(type, base.ut + t, labVesselId(base), base, { speed: 30, energy: 1e12, partId: labPartKey('atlas-c') })) : [];
         prev = t;
         return {
           parts: e.parts(SEA_LEVEL),
@@ -479,7 +479,7 @@ export function loudScripts(lib: DefLibrary): Script[] {
         base,
         listen: () => l,
         state: (t) => {
-          const evs = t >= 0.5 && prev < 0.5 ? LOUD_EVENTS.map((type) => makeEvent(type, base.ut + t, labVesselId(base), base, { speed: 30, energy: 1e12, partId: 'atlas-c' })) : [];
+          const evs = t >= 0.5 && prev < 0.5 ? LOUD_EVENTS.map((type) => makeEvent(type, base.ut + t, labVesselId(base), base, { speed: 30, energy: 1e12, partId: labPartKey('atlas-c') })) : [];
           prev = t;
           return { parts: e.parts(SEA_LEVEL), aero: { pressure: SEA_LEVEL }, airVelocityVes: v3.zero(), events: evs, boundingRadius: 55 };
         },

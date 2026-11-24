@@ -1,87 +1,34 @@
 /**
- * What presentation reads of a snapshot through one function instead of a field: the v2 fields that are
- * optional until the contract tighten after sub-wave 3.2 (MIGRATION_V2 section 3), each with the neutral
- * value its comment in src/core/contracts/sim.ts states, and the ONE place outside the simulation that still
- * reads a deprecated field on a consumer's behalf.
+ * What presentation reads of a snapshot through one function instead of a field: the questions several
+ * packages ask of it (the vessel the viewer is seated in, the craft of a part, the key of a part, the part an
+ * event names, the lineage of a craft, the cabin of a vessel), each answered in one place.
  *
  * Why it is in src/core: every presentation package imports src/core only, so a helper that the HUD, the
  * map, the camera rigs, the render features and the audio engine share has to live here (the lead's answer
  * to request presentation-sweep-1 gave it this directory). The functions are pure, hold no state besides a
  * per-object cache, and import contracts only.
  *
- * At the tighten step:
- *  - `revisionOf` becomes `snapshot.revision` (the field is required then, and `tick` is gone);
- *  - `targetOf` becomes `readouts.target` (`TargetView` is the part of `TargetReadout` that can be derived from
- *    the deprecated pair, with the same field names, so a call site changes by its callee only);
- *  - `craftsOf`, `craftIdOf` and `parentOf` lose their fallbacks.
+ * Since the tighten step after sub-wave 3.2 every v2 field of a snapshot is required, so nothing here has a
+ * fallback for a missing one: a consumer reads `snapshot.revision` and `readouts.target` themselves (the
+ * functions `revisionOf` and `targetOf` that stood in front of them are gone), `craftsOf`, `craftIdOf` and
+ * `parentOf` are the fields, and an event names a part by its part key only.
  */
-import type { DefLibrary } from '../contracts/defs';
 import type { TargetRef } from '../contracts/net';
 import type { CraftSnapshot, PartSnapshot, Readouts, SimSnapshot, VesselSnapshot } from '../contracts/sim';
 
-/** The counter that changes whenever anything in the snapshot may have changed (`SimSnapshot.revision`; a producer older than it states `tick`). */
-export function revisionOf(snapshot: SimSnapshot): number {
-  return snapshot.revision ?? snapshot.tick;
-}
-
-/**
- * The selected target as every consumer reads it: the fields of `TargetReadout` (`Readouts.target`) that exist
- * for a session that does not produce the readout yet. A `TargetReadout` is a `TargetView`.
- */
-export interface TargetView {
-  ref: TargetRef;
-  /** Relative inclination to the target's orbit plane, rad; null when the two are not about the same body. */
-  relativeInclination: number | null;
-  /** The next closest approaches in time order, at most three; `relSpeed` (m/s) only where the session states it. */
-  closestApproaches: readonly { ut: number; distance: number; relSpeed?: number }[];
-}
-
-const derivedTargets = new WeakMap<Readouts, TargetView | null>();
-
-/**
- * The selected target, or null without one: `Readouts.target` when the session fills it, else derived from
- * the deprecated `targetBodyId` and `targetClosestApproach` (the contract: "Absent = derive from the
- * deprecated fields"). The derived view of one readouts block is built once.
- */
-export function targetOf(readouts: Readouts): TargetView | null {
-  if (readouts.target !== undefined) return readouts.target;
-  let view = derivedTargets.get(readouts);
-  if (view === undefined) {
-    view =
-      readouts.targetBodyId === null
-        ? null
-        : {
-            ref: { kind: 'body', id: readouts.targetBodyId },
-            relativeInclination: readouts.targetRelativeInclination,
-            closestApproaches: readouts.targetClosestApproach ? [readouts.targetClosestApproach] : [],
-          };
-    derivedTargets.set(readouts, view);
-  }
-  return view;
-}
-
 /** The id of the targeted body; null without a target and for a vessel or port target. */
 export function targetBodyOf(readouts: Readouts): string | null {
-  const target = targetOf(readouts);
+  const target = readouts.target;
   return target !== null && target.ref.kind === 'body' ? target.ref.id : null;
 }
 
 /**
  * The name of the selected target as the HUD, the displays and the map show it, or null without a target: the
- * name the session's target readout states, else the body's, the vessel's or (for a port) its vessel's name;
- * an id that names nothing known is shown as it is.
+ * name the session's target readout states (`TargetReadout.name`).
  */
-export function targetNameOf(snapshot: SimSnapshot, defs: DefLibrary): string | null {
-  const target = targetOf(snapshot.readouts);
-  if (target === null) return null;
-  const stated = snapshot.readouts.target?.name;
-  if (stated !== undefined) return stated;
-  const ref = target.ref;
-  if (ref.kind === 'body') return defs.bodies[ref.id]?.name ?? ref.id;
-  const vesselId = ref.kind === 'vessel' ? ref.id : ref.vesselId;
-  const vessels = snapshot.vessels;
-  for (let i = 0; i < vessels.length; i++) if (vessels[i]!.id === vesselId) return vessels[i]!.name;
-  return vesselId;
+export function targetNameOf(snapshot: SimSnapshot): string | null {
+  const target = snapshot.readouts.target;
+  return target === null ? null : target.name;
 }
 
 /** The `TargetRef` of a body (what `PlayerCommands.setTarget` takes for it). */
@@ -89,29 +36,24 @@ export const bodyTarget = (bodyId: string): TargetRef => ({ kind: 'body', id: bo
 
 /**
  * The vessel the viewer is seated in, or null: there is none in the menu, for a spectator and between ships
- * (`activeVesselId` is nullable from the tighten step), and an id the snapshot no longer holds names none.
+ * (`activeVesselId` is null), and an id the snapshot no longer holds names none.
  */
 export function activeVesselOf(snapshot: SimSnapshot): VesselSnapshot | null {
-  const id: string | null = snapshot.activeVesselId;
+  const id = snapshot.activeVesselId;
   if (id === null) return null;
   const vessels = snapshot.vessels;
   for (let i = 0; i < vessels.length; i++) if (vessels[i]!.id === id) return vessels[i]!;
   return null;
 }
 
-const NO_CRAFTS: readonly CraftSnapshot[] = Object.freeze([]);
-
-/** The craft of a vessel, base craft first. A hand-built snapshot without the block has none to describe. */
+/** The craft of a vessel, base craft first (`VesselSnapshot.crafts`). */
 export function craftsOf(vessel: VesselSnapshot): readonly CraftSnapshot[] {
-  return vessel.crafts ?? NO_CRAFTS;
+  return vessel.crafts;
 }
 
-/**
- * The id of the craft a part belongs to: `PartSnapshot.craftId`; absent = the vessel's only craft, which in a
- * snapshot without craft blocks is known by the vessel's own id.
- */
-export function craftIdOf(vessel: VesselSnapshot, part: PartSnapshot): string {
-  return part.craftId ?? vessel.crafts?.[0]?.id ?? vessel.id;
+/** The id of the craft a part belongs to (`PartSnapshot.craftId`; the vessel is not consulted). */
+export function craftIdOf(_vessel: VesselSnapshot, part: PartSnapshot): string {
+  return part.craftId;
 }
 
 /** The part key `craftId/instanceId`: how a part is addressed outside its craft (the contract's "Ids"). */
@@ -125,27 +67,21 @@ export const partKey = (craftId: string, instanceId: string): string => `${craft
 /** The craft `craftId` of a vessel, or null. */
 export function craftOf(vessel: VesselSnapshot, craftId: string): CraftSnapshot | null {
   const crafts = vessel.crafts;
-  if (!crafts) return null;
   for (let i = 0; i < crafts.length; i++) if (crafts[i]!.id === craftId) return crafts[i]!;
   return null;
 }
 
-/** The craft a craft separated from (`CraftSnapshot.parent`); null for a launched craft and where it is not produced. */
-export const parentOf = (craft: CraftSnapshot): string | null => craft.parent ?? null;
+/** The craft a craft separated from (`CraftSnapshot.parent`); null for a launched craft. */
+export const parentOf = (craft: CraftSnapshot): string | null => craft.parent;
 
 /**
- * The part of a vessel that an EVENT names (`partId`, `otherPartId`, `partsDestroyed`). Until the tighten
- * step an event part id has two forms (the contract's `SimEvent`): a part key `craftId/instanceId` in a vessel
- * of several craft, the instance id of the vessel's only craft otherwise; telling them apart by the '/' is
- * the one test on an id string the contract allows.
+ * The part of a vessel that an EVENT names (`partId`, `otherPartId`, `partsDestroyed`): the part whose part
+ * key `craftId/instanceId` the id is (the one form of an event part id, the contract's `SimEvent`). Keys are
+ * composed and compared; no id is taken apart.
  */
 export function eventPartOf(vessel: VesselSnapshot, eventPartId: string): PartSnapshot | null {
   const parts = vessel.parts;
-  if (eventPartId.includes('/')) {
-    for (let i = 0; i < parts.length; i++) if (partKeyOf(vessel, parts[i]!) === eventPartId) return parts[i]!;
-    return null;
-  }
-  for (let i = 0; i < parts.length; i++) if (parts[i]!.instanceId === eventPartId) return parts[i]!;
+  for (let i = 0; i < parts.length; i++) if (partKeyOf(vessel, parts[i]!) === eventPartId) return parts[i]!;
   return null;
 }
 
@@ -158,15 +94,11 @@ export interface EventVessels {
   newVesselIds?: readonly string[];
 }
 
-/** The part of `vessel` that an event part id names (the two forms as in `findEventPart`), or null. */
-function eventPartIn(snapshot: SimSnapshot, vessel: VesselSnapshot, eventPartId: string, keyed: boolean): PartSnapshot | null {
+/** The part of `vessel` that an event part id names (a part key, as in `findEventPart`), or null. */
+function eventPartIn(snapshot: SimSnapshot, vessel: VesselSnapshot, eventPartId: string): PartSnapshot | null {
   const parts = vessel.parts;
   for (let j = 0; j < parts.length; j++) {
     const part = parts[j]!;
-    if (!keyed) {
-      if (part.instanceId === eventPartId) return part;
-      continue;
-    }
     let craftId: string | null = craftIdOf(vessel, part);
     // (The bound only ends a malformed cycle of parents.)
     for (let hops = 0; craftId !== null && hops < 256; hops++) {
@@ -178,23 +110,20 @@ function eventPartIn(snapshot: SimSnapshot, vessel: VesselSnapshot, eventPartId:
 }
 
 /**
- * The part an EVENT names, with the vessel that holds it now. A separation in the tick of the event may
- * already have moved the part into a piece, which is a craft of its own (`CraftSnapshot.parent` names the
- * craft it left), while the event still names the part by the craft it was a part of: so in the part-key form
- * a part answers to the key of its own craft and of every craft up its line of descent that the snapshot
- * describes. Keys are composed and compared; no id is taken apart.
+ * The part an EVENT names, with the vessel that holds it now. An event names a part by its part key
+ * `craftId/instanceId`. A separation in the tick of the event may already have moved the part into a piece,
+ * which is a craft of its own (`CraftSnapshot.parent` names the craft it left), while the event still names
+ * the part by the craft it was a part of: so a part answers to the key of its own craft and of every craft up
+ * its line of descent that the snapshot describes. Keys are composed and compared; no id is taken apart.
  *
  * `event` is the event the id comes from (any `SimEvent`). Its own vessel is searched first, then the vessels
- * it made, in its order: the part is in one of them unless a later separation took it further. That order
- * decides the instance-id form, because an instance id is unique within a craft only: another vessel of the
- * same vehicle carries the same ids, so in a vessel the event does not name an instance id is evidence of
- * nothing and is not looked for there (the part a jettisoned fairing was is in no vessel any more; the
- * fairing of the vehicle beside it is not it). A part key is unique in the snapshot and is looked for in
- * every vessel. Without `event` every vessel is searched in the snapshot's order, in both forms: that is for
- * a caller that has the id and nothing else.
+ * it made, in its order: the part is in one of them unless a later separation took it further, and then every
+ * vessel of the snapshot is searched in the snapshot's order (a part key is unique in the snapshot: another
+ * vessel of the same vehicle carries the same instance ids under another craft id, so its parts do not answer
+ * to it; the part a jettisoned fairing was is in no vessel any more and is found nowhere). Without `event`
+ * every vessel is searched in the snapshot's order: that is for a caller that has the id and nothing else.
  */
 export function findEventPart(snapshot: SimSnapshot, eventPartId: string, event?: EventVessels): { vessel: VesselSnapshot; part: PartSnapshot } | null {
-  const keyed = eventPartId.includes('/');
   const vessels = snapshot.vessels;
   if (event !== undefined) {
     const made = event.newVesselIds;
@@ -204,15 +133,14 @@ export function findEventPart(snapshot: SimSnapshot, eventPartId: string, event?
       for (let i = 0; i < vessels.length; i++) {
         const vessel = vessels[i]!;
         if (vessel.id !== id) continue;
-        const part = eventPartIn(snapshot, vessel, eventPartId, keyed);
+        const part = eventPartIn(snapshot, vessel, eventPartId);
         if (part !== null) return { vessel, part };
       }
     }
-    if (!keyed) return null;
   }
   for (let i = 0; i < vessels.length; i++) {
     const vessel = vessels[i]!;
-    const part = eventPartIn(snapshot, vessel, eventPartId, keyed);
+    const part = eventPartIn(snapshot, vessel, eventPartId);
     if (part !== null) return { vessel, part };
   }
   return null;
@@ -305,8 +233,7 @@ function parentInSnapshot(snapshot: SimSnapshot, craftId: string): string | null
   const vessels = snapshot.vessels;
   for (let i = 0; i < vessels.length; i++) {
     const crafts = vessels[i]!.crafts;
-    if (!crafts) continue;
-    for (let j = 0; j < crafts.length; j++) if (crafts[j]!.id === craftId) return crafts[j]!.parent ?? null;
+    for (let j = 0; j < crafts.length; j++) if (crafts[j]!.id === craftId) return crafts[j]!.parent;
   }
   return null;
 }
@@ -326,19 +253,18 @@ export interface CabinRef {
  * craft with one. A cabin is what the craft states (`CraftSnapshot.commandPart` and `.cockpit` with a layout
  * id) and the part of THAT craft with the command part's instance id, so two craft of one vehicle in an
  * assembly each have their own; no vehicle definition is read. Null for a vessel without a cabin: debris, a
- * probe whose first-person view is the sensor camera, a hand-built snapshot without craft blocks.
+ * probe whose first-person view is the sensor camera.
  */
 export function cabinOf(vessel: VesselSnapshot): CabinRef | null {
   const crafts = vessel.crafts;
-  if (!crafts) return null;
-  const helm = vessel.helm?.craftId;
+  const helm = vessel.helm.craftId;
   // Two passes over the same list: the helm's craft, then the others in their order.
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i < crafts.length; i++) {
       const craft = crafts[i]!;
       if ((craft.id === helm) !== (pass === 0)) continue;
       const cabin = craft.cockpit;
-      if (!cabin || cabin.id === null || craft.commandPart === null) continue;
+      if (cabin === null || cabin.id === null || craft.commandPart === null) continue;
       const parts = vessel.parts;
       for (let j = 0; j < parts.length; j++) {
         const part = parts[j]!;
