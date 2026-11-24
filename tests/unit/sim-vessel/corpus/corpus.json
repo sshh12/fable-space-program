@@ -214,5 +214,86 @@
   "bytes": 8100,
   "parts": 38,
   "stateHash": "a6c9b38a178654e6"
+ },
+ {
+  "file": "fleet-pad-azimuth-pathfinder.v4.bin",
+  "scene": "fleet-pad-azimuth-pathfinder",
+  "version": 4,
+  "defsHash": "5d17395d4eb6e10d",
+  "bytes": 3078,
+  "parts": 17,
+  "stateHash": "4063d443d831535a"
+ },
+ {
+  "file": "fleet-pad-solstice-kestrel.v4.bin",
+  "scene": "fleet-pad-solstice-kestrel",
+  "version": 4,
+  "defsHash": "5d17395d4eb6e10d",
+  "bytes": 4986,
+  "parts": 26,
+  "stateHash": "01ea237f108d1fdc"
+ },
+ {
+  "file": "fleet-pad-solstice-atoll.v4.bin",
+  "scene": "fleet-pad-solstice-atoll",
+  "version": 4,
+  "defsHash": "5d17395d4eb6e10d",
+  "bytes": 4616,
+  "parts": 27,
+  "stateHash": "1f487658afcaec39"
+ },
+ {
+  "file": "fleet-pad-solstice-pelican.v4.bin",
+  "scene": "fleet-pad-solstice-pelican",
+  "version": 4,
+  "defsHash": "5d17395d4eb6e10d",
+  "bytes": 4106,
+  "parts": 23,
+  "stateHash": "0674cd2e1aa44c2a"
+ },
+ {
+  "file": "fleet-pad-meridian-egret.v4.bin",
+  "scene": "fleet-pad-meridian-egret",
+  "version": 4,
+  "defsHash": "5d17395d4eb6e10d",
+  "bytes": 6543,
+  "parts": 40,
+  "stateHash": "14d6d24070e80957"
+ },
+ {
+  "file": "fleet-pad-meridian-albatross.v4.bin",
+  "scene": "fleet-pad-meridian-albatross",
+  "version": 4,
+  "defsHash": "5d17395d4eb6e10d",
+  "bytes": 6216,
+  "parts": 40,
+  "stateHash": "435085cf5043fab8"
+ },
+ {
+  "file": "fleet-pad-meridian-pelican-heavy.v4.bin",
+  "scene": "fleet-pad-meridian-pelican-heavy",
+  "version": 4,
+  "defsHash": "5d17395d4eb6e10d",
+  "bytes": 6200,
+  "parts": 38,
+  "stateHash": "6794e350d285582c"
+ },
+ {
+  "file": "fleet-orbit-kestrel-lf.v4.bin",
+  "scene": "fleet-orbit-kestrel-lf",
+  "version": 4,
+  "defsHash": "5d17395d4eb6e10d",
+  "bytes": 2571,
+  "parts": 10,
+  "stateHash": "34fc6aab51db52e7"
+ },
+ {
+  "file": "fleet-orbit-pelican.v4.bin",
+  "scene": "fleet-orbit-pelican",
+  "version": 4,
+  "defsHash": "5d17395d4eb6e10d",
+  "bytes": 2169,
+  "parts": 9,
+  "stateHash": "fb291134c3577523"
  }
 ]

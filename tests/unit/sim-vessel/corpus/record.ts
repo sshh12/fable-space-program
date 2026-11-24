@@ -23,6 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CODEC_VERSION, contentHash, decodeVessel, encodeVessel, libraryResolver, stateHash } from '@/sim/vessel';
 import { buildScene, SCENE_NAMES } from '../codecScenes';
+import { buildFleetScene, FLEET_SCENE_NAMES } from './fleetScenes';
 import { loadLibrary } from '../helpers';
 
 export interface CorpusEntry {
@@ -39,19 +40,23 @@ export interface CorpusEntry {
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const listFile = path.join(dir, 'corpus.json');
 const defs = await loadLibrary();
+// The codec scenes of ../codecScenes.ts and the fleet's (./fleetScenes.ts: every vehicle of the fleet).
+const ALL_SCENES: readonly string[] = [...SCENE_NAMES, ...FLEET_SCENE_NAMES];
+const sceneOf = (name: string): { vessel: ReturnType<typeof buildScene>['vessel'] } => ((SCENE_NAMES as readonly string[]).includes(name) ? buildScene(defs, name as (typeof SCENE_NAMES)[number]) : buildFleetScene(defs, name));
 const refs = libraryResolver(defs);
 const defsHash = contentHash({ parts: defs.parts, vehicles: defs.vehicles });
 const list: CorpusEntry[] = fs.existsSync(listFile) ? (JSON.parse(fs.readFileSync(listFile, 'utf8')) as CorpusEntry[]) : [];
 // Version 1 is in the corpus from the day version 2 replaced it; later versions are added as they are written.
 const versions = process.argv.includes('--with-version-1') ? [1, CODEC_VERSION] : [CODEC_VERSION];
-for (const scene of SCENE_NAMES) {
-  for (const version of versions) {
+for (const scene of ALL_SCENES) {
+  // The fleet's scenes start at the present version (no earlier build had their vehicles).
+  for (const version of FLEET_SCENE_NAMES.includes(scene) ? [CODEC_VERSION] : versions) {
     const file = `${scene}.v${version}.bin`;
     if (list.some((e) => e.file === file)) {
       console.log(`${file}: in the corpus, left alone`);
       continue;
     }
-    const s = buildScene(defs, scene);
+    const s = sceneOf(scene);
     const bytes = encodeVessel(s.vessel, { defsHash, refs, version });
     fs.writeFileSync(path.join(dir, file), bytes);
     list.push({ file, scene, version, defsHash, bytes: bytes.length, parts: s.vessel.parts.length, stateHash: stateHash(s.vessel) });
@@ -60,7 +65,7 @@ for (const scene of SCENE_NAMES) {
 }
 // Re-derive the hashes under the present hash definition, holding every blob to the scene it was written from.
 const sceneHash = new Map<string, string>();
-for (const scene of SCENE_NAMES) sceneHash.set(scene, stateHash(buildScene(defs, scene).vessel));
+for (const scene of ALL_SCENES) sceneHash.set(scene, stateHash(sceneOf(scene).vessel));
 for (const e of list) {
   const want = sceneHash.get(e.scene);
   if (want === undefined) throw new Error(`${e.file}: scene "${e.scene}" is not built any more`);
