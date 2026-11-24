@@ -236,12 +236,14 @@ test('a lens shift moves the whole picture and brings the rest of the scene into
     (window as unknown as { __depth0: DepthImage }).__depth0 = await (window as unknown as LabPage).__lab.renderer.readDepth();
     (window as unknown as { __hdr0: DepthImage }).__hdr0 = await (window as unknown as LabPage).__lab.renderer.readHdrPixels('hdr');
   });
-  // The picture moves 128 pixels right and 64 up (a fifth of the half width, 0.178 of the half height): whole
+  // The picture moves 128 pixels right and 128 up (a fifth of the half width, 0.356 of the half height): whole
   // pixels, so every pixel of the shifted frame looks along the ray of a pixel of the unshifted one, and
-  // multiples of the 64 pixel blue-noise tile and of the quarter-resolution lattices, so the stochastic parts
-  // of the frame (dither, shadow taps, march offsets, the cloud lattice) fall on the same scene points too.
+  // multiples of 128 = two blue-noise tiles of 64 pixels, so the stochastic parts of the frame fall on the same
+  // scene points also in the passes that run at half the resolution (there a shift of 64 full-resolution
+  // pixels is HALF a noise tile: with 128 x 64 the shadow taps and march offsets of those passes differed, and
+  // thin things looked lit differently; found by the independent review, 2026-11-17).
   const dx = 128;
-  const dy = 64;
+  const dy = 128;
   const shift: [number, number] = [dx / (W / 2), dy / (H / 2)];
   await page.evaluate((s) => {
     (window as unknown as LabPage).__lab.camera.settings.lensShift = s;
@@ -296,8 +298,8 @@ test('a lens shift moves the whole picture and brings the rest of the scene into
   expect(depth.off / depth.n, 'share of the overlap whose depth differs by more than a thousandth').toBeLessThan(0.005);
   expect(depth.offByOnePixel / depth.n, 'the depth comparison is sensitive to one pixel').toBeGreaterThan(20 * Math.max(depth.off / depth.n, 0.0005));
 
-  // THE PICTURE. Not to the bit: thin things (lattice members, the fence, leaves, cloud edges) are drawn with a
-  // coverage that is decided per pixel and frame, and they land on other pixels of the frame.
+  // THE PICTURE. Not quite to the bit: what is read from screen-space volumes and neighbourhoods (the aerial
+  // perspective's froxels, the bloom, the ambient occlusion near the edges of the frame) sees another window.
   const A = PNG.sync.read(base);
   const B = PNG.sync.read(shifted);
   // Where the two overlap: shifted (x, y) shows what the unshifted frame shows at (x - dx, y + dy).
@@ -330,10 +332,10 @@ test('a lens shift moves the whole picture and brings the rest of the scene into
   console.log(
     `lens shift ${shift[0].toFixed(4)}, ${shift[1].toFixed(4)} = ${dx}, ${dy} px: over the ${n} pixels both frames show, mean difference ${mean.toFixed(3)} levels, ${((100 * same) / n).toFixed(1)} % identical, ${((100 * far) / n).toFixed(2)} % by more than 8 levels; one pixel off the mean would be ${offMean.toFixed(3)}`,
   );
-  expect(mean, 'mean difference where the two frames overlap, levels').toBeLessThan(1.5);
-  expect(same / n, 'share of the overlap that is the same to the bit').toBeGreaterThan(0.4);
-  expect(far / n, 'share of the overlap that differs by more than 8 levels').toBeLessThan(0.04);
-  expect(offMean, 'the comparison is sensitive to one pixel').toBeGreaterThan(4 * mean);
+  expect(mean, 'mean difference where the two frames overlap, levels').toBeLessThan(0.5);
+  expect(same / n, 'share of the overlap that is the same to the bit').toBeGreaterThan(0.8);
+  expect(far / n, 'share of the overlap that differs by more than 8 levels').toBeLessThan(0.002);
+  expect(offMean, 'the comparison is sensitive to one pixel').toBeGreaterThan(10 * mean);
 
   // What the shift brought into the frame (a strip on the left, a strip at the bottom) is drawn: no black hole
   // where a tile, the sea or the sky was culled against the unshifted frame.

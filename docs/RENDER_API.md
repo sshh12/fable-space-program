@@ -1959,19 +1959,23 @@ and trails are rasterised with the matrices); vehicle, site structures and cockp
 matrices); shadows (cascades are anchored on bodies and vessels, not fitted to the frustum); the map's 2D
 projection (`MapProjection`: principal point and matrix), so markers and labels stay on their objects.
 **Not done:** `src/app/framing.ts` (the test hooks `bodiesInFrame` / `groundSamples` of the app) assumes no
-shift; the HUD's navball and the cockpit displays are screen-fixed and do not move with it (by design).
+shift, and the app's camera key of the frozen start (`src/app/game.ts`) does not include it (request
+`presentation-sweep-11`); the HUD's navball and the cockpit displays are screen-fixed and do not move with it (by design).
 
-Proof: `tests/browser/integration/menu-core.spec.ts`, the pad at noon shifted by 128 x 64 pixels against the
-unshifted frame, where both show the scene (755,056 pixels). The GEOMETRY is the unshifted frame's moved by
-128 x 64 pixels: the depth buffers differ by more than a thousandth in 4 pixels (0.001 %; 9.4 % would against
-the pixel beside the right one). The PICTURE is the same to the bit in 51.4 % of those pixels and differs by
-1.10 levels in the mean (6.01 for a shift one pixel off), by more than 8 levels in 2.4 %: all on thin things
-(lattice members, the fence, bushes, cloud edges; the open ground is the same). There the lit scene already
-differs before the temporal resolve (more than a twentieth in 5.3 % of the pixels) although the depth is the
-same, so it is the lighting of fine detail, not its place: the most likely cause, not followed further, is
-the per-pixel stochastic sampling (shadow kernels, march offsets), which is tied to the pixel of the frame,
-not to the point of the scene. The strips the shift brings into the frame (terrain, sea, sky, the pad's
-structures) are drawn: no black pixel. Unit tests: `tests/unit/render-core/frameMath.test.ts` ("lens shift").
+Proof: `tests/browser/integration/menu-core.spec.ts`, the pad at noon shifted by 128 x 128 pixels against the
+unshifted frame, where both show the scene (681,984 pixels). The GEOMETRY is the unshifted frame's moved by
+128 x 128 pixels: the depth buffers differ by more than a thousandth in 5 pixels (0.001 %; 10.4 % would
+against the pixel beside the right one). The PICTURE is the same to the bit in 88.3 % of those pixels and
+differs by 0.13 levels in the mean (6.42 for a shift one pixel off), by more than 8 levels in 0.04 %; the lit
+scene before the temporal resolve differs by more than a twentieth in 0.07 %. What is left is what reads
+screen-space volumes and neighbourhoods (the aerial perspective's froxels, bloom, ambient occlusion at the
+frame's edge). The shift of such a comparison must be a multiple of 128 pixels: the blue-noise tile is 64
+pixels, and the passes at half the resolution see a shift of 64 full-resolution pixels as HALF a tile (the
+first version of this test shifted by 128 x 64 and reported thin geometry as "lit differently": that was the
+test's artefact, found by the independent review). The strips the shift brings into the frame (terrain, sea,
+sky, the pad's structures) are drawn: no black pixel. Unit tests: `tests/unit/render-core/frameMath.test.ts`
+("lens shift"), `lensShiftConsumers.test.ts`, `tests/unit/vfx/lensShift.test.ts` (no vfx shader forms a ray by
+hand; the particle step forms the previous frame's ray with the previous frame's shift).
 Lab: `&lensshift=<x>,<y>` or `__lab.camera.settings.lensShift = [x, y]`. The view manager blends the shift
 between two views.
 
@@ -2001,7 +2005,10 @@ Not through the seam (they read `ctx.tilesUrl` themselves, files of a tile set, 
 coverage map (`src/render/atmosphere/clouds.ts`), the sky probe's low-resolution albedo
 (`src/render/sky/probe.ts`) and the LabPlanet (`src/render/core/lab/labPlanet.ts`). A page that has only
 packs needs them moved to `TileSource.file(set, path)`; `RenderContext` has no tile source to give them
-(request `presentation-sweep-7`).
+(request `presentation-sweep-7`). The same holds for everything read from `ctx.skyUrl` (the star catalogue
+and the sky maps: the packed file set `sky`) and from `ctx.assetsUrl` (models, textures, material sets,
+the leaf atlas, audio: the packed file set `assets`): an app on packs alone needs every reader of those two
+URLs moved to a file source as well; grep `skyUrl` and `assetsUrl` under src/ for the list.
 
 ### 19.7 Changes of sub-wave 3.2
 
