@@ -72,7 +72,7 @@ test('every setting through every level and every preset: no GPU error, no leake
     });
   const before = await count();
   const settings = await page.evaluate(() => window.__lab!.renderer.core.quality.settings().map((s) => ({ id: s.setting.id, apply: s.setting.apply, levels: s.setting.levels.map((l) => l.name) })));
-  expect(settings.map((s) => s.id).sort()).toEqual(['ambientOcclusion', 'atmosphere', 'clouds', 'effects', 'ocean', 'shadows', 'terrain']);
+  expect(settings.map((s) => s.id).sort()).toEqual(['ambientOcclusion', 'atmosphere', 'clouds', 'effects', 'shadows', 'terrain']);
   const steps: string[] = [];
   for (const s of settings) {
     for (const level of s.levels) {

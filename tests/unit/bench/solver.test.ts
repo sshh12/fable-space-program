@@ -11,15 +11,26 @@ import { describe, expect, it } from 'vitest';
 import type { QualityProfile } from '@/core/contracts/render';
 import { CORE_QUALITY, QUALITY_LEVELS, type RegisteredSetting } from '@/render/core/quality';
 import { ATMOSPHERE_QUALITY } from '@/render/atmosphere/quality';
-import { OCEAN_QUALITY } from '@/render/ocean/quality';
 import { TERRAIN_QUALITY } from '@/render/terrain/quality';
 import { VFX_QUALITY } from '@/render/vfx/quality';
 import { CalibrationNotReady, cpuScoreOf, GraphicsSettings, measureShot, parseQualityTable, predictShot, presetProfile, runCalibration, solve, stepDown, type CalibrationHost, type FrameSample, type ShotMeasurement } from '@/bench';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..');
 const table = parseQualityTable(JSON.parse(fs.readFileSync(path.join(repoRoot, 'data', 'defs', 'render', 'quality.json'), 'utf8')));
-const recorded = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'shots-5090.json'), 'utf8')) as { displayPx: [number, number]; shots: ShotMeasurement[] };
-const settings: RegisteredSetting[] = [CORE_QUALITY, ATMOSPHERE_QUALITY, TERRAIN_QUALITY, OCEAN_QUALITY, VFX_QUALITY].flatMap((d) => d.settings.map((setting) => ({ featureId: d.featureId, setting })));
+const settings: RegisteredSetting[] = [CORE_QUALITY, ATMOSPHERE_QUALITY, TERRAIN_QUALITY, VFX_QUALITY].flatMap((d) => d.settings.map((setting) => ({ featureId: d.featureId, setting })));
+const raw = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'shots-5090.json'), 'utf8')) as { displayPx: [number, number]; shots: ShotMeasurement[] };
+/** The recorded shots, a group that is no setting of today's declarations folded into the fixed cost. */
+const recorded = {
+  displayPx: raw.displayPx,
+  shots: raw.shots.map((s) => {
+    const groups: Record<string, number> = {};
+    for (const [g, v] of Object.entries(s.groups)) {
+      const k = g === 'fixed' || settings.some((x) => x.setting.id === g) ? g : 'fixed';
+      groups[k] = (groups[k] ?? 0) + v;
+    }
+    return { ...s, groups };
+  }),
+};
 const ids = settings.map((s) => s.setting.id);
 const display = recorded.displayPx;
 
@@ -66,7 +77,7 @@ describe('the solver on the reference GPU', () => {
 });
 
 /** A pass name of each cost group (the table's attribution rules map it back). */
-const PASS_OF: Record<string, string> = { shadows: 'vehicle.shadow', ambientOcclusion: 'core.ao', clouds: 'atmosphere.cloudMarch', atmosphere: 'atmosphere.march', terrain: 'terrain.gbuffer', ocean: 'ocean.water', effects: 'vfx.transparent', fixed: 'core.lighting' };
+const PASS_OF: Record<string, string> = { shadows: 'vehicle.shadow', ambientOcclusion: 'core.ao', clouds: 'atmosphere.cloudMarch', atmosphere: 'atmosphere.march', terrain: 'terrain.gbuffer', effects: 'vfx.transparent', fixed: 'core.lighting' };
 
 /** A host whose GPU costs `k` times the recorded shots, the confirmation measured by the same model. */
 function fakeHost(k: number, opts: { resident?: boolean; lostAt?: number; perPass?: boolean; confirmBias?: number } = {}): CalibrationHost & { runs: string[] } {

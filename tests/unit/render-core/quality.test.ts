@@ -7,11 +7,10 @@ import { describe, expect, it } from 'vitest';
 import type { FeatureQualityDecl, QualityProfile } from '@/core/contracts/render';
 import { CORE_QUALITY, governorBudgetMs, legacyQualityView, paramsAt, QUALITY_LEVELS, QualityState, renderScaleCap } from '@/render/core/quality';
 import { ATMOSPHERE_QUALITY } from '@/render/atmosphere/quality';
-import { OCEAN_QUALITY, withNearRange } from '@/render/ocean/quality';
 import { TERRAIN_QUALITY } from '@/render/terrain/quality';
 import { VFX_QUALITY } from '@/render/vfx/quality';
 
-const ALL: FeatureQualityDecl[] = [ATMOSPHERE_QUALITY, TERRAIN_QUALITY, VFX_QUALITY, OCEAN_QUALITY];
+const ALL: FeatureQualityDecl[] = [ATMOSPHERE_QUALITY, TERRAIN_QUALITY, VFX_QUALITY];
 const profile = (levels: QualityProfile['levels'], o: Partial<QualityProfile> = {}): QualityProfile => ({ pixelCap: 3.7, renderScaleMin: 0.6, targetFps: 60, levels, ...o });
 
 describe('quality declarations', () => {
@@ -24,7 +23,6 @@ describe('quality declarations', () => {
     expect(q.params('atmosphere')).toEqual({ steps: 24 });
     expect(q.params('terrain')).toEqual({ pxPerQuad: 8 });
     expect(q.params('effects')).toEqual({ particles: 1, march: 1 });
-    expect(q.params('ocean')).toEqual({ nearRange: 1 });
     expect(legacyQualityView(q, 0.5, 1, { renderScaleMin: 0.5, renderScaleMax: 1, terrainPxPerQuad: 8, shadowResolution: 2048, cloudSteps: 96, atmosphereSteps: 24 })).toEqual({
       renderScaleMin: 0.5,
       renderScaleMax: 1,
@@ -100,16 +98,5 @@ describe('a profile', () => {
     expect(renderScaleCap(0.9, 2560, 1440)).toBeCloseTo(0.494, 3);
     expect(governorBudgetMs(60)).toBeCloseTo(11, 9);
     expect(governorBudgetMs(120)).toBeCloseTo(5.5, 9);
-  });
-});
-
-describe('the ocean near range', () => {
-  it('is the data itself at Ultra and a scaled copy below, one per body and level', () => {
-    const t = { fadeStart: 15000, fadeEnd: 30000, seaRadius: 6371000 } as never as Parameters<typeof withNearRange>[0] & object;
-    expect(withNearRange(t, 1)).toBe(t);
-    const half = withNearRange(t, 0.5)!;
-    expect([half.fadeStart, half.fadeEnd]).toEqual([7500, 15000]);
-    expect(withNearRange(t, 0.5)).toBe(half);
-    expect(withNearRange(null, 0.5)).toBeNull();
   });
 });

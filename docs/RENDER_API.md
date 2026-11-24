@@ -16,7 +16,7 @@ Contents: 1 Quick start · 2 Frame graph and hook rules · 3 Bind groups · 4 Fr
 5 Shader library and chunks · 6 G-buffer · 7 Lighting inputs (what to publish) · 8 Sun shadows ·
 9 Transparents · 10 Mesh system · 11 Utilities (`coreOf`) · 12 Photometric conventions · 13 Exposure,
 TAA, governor · 14 Perf and attribution · 15 Lab app · 16 Checklist · 17 Recipes · 18 Changes in wave 2 ·
-19 Additions of sub-wave 3.2 · 20 Quality settings (wave 4.1)
+19 Additions of sub-wave 3.2 · 20 Quality settings (wave 4.1) · 21 Presentable vehicles (wave 4.1)
 
 ---
 
@@ -2099,11 +2099,11 @@ coreOf(ctx).quality.onRebuild('mySetting', async (p) => { /* reallocate what p s
 | `clouds` | atmosphere | live | `steps` 48 / 64 / 80 / 96 | the step budget of a cloud ray (`clouds.ts stepBudget`), before `qualityScale` |
 | `atmosphere` | atmosphere | live | `steps` 12 / 16 / 20 / 24 | samples of a shell that fills the view (`select.ts baseSteps`) |
 | `terrain` | terrain | live | `pxPerQuad` 14 / 11 / 9 / 8 | the on-screen quad size the LOD selection aims at (`lodK`) |
-| `ocean` | ocean | live | `nearRange` 0.4 / 0.6 / 0.8 / 1 | the near field's radii (nearFieldFadeStartM / EndM) scaled: the forward wave surface ends nearer, the far sheet takes over with the same hand-over rules |
 | `effects` | vfx | live | `particles` 0.4 / 0.6 / 0.8 / 1, `march` 0.6 / 0.8 / 1 / 1 | particle emission rates and the step counts of every ray-marched volume, on top of `qualityScale` |
 
-The pixel cap and the floor are the profile's own members, not settings. Not implemented this wave (no
-consumer exists yet): "other craft detail" (full-detail remote vessels; the vehicle feature has no
+The pixel cap and the floor are the profile's own members, not settings. The ocean has no setting: its near
+pass is per-pixel shading and follows the pixel cap (a near-range knob was built and measured to change
+nothing at the splashdown, and taken out). Not implemented this wave (no consumer exists yet): "other craft detail" (full-detail remote vessels; the vehicle feature has no
 remote-vessel LOD until `fleet-models-pads`) and "texture budget" (reduced mips of vehicle and cockpit
 textures: the core's texture manager loads every level). Their cost models are measured in the hand-off.
 
@@ -2115,3 +2115,57 @@ textures: the core's texture manager loads every level). Their cost models are m
   (what `governor=off` does for a page, at run time).
 - `CoreRenderer.onGpuFrame(fn)`: every frame's GPU passes as they are read back (`GpuFrameRecord`: total,
   passes, the main thread's frame time); the calibration's frame log. `null` stops it.
+
+## 21. Presentable vehicles (wave 4.1; requests fleet-data-2, capability-settings-2, fleet-data-3)
+
+The library holds vehicles whose models are a later package's: a part's `PartDef.visual` is `null` until its
+model is authored, and stand-ins are forbidden. Lead decision of 2026-11-24:
+
+> A vehicle is PRESENTABLE when every one of its parts has a visual definition.
+
+It is derived from the definitions in ONE place, `src/core/access/presentable.ts` (functions of the
+`DefLibrary`; no list of names, no flag in a file). Nothing else decides it.
+
+| member | for |
+| --- | --- |
+| `isPresentableVehicle(defs, vehicleId): boolean` | the rule itself (false for an id the library does not hold) |
+| `presentableVehicleIds(defs): string[]` | **the menu**: the vehicles it offers, in the library's order |
+| `presentableVehicles(defs): VehicleDef[]` | a feature that prepares something per vehicle at start-up |
+| `firstPresentableVehicleId(defs): string \| null` | **a lab or a test** that wants "a vehicle of the library" (it does not take `Object.keys(defs.vehicles)[0]`: the order of the library carries no meaning) |
+| `presentableLibrary(defs): DefLibrary` | a page that wants nothing in it that cannot be shown: the presentable vehicles and the scenarios that fly them |
+| `isPresentableVessel(defs, vessel): boolean` | a feature that draws something of a vessel of a snapshot: judged by the vessel's own parts, no allocation |
+| `partHasVisual(defs, partDefId)`, `partsWithoutVisual(defs, partDefIds)` | the parts behind an answer (a test that checks models holds the parts that have one) |
+
+What the features do with it:
+
+- **The vessel feature** (`createVesselVisualFeature`) builds at start-up the models of the presentable
+  vehicles only: nothing is built, logged or thrown for the others. A vessel of a snapshot one of whose parts
+  has no visual is NOT DRAWN at all (not the half of it that has models, no shadow, no fading copy when it
+  leaves), and the feature says so in `VesselVisualFeature.status()`:
+  `{ notPresentable: { vehicleId, parts }[] }`, ONE entry per vehicle id (`CraftSnapshot.vehicleId` of the craft
+  that holds the part) with the part definitions that have no visual, however many vessels and frames. `stats.notShown` counts the vessels
+  of the last frame that were passed over. It is the feature's only report: no `reportError`, no console line
+  (a data-only scenario in a lab stays clean under `expectNoErrors`). A host that wants to tell the player
+  reads `status()`.
+- **The effects** (`createVfxFeature`) draw nothing of a vessel that is not presentable: no plume, no plasma
+  sheath or trail, no canopy, and no effect at its events (also not at the explosion that ends it).
+- **The engine voices** are not touched: sound follows the simulation, and every engine definition of the
+  library has its sound profile and its plume look (`checkPartSounds`, `loadVfxData` hold all parts to that
+  at start-up, as before: those are data, not models).
+- **Sites and pads**: a pad without structures builds an empty runtime in the site feature (nothing drawn,
+  nothing reported); the terrain keeps a ground plan for the first `MAX_SITES` pads (request
+  presentation-sweep-6).
+
+Rules for a feature author:
+
+- A feature that prepares per-vehicle resources at start-up enumerates `presentableVehicles(ctx.defs)`,
+  never `Object.values(defs.vehicles)`.
+- A feature that draws something of a vessel asks `isPresentableVessel(ctx.defs, vessel)` and passes over the
+  vessel; it never reports per part or per frame.
+- A missing model is not an error of the page. It is a state of the library, read from `status()`.
+
+Tests: `tests/unit/fakes/presentable.test.ts` (the function, on a library with vehicles that lack visuals),
+`tests/unit/vfx/director.test.ts` (no effect of a vessel that is not presentable),
+`tests/browser/integration/presentable.spec.ts` (the lab on the whole library starts clean; a vessel that is
+not presentable is not drawn and its vehicle is named once; the lab's `&novisual=<part>` takes a visual away
+in memory).

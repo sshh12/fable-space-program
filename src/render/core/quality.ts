@@ -45,8 +45,8 @@ export interface RegisteredSetting {
  *  - shadows (rebuild): the side of the sun-shadow cascade array, 2048 (shadows/shadowSystem.ts);
  *  - ambientOcclusion (live; every variant's pipeline is created ahead): GTAO slices x steps per side, 2 x 6
  *    (lighting/ao.ts).
- * Cost models: measured on the reference GPU (docs/handoff/capability-settings.md, the table of quality
- * steps); `ratios` are the cost of a level against Ultra, `exponent` how it follows the internal pixels.
+ * Cost models measured on the reference GPU (RTX 5090, 2560 x 1440, attribution mode, every other setting at Ultra; docs/handoff/capability-settings.md section 6): `ratios` are the cost of a level against Ultra in the lift-off, `exponent`
+ * how it follows the internal pixel count over the pixel caps 0.9 to 3.7 MP.
  */
 export const CORE_QUALITY: FeatureQualityDecl = {
   featureId: 'core',
@@ -61,7 +61,7 @@ export const CORE_QUALITY: FeatureQualityDecl = {
         { name: 'ultra', params: { mapSize: 2048 } },
       ],
       apply: 'rebuild',
-      costModel: { exponent: 0, ratios: { low: 0.7, medium: 0.85, high: 1, ultra: 1 }, constantMs: 0 },
+      costModel: { exponent: 0.35, ratios: { low: 0.4, medium: 0.65, high: 1, ultra: 1 }, constantMs: 0 },
       weight: 3,
     },
     {
@@ -74,7 +74,7 @@ export const CORE_QUALITY: FeatureQualityDecl = {
         { name: 'ultra', params: { slices: 2, steps: 6 } },
       ],
       apply: 'live',
-      costModel: { exponent: 1, ratios: { low: 0.55, medium: 0.8, high: 1, ultra: 1 }, constantMs: 0 },
+      costModel: { exponent: 1, ratios: { low: 0.62, medium: 0.86, high: 1, ultra: 1 }, constantMs: 0 },
       weight: 1,
     },
   ],

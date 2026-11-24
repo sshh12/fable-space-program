@@ -34,6 +34,6 @@
       "terrain": "^terrain(-cover|-rocks)?\\."
     },
     "ignore": "^lab-ballast\\.",
-    "fixedExponent": 0.8
+    "fixedExponent": 0.5
   }
 }

@@ -44,7 +44,7 @@ const SCENES: Scene[] = [
   { id: 'liftoff', query: `scene=pad&stage=1&throttle=1&sun=95,8&${KA_LAE}`, sweep: ['shadows', 'ambientOcclusion', 'clouds', 'atmosphere', 'terrain', 'effects'] },
   { id: 'leo', query: 'scene=lowOrbit&orbit=120,20,60', setup: async (p) => void (await p.evaluate(() => window.__integration!.setSunInVesselFrame({ x: 0, y: 1, z: 0 }))) },
   { id: 'lunar', query: 'scene=lunarSurface&throttle=0.4&hover=12&sun=100,15&sunsite=moon,0.661471,23.435999&orbit=40,12,45' },
-  { id: 'splashdown', query: 'scene=chutes&start=120', sweep: ['ocean', 'clouds', 'atmosphere'] },
+  { id: 'splashdown', query: 'scene=chutes&start=120', sweep: ['clouds', 'atmosphere'] },
   { id: 'cockpit', query: 'sim=real&scenario=qa-leo', setup: async (p) => void (await p.evaluate(() => window.__integration!.sitInCockpit(0, 0))) },
 ];
 
