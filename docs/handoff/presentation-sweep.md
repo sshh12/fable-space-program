@@ -1,4 +1,4 @@
-# presentation-sweep: hand-off (sub-wave 3.2; FINISHED in the third working context, with the limits of 1.3)
+# presentation-sweep: hand-off (sub-wave 3.2; FINISHED in the third working context; the fix round after the independent review is section 9)
 
 The one sweep over every presentation consumer (brief: `docs/WORK_PACKAGES_V2.json`, id `presentation-sweep`,
 with its LEAD NOTES). Three working contexts: the first two did the snapshot consumers, the frame rebase, the
@@ -61,19 +61,19 @@ measured before (section 3).
 
 ### 1.3 Not done, and known limits
 
-- **Eight lab specs fail on the final tree; none was fixed** (section 3). Six are the known failures of the
-  tree before the sweep. Two fail in some runs only: a cloud test on a noise maximum, and THE SWEEP'S OWN
-  origin test for the `leo` scene, whose precondition (two control runs agree) does not hold in some loads.
-  The origin test should take another control pair instead of failing; that was not done.
+- **Eight lab specs failed on the tree of the third context; none was fixed there** (section 3). Six are the
+  known failures of the tree before the sweep. Two failed in some runs only: a cloud test on a noise maximum,
+  and the sweep's own origin test for the `leo` scene. THE ORIGIN TEST WAS REBUILT IN THE FIX ROUND (section 9,
+  finding 6): its comparisons are exact now and it no longer has that failure.
 - **The lens shift in `src/app/framing.ts`** (the app's test hooks `bodiesInFrame` / `groundSamples`): they
   project without a shift. No rig of the app states one today; the menu package that adds one adds it there.
 - **The lens flare under a shift** places its ghosts about the centre of the FRAME, not about the shifted
   view axis (D17): a choice, stated in RENDER_API 19.5.
-- **Thin geometry under a lens shift is not lit to the bit as without one** (same depth, another stochastic
-  sample pattern; section 3 has the numbers). The cause was inferred, not isolated.
-- **The scrim costs its 0.077 ms whenever ANY rectangle is published**, whatever the area (the shader compiler
-  flattens the conditions inside the loop; measured with a rectangle of no area: 0.072 ms). Within the line;
-  drawing the scrim as quads over the covered pixels only would make it proportional to the area. Not done.
+- (WITHDRAWN in the fix round: "thin geometry under a lens shift is lit differently". It was the test's
+  artefact, a shift of half a blue-noise tile in the half-resolution passes: section 9, minor 11.)
+- **The scrim's cost** as the third context left it (0.077 ms for any rectangle, whatever its area) is no
+  longer the state of the tree: the render core's maintainer draws the scrim inside scissors since 8b93e39
+  (review finding 12; RENDER_API 19.3 has the numbers of the tree as it is).
 - **Three readers of tile-set FILES are not through the seam** (the clouds' coverage map, the sky probe's
   albedo, the labs' stand-in planet read `ctx.tilesUrl`): request `presentation-sweep-7`. The integrated app
   therefore still needs the plain files beside the packs; the terrain itself does not.
@@ -152,9 +152,11 @@ measured before (section 3).
 - **D12. Keys of per-part state in effects and audio**: `<vessel id>|<part key>|...` (RCS jet clusters,
   canopies, engine histories of the audio model). The vessel id stays in the key, so nothing carries over a
   separation that did not before; two craft of one vehicle in a vessel no longer share a key. Engine plume
-  clusters are keyed by vessel, plume look and part DEFINITION by design (a cluster is the drawn group of
-  like engines of a vessel), which is not per-part state.
-- **D13. `findEventPart(snapshot, id)`**: an event names a part by instance id or by part key; a part that
+  clusters were keyed by vessel, plume look and part definition "by design" until the review (finding 4):
+  that merged the engines of two craft of one vehicle into one jet. The craft is in the key now, whenever a
+  vessel's parts are of several craft (section 9).
+- **D13. `findEventPart(snapshot, id, event?)`** (the event since the fix round, finding 5: the vessels the
+  event names are searched first, and an instance id is searched nowhere else): an event names a part by instance id or by part key; a part that
   left with a piece in the same tick answers to the key of every craft up its line of descent
   (`CraftSnapshot.parent`): keys are composed and compared, never taken apart.
 - **D14. The audio data names `readouts.targetBodyId` as a click watch** (`data/defs/audio/ui.json`, not
@@ -569,6 +571,14 @@ offers and the three time strips.
 - `presentation-sweep-6` (terrain-render, not blocking): ground plans for every pad of a body (`MAX_SITES` = 4).
 - `presentation-sweep-7` (the lead, not blocking): `RenderContext` states the tile source, so that the
   clouds' and the sky probe's files of a tile set can come from packs.
+- `presentation-sweep-8` (atmosphere-clouds, not blocking): a low-orbit view has two states by the 64-frame
+  boundary the page goes idle at (the reviewer's numbers; it predates the sweep).
+- `presentation-sweep-9` (app-integration, not blocking): the mission spec's milestone gate compares a prefix
+  also on a full flight (review minor 16; the line this sweep changed).
+- `presentation-sweep-10` (the lead and the simulation, not blocking): `PartSnapshot.stageOrder`, so that the
+  HUD can order its resource groups by the craft's stage groups without a vehicle lookup (review minor 15a).
+- `presentation-sweep-11` (app-integration, not blocking): the app's camera key of the frozen start ignores
+  `lensShift` (review minor 11), and what Esc does in the app.
 
 ## 8. How to run
 
@@ -590,3 +600,88 @@ Scratch of the first two contexts (edit lists, gate logs, the lab-spec logs): `C
 and `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\presentation-sweep-2\`
 (`repm.mjs <edits.json>` applies exact replacements to several files, all or none; write the JSON with the
 Write tool: a shell heredoc corrupts backslashes on this machine).
+
+## 9. The fix round after the independent review (2026-11-17 to 2026-11-24)
+
+The review found no blocker; it proved the HUD equal to the old computation and three of the known lab
+failures as pre-existing, and listed six major and eleven minor findings against this package. Findings 7
+and 12 are other packages' (platform-delivery; the render core's maintainer, who has drawn the scrim inside
+scissors since). The work on 1-5, 8-11, 13-15 and 17 was done by four sub-agents of the builder in parallel
+on unit tests alone, then held to the gates below; 6 and 18 by the builder in a browser. Each finding has
+the test that would have caught it.
+
+| # | Finding | State | Commits | The test that catches it, and what was measured |
+|---|---|---|---|---|
+| 1 | The grep test did not prove its line | FIXED | c6d610f, 1fab98b, f00d472 | `tests/unit/fakes/deprecated.test.ts` (22 tests) walks the compiler's syntax trees with its checker: property and element accesses, binding and assignment patterns (renamed, nested, quoted, computed), indexed-access types, type queries, and the compiler's own `@deprecated` list; `vehicles` only by a constant index, a count or a closed search; a rule for `cameras.cockpit`; `tests/unit/camera` scanned; 35 exceptions, each per LINE with its reason, a stale one fails; self-tests for every evasion the review named. The reads it let pass were moved (`clouds.spec.ts`, `tests/browser/cockpit/world.ts`, `labs/cockpit/{main,hull}.ts`, `labs/audio/labVehicle.ts`, `chase.test.ts`, and one more it found: `raster.test.ts:65`). NOT caught: a file-local type given an untyped value without an assertion; `tick` / `pad` / `structures` named only by a string. Outside its scan (not presentation): `tools/vehicle`, `tools/audio`, `deploy/bench`, `src/pilot/runner.ts`, `tests/unit/{sim-world,sim-orbits,terrain-core}` |
+| 2 | The conformance test compared key presence and typeof only | FIXED | 5129365 | `tests/unit/fakes/fakeSession.test.ts` (72 tests): every vessel, part and array element of the fake against `createSession` in the same situation (the eight flight scenes after its first step, `ascent` after 60 s of flight); fields are EQUAL unless a row of one table (`TOLERANCES`, 114 rows, each with its reason; a row no scene needs fails) allows a range; 36 deliberately wrong values (mass x 10, a stage list of 4, no target, a 55 m radius, a missing part, ...) are each found; the eight v2 scenes are held to the contract's invariants at start, after 1 s, at every event frame and after 3 min. The fake's values were corrected for `createFakeSession` (`figures: 'derived'`: masses, radii, stage stack with fired stages, chute envelope, target); `createFakeSim` (`figures: 'standIn'`) states what it stated, compared over 88 option cases, because 25 reference images are drawn from it |
+| 3 | `dockingApproach` docked into a state no session produces | FIXED | 66796d3 | three tests (before capture, captured, docked): ports and control point are parts of the part list; a hard dock gives one assembly vessel (station craft first, a link between the port parts, the vacant helm granted with `docked` then `helmChanged`, census, ships, assembly and roster restated). `dockingApproach` and `assembly` now throw without `parts` |
+| 4 | Plume clusters merged across two craft of one vehicle | FIXED | f9a0544 | `tests/unit/vfx/model.test.ts`: two docked stacks give two 9-nozzle clusters with their own throttle, 40 m apart; a single-craft vessel's keys are the old strings |
+| 5 | `findEventPart` ignored the event's vessel | FIXED | 4d3486f | `tests/unit/vfx/director.test.ts`: two vessels of one vehicle in both orders; staging, chute and fairing effects start at the event's vessel. An instance id is no longer searched outside the vessels the event names |
+| 6 | The origin test could not see a missing rebase, and flaked | FIXED | 47f33c2 | `tests/browser/integration/origin.spec.ts`, parts 2 and 3: below |
+| 8 | Docking drew the absorbed vessel twice for a second | FIXED | 77f2b39 | `tests/unit/vehicle/ghosts.test.ts`: a vessel a `docked` event names leaves no ghost; expired debris still fades |
+| 9 | Per-part state grew without bound | FIXED | 9533859 | `tests/unit/vehicle/partHistory.test.ts`: the sizes equal the live parts and craft through every stage and 500 separations (`CraftLineage.knows / retain / size`) |
+| 10 | The map's at-intercept anchors assumed a static origin | FIXED on the map's side | 619e23c | `tests/unit/map-view/controller.test.ts`: the fixture stated about the Moon; the old formula was 251,568 km off. No request to the simulation was needed |
+| 11 | Lens shift: "thin geometry lit differently"; a miss in the particles; camera keys | FIXED but for the app's key | 4180a17, 682845f, a776345, f5e0d3c | The picture test shifts by 128 x 128 px: 88.3 % of the overlap the same to the bit, 0.04 % more than 8 levels off, mean 0.13 levels (was 51 %, 2.4 %, 1.10 at 128 x 64: the test's artefact). The particle step forms the previous ray with the previous frame's shift (`tests/unit/vfx/lensShift.test.ts`). The map's camera comparison includes the shift. The app's camera key: request `presentation-sweep-11` |
+| 13 | A decoded bitmap leaked when a tile job failed; `skyUrl` / `assetsUrl` | FIXED | a62e018, 9cede66, 4180a17 | `tests/unit/terrain-render/settle.test.ts`: a bitmap decoded before or after another read fails is closed once. RENDER_API 19.6 names the readers of the two URLs |
+| 14 | Input: the key card, Esc, Ctrl chords | FIXED | 7588ff2 | `src/input/inputCore.test.ts`, `tests/unit/flight-ui/bindings.test.ts`: the card lists what is served (the five v2 actions through a capability the caller passes, `ServedActions`, default none; the three target holds through the session's SAS modes); a chord with Control or Meta the game does not bind passes to the browser; Esc, which the sweep had made pause, is live only when `flightMenu` is served, and P pauses as before the sweep |
+| 15 | Latent HUD and camera differences | (a) PARTLY, (b) (c) FIXED | 215cd00, a5855ed, 6a19f57, 3f54e47 | (a) the snapshot does not state the order of the stage groups and the HUD may not look the vehicle up, so the groups are still ordered by the part list: `tests/unit/flight-ui/resources.test.ts` holds every vehicle of the library, 0 to 10 stages fired, in every scenario, equal to the computation of before the sweep; request `presentation-sweep-10` asks for `PartSnapshot.stageOrder`. (b) `tests/unit/camera/dock.test.ts`: an assembly's default distance is 2.4 radii and the distance eases when the limits move past it. (c) `tests/unit/camera/seat.test.ts`: back from the stand-in map when a seat is regained; a map the player chose stays |
+| 16 | The mission spec's milestone slice also on a full flight | REQUEST | f060d97 | `presentation-sweep-9` (the file is app-integration's) |
+| 17 | The `launchQueue` scene; the petal found by its id in labs/vehicle | FIXED | b848e8b, c6d610f | the queue scene has its spawn pending and `cancelSpawn` resolves it refused; `labs/vehicle` reads `PartSnapshot.panel` |
+| 18 | Multi-pad paths held by synthetic unit tests only | DONE | 0012535 | `tests/browser/integration/multi-pad.spec.ts`: below |
+
+**Finding 6, as measured** (`origin.spec.ts`, 10 tests, all pass; each rebase scene: two control runs, one
+with the replacement, one per rebase switched off). Every run is ONE FRAME-EXACT CAPTURE (`renderExact`): the
+scene is staged and the origin replaced inside the capture's frames, so nothing depends on when a load went
+idle. The steps are asserted before any picture.
+
+| Scene | Two controls | Replaced: eye / vessel step from "always the new origin" | Replaced: picture against control | With a rebase off |
+|---|---|---|---|---|
+| `sea` | 0 pixels | 1.4e-8 m / 1.4e-8 m | 2 px by 1 level | core: both steps 384,399 km |
+| `leo` | 0 pixels | 3.2e-8 m / 1.4e-8 m | 0 px | core: both steps 384,399 km |
+| `lunar-orbit` | 0 pixels | 1.0e-8 m / 2.3e-8 m | 0 px | core: both steps 384,399 km |
+| `ghost` (a second vessel leaves the snapshot six frames before) | 0 pixels | 3.7e-8 m / 1.4e-8 m; the ghost drawn 3.2e-8 m from the control's place, 101 m from the eye | 30 px by up to 3 levels | ghosts: the ghost drawn 384,399 km away, gone from the picture (10,963 px differ, 4,670 by more than 8 levels); core: both steps, and the ghost's motion vectors 0.92 of the frame against 4e-4 |
+| `particles` (a burst, 695 particles alive in a space domain) | 0 pixels | 4.6e-8 m / 1.4e-8 m; the domain passes the eye 3.7e-6 m/s from the control's velocity | 0 px | core: both steps; the streak 2.3e10 m/s; 161,047 px differ |
+| `canopy` (three canopies cut away and adrift) | 0 pixels | 4.9e-8 m / 5.5e-8 m | 1 px by 1 level | core: both steps; motion vectors 0.64 of the frame against 8e-5; 13,500 px differ |
+
+The switches are test-only and off by default: the lab's `&norebase=core|ghosts`
+(`RendererOptions.debugNoFrameRebase`, `VesselVisualOptions.debugNoGhostRebase`). The effects and the canopies
+hold no ROOT position of their own (they read the core's previous camera), so the core's switch is theirs.
+Lab handles added: `__integration.dropVessel(id)`, `cutParachutes()`, `burst(posVes)`, `&twin=<m>` (a copy of
+the vessel beside it); `VesselVisualFeature.ghostPlacements()`, `VfxDebug.domainVelocity()`. The second state
+of the `leo` scene between loads is the atmosphere's when it is stepped by hand (request
+`presentation-sweep-8`); a capture restarts it. Each scene was run once in this form (`sea` and `ghost` twice)
+and again in the full run below; none was flaky. The pictures were looked at (`rebase-ghost.replaced.png`:
+two vessels over the Earth; `rebase-ghost.no-ghosts.png`: one; `rebase-particles.replaced.png`: the fireball
+and its debris; `rebase-canopy.replaced.png`: the capsule under canopies adrift).
+
+**Finding 18, as measured** (`multi-pad.spec.ts`; the lab's `&pads=5`, `labs/integration/syntheticPads.ts`):
+the site has the pads `lc-1`, `lab-pad-2` ... `lab-pad-5`, each with a runtime and a state; all five are
+drawn (125,820 triangles against 25,236 for the library's one pad); the terrain holds four ground plans (the
+known limit, request `presentation-sweep-6`) and levels every pad's disc. Pictures looked at
+(`out/screens/presentation-sweep/multi-pad-*.png`): the row of five complexes up the slope from the first pad;
+the third pad from 900 m with its tower, masts, tank farm, ring road and slab, turned by its own azimuth; the
+fifth likewise (the missing ground plan cannot be told from this distance: the structures carry their own
+slab and roads). A copied pad has the first pad's ground survey, not its own.
+
+**API of the fix round** (beyond section 4):
+
+```ts
+findEventPart(snapshot, eventPartId, event?: { vesselId: string; newVesselIds?: readonly string[] })   // src/core/access
+class CraftLineage { ...; knows(craftId): boolean; retain(live): void; readonly size: number }
+createFakeSession(defs, { figures?: 'derived' | 'standIn'; stagesAlreadyFired?; target?; landing?; ... })  // createFakeSim = 'standIn'
+RendererOptions.debugNoFrameRebase?: boolean          // test only
+VesselVisualOptions.debugNoGhostRebase?: boolean      // test only
+VesselVisualFeature.ghostPlacements(): { vesselId: string; originRelCam: Vec3 }[]
+VfxDebug.domainVelocity(): Vec3 | null
+TerrainDebug.groundPlans(bodyId: string): number
+interface ServedActions (src/input): which of the v2 actions something serves; the reference card lists only those
+// labs/integration: &norebase=core|ghosts, &twin=<m>, &pads=<n>; __integration.dropVessel / cutParachutes / burst / syntheticPads
+```
+
+**Gates of the fix round.** On the tree with findings 1-5, 8-11, 13-15 and 17 in (2026-11-17, before
+findings 6 and 18): the reference images PASSED 33 of 33, the 30 exact at 0 pixels, no OTHER STATE line
+(`lunar-touchdown` mean 0.0013, max 8; `shoreline` mean 0.0010, max 3; `sweep-lunar-orbit` max 4); the
+unit suites 93 files, 1,158 tests, all pass; `npm run typecheck` clean. ON THE FINAL TREE of the fix round
+(0012535: findings 6 and 18 added; they change a lab, a spec, two test-only switches and two debug accessors)
+the reference-image gate, the budget gate, every lab spec and the fetch-against-pack test WERE RUNNING when
+this file was committed; their results are in the next commit of this file.
