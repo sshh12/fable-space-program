@@ -1,6 +1,6 @@
 # capability-settings (wave 4.1): the capability gate, the calibration, feature-declared quality, the settings model
 
-Status: built (2026-11-24); the full-quality gates of section 5 that wait for the look flip are in section 9.
+Status: built (2026-11-24). The full-quality gates: the budget table at Ultra in section 5; the reference images wait for the lead's look-2 re-recording (section 9).
 
 ## 1. What exists
 
@@ -111,8 +111,8 @@ lock with no other browser on the GPU.
 | Unit: fake navigator.gpu lacking each feature or limit gives the right reason; mobile and iPadOS give mobile; an Intel adapter with an empty description is not integrated | MET (3 features, 9 limits, 6 mobile fixtures, 15 class fixtures, the gate and acquireGpu agree) | `tests/unit/bench/gate.test.ts` |
 | Unit: solver on recorded 5090 timings gives Ultra at 1440p; x3 a valid profile under budget; the step-down loop terminates | MET (fixture: the four shots of the calibration run of 2026-11-24, `tests/unit/bench/fixtures/shots-5090.json`) | `tests/unit/bench/solver.test.ts` |
 | Browser: block pages for mobile (emulation), noWebGPU (navigator.gpu deleted), missingFeature (wrapped adapter); no main bundle request | MET (pictures looked at: `gate-mobile.png`, `gate-noWebGpu.png`, `gate-missingFeature.png`) | `tests/browser/gate/gate.spec.ts` |
-| Browser: calibration on the reference GPU under 30 s and chooses Ultra | MET: 23.1 s, Ultra, predicted worst shot 6.41 ms against the 9.35 ms limit, confirmation p95 6.50 ms of 11 | `calibration.perf.spec.ts` |
-| Browser: with a GPU ballast flag a lower profile that then holds 60 fps in the confirmation shot | MET: 7.0 ms of ballast at 1440p -> a Custom profile at 0.9 MP (shadows medium, terrain low, the rest Ultra), predicted 9.32 ms, confirmation p95 8.61 ms of 11, no step-down | `calibration.perf.spec.ts` |
+| Browser: calibration on the reference GPU under 30 s and chooses Ultra | MET twice: 23.1 s, Ultra, predicted worst shot 6.41 / 6.57 ms against the 9.35 ms limit, confirmation p95 6.50 / 6.59 ms of 11 (cpuScore 100.7 against the reference recorded the run before) | `calibration.perf.spec.ts` |
+| Browser: with a GPU ballast flag a lower profile that then holds 60 fps in the confirmation shot | MET twice: 7.0 ms of ballast at 1440p (a frame 2.1 times slower on pixel work). With the fixed cost's exponent at 0.8: a Custom profile at 0.9 MP (shadows medium, terrain low, the rest Ultra), predicted 9.32 ms, confirmation p95 8.61 ms of 11. With the measured exponent 0.5 (the table as committed): the Low preset, predicted 12.86 ms (over the limit, so the lowest profile), confirmed at 8.17 ms. The ballast follows the pixels by an exponent of 1 and the model by 0.5, so for a GPU that is slow on pixel work only the prediction is pessimistic and the calibration settles lower than it needs to (it never steps up after the confirmation) | `calibration.perf.spec.ts` |
 | Browser: every setting through every level leaves no GPU error and no leaked texture (counts reported) | MET: 238 live textures before, 238 after, no label changed; no error | `settings.spec.ts` |
 | Browser: the title renders on the class-hint preset without calibration having run; calibration refuses while resident() is false | MET in the bench lab (the title is shell-menu's and its wiring app-integration-1's): the page opens on High (discrete) with every setting at High and 2.4 MP; `calibrate()` throws `CalibrationNotReady` before the needs are prefetched | `calibration.perf.spec.ts` |
 | Each feature's predicted cost per level within 25 % of measured | PARTLY MET: 64 of the 72 cells of at least 0.05 ms within 25 % (73 of 90 cells in all), predicted in six scenes from each scene's Ultra measurement by the declared models (which are taken from the lift-off). Not met: clouds in low orbit at Low / Medium (predicted 0.42 / 0.49, measured 0.16 / 0.22 ms: from orbit the cloud march is step-bound), clouds in the cockpit at Low / Medium (0.22 / 0.25 against 0.35: cheaper predicted than measured, by 0.13 ms), the shadows at the lunar surface and the splashdown at Low (0.04 ms off), terrain in low orbit at Low (0.03 ms off), the atmosphere in the cockpit at Low (0.04 ms off). The per-level costs themselves are reproducible: a second run predicted from the first within 2 % at the lift-off and the splashdown | section 6; `out/capability-settings/levels-check.json`, `levels.json` |
@@ -196,8 +196,17 @@ goes to the server. The lead sets the field.
 - The gate plugin is not registered (request capability-settings-1): the gate is one module request of a few
   kB before the app instead of inline in the page. It uses rolldown, Vite's own dependency, not a direct one.
 - The calibration runs in the bench lab; in the app it is app-integration-1's to wire (section 3). The
-  calibration's shots fly the session as it is this wave (World) on meridian-lunar.
+  calibration's shots fly the session as it is this wave (World) on meridian-lunar. The cockpit shot looks through the
+  side window into space at this orbit's attitude: the Earth is not in the window (what the shot measures is
+  the cabin's cost).
 - Below-minimum and the device-lost path are unit-tested through a fake host, not on a weak GPU.
+- The reference images under look 2: the lead has HELD their re-recording (lead-baseline-v2 section 28), so
+  this package has not run the lead's image gate, as its brief says. What stands meanwhile: `pad-noon` is the
+  same to the bit before any profile, at the Ultra preset and back from Low (three runs, under look 2); and
+  the lead's look-1 runs of 12:30 and 13:01 ran on the tree with this package's render-core changes in it
+  (b78b7b9 was in the working tree from about 12:20), their differences attributed there to the vehicle
+  library and the vessel feature. After the re-recording the gate is
+  `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/shell/baselines.record.spec.ts --project=functional`.
 - In the app at this commit nothing calls `setQuality`: the game runs at the renderer's defaults (Ultra, no
   pixel cap), as before this package.
 
