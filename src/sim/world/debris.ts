@@ -63,6 +63,12 @@ export class Debris {
     w.policy.drop(`vessel:${v.id}`);
   }
 
+  /** An object outside the island is gone (the far set's report): out of the roster at the next control tick, with its fate and its event. */
+  gone(v: Vessel, bodyId: string, reason: 'burnedUp' | 'impact', ut: number): void {
+    this.w.gone.add(v);
+    this.fate(v, bodyId, reason, ut, true);
+  }
+
   /** Control-tick cadence: small fragments expire; the cap removes the oldest uncontrollable vessel outside the island. */
   sweep(): void {
     const w = this.w;

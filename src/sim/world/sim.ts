@@ -102,13 +102,9 @@ export class World implements SimWorld, PresentedHost, PacedClock, SeatHost {
     this.view = new Presenter(this, opts.renderRoot ?? 'soiBody');
     this.seat = new PilotSeat(this, PILOT_ACCOUNT);
     this.pacer = new FramePacer(this);
-    this.far = new FarSet(this.frames, {
-      event: (e) => this.view.push(e),
-      removed: (o, reason, ut) => {
-        this.gone.add(o.vessel);
-        this.debris.fate(o.vessel, o.bodyId, reason, ut, true);
-      },
-    });
+    // One island: a ship about another body that meets the air unattended is flown by the Reduced tier (`reduceUnhosted`), a targeted vessel never is.
+    this.far = new FarSet(this.frames, { event: (e) => this.view.push(e), removed: (o, reason, ut) => this.debris.gone(o.vessel, o.bodyId, reason, ut) }, { reduceUnhosted: true });
+    this.far.protect = (v) => this.plan.targetCraft?.vesselId === v.id;
     this.ids = opts.ids ?? seededCraftIds();
     this.startCraftId = this.ids.next(scenario.vehicle);
     this.commands = makeCommands(this);
@@ -258,7 +254,7 @@ export class World implements SimWorld, PresentedHost, PacedClock, SeatHost {
     const burnFrom = this.seat.beforeStep(this.tick % CONTROL_TICK_STEPS === 0);
     const ut0 = this.ut;
     const report = this.island.step();
-    this.far.step(this.tick);
+    this.far.step(this.tick, this.island);
     this.absorb(report, ut0);
     this.seat.afterStep(burnFrom);
     if (report.incompleteTerrain) this.incompleteQueries++;
@@ -341,7 +337,7 @@ export class World implements SimWorld, PresentedHost, PacedClock, SeatHost {
       const o = this.far.find(this.active.id);
       if (o) this.far.sync(o, tick);
       if (!o || o.removed) return;
-      for (const m of this.island.members.slice()) this.far.receive(this.island, m.vessel.id, this.orderOf(m.vessel));
+      for (const m of this.island.members.slice()) this.far.receive(this.island, m.vessel.id, this.orderOf(m.vessel), o.bodyId !== this.island.bodyId);
       if (o.bodyId !== this.island.bodyId) this.island = this.newIsland(tick, o.bodyId);
       this.far.release(this.island, this.active.id, tick);
     }
@@ -351,8 +347,8 @@ export class World implements SimWorld, PresentedHost, PacedClock, SeatHost {
     for (const m of this.island.members.slice()) {
       const v = m.vessel;
       if (linked.has(v.id) || anyPending(v) || anyEngineBurning(v)) continue;
-      this.far.receive(this.island, v.id, this.orderOf(v));
-      changed = true;
+      // (A vessel that is no debris and is in the air is refused: it stays, at full fidelity.)
+      if (this.far.receive(this.island, v.id, this.orderOf(v))) changed = true;
     }
     if (this.far.joinInto(this.island, tick) > 0) changed = true;
     if (changed) this.island.refreshMargins();
@@ -378,7 +374,7 @@ export class World implements SimWorld, PresentedHost, PacedClock, SeatHost {
     let landing = requestTick;
     if (this.ladder.event) landing = Math.min(landing, ceilTick(this.ladder.event.ut));
     const islandEvent = this.island.nextEvent();
-    if (islandEvent) landing = Math.min(landing, islandEvent.tick);
+    landing = Math.min(landing, islandEvent ? islandEvent.tick : Infinity, this.far.nextRunTick());
     if (!(landing > this.tick)) {
       // An event is due: time can only move on by integrating.
       this.setWarpIndex(Math.min(this.ladder.index, MAX_PHYSICS_WARP_INDEX), 'event due');
@@ -388,7 +384,7 @@ export class World implements SimWorld, PresentedHost, PacedClock, SeatHost {
     const ut0 = this.ut;
     const report = this.island.advanceTo(landing);
     if (this.tick !== landing) throw new Error(`rails advance: the island landed on tick ${this.tick}, the clock asked for ${landing}`);
-    this.far.advanceTo(landing);
+    this.far.advanceTo(landing, this.island);
     this.absorb(report, ut0);
     this.railsWarpActive = true;
     this.far.stampAges(this.tick);

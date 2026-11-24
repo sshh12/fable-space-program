@@ -23,7 +23,7 @@ import { compareEnvelope, describeEnvelope, parseControls, type MissionRecord } 
 import { BASELINE_FILE, captureMilestones, readRecord } from '../../tools/dev/record-mission-baseline';
 import { ScenarioCapturer, scenarioFileText } from '../../tools/sim/qaScenarios';
 import { compareToReference, readReference, referenceRecorder, referenceTable, type ReferenceDifference } from '../../tools/sim/referenceFlight';
-import { DEBRIS_DISTANCE_TOLERANCE, DEBRIS_TIME_TOLERANCE, debrisDifferences, fatesOf, guardObserver, readGuard, sampleDifference, survivorsOf, type GuardSample } from '../../tools/sim/trajectoryGuard';
+import { DEBRIS_DISTANCE_TOLERANCE, DEBRIS_TIME_TOLERANCE, debrisDifferences, fatesOf, guardObserver, readGuard, sampleDifferences, survivorsOf, type GuardSample } from '../../tools/sim/trajectoryGuard';
 import {
   CLEARANCE_SETTLE,
   deepestDataLevel,
@@ -59,6 +59,9 @@ let record: MissionRecord;
 let sameStart: ReferenceDifference[];
 /** The samples of the trajectory guard as this flight gives them (tests/mission/trajectory-guard.json). */
 let guardSamples: GuardSample[];
+/** Vessels the Reduced tier flew at some control tick of the flight, and those among them that somebody could command. */
+const reducedPieces = new Set<string>();
+const reducedShips = new Set<string>();
 /** Control ticks of the nominal flight whose state time is not a whole tick (none on the tick grid). */
 let offGridTicks = 0;
 let delayed: ReturnType<typeof delayedSource> | null = null;
@@ -83,6 +86,11 @@ beforeAll(async () => {
       ascent.onTick(s);
       guard.onTick(s);
       if (!isTickInstant(s.simUt)) offGridTicks++;
+      for (const v of s.vessels) {
+        if (v.tier !== 'reduced') continue;
+        reducedPieces.add(v.id);
+        if (v.controllable || v.id === s.activeVesselId) reducedShips.add(v.id);
+      }
     },
   });
   record = milestones.finish(a, tileContentHashes(a.defs));
@@ -435,7 +443,7 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     console.log(`\nEnvelope against tests/mission/baseline-v1.json:\n${describeEnvelope(rows)}`);
   });
 
-  it('trajectory guard: the attended craft and the launch clamps at 400 ticks are bit-identical to the recording', () => {
+  it('trajectory guard: the attended craft at 400 ticks is bit-identical to the recording', () => {
     // tests/mission/trajectory-guard.json (MIGRATION_V2 principle 4): recorded on the tick-grid tree and once
     // more, by lead decision, with the tick-pure rule; pinned by tools/dev/guard-pins.test.ts. Body-centred position, velocity, attitude and mass as float64 bit patterns.
     const guard = readGuard();
@@ -445,9 +453,15 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     expect(a.run.stats.steps).toBe(guard.flight.steps);
     expect(a.run.stats.railsAdvances).toBe(guard.flight.railsAdvances);
     expect(Math.round(a.run.finalUt * 120)).toBe(guard.flight.endTick);
-    expect(sampleDifference(guard, guardSamples)).toBeNull();
+    // Every sample is judged, whatever the first shed vessel does (its own test follows).
+    expect(sampleDifferences(guard, guardSamples).attended).toEqual([]);
     const clamps = guard.samples.filter((s) => s.firstShed !== null).length;
     note('trajectory guard', `all 400 samples bit-identical: the attended craft (${guard.samples.filter((s) => s.attended.bodyId === a.defs.rootBodyId).length} about ${a.defs.rootBodyId}, ${guard.samples.filter((s) => s.attended.bodyId !== a.defs.rootBodyId).length} about another body) and the first vessel it shed, the launch clamps (${clamps} samples)`, 'bit for bit');
+  });
+
+  it('trajectory guard: the first vessel the craft shed, the launch clamps, is bit-identical to the recording at every sample that holds it', () => {
+    const guard = readGuard();
+    expect(sampleDifferences(guard, guardSamples).firstShed).toEqual([]);
   });
 
   it('step paths: no vessel step of the flight took the sub-stepped path without its own ground or water probe within reach, where v1 would not have', () => {
@@ -463,12 +477,20 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     note('step paths', `${a.world.freeSteps} vessel steps on the RK4 path, ${a.world.probeSubsteps} sub-stepped with a probe near the ground or water, ${a.world.pairSubsteps} sub-stepped without one`, '0 without a probe');
   });
 
+  it('the Reduced tier flew debris only: no vessel that anybody could command, and never the one the pilot is in', () => {
+    // Lead decision (island-core fix round, finding 8): a 2 Hz point mass with a frozen attitude and one lumped
+    // temperature is what becomes of spent stages, fairings and covers, never of a ship.
+    expect([...reducedShips]).toEqual([]);
+    expect(reducedPieces.size).toBeGreaterThan(0);
+    note('reduced tier', `${reducedPieces.size} pieces of debris flown at 2 Hz, 0 of them commandable`, '0 commandable');
+  });
+
   it('trajectory guard: every piece of debris meets its recorded fate within 2 s and 500 m', () => {
     const guard = readGuard();
     const rows = debrisDifferences(guard, fatesOf(a.debris), survivorsOf(a.run.last), (id) => a.defs.bodies[id]!);
-    expect(rows).toHaveLength(guard.debris.length + guard.survivors.length);
-    // Every row outside is named (not only the first one).
+    // Every row outside is named (not only the first one), a missing or an extra fate among them.
     expect(rows.filter((r) => r.problem !== null).map((r) => `${r.name}: ${r.problem}`)).toEqual([]);
+    expect(rows).toHaveLength(guard.debris.length + guard.survivors.length);
     const worstTime = Math.max(...rows.map((r) => Math.abs(r.dTime)));
     const worstDistance = Math.max(...rows.map((r) => r.distance));
     note('debris', `${guard.debris.length} fates and ${guard.survivors.length} survivors as recorded: at most ${worstTime.toFixed(3)} s and ${worstDistance.toFixed(3)} m from the recording`, `${DEBRIS_TIME_TOLERANCE} s, ${DEBRIS_DISTANCE_TOLERANCE} m`);

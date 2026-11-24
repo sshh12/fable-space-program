@@ -188,20 +188,43 @@ function vesselDifference(what: string, recorded: GuardVessel | null, flown: Gua
   return null;
 }
 
-/** BIT-EXACT part: the first difference of the samples of a flight from the guard's, in words (null = equal). */
-export function sampleDifference(guard: TrajectoryGuard, samples: readonly GuardSample[]): string | null {
-  if (samples.length !== guard.samples.length) return `${samples.length} samples, the guard has ${guard.samples.length}`;
+/**
+ * BIT-EXACT part: EVERY difference of the samples of a flight from the guard's, in words, the attended craft's
+ * and the first shed vessel's apart (a difference of one never hides the other: while the first shed vessel
+ * waits for a re-record, the attended craft is still judged at all 400 samples). A sample taken at another
+ * tick, or for another reason, counts against both.
+ */
+export function sampleDifferences(guard: TrajectoryGuard, samples: readonly GuardSample[]): { attended: string[]; firstShed: string[] } {
+  const out = { attended: [] as string[], firstShed: [] as string[] };
+  if (samples.length !== guard.samples.length) {
+    const d = `${samples.length} samples, the guard has ${guard.samples.length}`;
+    return { attended: [d], firstShed: [d] };
+  }
   for (let i = 0; i < guard.samples.length; i++) {
     const a = guard.samples[i]!;
     const b = samples[i]!;
     const where = `sample ${i} (control tick ${a.controlTick}, ${a.why})`;
-    if (a.controlTick !== b.controlTick) return `${where}: taken at control tick ${b.controlTick}`;
-    if (a.tick !== b.tick) return `${where}: at tick ${b.tick}, recorded at tick ${a.tick} (${((b.tick - a.tick) / 120).toFixed(4)} s)`;
-    if (a.why !== b.why) return `${where}: is ${b.why} in this flight`;
-    const d = vesselDifference(`${where}, attended craft`, a.attended, b.attended) ?? vesselDifference(`${where}, first shed vessel`, a.firstShed, b.firstShed);
-    if (d) return d;
+    let both: string | null = null;
+    if (a.controlTick !== b.controlTick) both = `${where}: taken at control tick ${b.controlTick}`;
+    else if (a.tick !== b.tick) both = `${where}: at tick ${b.tick}, recorded at tick ${a.tick} (${((b.tick - a.tick) / 120).toFixed(4)} s)`;
+    else if (a.why !== b.why) both = `${where}: is ${b.why} in this flight`;
+    if (both !== null) {
+      out.attended.push(both);
+      out.firstShed.push(both);
+      continue;
+    }
+    const d = vesselDifference(`${where}, attended craft`, a.attended, b.attended);
+    if (d) out.attended.push(d);
+    const e = vesselDifference(`${where}, first shed vessel`, a.firstShed, b.firstShed);
+    if (e) out.firstShed.push(e);
   }
-  return null;
+  return out;
+}
+
+/** The first difference of the samples of a flight from the guard's, in words (null = equal): the attended craft's first. */
+export function sampleDifference(guard: TrajectoryGuard, samples: readonly GuardSample[]): string | null {
+  const d = sampleDifferences(guard, samples);
+  return d.attended[0] ?? d.firstShed[0] ?? null;
 }
 
 export interface DebrisDifference {
@@ -339,7 +362,8 @@ if (invokedDirectly) {
     const guard = readGuard();
     const obs = guardObserver(guard.samples.map((s) => s.controlTick));
     const f = await fly({ scenario: SCENARIO, onPilotTick: (s) => obs.onTick(s) });
-    const diff = sampleDifference(guard, obs.samples());
+    const all = sampleDifferences(guard, obs.samples());
+    const diff = all.attended.length + all.firstShed.length === 0 ? null : `attended craft: ${all.attended.length} samples differ${all.attended[0] ? ` (first: ${all.attended[0]})` : ''}; first shed vessel: ${all.firstShed.length} samples differ${all.firstShed[0] ? ` (first: ${all.firstShed[0]})` : ''}`;
     const debris = debrisDifferences(guard, fatesOf(f.debris), survivorsOf(f.run.last), (id) => f.defs.bodies[id]!);
     const bad = debris.filter((d) => d.problem !== null);
     console.log(diff === null ? `trajectory guard: all ${guard.samples.length} samples bit-identical (attended craft and first shed vessel)` : `trajectory guard: DIFFERENT. ${diff}`);

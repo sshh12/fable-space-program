@@ -9,7 +9,7 @@ import { IslandImpl } from './island';
 export * from './api';
 export { BodyFrames, comStateOf, setFromCom, IMPACT_PREDICTION_LAMBDA } from './frames';
 export { bodyEnvBase, IslandEnv, OrientationCache, type BodyEnvBase } from './environment';
-export { FarSet, type FarObject, type FarSink } from './far';
+export { FarSet, isDebris, type FarObject, type FarOptions, type FarSink } from './far';
 export { computeRailsEvent, railsStateAt, orbitOf, type RailsEvent, type RailsEventKind } from './rails';
 export { TerrainPolicy } from './terrainPolicy';
 export { checksumOfVessel, checksumsAgree, craftListHash, IslandOpError } from './ops';
