@@ -157,3 +157,53 @@ describe('deltaVToOrbit', () => {
     if (process.env['SOLAR_SYSTEM_VERBOSE']) console.log(rows.join('\n'));
   });
 });
+
+/** The Albatross's delta-v with full tanks (ARCHITECTURE 9.1), m/s: the line the table is read against. */
+const CRUISER = 10900;
+const YEAR = 365.25 * 86400;
+
+describe('reach with broken-plane arcs and a seven-year window search (ReachOptions.brokenPlane, searchSpan)', () => {
+  it('the defaults are unchanged: a direct arc in one synodic period (what fleet-data holds)', () => {
+    for (const id of ['pluto', 'mercury']) {
+      const d = deltaVToOrbit(w.defs, id, { refuel: 'highOrbit' });
+      const same = deltaVToOrbit(w.defs, id, { refuel: 'highOrbit', brokenPlane: false });
+      expect(same.total).toBe(d.total);
+      expect(d.legs.some((l) => l.name.startsWith('plane change'))).toBe(false);
+    }
+  });
+
+  it('a broken-plane arc reaches its target: the in-plane leg, the turn, and the Lambert leg meet at the break point', async () => {
+    const { brokenPlaneArc } = await import('../../../src/sim/nav/transfer');
+    const t = utOf(2031, 3, 1);
+    const tof = 30 * YEAR;
+    const arc = brokenPlaneArc(w.system, 'earth', 'pluto', t, tof, 0.75)!;
+    expect(arc).not.toBeNull();
+    expect(arc.breakUt).toBeCloseTo(t + 0.75 * tof, 3);
+    expect(arc.breakDeltaV!).toBeGreaterThan(0);
+    // the first leg stays in the Earth's orbit plane; after the turn the craft reaches Pluto at the arrival time
+    const e = w.system.stateRelative('earth', 'sun', t);
+    const n = v3.normalize(v3.cross(e.r, e.v));
+    const leg1 = makeOrbit('sun', w.system.body('sun').mu, e.r, v3.add(e.v, arc.vInfDepart), t);
+    const atBreak = propagate(leg1, arc.breakUt!);
+    expect(Math.abs(v3.dot(v3.normalize(atBreak.r), n))).toBeLessThan(1e-9);
+    const p = w.system.stateRelative('pluto', 'sun', t + tof);
+    const vAfter = v3.add(p.v, arc.vInfArrive);
+    const back = propagate(makeOrbit('sun', w.system.body('sun').mu, p.r, vAfter, t + tof), arc.breakUt!);
+    expect(v3.len(v3.sub(back.r, atBreak.r)) / AU).toBeLessThan(1e-6);
+    expect(Math.abs(v3.len(v3.sub(back.v, atBreak.v)) - arc.breakDeltaV!)).toBeLessThan(1e-3);
+  });
+
+  it('after the high-orbit refuel every body fits 10.9 km/s but Mimas (Pluto and Charon by the broken plane, Mercury by the longer search)', () => {
+    const opts = { brokenPlane: true, searchSpan: 7 * YEAR, refuel: 'highOrbit' as const };
+    const after: Record<string, number> = {};
+    for (const id of ['mercury', 'mimas', 'pluto', 'charon', 'ceres', 'io']) after[id] = deltaVToOrbit(w.defs, id, opts).afterRefuel;
+    if (process.env['SOLAR_SYSTEM_VERBOSE']) console.log(Object.entries(after).map(([k, v]) => `${k} ${(v / 1000).toFixed(2)}`).join(', '));
+    for (const id of ['mercury', 'pluto', 'charon', 'ceres', 'io']) expect(after[id]!, id).toBeLessThan(CRUISER);
+    // Mimas is short by about 0.35 km/s with full tanks after the refuel (Q17)
+    expect(after['mimas']!).toBeGreaterThan(CRUISER);
+    expect(after['mimas']! - CRUISER).toBeLessThan(500);
+    const pluto = deltaVToOrbit(w.defs, 'pluto', opts);
+    expect(pluto.legs.some((l) => l.name.startsWith('plane change'))).toBe(true);
+    expect(deltaVToOrbit(w.defs, 'pluto', { refuel: 'highOrbit' }).afterRefuel).toBeGreaterThan(CRUISER);
+  }, 60_000);
+});

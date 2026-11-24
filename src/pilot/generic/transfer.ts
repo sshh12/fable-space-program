@@ -3,13 +3,17 @@
  * bots). From a parking orbit about the origin it plans with maneuver nodes as a player does in the map view
  * and flies every burn through the FlightSession (PlayerCommands and ControlInputs only):
  *
- *   1. window: the Hohmann phase angle of the target's planet against the origin from the bodies in the snapshot;
- *      rails warp until the window;
- *   2. departure: a node at the ejection point of the parking orbit with the ejection delta-v, refined by a compass
- *      search over its time and its prograde and normal delta-v on the predicted patches (an encounter with the
- *      planet at the wanted periapsis altitude; failing an encounter, the closest approach);
- *   3. correction: after leaving the origin's sphere, one node that refines the arrival periapsis;
- *   4. at the planet: for a moon of the planet, a correction that makes the encounter with the moon;
+ *   1. window: a porkchop of Lambert arcs between the origin's and the planet's osculating orbits from the
+ *      snapshot (departure burn from the parking orbit plus capture at the planet); rails warp until it;
+ *   2. departure: a node at the periapsis of the departure hyperbola whose asymptote is the arc's excess
+ *      velocity (on the parking orbit, the point of the smaller burn), refined by a compass search over its
+ *      time and its three delta-v components on the predicted patches (an encounter with the planet at the
+ *      aim periapsis; failing an encounter, the closest approach);
+ *   3. corrections: after leaving the origin's sphere, and again late in the cruise, one node each that refines
+ *      the arrival (for a moon of the planet: the encounter with the moon, its closest approach taken from the
+ *      planet patch and the moon's orbit as the map shows them);
+ *   4. at the planet: for a moon of the planet, a correction that makes the moon's periapsis; at the target, an
+ *      approach correction when the periapsis is off;
  *   5. capture: a retrograde node at the periapsis about the target into a bound ellipse (apoapsis a share of the
  *      target's sphere of influence).
  * The pilot reads the snapshot and the definitions only; the burns are flown by PilotCore (SAS maneuver hold,
@@ -17,10 +21,27 @@
  */
 import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
 import type { Patch, SimSnapshot } from '@/core/contracts/sim';
-import { v3 } from '@/core/math/vec3';
+import { conicRadiusCrossing, timeSincePeriapsis } from '@/core/math/conic';
+import { v3, type Vec3 } from '@/core/math/vec3';
 import { PilotCore, type PilotLogEntry } from '../core';
 import { compassSearch, type Budget, type NodeVars, type Plan } from '../planner';
-import { captureDeltaV, ejectionDeltaV, ejectionPoint, hohmann, meanOrbit, phaseAngle, relativeTo, timeToDirection, timeToWindow } from './transferMath';
+import {
+  aimDeparture,
+  bestWindow,
+  bodyStateAt,
+  captureDeltaV,
+  captureDeltaVFromExcess,
+  closestToMoon,
+  ejectionBurn,
+  ejectionDeltaV,
+  ejectionPoint,
+  meanOrbit,
+  synodic,
+  timeToDirection,
+  windowArc,
+  type WindowArc,
+  type WindowSearch,
+} from './transferMath';
 
 export interface TransferPilotOptions {
   /** The body to reach a bound orbit about: a body about the origin's parent, or a moon of one. */
@@ -29,16 +50,37 @@ export interface TransferPilotOptions {
   periapsisAltitude?: number;
   /** Apoapsis of the capture ellipse as a share of the target's sphere of influence (default 0.3). */
   captureApoapsisShare?: number;
-  /** Delay after leaving the origin's sphere before the correction, s (default 5 days). */
+  /** Delay after the departure burn before the first correction, s (default 5 days). */
   correctionDelay?: number;
+  /** Departures searched for the window, from the start on, s (default WINDOW_SPAN_SYNODIC_SHARE of the synodic period). */
+  windowSpan?: number;
   onLog?: (e: PilotLogEntry) => void;
 }
 
-/** A window passed by less than this phase (rad) is taken at once (5 deg: days for Mars, the node search absorbs it). */
-export const WINDOW_PASSED_TOLERANCE = (5 * Math.PI) / 180;
+/** Share of the synodic period searched for the window by default (one window, not the next one). */
+export const WINDOW_SPAN_SYNODIC_SHARE = 0.8;
+/** The late correction is planned this long before the planet's sphere is entered: the larger of the two, s. */
+export const LATE_CORRECTION_LEAD = 10 * 86400;
+export const LATE_CORRECTION_CRUISE_SHARE = 0.1;
+/** A periapsis about the target within this share of the wanted altitude (or 20 km) needs no approach correction. */
+export const APPROACH_TOLERANCE_SHARE = 0.1;
+/** For a moon target the planet flyby's periapsis is aimed at this share of the moon's orbit radius (tangent to it: the least speed relative to the moon). */
+export const MOON_FLYBY_SHARE = 1;
 
 /** Cost of a patch list for an arrival at `bodyId` with periapsis radius `rp`: km of periapsis error, or the closest approach plus a penalty. */
 function arrivalCost(patches: readonly Patch[], bodyId: string, parentId: string, rp: number, radius: number): number {
+  const at = costAtBody(patches, bodyId, rp, radius);
+  if (at !== null) return at;
+  let best = Infinity;
+  for (const p of patches) {
+    if (p.bodyId !== parentId) continue;
+    for (const m of p.markers) if (m.kind === 'closestApproach' && m.value !== undefined) best = Math.min(best, m.value);
+  }
+  return Number.isFinite(best) ? 1e4 + best / 1000 : 1e9;
+}
+
+/** km of periapsis error on the first patch about `bodyId` (an impact: the depth below the wanted periapsis), or null without one. */
+function costAtBody(patches: readonly Patch[], bodyId: string, rp: number, radius: number): number | null {
   for (const p of patches) {
     if (p.bodyId !== bodyId) continue;
     const peri = p.markers.find((m) => m.kind === 'periapsis');
@@ -47,12 +89,7 @@ function arrivalCost(patches: readonly Patch[], bodyId: string, parentId: string
     if (imp) return (rp - radius) / 1000 + 1;
     return 1e3;
   }
-  let best = Infinity;
-  for (const p of patches) {
-    if (p.bodyId !== parentId) continue;
-    for (const m of p.markers) if (m.kind === 'closestApproach' && m.value !== undefined) best = Math.min(best, m.value);
-  }
-  return Number.isFinite(best) ? 1e4 + best / 1000 : 1e9;
+  return null;
 }
 
 export class TransferPilot extends PilotCore {
@@ -62,13 +99,18 @@ export class TransferPilot extends PilotCore {
   private originId = '';
   private starId = '';
   private readonly opts: TransferPilotOptions;
-  private windowUt = NaN;
+  private arc: WindowArc | null = null;
   private departedUt = NaN;
-  private corrected = false;
+  private corrections = 0;
   private moonCorrected = false;
+  private approachCorrected = false;
   /** Delta-v of every burn flown, m/s (planned), by label. */
   get flown(): Readonly<Record<string, number>> {
     return this.dvFlown;
+  }
+  /** The window the pilot chose (the Lambert arc between the osculating orbits), null before the start. */
+  get chosenWindow(): Readonly<WindowArc> | null {
+    return this.arc;
   }
 
   constructor(defs: DefLibrary, scenario: ScenarioDef, opts: TransferPilotOptions) {
@@ -91,10 +133,22 @@ export class TransferPilot extends PilotCore {
     return Math.max(top, Math.min(300e3, Math.max(20e3, 0.05 * b.radius)));
   }
 
-  private periapsisRadius(bodyId: string): number {
+  private equatorialRadius(bodyId: string): number {
     const b = this.defs.bodies[bodyId]!;
+    return b.shape ? b.shape.equatorialRadius : b.radius;
+  }
+
+  private periapsisRadius(bodyId: string): number {
     const alt = bodyId === this.targetId && this.opts.periapsisAltitude !== undefined ? this.opts.periapsisAltitude : TransferPilot.defaultPeriapsisAltitude(this.defs, bodyId);
-    return (b.shape ? b.shape.equatorialRadius : b.radius) + alt;
+    return this.equatorialRadius(bodyId) + alt;
+  }
+
+  /** Periapsis radius aimed at about the planet: the target's periapsis, or for a moon a flyby that crosses the moon's orbit. */
+  private planetAimRadius(): number {
+    if (this.planetId === this.targetId) return this.periapsisRadius(this.planetId);
+    const moon = this.bodySnap(this.targetId);
+    const a = meanOrbit(moon, this.bodySnap(this.planetId), this.defs.bodies[this.planetId]!.mu).a;
+    return Math.max(this.periapsisRadius(this.planetId), MOON_FLYBY_SHARE * a);
   }
 
   protected start(): void {
@@ -106,40 +160,61 @@ export class TransferPilot extends PilotCore {
       return;
     }
     this.cmd.setTarget({ kind: 'body', id: this.planetId });
-    const w = this.nextWindow();
-    this.windowUt = this.s.simUt + w.wait;
-    this.go('window', Infinity, `window in ${(w.wait / 86400).toFixed(1)} d (Hohmann phase ${((w.phase * 180) / Math.PI).toFixed(1)} deg, transfer ${(w.tof / 86400).toFixed(0)} d)`);
+    const arc = bestWindow(this.windowSearch(this.s.simUt + this.departureLead() + 3600));
+    if (!arc) {
+      this.fail(`no window to ${this.planetId} in the searched span that a periapsis burn on this parking orbit reaches`);
+      return;
+    }
+    this.arc = arc;
+    this.go(
+      'window',
+      Infinity,
+      `window in ${((arc.departUt - this.s.simUt) / 86400).toFixed(2)} d: transfer ${(arc.tof / 86400).toFixed(1)} d, excess ${v3.len(arc.vInfDepart).toFixed(0)} m/s out and ${v3.len(arc.vInfArrive).toFixed(0)} m/s in, departure and capture ${arc.cost.toFixed(0)} m/s`,
+    );
   }
 
-  /**
-   * The next window from the bodies in the snapshot: the wait until the phase angle is the Hohmann one. The mean
-   * motions make it an estimate that converges as the window nears (it is recomputed every tick of the wait); a
-   * window passed by less than WINDOW_PASSED_TOLERANCE of phase is taken now (the node search absorbs it).
-   */
-  private nextWindow(): { wait: number; phase: number; tof: number } {
+  /** Time before the departure node at which the plan is made: one parking orbit and half an hour. */
+  private departureLead(): number {
+    return (this.rd.period ?? 5400) + 1800;
+  }
+
+  /** The porkchop of the window, from `fromUt`: departure from the parking orbit plus the arrival at the planet. */
+  private windowSearch(fromUt: number): WindowSearch {
     const O = this.bodySnap(this.originId);
     const P = this.bodySnap(this.planetId);
     const S = this.bodySnap(this.starId);
     const muS = this.defs.bodies[this.starId]!.mu;
-    const mo = meanOrbit(O, S, muS);
-    const mp = meanOrbit(P, S, muS);
-    const h = hohmann(muS, v3.len(relativeTo(O, S).r), mp.a);
-    const now = phaseAngle(O, P, S);
-    const rate = mp.n - mo.n;
-    // phase still to go before the window (negative: passed)
-    const ahead = Math.atan2(Math.sin(rate < 0 ? now - h.phase : h.phase - now), Math.cos(now - h.phase));
-    const wait = ahead < 0 && ahead > -WINDOW_PASSED_TOLERANCE ? 0 : timeToWindow(now, h.phase, mo.n, mp.n);
-    return { wait, phase: h.phase, tof: h.tof };
+    const muO = this.defs.bodies[this.originId]!.mu;
+    const muP = this.defs.bodies[this.planetId]!.mu;
+    const span = this.opts.windowSpan ?? WINDOW_SPAN_SYNODIC_SHARE * synodic(muS, meanOrbit(O, S, muS).a, meanOrbit(P, S, muS).a);
+    const rp = this.planetAimRadius();
+    let arriveCost: (vinf: number) => number;
+    if (this.planetId === this.targetId) {
+      const ra = this.captureApoapsis(this.planetId, rp);
+      arriveCost = (vinf) => captureDeltaVFromExcess(muP, vinf, rp, ra);
+    } else {
+      // the speed relative to the moon where the flyby crosses its orbit (what its capture has to take out)
+      arriveCost = (vinf) => Math.sqrt(vinf * vinf + (2 * muP) / rp) - Math.sqrt(muP / rp);
+    }
+    // the departure from THIS parking orbit (its plane is fixed in space): the periapsis burn toward the asymptote
+    const r = this.v.r;
+    const vel = this.v.v;
+    const departCost = (vinf: Vec3): number => ejectionBurn(muO, r, vel, vinf, 0)?.deltaV ?? Infinity;
+    return { origin: O, planet: P, parent: S, muParent: muS, departCost, arriveCost, fromUt, toUt: fromUt + span };
+  }
+
+  /** Apoapsis radius of the capture ellipse about a body with periapsis rp. */
+  private captureApoapsis(bodyId: string, rp: number): number {
+    const b = this.defs.bodies[bodyId]!;
+    const soi = this.bodySnap(bodyId).soiRadius ?? 10 * b.radius;
+    return Math.max(rp * 1.01, (this.opts.captureApoapsisShare ?? 0.3) * soi);
   }
 
   protected tick(): void {
     const s = this.s;
     switch (this.phase) {
       case 'window': {
-        const lead = (this.rd.period ?? 5400) + 1800;
-        // the estimate converges as the window nears
-        if (this.windowUt - s.simUt < 30 * 86400) this.windowUt = s.simUt + this.nextWindow().wait;
-        const left = this.windowUt - lead - s.simUt;
+        const left = this.arc!.departUt - this.departureLead() - s.simUt;
         if (left > 60) {
           this.warpFor(left);
           return;
@@ -154,20 +229,27 @@ export class TransferPilot extends PilotCore {
           return;
         }
         if (this.v.bodyId === this.starId) {
-          if (!this.corrected && s.simUt - this.departedUt > (this.opts.correctionDelay ?? 5 * 86400)) {
-            this.corrected = true;
-            this.planCorrection('correction', this.planetId, this.starId);
+          const next = this.soiChangeUt(s.patches.current);
+          if (this.corrections === 0 && s.simUt - this.departedUt > (this.opts.correctionDelay ?? 5 * 86400)) {
+            this.corrections = 1;
+            this.planHeliocentricCorrection('correction');
             return;
           }
-          const next = this.soiChangeUt(s.patches.current);
-          this.warpFor(Math.max(60, (next ?? s.simUt + 30 * 86400) - s.simUt) - 120);
+          const lateLead = next !== null ? Math.max(LATE_CORRECTION_LEAD, LATE_CORRECTION_CRUISE_SHARE * (next - this.departedUt)) : 0;
+          if (this.corrections === 1 && next !== null && next - s.simUt < lateLead) {
+            this.corrections = 2;
+            this.planHeliocentricCorrection('late-correction');
+            return;
+          }
+          const until = next === null ? s.simUt + 30 * 86400 : this.corrections === 1 ? next - lateLead : next;
+          this.warpFor(Math.max(60, until - s.simUt) - 120);
           return;
         }
         if (this.v.bodyId === this.planetId && this.planetId !== this.targetId) {
           if (!this.moonCorrected) {
             this.moonCorrected = true;
             this.cmd.setTarget({ kind: 'body', id: this.targetId });
-            this.planCorrection('moon-correction', this.targetId, this.planetId);
+            this.planCorrection('moon-correction', this.targetId, (p) => arrivalCost(p, this.targetId, this.planetId, this.periapsisRadius(this.targetId), this.equatorialRadius(this.targetId)));
             return;
           }
           const next = this.soiChangeUt(s.patches.current);
@@ -176,6 +258,14 @@ export class TransferPilot extends PilotCore {
           return;
         }
         if (this.v.bodyId === this.targetId) {
+          const rp = this.periapsisRadius(this.targetId);
+          const R = this.equatorialRadius(this.targetId);
+          const err = costAtBody(s.patches.current, this.targetId, rp, R) ?? Infinity;
+          if (!this.approachCorrected && err * 1000 > Math.max(20e3, APPROACH_TOLERANCE_SHARE * (rp - R))) {
+            this.approachCorrected = true;
+            this.planCorrection('approach-correction', this.targetId, (p) => arrivalCost(p, this.targetId, '', rp, R));
+            return;
+          }
           this.planCapture();
           return;
         }
@@ -198,50 +288,103 @@ export class TransferPilot extends PilotCore {
     return null;
   }
 
+  /**
+   * Cost of a heliocentric plan: for the planet itself, the arrival cost at the planet; for a moon, km of the
+   * periapsis error at the moon when the plan meets it, else 1,000 + the closest approach to the moon in km along
+   * the planet patch (the moon on its orbit about the planet), else 1e6 + the closest approach to the planet.
+   */
+  private heliocentricCost(patches: readonly Patch[]): number {
+    if (this.planetId === this.targetId) return arrivalCost(patches, this.planetId, this.starId, this.planetAimRadius(), this.equatorialRadius(this.planetId));
+    const atMoon = costAtBody(patches, this.targetId, this.periapsisRadius(this.targetId), this.equatorialRadius(this.targetId));
+    if (atMoon !== null) return atMoon;
+    const pp = patches.find((p) => p.bodyId === this.planetId);
+    if (!pp) {
+      const c = arrivalCost(patches, this.planetId, this.starId, this.planetAimRadius(), this.equatorialRadius(this.planetId));
+      return 1e6 + c;
+    }
+    const moon = this.bodySnap(this.targetId);
+    const planet = this.bodySnap(this.planetId);
+    const aM = meanOrbit(moon, planet, this.defs.bodies[this.planetId]!.mu).a;
+    // the part of the planet patch within three moon-orbit radii (where the flyby crosses the moon's orbit)
+    let t0 = pp.tStart;
+    let t1 = pp.tEnd;
+    const nu = conicRadiusCrossing(pp.conic, 3 * aM);
+    if (nu !== null) {
+      const tp = pp.conic.tPeriapsis;
+      const dt = Math.abs(timeSincePeriapsis(pp.conic, nu));
+      if (Number.isFinite(dt)) {
+        t0 = Math.max(t0, tp - dt);
+        t1 = Math.min(t1, tp + dt);
+      }
+    }
+    if (!(t1 > t0)) return 1e3 + 1e9;
+    return 1e3 + closestToMoon(pp.conic, t0, t1, moon, planet).distance / 1000;
+  }
+
   private planDeparture(): void {
     const s = this.s;
+    const muO = this.defs.bodies[this.originId]!.mu;
+    const prev = this.arc!;
+    const arc = windowArc(this.windowSearch(s.simUt), prev.departUt, prev.tof) ?? prev;
+    this.arc = arc;
+    const period = this.rd.period ?? 5400;
+    // aimed through the origin's sphere at the planet's centre at the arrival (the search then sets the periapsis)
     const O = this.bodySnap(this.originId);
     const S = this.bodySnap(this.starId);
-    const P = this.bodySnap(this.planetId);
-    const muO = this.defs.bodies[this.originId]!.mu;
-    const muS = this.defs.bodies[this.starId]!.mu;
-    const h = hohmann(muS, v3.len(relativeTo(O, S).r), meanOrbit(P, S, muS).a);
-    const rPark = v3.len(this.v.r);
-    const vinf = Math.abs(h.vInfDepart);
-    const dv = ejectionDeltaV(muO, rPark, vinf);
-    const vO = relativeTo(O, S).v;
-    const asymptote = h.vInfDepart >= 0 ? vO : v3.neg(vO);
-    const hPark = v3.normalize(v3.cross(this.v.r, this.v.v));
-    const dir = ejectionPoint(muO, rPark, vinf, asymptote, hPark);
-    const ut = s.simUt + 600 + timeToDirection(muO, this.v.r, this.v.v, dir);
-    const rp = this.periapsisRadius(this.planetId);
-    const R = this.defs.bodies[this.planetId]!.radius;
+    const target = bodyStateAt(this.bodySnap(this.planetId), S, arc.arriveUt).r;
+    let nearDt = arc.departUt - s.simUt;
+    if (nearDt < 600) nearDt += period;
+    const aim = O.soiRadius !== null ? aimDeparture(muO, this.v.r, this.v.v, s.simUt, O.soiRadius, O, S, this.defs.bodies[this.starId]!.mu, target, arc.arriveUt, arc.vInfDepart, nearDt) : null;
+    const burn = aim?.burn ?? ejectionBurn(muO, this.v.r, this.v.v, arc.vInfDepart, nearDt);
+    let initial: NodeVars;
+    if (burn) {
+      let dt = burn.dt;
+      while (dt < 600) dt += period;
+      initial = { ut: s.simUt + dt, prograde: burn.prograde, normal: burn.normal, radial: burn.radial };
+      this.note(
+        `departure: ${burn.deltaV.toFixed(0)} m/s at T+${dt.toFixed(0)} s (excess ${v3.len(aim?.vInf ?? arc.vInfDepart).toFixed(0)} m/s through the sphere${aim ? `, aim closed to ${aim.residual.toFixed(3)} m/s` : ''}, plane change ${((burn.planeChange * 180) / Math.PI).toFixed(1)} deg)`,
+      );
+    } else {
+      // the asymptote is too far out of the parking plane for a periapsis on it: its projection, then the search
+      const vinf = v3.len(arc.vInfDepart);
+      const rPark = v3.len(this.v.r);
+      const hPark = v3.normalize(v3.cross(this.v.r, this.v.v));
+      const dir = ejectionPoint(muO, rPark, vinf, arc.vInfDepart, hPark);
+      initial = { ut: s.simUt + 600 + timeToDirection(muO, this.v.r, this.v.v, dir), prograde: ejectionDeltaV(muO, rPark, vinf), normal: 0, radial: 0 };
+      this.note(`departure: ${initial.prograde.toFixed(0)} m/s in the parking plane (the asymptote is beyond its reach out of the plane)`);
+    }
+    const rp = this.planetAimRadius();
+    const R = this.equatorialRadius(this.planetId);
     const planet = this.planetId;
     const star = this.starId;
-    this.note(`departure: ${dv.toFixed(0)} m/s at T+${(ut - s.simUt).toFixed(0)} s (excess ${vinf.toFixed(0)} m/s)`);
+    const cost = (snap: SimSnapshot): number => arrivalCost(snap.patches.planned, planet, star, rp, R);
     this.beginManeuver({
       label: 'departure',
-      initial: { ut, prograde: dv, normal: 0, radial: 0 },
+      initial,
       plan: (budget: Budget): Plan =>
         (function* (): Plan {
           const r = yield* compassSearch(
-            { ut, prograde: dv, normal: 0, radial: 0 },
+            initial,
             {
               vars: [
-                { key: 'prograde', steps: [40, 10, 2, 0.5, 0.1, 0.02] },
-                { key: 'ut', steps: [240, 60, 15, 4, 1, 0.25] },
-                { key: 'normal', steps: [80, 20, 5, 1, 0.25, 0.05] },
+                { key: 'prograde', steps: [10, 2, 0.5, 0.1, 0.02] },
+                { key: 'ut', steps: [60, 15, 4, 1, 0.25] },
+                { key: 'normal', steps: [20, 5, 1, 0.25, 0.05] },
+                { key: 'radial', steps: [20, 5, 1, 0.25, 0.05] },
               ],
-              cost: (snap: SimSnapshot) => arrivalCost(snap.patches.planned, planet, star, rp, R),
-              tolerance: 5,
+              cost,
+              tolerance: Math.max(5, (0.02 * rp) / 1000),
             },
             budget,
           );
           return r.best;
         })(),
-      reject: (snap) => (arrivalCost(snap.patches.planned, planet, star, rp, R) >= 1e4 ? 'no encounter with the planet' : null),
-      describe: (snap) => `arrival cost ${arrivalCost(snap.patches.planned, planet, star, rp, R).toFixed(1)} km`,
-      timeout: ut - s.simUt + 7200,
+      reject: (snap) => {
+        const c = cost(snap);
+        return c >= 1e4 ? `no encounter with the planet (closest approach ${c < 1e9 ? `${(c - 1e4).toFixed(0)} km` : 'not found'})` : null;
+      },
+      describe: (snap) => `arrival cost ${cost(snap).toFixed(1)} km`,
+      timeout: initial.ut - s.simUt + 7200,
       then: () => {
         this.departedUt = this.s.simUt;
         this.go('cruise');
@@ -249,14 +392,20 @@ export class TransferPilot extends PilotCore {
     });
   }
 
-  private planCorrection(label: string, bodyId: string, parentId: string): void {
-    const s = this.s;
-    const rp = this.periapsisRadius(bodyId);
-    const R = this.defs.bodies[bodyId]!.radius;
-    const before = arrivalCost(s.patches.current, bodyId, parentId, rp, R);
-    this.note(`${label}: arrival cost before ${before.toFixed(1)} km`);
-    const ut = s.simUt + 900;
-    const start: NodeVars = { ut, prograde: 0, normal: 0, radial: 0 };
+  private planHeliocentricCorrection(label: string): void {
+    const cost = (snap: SimSnapshot): number => this.heliocentricCost(snap.patches.planned);
+    const limit = this.planetId === this.targetId ? 1e4 : 1e6;
+    this.note(`${label}: cost before ${this.heliocentricCost(this.s.patches.current).toFixed(1)}`);
+    this.runCorrection(label, cost, limit, `no encounter with ${this.planetId}`);
+  }
+
+  private planCorrection(label: string, bodyId: string, costOf: (p: readonly Patch[]) => number): void {
+    this.note(`${label}: arrival cost before ${costOf(this.s.patches.current).toFixed(1)} km`);
+    this.runCorrection(label, (snap) => costOf(snap.patches.planned), 1e4, `no encounter with ${bodyId}`);
+  }
+
+  private runCorrection(label: string, cost: (snap: SimSnapshot) => number, limit: number, why: string): void {
+    const start: NodeVars = { ut: this.s.simUt + 900, prograde: 0, normal: 0, radial: 0 };
     this.beginManeuver({
       label,
       initial: start,
@@ -270,15 +419,15 @@ export class TransferPilot extends PilotCore {
                 { key: 'normal', steps: [20, 5, 1, 0.25, 0.05, 0.01] },
                 { key: 'radial', steps: [20, 5, 1, 0.25, 0.05, 0.01] },
               ],
-              cost: (snap: SimSnapshot) => arrivalCost(snap.patches.planned, bodyId, parentId, rp, R),
+              cost,
               tolerance: 2,
             },
             budget,
           );
           return r.best;
         })(),
-      reject: (snap) => (arrivalCost(snap.patches.planned, bodyId, parentId, rp, R) >= 1e4 ? `no encounter with ${bodyId}` : null),
-      describe: (snap) => `arrival cost ${arrivalCost(snap.patches.planned, bodyId, parentId, rp, R).toFixed(1)} km`,
+      reject: (snap) => (cost(snap) >= limit ? why : null),
+      describe: (snap) => `cost after ${cost(snap).toFixed(1)}`,
       skipBelow: 0.3,
       then: () => this.go('cruise'),
     });
@@ -293,12 +442,11 @@ export class TransferPilot extends PilotCore {
       return;
     }
     const target = this.defs.bodies[this.targetId]!;
-    const soi = this.bodySnap(this.targetId).soiRadius ?? 10 * target.radius;
     const rp = v3.len(peri.r);
-    const ra = Math.max(rp * 1.01, (this.opts.captureApoapsisShare ?? 0.3) * soi);
+    const ra = this.captureApoapsis(this.targetId, rp);
     const aHyp = p.conic.a;
     const dv = aHyp < 0 ? captureDeltaV(target.mu, aHyp, rp, ra) : 0;
-    this.note(`capture: ${dv.toFixed(0)} m/s retrograde at periapsis ${(rp / 1000 - target.radius / 1000).toFixed(1)} km`);
+    this.note(`capture: ${dv.toFixed(0)} m/s retrograde at periapsis ${(rp / 1000 - this.equatorialRadius(this.targetId) / 1000).toFixed(1)} km`);
     if (!(dv > 0)) {
       this.go('orbit');
       return;

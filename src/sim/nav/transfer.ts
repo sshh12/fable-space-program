@@ -8,6 +8,7 @@
  */
 import { v3, type Vec3 } from '../../core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
+import { makeOrbit, propagate } from '../orbit/kepler';
 import { solveLambert } from '../orbit/lambert';
 import { goldenMin } from '../orbit/roots';
 
@@ -82,9 +83,15 @@ export interface TransferArc {
   vInfArrive: Vec3;
   /** The phase angle of the target at departure, rad. */
   phaseAngle: number;
-  /** The search's cost of the arc (default |vInfDepart| + |vInfArrive|). */
+  /** The search's cost of the arc (default |vInfDepart| + |vInfArrive|), the plane change of a broken-plane arc included. */
   cost: number;
+  /** A broken-plane arc (`brokenPlaneArc`): the instant and the delta-v of its plane change, m/s; absent on a direct arc. */
+  breakUt?: number;
+  breakDeltaV?: number;
 }
+
+/** Where on the time of flight a broken-plane arc may turn (shares of it; the search keeps the cheapest). */
+export const BROKEN_PLANE_SHARES: readonly number[] = [0.3, 0.45, 0.6, 0.75, 0.9];
 
 export interface TransferSearchOptions {
   /** Time of flight range as multiples of the Hohmann time between the mean orbit radii (default [0.6, 1.5]). */
@@ -94,6 +101,8 @@ export interface TransferSearchOptions {
   /** Grid of the coarse search: departure samples per searched span and time-of-flight samples (default 48, 24). */
   departureSamples?: number;
   tofSamples?: number;
+  /** Also try broken-plane arcs (`brokenPlaneArc` at BROKEN_PLANE_SHARES) and keep the cheapest (default false: direct arcs). */
+  brokenPlane?: boolean;
 }
 
 /** The Lambert arc departing at `departUt` and arriving after `tof`, with its excess velocities; null when none. */
@@ -117,6 +126,55 @@ export function transferArc(system: BodySystem, fromId: string, toId: string, de
   };
 }
 
+/**
+ * A broken-plane arc (the remedy when the target lies far out of the departure body's orbit plane, as Pluto does:
+ * a direct arc near a half revolution needs a steep plane): the first leg stays in the departure body's orbit
+ * plane, on the Lambert arc from its position toward the target's arrival position PROJECTED into that plane; at
+ * `breakShare` of the time of flight one burn turns the craft onto the Lambert arc from there to the target's true
+ * arrival position in the time left. The cost adds that burn to the excess velocities' cost.
+ */
+export function brokenPlaneArc(system: BodySystem, fromId: string, toId: string, departUt: number, tof: number, breakShare: number, cost?: (a: Vec3, b: Vec3) => number): TransferArc | null {
+  const parent = commonParent(system, fromId, toId);
+  const mu = system.body(parent).mu;
+  const s1 = system.stateRelative(fromId, parent, departUt);
+  const s2 = system.stateRelative(toId, parent, departUt + tof);
+  const n1 = v3.normalize(v3.cross(s1.r, s1.v));
+  const inPlane = v3.reject(s2.r, n1);
+  if (!(v3.len(inPlane) > 0)) return null;
+  const leg1 = solveLambert(mu, s1.r, v3.scale(v3.normalize(inPlane), v3.len(s2.r)), tof, true, n1);
+  if (!leg1) return null;
+  const breakUt = departUt + breakShare * tof;
+  const sb = propagate(makeOrbit(parent, mu, s1.r, leg1.v1, departUt), breakUt);
+  const leg2 = solveLambert(mu, sb.r, s2.r, departUt + tof - breakUt, true, n1);
+  if (!leg2) return null;
+  const vInfDepart = v3.sub(leg1.v1, s1.v);
+  const vInfArrive = v3.sub(leg2.v2, s2.v);
+  const breakDeltaV = v3.len(v3.sub(leg2.v1, sb.v));
+  return {
+    departUt,
+    arriveUt: departUt + tof,
+    tof,
+    vInfDepart,
+    vInfArrive,
+    phaseAngle: phaseAngle(system, fromId, toId, departUt),
+    cost: (cost ? cost(vInfDepart, vInfArrive) : v3.len(vInfDepart) + v3.len(vInfArrive)) + breakDeltaV,
+    breakUt,
+    breakDeltaV,
+  };
+}
+
+/** The cheapest of the direct arc and (with `brokenPlane`) the broken-plane arcs departing at departUt with time of flight tof. */
+function searchArc(system: BodySystem, fromId: string, toId: string, departUt: number, tof: number, opts: TransferSearchOptions): TransferArc | null {
+  let best = transferArc(system, fromId, toId, departUt, tof, opts.cost);
+  if (opts.brokenPlane) {
+    for (const share of BROKEN_PLANE_SHARES) {
+      const arc = brokenPlaneArc(system, fromId, toId, departUt, tof, share, opts.cost);
+      if (arc && (!best || arc.cost < best.cost)) best = arc;
+    }
+  }
+  return best;
+}
+
 /** Mean orbit radius of a body about its parent (the semi-major axis of its osculating conic at ut). */
 function meanRadius(system: BodySystem, id: string, ut: number): number {
   const c = system.orbitConic(id, ut);
@@ -127,7 +185,7 @@ function meanRadius(system: BodySystem, id: string, ut: number): number {
 /**
  * The best transfer arc departing in [fromUt, toUt] (a porkchop search: a grid of departure times and times
  * of flight, then the best cell refined by alternating golden-section searches in departure time and time of
- * flight). Null when no arc exists.
+ * flight; with `brokenPlane` every cell also tries the broken-plane arcs). Null when no arc exists.
  */
 export function bestTransfer(system: BodySystem, fromId: string, toId: string, fromUt: number, toUt: number, opts: TransferSearchOptions = {}): TransferArc | null {
   const parent = commonParent(system, fromId, toId);
@@ -143,7 +201,7 @@ export function bestTransfer(system: BodySystem, fromId: string, toId: string, f
     const td = fromUt + ((toUt - fromUt) * i) / nd;
     for (let j = 0; j <= nt; j++) {
       const tof = th * (k0 + ((k1 - k0) * j) / nt);
-      const arc = transferArc(system, fromId, toId, td, tof, opts.cost);
+      const arc = searchArc(system, fromId, toId, td, tof, opts);
       if (arc && (!best || arc.cost < best.cost)) best = arc;
     }
   }
@@ -153,7 +211,7 @@ export function bestTransfer(system: BodySystem, fromId: string, toId: string, f
   let tof = best.tof;
   let dd = (toUt - fromUt) / nd;
   let dt = (th * (k1 - k0)) / nt;
-  const costOf = (a: number, b: number): number => transferArc(system, fromId, toId, a, b, opts.cost)?.cost ?? Infinity;
+  const costOf = (a: number, b: number): number => searchArc(system, fromId, toId, a, b, opts)?.cost ?? Infinity;
   for (let pass = 0; pass < 6; pass++) {
     const lo = Math.max(fromUt, td - dd);
     const hi = Math.min(toUt, td + dd);
@@ -164,7 +222,7 @@ export function bestTransfer(system: BodySystem, fromId: string, toId: string, f
     dd /= 2;
     dt /= 2;
   }
-  const refined = transferArc(system, fromId, toId, td, tof, opts.cost);
+  const refined = searchArc(system, fromId, toId, td, tof, opts);
   return refined && refined.cost <= best.cost ? refined : best;
 }
 

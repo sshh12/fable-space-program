@@ -12,14 +12,24 @@ reach, launch windows per pad; f94556a rails at any lead and the prediction acce
 residency and the shared tile store interface; c1bb1b2 tools/bodies/activate.mjs; d0980eb requests -1 item 6 and
 -2. Then the transfer pilot and its scenario (section 6).
 
+**Successor (second builder, 2026-11-24), running state.** The transfer pilot plans its window by a porkchop of
+Lambert arcs between the osculating orbits of the snapshot (its own universal-variable Lambert in
+transferMath.ts, held against src/sim/orbit/lambert.ts), costs the departure as the 3-D periapsis burn from the
+ACTUAL parking orbit, and aims the departure through the origin's sphere (`aimDeparture`: the craft leaves the
+sphere about 130 m/s faster than the asymptotic excess speed; ignoring that missed Mars by 2.6 Gm). Measured on
+the 2030-12-24 window: the first guess enters Mars's sphere; the compass search sets the periapsis to 26.6 km in
+57 evaluations; the 3,669 m/s burn flies. The flights start in the departure plane (as a player launches at the
+window: tests/unit/solar-system/flightPlane.ts). Reach: `ReachOptions.brokenPlane` and a long `searchSpan`
+(searched one synodic period at a time) close Pluto, Charon and Mercury after the refuel; Mimas stays short by
+0.35 km/s (request -3). Both defaults of request -1 (items 1, 6) are tested under both settings
+(tests/unit/solar-system/defaults.test.ts).
+
 **Not done** (in the order a successor should take them):
-0. **The transfer flights do not yet succeed** (section 6): the pilot, its scenario and the gated flight test are
-   committed; the Mars flight fails at its departure plan (the compass search from the Hohmann first guess finds
-   no encounter). Next step: a Lambert first guess in the pilot (section 6).
-1. The transfer flights to Titan or Callisto, and to Phobos (section 6): the pilot plans a moon encounter after
-   the planet's SOI entry (approach A of solar-system.md 6.2), which suits Titan and Callisto; Phobos needs a
-   rendezvous after a Mars capture (its 16.6 km sphere is crossed in seconds at the flyby speed, and the capture
-   burn of about 2 km/s takes the stack's engines many minutes), which the pilot does not have.
+0. **The flights stop at the Earth's SOI exit on the shared tree**: the World hands the craft to the Sun with a
+   state of |r| = 10.5 m and v = 0 (an island-local offset reported as the Sun-centred state), the warp is held at
+   4x physics ("Altitude too low") and the map's impact hint asks the terrain for 'sun', which throws. Being
+   checked on a clean worktree of HEAD (section 6).
+1. Phobos needs a rendezvous after a Mars capture (section 6), which the pilot does not have yet.
 2. The planning service (`PlanningService` of session.ts) is not wired by this package: `LocalSession` is
    universe-directory's (4.2). Its five calls map to functions here (section 2, "For the planning service").
 

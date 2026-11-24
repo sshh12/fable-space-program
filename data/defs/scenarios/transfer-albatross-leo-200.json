@@ -1,0 +1,22 @@
+{
+  "id": "transfer-albatross-leo-200",
+  "name": "Transfer: the Albatross cruiser in a 200 km parking orbit (10.9 km/s)",
+  "vehicle": "meridian-albatross",
+  "site": "ka-lae",
+  "pad": "lc-2",
+  "startUt": 938240818.8416667,
+  "start": {
+    "kind": "orbit",
+    "bodyId": "earth",
+    "periapsisAltitude": 200000,
+    "apoapsisAltitude": 200000,
+    "inclinationDeg": 19,
+    "lanDeg": 0,
+    "argPeDeg": 0,
+    "trueAnomalyDeg": 0
+  },
+  "stagesAlreadyFired": 4,
+  "target": null,
+  "suggestedLanding": null,
+  "milestones": []
+}

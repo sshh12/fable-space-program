@@ -86,6 +86,23 @@ describe('the SOI rule', () => {
     expect(sys.body('jupiter').soiRadius! / 1e9).toBeCloseTo(48.2, 1);
     expect(Math.abs(sys.body('neptune').soiRadius! / 1e9 - 86.8)).toBeLessThan(0.5);
   });
+
+  it("the Moon's sphere is PINNED at 66,100 km by its definitions in both libraries; the rule would give 61,500 km (Hill binds)", async () => {
+    // What the golden and the original mission fly is the stated number; the v2 rule reaches the Moon only
+    // through a definition that says 'auto' (none does; sim-orbits' synthetic 'auto' test holds the 61.5e6).
+    const shippedWorld = await loadShipped();
+    for (const w of [shippedWorld, staged]) {
+      expect(w.defs.bodies['moon']!.soiRadius).toBe(66.1e6);
+      expect(w.system.body('moon').soiRadius).toBe(66.1e6);
+    }
+    const m = staged.defs.bodies['moon']!;
+    const a = (m.orbit as { a: number }).a;
+    const ratio = m.mu / staged.defs.bodies['earth']!.mu;
+    const hill = a * Math.cbrt(ratio / 3);
+    const laplace = a * Math.pow(ratio, 0.4);
+    expect(Math.abs(Math.min(hill, Math.max(laplace, 2.5 * m.radius)) - 61.5e6)).toBeLessThan(0.3e6);
+    expect(Math.abs(laplace - 66.1e6)).toBeLessThan(0.3e6);
+  });
 });
 
 describe('the runtime ephemeris', () => {

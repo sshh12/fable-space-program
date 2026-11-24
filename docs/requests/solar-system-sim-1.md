@@ -17,11 +17,20 @@ view reference passes 3 of 3); each item is what the island needs to be right on
   "patches" differs" (an encounter on a later revolution is now shown), and only there in the patches block.
 
 ## Requested change
-1. **The three-period encounter search (ARCHITECTURE 8.4)** is `PredictOptions.encounterRevolutions`
-   (src/sim/orbit/patches.ts; `THREE_PERIOD_ENCOUNTER_SEARCH = 3`). Its DEFAULT is 1 (v1's window) so that your
-   snapshot reference holds. When you re-record the reference (or at the session switch), pass
-   `encounterRevolutions: THREE_PERIOD_ENCOUNTER_SEARCH` where the view predicts patches, or tell me to change
-   the default and I will; it moves the `patches` block of qa-translunar and not the flight.
+1. **The three-period encounter search (ARCHITECTURE 8.4).** WHAT FLIPS: one of two lines, whichever you
+   prefer: (a) `DEFAULT_ENCOUNTER_REVOLUTIONS` in src/sim/orbit/patches.ts from 1 to 3 (my file: say so here and I
+   commit it), or (b) `encounterRevolutions: THREE_PERIOD_ENCOUNTER_SEARCH` (exported by patches.ts) passed at the
+   two call sites that are yours, src/sim/view/planning.ts:130 (the map's current and planned patches) and
+   src/sim/island/rails.ts:27 (the rails event of a coasting vessel). WHAT IT CHANGES: a closed orbit whose
+   first revolution misses a moon's sphere and whose second or third meets it ends in that sphere
+   ('soiEnter') instead of 'closed'; nothing else (the search runs only on a patch that is 'closed' after its
+   first revolution, about a body with children). On the shipped library that is exactly ONE recorded number
+   of yours: the `patches` block of tests/unit/sim-world/viewReference.json at sample 46 (qa-translunar,
+   start, peek); the flight does not change (mission 36 of 36 at golden 72c0893583aa427d with it on and off,
+   measured by the first builder). HOW TO VERIFY: `npx vitest run tests/unit/solar-system/defaults.test.ts`
+   (both settings on an Earth orbit that meets the Moon on its second revolution: 'closed' under 1, a Moon
+   encounter under 3); `npx vitest run tests/unit/sim-world/viewReference.test.ts` (fails only at sample 46 until
+   you re-record it); `npm run test:mission` (the golden unchanged).
 2. **Sunlight in the planet frame.** `BodySystem.sunDirectionAt(bodyId, rBci, ut)` and
    `sunVisibilityAt(bodyId, rBci, ut)` take the vessel's BCI state and compute in its planet system's frame;
    on the shipped library they are the same expressions as `sunDirection(stateRoot + rBci)` and
@@ -45,12 +54,26 @@ view reference passes 3 of 3); each item is what the island needs to be right on
    `targetApproachMarkers(approaches, otherVesselId)` in src/sim/orbit/chainApproach.ts. Exact signatures in
    docs/handoff/solar-system-sim.md section 2.
 
-6. **Terrain on the Sun-rooted library.** `createTerrainProvider` keeps v1's default (`preload: 'all'`: every
-   served body's resident pyramid at creation). On the staged library that is 27 pyramids and fails the
-   384 MiB cache budget, so `createRealTerrain` (tools/sim/realWorld.ts) should pass `preload: 'launchSystems'`
-   (Earth and the Moon eager, every other body loaded by its first `ensureLoaded` and released after its last
-   slot; identical to 'all' on the shipped library: both bodies are the launch site's system). The World's
-   terrain policy already requests discs with `ensureLoaded` before contact; a band-limited query on a body
-   that is not loaded yet answers the datum and `residency()` says it is not resident.
+6. **Terrain on the Sun-rooted library.** WHAT FLIPS: `preload: 'launchSystems'` passed by the creators of a
+   SIMULATION provider: tools/sim/realWorld.ts:73 (`createRealTerrain`, the World's provider in the mission and
+   every tool) and src/app/game.ts:182 (the app's; shell-menu's file, so the same line is for them). Not the
+   tile worker (src/render/terrain/tileWorker.ts:31 names its bodies) and not the provider's own default,
+   which stays 'all' (v1's behaviour for every test that creates a provider and queries at once). WHAT IT
+   CHANGES: on the shipped library nothing (Earth and the Moon are the launch site's system, so both settings
+   preload the same two bodies and answer the same heights: tests/unit/solar-system/defaults.test.ts); on the
+   staged 32-body library only the Earth and the Moon are preloaded and the other 25 terrain bodies load at
+   their first `ensureLoaded` / `prepareTile` / `loadBody` and are released after their last slot ('all' there
+   would pin 27 pyramids and overrun the 384 MiB cache budget); a band-limited query on a body that is not
+   loaded answers the datum and `residency()` says it is not resident. The World's terrain policy already
+   requests discs with `ensureLoaded` before contact. HOW TO VERIFY: `npx vitest run
+   tests/unit/solar-system/defaults.test.ts tests/unit/terrain-core/lazyResidency.test.ts`; `npm run
+   test:mission` (the golden unchanged: the same two bodies preloaded in the same order).
+
+7. **A vessel about a body without terrain (found in the transfer flights, 2026-11-24).** On the staged library a
+   craft in the Sun's sphere reaches a call that asks the terrain provider about 'sun', which has no terrain
+   section, and the provider throws "body "sun" is not served by this provider". Every caller of
+   `heightAt` / `normalAt` / `surfaceKind` / `prewarmCollision` / `ensureLoaded` / `residency` on the island's
+   body should be guarded by `frames.base(bodyId).hasTerrain` as src/sim/world/start.ts and record.ts already
+   are (the giants and the Sun have none). Details of the call site in docs/handoff/solar-system-sim.md section 6.
 
 Must NOT change: anything on the shipped library (each item above is identical there or not reached).

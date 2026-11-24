@@ -21,16 +21,17 @@
  *  - the refuel point (optional): a high elliptical orbit about the origin (periapsis at the parking orbit,
  *    apoapsis REFUEL_HIGH_ORBIT_SOI_SHARE of the origin's sphere) or a low orbit about the origin's largest moon;
  *    the result states the delta-v before and after it (with full tanks there);
+ *  - optionally a broken-plane heliocentric leg (ReachOptions.brokenPlane): its plane change is a leg of its own;
  *  - allowances: BURN_LOSS_SHARE of every burn (finite burns, steering), and a correction allowance per
  *    transfer leg (CORRECTION_PER_INTERPLANETARY_LEG, CORRECTION_PER_MOON_LEG).
  *
  * Generic: no body is named; the origin is the body of the library's launch sites unless stated.
  */
 import type { DefLibrary } from '../../core/contracts/defs';
-import { v3 } from '../../core/math/vec3';
+import { v3, type Vec3 } from '../../core/math/vec3';
 import { createBodySystem, type BodySystem } from '../bodies/bodySystem';
 import { surfaceRadiusRange } from '../bodies/shape';
-import { bestTransfer, captureDeltaV, departureDeltaV, hohmannTransferTime, synodicPeriod } from './transfer';
+import { bestTransfer, captureDeltaV, departureDeltaV, hohmannTransferTime, synodicPeriod, type TransferArc } from './transfer';
 
 /** Share of every impulsive burn added for finite-burn and steering losses. */
 export const BURN_LOSS_SHARE = 0.02;
@@ -65,8 +66,14 @@ export interface ReachOptions {
   method?: 'lambert' | 'hohmann';
   /** Start of the window search, s (default: the earliest scenario start of the library, else J2000). */
   fromUt?: number;
-  /** Length of the window search, s (default one synodic period of the two planets). */
+  /** Length of the window search, s (default one synodic period of the two planets; a longer span is searched one synodic period at a time). */
   searchSpan?: number;
+  /**
+   * Also try broken-plane heliocentric legs (src/sim/nav/transfer.ts `brokenPlaneArc`: in the departure plane,
+   * one plane change on the way, then to the target's true position) and keep the cheaper (default false, the
+   * direct Lambert arc: the numbers fleet-data's reach table holds). Lambert method only.
+   */
+  brokenPlane?: boolean;
 }
 
 export interface ReachLeg {
@@ -289,6 +296,7 @@ export function deltaVToOrbit(defs: DefLibrary, bodyId: string, options: ReachOp
     const costOf = (vd: number, va: number): number => dep.depart(vd) + arrival(va).legs.reduce((s, l) => s + l.deltaV, 0);
     let vd: number;
     let va: number;
+    let breakDeltaV = 0;
     const parentMu = system.body(origin.parentId!).mu;
     const r1 = meanDistance(system, originId, fromUt);
     const r2 = meanDistance(system, planetId, fromUt);
@@ -298,15 +306,24 @@ export function deltaVToOrbit(defs: DefLibrary, bodyId: string, options: ReachOp
       va = Math.abs(Math.sqrt(parentMu / r2) * (1 - Math.sqrt(r1 / a)));
       transferTime = hohmannTransferTime(parentMu, r1, r2);
     } else {
-      const span = options.searchSpan ?? Math.min(synodicPeriod(parentMu, r1, r2), 20 * 365.25 * 86400);
-      const arc = bestTransfer(system, originId, planetId, fromUt, fromUt + span, { cost: (a, b) => costOf(v3.len(a), v3.len(b)) });
+      // one synodic period at a time (each on its own grid): a longer span is the best of its windows
+      const syn = Math.min(synodicPeriod(parentMu, r1, r2), 20 * 365.25 * 86400);
+      const span = options.searchSpan ?? syn;
+      const search = { cost: (a: Vec3, b: Vec3): number => costOf(v3.len(a), v3.len(b)), brokenPlane: options.brokenPlane ?? false };
+      let arc: TransferArc | null = null;
+      for (let t = fromUt; t < fromUt + span; t += syn) {
+        const w = bestTransfer(system, originId, planetId, t, Math.min(fromUt + span, t + syn), search);
+        if (w && (!arc || w.cost < arc.cost)) arc = w;
+      }
       if (!arc) throw new Error(`deltaVToOrbit: no transfer arc from ${originId} to ${planetId} departing in the search span`);
       vd = v3.len(arc.vInfDepart);
       va = v3.len(arc.vInfArrive);
       transferTime = arc.tof;
       departUt = arc.departUt;
+      breakDeltaV = arc.breakDeltaV ?? 0;
     }
     legs.push({ name: dep.departName, deltaV: dep.depart(vd) });
+    if (breakDeltaV > 0) legs.push({ name: 'plane change of the broken-plane arc', deltaV: breakDeltaV });
     const arr = arrival(va);
     legs.push(...arr.legs);
     aerobraked = arr.aerobraked;
