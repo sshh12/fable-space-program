@@ -17,6 +17,7 @@ done (with commits), what is measured, the decisions. Continue from here and
 | 6815c77 | The lead's two points: no read of `defs.vehicles` by a runtime id in this package's scanned files (`tests/unit/fakes/deprecated.test.ts` rule `vehicles`: `ShellDeps.capabilities` takes the `VehicleDef` the menu lists; the lab's display vessel is `presentableVehicles(defs)[0]`; the fixture test lists ids). The rule `html` finding on the ROOT `index.html:106` (the capability gate's inline script, 4eeb9e0) is capability-settings', not this package's. The offer's order: presentable first-offer vehicles, then the other presentable ones (all of them when none is a first offer: never empty), then the rest, disabled. List rows no longer shrink in a scrolling list |
 | a0e8860, 3045ea9 | A letter that is also a menu key (W, S) or Space types into a text field (only Enter, Esc, up/down act there); the lab's flight camera holds the transit's last pose; the status line and the Launch card in full ink |
 | b7467a3 | Pad limits compared with fleet-data's tolerances (`ShellDeps.padLimitTolerance` = `LIMIT_TOLERANCE`, `DIAMETER_TOLERANCE` of src/sim/vessel/validate.ts; `padTakes`): the 9.50 m lunar stack was refused LC-1's stated 9.5 m by a rounding hair |
+| c7478e1, 5649c6b | The lab's flight camera held body-fixed at the transit's last point; the tab bar on a plate; the display vessel stands on the pad's mount (it was drawn below the ground), the turntable aims at the stack's middle |
 | 1fb6167 | Presentable vehicles only (see 6); the identity screen (`src/shell/identity.ts`, `createIdentityFixture`); the Hangar turntable (`ShellIntent` `turntable`; the lab's display vessel); layout (scrolling column and lists, detail and Launch in the right column, banner at the right, plates behind the top-right status and "Press any key", stronger fills); the click-through-a-rebuilt-control fix; the transit status read live; pad focus on a free pad of the vehicle's own class; the transit's exposure follows the meter below the hold |
 
 ## 2. Public API (exact signatures)
@@ -34,7 +35,8 @@ interface Shell {
 }
 ShellDeps { root, canvas, defs, format: NumberFormat, keys: ShellKeys, lobby: ShellSession, practice: ShellSession | null,
   publishScrim(rects), boot(): BootProgress, snapshot(): SimSnapshot | null,
-  capabilities(vehicleId: string, rules: UniverseRules): VehicleCapabilities,      // analyzeVehicle(defs, v, { rules, reachCost }) of the host
+  capabilities(vehicle: VehicleDef, rules: UniverseRules): VehicleCapabilities,    // analyzeVehicle(defs, vehicle, { rules, reachCost }) of the host
+  padLimitTolerance: { massShare: number; diameter: number },                      // LIMIT_TOLERANCE, DIAMETER_TOLERANCE of src/sim/vessel/validate.ts
   settings: SettingsHost | null, identity: IdentityHost | null, padCycleSeconds(rules): number | null,
   capacityReport(): string | null, wallNow(): number, captured(): boolean, intent(i: ShellIntent): void, reportError(m), reducedMotion?, uiScale? }
 IdentityHost { callsign(): string | null; check(name): Promise<CallsignCheck>; generate(): string; rule(): string; create(name): Promise<{ recoveryCode: string }> }
@@ -43,7 +45,8 @@ ShellIntent = context | frame (subject earth|turntable|site|flight, vehicleId: a
             | transit (request, practice) | spawnAcknowledged | riseBack | resume | leave | capture (opt-in)
             | turntable { turn, zoom } | watchPad | trackShip
 classOutlook(sites, padStates, vehicleClass, liveTick, rules, fit?: VehicleFit); padRows(sites, states, cls, liveTick, fit?)
-VehicleFit { massWet: number; diameter: number; rules: UniverseRules }
+VehicleFit { massWet: number; diameter: number; rules: UniverseRules; tolerance: { massShare: number; diameter: number } }
+padTakes(limits: { maxLiftoffMass; maxDiameter }, fit: VehicleFit): boolean     // as validateVehicle compares
 // src/camera: menuEye, transitSample, transitPose, holdProgress, transitPathLength(plan, u0, a0, u1, a1, steps = 8): number
 // src/core/fakes: createMenuFixture, menuShipsFixture, createIdentityFixture(opts?: IdentityFixtureOptions): IdentityFixture
 ```
@@ -57,43 +60,48 @@ VehicleFit { massWet: number; diameter: number; rules: UniverseRules }
   `mouse.spec.ts`, `legibility.spec.ts` (contrast by day and at a night pad, transit on its path, night exposure at the hand-over),
   `coldstart.spec.ts`, `menu.perf.spec.ts` (CDP A/B, text rate, transit frame times). Helpers in `menuPage.ts`.
 
-## 4. Acceptance, as measured (run 4 at 14723e1; run 5 at 1fb6167: section 7)
+## 4. Acceptance, as measured
 
-| Line | State |
+| Line | State (runs 6 and 7: section 7) |
 |---|---|
 | Binding tables (no Ctrl/Alt/Meta, no conflicts, every action reachable) | MET (unit, 7 tests) |
 | Rules screen: default and staging, different numbers, no code change | MET (unit) |
-| Credits: every source and licence line on the screen | MET (browser, run 4 test 5) |
-| Deploy flow by keyboard, focus per step, Back from every screen | MET (run 4 tests 4, 5) |
-| The same by mouse | spec `mouse.spec.ts`; run 4 failed on a real bug (a click whose control rebuilt the screen fell through to "begin" on the title), fixed in 1fb6167 |
-| Four resolutions | MET at 1280x720 (test 4), 2560x1440, 3840x2160, 3440x1440 (run 4 tests 8-10); pictures looked at |
-| Transition: camera on its path every frame | MET: 599 frames, largest step 18.8 km, 0 steps above `transitPathLength` + 1 cm (run 4, day) |
-| No frame >= 33 ms in the transit | MET: worst 27.4 ms, p99 18.1, p50 16.7 (run 4, perf, GPU lock) |
-| HUD only after the spawn gate | the shell hides itself and publishes no scrim until `handOver()` (asserted); the lab has no HUD: the HUD's own gate is app-integration-1's |
-| Holding drift on a slow acknowledgement | run 4 failed on a real bug (the transit text was a stale copy), fixed in 1fb6167 |
-| A refused spawn re-targets | the spawn flow and the fixture's `refuseNext` exist and the refusal panel offers the alternative; no browser assertion yet |
-| Night pad exposure within 1 EV at hand-over | run 4: 1.93 EV (hand-over 9.55, settled 11.48): NOT MET; fixed in 1fb6167 (the pad's exposure is the meter's reading from the hold down, rate >= 2 EV/s): see run 5 |
-| Contrast >= 4.5:1 over the brightest backdrop, every text box | run 4 by day: 16 texts below (top-right status 1.0 over cloud, "Press any key" 1.08 over the limb, a label under a tab underline 1.12, a few dim captions 3.8-4.3): layout fixed in 1fb6167; see run 5 |
-| Menu DOM main thread <= 0.5 ms/frame; text <= 10 Hz | MET: 0.145 ms (hub, open 1.281 / hidden 1.136) and 0.070 ms (pad screen); 9.7 Hz (run 4, perf, thread ticks) |
-| Practice: keyboard flow with requests blocked; from an unreachable server | PARTLY: Practice runs the same deploy flow on the local rules (fixture, never queues); the reconnecting / offline banner offers it; no spec with blocked requests yet. A real `LocalSession` is session-switch's (the session type has no universe commands or stores until then): the fixture is this package's ground |
-| Cold start: title on the boot set, progress, Play only when the hangar data is resident | spec `coldstart.spec.ts` (`&planet=1&holdboot=1`); run 4 failed on the spec's own text match (innerText is upper-cased), fixed |
-| Wave-2 flight-ui, map, audio specs; FakeSession conformance | not re-run (nothing of theirs changed) |
+| Credits: every source and licence line on the screen | MET (browser, menu.spec test 2) |
+| Deploy flow by keyboard, focus per step, Back from every screen | MET (menu.spec tests 1, 2; runs 6, 7) |
+| The same by mouse | MET (mouse.spec, run 6: hover moves the focus, tabs and deploy by click, Back by the prompt bar, Leave by click) |
+| Four resolutions | MET: 1280x720, 2560x1440, 3840x2160, 3440x1440 (runs 6, 7); pictures looked at |
+| Transition: camera on its path every frame | MET: 599 frames, largest step 18.9 km, 0 steps above `transitPathLength` + 1 cm (runs 6, 7, day; night too) |
+| No frame >= 33 ms in the transit | MET: worst 27.0 ms, p99 17.1, p50 16.7 (run 6, perf, GPU lock) |
+| HUD only after the spawn gate | PARTLY: the shell hides itself and publishes no scrim until `handOver()` (asserted in flight); the lab has no HUD, so the HUD's own gate is app-integration-1's |
+| Holding drift on a slow acknowledgement | MET (menu.spec test 4, runs 6, 7: progress stands at the hold while every step > 0, "Securing range") |
+| A refused spawn re-targets | MET (retarget.spec, run 6: rises back to deploy/pad with the reason, the alternative pad launches to control) |
+| Night pad exposure within 1 EV at hand-over | MET: 11.38 EV at the hand-over, settled 11.40 (0.02 EV), Ka Lae LC-1 at 01:00 local, floodlit (run 7). The test still FAILS on one WebGPU warning of the spot shadow pass ("shadow.spot0" draw with 0 indices): request shell-menu-5 |
+| Contrast >= 4.5:1 over the brightest backdrop, every text box | MET by day (run 7: every screen, worst 5.00:1 on Credits' "Moon · Public domain", 5.66 Hangar, 6.17 Universe) and at night (run 7: pad screen 7.71, flight menu over the night pad 10.24). Text of disabled controls (the fleet's not-yet-available rows) is reported and not held (WCAG 1.4.3). Tables: out/screens/shell-menu/contrast-day.json, contrast-night.json |
+| Menu DOM main thread <= 0.5 ms/frame; text <= 10 Hz | MET: hub -0.04 ms (noise), pad screen 0.140 ms (open 1.806 / hidden 1.666 ms); text 9.5 Hz (run 6, perf, CDP thread ticks, five A/B rounds of 240 frames) |
+| Practice: keyboard flow with requests blocked; from an unreachable server | MET on the fixture (practice.spec, run 6): every other origin blocked, keyboard from the hub's Practice card to control on the pad, the spawn to the Practice session (lobby 0, practice 1); `&link=offline` shows the banner, its Practice offer reaches the pad. A real `LocalSession` is session-switch's (the session type has no universe commands or stores until then): the fixture is this package's ground |
+| Cold start | MET (coldstart.spec, run 6): `&planet=1&holdboot=1`, the title reports each boot step, a key does not begin while the hangar step is open, only the boot set's tile index, manifests and low-resolution globals are fetched; releasing the hangar opens Play |
+| Wave-2 flight-ui, map, audio specs; FakeSession conformance | NOT re-run this round (nothing of theirs changed; the GPU slot was shared all day) |
+| Turntable, display vessel, exploded stage view | PARTLY: the Hangar and Choose-a-craft orbit the display vessel on its pad (J / L turn, I / K zoom; picture hub-hangar-turntable-1280); the stage view (`splitForStage`) is NOT built (X is bound, no screen uses it) |
+| Identity (callsign, recovery code) | MET on the fixture (menu.spec test 5, runs 6, 7): taken with suggestions, invalid in the service's words, available, created, the code once, Back cannot leave it |
+| Audio (buses, UI sounds, menu score) | NOT DONE (section 5) |
+| Type on the HUD and map labels | request shell-menu-4, not this package's files |
 
 ## 5. Left, in order
 
-1. Run 5's result (section 7), then the perf spec again on the final tree (the scrim now clips to scrolled
-   ancestors: re-measure the 0.5 ms line).
-2. Practice spec with requests blocked (`page.route('**', abort)` for anything outside the page's own files) and
-   from `&link=offline`.
-3. A refused spawn re-targeting in the browser (`&refuse=1`).
-4. The exploded stage view (`splitForStage`) and the spectate rig; the turntable shows the display vessel the
-   lab assembled (one presentable vehicle today); the app's host must build its own per chosen vehicle.
-5. Settings' graphics rows from capability-settings' `GraphicsSettings` (src/bench/settings.ts) through
-   `SettingsHost` (app-integration-1 or the next round: the lab passes `settings: null`).
-6. Audio (NOT STARTED): buses music and comms wait for the lead's join of `AudioBusNameV2` into `AudioBusName`
+1. Request shell-menu-5 (the spot shadow pass's empty draw): the night test passes once it is fixed.
+2. The exploded stage view (`splitForStage`) and the spectate rig. The turntable's framing: the stack's base sits
+   behind the detail panel at 1280x720 (lens shift to the free area's centre; a closer or higher eye).
+3. The transit's end pose and the app's chase rig: the lab's flight camera holds the transit's last pose (no chase
+   rig in the lab); in the app the chase rig must START at `TransitPlan.endOffsetEnu` (and look where the transit
+   looks) or the hand-over cuts and the exposure lands on another view. The lab's end looks at the pad + 9 m: the
+   stack's top is cut; look at the stack's middle.
+4. Settings' graphics rows from capability-settings' `GraphicsSettings` (src/bench/settings.ts) through
+   `SettingsHost` (the lab passes `settings: null`; rows are read-outs today).
+5. Audio (NOT STARTED): buses music and comms wait for the lead's join of `AudioBusNameV2` into `AudioBusName`
    (still separate in src/core/contracts/audio.ts); the UI sound set and the menu score via tools/audio
-   (ElevenLabs, budget 60 USD); nothing before the first gesture. (labs/audio and tests/unit/audio have another
-   agent's uncommitted edits today: leave them.)
+   (ElevenLabs, budget 60 USD); nothing before the first gesture. (labs/audio and tests/unit/audio had another
+   agent's uncommitted edits today: left alone.)
+6. Re-run the wave-2 flight-ui, map and audio specs.
 7. The HUD and map label atlas on the shipped type (request shell-menu-4).
 
 ## 6. Decisions and why
@@ -103,7 +111,7 @@ VehicleFit { massWet: number; diameter: number; rules: UniverseRules }
 - PRESENTABLE ONLY (lead decision of 2026-11-24): the Hangar and the deploy flow offer `presentableVehicleIds(defs)`
   (src/core/access/presentable.ts) first and list the others disabled as "Not yet available" (the brief shows the
   full fleet in the Hangar); My Ships does not resume a ship of a vehicle that cannot be shown; the turntable intent
-  names only a presentable vehicle; the lab builds its display vessel from `firstPresentableVehicleId`. NOTE:
+  names only a presentable vehicle; the lab builds its display vessel from `presentableVehicles(defs)[0]`. NOTE:
   presentable.ts and the vessel feature's use of it were in the working tree, NOT committed, when 1fb6167 was
   made; 1fb6167 needs that commit to compile on its own.
 - The pad class is the analysis' (`VehicleCapabilities.padClass`, derived by fleet-data from the class limits of
@@ -137,4 +145,19 @@ VehicleFit { massWet: number; diameter: number; rules: UniverseRules }
   under the panel: right column now), launch-queue-reconnecting (banner over the tabs: moved right),
   flight-menu (subtitle weak over the sky: full ink + top vignette), hub-universe and hub-credits (ran off the
   screen: the column scrolls, up/down scroll it), hub-settings (clean), flight-night-handover (flood-lit pad).
-- Run 5 (1fb6167): RUNNING when this was written.
+- Run 5 (1fb6167, functional, 15 tests, 11.0 min): 10 passed (keyboard flow, Back, queue, holding drift, three
+  resolutions, mouse, Practice blocked, Practice from the offline banner), 5 failed: cold start (the boot set's
+  tile index and low-resolution globals: spec fixed), contrast by day (rows squeezed in a scrolling list: fixed),
+  night exposure (1.93 EV: the lab's flight view differed from the transit's end view: the lab's flight camera now
+  holds the transit's last pose), first Play (the S of a callsign was taken as menu-down: fixed), re-target (an
+  immediate refusal passes through 'transit' between two frames: spec fixed). Also seen: LC-1 refused the lunar
+  stack by a rounding hair (9.50 m stack, LC-1 states 9.5 m): fleet-data's tolerances now (b7467a3).
+- Run 6 (b7467a3, functional + perf, 16 tests, 10.3 min): 14 PASSED, 2 failed - contrast by day (one unselected
+  tab at 4.19:1 over the turntable's sky: tab bar on a plate since c7478e1) and the night exposure (the lab's flight
+  camera was held in ROOT and drifted off the pad with the Earth: held body-fixed since c7478e1). Perf (GPU lock,
+  thread ticks): menu DOM -0.04 ms/frame on the hub and 0.140 ms on the pad screen (open 1.806 / hidden 1.666),
+  text 9.5 Hz; transit 599 frames, p50 16.66 ms, p99 17.1 ms, worst 27.0 ms, none >= 33 ms. Day transit: 0 of 599
+  steps off the path. Contrast by day: every text of every screen >= 4.5:1 at the 2nd percentile except that tab.
+  The vessel feature drew the display vessel (1 vessel, 125 instances) but below the ground (origin height 0): the
+  lab stands it on the mount since 5649c6b.
+- Run 7 (5649c6b, legibility + menu specs, 10 tests, 6.0 min): 9 PASSED, 1 failed: the night test, after all of its assertions passed (hand-over 11.38 EV, settled 11.40; night contrast >= 7.7:1), on one WebGPU warning of the spot shadow pass (request shell-menu-5). Contrast by day: no text below 4.5:1. Pictures looked at: hub-hangar-turntable (the lunar stack on LC-1 beside its tower, the fleet list with seven rows not yet available, the detail panel), flight-1280 (the stack on LC-1 at the hand-over pose; its top is cut), identity-recovery (the code, copy and download, the card), flight-night-handover (the floodlit pad).
