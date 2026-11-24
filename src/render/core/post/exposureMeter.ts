@@ -8,7 +8,7 @@
 import type { FrameContext, RenderContext } from '@/core/contracts/render';
 import type { Perf } from '../perf';
 import type { CoreShaderLibrary, Tracked } from '../shaders/library';
-import { adaptEv100, adaptEv100Cut, HISTOGRAM_BINS, HISTOGRAM_MIN_LOG2, HISTOGRAM_RANGE_LOG2, INTERIOR_RANGE, LUMINANCE_FLOOR, meterExposure, SKY_METER_MAX, type MeterInput, type MeterResult } from './exposure';
+import { adaptEv100, adaptEv100Cut, HISTOGRAM_BINS, HISTOGRAM_MIN_LOG2, HISTOGRAM_RANGE_LOG2, INTERIOR_RANGE, LUMINANCE_FLOOR, meterExposure, SKY_METER_MAX, smallEmitterInFrame, type MeterInput, type MeterResult } from './exposure';
 
 /** Histograms in the buffer: geometry, near geometry, sky. */
 const SECTIONS = 3;
@@ -61,6 +61,7 @@ export class ExposureMeter {
   private histogramSky = new Uint32Array(HISTOGRAM_BINS);
   private sampleCount = 1;
   private input: MeterInput | null = null;
+  private emitterHeld = 0;
   private result: MeterResult = { targetEv100: 0, litFraction: 0, histogramWeight: 0, evHistogram: 0, evPrior: 0, outsideFraction: 0, evOutside: 0, outsideWeight: 0, sunlitFloor: 0, farLevel: 0, farWeight: 0 };
   private sunVis = 1;
 
@@ -93,9 +94,13 @@ export class ExposureMeter {
   }
 
   /** Target EV100 for this frame from the most recent histogram that has been read back. */
-  evaluate(input: Omit<MeterInput, 'histogram' | 'histogramNear' | 'histogramSky' | 'sampleCount'>): MeterResult {
+  evaluate(input: Omit<MeterInput, 'histogram' | 'histogramNear' | 'histogramSky' | 'sampleCount' | 'emitterHeldSeconds'>, dt = 0): MeterResult {
     this.sunVis = input.sunVisibility;
-    this.input = { ...input, histogram: this.histogram, histogramNear: this.histogramNear, histogramSky: this.histogramSky, sampleCount: this.sampleCount };
+    // How long a small emitter has stood in the frame (METER2, rule 3): it earns the exposure by lasting, and
+    // loses what it earned at the same rate while it is gone (a train of pulses earns nothing).
+    const small = smallEmitterInFrame(input.emissive);
+    this.emitterHeld = small ? this.emitterHeld + Math.max(0, dt) : Math.max(0, this.emitterHeld - Math.max(0, dt));
+    this.input = { ...input, emitterHeldSeconds: this.emitterHeld, histogram: this.histogram, histogramNear: this.histogramNear, histogramSky: this.histogramSky, sampleCount: this.sampleCount };
     this.result = meterExposure(this.input);
     return this.result;
   }
@@ -108,6 +113,11 @@ export class ExposureMeter {
     const m = this.input;
     if (!m) return null;
     return { ...m, emissive: m.emissive ? m.emissive.map((e) => ({ ...e })) : undefined, histogram: Array.from(m.histogram), histogramNear: Array.from(m.histogramNear), ...(m.histogramSky ? { histogramSky: Array.from(m.histogramSky) } : {}) } as MeterInput;
+  }
+
+  /** The temporal sequences start again (a frame-exact capture): what a small emitter has earned by lasting is forgotten. */
+  restartEmitterHold(): void {
+    this.emitterHeld = 0;
   }
 
   adapt(current: number, target: number, dt: number): number {

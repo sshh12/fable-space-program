@@ -8,6 +8,7 @@
  * histograms into a target EV100.
  */
 import type { ViewKind } from '@/core/contracts/render';
+import { DEFAULT_LOOK } from './tonemap';
 
 export const HISTOGRAM_BINS = 256;
 /** log2(cd/m^2) of the lower edge of bin 0 and the span covered by the histogram (8 bins per EV). */
@@ -321,10 +322,15 @@ export interface MeterInput {
   skyInAir?: number;
   sunDirectShare?: number;
   /**
-   * The rules in use (RendererOptions.look): 1 or absent = the meter as it is; 2 = with the bounds on small
-   * bright subjects and under a low sun (METER2_*, below).
+   * The rules in use (RendererOptions.look): 2 or absent (DEFAULT_LOOK) = with the bounds on small bright
+   * subjects and under a low sun (METER2_*, below); 1 = the meter as it was before them.
    */
   look?: 1 | 2;
+  /**
+   * How long a small emitter (METER2, rule 3) has stood in the frame, s: what it has earned by lasting.
+   * Kept by the ExposureMeter; absent = 0 (a pulse).
+   */
+  emitterHeldSeconds?: number;
   /** Number of pixels the GPU sampled (lit or not). */
   sampleCount: number;
   /** Unoccluded illuminance of the star at the camera (lux) and the fraction of its disc visible there. */
@@ -407,11 +413,14 @@ export interface MeterResult {
  * 3. A SMALL EMITTER DOES NOT SET THE EXPOSURE EITHER. An emitter hint that covers up to
  *    METER2_EMITTER_SMALL of the frame (a thruster's flash is told with its glare, 1.1 to 1.8 %) may raise the
  *    target by METER2_EMITTER_SMALL_EV over what the frame without emitters asks for; from
- *    METER2_EMITTER_FREE it is not bounded (a flame beside the camera, a plasma sheath). The bound holds by
- *    what that frame has to show (lit pixels over 2 % of it, and none where its target is the dark floor: a
- *    frame that is dark but for the emitter follows the emitter, METER2_CONTENT_EV stops over the floor
- *    the bound is whole). Before, each thruster pulse of a night entry took the target from 1.7 to 11.8
- *    and back.
+ *    METER2_EMITTER_FREE it is not bounded (a flame beside the camera, a plasma sheath). The frame without
+ *    the emitter counts as no darker than METER2_EMITTER_DARK_EV there (2: where a hull stands in its own
+ *    faint light; a frame that is dark but for a pulse is not exposed for starlight while the pulse is in
+ *    it, and no longer for the pulse either: 4, not 11.8). An emitter that LASTS earns its exposure: the
+ *    bound rises by METER2_EMITTER_FOLLOW_EV_PER_S for every second it has stood in the frame and falls at
+ *    the same rate while it is gone (MeterInput.emitterHeldSeconds, kept by the ExposureMeter), so a
+ *    distant flame that burns for seconds is exposed for, and a train of pulses earns nothing. Before,
+ *    each thruster pulse of a night entry took the target from 1.7 to 11.8 and back.
  * 4. AN EMITTER THAT FILLS THE FRAME IS THE SCENE, whatever the sun. The rules under the sun (the cap half
  *    a stop over sunny 16, the quarter stop for what is over white) assume that nothing in the frame is
  *    brighter than what the sun lights. From METER2_EMITTER_SCENE_FROM to _FULL of the frame covered by one
@@ -428,7 +437,8 @@ export const METER2_HIGHLIGHT_MAX_EV = 1;
 export const METER2_EMITTER_SMALL = 0.02;
 export const METER2_EMITTER_FREE = 0.06;
 export const METER2_EMITTER_SMALL_EV = 2;
-export const METER2_CONTENT_EV = 4;
+export const METER2_EMITTER_DARK_EV = 2;
+export const METER2_EMITTER_FOLLOW_EV_PER_S = 4;
 export const METER2_SCENE_LIT_FROM = 0.1;
 export const METER2_SCENE_LIT_FULL = 0.3;
 export const METER2_EMITTER_SCENE_FROM = 0.1;
@@ -440,6 +450,13 @@ export const METER2_EMITTER_SCENE_FROM = 0.1;
  * 18 is between the two pictures of the A/B (out/screens/core-support/curve-ab/10-entry.png).
  */
 export const METER2_EV_MAX = 18;
+
+/** True when the meter is told of an emitter outside a cabin and the largest of them is small (METER2, rule 3). */
+export function smallEmitterInFrame(emissive: readonly EmissiveHint[] | undefined): boolean {
+  let largest = 0;
+  for (const e of emissive ?? []) if (!e.inside && e.luminance >= LUMINANCE_FLOOR && e.coverage > 0) largest = Math.max(largest, Math.min(1, e.coverage));
+  return largest > 0 && largest < METER2_EMITTER_FREE;
+}
 export const METER2_EMITTER_SCENE_FULL = 0.2;
 
 export const TWILIGHT_SKY_FROM = Math.sin((-12 * Math.PI) / 180);
@@ -537,7 +554,7 @@ export function meterExposure(m: MeterInput): MeterResult {
 
 /** One metering: `withSky` counts the sky's pixels as lit ones and lets the rules under the sun go (exterior and map views at twilight). */
 function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
-  if (m.look === 2 && m.kind !== 'interior') {
+  if ((m.look ?? DEFAULT_LOOK) === 2 && m.kind !== 'interior') {
     // Look 2, rule 3: a small emitter may raise the target by METER2_EMITTER_SMALL_EV over the frame without emitters.
     let largest = 0;
     for (const e of m.emissive ?? []) if (!e.inside && e.luminance >= LUMINANCE_FLOOR && e.coverage > 0) largest = Math.max(largest, Math.min(1, e.coverage));
@@ -545,11 +562,11 @@ function meterOnce(m: MeterInput, withSky: boolean): MeterResult {
     if (largest > 0 && free < 1) {
       const all = meterFrame(m, withSky);
       const none = meterFrame({ ...m, emissive: (m.emissive ?? []).filter((e) => e.inside) }, withSky);
-      // (Towards "not bounded" over the range of the scale: 24 stops.) The bound holds by what the frame
-      // without the emitter has to show: a frame that is dark but for the emitter follows the emitter.
-      const bound = none.targetEv100 + METER2_EMITTER_SMALL_EV + free * (EV_MAX - EV_MIN);
-      const content = smooth(LIT_PRIOR_ONLY, LIT_FULL_BRIGHT, none.litFraction) * smooth(EV_DARK_FLOOR, EV_DARK_FLOOR + METER2_CONTENT_EV, none.targetEv100);
-      return all.targetEv100 > bound ? { ...all, targetEv100: all.targetEv100 + (bound - all.targetEv100) * content } : all;
+      // (Towards "not bounded" over the range of the scale: 24 stops.) The frame without the emitter counts
+      // as no darker than METER2_EMITTER_DARK_EV (a frame that is dark but for the emitter is not exposed
+      // for starlight while the emitter is in it), and an emitter that lasts earns its exposure.
+      const bound = Math.max(none.targetEv100, METER2_EMITTER_DARK_EV) + METER2_EMITTER_SMALL_EV + METER2_EMITTER_FOLLOW_EV_PER_S * Math.max(0, m.emitterHeldSeconds ?? 0) + free * (EV_MAX - EV_MIN);
+      return all.targetEv100 > bound ? { ...all, targetEv100: bound } : all;
     }
   }
   return meterFrame(m, withSky);
@@ -620,7 +637,7 @@ function meterFrame(m: MeterInput, withSky: boolean): MeterResult {
   }
   const stats = interior ? histogramStats(m.histogramNear, m.sampleCount, Infinity) : histogramStats(histogram, m.sampleCount);
   // Look 2, rule 2: under a low sun and where the sky counts, the frame's bulk (what stands far over it counts at a bound).
-  const look2 = m.look === 2 && !interior;
+  const look2 = (m.look ?? DEFAULT_LOOK) === 2 && !interior;
   let bulkWeight = 0;
   let bulk: HistogramStats | null = null;
   if (look2) {

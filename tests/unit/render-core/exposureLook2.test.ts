@@ -13,7 +13,11 @@ import { describe, expect, it } from 'vitest';
 import {
   EV_MAX,
   HISTOGRAM_BINS,
+  EV_DARK_FLOOR,
+  METER2_EMITTER_DARK_EV,
+  METER2_EMITTER_FOLLOW_EV_PER_S,
   METER2_EMITTER_SMALL_EV,
+  smallEmitterInFrame,
   METER2_EV_MAX,
   METER2_SKY_MAX,
   EXPOSURE_K,
@@ -39,13 +43,13 @@ const input = (name: string, look: 1 | 2, extra: Partial<MeterInput> = {}): Mete
 };
 const target = (name: string, look: 1 | 2, extra: Partial<MeterInput> = {}): number => meterExposure(input(name, look, extra)).targetEv100;
 
-describe('the meter with the switch off (look 1) is the meter as it was', () => {
-  it('gives every recorded frame the target it had when it was recorded, with look 1 and with no look at all', () => {
+describe('the meter with look 1 is the meter as it was; without a look it is look 2 (the default since 2026-11-24)', () => {
+  it('gives every recorded frame the target it had when it was recorded with look 1, and with no look at all what look 2 gives it', () => {
     const recorded: Record<string, number> = { padNoon: 14.576, liftoff: 14.648, dawnBefore: 9.023, dawnCanopies5s: 12.49, dawnCanopies8s: 12.522, dawnAfter15s: 8.581, entryThrusterPulse: 11.808, entryDark: 1.416, entryPeakHeating: 16.5, entryPeakG: 12.301 };
     for (const [name, ev] of Object.entries(recorded)) {
       expect(target(name, 1), name).toBeCloseTo(ev, 2);
       const { look: _look, ...without } = input(name, 1);
-      expect(meterExposure(without as MeterInput), name).toEqual(meterExposure(input(name, 1)));
+      expect(meterExposure(without as MeterInput), name).toEqual(meterExposure(input(name, 2)));
     }
   });
 });
@@ -109,9 +113,24 @@ describe('look 2 and emitters: the night entry', () => {
     expect(target('entryDark', 2)).toBeCloseTo(target('entryDark', 1), 9);
   });
 
-  it('a frame that is dark but for the emitter follows the emitter, as before', () => {
+  it('a pulse in a frame that is dark but for it raises the target to 4, not to 12 (the lead\'s item of 2026-11-24); an emitter that lasts earns its exposure', () => {
     const dark = { histogram: new Array<number>(HISTOGRAM_BINS).fill(0), histogramNear: new Array<number>(HISTOGRAM_BINS).fill(0), litObjectInView: false };
-    expect(target('entryThrusterPulse', 2, dark)).toBeCloseTo(target('entryThrusterPulse', 1, dark), 9);
+    // With look 1 the frame follows the pulse from the dark floor (-6) to 12.07: eighteen stops, ten over the frames beside it.
+    expect(target('entryThrusterPulse', 1, { ...dark, emissive: [] })).toBe(EV_DARK_FLOOR);
+    expect(target('entryThrusterPulse', 1, dark)).toBeCloseTo(12.07, 1);
+    // With look 2 the frame without the emitter counts as no darker than METER2_EMITTER_DARK_EV, and the pulse adds two stops.
+    expect(target('entryThrusterPulse', 2, dark)).toBe(METER2_EMITTER_DARK_EV + METER2_EMITTER_SMALL_EV);
+    // The same pulse over the hull in its own faint light (1.4): 4 as well, so the two kinds of frame no longer differ by ten stops.
+    const hull = input('entryDark', 2, { emissive: packed['entryThrusterPulse']!.input.emissive });
+    expect(meterExposure(hull).targetEv100).toBe(METER2_EMITTER_DARK_EV + METER2_EMITTER_SMALL_EV);
+    // An emitter that has stood in the frame earns METER2_EMITTER_FOLLOW_EV_PER_S a second, up to its own exposure.
+    expect(target('entryThrusterPulse', 2, { ...dark, emitterHeldSeconds: 1 })).toBe(METER2_EMITTER_DARK_EV + METER2_EMITTER_SMALL_EV + METER2_EMITTER_FOLLOW_EV_PER_S);
+    expect(target('entryThrusterPulse', 2, { ...dark, emitterHeldSeconds: 10 })).toBeCloseTo(target('entryThrusterPulse', 1, dark), 9);
+    // What the ExposureMeter counts as such an emitter: the largest hint outside a cabin under METER2_EMITTER_FREE of the frame.
+    expect(smallEmitterInFrame(packed['entryThrusterPulse']!.input.emissive)).toBe(true);
+    expect(smallEmitterInFrame(packed['entryPeakHeating']!.input.emissive)).toBe(false);
+    expect(smallEmitterInFrame([])).toBe(false);
+    expect(smallEmitterInFrame([{ luminance: 1e4, coverage: 0.01, inside: true }])).toBe(false);
   });
 
   it('at the peak of g the meter is told of no emitter (the vfx withholds its hints once a sun is up), so both looks expose for the hull; with the hint, look 2 exposes for the sheath and look 1 is held at that weak sun', () => {

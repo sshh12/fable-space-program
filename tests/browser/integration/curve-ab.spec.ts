@@ -256,7 +256,7 @@ const STILLS: Still[] = [
   },
 ];
 
-const withSwitches = (url: string, look: number): string => `${url}&coredebug=1${look === 2 ? '&corelook=2' : ''}`;
+const withSwitches = (url: string, look: number): string => `${url}&coredebug=1&corelook=${look}`;
 
 for (const s of STILLS) {
   test(`curve A/B: ${s.id}`, async ({ page }) => {

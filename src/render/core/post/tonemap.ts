@@ -48,6 +48,12 @@ const luma = (c: Rgb): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
  * as it is; 2 = the camera curve above mid-grey (below) and, in the meter, the bounds of exposure.ts.
  */
 export type Look = 1 | 2;
+/**
+ * The game's look since the lead's decision of 2026-11-24 (docs/requests/ocean-10.md): the camera curve and
+ * the meter's bounds. Look 1 (the curve and the meter as they were) stays reachable for one round, as the
+ * comparison: `RendererOptions.look`, `corelook=1` in a page's address, VITE_CORE_LOOK=1.
+ */
+export const DEFAULT_LOOK: Look = 2;
 
 /**
  * The camera curve (look 2; lead decision in docs/requests/ocean-10.md). The present curve shows sunlit white
@@ -91,7 +97,7 @@ const channelCurve = (x: number, look: Look): number => {
 };
 
 /** AgX with the pass's look: pre-exposed scene-linear sRGB -> display-linear sRGB (before the OETF). */
-export function agxDisplayLinear(c: Rgb, look: Look = 1): [number, number, number] {
+export function agxDisplayLinear(c: Rgb, look: Look = DEFAULT_LOOK): [number, number, number] {
   let v = mul(AGX_INSET, [Math.max(c[0], 0), Math.max(c[1], 0), Math.max(c[2], 0)]);
   v = v.map((x) => channelCurve(x, look)) as [number, number, number];
   v = v.map((x) => Math.max(x, 0) ** 1.12) as [number, number, number];
@@ -120,10 +126,10 @@ export const TOE_START_STOPS = -1;
 export const TOE_FULL_STOPS = -6;
 const TOE_MID_GREY = 0.18;
 const toeJoin = TOE_MID_GREY * 2 ** (0.5 * (TOE_START_STOPS + TOE_FULL_STOPS));
-export const TOE_GAIN = agxDisplayLinear([toeJoin, toeJoin, toeJoin])[1] / toeJoin;
+export const TOE_GAIN = agxDisplayLinear([toeJoin, toeJoin, toeJoin], 1)[1] / toeJoin;
 
 /** The whole display transform of the tonemap pass: pre-exposed scene-linear sRGB -> display-linear sRGB. */
-export function displayLinear(c: Rgb, look: Look = 1): [number, number, number] {
+export function displayLinear(c: Rgb, look: Look = DEFAULT_LOOK): [number, number, number] {
   const p: Rgb = [Math.max(c[0], 0), Math.max(c[1], 0), Math.max(c[2], 0)];
   const a = agxDisplayLinear(p, look);
   const stops = Math.log2(Math.max(luma(p), 1e-10) / TOE_MID_GREY);
@@ -394,7 +400,7 @@ export class Tonemap {
     private readonly ctx: RenderContext,
     shaders: CoreShaderLibrary,
     /** The display curve (RendererOptions.look): 1 = as it is, 2 = the camera curve. */
-    look: Look = 1,
+    look: Look = DEFAULT_LOOK,
   ) {
     const device = ctx.device;
     this.info = { drawn: 'base', scissors: 0, scissorPixels: 0, look };

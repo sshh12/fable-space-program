@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agxDisplayLinear, CAMERA_BLEND_FROM, CAMERA_GAIN, CAMERA_SHOULDER_FROM, CAMERA_WHITE, displayLinear, srgbEncode, TOE_FULL_STOPS, TOE_GAIN, TOE_START_STOPS, TONEMAP_BASE_WGSL, TONEMAP_WGSL, tonemapBaseWgsl, tonemapWgsl } from '@/render/core/post/tonemap';
+import { agxDisplayLinear, CAMERA_BLEND_FROM, DEFAULT_LOOK, CAMERA_GAIN, CAMERA_SHOULDER_FROM, CAMERA_WHITE, displayLinear, srgbEncode, TOE_FULL_STOPS, TOE_GAIN, TOE_START_STOPS, TONEMAP_BASE_WGSL, TONEMAP_WGSL, tonemapBaseWgsl, tonemapWgsl } from '@/render/core/post/tonemap';
 
 const MID = 0.18;
 const grey = (stops: number): [number, number, number] => [MID * 2 ** stops, MID * 2 ** stops, MID * 2 ** stops];
@@ -54,9 +54,13 @@ describe('display transform (tonemap pass): AgX with a linear, hue-preserving to
     for (let s = -11.95; s <= 6; s += 0.05) {
       const v = displayLinear(grey(s))[1];
       expect(v).toBeGreaterThanOrEqual(last);
-      // In the encoded image no twentieth of a stop is a jump: under 2 levels, and no step more than twice its neighbour.
+      // In the encoded image no twentieth of a stop is a jump: under 2 levels up to mid-grey (the toe and the
+      // blend, the same in both looks), and no step more than twice its neighbour there. Above mid-grey the
+      // camera curve is the scene's own line, which in encoded levels is steep near white: 3.40 levels per
+      // twentieth of a stop at its steepest (2.1 stops over mid-grey; the present curve: 1.70 at 0.35 stops).
+      // (Was: under 2 everywhere.)
       const step = 255 * (srgbEncode(v) - srgbEncode(last));
-      expect(step).toBeLessThan(2);
+      expect(step).toBeLessThan(s <= 0 ? 2 : 3.5);
       if (s > -6.6 && s < -0.4 && lastStep > 0.02) expect(step / lastStep).toBeLessThan(2);
       lastStep = step;
       last = v;
@@ -98,12 +102,12 @@ describe('display transform (tonemap pass): AgX with a linear, hue-preserving to
     expect(a[0] / a[2]).toBeGreaterThan(3);
   });
 
-  it('desaturates bright colours towards white without changing their order (the shoulder, unchanged)', () => {
+  it('desaturates bright colours towards white without changing their order (the shoulder of the present curve, look 1; the camera curve: below)', () => {
     // A saturated orange from one to six stops over mid-grey: red >= green >= blue throughout, all rising.
     let last = [0, 0, 0];
     for (let s = 1; s <= 6; s++) {
       const y = MID * 2 ** s;
-      const d = displayLinear([1.6 * y, 0.8 * y, 0.2 * y]).map(srgbEncode);
+      const d = displayLinear([1.6 * y, 0.8 * y, 0.2 * y], 1).map(srgbEncode);
       expect(d[0]!).toBeGreaterThanOrEqual(d[1]!);
       expect(d[1]!).toBeGreaterThanOrEqual(d[2]!);
       for (let c = 0; c < 3; c++) expect(d[c]!).toBeGreaterThanOrEqual(last[c]!);
@@ -127,7 +131,9 @@ describe("the camera curve (look 2; request ocean-10): the scene's own line abov
         expect(displayLinear(c, 2)).toEqual(displayLinear(c, 1));
       }
     }
-    for (let s = -8; s <= 8; s += 0.5) expect(displayLinear(grey(s), 1)).toEqual(displayLinear(grey(s)));
+    // The default is the camera curve since 2026-11-24 (DEFAULT_LOOK); look 1 is the text the pass always compiled.
+    expect(DEFAULT_LOOK).toBe(2);
+    for (let s = -8; s <= 8; s += 0.5) expect(displayLinear(grey(s), 2)).toEqual(displayLinear(grey(s)));
     expect(tonemapWgsl(1)).toBe(TONEMAP_WGSL);
   });
 

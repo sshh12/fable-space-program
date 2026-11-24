@@ -9,6 +9,9 @@ import {
   binLuminance,
   DARK_ADAPT_EV,
   EV_DARK_FLOOR,
+  METER2_EMITTER_DARK_EV,
+  METER2_EMITTER_FOLLOW_EV_PER_S,
+  METER2_EMITTER_SMALL_EV,
   EV_MIN,
   ev100ForMidGrey,
   exposureCompensationCurve,
@@ -263,15 +266,25 @@ describe('metering rules (ARCHITECTURE 10.4)', () => {
     const night = { sunVisibility: 0, litObjectInView: false };
     expect(meter(empty, night).targetEv100).toBe(EV_DARK_FLOOR);
     // A reentry trail of 26,000 cd/m^2 over 2 % of the frame: exposed so that it stays under 4 x mid-grey.
-    const trail = meter(empty, { ...night, emissive: [{ luminance: 26000, coverage: 0.02 }] });
+    // Since look 2 (METER2, rule 3) a small emitter earns that by lasting: `lasting` is one that has stood in
+    // the frame for ten seconds. With look 1 it had it from its first frame, and has it still.
+    const lasting = { ...night, emitterHeldSeconds: 10 };
+    const trail = meter(empty, { ...lasting, emissive: [{ luminance: 26000, coverage: 0.02 }] });
     const shown = 26000 * exposureFromEv100(trail.targetEv100);
     expect(shown).toBeGreaterThan(0.3);
     expect(shown).toBeLessThanOrEqual(4 * 0.18 * 1.05);
+    expect(meter(empty, { ...night, look: 1, emissive: [{ luminance: 26000, coverage: 0.02 }] }).targetEv100).toBe(trail.targetEv100);
+    // In its first frame it raises the target to METER2_EMITTER_DARK_EV + METER2_EMITTER_SMALL_EV (4, where it
+    // was 14.9), and by METER2_EMITTER_FOLLOW_EV_PER_S for every second after.
+    const first = meter(empty, { ...night, emissive: [{ luminance: 26000, coverage: 0.02 }] }).targetEv100;
+    expect(first).toBe(METER2_EMITTER_DARK_EV + METER2_EMITTER_SMALL_EV);
+    expect(trail.targetEv100).toBeGreaterThan(14.5);
+    expect(meter(empty, { ...night, emitterHeldSeconds: 1, emissive: [{ luminance: 26000, coverage: 0.02 }] }).targetEv100).toBe(first + METER2_EMITTER_FOLLOW_EV_PER_S);
     // RCS jets over 0.1 % of the frame move it part of the way; a speck (0.01 %) leaves the floor alone.
-    const jets = meter(empty, { ...night, emissive: [{ luminance: 22000, coverage: 0.001 }] }).targetEv100;
+    const jets = meter(empty, { ...lasting, emissive: [{ luminance: 22000, coverage: 0.001 }] }).targetEv100;
     expect(jets).toBeGreaterThan(EV_DARK_FLOOR + 0.3);
     expect(jets).toBeLessThan(trail.targetEv100 - 3);
-    expect(meter(empty, { ...night, emissive: [{ luminance: 22000, coverage: 0.0001 }] }).targetEv100).toBe(EV_DARK_FLOOR);
+    expect(meter(empty, { ...lasting, emissive: [{ luminance: 22000, coverage: 0.0001 }] }).targetEv100).toBe(EV_DARK_FLOOR);
     // More coverage never exposes brighter, and several hints add up.
     let last = -Infinity;
     for (const c of [0.0005, 0.002, 0.005, 0.01, 0.05]) {
@@ -383,8 +396,8 @@ describe('highlight protection is bounded while the sun lights the scene (reques
     fill(h, 2e3, 2e4, 0.05 * N);
     const pad = meter(h, night);
     expect(histogramStats(h, N).p99 * exposureFromEv100(pad.targetEv100)).toBeLessThanOrEqual(4 * 0.18 * 1.001);
-    // An emitter over the night sky, as before (request vfx-1).
-    const trail = meter(new Uint32Array(HISTOGRAM_BINS), { ...night, emissive: [{ luminance: 26000, coverage: 0.02 }] });
+    // An emitter over the night sky, as before (request vfx-1), once it has stood there (look 2: METER2, rule 3).
+    const trail = meter(new Uint32Array(HISTOGRAM_BINS), { ...night, emitterHeldSeconds: 10, emissive: [{ luminance: 26000, coverage: 0.02 }] });
     expect(26000 * exposureFromEv100(trail.targetEv100)).toBeLessThanOrEqual(4 * 0.18 * 1.05);
     // 3 % of the solar disc over the limb: the scene is not sunlit in the sense of the bound.
     const sliver = meter(h, { sunVisibility: 0.03 });
@@ -811,9 +824,15 @@ describe('interior metering: bright areas of a few per cent of the frame (reques
     console.log(
       `[cockpit-12] 5 % patch at +6 EV: stop-down ${(r.targetEv100 - base.targetEv100).toFixed(2)} EV against the cabin alone; patch ${patchLevel.toFixed(0)} / 255, cabin ${cabinLevel.toFixed(0)} / 255 (cabin alone ${level(30, base.targetEv100).toFixed(0)}; the patch at the cabin's own exposure ${level(30 * 64, base.targetEv100).toFixed(0)})`,
     );
-    // In the shoulder (texture and hue kept), not at 255 ...
-    expect(patchLevel).toBeLessThan(246);
-    expect(patchLevel).toBeGreaterThan(200);
+    // In the shoulder of the curve the rule was made for (look 1: texture and hue kept), not at 255 ...
+    const patchLevel1 = 255 * srgbEncode(displayLinear([30 * 64 * exposureFromEv100(r.targetEv100), 30 * 64 * exposureFromEv100(r.targetEv100), 30 * 64 * exposureFromEv100(r.targetEv100)], 1)[1]);
+    expect(patchLevel1).toBeLessThan(246);
+    expect(patchLevel1).toBeGreaterThan(200);
+    // ... and white with the camera curve (look 2, the game's since 2026-11-24): the cabin's metering is the
+    // same (the patch stands at the same pre-exposed level, over 2.33), the curve's white is nearer. The A/B's
+    // cockpit sheet shows it; the cabin's rules are the cockpit's to re-state. (Was: under 246.)
+    expect(30 * 64 * exposureFromEv100(r.targetEv100)).toBeGreaterThan(2.33);
+    expect(patchLevel).toBeGreaterThan(254.9);
     // ... and the cabin readable, a stop or two under its own exposure.
     expect(cabinLevel).toBeGreaterThan(40);
     expect(r.targetEv100 - base.targetEv100).toBeLessThanOrEqual(INTERIOR_BRIGHT_MAX_EV + 0.3);
@@ -936,13 +955,20 @@ describe('interior metering: the world in the windows of the seat view (request 
     // Without it the same pixels stand nearly eight stops over mid-grey: four over the tone curve's white.
     expect(stopsOverMidGrey(r.farLevel, r.targetEv100)).toBeGreaterThan(7.5);
     // Cloud tops (16,000 cd/m^2) and sea (3,000) through the display transform: apart, neither clipped.
-    const level = (luminance: number): number => {
+    const level = (luminance: number, look: 1 | 2 = 1): number => {
       const v = luminance * gain * exposureFromEv100(r.targetEv100);
-      return 255 * srgbEncode(displayLinear([v, v, v])[1]);
+      return 255 * srgbEncode(displayLinear([v, v, v], look)[1]);
     };
+    // (With the curve the gain was set for, look 1.)
     expect(level(16000)).toBeLessThan(225);
     expect(level(3000)).toBeGreaterThan(100);
     expect(level(16000) - level(3000)).toBeGreaterThan(55);
+    // With the camera curve (look 2, the game's since 2026-11-24) the same gain leaves the cloud tops at white
+    // (they stand three stops over mid-grey and more: 1.44 pre-exposed and up, 254 and up of 255; was under
+    // 225) and the sea brighter (190 and up; was 100 and up): the A/B's cockpit sheet, the Earth in the window
+    // without its clouds. INTERIOR_FAR_STOPS is the cockpit's to re-state.
+    expect(level(16000, 2)).toBeGreaterThan(254);
+    expect(level(3000, 2)).toBeGreaterThan(150);
     // The cabin's own tones are not touched by it (the gain is for what lies beyond the cabin).
     expect(interiorFarGain(0, r.targetEv100, 1)).toBe(1);
   });
@@ -1205,28 +1231,46 @@ describe('exterior metering at twilight: the sky lights the frame and counts (re
     // The same frame metered without the sky moves by more than three stops against it.
     const v = dusk();
     expect(over - meter(v.ground, { ...sunAt(-0.3) }).targetEv100).toBeGreaterThan(3);
-    // Coming in (2.3 degrees: not yet; half a degree: wholly) the target is a mix of the two meterings by the weight: monotonic.
-    let last = at(2.3).targetEv100;
-    expect(last).toBe(meter(v.ground, { ...sunAt(2.3) }).targetEv100);
+    // Coming in (2.3 degrees: not yet; half a degree: wholly) the target is a mix of the two meterings by the
+    // weight: monotonic. With look 1 it starts from the ground's own metering (6.60)...
+    const at1 = (elevation: number): number => meter(v.ground, { ...sunAt(elevation), histogramSky: v.sky, skyInAir: 1, look: 1 }).targetEv100;
+    let last = at1(2.3);
+    expect(last).toBe(meter(v.ground, { ...sunAt(2.3), look: 1 }).targetEv100);
     for (const elevation of [2.1, 1.9, 1.7, 1.5, 1.3, 1.1, 0.9, 0.7, 0.5]) {
-      const ev = at(elevation).targetEv100;
+      const ev = at1(elevation);
       expect(ev, `${elevation} deg`).toBeGreaterThanOrEqual(last - 0.05);
       expect(ev - last, `${elevation} deg`).toBeLessThan(1.2);
       last = ev;
     }
-    // Twilight ends: from 6 to 12 degrees under the horizon the sky hands back to the night's metering.
-    expect(at(-12).targetEv100).toBe(meter(v.ground, { ...sunAt(-12) }).targetEv100);
-    expect(at(-9).targetEv100).toBeLessThan(at(-6).targetEv100);
-    expect(at(-9).targetEv100).toBeGreaterThan(at(-12).targetEv100);
+    // ... and with look 2 (the default) the sky's bulk already holds the frame there (METER2, rule 1: its 90th
+    // percentile at 0.7 pre-exposed, 10.69 for this sky; the ground's own metering is 6.60), so from 2.3
+    // degrees down to the horizon the target moves by under 0.15 EV in all.
+    const held = at(2.3).targetEv100;
+    expect(held).toBeGreaterThan(at1(2.3) + 3.5);
+    expect(held).toBeCloseTo(10.69, 1);
+    for (const elevation of [2.1, 1.9, 1.7, 1.5, 1.3, 1.1, 0.9, 0.7, 0.5]) expect(Math.abs(at(elevation).targetEv100 - held), `${elevation} deg, look 2`).toBeLessThan(0.15);
+    // Twilight ends: from 6 to 12 degrees under the horizon the sky hands back to the night's metering (the
+    // twilight rule, look 1). With look 2 a sky as bright as this one is held at any hour (METER2, rule 1 has
+    // no hour: 10.69 at -12 degrees as at 2.3); a night sky is far under the level and is not held.
+    expect(at(-12, { look: 1 }).targetEv100).toBe(meter(v.ground, { ...sunAt(-12), look: 1 }).targetEv100);
+    expect(at(-9, { look: 1 }).targetEv100).toBeLessThan(at(-6, { look: 1 }).targetEv100);
+    expect(at(-9, { look: 1 }).targetEv100).toBeGreaterThan(at(-12, { look: 1 }).targetEv100);
+    expect(at(-12).targetEv100).toBeCloseTo(held, 1);
   });
 
   it('daylight, the dawn of request atmosphere-clouds-10, the night and a camera above the air are metered as before', () => {
     const v = dusk();
-    // The sun up and its light arriving (5 % of it and more): the sky histogram changes nothing.
-    for (const elevation of [31, 10, 5, 2.3]) expect(at(elevation).targetEv100, `${elevation} deg`).toBe(meter(v.ground, { ...sunAt(elevation) }).targetEv100);
+    // The sun up and its light arriving (5 % of it and more): the twilight rule does not count the sky (look 1:
+    // the sky histogram changes nothing). With look 2 a sky as bright against its ground as this dusk sky is
+    // held wherever the sun stands (METER2, rule 1: this test's sky under a high sun is not a daylight sky; a
+    // real one stands at 0.1 to 0.2 pre-exposed at the daylight exposure and the rule does not bind).
+    for (const elevation of [31, 10, 5, 2.3]) {
+      expect(meter(v.ground, { ...sunAt(elevation), histogramSky: v.sky, skyInAir: 1, look: 1 }).targetEv100, `${elevation} deg`).toBe(meter(v.ground, { ...sunAt(elevation), look: 1 }).targetEv100);
+      expect(at(elevation).targetEv100, `${elevation} deg, look 2`).toBeCloseTo(10.69, 1);
+    }
     // The dawn frame: 7 km up, the sun 1 degree over the horizon, 0.24 of its light.
     const dawn = { sunIlluminance: sunThroughAir(SUN, 0.24, false), sunVisibility: 1, sunDirectShare: 0.24, sunElevationSin: sin(1) };
-    expect(meter(v.ground, { ...dawn, histogramSky: v.sky, skyInAir: 1 }).targetEv100).toBe(meter(v.ground, dawn).targetEv100);
+    expect(meter(v.ground, { ...dawn, histogramSky: v.sky, skyInAir: 1, look: 1 }).targetEv100).toBe(meter(v.ground, { ...dawn, look: 1 }).targetEv100);
     // Night (the sun 12 degrees and more under the horizon): stars and airglow in the sky histogram change nothing.
     const stars = new Uint32Array(HISTOGRAM_BINS);
     fill(stars, 0.01, 3, 0.02 * N);

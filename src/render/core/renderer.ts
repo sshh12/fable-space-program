@@ -36,7 +36,7 @@ import { FarExposure } from './post/farExposure';
 import { CUT_ADAPT_SECONDS, CUT_ADAPT_TAU, EV_DARK_FLOOR, exposureFromEv100, exposureHintOf, followExposureHint, interiorFarGain, sunThroughAir, type EmissiveHint, type MeterInput } from './post/exposure';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorConfig, type GovernorState } from './post/governor';
 import { PostProcess } from './post/postProcess';
-import { displayLinear, srgbEncode, Tonemap, type Look } from './post/tonemap';
+import { DEFAULT_LOOK, displayLinear, srgbEncode, Tonemap, type Look } from './post/tonemap';
 import { createSharedResources, type CoreSharedResources } from './resources';
 import { createSceneBindings } from './sceneBindings';
 import { BLUE_NOISE_SIZE, FRAME_WGSL, FULLSCREEN_WGSL, GBUFFER_WGSL, MAX_BODIES, NOISE_WGSL, SHINE_RECEIVERS } from './shaders/chunksFrame';
@@ -81,10 +81,11 @@ export interface RendererOptions {
   contactShader?: ContactShader;
   /**
    * The one switch of the display curve and the meter's bounds (requests ocean-10, ocean-13; RENDER_API
-   * section 13): 1 (the default) = both as they are, to the pixel; 2 = the camera curve above mid-grey
-   * (post/tonemap.ts) and the meter's bounds on small bright subjects and under a low sun (post/exposure.ts).
-   * Also by the page's address, `corelook=2` (`look` is taken by two labs' cameras), and by the env of the
-   * page's server, VITE_CORE_LOOK=2 (a run that exercises a whole suite with it).
+   * section 13.1). 2 (the default since the lead's decision of 2026-11-24, DEFAULT_LOOK) = the camera curve
+   * above mid-grey (post/tonemap.ts) and the meter's bounds on small bright subjects and under a low sun
+   * (post/exposure.ts); 1 = both as they were before, to the pixel, kept for one round as the comparison.
+   * Also by the page's address, `corelook=1` (`look` is taken by two labs' cameras), and by the env of the
+   * page's server, VITE_CORE_LOOK=1 (a run that exercises a whole suite with it).
    */
   look?: Look;
 }
@@ -355,7 +356,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   const pipelineWarm = opts.pipelineWarm ?? pageQuery.get('warm') !== '0';
   const contactAsked = pageQuery.get('contact') ?? VITE_ENV?.VITE_CORE_CONTACT;
   const contactShader: ContactShader = opts.contactShader ?? (contactAsked === 'first' ? 'first' : 'near');
-  const look: Look = opts.look ?? ((pageQuery.get('corelook') ?? VITE_ENV?.VITE_CORE_LOOK) === '2' ? 2 : 1);
+  const lookAsked = pageQuery.get('corelook') ?? VITE_ENV?.VITE_CORE_LOOK;
+  const look: Look = opts.look ?? (lookAsked === '1' ? 1 : lookAsked === '2' ? 2 : DEFAULT_LOOK);
   const shadowSwitches = (pageQuery.get('shadowdebug') ?? VITE_ENV?.VITE_CORE_SHADOW_DEBUG) === '1';
   const shaders: CoreShaderLibrary = createShaderLibrary(device, reportError, { warm: pipelineWarm });
   shaders.register('hash', HASH_WGSL);
@@ -805,6 +807,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     prevCamera = null;
     frameEpochs.reset();
     emissiveHints = [];
+    meter.restartEmitterHold();
     meteredKind = null;
     cutAdapt = 0;
     shadows.restart();
@@ -904,7 +907,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       minEv100: camera.minEv100,
       // What the features reported in the previous frame's prepare (this frame's hooks have not run yet).
       emissive: emissiveHints,
-    });
+    }, Math.min(realDt, 0.1));
     emissiveHints = [];
     // A change of view kind is a cut: the new shot's exposure, not an eye that adapts (request cockpit-14).
     const stepDt = Math.min(realDt, 0.1);
