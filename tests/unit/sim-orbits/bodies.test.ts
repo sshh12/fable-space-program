@@ -85,14 +85,21 @@ describe('Moon ephemeris', () => {
     expect(Math.abs(sumLon / n)).toBeLessThan(1);
   });
 
-  it('SOI radius is the data value; "auto" gives a (m/M)^0.4', () => {
+  // v2 (ARCHITECTURE 8.3; the body contract's `soiRadius`): "auto" is min(Hill, max(a (m/M)^0.4, 2.5 R)). For
+  // the Moon the Hill radius binds (61.5e6 m against the Laplace radius 66.1e6 m of v1's rule); the shipped
+  // Moon states its SOI as a number, which is unchanged.
+  it('SOI radius is the data value; "auto" gives min(Hill, max(a (m/M)^0.4, 2.5 R))', () => {
     expect(sys.body(MOON).soiRadius).toBe(defs.bodies[MOON]!.soiRadius);
     const auto: DefLibrary = { ...defs, bodies: { ...defs.bodies, [MOON]: { ...defs.bodies[MOON]!, soiRadius: 'auto' } } };
     const s2 = createBodySystem(auto);
     const m = defs.bodies[MOON]!;
     const a = (m.orbit as { a: number }).a;
-    expect(s2.body(MOON).soiRadius).toBeCloseTo(a * Math.pow(m.mu / defs.bodies[EARTH]!.mu, 0.4), 6);
-    expect(Math.abs(s2.body(MOON).soiRadius! - 66.1e6)).toBeLessThan(0.3e6);
+    const ratio = m.mu / defs.bodies[EARTH]!.mu;
+    const laplace = a * Math.pow(ratio, 0.4);
+    const hill = a * Math.cbrt(ratio / 3);
+    expect(Math.abs(laplace - 66.1e6)).toBeLessThan(0.3e6);
+    expect(s2.body(MOON).soiRadius).toBeCloseTo(Math.min(hill, Math.max(laplace, 2.5 * m.radius)), 6);
+    expect(Math.abs(s2.body(MOON).soiRadius! - 61.5e6)).toBeLessThan(0.3e6);
   });
 });
 

@@ -42,17 +42,44 @@ import { conicStateAtTime, makeOrbit, NEAR_RADIAL_P, propagate, type Orbit } fro
 import { nodeDeltaVInertial } from './maneuver';
 import { nodesVersusPlane } from './relative';
 
-export const DEFAULT_MAX_PATCHES = 8;
-/** Prediction horizon for open trajectories, s (60 days). */
+/** Patches per list (ARCHITECTURE 8.4: a Mars return alone is six to eight; a moon tour more). */
+export const DEFAULT_MAX_PATCHES = 16;
+/**
+ * Horizon of an open trajectory about a body without a sphere of influence (the root), s (60 days), counted
+ * from the start of each list, from every applied node and from every sphere-of-influence change.
+ */
 export const DEFAULT_HORIZON = 60 * 86400;
+/** No patch is predicted further than this from its start, s (40 years; ARCHITECTURE 8.4). */
+export const MAX_PATCH_SPAN = 40 * 365.25 * 86400;
+/**
+ * Revolutions of a closed patch searched for an encounter by default: 1, v1's window. ARCHITECTURE 8.4's three
+ * periods (THREE_PERIOD_ENCOUNTER_SEARCH) are passed by the planners that want them (the planning service, the
+ * transfer pilot); as the default they change the World's `patches` block at recorded states (island-core's
+ * snapshot reference: qa-translunar's start) and not the flight (the mission flew 36 of 36 at the golden with
+ * them on), so the switch of the default is island-core's to take with a re-record (request solar-system-sim-1).
+ */
+export const DEFAULT_ENCOUNTER_REVOLUTIONS = 1;
+/** The encounter window of ARCHITECTURE 8.4: three revolutions of a closed patch. */
+export const THREE_PERIOD_ENCOUNTER_SEARCH = 3;
 /** SOI boundary hysteresis after a transition, s. */
 export const SOI_HYSTERESIS = 1;
 
 export interface PredictOptions {
-  /** Patches per list (default 8). */
+  /** Patches per list (default 16). */
   maxPatches?: number;
-  /** Horizon for open trajectories, s from the start of each list and from every applied node (default 60 d). */
+  /**
+   * Horizon for open trajectories about a body without a sphere of influence, s from the start of each list,
+   * from every applied node and from every SOI change (default 60 d). An open patch inside a sphere of
+   * influence runs to its exit (the SOI crossing time; at most MAX_PATCH_SPAN).
+   */
   horizon?: number;
+  /**
+   * Revolutions of a closed patch searched for a child-SOI encounter (default DEFAULT_ENCOUNTER_REVOLUTIONS = 1;
+   * ARCHITECTURE 8.4 asks THREE_PERIOD_ENCOUNTER_SEARCH = 3 of the planners). A closed patch with no event
+   * in its first revolution still ends after one revolution ('closed'); an encounter on a later revolution
+   * ends it there (endReason 'soiEnter', nuEnd unwrapped by the whole revolutions before it).
+   */
+  encounterRevolutions?: number;
   /** Target body: AN/DN and closest-approach markers on patches about the target's parent. */
   targetBodyId?: string | null;
   /** Coarse terrain height for impact prediction; omitted = reference sphere (and sea surface). */
@@ -148,7 +175,10 @@ function runChain(
     const nextNode = mode === 'planned' ? nodes[nodeIdx] : nodes[0] !== undefined && nodes[0].ut >= t ? nodes[0] : undefined;
     const closed = o.period !== null;
 
-    let tEnd = closed ? t + o.period! : Math.max(horizonEnd, t);
+    // Per-patch horizon: an open patch inside a sphere of influence runs to its exit (found below); about a
+    // body without one, to the horizon counted from the latest list start, node or SOI change.
+    const openEnd = body.soiRadius !== null ? t + MAX_PATCH_SPAN : Math.min(Math.max(horizonEnd, t), t + MAX_PATCH_SPAN);
+    let tEnd = closed ? t + o.period! : openEnd;
     let reason: PatchEndReason = closed ? 'closed' : 'horizon';
     if (nextNode && nextNode.ut > tEnd) {
       tEnd = nextNode.ut;
@@ -189,6 +219,24 @@ function runChain(
         nextBodyId = cid;
       }
     }
+    // A closed patch with no event in its first revolution: an encounter on a later one (the conic repeats,
+    // so nothing else can happen there). The patch then runs to it, its true anomaly unwrapped.
+    const revolutions = Math.max(1, Math.floor(opts.encounterRevolutions ?? DEFAULT_ENCOUNTER_REVOLUTIONS));
+    if (reason === 'closed' && revolutions > 1 && body.childIds.length > 0) {
+      const searchEnd = Math.min(t + revolutions * o.period!, t + MAX_PATCH_SPAN);
+      let later = searchEnd;
+      for (const cid of body.childIds) {
+        const tc = findSoiEntry(system, o, cid, tEnd, later);
+        if (tc !== null && tc < later) {
+          later = tc;
+          nextBodyId = cid;
+        }
+      }
+      if (nextBodyId !== undefined && later < searchEnd) {
+        tEnd = later;
+        reason = 'soiEnter';
+      }
+    }
     // terrain impact
     const imp = findImpact(system, o, t, tEnd, heightFn);
     if (imp && imp.t <= tEnd) {
@@ -223,12 +271,14 @@ function runChain(
       r = v3.add(end.r, bs.r);
       v = v3.add(end.v, bs.v);
       bodyId = nextBodyId!;
+      horizonEnd = Math.max(horizonEnd, tEnd + horizon);
     } else if (reason === 'soiEnter') {
       const cs = system.stateRelParent(nextBodyId!, tEnd);
       hyst = { bodyId: nextBodyId!, until: tEnd + SOI_HYSTERESIS };
       r = v3.sub(end.r, cs.r);
       v = v3.sub(end.v, cs.v);
       bodyId = nextBodyId!;
+      horizonEnd = Math.max(horizonEnd, tEnd + horizon);
     } else if (reason === 'maneuver' && mode === 'planned') {
       const n = nextNode!;
       r = end.r;
@@ -275,8 +325,8 @@ function buildMarkers(
   // target plane nodes and closest approach (target orbiting this patch's body)
   if (targetId !== null && targetId !== bodyId) {
     const target = system.body(targetId);
-    if (target.parentId === bodyId && target.kepler) {
-      const nodes = o.nearRadial ? null : nodesVersusPlane(c, target.kepler.normal);
+    if (target.parentId === bodyId && target.ephemeris) {
+      const nodes = o.nearRadial ? null : nodesVersusPlane(c, target.ephemeris.normalAt(tStart));
       if (nodes) {
         for (const [kind, nu] of [
           ['ascendingNode', nodes.nuAscending],

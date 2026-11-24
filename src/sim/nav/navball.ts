@@ -3,7 +3,9 @@
  *
  * Horizon frame = ENU at the vessel's sub-point of its SOI body (geocentric up). Markers are unit vectors
  * in the VES frame. Orbit mode: prograde = v (BCI); surface mode: prograde = v - spin x r. Normal follows
- * the node-frame convention, normal = normalize(r_hat x prograde), radialOut = prograde x normal.
+ * the node-frame convention, normal = normalize(r_hat x prograde), radialOut = prograde x normal. Target mode
+ * (v2): prograde and retrograde show the velocity relative to a vessel or port target; normal and radial stay
+ * those of the orbit.
  *
  * Robustness (never NaN): with |velocity| < MIN_SPEED (vessel at rest, on the pad) prograde = up; when
  * prograde is vertical the normal is the local north projected perpendicular to prograde (the continuous
@@ -41,6 +43,12 @@ export interface NavballInput {
   targetDir?: Vec3 | null;
   /** Capsule lift direction in the VES frame (from the aerodynamics) or null. */
   liftVectorVes?: Vec3 | null;
+  /**
+   * Own velocity relative to a VESSEL or PORT target (own minus target, ROOT axes; relativeState in
+   * src/sim/nav/target.ts) or null: it gives the relative prograde and retrograde markers, and in mode 'target'
+   * the prograde and retrograde markers themselves (the normal and radial markers stay the orbit's).
+   */
+  relativeVelocity?: Vec3 | null;
 }
 
 /** Prograde / normal / radial-out directions (BCI axes) of a velocity at position r. */
@@ -93,14 +101,16 @@ export function computeNavball(input: NavballInput): NavballState {
   const enu = enuBasis(input.qFixedToInertial, r);
   const vel = mode === 'surface' ? surfaceVelocity(r, v, input.spin) : v;
   const dirs = flightDirections(r, vel, enu);
+  const rel = input.relativeVelocity && v3.len(input.relativeVelocity) >= NAVBALL_MIN_SPEED ? v3.normalize(input.relativeVelocity) : null;
+  const pro = mode === 'target' && rel ? rel : dirs.prograde;
   const toVes = (d: Vec3): Vec3 => v3.normalize(quat.rotateInv(q, d));
   const unitOrNull = (d: Vec3 | null | undefined): Vec3 | null => (d && v3.len(d) > 1e-9 ? v3.normalize(d) : null);
   const man = unitOrNull(input.maneuverDv);
   const tgt = unitOrNull(input.targetDir);
   const lift = unitOrNull(input.liftVectorVes);
   const markers: NavballMarkers = {
-    prograde: toVes(dirs.prograde),
-    retrograde: toVes(v3.neg(dirs.prograde)),
+    prograde: toVes(pro),
+    retrograde: toVes(v3.neg(pro)),
     normal: toVes(dirs.normal),
     antinormal: toVes(v3.neg(dirs.normal)),
     radialOut: toVes(dirs.radialOut),
@@ -109,9 +119,9 @@ export function computeNavball(input: NavballInput): NavballState {
     target: tgt ? toVes(tgt) : null,
     antiTarget: tgt ? toVes(v3.neg(tgt)) : null,
     liftVector: lift,
-    // The velocity relative to a vessel or port target: this session has body targets only.
-    relativePrograde: null,
-    relativeRetrograde: null,
+    // The velocity relative to a vessel or port target (null for a body target and below 1 mm/s).
+    relativePrograde: rel ? toVes(rel) : null,
+    relativeRetrograde: rel ? toVes(v3.neg(rel)) : null,
   };
   const qHorizonToInertial = qEnuToInertial(enu);
   const qVesselToHorizon = quat.normalize(quat.mul(quat.conj(qHorizonToInertial), q));

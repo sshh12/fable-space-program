@@ -146,7 +146,7 @@ export function computeOrbitalReadouts(input: OrbitalReadoutInput): OrbitalReado
   let closest: { ut: number; distance: number; relSpeed: number } | null = null;
   if (targetId !== null && targetId !== bodyId) {
     const tb = system.body(targetId);
-    if (tb.parentId === bodyId && tb.kepler) relInc = relativeInclination(c.W, tb.kepler.normal);
+    if (tb.parentId === bodyId && tb.ephemeris) relInc = relativeInclination(c.W, tb.ephemeris.normalAt(ut));
     const pp = input.patches;
     if (pp) closest = closestApproachToBody(system, pp.planned.length ? pp.planned : pp.current, targetId);
   }

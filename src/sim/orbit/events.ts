@@ -8,6 +8,7 @@ import { conicRadiusCrossing } from '../../core/math/conic';
 import { quat } from '../../core/math/quat';
 import { v3, type Vec3 } from '../../core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
+import { floorAltitude, surfaceRadius, surfaceRadiusRange } from '../bodies/shape';
 import { timeFromPeriapsis } from './anomaly';
 import { propagateInto, type Orbit } from './kepler';
 import { bisectToNonPositive, brentRoot, goldenMin } from './roots';
@@ -168,13 +169,14 @@ export function soiExitTime(o: Orbit, soiRadius: number, tFrom: number): number 
 
 /**
  * Atmosphere-entry time (inbound crossing of radius + simTop) strictly after `tFrom`, or null. A vessel
- * already inside and descending has no entry on this pass (its impact is found instead).
+ * already inside and descending has no entry on this pass (its impact is found instead). On an oblate body
+ * the shell is the equatorial radius + simTop (the top of the atmosphere is first met there).
  */
 export function atmosphereEntryTime(system: BodySystem, o: Orbit, tFrom: number): number | null {
   const body = system.body(o.bodyId);
   const atm = body.def.atmosphere;
   if (!atm) return null;
-  const R = body.radius + atm.simTop;
+  const R = surfaceRadiusRange(body.def).max + atm.simTop;
   if (o.conic.p / (1 + o.conic.e) >= R) return null;
   return nextRadiusCrossing(o, R, -1, tFrom);
 }
@@ -210,6 +212,14 @@ export function findImpact(system: BodySystem, o: Orbit, tFrom: number, tTo: num
     propagateInto(o, t, r, v);
     return { t, r, v, height };
   };
+  // A body without a solid surface ends a trajectory at its floor (ARCHITECTURE 8.3); a spheroid without
+  // terrain data is its reference surface. Both are height functions of the direction for the march below.
+  const floor = floorAltitude(def) ?? 0;
+  if ((!heightFn || !def.terrain) && (def.shape !== undefined || body.surface === 'none')) {
+    const range = surfaceRadiusRange(def);
+    const shapeH: CoarseHeightFn = (_id, dirFixed) => surfaceRadius(def, dirFixed) - R + floor;
+    return marchImpact(system, o, tFrom, tTo, shapeH, range.min - R + floor, range.max - R + floor, -Infinity, finish);
+  }
   if (!heightFn || !def.terrain) {
     const h = Math.max(0, sea);
     if (rp >= R + h) return null;
@@ -218,7 +228,28 @@ export function findImpact(system: BodySystem, o: Orbit, tFrom: number, tTo: num
     const t = nextRadiusCrossing(o, R + h, -1, tFrom);
     return t !== null && t <= tTo ? finish(t, h) : null;
   }
-  const { minElevation, maxElevation } = def.terrain;
+  return marchImpact(system, o, tFrom, tTo, heightFn, def.terrain.minElevation, def.terrain.maxElevation, sea, finish);
+}
+
+/**
+ * The march of findImpact against a height function: entry of the shell at the highest surface (analytic, or
+ * tFrom when already inside), then steps of at most TERRAIN_MARCH_STEP of ground, the first sign change
+ * bisected; every shell pass inside the window.
+ */
+function marchImpact(
+  system: BodySystem,
+  o: Orbit,
+  tFrom: number,
+  tTo: number,
+  heightFn: CoarseHeightFn,
+  minElevation: number,
+  maxElevation: number,
+  sea: number,
+  finish: (t: number, height: number) => ImpactEvent,
+): ImpactEvent | null {
+  const body = system.body(o.bodyId);
+  const R = body.radius;
+  const rp = o.conic.p / (1 + o.conic.e);
   const top = Math.max(maxElevation, sea);
   const shell = R + top;
   if (rp >= shell) return null;
@@ -272,37 +303,52 @@ const VV_ = { x: 0, y: 0, z: 0 };
 const periapsisSpeed = (mu: number, p: number, e: number): number => Math.sqrt(mu / p) * (1 + e);
 
 /**
+ * The smallest step of the SOI-entry sampler for a child: min(SOI_MIN_STEP, Rsoi / (4 V)) with V the largest
+ * speed of the vessel relative to the child while the vessel is within reach of the child's orbit (vis-viva at
+ * the innermost radius of that band, plus the child's speed bound), so that even the smallest spheres
+ * (Phobos 16.6 km at 2 km/s relative, crossed in 8 s) cannot be stepped over (ARCHITECTURE 8.4).
+ */
+export function soiStepFloor(o: Orbit, rsoi: number, childBounds: { rMin: number; vMax: number }): number {
+  const c = o.conic;
+  const rp = c.p / (1 + c.e);
+  const rBand = Math.max(rp, childBounds.rMin - rsoi, 1);
+  const vVessel = Math.sqrt(Math.max(0, o.mu * (2 / rBand - o.alpha)));
+  const V = vVessel + childBounds.vMax;
+  return Math.min(SOI_MIN_STEP, rsoi / (4 * V));
+}
+
+/**
  * First entry into the SOI of `childId` (which orbits the orbit's body) in [tFrom, tTo], or null.
  *
- * d(t) = |r_vessel(t) - r_child(t)| - R_soi. Because |d'| <= V = (vessel periapsis speed) + (child
- * periapsis speed), a step h <= d/V cannot jump over a root; the sampler steps by max(d/V, SOI_MIN_STEP),
- * so far from the SOI it takes long steps and no encounter can be missed there. Inside the minimum-step band
- * a sampled local minimum (a grazing pass that dips in and out between samples) is refined by golden-section
- * search and, if negative, its first root is found. Roots are refined by Brent to EVENT_TIME_TOLERANCE.
- * A vessel that starts inside the SOI and is moving out is followed until it is outside; one that starts
- * inside and moving in returns tFrom.
+ * d(t) = |r_vessel(t) - r_child(t)| - R_soi. Because |d'| <= V = (vessel periapsis speed) + (child speed
+ * bound), a step h <= d/V cannot jump over a root; the sampler steps by max(d/V, hMin), so far from the SOI it
+ * takes long steps and no encounter can be missed there. hMin is the floor of `soiStepFloor` (30 s, or less
+ * for a small sphere). Inside the minimum-step band a sampled local minimum (a grazing pass that dips in and
+ * out between samples) is refined by golden-section search and, if negative, its first root is found. Roots
+ * are refined by Brent to EVENT_TIME_TOLERANCE. A vessel that starts inside the SOI and is moving out is
+ * followed until it is outside; one that starts inside and moving in returns tFrom. The child may move on
+ * any orbit of the body contract (its ephemeris states the bounds the search needs).
  */
 export function findSoiEntry(system: BodySystem, o: Orbit, childId: string, tFrom: number, tTo: number): number | null {
   if (!(tTo > tFrom)) return null;
   const child = system.body(childId);
-  const kep = child.kepler;
+  const kep = child.ephemeris;
   const Rsoi = child.soiRadius;
   if (!kep || Rsoi === null || child.parentId !== o.bodyId) return null;
   const c = o.conic;
   const rpV = c.p / (1 + c.e);
   // 2a - rp: exact for every bound orbit, including near-radial ones where p/(1 - e) has lost its digits.
   const raV = o.period !== null ? 2 / o.alpha - rpV : Infinity;
-  const rpC = kep.a * (1 - kep.e);
-  const raC = kep.a * (1 + kep.e);
-  if (rpV > raC + Rsoi || raV < rpC - Rsoi) return null;
-  const V = periapsisSpeed(o.mu, c.p, c.e) + periapsisSpeed(kep.mu, kep.a * (1 - kep.e * kep.e), kep.e);
+  const cb = kep.bounds(tFrom, tTo);
+  if (rpV > cb.rMax + Rsoi || raV < cb.rMin - Rsoi) return null;
+  const V = periapsisSpeed(o.mu, c.p, c.e) + cb.vMax;
   const D = (t: number): number => {
     propagateInto(o, t, RV_, VV_);
     const s = kep.stateAt(t);
     return Math.hypot(RV_.x - s.r.x, RV_.y - s.r.y, RV_.z - s.r.z) - Rsoi;
   };
   const span = tTo - tFrom;
-  const hMin = Math.min(SOI_MIN_STEP, span / 16);
+  const hMin = Math.min(soiStepFloor(o, Rsoi, cb), span / 16);
   let t = tFrom;
   let d = D(t);
   if (d <= 0) {
@@ -345,21 +391,32 @@ export interface ClosestApproach {
   r: Vec3;
 }
 
+/** Largest number of distance samples one closest-approach scan takes (a 40-year heliocentric window against Mercury needs about 10,000). */
+export const CLOSEST_APPROACH_MAX_SAMPLES = 20000;
+
 /**
- * Local minima of the distance to body `targetId` (which must orbit the orbit's body) over
- * [tFrom, min(tTo, tFrom + one period)], sampled at `samples` points and refined by golden section to 1 s;
- * the first `maxCount` in time order.
+ * Local minima of the distance to body `targetId` (which must orbit the orbit's body) over the patch window
+ * [tFrom, tTo] (ARCHITECTURE 8.4: an adaptive scan over the horizon), refined by golden section to 1 s; the
+ * first `maxCount` in time order. The scan takes `samples` points per the shorter of the two periods (the
+ * vessel's and the target's mean period), at least `samples` over the window: so a window of up to one
+ * period is sampled exactly as v1 did (64 points over it), and a long heliocentric window against a fast
+ * planet is sampled finely enough to see every approach (at most CLOSEST_APPROACH_MAX_SAMPLES points).
  */
 export function closestApproaches(system: BodySystem, o: Orbit, targetId: string, tFrom: number, tTo: number, samples = 64, maxCount = 2): ClosestApproach[] {
   const target = system.body(targetId);
   if (target.parentId !== o.bodyId || !(tTo > tFrom)) return [];
-  const t1 = o.period !== null ? Math.min(tTo, tFrom + o.period) : tTo;
+  const eph = target.ephemeris;
+  const t1 = tTo;
   const D = (t: number): number => {
     propagateInto(o, t, RV_, VV_);
     const s = system.stateRelParent(targetId, t);
     return Math.hypot(RV_.x - s.r.x, RV_.y - s.r.y, RV_.z - s.r.z);
   };
-  const n = Math.max(8, samples);
+  const base = Math.max(8, samples);
+  const shortest = Math.min(o.period ?? Infinity, eph ? eph.meanPeriod : Infinity);
+  // (a window of exactly one period must give `base` samples, whatever the rounding of t1 - tFrom)
+  const perPeriod = Number.isFinite(shortest) && shortest > 0 ? Math.ceil((base * (t1 - tFrom)) / shortest - 1e-6) : base;
+  const n = Math.min(CLOSEST_APPROACH_MAX_SAMPLES, Math.max(base, perPeriod));
   const ts: number[] = [];
   const ds: number[] = [];
   for (let i = 0; i <= n; i++) {

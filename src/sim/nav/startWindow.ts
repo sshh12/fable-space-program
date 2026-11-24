@@ -62,14 +62,14 @@ export interface SunAtPoint {
   visibility: number;
 }
 
-function elevationOnly(system: BodySystem, p: SurfacePoint, ut: number): { elev: number; posRoot: ReturnType<typeof v3.zero>; up: ReturnType<typeof v3.zero> } {
+function elevationOnly(system: BodySystem, p: SurfacePoint, ut: number): { elev: number; rBci: ReturnType<typeof v3.zero>; up: ReturnType<typeof v3.zero> } {
   const body = system.body(p.bodyId);
   const rFixed = fixedPosition(p.latitude, p.longitude, body.radius + p.elevation);
   const rInertial = quat.rotate(system.orientation(p.bodyId, ut), rFixed);
-  const posRoot = v3.add(system.stateRoot(p.bodyId, ut).r, rInertial);
   const up = v3.normalize(rInertial);
-  const s = system.sunDirection(posRoot, ut);
-  return { elev: Math.asin(Math.max(-1, Math.min(1, v3.dot(up, s.dir)))), posRoot, up };
+  // in the frame of the body's planet system (no digits lost to a heliocentric root)
+  const s = system.sunDirectionAt(p.bodyId, rInertial, ut);
+  return { elev: Math.asin(Math.max(-1, Math.min(1, v3.dot(up, s.dir)))), rBci: rInertial, up };
 }
 
 /** Sun elevation, its rate (central difference over +/- 30 s) and disc visibility at a surface point. */
@@ -77,7 +77,7 @@ export function sunAtSurfacePoint(system: BodySystem, p: SurfacePoint, ut: numbe
   const now = elevationOnly(system, p, ut);
   const a = elevationOnly(system, p, ut - 30).elev;
   const b = elevationOnly(system, p, ut + 30).elev;
-  const visibility = system.sunVisibility(v3.addScaled(now.posRoot, now.up, 2), ut);
+  const visibility = system.sunVisibilityAt(p.bodyId, v3.addScaled(now.rBci, now.up, 2), ut);
   return { elevation: now.elev, rate: (b - a) / 60, visibility };
 }
 

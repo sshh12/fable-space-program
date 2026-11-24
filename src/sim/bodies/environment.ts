@@ -13,7 +13,6 @@ export type OrbitalEnvironment = Pick<VesselEnvironment, 'ut' | 'bodyId' | 'mu' 
 /** Environment members that depend only on the body system, for a vessel at `rBci` (BCI of bodyId) at ut. */
 export function orbitalEnvironment(system: BodySystem, bodyId: string, ut: number, rBci: Vec3): OrbitalEnvironment {
   const body = system.body(bodyId);
-  const posRoot = v3.add(system.stateRoot(bodyId, ut).r, rBci);
   return {
     ut,
     bodyId,
@@ -23,7 +22,8 @@ export function orbitalEnvironment(system: BodySystem, bodyId: string, ut: numbe
     spin: v3.clone(body.spin),
     atmosphereAt: atmosphereFunction(body.def),
     heating: body.def.atmosphere ? body.def.atmosphere.heating : null,
-    sunDir: system.sunDirection(posRoot, ut).dir,
-    sunVisibility: system.sunVisibility(posRoot, ut),
+    // in the frame of the planet system (sunDirectionAt): v1's numbers in a library rooted at a planet
+    sunDir: system.sunDirectionAt(bodyId, rBci, ut).dir,
+    sunVisibility: system.sunVisibilityAt(bodyId, rBci, ut),
   };
 }

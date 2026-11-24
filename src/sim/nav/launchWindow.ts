@@ -1,8 +1,8 @@
 /**
  * Launch-window maths (docs/research/sim-design.md 15.2) - information for the HUD, never automation.
  *
- * Target plane = the orbit plane of a body that orbits the launch body (unit normal nT, fixed: Kepler
- * orbits do not precess). Pad direction rP(t) rotates with the launch body.
+ * Target plane = the orbit plane of a body that orbits the launch body (unit normal nT at the start of the
+ * search: a frozen ellipse does not precess, and a precessing moon turns its plane by degrees per year at most). Pad direction rP(t) rotates with the launch body.
  *
  *  - Coplanar (|latitude| <= target inclination to the launch body's equator): the times where
  *    rP(t) . nT = 0, solved ANALYTICALLY for the uniform rotation W(t) (two per rotation). Required
@@ -75,7 +75,7 @@ export function computeLaunchWindow(input: LaunchWindowInput): LaunchWindow | nu
   const { system, bodyId, ut, targetBodyId } = input;
   const body = system.body(bodyId);
   const target = system.body(targetBodyId);
-  if (target.parentId !== bodyId || !target.kepler) return null;
+  if (target.parentId !== bodyId || !target.ephemeris) return null;
   const rot = body.rotation;
   if (rot.kind !== 'uniform' || rot.rate === 0) return null;
   const lead = input.ascentLeadTime ?? 0;
@@ -84,7 +84,7 @@ export function computeLaunchWindow(input: LaunchWindowInput): LaunchWindow | nu
   const rFixed = fixedPosition(input.latitude, input.longitude, rPad);
   const vOrb = Math.sqrt(body.mu / (body.radius + (input.parkingAltitude ?? DEFAULT_PARKING_ALTITUDE)));
   const vRot = Math.abs(rot.rate) * Math.hypot(rFixed.x, rFixed.y);
-  const nT = target.kepler.normal;
+  const nT = target.ephemeris.normalAt(ut);
   const m = quat.rotateInv(rot.qPole, nT);
   const cl = Math.cos(input.latitude);
   const sl = Math.sin(input.latitude);
@@ -166,7 +166,7 @@ export function launchWindowReadout(input: Omit<LaunchWindowInput, 'kind'>): Rea
 /** Angle (rad) of a body-fixed point above (+) / below (-) the target body's orbit plane at time t. */
 export function angleFromTargetPlane(system: BodySystem, bodyId: string, rFixed: Vec3, targetBodyId: string, t: number): number {
   const target = system.body(targetBodyId);
-  if (!target.kepler) throw new Error(`angleFromTargetPlane: ${targetBodyId} has no kepler orbit`);
+  if (!target.ephemeris) throw new Error(`angleFromTargetPlane: ${targetBodyId} has no orbit`);
   const r = quat.rotate(system.orientation(bodyId, t), rFixed);
-  return Math.asin(Math.max(-1, Math.min(1, v3.dot(v3.normalize(r), target.kepler.normal))));
+  return Math.asin(Math.max(-1, Math.min(1, v3.dot(v3.normalize(r), target.ephemeris.normalAt(t)))));
 }

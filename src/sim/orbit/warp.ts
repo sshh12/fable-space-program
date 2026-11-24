@@ -14,6 +14,7 @@ import { MAX_PHYSICS_WARP_INDEX, WARP_LEVELS, type BodyDef } from '../../core/co
 import type { ManeuverNode, Patch } from '../../core/contracts/sim';
 import { v3, type Vec3 } from '../../core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
+import { warpAltitudeLimitsOf } from '../bodies/shape';
 import { atmosphereEntryTime, nextRadiusCrossing } from './events';
 import { makeOrbit } from './kepler';
 
@@ -28,11 +29,16 @@ export const SOI_CHANGE_MIN_WARP_INDEX = WARP_LEVELS.indexOf(50);
 
 export const warpFactor = (index: number): number => WARP_LEVELS[Math.max(0, Math.min(WARP_LEVELS.length - 1, Math.round(index)))]!;
 
-/** Highest warp index allowed by the body's altitude limits at `altitude` (physics levels always allowed). */
+/**
+ * Highest warp index allowed by the body's altitude limits at `altitude` (physics levels always allowed). The
+ * limits are the body's stated list, completed from its radius and atmosphere top where it states fewer than
+ * the rails levels or none (warpAltitudeLimitsOf, src/sim/bodies/shape.ts).
+ */
 export function maxWarpIndexForAltitude(body: BodyDef, altitude: number): number {
+  const limits = warpAltitudeLimitsOf(body);
   let idx = MAX_PHYSICS_WARP_INDEX;
   for (let i = MAX_PHYSICS_WARP_INDEX + 1; i < WARP_LEVELS.length; i++) {
-    const lim = body.warpAltitudeLimits[i - MAX_PHYSICS_WARP_INDEX - 1];
+    const lim = limits[i - MAX_PHYSICS_WARP_INDEX - 1];
     if (lim === undefined || !(altitude >= lim)) break;
     idx = i;
   }
@@ -42,7 +48,7 @@ export function maxWarpIndexForAltitude(body: BodyDef, altitude: number): number
 /** Altitude limit (m) of a rails warp level, or null for physics levels. */
 export function warpAltitudeLimit(body: BodyDef, index: number): number | null {
   if (index <= MAX_PHYSICS_WARP_INDEX) return null;
-  const lim = body.warpAltitudeLimits[index - MAX_PHYSICS_WARP_INDEX - 1];
+  const lim = warpAltitudeLimitsOf(body)[index - MAX_PHYSICS_WARP_INDEX - 1];
   return lim === undefined ? Infinity : lim;
 }
 
