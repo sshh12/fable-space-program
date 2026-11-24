@@ -1682,8 +1682,10 @@ export class IslandImpl implements Island {
       case 'stage':
       case 'abort': {
         const env = this.envAt(rec, ut);
+        const idBefore = v.id;
         const res = c.kind === 'stage' ? fireNextStage(v, env) : abortVessel(v, env);
         if (!res.ok) return res.reason ?? (c.kind === 'stage' ? 'Staging refused' : 'Abort refused');
+        if (v.id !== idBefore) this.renamed(rec, idBefore);
         for (const ev of res.events) this.report.events.push(ev);
         for (const s of res.spawned) this.adopt(s, rec);
         this.afterStructureChange(rec);

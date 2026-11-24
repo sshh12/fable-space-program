@@ -117,6 +117,25 @@ describe('a vessel target', () => {
     expect(s.readouts.sasModesAvailable).toContain('antiTarget');
     expect(s.readouts.sasModesAvailable).not.toContain('portAlign');
     expect(sim.commands.setSasMode('portAlign')).toEqual({ ok: false, reason: 'No docking port to align' });
+    // Once the two are a few hundred metres apart both coast (outside the armed margin nothing is integrated). Two hours
+    // of rails later, more than a revolution: the list holds what lies ahead, with its distances and speeds, never an
+    // approach that has passed.
+    for (let k = 0; k < 40 && sim.peek().readouts.target!.range < 400; k++) steps(sim, 120 * 60);
+    expect(sim.peek().readouts.target!.range).toBeGreaterThan(400);
+    steps(sim, 240);
+    const from = sim.peek().simUt;
+    sim.commands.setWarpLevel(6);
+    sim.advanceRails(from + 7200);
+    const later = sim.peek();
+    expect(later.simUt - from).toBeGreaterThan(3600);
+    const ahead = later.readouts.target!.closestApproaches;
+    for (const c of ahead) {
+      expect(c.ut).toBeGreaterThanOrEqual(later.simUt);
+      expect(c.distance).toBeGreaterThanOrEqual(0);
+      expect(c.distance).toBeLessThan(1e7);
+      expect(c.relSpeed).toBeLessThan(1000);
+    }
+    for (let k = 1; k < ahead.length; k++) expect(ahead[k]!.ut).toBeGreaterThan(ahead[k - 1]!.ut);
   });
 
   it('the navball\'s target mode shows the velocity relative to the target as prograde, and is the pilot\'s to keep', async () => {

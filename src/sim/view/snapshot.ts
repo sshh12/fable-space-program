@@ -433,7 +433,8 @@ export function buildSnapshot(s: SnapshotSource): SimSnapshot {
       targetDir = v3.sub(tb.rRoot, v3.add(ab.rRoot, a.r));
     } else if (craft && s.target) {
       // A vessel or a port: the read-out, the direction to it and the velocity relative to it (the relative markers; prograde in the target mode).
-      readouts.target = craftTargetReadout(system, a, s.target, craft, planning.approaches, simUt);
+      // (Only what lies ahead: an approach that has passed is no approach to fly.)
+      readouts.target = craftTargetReadout(system, a, s.target, craft, planning.approaches.filter((c) => c.ut >= simUt), simUt);
       ({ targetDir, relativeVelocity } = craftTargetVectors(system, a, s.target, craft, simUt));
     }
     navball = computeNavball({ mode: planning.navballMode, q: v.q, r: a.r, v: a.v, qFixedToInertial: env.qFixedToInertial, spin: env.spin, maneuverDv: dv, targetDir, relativeVelocity, liftVectorVes: v.aero.liftDirVes });

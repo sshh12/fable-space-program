@@ -203,12 +203,14 @@ export class World implements SimWorld, PresentedHost, PacedClock, SeatHost {
   /** Move the pilot to another vessel: the plan is the old vessel's and is forgotten. */
   takeVessel(next: Vessel): void {
     const prev = this.active;
+    const held = this.island.seatOf(PILOT_ACCOUNT)?.controls;
     if (this.view.present) this.seat.input({ kind: 'seat', vesselId: prev.id, aboard: false });
     this.active = next;
     this.view.regain();
     // A vessel outside the island (the one that takes over when the pilot's is lost): the island forms about it.
     if (!this.island.member(next.id)) this.form();
     this.seat.input({ kind: 'seat', vesselId: next.id, aboard: true });
+    if (held) this.seat.input({ kind: 'controls', vesselId: next.id, controls: held, sasHold: null });
     this.seat.sendReference();
     if (this.view.follow()) this.touch();
     this.plan.clear();

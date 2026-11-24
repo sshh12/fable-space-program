@@ -115,10 +115,10 @@ export class Planning {
     this.patchesDirty = true;
   }
 
-  /** The target vessel changed its orbit otherwise than by coasting: the approaches are stale. */
-  noteTargetRevision(): void {
+  /** The approaches are stale when the target vessel changed its orbit otherwise than by coasting, and when the first of them has passed (`ut`: now). */
+  noteTargetRevision(ut: number): void {
     const t = this.targetCraft ? this.resolveTarget(this.targetCraft.vesselId) : null;
-    if (t && t.revision !== this.targetRevision) this.patchesDirty = true;
+    if (t && (t.revision !== this.targetRevision || (this.approaches[0] !== undefined && this.approaches[0].ut < ut))) this.patchesDirty = true;
   }
 
   /**

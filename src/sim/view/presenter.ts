@@ -184,7 +184,7 @@ export class Presenter {
 
   private build(lag: number): SimSnapshot {
     const h = this.h;
-    h.plan.noteTargetRevision();
+    h.plan.noteTargetRevision(utOfTick(h.tick));
     h.refresh();
     // The render root is at the pilot's vessel whatever replaced its island's reference orbit since the host last said so (a member that was the anchor left).
     if (this.present) this.follow();
