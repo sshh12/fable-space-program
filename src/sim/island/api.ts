@@ -114,6 +114,10 @@ export interface IslandMember {
   readonly previous: { r: Vec3; v: Vec3; q: Quat } | null;
   /** Attitude follows the SAS hold direction across a rails advance. */
   readonly trackHold: boolean;
+  /** The head the member had as a passive vessel when it was admitted as a copy (ARCHITECTURE U4); null = not an admitted copy. */
+  readonly admittedFromHead: number | null;
+  /** Where the reservation of an admitted copy stands. */
+  readonly reservation: ReservationState;
 }
 
 // ---------------------------------------------------------------------------------------------- inputs
