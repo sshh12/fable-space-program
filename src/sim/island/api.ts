@@ -222,7 +222,51 @@ export interface CommandOutcome {
  * executes. `merge`, `capture` and `release` are contact-docking's and join this type with it.
  * Vessels are named by SLOT at the operation's tick, parts by index in `Vessel.parts`.
  */
-export type IslandOp = Extract<IslandOpBody, { op: 'split' | 'destroy' | 'add' | 'remove' | 'rebase' | 'replace' }>;
+export type IslandOp = Extract<IslandOpBody, { op: 'split' | 'destroy' | 'add' | 'remove' | 'rebase' | 'replace' }> | OutcomeOp | PoseOp;
+
+/**
+ * The threshold outcomes (ARCHITECTURE 6.4): what a predicting replica never produces by itself and receives
+ * as operations. `partDestroyed` (heat, impact, burial, overstress; the parts themselves leave by a `destroy`
+ * operation), `jointBroken` (the pieces part by a `split` operation), `crewLost`, `chuteFailed`, `touchdown`
+ * and `splash` (the confirmed first contact), `splashed` (the splashdown confirmed after its dwell),
+ * `asleep` and `awake` (a vessel at rest is held on the ground, and released from it).
+ */
+export type ThresholdOutcome = 'partDestroyed' | 'jointBroken' | 'crewLost' | 'chuteFailed' | 'touchdown' | 'splash' | 'splashed' | 'asleep' | 'awake';
+
+/**
+ * A threshold outcome of one member as data. The authoritative island journals one per member and step in
+ * which the member had an outcome and still exists, AFTER the `destroy` and `split` operations of that
+ * step, and one for every vessel such a step brought into being. `member` is the member in the island
+ * codec's own form (`encodeMember`: its vessel without labels and the island's items about it, raw bytes),
+ * as it is after the step: the continuous state a predicting replica held at a limit (a temperature, a
+ * stress, a dose, a canopy) is the sender's again, to the bit. A replica applies the operations of a step
+ * after its own step of that tick, in order.
+ */
+export interface OutcomeOp {
+  op: 'outcome';
+  slot: number;
+  /** What happened to the member in the step, each kind once, in the order of `ThresholdOutcome`; empty for a vessel the step brought into being. */
+  outcomes: ThresholdOutcome[];
+  member: Uint8Array;
+}
+
+/**
+ * A pose-only correction of one member at the operation's tick: position and velocity of its VES origin IN
+ * THE ISLAND'S FRAME (BCI of the island's body, or the offset from the reference point where the island
+ * has a reference orbit: the member vessel's own `r`, `v`), attitude (VES to inertial axes, unit) and body
+ * rates (VES axes, rad/s), all float64. Nothing else of the member changes. It is accepted only within
+ * `POSE_CORRECTION_MAX_DISTANCE`, `_SPEED`, `_ANGLE` and `_RATE` of the member's state; beyond them
+ * `applyOp` throws `IslandOpError` ('bound') and the sender sends the whole vessel (`replace`). A member on
+ * a conic is integrated from the corrected state.
+ */
+export interface PoseOp {
+  op: 'pose';
+  slot: number;
+  r: Vec3;
+  v: Vec3;
+  q: Quat;
+  w: Vec3;
+}
 
 /** An operation the island executed, with the check both sides compute after it. */
 export interface AppliedOp {
@@ -380,6 +424,13 @@ export interface Island {
   /** A pending merge tick the island does not pass; null = none. */
   readonly mergeTick: number | null;
   readonly counters: Readonly<IslandCounters>;
+  /**
+   * Journal the operations of the steps: with it set, `AdvanceReport.ops` holds every `split` and `destroy`
+   * a step executed and, in the authoritative mode, an `outcome` for every member that had a threshold
+   * outcome (a host that sends or stores operations sets it; without it a step reports the rebases only).
+   * Not state.
+   */
+  recordOps: boolean;
 
   member(vesselId: string): IslandMember | null;
 
@@ -522,7 +573,7 @@ export interface IslandInit {
 
 /** Thrown by `applyOp` and `decodeIsland`: the data does not fit the state or the codec. */
 export interface IslandErrorInfo {
-  problem: 'format' | 'version' | 'slot' | 'joint' | 'ids' | 'vessel' | 'frame';
+  problem: 'format' | 'version' | 'slot' | 'joint' | 'ids' | 'vessel' | 'frame' | 'bound';
   detail: string;
 }
 
@@ -556,3 +607,8 @@ export const REFERENCE_OFFSET_MAX = 30_000;
  */
 export const REFERENCE_SETTLE_DISTANCE = 1;
 export const REFERENCE_SETTLE_SPEED = 1e-3;
+/** Bounds of a pose-only correction (`PoseOp`): farther from the member's state than these it is refused. m, m/s, rad, rad/s. */
+export const POSE_CORRECTION_MAX_DISTANCE = 100;
+export const POSE_CORRECTION_MAX_SPEED = 10;
+export const POSE_CORRECTION_MAX_ANGLE = 0.2;
+export const POSE_CORRECTION_MAX_RATE = 1;

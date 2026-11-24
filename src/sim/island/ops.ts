@@ -5,11 +5,14 @@
  * applied here is the change the authoritative step made, part for part and id for id.
  */
 import type { IslandOpChecksum } from '@/core/contracts/net';
+import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import { destroyParts } from '../dynamics/failure';
-import { decodeVessel, libraryResolver, separateVessel, type Vessel } from '../vessel';
+import { decodeVessel, isControllable, libraryResolver, separateVessel, type Vessel } from '../vessel';
 import type { StepContext, StructuralRecord } from '../vessel/types';
 import type { IslandErrorInfo, IslandOp } from './api';
+import { POSE_CORRECTION_MAX_ANGLE, POSE_CORRECTION_MAX_DISTANCE, POSE_CORRECTION_MAX_RATE, POSE_CORRECTION_MAX_SPEED } from './api';
+import { restoreMemberBytes } from './codec';
 import type { IslandImpl, Rec } from './island';
 
 /** Thrown by `applyOp` and `decodeIsland`: the data does not fit the state or the codec. */
@@ -67,6 +70,14 @@ function sameIds(got: readonly Vessel[], stated: readonly string[]): boolean {
 
 /** Execute `op` on the island at its tick. Returns the checksum of the vessel the operation leaves at its first slot. */
 export function applyIslandOp(island: IslandImpl, op: IslandOp): IslandOpChecksum | null {
+  const checksum = executeOp(island, op);
+  // An operation applied on a control tick changes what the island's upkeep derived there from its members (the
+  // armed margins, the pairs still overlapping, the watch flags): they are derived again from what it left.
+  island.opAccess.settled();
+  return checksum;
+}
+
+function executeOp(island: IslandImpl, op: IslandOp): IslandOpChecksum | null {
   const access = island.opAccess;
   switch (op.op) {
     case 'split': {
@@ -123,6 +134,34 @@ export function applyIslandOp(island: IslandImpl, op: IslandOp): IslandOpChecksu
       if (!v3.isFinite(op.r) || !v3.isFinite(op.v)) throw new IslandOpError('frame', 'the reference state is not finite');
       access.rebaseTo({ r: op.r, v: op.v }, anchor);
       const checksum = checksumOfVessel(anchor.vessel);
+      access.pushOp({ tick: island.tick, body: op, checksum });
+      return checksum;
+    }
+    case 'outcome': {
+      const rec = memberAt(island, op.slot);
+      // The member as the sender has it after the step: its vessel and the island's items about it.
+      restoreMemberBytes(island, rec, op.member);
+      rec.controllable = isControllable(rec.vessel);
+      const checksum = checksumOfVessel(rec.vessel);
+      access.pushOp({ tick: island.tick, body: op, checksum });
+      return checksum;
+    }
+    case 'pose': {
+      const rec = memberAt(island, op.slot);
+      const v = rec.vessel;
+      if (!v3.isFinite(op.r) || !v3.isFinite(op.v) || !v3.isFinite(op.w) || ![op.q.x, op.q.y, op.q.z, op.q.w].every(Number.isFinite)) throw new IslandOpError('bound', 'the pose is not finite');
+      const q = quat.normalize(op.q);
+      const turned = 2 * Math.acos(Math.min(1, Math.abs(q.x * v.q.x + q.y * v.q.y + q.z * v.q.z + q.w * v.q.w)));
+      if (v3.dist(op.r, v.r) > POSE_CORRECTION_MAX_DISTANCE || v3.dist(op.v, v.v) > POSE_CORRECTION_MAX_SPEED || turned > POSE_CORRECTION_MAX_ANGLE || v3.dist(op.w, v.w) > POSE_CORRECTION_MAX_RATE) {
+        throw new IslandOpError('bound', `the pose of "${v.id}" is ${v3.dist(op.r, v.r).toFixed(1)} m, ${v3.dist(op.v, v.v).toFixed(2)} m/s, ${turned.toFixed(3)} rad from the member's: beyond a correction (send the vessel)`);
+      }
+      const moved = v3.dist(op.r, v.r) !== 0 || v3.dist(op.v, v.v) !== 0;
+      v.r = v3.clone(op.r);
+      v.v = v3.clone(op.v);
+      v.q = { x: op.q.x, y: op.q.y, z: op.q.z, w: op.q.w };
+      v.w = v3.clone(op.w);
+      access.posed(rec, moved);
+      const checksum = checksumOfVessel(v);
       access.pushOp({ tick: island.tick, body: op, checksum });
       return checksum;
     }

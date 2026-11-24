@@ -74,10 +74,11 @@ import {
   type ReferenceOrbit,
   type ReservationState,
   type StepMode,
+  type ThresholdOutcome,
 } from './api';
 import { IslandEnv } from './environment';
 import { BodyFrames, comStateOf, setFromCom } from './frames';
-import { encodeIsland, islandHash } from './codec';
+import { encodeIsland, encodeMember, islandHash } from './codec';
 import { applyIslandOp, checksumOfVessel, decodeBlob, opFromRecord } from './ops';
 import { computeRailsEvent, crossSoi, eventAfterCrossing, orbitOf, railsStateAt, shifted, type RailsEvent } from './rails';
 import { IMPACT_DISC_RADIUS, IMPACT_REFRESH_DISTANCE, TerrainPolicy, VESSEL_DISC_RADIUS, VESSEL_REFRESH_DISTANCE } from './terrainPolicy';
@@ -143,7 +144,12 @@ interface PreStep {
   parts: number;
   crewAlive: boolean;
   id: string;
+  hold: Vessel['hold'];
+  surface: Vessel['surface'];
 }
+
+/** The order of `ThresholdOutcome` (an operation lists them in it). */
+const OUTCOME_ORDER: readonly ThresholdOutcome[] = ['partDestroyed', 'jointBroken', 'crewLost', 'chuteFailed', 'touchdown', 'splash', 'splashed', 'asleep', 'awake'];
 
 const cloneControls = (c: ControlInputs): ControlInputs => ({ pitch: c.pitch, yaw: c.yaw, roll: c.roll, translate: { x: c.translate.x, y: c.translate.y, z: c.translate.z }, throttle: c.throttle });
 
@@ -833,6 +839,15 @@ export class IslandImpl implements Island {
     this.counters.steps++;
     this.railsWarp = false;
     if (this.tick % CONTROL_TICKS === 0) this.upkeep();
+    if (this.outcomes.size > 0) {
+      // When the whole step is done, its upkeep included: each member that had a threshold outcome, as it is now, in
+      // slot order. (The operations of a step carry the tick the step began at.)
+      for (const rec of this.recs) {
+        const outcomes = this.outcomes.get(rec);
+        if (outcomes) this.report.ops.push({ tick: this.tick - 1, body: { op: 'outcome', slot: rec.slot, outcomes, member: encodeMember(this, rec) }, checksum: checksumOfVessel(rec.vessel) });
+      }
+      this.outcomes.clear();
+    }
     return this.end();
   }
 
@@ -869,7 +884,7 @@ export class IslandImpl implements Island {
       this.leaveRails(rec);
       this.report.replan.push(v.id);
     }
-    return { env, must, parts: v.parts.length, crewAlive: v.crewAlive, id: v.id };
+    return { env, must, parts: v.parts.length, crewAlive: v.crewAlive, id: v.id, hold: v.hold, surface: v.surface };
   }
 
   /** A member's vessel id changed (a separation of an assembly renames its pieces): the order, the seat and the pair lists follow. */
@@ -890,8 +905,10 @@ export class IslandImpl implements Island {
     if (this.mode === 'authoritative' && !extra && !this.recordOps) return undefined;
     return { mode: this.mode, records: this.recordOps, ...extra };
   }
-  /** Collect the structural operations of the steps (a host that journals or sends them turns it on). */
+  /** Journal the operations of the steps (`Island.recordOps`). */
   recordOps = false;
+  /** Members that had a threshold outcome in the step under way (authoritative, `recordOps`): their `outcome` operations are written when all have stepped. */
+  private readonly outcomes = new Map<Rec, ThresholdOutcome[]>();
 
   /** One physics step of a member. Returns true when a terrain query ran on data that was not final. */
   private stepMember(rec: Rec, ut0: number, utNew: number, dt: number, born: Rec[]): boolean {
@@ -917,7 +934,14 @@ export class IslandImpl implements Island {
     }
     for (const ev of res.events) this.report.events.push(ev);
     if (res.records) this.reportRecords(rec, res.records);
-    for (const s of res.spawned) born.push(this.adopt(s, rec));
+    const outcomes = this.recordOps && this.mode === 'authoritative' ? thresholdOutcomes(res.events, pre, v) : null;
+    for (const s of res.spawned) {
+      const child = this.adopt(s, rec);
+      born.push(child);
+      // What a threshold outcome brought into being is sent whole too: the replica's pieces come from a state held at its limits.
+      if (outcomes && outcomes.length > 0) this.outcomes.set(child, []);
+    }
+    if (outcomes && outcomes.length > 0) this.outcomes.set(rec, outcomes);
     // Command authority goes with the command parts and with their crew.
     if (v.parts.length !== pre.parts || v.crewAlive !== pre.crewAlive) rec.controllable = isControllable(v);
     if (v.destroyed || v.parts.length === 0) {
@@ -1728,6 +1752,26 @@ export class IslandImpl implements Island {
       this.report.arrivals.push({ vesselId, fromVesselId: vesselId });
     },
     envOf: (rec: Rec): IslandEnv => this.envAt(rec, this.ut),
+    /** A pose correction took the member off whatever conic it was on. */
+    posed: (rec: Rec, moved: boolean): void => {
+      rec.previous = null;
+      // A member on a conic whose position or velocity was corrected is off that conic: it is integrated from here.
+      if (moved && rec.vessel.hold === null && rec.orbit !== null) {
+        rec.mode = 'integrated';
+        rec.tier = 'full';
+        rec.orbit = null;
+        rec.railsEvent = null;
+        rec.coastTime = 0;
+      }
+      this.report.replan.push(rec.vessel.id);
+    },
+    /** After the operations of a step that ended on a control tick: what the island's upkeep derives from the members' states, derived again from the states the operations left. */
+    settled: (): void => {
+      if (this.tick % CONTROL_TICKS !== 0) return;
+      this.refreshMargins();
+      this.clearNascent();
+      this.watchThresholds();
+    },
     rebaseTo: (state: { r: Vec3; v: Vec3 }, anchor: Rec): void => {
       // A replica that rebased by the same rule at this tick has this reference already: nothing moves, to the bit.
       const have = this.reference;
@@ -1792,6 +1836,18 @@ export class IslandImpl implements Island {
     this.frameUp(this.carried);
     return islandHash(encodeIsland(this, false));
   }
+}
+
+/** The threshold outcomes of one member's step (authoritative mode): from its events, and from what the step changed without an event. */
+function thresholdOutcomes(events: readonly SimEvent[], pre: PreStep, v: Vessel): ThresholdOutcome[] {
+  const seen = new Set<ThresholdOutcome>();
+  for (const e of events) {
+    if (e.type === 'partDestroyed' || e.type === 'jointBroken' || e.type === 'crewLost' || e.type === 'chuteFailed' || e.type === 'touchdown' || e.type === 'splash') seen.add(e.type);
+  }
+  if (v.surface === 'splashed' && pre.surface !== 'splashed') seen.add('splashed');
+  if (v.hold === 'asleep' && pre.hold !== 'asleep') seen.add('asleep');
+  if (pre.hold === 'asleep' && v.hold !== 'asleep') seen.add('awake');
+  return OUTCOME_ORDER.filter((o) => seen.has(o));
 }
 
 /** Fold the report of an input that was applied at once into the report of the advance it happened in. */

@@ -23,10 +23,10 @@
 import type { ControlInputs } from '@/core/contracts/controls';
 import type { Vec3 } from '@/core/math/vec3';
 import { hashLibrary } from '@/core/defs/hash';
-import { decodeVessel, encodeVessel, hashBytes, libraryResolver, VesselDecodeError } from '../vessel';
+import { decodeVessel, encodeVessel, hashBytes, libraryResolver, VesselDecodeError, type DefResolver, type Vessel } from '../vessel';
 import { Reader, Writer } from '../vessel/codec';
 import type { IslandCommand, IslandDeps, IslandInit, IslandInput, IslandTimer, MemberMode, ReservationState, StepMode } from './api';
-import { inputOrder, type IslandImpl } from './island';
+import { inputOrder, type IslandImpl, type Rec } from './island';
 import { IslandOpError } from './ops';
 import type { RailsEvent, RailsEventKind } from './rails';
 import { orbitOf } from './rails';
@@ -220,35 +220,7 @@ export function encodeIsland(island: IslandImpl, names: boolean): Uint8Array {
     b.f64(ref.tick);
   }
   b.uint(island.recs.length);
-  for (const rec of island.recs) {
-    wBytes(b, encodeVessel(rec.vessel, { defsHash, labels: false }));
-    b.u8(indexIn(MODES, rec.mode, 'mode'));
-    b.bool(rec.attended);
-    wOptStr(b, rec.pilot);
-    b.f64(rec.bornTick);
-    b.f64(rec.revision);
-    b.bool(rec.thresholdWatch);
-    b.bool(rec.terrainRegime);
-    b.bool(rec.trackHold);
-    b.f64(rec.coastTime);
-    b.bool(rec.forceIntegrate);
-    b.bool(rec.nearOther);
-    wOptTick(b, rec.admittedFromHead);
-    b.u8(indexIn(RESERVATIONS, rec.reservation, 'reservation state'));
-    b.bool(rec.orbit !== null);
-    if (rec.orbit !== null) {
-      wVec(b, rec.orbit.r0);
-      wVec(b, rec.orbit.v0);
-      b.f64(rec.orbit.t0);
-    }
-    const ev = rec.railsEvent;
-    b.bool(ev !== null);
-    if (ev !== null) {
-      b.f64(ev.ut);
-      b.u8(indexIn(EVENT_KINDS, ev.kind, 'event kind'));
-      wOptStr(b, ev.nextBodyId);
-    }
-  }
+  for (const rec of island.recs) wMember(b, rec, defsHash);
   const anchor = island.anchorId;
   b.uint(anchor === null ? 0 : island.recs.findIndex((r) => r.vessel.id === anchor) + 1);
   b.uint(island.nascentPairs.length);
@@ -325,6 +297,129 @@ function openIsland(bytes: Uint8Array): { version: number; defsHash: string; id:
   }
 }
 
+/** One member as the codec writes it: its vessel (without labels) and everything the island keeps about it. */
+function wMember(b: Writer, rec: Rec, defsHash: string): void {
+  wBytes(b, encodeVessel(rec.vessel, { defsHash, labels: false }));
+  b.u8(indexIn(MODES, rec.mode, 'mode'));
+  b.bool(rec.attended);
+  wOptStr(b, rec.pilot);
+  b.f64(rec.bornTick);
+  b.f64(rec.revision);
+  b.bool(rec.thresholdWatch);
+  b.bool(rec.terrainRegime);
+  b.bool(rec.trackHold);
+  b.f64(rec.coastTime);
+  b.bool(rec.forceIntegrate);
+  b.bool(rec.nearOther);
+  wOptTick(b, rec.admittedFromHead);
+  b.u8(indexIn(RESERVATIONS, rec.reservation, 'reservation state'));
+  b.bool(rec.orbit !== null);
+  if (rec.orbit !== null) {
+    wVec(b, rec.orbit.r0);
+    wVec(b, rec.orbit.v0);
+    b.f64(rec.orbit.t0);
+  }
+  const ev = rec.railsEvent;
+  b.bool(ev !== null);
+  if (ev !== null) {
+    b.f64(ev.ut);
+    b.u8(indexIn(EVENT_KINDS, ev.kind, 'event kind'));
+    wOptStr(b, ev.nextBodyId);
+  }
+}
+
+/** What `wMember` wrote. */
+interface MemberState {
+  vessel: Vessel;
+  mode: Rec['mode'];
+  attended: boolean;
+  pilot: string | null;
+  bornTick: number;
+  revision: number;
+  thresholdWatch: boolean;
+  terrainRegime: boolean;
+  trackHold: boolean;
+  coastTime: number;
+  forceIntegrate: boolean;
+  nearOther: boolean;
+  admittedFromHead: number | null;
+  reservation: Rec['reservation'];
+  orbit: Rec['orbit'];
+  railsEvent: RailsEvent | null;
+}
+
+function rMember(island: IslandImpl, r: Reader, resolver: DefResolver): MemberState {
+  const vessel = decodeVessel(rBytes(r), { resolver }).vessel;
+  const mode = fromIndex(MODES, r.u8(), 'mode');
+  const attended = r.bool();
+  const pilot = rOptStr(r);
+  const bornTick = r.f64();
+  const revision = r.f64();
+  const thresholdWatch = r.bool();
+  const terrainRegime = r.bool();
+  const trackHold = r.bool();
+  const coastTime = r.f64();
+  const forceIntegrate = r.bool();
+  const nearOther = r.bool();
+  const admittedFromHead = rOptTick(r);
+  const reservation = fromIndex(RESERVATIONS, r.u8(), 'reservation state');
+  let orbit: Rec['orbit'] = null;
+  if (r.bool()) {
+    const r0 = rVec(r);
+    const v0 = rVec(r);
+    orbit = orbitOf(island.frames, island.bodyId, { r: r0, v: v0 }, r.f64());
+  }
+  let railsEvent: RailsEvent | null = null;
+  if (r.bool()) {
+    railsEvent = { ut: r.f64(), kind: fromIndex(EVENT_KINDS, r.u8(), 'event kind'), nextBodyId: null };
+    railsEvent.nextBodyId = rOptStr(r);
+  }
+  return { vessel, mode, attended, pilot, bornTick, revision, thresholdWatch, terrainRegime, trackHold, coastTime, forceIntegrate, nearOther, admittedFromHead, reservation, orbit, railsEvent };
+}
+
+/** Put what the codec carries of a member into its record (the vessel is set by the caller). */
+function setMember(rec: Rec, m: MemberState): void {
+  rec.bornTick = m.bornTick;
+  rec.mode = m.mode;
+  rec.tier = m.mode === 'armed' ? 'armed' : 'full';
+  rec.thresholdWatch = m.thresholdWatch;
+  rec.terrainRegime = m.terrainRegime;
+  rec.trackHold = m.trackHold;
+  rec.coastTime = m.coastTime;
+  rec.forceIntegrate = m.forceIntegrate;
+  rec.nearOther = m.nearOther;
+  rec.admittedFromHead = m.admittedFromHead;
+  rec.reservation = m.reservation;
+  rec.orbit = m.orbit;
+  rec.railsEvent = m.railsEvent;
+}
+
+/**
+ * One member in the island codec's own form (an `outcome` operation's blob): the vessel and every item the
+ * island keeps about it, as `encode` writes them.
+ */
+export function encodeMember(island: IslandImpl, rec: Rec): Uint8Array {
+  const b = new Writer();
+  wMember(b, rec, defsHashOf(island.deps));
+  return b.done();
+}
+
+/** Make a member what `encodeMember` wrote of it on another island in the same state otherwise: its vessel and the island's items about it. Who sits where is not touched. */
+export function restoreMemberBytes(island: IslandImpl, rec: Rec, bytes: Uint8Array): void {
+  let m: MemberState;
+  try {
+    m = rMember(island, new Reader(bytes), island.deps.resolver ?? libraryResolver(island.deps.defs));
+  } catch (e) {
+    if (e instanceof IslandOpError) throw e;
+    throw new IslandOpError('format', `the member blob does not read: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (m.vessel.id !== rec.vessel.id) throw new IslandOpError('ids', `the blob holds vessel "${m.vessel.id}", the slot holds "${rec.vessel.id}"`);
+  rec.vessel = m.vessel;
+  rec.previous = null;
+  rec.revision = m.revision;
+  setMember(rec, m);
+}
+
 /** Hash of island codec bytes (16 hex digits): the body, which is every byte but the header and the names. */
 export function islandHash(bytes: Uint8Array): string {
   const o = openIsland(bytes);
@@ -347,33 +442,9 @@ export function decodeIslandInto(make: (init: IslandInit) => IslandImpl, deps: I
     if (r.bool()) island.setReference({ r0: rVec(r), v0: rVec(r), tick: r.f64() });
     const count = r.uint();
     for (let k = 0; k < count; k++) {
-      const vessel = decodeVessel(rBytes(r), { resolver }).vessel;
-      const m = fromIndex(MODES, r.u8(), 'mode');
-      const attended = r.bool();
-      const pilot = rOptStr(r);
-      const bornTick = r.f64();
-      const revision = r.f64();
-      const rec = island.restoreMember(vessel, { bornTick, revision, pilot, attended });
-      rec.mode = m;
-      rec.tier = m === 'armed' ? 'armed' : 'full';
-      rec.thresholdWatch = r.bool();
-      rec.terrainRegime = r.bool();
-      rec.trackHold = r.bool();
-      rec.coastTime = r.f64();
-      rec.forceIntegrate = r.bool();
-      rec.nearOther = r.bool();
-      rec.admittedFromHead = rOptTick(r);
-      rec.reservation = fromIndex(RESERVATIONS, r.u8(), 'reservation state');
-      if (r.bool()) {
-        const r0 = rVec(r);
-        const v0 = rVec(r);
-        rec.orbit = orbitOf(island.frames, bodyId, { r: r0, v: v0 }, r.f64());
-      }
-      if (r.bool()) {
-        const ev: RailsEvent = { ut: r.f64(), kind: fromIndex(EVENT_KINDS, r.u8(), 'event kind'), nextBodyId: null };
-        ev.nextBodyId = rOptStr(r);
-        rec.railsEvent = ev;
-      }
+      const m = rMember(island, r, resolver);
+      const rec = island.restoreMember(m.vessel, { bornTick: m.bornTick, revision: m.revision, pilot: m.pilot, attended: m.attended });
+      setMember(rec, m);
     }
     const anchorSlot = r.uint();
     const anchor = island.anchorId;
