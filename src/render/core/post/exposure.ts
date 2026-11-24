@@ -433,11 +433,13 @@ export const METER2_SCENE_LIT_FROM = 0.1;
 export const METER2_SCENE_LIT_FULL = 0.3;
 export const METER2_EMITTER_SCENE_FROM = 0.1;
 /**
- * The top of the scale with look 2. The present top (EV_MAX, 16.5) left a sheath that asks for 19.6 three
- * stops over where its hint puts it: the present curve still showed it with its streaks there (eight times
- * over the cap is 0.93 of white), the camera curve shows one white ball.
+ * The top of the scale with look 2. At the present top (EV_MAX, 16.5) the sheath of a night entry stands
+ * three stops over where its hint asks (19.6): the present curve showed it with its streaks there, the
+ * camera curve shows one white ball (3.8 % of the frame white). At 19.6 it is a grey cloud (the picture's
+ * 95th percentile at 0.07): the hint's luminance is the sheath seen square on, not what most of it has.
+ * 18 is between the two pictures of the A/B (out/screens/core-support/curve-ab/10-entry.png).
  */
-export const METER2_EV_MAX = 20;
+export const METER2_EV_MAX = 18;
 export const METER2_EMITTER_SCENE_FULL = 0.2;
 
 export const TWILIGHT_SKY_FROM = Math.sin((-12 * Math.PI) / 180);

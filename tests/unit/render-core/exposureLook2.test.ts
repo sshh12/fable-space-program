@@ -94,10 +94,10 @@ describe('look 2 under a low sun: the dawn splashdown (request ocean-13)', () =>
 });
 
 describe('look 2 and emitters: the night entry', () => {
-  it('a sheath a quarter of the frame wide is the scene: at the peak of heating look 1 stands at the top of its scale, look 2 where the hint asks (its scale ends higher)', () => {
+  it('a sheath a quarter of the frame wide is the scene: at the peak of heating each look stands at the top of its scale (the hint asks for 19.6)', () => {
     expect(target('entryPeakHeating', 1)).toBe(EV_MAX);
-    expect(target('entryPeakHeating', 2)).toBeGreaterThan(18.5);
-    expect(target('entryPeakHeating', 2)).toBeLessThan(METER2_EV_MAX);
+    expect(target('entryPeakHeating', 2)).toBe(METER2_EV_MAX);
+    expect(METER2_EV_MAX).toBeGreaterThan(EV_MAX);
   });
 
   it("a thruster's pulse raises the target by two stops over the frame without it, where it raised it by five and a half (6.27 -> 11.81)", () => {
