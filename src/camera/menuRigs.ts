@@ -183,6 +183,26 @@ export function transitSample(plan: TransitPlan, u: number, holdAngle = 0): Tran
 
 /** A body-fixed point to ROOT, with the body's pose of the frame. */
 export const fixedToRoot = (body: Pick<BodySnapshot, 'rRoot' | 'qFixedToRoot'>, p: Vec3): Vec3 => v3.add(body.rRoot, quat.rotate(body.qFixedToRoot, p));
+/**
+ * The path's own motion bound between two of its points (m, body-fixed): the length of the path from progress
+ * `u0` at hold angle `a0` to `u1` at `a1`, as the sum of `steps` chords along the progress and along the
+ * holding drift. A camera that stands on the path in both frames moved at most this much (triangle
+ * inequality); a camera that left it (a cut, a jump at a hand-over) moved more.
+ */
+export function transitPathLength(plan: TransitPlan, u0: number, a0: number, u1: number, a1: number, steps = 8): number {
+  let length = 0;
+  let prev = transitSample(plan, u0, a0).positionFixed;
+  for (let i = 1; i <= steps; i++) {
+    const u = u0 + ((u1 - u0) * i) / steps;
+    const a = a0 + ((a1 - a0) * i) / steps;
+    const alongU = transitSample(plan, u, a0 + ((a1 - a0) * (i - 1)) / steps).positionFixed;
+    const next = transitSample(plan, u, a).positionFixed;
+    length += v3.len(v3.sub(alongU, prev)) + v3.len(v3.sub(next, alongU));
+    prev = next;
+  }
+  return length;
+}
+
 /** A ROOT point to body-fixed. */
 export const rootToFixed = (body: Pick<BodySnapshot, 'rRoot' | 'qFixedToRoot'>, p: Vec3): Vec3 => quat.rotateInv(body.qFixedToRoot, v3.sub(p, body.rRoot));
 

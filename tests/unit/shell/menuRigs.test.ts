@@ -4,7 +4,7 @@
  * reaches the pad's exposure at the end, and the menu eye keeps the sun just behind the limb.
  */
 import { describe, expect, it } from 'vitest';
-import { holdProgress, menuEye, transitSample, type TransitPlan } from '@/camera/menuRigs';
+import { holdProgress, menuEye, transitPathLength, transitSample, type TransitPlan } from '@/camera/menuRigs';
 import { latLonToDir } from '@/core/geo/cubeSphere';
 import { DEG } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
@@ -46,6 +46,26 @@ describe('the transit path', () => {
     const turned = transitSample(plan, u, 30 * DEG);
     expect(turned.altitude).toBeCloseTo(s.altitude, 6);
     expect(v3.len(v3.sub(turned.positionFixed, s.positionFixed))).toBeGreaterThan(0);
+  });
+
+  it('bounds a frame step by the path length between its two points, and a step off the path exceeds it', () => {
+    const hold = holdProgress(plan);
+    for (const [u0, u1, a0, a1] of [
+      [0, 0.002, 0, 0],
+      [0.4, 0.401, 0, 0],
+      [hold, hold, 0, 0.01],
+      [0.999, 1, 0, 0],
+    ] as const) {
+      const step = v3.len(v3.sub(transitSample(plan, u1, a1).positionFixed, transitSample(plan, u0, a0).positionFixed));
+      const bound = transitPathLength(plan, u0, a0, u1, a1);
+      expect(step).toBeLessThanOrEqual(bound + 1e-6);
+      // The chord and the arc of a short step agree to well under a per cent: the bound is tight, not a licence.
+      if (step > 1e-3) expect(bound / step).toBeLessThan(1.01);
+    }
+    // A cut to another pose (a jump of 50 m at the end) is outside the bound of the step it was made in.
+    const end = transitSample(plan, 1).positionFixed;
+    const jumped = v3.add(end, v3.new(50, 0, 0));
+    expect(v3.len(v3.sub(jumped, transitSample(plan, 0.9999).positionFixed))).toBeGreaterThan(transitPathLength(plan, 0.9999, 0, 1, 0) + 1);
   });
 
   it('walks the exposure from the eye to the pad over the lower path and lands on the pad exposure', () => {

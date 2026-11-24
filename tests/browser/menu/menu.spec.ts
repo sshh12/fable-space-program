@@ -6,50 +6,10 @@
  *
  *   node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/menu --project=functional
  */
-import type { Page } from '@playwright/test';
-import { assertDiscreteGpu, expect, expectNoErrors, openPage, saveScreenshot, test } from '../harness';
+import { expect, expectNoErrors, saveScreenshot, test } from '../harness';
+import { hooks, openLab, press, shot, waitMain, waitState } from './menuPage';
 
 test.setTimeout(15 * 60_000);
-
-interface Hooks {
-  state: string;
-  main: string;
-  side: string[];
-  focus: string | null;
-  scrimRects: number;
-  spawn: string;
-  practice: boolean;
-}
-declare global {
-  interface Window {
-    __shell?: { hooks(): Hooks; transit(): { u: number; holding: boolean; steps: number[]; acknowledged: boolean } | null; fixture: { setLink(s: string, r?: string | null): void } };
-  }
-}
-
-const hooks = (page: Page): Promise<Hooks> => page.evaluate(() => window.__shell!.hooks());
-const waitState = (page: Page, state: string, timeout = 120_000): Promise<unknown> => page.waitForFunction((s) => window.__shell?.hooks().state === s, state, { timeout });
-const waitMain = (page: Page, main: string, timeout = 120_000): Promise<unknown> => page.waitForFunction((m) => window.__shell?.hooks().main === m, main, { timeout });
-const settle = (page: Page): Promise<void> => page.evaluate(() => window.__test!.waitFrames(40));
-const shot = async (page: Page, name: string): Promise<void> => {
-  await settle(page);
-  await saveScreenshot(page, 'shell-menu', name);
-};
-/** Press a key; then wait for the state and for the focus (an id, or a prefix ending in '-*'). */
-async function press(page: Page, key: string, state?: string, focus?: string): Promise<void> {
-  await page.keyboard.press(key);
-  if (state) await waitState(page, state);
-  if (focus !== undefined)
-    await page.waitForFunction((f) => {
-      const id = window.__shell!.hooks().focus ?? '';
-      return f.endsWith('-*') ? id.startsWith(f.slice(0, -1)) : id === f;
-    }, focus, { timeout: 10_000 });
-}
-async function openLab(page: Page, query = ''): Promise<void> {
-  await openPage(page, `/labs/shell/?governor=off${query}`, { timeoutMs: 600_000 });
-  await assertDiscreteGpu(page);
-  await waitState(page, 'title');
-  await page.waitForFunction(() => document.querySelector('.sh-begin .sh-label')?.textContent === 'Press any key to begin', undefined, { timeout: 600_000 });
-}
 
 test('the deploy flow by keyboard only, with the focus at every step, to control on the pad and back', async ({ page, pageLog }) => {
   await openLab(page, '&queue=free');

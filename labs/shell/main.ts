@@ -19,14 +19,14 @@ import type { SpawnRequest } from '@/core/contracts/session';
 import type { BodySnapshot } from '@/core/contracts/sim';
 import type { VehicleCapabilities } from '@/core/contracts/vehicle';
 import { analyzeVehicle } from '@/sim/vessel/analyze';
-import { createFakeSession } from '@/core/fakes/fakeSession';
+import { createFakeSession, FAKE_SESSION_DEFAULT_UT } from '@/core/fakes/fakeSession';
 import { createMenuFixture, menuShipsFixture } from '@/core/fakes/menuStores';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { holdProgress, lookAt, menuEye, rootToFixed, transitPose, transitSample, type EyePose, type TransitPlan } from '@/camera';
+import { holdProgress, lookAt, menuEye, rootToFixed, transitPathLength, transitPose, transitSample, type EyePose, type TransitPlan } from '@/camera';
 import { DEFAULT_BINDINGS, keyHelpEntries, keyLabel, MENU_BINDINGS, TRANSIT_BINDINGS } from '@/input';
 import { createLabApp, createLabPlanetFeature } from '@/render/core/lab';
-import { createShell, loadShellFonts, type ShellIntent } from '@/shell';
+import { createShell, loadShellFonts, solarViewAt, type ShellIntent } from '@/shell';
 import { createTerrainProvider, createFetchTileSource } from '@/terrain';
 import { createMfdPainter, createNavballRenderer } from '@/ui';
 import { formatApsis, formatDeltaV, formatDuration, formatMass, formatNumber } from '@/ui/format';
@@ -46,14 +46,26 @@ async function boot(): Promise<void> {
     { label: 'Render features', done: 0, total: 0, finished: false },
     { label: 'The view from orbit', done: 0, total: 1, finished: false },
   ];
+  // &holdboot=1 (the cold-start test): the hangar's data is not resident until the test releases it
+  // (`__shell.releaseHangar()`); the title must show the progress and keep Play closed until then.
+  const hangarStep = query.get('holdboot') === '1' ? { label: 'Hangar', done: 0, total: 1, finished: false } : null;
+  if (hangarStep) bootSteps.push(hangarStep);
   const defs = await loadDefs(fetchDefSource());
   bootSteps[0]!.done = 1;
   bootSteps[0]!.finished = true;
   const site = Object.values(defs.sites).sort((a, b) => a.name.localeCompare(b.name))[0]!;
   const loc = padLocationOf(site);
   const padElevation = typeof loc.padElevation === 'number' ? loc.padElevation : 0;
-  const sim = createFakeSession(defs, { scene: 'pad', siteId: site.id, ground: { height: padElevation, originHeight: 0 } });
-  const terrain = await createTerrainProvider(defs, createFetchTileSource('/tiles'));
+  // &padhour=<h>: the local solar hour at the pad (a night pad for the exposure at the hand-over); the fake's own start otherwise.
+  const padHour = query.get('padhour');
+  let ut = FAKE_SESSION_DEFAULT_UT;
+  if (padHour !== null) {
+    const probe = createFakeSession(defs, { scene: 'pad', siteId: site.id, ground: { height: padElevation, originHeight: 0 } });
+    const earth0 = probe.snapshot().bodies.find((b) => b.id === site.bodyId)!;
+    const now = solarViewAt(earth0, loc.latDeg, loc.lonDeg).localSolarHours;
+    ut += ((((Number(padHour) - now) % 24) + 24) % 24) * 3600;
+  }
+  const sim = createFakeSession(defs, { scene: 'pad', siteId: site.id, ut, ground: { height: padElevation, originHeight: 0 } });
   const app = await createLabApp({ canvas, name: 'shell', defs, sim, features: [], autoReady: false });
   const errors = (m: string): void => app.testApi.reportError(m);
   const fonts = loadShellFonts('/assets/ui/fonts/', errors).then(() => {
@@ -84,7 +96,24 @@ async function boot(): Promise<void> {
   let subject: Subject = 'earth';
   let lensX = 0;
   let glide: { from: EyePose; t: number } | null = null;
-  let transit: { plan: TransitPlan; u: number; speed: number; holdAngle: number; acknowledged: boolean; practice: boolean; request: SpawnRequest; steps: number[]; last: Vec3 | null; holding: boolean } | null = null;
+  /** The transit, and what a test reads of it: per frame the camera's step (m, body-fixed), its bound from the path, the frame time and the exposure. */
+  interface TransitRun {
+    plan: TransitPlan;
+    u: number;
+    speed: number;
+    holdAngle: number;
+    acknowledged: boolean;
+    practice: boolean;
+    request: SpawnRequest;
+    steps: number[];
+    bounds: number[];
+    frameMs: number[];
+    last: { u: number; angle: number; fixed: Vec3 } | null;
+    holding: boolean;
+  }
+  let transit: TransitRun | null = null;
+  /** The last transit's record and the exposure at its hand-over (EV100), kept for the test after the transit ends. */
+  let lastTransit: (TransitRun & { handOverEv: number | null; handOverAt: number | null }) | null = null;
   let flightCamera = false;
   const eyeFor = (s: Subject): EyePose => {
     const earth = earthOf();
@@ -157,7 +186,8 @@ async function boot(): Promise<void> {
           const earth = earthOf();
           const startFixed = rootToFixed(earth, current().positionRoot);
           const padEv = sunEvAtPad(earth);
-          transit = { plan: { radius, padLatDeg: loc.latDeg, padLonDeg: loc.lonDeg, padHeight: padElevation, startFixed, endOffsetEnu: v3.new(-60, -160, 60), holdAltitude: 3000, startEv: ev(), padEv, duration: 10 }, u: 0, speed: 1, holdAngle: 0, acknowledged: false, practice: i.practice, request: i.request, steps: [], last: null, holding: false };
+          transit = { plan: { radius, padLatDeg: loc.latDeg, padLonDeg: loc.lonDeg, padHeight: padElevation, startFixed, endOffsetEnu: v3.new(-60, -160, 60), holdAltitude: 3000, startEv: ev(), padEv, duration: 10 }, u: 0, speed: 1, holdAngle: 0, acknowledged: false, practice: i.practice, request: i.request, steps: [], bounds: [], frameMs: [], last: null, holding: false };
+          lastTransit = null;
           lensX = 0;
           return;
         }
@@ -201,6 +231,7 @@ async function boot(): Promise<void> {
     await app.renderer.addFeature(createLabPlanetFeature({ defaultMap: 'tileset' }));
     bootSteps[2]!.done = 1;
   } else {
+    const terrain = await createTerrainProvider(defs, createFetchTileSource('/tiles'));
     const imported = await importPackages(wanted);
     const navball = createNavballRenderer(app.gpu);
     app.renderer.context.resources.publish('ui.navball', navball.view);
@@ -224,7 +255,14 @@ async function boot(): Promise<void> {
   shell.booted();
   shell.gatePassed();
   let idleFrames = 0;
+  let lastFrameAt: number | null = null;
+  let frameMs = 0;
+  /** True while a test measures the page without the menu: the shell is not updated and its root is hidden. */
+  let menuHidden = false;
   app.onFrame((_s, dt) => {
+    const now = performance.now();
+    frameMs = lastFrameAt === null ? 0 : now - lastFrameAt;
+    lastFrameAt = now;
     if (!bootSteps[3]!.finished) {
       idleFrames = app.testApi.api.isIdle() ? idleFrames + 1 : 0;
       if (idleFrames > 6) {
@@ -242,13 +280,22 @@ async function boot(): Promise<void> {
       else tr.u = Math.min(1, tr.u + (dt * tr.speed) / tr.plan.duration);
       if (gatesOpen && tr.u > hold) tr.u = hold;
       shell.transitStatus(tr.holding ? 'Securing range · waiting for the launch to be confirmed' : tr.u < hold ? `${site.name} · ${padOf(site, tr.request.pad).name}` : 'Pad clear', tr.holding);
+      // Below the hold the pad is in view: the exposure heads for what the meter reads there (it keeps metering
+      // under a hint), so the hand-over lands on the pad's settled exposure, by day or by night.
+      if (tr.u >= hold) tr.plan.padEv += (app.renderer.exposureInfo().targetEv100 - tr.plan.padEv) * Math.min(1, dt * 2);
       const sample = transitSample(tr.plan, tr.u, tr.holdAngle);
       const pose = transitPose(earth, sample);
-      if (tr.last) tr.steps.push(v3.len(v3.sub(rootToFixed(earth, pose.positionRoot), rootToFixed(earth, tr.last))));
-      tr.last = pose.positionRoot;
+      const fixed = rootToFixed(earth, pose.positionRoot);
+      if (tr.last) {
+        tr.steps.push(v3.len(v3.sub(fixed, tr.last.fixed)));
+        tr.bounds.push(transitPathLength(tr.plan, tr.last.u, tr.last.angle, tr.u, tr.holdAngle));
+        tr.frameMs.push(frameMs);
+      }
+      tr.last = { u: tr.u, angle: tr.holdAngle, fixed };
       place(pose, sample.exposureHint);
       if (tr.u >= 1) {
         transit = null;
+        lastTransit = { ...tr, handOverEv: ev(), handOverAt: performance.now() };
         flightCamera = true;
         app.camera.settings.exposureHint = null;
         app.camera.spec = { type: 'orbit', target: { vesselId: app.snapshot().activeVesselId ?? '' }, yaw: -0.35, pitch: 0.18, distance: 180 };
@@ -272,7 +319,7 @@ async function boot(): Promise<void> {
     }
     fixture.advance(dt);
     practice.advance(dt);
-    shell.update(dt);
+    if (!menuHidden) shell.update(dt);
   });
   // Esc / P in flight open the flight menu (the flight table's action; this lab has no flight controller).
   window.addEventListener('keydown', (e) => {
@@ -292,6 +339,19 @@ async function boot(): Promise<void> {
     camera: () => app.cameraState(),
     exposure: () => app.renderer.exposureInfo(),
     transit: () => (transit ? { u: transit.u, holding: transit.holding, steps: transit.steps.slice(), acknowledged: transit.acknowledged } : null),
+    /** The last finished transit: per-frame steps and their bounds (m), frame times (ms), the exposure at the hand-over and now. */
+    lastTransit: () =>
+      lastTransit ? { steps: lastTransit.steps.slice(), bounds: lastTransit.bounds.slice(), frameMs: lastTransit.frameMs.slice(), handOverEv: lastTransit.handOverEv, secondsSince: lastTransit.handOverAt === null ? null : (performance.now() - lastTransit.handOverAt) / 1000, evNow: ev() } : null,
+    /** Measure the page without the menu (the CDP A/B): the shell is not updated and its DOM is hidden; the scene is unchanged. */
+    setMenuHidden: (on: boolean) => {
+      menuHidden = on;
+      uiRoot.style.display = on ? 'none' : '';
+    },
+    releaseHangar: () => {
+      if (!hangarStep) return;
+      hangarStep.done = 1;
+      hangarStep.finished = true;
+    },
     resetClock: () => (t0 = performance.now()),
   };
   app.testApi.markReady(true);

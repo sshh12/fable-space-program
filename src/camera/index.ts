@@ -31,4 +31,4 @@ export { createMapRig, MAP_FILL_LIGHT, MAP_FOCUS_SECONDS, MAP_MAX_DISTANCE, MAP_
 export { createViewManager, VIEW_BLEND_SECONDS, type ViewFrame, type ViewManager, type ViewManagerOptions } from './viewManager';
 export { buildAudioListener, buildLodObservers, OBSERVER_FOOTPRINT_MARGIN, OBSERVER_SURFACE_DISTANCE, pressureAtCamera, vesselGroundObserver } from './listener';
 export { createCameraInputMapper, type CameraInputContext, type CameraInputMapper, type CameraInputMapperOptions } from './cameraInput';
-export { fixedToRoot, holdProgress, lookAt, menuEye, rootToFixed, transitPose, transitSample, type EyePose, type MenuEyeOptions, type TransitPlan, type TransitSample } from './menuRigs';
+export { fixedToRoot, holdProgress, lookAt, menuEye, rootToFixed, transitPathLength, transitPose, transitSample, type EyePose, type MenuEyeOptions, type TransitPlan, type TransitSample } from './menuRigs';

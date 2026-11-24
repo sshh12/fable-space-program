@@ -199,7 +199,8 @@ export function focusable<T extends HTMLElement>(e: T, id: string, onActivate: (
   e.tabIndex = -1;
   e.addEventListener('click', (ev) => {
     ev.preventDefault();
-    onActivate();
+    // A disabled control takes the pointer's focus but does nothing, as by key (`activate` is not called for it).
+    if (e.getAttribute('aria-disabled') !== 'true') onActivate();
   });
   (e as HTMLElement & { shActivate?: () => void }).shActivate = onActivate;
   return e;

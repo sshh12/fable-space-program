@@ -45,7 +45,7 @@ export interface Shell {
   /** The element id that has the focus (test hook). */
   focused(): string | null;
   /** State, focus, the scrim rectangles last published (test hook: window.__shell). */
-  hooks(): { state: string; main: string; side: readonly string[]; focus: string | null; scrimRects: number; spawn: string; practice: boolean };
+  hooks(): { state: string; main: string; side: readonly string[]; focus: string | null; scrimRects: number; spawn: string; practice: boolean; textRefreshes: number; screenChanges: number };
   dispose(): void;
 }
 
@@ -85,6 +85,9 @@ export function createShell(deps: ShellDeps): Shell {
   const focusMemory = new Map<string, string>();
   let dirty = true;
   let textClock = 0;
+  /** Test hooks: text refreshes on the text clock (rebuilds and live text), and screen changes (drawn at once). */
+  let textRefreshes = 0;
+  let screenChanges = 0;
   let scrimFollow = 0;
   let lastScrim = '';
   let lastScrimCount = 0;
@@ -353,6 +356,7 @@ export function createShell(deps: ShellDeps): Shell {
     const v = screenFor(st);
     view = v;
     const changed = name !== lastName;
+    if (changed) screenChanges++;
     root.hidden = v === null;
     deps.intent({ kind: 'context', context: st.main === 'flight' || st.main === 'leaving' ? 'flight' : st.main === 'transit' ? 'transit' : 'menu' });
     if (!v) {
@@ -581,11 +585,13 @@ export function createShell(deps: ShellDeps): Shell {
       textClock += realDt;
       if (dirty && textClock >= 1 / TEXT_HZ) {
         textClock = 0;
+        textRefreshes++;
         render();
         return;
       }
       if (textClock >= 1 / TEXT_HZ && view) {
         textClock = 0;
+        textRefreshes++;
         view.live?.();
         liveTop();
         renderStatus(machine.state());
@@ -623,7 +629,7 @@ export function createShell(deps: ShellDeps): Shell {
     focused: () => focusId,
     hooks: () => {
       const st = machine.state();
-      return { state: stateName(st), main: st.main, side: st.side, focus: focusId, scrimRects: lastScrimCount, spawn: spawn.phase().kind, practice: practiceOn() };
+      return { state: stateName(st), main: st.main, side: st.side, focus: focusId, scrimRects: lastScrimCount, spawn: spawn.phase().kind, practice: practiceOn(), textRefreshes, screenChanges };
     },
     dispose() {
       window.removeEventListener('keydown', armTrap, { capture: true });
