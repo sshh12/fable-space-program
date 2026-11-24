@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NEUTRAL_CONTROLS } from '../contracts/controls';
+import { firstPresentableVehicleId } from '../access/presentable';
 import type { DefLibrary } from '../contracts/defs';
 import type { ModuleState, PartSnapshot } from '../contracts/sim';
 import { fsDefSource } from '../defs/fsSource';
@@ -136,7 +137,7 @@ describe('FakeSim', () => {
   });
 
   it('names the vehicle it was told it flies (features look the vehicle definition up by it)', () => {
-    const vehicleId = Object.keys(defs.vehicles)[0]!;
+    const vehicleId = firstPresentableVehicleId(defs)!;
     const sim = createFakeSim(defs, { scene: 'lowOrbit', vehicleId });
     expect(sim.scenario.vehicle).toBe(vehicleId);
     expect(sim.snapshot().vessels[0]!.vehicleId).toBe(vehicleId);

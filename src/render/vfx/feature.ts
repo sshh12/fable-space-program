@@ -7,6 +7,7 @@
  */
 import type { FrameContext, LocalLight, RenderContext, RenderFeature } from '@/core/contracts/render';
 import type { VesselSnapshot } from '@/core/contracts/sim';
+import { isPresentableVessel } from '@/core/access/presentable';
 import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import { coreOf, sunVisibilityAt } from '@/render/core';
@@ -393,6 +394,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       // ---- plume clusters of every vessel with something burning
       placed = [];
       for (const vessel of snap.vessels) {
+        // (A vessel that is not presentable is not drawn by the vessel feature, src/core/access/presentable.ts: nothing of it is drawn here either.)
+        if (!isPresentableVessel(ctx.defs, vessel)) continue;
         let burning = false;
         for (const part of vessel.parts) {
           for (const m of part.modules) {

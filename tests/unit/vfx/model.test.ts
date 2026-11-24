@@ -3,6 +3,7 @@
  * parts (vessel facade).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { firstPresentableVehicleId } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { findEventPart, partKey, partKeyOf } from '@/core/access/snapshotAccess';
@@ -41,7 +42,7 @@ beforeAll(async () => {
 });
 
 const vesselOf = (stagesAlreadyFired: number): VesselSnapshot => {
-  const vehicleId = Object.keys(defs.vehicles)[0]!;
+  const vehicleId = firstPresentableVehicleId(defs)!;
   const parts = vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired }));
   const base = createFakeSim(defs, { scene: 'pad' }).peek().vessels[0]!;
   return { ...base, parts, q: quat.identity() };

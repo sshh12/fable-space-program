@@ -4,6 +4,7 @@
  * are drawn by the vessel that absorbed it, and a fading copy would be the same hardware twice.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { firstPresentableVehicleId } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
@@ -21,10 +22,10 @@ beforeAll(async () => {
   base = createFakeSim(defs, { scene: 'lowOrbit' }).peek();
 });
 
-/** A vessel `id` of one launched craft `craft-<id>` of the library's first vehicle. */
+/** A vessel `id` of one launched craft `craft-<id>` of the library's first presentable vehicle. */
 const vesselOf = (id: string): VesselSnapshot => {
   const craftId = `craft-${id}`;
-  const parts = vesselPartSnapshots(assembleVessel(defs, Object.keys(defs.vehicles)[0]!, { craft: { craftId, ownerId: null, name: id, joinedTick: 0 } }));
+  const parts = vesselPartSnapshots(assembleVessel(defs, firstPresentableVehicleId(defs)!, { craft: { craftId, ownerId: null, name: id, joinedTick: 0 } }));
   return { ...base.vessels[0]!, id, parts, crafts: [{ ...base.vessels[0]!.crafts![0]!, id: craftId, parent: null }] };
 };
 

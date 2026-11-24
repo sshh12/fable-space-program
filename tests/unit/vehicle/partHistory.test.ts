@@ -8,6 +8,7 @@
  *  - state asked for by craft and instance id is the state of the part, also for a piece nothing was drawn of.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { presentableVehicles } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CraftSnapshot, PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
@@ -52,7 +53,7 @@ const craftCount = (vessels: readonly VesselSnapshot[]): number => new Set(vesse
 
 describe('the state kept per part', () => {
   it('holds the parts and the craft of the snapshot through every stage of the stack, as the simulation names its craft', () => {
-    const vehicle = Object.values(defs.vehicles)[0]!;
+    const vehicle = presentableVehicles(defs)[0]!;
     const pruned = new PartHistory();
     // The same flight without a prune, as the feature kept its state before: every craft that ever was.
     const unpruned = new PartHistory();

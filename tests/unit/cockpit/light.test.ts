@@ -4,6 +4,7 @@
  * map transform and its casters, the plugs for the core's cascades, and the sun-patch ray cast's receiver albedo.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { presentableVehicles } from '@/core/access/presentable';
 import { v3, type Vec3 } from '@/core/math';
 import { bvhRay } from '@/render/cockpit/bvh';
 import { meshPositions, sunRange, type CockpitModel } from '@/render/cockpit/build';
@@ -296,7 +297,7 @@ describe('covered windows', () => {
   it("take the boost cover's ports from its visual params: every other window is shut while the cover is on", async () => {
     const defs = await testDefs();
     const ids = model.windows.map((w) => w.id);
-    const vehicle = Object.values(defs.vehicles).find((v) => v.cockpit === 'kestrel')!;
+    const vehicle = presentableVehicles(defs).find((v) => v.cockpit === 'kestrel')!;
     const parts = vehicle.parts.map((p) => p.def);
     const lib = defs as unknown as Parameters<typeof coveredWindows>[2];
     const withCover = coveredWindows(ids, parts, lib);

@@ -13,6 +13,7 @@
  *  - condensation: white and persistent where the air is cold and dense enough (upper troposphere);
  *  - reentry: a glowing wake that fades in seconds, visible from far away.
  */
+import { isPresentableVessel } from '@/core/access/presentable';
 import type { FrameContext, RenderContext } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
@@ -343,7 +344,7 @@ export class TrailSystem {
 
     for (const vessel of snap.vessels) {
       const plasma = vessel.aero.plasmaIntensity;
-      if (plasma < R.minIntensity) continue;
+      if (plasma < R.minIntensity || !isPresentableVessel(this.ctx.defs, vessel)) continue;
       const pose = frame.vesselPose(vessel.id);
       const speed = v3.len(vessel.aero.airVelocity);
       if (!pose || speed < 500) continue;

@@ -27,6 +27,7 @@
  * Keys 9 / 0 / minus cycle the pages of the three displays through a minimal mapping (the app shell does the
  * same through the input layer's 'mfdCycle:i' actions).
  */
+import { presentableVehicles } from '@/core/access/presentable';
 import type { CapsuleMouldLineDef, DefLibrary } from '@/core/contracts/defs';
 import type { LocalSession } from '@/core/contracts/session';
 import type { SimSnapshot } from '@/core/contracts/sim';
@@ -214,7 +215,7 @@ async function boot(): Promise<void> {
     autoReady: false,
     sim: (defs) => {
       // The lab's vehicle: the first of the definitions that has a cabin.
-      const vehicle = Object.values(defs.vehicles).find((v) => v.cockpit)!;
+      const vehicle = presentableVehicles(defs).find((v) => v.cockpit)!;
       const parts = vesselPartSnapshots(assembleVessel(defs, vehicle.id, { stagesAlreadyFired: scene.fired }));
       // The fake is told its vehicle: the craft block then states the cabin of the command part, as a session
       // does, and everything below reads the cabin from that block (`cabinOf`): its command part, its layout id

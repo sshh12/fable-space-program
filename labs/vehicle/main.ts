@@ -29,6 +29,7 @@
  * window.__veh is the lab handle: sim (VehicleLabSim), vehicle (VesselVisualFeature), site (SiteFeature),
  * env, and helpers used by the specs.
  */
+import { firstPresentableVehicleId } from '@/core/access/presentable';
 import type { RenderFeature } from '@/core/contracts/render';
 import { boxMesh, type MeshBatch, type ModelHandle, coreOf } from '@/render/core';
 import { createLabApp, createLabPlanetFeature, type LabApp } from '@/render/core/lab';
@@ -170,7 +171,7 @@ async function boot(): Promise<void> {
     name: 'vehicle',
     scene,
     sim: (defs) => {
-      const vehicleId = params.get('vehicle') ?? Object.keys(defs.vehicles)[0]!;
+      const vehicleId = params.get('vehicle') ?? firstPresentableVehicleId(defs)!;
       const siteId = Object.keys(defs.sites)[0]!;
       let place: LabPlace;
       if (placeKind === 'pad') place = { kind: 'pad', siteId, padElevation: 0 };

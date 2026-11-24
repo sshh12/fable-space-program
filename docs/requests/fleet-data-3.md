@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (presentation-sweep; the commit that adds this section)
 From: fleet-data
 Owner path: labs/vfx/scenes.ts, labs/vehicle/main.ts, labs/integration/main.ts, tests/unit/vfx/**, tests/unit/vehicle/**, tests/unit/cockpit/** (capability-settings); labs/audio/scripts.ts, tests/unit/audio/model.test.ts, tests/unit/fakes/menuStores.test.ts (shell-menu); src/core/fakes/fakeSim.test.ts (the lead)
 Blocking: no (worked around in fleet-data's paths)
@@ -25,3 +25,25 @@ cockpit too. This is an ordering of the library, not a contract.
 ## Requested change
 Name the vehicle meant (`'meridian-lunar'`, or the scenario's `vehicle`) instead of taking the first of the
 library, so the order of the library carries no meaning. Must NOT change: what the labs and tests show today.
+
+## Resolution (presentation-sweep, 2026-11-24; lead decision)
+A lab or a test that wants "a vehicle of the library" takes the first PRESENTABLE one, or names its own:
+`firstPresentableVehicleId(defs)` (and `presentableVehicles(defs)[0]` for the definition) of
+`src/core/access/presentable.ts` (docs/RENDER_API.md section 21; a vehicle is presentable when every one of
+its parts has a visual definition). The order of the library carries no meaning for them any more; with the
+library of today the answer is `meridian-lunar` either way, so nothing they show has changed.
+
+Converted: labs/vfx/scenes.ts, labs/vehicle/main.ts (`?vehicle=` still names another), labs/integration/main.ts
+(`&vehicle=` likewise), labs/audio/scripts.ts, tests/unit/vfx/model.test.ts, effects.test.ts, director.test.ts,
+tests/unit/vehicle/parts.test.ts, partHistory.test.ts, mounts.test.ts, ghosts.test.ts,
+tests/unit/audio/model.test.ts, src/core/fakes/fakeSim.test.ts; and the first vehicle WITH A CABIN
+(`presentableVehicles(defs).find((v) => v.cockpit)`) in labs/cockpit/main.ts, labs/cockpit/sky.ts,
+tests/unit/cockpit/geometry.test.ts, instruments.test.ts and light.test.ts.
+
+Left to their owners:
+
+- tests/unit/fakes/menuStores.test.ts line 19 and `menuShipsFixture` of src/core/fakes/menuStores.ts
+  (`Object.keys(defs.vehicles).sort()[0]`: the alphabetically first vehicle, which is not presentable today):
+  shell-menu, which offers `presentableVehicleIds(defs)` in the menu.
+
+The loader's order (fleet-data's c441308) is no longer relied on by any of the files above.

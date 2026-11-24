@@ -12,6 +12,7 @@
  *    or the sun has moved.
  * Never used by the app.
  */
+import { presentableVehicles } from '@/core/access/presentable';
 import type { AtmosphereRenderDef, DefLibrary } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import { v3, type Vec3 } from '@/core/math';
@@ -242,7 +243,7 @@ function cubeDir(face: number, u: number, v: number): Vec3 {
 
 export function createLabSkyFeature(defs: DefLibrary): RenderFeature & { refreshProbe(): void } {
   // The window plasma of the cockpit layout (luminance at full intensity, colour) for the stand-in glow.
-  const cockpitId = Object.values(defs.vehicles).find((x) => x.cockpit)?.cockpit;
+  const cockpitId = presentableVehicles(defs).find((x) => x.cockpit)?.cockpit;
   const lighting = cockpitId ? loadCockpitLayout(defs, cockpitId).layout.lighting : null;
   const plasmaL = lighting?.plasmaLuminance ?? 0;
   const plasmaC = lighting?.plasmaColor ?? [1, 1, 1];

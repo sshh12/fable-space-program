@@ -209,7 +209,13 @@ const RULES: readonly Rule[] = [
         reason: 'a producer of definitions: the library with one vehicle whose groups are listed the other way round, flown by a session of its own (the order of the resource groups follows the file)',
       },
       // Every vehicle of the definitions.
-      { file: 'src/render/vehicle/vesselFeature.ts', line: 'for (const vehicle of Object.values(defs.vehicles)) for (const p of vehicle.parts) visualOf(p.def);', reason: `${EVERY_VEHICLE} (the models of every part are built at start)` },
+      // Which vehicles can be shown: the one module that says so (the vessel feature, the menu, the labs and the tests ask it).
+      { file: 'src/core/access/presentable.ts', line: 'const vehicle = defs.vehicles[vehicleId];', reason: 'the definition of PRESENTABLE: whether the vehicle of that id can be shown is a fact of its definition (its parts and their visuals), asked by the id a menu or a lab offers' },
+      {
+        file: 'src/core/access/presentable.ts',
+        line: 'return Object.values(defs.vehicles).filter((v) => isPresentableVehicle(defs, v.id));',
+        reason: `${EVERY_VEHICLE} (those that can be shown: the vessel feature builds their models at start, a lab keeps a library of them)`,
+      },
       { file: 'tests/unit/audio/mapping.test.ts', line: 'const chase = Object.values(defs.vehicles).map((v) => v.cameras.chase);', reason: `${EVERY_VEHICLE} (the chase distances of each, for the range a camera is heard over)` },
       { file: 'tests/unit/flight-ui/camera.test.ts', line: 'const withCockpit = Object.values(defs.vehicles).filter((v) => v.cockpit !== null);', reason: `${EVERY_VEHICLE} (those with a cabin, each published by a fake of its own)` },
       {
@@ -218,7 +224,6 @@ const RULES: readonly Rule[] = [
         reason: `${EVERY_VEHICLE} (each flown by a session of its own and held to the computation of before the sweep)`,
       },
       { file: 'tests/unit/vehicle/mounts.test.ts', line: 'for (const vehicle of Object.values(defs.vehicles)) {', reason: EVERY_VEHICLE },
-      { file: 'tests/unit/vehicle/parts.test.ts', line: 'for (const vehicle of Object.values(defs.vehicles)) {', reason: EVERY_VEHICLE },
     ],
   },
   {

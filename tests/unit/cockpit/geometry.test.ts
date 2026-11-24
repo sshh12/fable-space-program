@@ -9,6 +9,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createCockpitRig } from '@/camera';
+import { presentableVehicles } from '@/core/access/presentable';
 import type { CapsuleMouldLineDef } from '@/core/contracts/defs';
 import { getSection } from '@/core/defs/loader';
 import { createFakeSim } from '@/core/fakes/fakeSim';
@@ -368,7 +369,7 @@ describe('cockpit interior geometry (shared mould line)', () => {
 /** The vertical field of view the app's cockpit camera rig starts with. */
 async function cockpitCameraFov(): Promise<number> {
   const defs = await testDefs();
-  const vehicleId = Object.values(defs.vehicles).find((v) => v.cockpit)!.id;
+  const vehicleId = presentableVehicles(defs).find((v) => v.cockpit)!.id;
   // The fake is told its vehicle, so the craft block states the cabin of the command part as a session does.
   const sim = createFakeSim(defs, { scene: 'lowOrbit', vehicleId, parts: vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 4 })) });
   const s = sim.snapshot();

@@ -3,6 +3,7 @@ import { parseAudioConfig, type AudioConfig } from '@/audio/config';
 import { gainToDb } from '@/audio/mapping';
 import { SoundModel, type ModelOutput } from '@/audio/model';
 import type { AudioFrame } from '@/core/contracts/audio';
+import { firstPresentableVehicleId } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimEventType } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
@@ -109,7 +110,7 @@ describe('engine clusters', () => {
   });
 
   it('a real vehicle on the pad has no engine voice before anything fires', () => {
-    const id = Object.keys(lib.vehicles)[0];
+    const id = firstPresentableVehicleId(lib);
     if (!id) return;
     const v = placeVehicle(lib, id);
     const e = new LabEngines(v.parts, lib.parts);
@@ -119,7 +120,7 @@ describe('engine clusters', () => {
   });
 
   it('the silent clusters of the active vessel that can still fire stand by, in a stable order, never the sounding ones', () => {
-    const id = Object.keys(lib.vehicles)[0];
+    const id = firstPresentableVehicleId(lib);
     if (!id) return;
     const v = placeVehicle(lib, id);
     const e = new LabEngines(v.parts, lib.parts);

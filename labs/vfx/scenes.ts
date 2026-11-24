@@ -2,6 +2,7 @@
  * Scene catalogue of the vfx lab. A scene chooses a site and a sun elevation, then builds vessels from the
  * real assembled parts and drives their module states with a script. Selected with ?scene=<name>.
  */
+import { firstPresentableVehicleId } from '@/core/access/presentable';
 import { partKey } from '@/core/access/snapshotAccess';
 import type { DefLibrary, ModuleDef } from '@/core/contracts/defs';
 import { padOf } from '@/core/defs/sites';
@@ -59,7 +60,7 @@ function earthSite(defs: DefLibrary): { bodyId: string; latDeg: number; lonDeg: 
 const moonId = (defs: DefLibrary): string => Object.values(defs.bodies).find((b) => b.parent === defs.rootBodyId && b.gravityRole === 'attractor')?.id ?? defs.rootBodyId;
 
 function stack(defs: DefLibrary, stagesAlreadyFired: number): { vessel: Vessel; parts: PartSnapshot[] } {
-  const vehicleId = Object.keys(defs.vehicles)[0]!;
+  const vehicleId = firstPresentableVehicleId(defs)!;
   const vessel = assembleVessel(defs, vehicleId, { stagesAlreadyFired });
   return { vessel, parts: vesselPartSnapshots(vessel) };
 }

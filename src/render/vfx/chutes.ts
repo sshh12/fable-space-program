@@ -10,6 +10,7 @@
  */
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type ShadowCascadeView } from '@/core/contracts/render';
 import type { SimSnapshot } from '@/core/contracts/sim';
+import { isPresentableVessel } from '@/core/access/presentable';
 import { partKeyOf } from '@/core/access/snapshotAccess';
 import { mat3, quat, v3, type Vec3 } from '@/core/math';
 import type { Tracked } from '@/render/core';
@@ -443,6 +444,8 @@ export class ChuteSystem {
     const now = new Map<string, CanopyPlacement>();
 
     for (const vessel of snap.vessels) {
+      // (A vessel that is not presentable is not drawn by the vessel feature, src/core/access/presentable.ts: nothing of it is drawn here either.)
+      if (!isPresentableVessel(defs, vessel)) continue;
       const pose = frame.vesselPose(vessel.id);
       if (!pose) continue;
       for (const part of vessel.parts) {

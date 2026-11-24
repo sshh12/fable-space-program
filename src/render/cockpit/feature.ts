@@ -19,6 +19,7 @@
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature, type ShadowCascadeView } from '@/core/contracts/render';
 import type { PartSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { CockpitControls, MfdPainter, NavballRenderer } from '@/core/contracts/ui';
+import { isPresentableVessel } from '@/core/access/presentable';
 import { cabinOf } from '@/core/access/snapshotAccess';
 import { mat3, mat4, quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, createSceneBindings, MAX_BODIES, mipCount, nearestBody, sunVisibilityAt, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
@@ -295,7 +296,9 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
   /**
    * The cabin to draw: the vessel the camera is inside, else the active vessel, else the first vessel with a
    * cabin whose layout is loaded. The cabin is the craft's own (its command part and the layout id it states,
-   * `cabinOf`): no vehicle definition is read, and there may be no active vessel.
+   * `cabinOf`): no vehicle definition is read, and there may be no active vessel. A vessel that is not
+   * presentable (src/core/access/presentable.ts) is not drawn by the vessel feature, and its cabin is not
+   * drawn here: a cabin without the vehicle around it is half a vessel.
    */
   const pick = (frame: FrameContext): { gm: GpuModel; vessel: VesselSnapshot; part: PartSnapshot } | null => {
     const s = frame.snapshot;
@@ -304,7 +307,7 @@ export function createCockpitFeature(ctx0: RenderContext, opts: CockpitFeatureOp
     for (const id of order) {
       if (!id) continue;
       const vessel = s.vessels.find((v) => v.id === id);
-      if (!vessel) continue;
+      if (!vessel || !isPresentableVessel(defs, vessel)) continue;
       const cabin = cabinOf(vessel);
       if (!cabin) continue;
       const gm = models.get(cabin.cockpitId);

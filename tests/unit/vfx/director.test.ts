@@ -5,6 +5,7 @@
  * that left it), whichever of the two vehicles the snapshot lists first; an instance id alone names nothing.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { firstPresentableVehicleId } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { FrameContext } from '@/core/contracts/render';
 import type { PartSnapshot, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
@@ -48,7 +49,7 @@ const vesselAt = (id: string, x: number, parts: PartSnapshot[], craftId: string,
 /** The whole stack of the library's first vehicle: a launched craft `craft-<id>` in a vessel `id`. */
 const stackAt = (id: string, x: number): VesselSnapshot => {
   const craftId = `craft-${id}`;
-  const parts = vesselPartSnapshots(assembleVessel(defs, Object.keys(defs.vehicles)[0]!, { craft: { craftId, ownerId: null, name: id, joinedTick: 0 } }));
+  const parts = vesselPartSnapshots(assembleVessel(defs, firstPresentableVehicleId(defs)!, { craft: { craftId, ownerId: null, name: id, joinedTick: 0 } }));
   return vesselAt(id, x, parts, craftId);
 };
 
@@ -79,12 +80,15 @@ const domainOf = (bodyId: string): DomainFrame => ({
   altitude: 6e5,
 });
 
-/** Where the effects of one snapshot's events start: the x of every emitter and flash. */
-const effectsAt = (snapshot: SimSnapshot): number[] => {
-  const director = new EffectDirector(defs, data);
+/** Where the effects of one update start: the x of every emitter, fireball and flash. */
+const startedBy = (director: EffectDirector, snapshot: SimSnapshot): number[] => {
+  const flashes = director.flashes.length;
   const out = director.update(frameOf(snapshot), domainOf(snapshot.vessels[0]!.bodyId), [], 0, 1 / 60);
-  return [...out.emitters.map((e) => e.pos.x), ...director.flashes.map((f) => f.pos.x)];
+  return [...out.emitters.map((e) => e.pos.x), ...out.fireballs.map((f) => f.pos.x), ...director.flashes.slice(flashes).map((f) => f.pos.x)];
 };
+
+/** Where the effects of one snapshot's events start, in the given library (the repository's unless one is given). */
+const effectsAt = (snapshot: SimSnapshot, library: DefLibrary = defs): number[] => startedBy(new EffectDirector(library, data), snapshot);
 
 const withModule = (vessel: VesselSnapshot, type: string): PartSnapshot => {
   const part = vessel.parts.find((p) => defs.parts[p.def]!.modules.some((m) => m.type === type));
@@ -191,5 +195,54 @@ describe('the effects of an event, with two vessels of one vehicle in the snapsh
     const petals = [petal(1), petal(0)];
     const event: SimEvent = { type: 'fairingJettisoned', ut: 0, vesselId: 'B', partId: partKey('craft-B', fairing.instanceId), newVesselIds: petals.map((p) => p.id) };
     for (const vessels of bothOrders(a, [b, ...petals])) expectAllNear(effectsAt(snapshotOf(vessels, [event])), APART + 400);
+  });
+});
+
+describe('a vessel that is not presentable (a part of it has no visual definition: src/core/access/presentable.ts)', () => {
+  /**
+   * The stack B with one of its parts on a definition that has no visual (the part's own definition under
+   * another id, without its model), and the library that holds that definition. A stays as it is.
+   */
+  const withoutModel = (b: VesselSnapshot, keep: PartSnapshot): { library: DefLibrary; hidden: VesselSnapshot } => {
+    const lacking = b.parts.find((p) => p !== keep)!;
+    const library: DefLibrary = { ...defs, parts: { ...defs.parts, 'no-model': { ...defs.parts[lacking.def]!, id: 'no-model', visual: null } } };
+    return { library, hidden: { ...b, parts: b.parts.map((p) => (p === lacking ? { ...p, def: 'no-model' } : p)) } };
+  };
+  const staged = (id: 'A' | 'B', decoupler: PartSnapshot): SimEvent => ({ type: 'decoupled', ut: 0, vesselId: id, partId: partKey(`craft-${id}`, decoupler.instanceId), newVesselIds: [] });
+
+  it('starts no effect at its events; the vessel that is shown beside it starts its own', () => {
+    const a = stackAt('A', 0);
+    const b = stackAt('B', APART);
+    const decoupler = withModule(b, 'decoupler');
+    const { library, hidden } = withoutModel(b, decoupler);
+    for (const vessels of bothOrders(a, [hidden])) {
+      expect(effectsAt(snapshotOf(vessels, [staged('B', decoupler)]), library)).toEqual([]);
+      const ofA = effectsAt(snapshotOf(vessels, [staged('A', decoupler)]), library);
+      expect(ofA.length).toBeGreaterThan(0);
+      for (const x of ofA) expect(Math.abs(x)).toBeLessThan(NEAR);
+    }
+    // The same vessel with every model: its staging puff is there (the test above sees a difference).
+    expect(effectsAt(snapshotOf([a, b], [staged('B', decoupler)]), library).length).toBeGreaterThan(0);
+  });
+
+  it('starts no ablation sparks in a shock layer, and none when it ends: the explosion of a vessel that was never shown is not shown', () => {
+    const a = stackAt('A', 0);
+    const b = stackAt('B', APART);
+    const { library, hidden } = withoutModel(b, withModule(b, 'decoupler'));
+    const entering = (v: VesselSnapshot): VesselSnapshot => ({ ...v, vRoot: { x: 0, y: 0, z: 3000 }, aero: { ...v.aero, plasmaIntensity: 1 } });
+    // In the shock layer: the vessel with its models sheds sparks, the one without is passed over.
+    expect(effectsAt(snapshotOf([a, entering(b)]), library).length).toBeGreaterThan(0);
+    expect(effectsAt(snapshotOf([a, entering(hidden)]), library)).toEqual([]);
+    // It is destroyed: the snapshot that carries the event holds the vessel no more.
+    const blast: SimEvent = { type: 'explosion', ut: 1, vesselId: 'B', posRoot: { x: APART, y: 0, z: 0 }, energy: 1e9 };
+    const director = new EffectDirector(library, data);
+    expect(startedBy(director, snapshotOf([a, hidden]))).toEqual([]);
+    expect(startedBy(director, snapshotOf([a], [blast]))).toEqual([]);
+    // The explosion of the vessel that was shown is.
+    const shown = new EffectDirector(library, data);
+    expect(startedBy(shown, snapshotOf([a, b]))).toEqual([]);
+    const at = startedBy(shown, snapshotOf([a], [blast]));
+    expect(at.length).toBeGreaterThan(0);
+    for (const x of at) expect(Math.abs(x - APART)).toBeLessThan(NEAR);
   });
 });

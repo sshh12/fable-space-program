@@ -6,6 +6,7 @@
 import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext } from '@/core/contracts/render';
 import type { PartSnapshot, SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import { isPresentableVessel } from '@/core/access/presentable';
 import { findEventPart } from '@/core/access/snapshotAccess';
 import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { latLonToDir } from '@/core/geo/cubeSphere';
@@ -98,6 +99,13 @@ export class EffectDirector {
   private readonly acc = new Map<string, number>();
   private readonly liftoff = new Map<string, number>();
   private lastEvents: readonly SimEvent[] | null = null;
+  /**
+   * The vessels that are not presentable (src/core/access/presentable.ts): the vessel feature does not draw
+   * them, and nothing of them is drawn here either. Of this update and of the one before it, so that the
+   * event that ends such a vessel (it is in no snapshot any more) starts nothing where nothing was shown.
+   */
+  private hidden = new Set<string>();
+  private hiddenBefore = new Set<string>();
   readonly flashes: Flash[] = [];
   private frameCounter = 0;
 
@@ -219,10 +227,17 @@ export class EffectDirector {
       }
     }
 
+    // ---- the vessels that are not shown: they start nothing below
+    const hidden = this.hiddenBefore;
+    this.hiddenBefore = this.hidden;
+    this.hidden = hidden;
+    hidden.clear();
+    for (const v of snap.vessels) if (!isPresentableVessel(this.defs, v)) hidden.add(v.id);
+
     // ---- events (each snapshot's list is handled once)
     if (snap.events !== this.lastEvents) {
       this.lastEvents = snap.events;
-      for (const ev of snap.events) this.onEvent(ev, snap, dom, out, effectTime, vesselDom, partFrame);
+      for (const ev of snap.events) if (!this.hidden.has(ev.vesselId) && !this.hiddenBefore.has(ev.vesselId)) this.onEvent(ev, snap, dom, out, effectTime, vesselDom, partFrame);
     }
 
     // ---- frost shedding for a while after lift-off
@@ -247,7 +262,7 @@ export class EffectDirector {
     // ---- ablation sparks in the shock layer
     for (const vessel of snap.vessels) {
       const plasma = vessel.aero.plasmaIntensity;
-      if (plasma < 0.15) continue;
+      if (plasma < 0.15 || this.hidden.has(vessel.id)) continue;
       const vd = vesselDom(vessel);
       if (!vd) continue;
       const n = this.take(`ablation|${vessel.id}`, P.ablation.rate * plasma * frame.qualityScale, dt);

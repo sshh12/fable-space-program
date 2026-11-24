@@ -2149,6 +2149,11 @@ What the features do with it:
   reads `status()`.
 - **The effects** (`createVfxFeature`) draw nothing of a vessel that is not presentable: no plume, no plasma
   sheath or trail, no canopy, and no effect at its events (also not at the explosion that ends it).
+- **The cockpit feature** (`createCockpitFeature`) does not draw the cabin of a vessel that is not presentable
+  (a cabin without the vehicle around it is half a vessel); it goes on to the next vessel with a cabin.
+- **The app** opens, when no `?scenario=` is given, the first mission scenario in id order whose vehicle is
+  presentable (`defaultScenario` of src/app/settings.ts); a scenario asked for by name is opened whatever it
+  flies.
 - **The engine voices** are not touched: sound follows the simulation, and every engine definition of the
   library has its sound profile and its plume look (`checkPartSounds`, `loadVfxData` hold all parts to that
   at start-up, as before: those are data, not models).
@@ -2165,7 +2170,7 @@ Rules for a feature author:
 - A missing model is not an error of the page. It is a state of the library, read from `status()`.
 
 Tests: `tests/unit/fakes/presentable.test.ts` (the function, on a library with vehicles that lack visuals),
-`tests/unit/vfx/director.test.ts` (no effect of a vessel that is not presentable),
-`tests/browser/integration/presentable.spec.ts` (the lab on the whole library starts clean; a vessel that is
-not presentable is not drawn and its vehicle is named once; the lab's `&novisual=<part>` takes a visual away
-in memory).
+`tests/unit/vfx/director.test.ts` (no effect of a vessel that is not presentable), `src/app/settings.test.ts`
+(the default scenario), `tests/browser/integration/presentable.spec.ts` (the lab on the whole library starts
+clean; a vessel that is not presentable is not drawn, nor its plumes and its cabin, and its vehicle is named
+once; the lab's `&novisual=<part>` takes a visual away in memory).

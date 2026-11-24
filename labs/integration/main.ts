@@ -8,7 +8,7 @@
  *   &planet=0                   no LabPlanet backdrop (it is added when the terrain feature is not loaded)
  *   &sim=real&scenario=<id>     the real Sim of src/sim when it exists (default: FakeSim, ?scene=<FakeScene>)
  *   &vehicle=<id>&stage=<n>     FakeSim: the real parts of this vehicle after n fired stages (default: the first
- *                               vehicle, staged as the scene needs; stage=none = the FakeSim's placeholder parts)
+ *                               presentable vehicle, staged as the scene needs; stage=none = the FakeSim's placeholder parts)
  *   &at=lat,lon                 FakeSim: put a surface scene here instead of at its own place (pad, ascent: the
  *                               site; lunarSurface: the scenario's landing target; chutes: the first recovery zone)
  *   &hover=<m>                  FakeSim, lunarSurface: the lander's feet this high above the ground (default 0)
@@ -25,7 +25,9 @@
  *   &probe=casters              log the cascades handed to drawShadow (render-core lab probe)
  *   &map=1                      the map view, active while the camera kind is 'map' (window.__integration.mapCamera)
  *   &flighthud=1                the flight HUD over the canvas (its panels are the map's obstacles)
- *   &withart=1                  only the vehicles whose parts all have art (request capability-settings-2)
+ *   &withart=1                  only the presentable vehicles (src/core/access/presentable.ts) and their scenarios
+ *   &novisual=<part>[,<part>]   those part definitions without their visual, in memory: their vehicles are not
+ *                               presentable in this page (the vessel feature does not draw them: status())
  *   &ballast=1                  add a ballast pass at the end of the frame (feature lab-ballast, off until
  *                               setBallast): perf runs keep the GPU as busy as the full game's frame
  * plus every camera / renderer parameter of createLabApp (body=, lat=, lon=, alt=, heading=, pitch=,
@@ -59,6 +61,7 @@ import { createProbes } from '../render-core/probes';
 import { createEndBallast } from './ballast';
 import { sunAtSite, withSnapshotMap, withSunOverride, type Site, type SunOverride } from '../render-core/world';
 import { withSyntheticPads } from './syntheticPads';
+import { firstPresentableVehicleId, presentableLibrary, presentableVehicleIds } from '@/core/access/presentable';
 import { availablePackages, buildFeatures, FEATURE_PACKAGES, importPackages, importRealSession, realSessionAvailable, realVesselParts, type FeaturePackage } from './features';
 
 export interface IntegrationLab {
@@ -74,6 +77,8 @@ export interface IntegrationLab {
   handles: Record<string, unknown>;
   /** The synthetic multi-pad site of `&pads=<n>` (its site, body and pad ids), or null. */
   syntheticPads: { siteId: string; bodyId: string; padIds: string[] } | null;
+  /** The vehicles of this page's library, and those of them that can be shown (src/core/access/presentable.ts). */
+  vehicleIds: { all: string[]; presentable: string[] };
   /** Package of each registered wave-2 feature id. */
   packageOf: Record<string, FeaturePackage>;
   /** Iterations of the ballast pass per pixel (?ballast=1; 0 = off). Its GPU time is pass 'lab-ballast.overlay'. */
@@ -414,12 +419,17 @@ async function boot(): Promise<void> {
 
   // &pads=<n>: the first site with n pads, in memory (syntheticPads.ts): the per-pad paths of the site feature
   // and of the terrain in a picture. No definition file changes.
-  // &withart=1: only the vehicles whose parts all have art, and the scenarios that fly them (the library holds
-  // vehicles of fleet-data whose parts have no visual yet, which the vehicle feature reports at init: request
-  // capability-settings-2). Off by default: the page is as it was.
-  const fullLibrary = await loadDefs(fetchDefSource());
-  const withArt = Object.fromEntries(Object.entries(fullLibrary.vehicles).filter(([, v]) => v.parts.every((pt) => fullLibrary.parts[pt.def]?.visual)));
-  const library: DefLibrary = query.get('withart') === '1' ? { ...fullLibrary, vehicles: withArt, scenarios: Object.fromEntries(Object.entries(fullLibrary.scenarios).filter(([, sc]) => sc.vehicle in withArt)) } : fullLibrary;
+  // &withart=1: only the presentable vehicles (every part has a visual definition: src/core/access/presentable.ts)
+  // and the scenarios that fly them. Off by default: the page has the whole library, and the vehicle feature
+  // neither builds nor reports the vehicles it cannot show (requests fleet-data-2, capability-settings-2).
+  // &novisual=<part>[,<part>]: those part definitions without their visual, in memory (no definition file
+  // changes): the vehicles that hold one are not presentable in this page, whatever the library has models for
+  // (tests/browser/integration/presentable.spec.ts).
+  const loadedLibrary = await loadDefs(fetchDefSource());
+  const noVisual = (query.get('novisual') ?? '').split(',').filter((id) => id !== '');
+  for (const id of noVisual) if (!loadedLibrary.parts[id]) throw new Error(`&novisual=: the library has no part "${id}"`);
+  const fullLibrary: DefLibrary = noVisual.length === 0 ? loadedLibrary : { ...loadedLibrary, parts: { ...loadedLibrary.parts, ...Object.fromEntries(noVisual.map((id) => [id, { ...loadedLibrary.parts[id]!, visual: null }])) } };
+  const library: DefLibrary = query.get('withart') === '1' ? presentableLibrary(fullLibrary) : fullLibrary;
   let syntheticPads: Awaited<ReturnType<typeof withSyntheticPads>> | null = null;
   if (query.has('pads')) {
     // The natural ground under the new pads, from a height authority of the library as it is.
@@ -464,7 +474,8 @@ async function boot(): Promise<void> {
   } else {
     const scene = (query.get('scene') as FakeScene | null) ?? 'lowOrbit';
     const stage = query.get('stage');
-    const vehicleId = query.get('vehicle') ?? Object.keys(defs.vehicles)[0] ?? '';
+    // (No &vehicle=: the first vehicle of the library that can be shown, request fleet-data-3.)
+    const vehicleId = query.get('vehicle') ?? firstPresentableVehicleId(defs) ?? '';
     const real = stage === 'none' ? null : await realVesselParts(defs, vehicleId, stage !== null ? Number(stage) : SCENE_STAGES[scene], problems);
     // A landed lander stands on its legs (request vehicle-pad-5); &legs=0 keeps them stowed.
     const legsDeployed = scene === 'lunarSurface' && query.get('legs') !== '0';
@@ -801,6 +812,7 @@ async function boot(): Promise<void> {
     quarantined,
     handles: built.handles,
     packageOf: built.packageOf,
+    vehicleIds: { all: Object.keys(defs.vehicles), presentable: presentableVehicleIds(defs) },
     setBallast(iterations) {
       endBallast?.setIterations(iterations);
     },

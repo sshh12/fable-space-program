@@ -25,6 +25,7 @@
  *                         (no opening swing, no blend, the head's sway settled), so that
  *                         `window.__test.renderExact` gives the same picture on every load.
  */
+import { isPresentableVehicle } from '@/core/access/presentable';
 import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
 
 export interface AppSettings {
@@ -74,12 +75,15 @@ export function isMissionScenario(s: ScenarioDef): boolean {
 
 /**
  * The scenario the game opens when none is asked for: the first mission scenario of the definitions in id
- * order (the data decides; no scenario id is named in code). Falls back to the first scenario of any kind.
+ * order whose vehicle can be shown (the data decides; no scenario id is named in code). The library holds
+ * vehicles whose models are not authored yet (src/core/access/presentable.ts): a scenario that flies one is
+ * opened when it is asked for by name, not by default. Falls back to the first mission scenario, then to the
+ * first scenario of any kind.
  */
 export function defaultScenario(defs: DefLibrary): string {
   const ids = Object.keys(defs.scenarios).sort();
-  const mission = ids.find((id) => isMissionScenario(defs.scenarios[id]!));
-  const pick = mission ?? ids[0];
+  const missions = ids.filter((id) => isMissionScenario(defs.scenarios[id]!));
+  const pick = missions.find((id) => isPresentableVehicle(defs, defs.scenarios[id]!.vehicle)) ?? missions[0] ?? ids[0];
   if (pick === undefined) throw new Error('No scenario is defined under data/defs/scenarios.');
   return pick;
 }

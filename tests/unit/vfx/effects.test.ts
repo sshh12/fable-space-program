@@ -2,6 +2,7 @@
  * Canopy geometry, trail ageing, the reentry shape proxy and the effect domain (float64 bookkeeping).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { firstPresentableVehicleId } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { VesselSnapshot } from '@/core/contracts/sim';
 import { createFakeSim } from '@/core/fakes/fakeSim';
@@ -146,7 +147,7 @@ describe('splash crown and fragment trails', () => {
 
 describe('reentry proxy and colour', () => {
   it('the capsule alone: the shape of its heat shield and back shell, wherever the wind comes from', () => {
-    const vehicleId = Object.keys(defs.vehicles)[0]!;
+    const vehicleId = firstPresentableVehicleId(defs)!;
     const parts = vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 10 }));
     const base = createFakeSim(defs, { scene: 'reentry' }).peek().vessels[0]!;
     const vessel: VesselSnapshot = { ...base, parts };
@@ -172,7 +173,7 @@ describe('reentry proxy and colour', () => {
     expect(v3.dist(backwards.centreVes, shoulder)).toBeLessThan(1e-6);
   });
   it('a vessel without a reentry shape: the cylinder of its bounds with a cap turned into the wind', () => {
-    const vehicleId = Object.keys(defs.vehicles)[0]!;
+    const vehicleId = firstPresentableVehicleId(defs)!;
     const parts = vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 10 })).filter((p) => !defs.parts[p.def]!.visual?.reentryShape);
     const base = createFakeSim(defs, { scene: 'reentry' }).peek().vessels[0]!;
     const all = vesselPartSnapshots(assembleVessel(defs, vehicleId, { stagesAlreadyFired: 2 })).filter((p) => !defs.parts[p.def]!.visual?.reentryShape);

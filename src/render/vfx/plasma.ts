@@ -13,6 +13,7 @@
  * flickers at 8 - 30 Hz. `plasmaIntensity` shapes it: a faint rim of orange at 0.3, a white-hot cap with a
  * long streaming wake at 1.
  */
+import { isPresentableVessel } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import { PLASMA_WINDOW_BYTES, type FrameContext, type LocalLight, type RenderContext } from '@/core/contracts/render';
 import type { VesselSnapshot } from '@/core/contracts/sim';
@@ -443,7 +444,7 @@ export class PlasmaRenderer {
     this.placed = [];
     this.lights.length = 0;
     this.hints.length = 0;
-    const list = frame.snapshot.vessels.filter((v) => v.aero.plasmaIntensity >= R.minIntensity && v3.len(v.aero.airVelocity) > 500).sort((x, y) => y.aero.plasmaIntensity - x.aero.plasmaIntensity);
+    const list = frame.snapshot.vessels.filter((v) => v.aero.plasmaIntensity >= R.minIntensity && v3.len(v.aero.airVelocity) > 500 && isPresentableVessel(this.ctx.defs, v)).sort((x, y) => y.aero.plasmaIntensity - x.aero.plasmaIntensity);
     for (const vessel of list.slice(0, MAX_PLASMA)) {
       const pose = frame.vesselPose(vessel.id);
       if (!pose) continue;

@@ -31,7 +31,8 @@ import type { DefLibrary, PartDef } from '@/core/contracts/defs';
 import type { FrameContext, RenderContext, RenderFeature, ShadowCascadeView } from '@/core/contracts/render';
 import type { ModuleState, PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { observeFrame, rebaseHeldAt } from '@/core/access/frameAccess';
-import { craftIdOf } from '@/core/access/snapshotAccess';
+import { isPresentableVessel, partHasVisual, presentableVehicles } from '@/core/access/presentable';
+import { craftIdOf, craftOf } from '@/core/access/snapshotAccess';
 import { FrameEpochTracker, rebasePoint, rebaseVelocity } from '@/core/math/frame';
 import { quat, v3, type Quat, type Vec3 } from '@/core/math';
 import { coreOf, type MeshBatch, type MeshInstance, type ModelHandle, type TemporalFeature } from '@/render/core';
@@ -78,10 +79,17 @@ export interface VesselVisualStats {
   fading: number;
   /** CPU time of the last instance update, ms. */
   updateMs: number;
+  /** Vessels of the last frame that were not drawn because they are not presentable (`status()` says which vehicles). */
+  notShown: number;
 }
 
 export interface VesselVisualFeature extends RenderFeature, TemporalFeature {
   readonly stats: VesselVisualStats;
+  /**
+   * What the feature does not draw, and why: one entry per vehicle whose vessels are not presentable. This is
+   * the feature's only report of it: nothing is logged and no error is raised, at start-up or per frame.
+   */
+  status(): VesselVisualStatus;
   /** Where the ghosts of the last frame were drawn (vessels that left the snapshot and fade out), camera-relative, m. For tests. */
   ghostPlacements(): { vesselId: string; originRelCam: Vec3 }[];
   /** The generated visual of a part definition (undefined before init or for a part without one). */
@@ -135,6 +143,18 @@ interface PartEntry {
 interface VesselPlan {
   key: string;
   entries: PartEntry[];
+  /** False for a vessel that is not presentable (a part of it has no visual definition): it is not drawn. */
+  shown: boolean;
+}
+
+/** What the feature was given and does not draw (`VesselVisualFeature.status`). */
+export interface VesselVisualStatus {
+  /**
+   * The vehicles of vessels in the snapshots that are not presentable (src/core/access/presentable.ts): the
+   * vehicle id of the craft that holds a part without a visual (`CraftSnapshot.vehicleId`), ONCE, with those
+   * part definitions. Such a vessel is not drawn at all. Empty while everything given is shown.
+   */
+  notPresentable: { vehicleId: string; parts: string[] }[];
 }
 
 interface Ghost {
@@ -215,7 +235,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
   /** The snapshot of the last frame, null before the first: `anim` resolves a craft it has not drawn against it. */
   let latest: SimSnapshot | null = null;
   const plans = new Map<string, VesselPlan>();
-  const reported = new Set<string>();
+  /** Vehicles of vessels that were given and are not drawn, with the parts that have no visual (status()). */
+  const notPresentable = new Map<string, Set<string>>();
   let ghosts: Ghost[] = [];
   /** Where each ghost of the last frame was drawn (ghostPlacements). */
   const ghostPlaces: { vesselId: string; originRelCam: Vec3 }[] = [];
@@ -234,19 +255,15 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     lights: 0,
     fading: 0,
     updateMs: 0,
+    notShown: 0,
   };
 
-  const visualOf = (defId: string): PartModels | null => {
+  /** The models of a part that has a visual definition (built once). Only parts of presentable vehicles and vessels come here. */
+  const visualOf = (defId: string): PartModels => {
     const hit = visuals.get(defId);
     if (hit) return hit;
     const def = defs.parts[defId];
-    if (!def?.visual) {
-      if (!reported.has(defId)) {
-        reported.add(defId);
-        coreOf(ctx).reportError(`vehicle: part "${defId}" has no visual definition`);
-      }
-      return null;
-    }
+    if (!def) throw new Error(`vehicle: unknown part definition "${defId}"`);
     const visual = generatePart(defs, def);
     const lods: Record<string, ModelHandle[]> = {};
     const lodPixels: Record<string, readonly number[]> = {};
@@ -276,20 +293,32 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
 
   const buildPlan = (snapshot: SimSnapshot, vessel: VesselSnapshot): VesselPlan => {
     const parts = vessel.parts;
+    pruneDue = true;
+    // A vessel one of whose parts has no visual definition is not presentable: it is not drawn at all (not
+    // the half of it that has models). Its vehicle is noted once for status(): the vehicle of the craft the
+    // part belongs to (of a vessel of several craft, the one that cannot be shown).
+    if (!isPresentableVessel(defs, vessel)) {
+      for (const part of parts) {
+        if (partHasVisual(defs, part.def)) continue;
+        const vehicleId = craftOf(vessel, craftIdOf(vessel, part))?.vehicleId ?? vessel.vehicleId;
+        let noted = notPresentable.get(vehicleId);
+        if (!noted) notPresentable.set(vehicleId, (noted = new Set()));
+        noted.add(part.def);
+      }
+      return { key: planKey(vessel), entries: [], shown: false };
+    }
     const mounts = engineMounts(defs, parts, (part) => craftIdOf(vessel, part));
     const entries: PartEntry[] = [];
-    pruneDue = true;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i]!;
       const v = visualOf(part.def);
-      if (!v) continue;
       const def = defs.parts[part.def]!;
       const anim = history.of(snapshot, vessel, part);
       const engineAnims = (mounts.get(i) ?? []).map((e) => history.of(snapshot, vessel, parts[e]!));
       const panel = fairingPanelOf(part);
       entries.push({ craftId: craftIdOf(vessel, part), instanceId: part.instanceId, def, models: v, visual: v.visual, anim, lodStates: [], engineAnims, panel, input: { def, modules: part.modules, panel, anim }, seen: false });
     }
-    return { key: planKey(vessel), entries };
+    return { key: planKey(vessel), entries, shown: true };
   };
 
   /** Advance the presentation state of one part from its module states. */
@@ -455,7 +484,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     for (const v of departedVessels(prev, snapshot)) {
       if (ghosts.some((g) => g.vessel.id === v.id)) continue;
       const plan = plans.get(v.id);
-      if (plan) ghosts.push({ vessel: v, plan, ut0: prev.ut, t0: frame.realTime });
+      if (plan?.shown) ghosts.push({ vessel: v, plan, ut0: prev.ut, t0: frame.realTime });
     }
   };
 
@@ -464,6 +493,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     order: 0,
     stats,
     ghostPlacements: () => ghostPlaces.map((g) => ({ vesselId: g.vesselId, originRelCam: { ...g.originRelCam } })),
+    status: () => ({ notPresentable: [...notPresentable].map(([vehicleId, parts]) => ({ vehicleId, parts: [...parts] })) }),
     partVisual: (defId) => visuals.get(defId)?.visual,
     anim: (craftId, instanceId) => {
       pruneDue = true;
@@ -476,8 +506,10 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       batch = coreOf(c).meshes.createBatch('vehicle');
       fineBatch = coreOf(c).meshes.createBatch('vehicle-casters-fine');
       coarseBatch = coreOf(c).meshes.createBatch('vehicle-casters-coarse');
-      // Generate the models of every part a vehicle definition uses, so staging never builds geometry.
-      for (const vehicle of Object.values(defs.vehicles)) for (const p of vehicle.parts) visualOf(p.def);
+      // Generate the models of every part a PRESENTABLE vehicle uses, so staging never builds geometry. A
+      // vehicle with a part that has no visual definition yet is left alone: nothing of it is built, logged
+      // or thrown here (src/core/access/presentable.ts).
+      for (const vehicle of presentableVehicles(defs)) for (const p of vehicle.parts) visualOf(p.def);
     },
 
     prepare(frame) {
@@ -494,6 +526,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       stats.instances = 0;
       stats.fading = 0;
       stats.vessels = 0;
+      stats.notShown = 0;
       stats.shadowTriangles = 0;
       lightBudget.n = 0;
       // A ghost holds the ROOT position and velocity its vessel had when it left the snapshot. When the origin
@@ -518,6 +551,10 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
         if (!plan || plan.key !== planKey(vessel)) {
           plan = buildPlan(snapshot, vessel);
           plans.set(vessel.id, plan);
+        }
+        if (!plan.shown) {
+          stats.notShown++;
+          continue;
         }
         drawVessel(frame, vessel, plan, pose, 1, dt, true);
         stats.vessels++;

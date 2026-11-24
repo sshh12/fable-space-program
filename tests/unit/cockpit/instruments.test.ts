@@ -4,6 +4,7 @@
  * to the HUD's strings (same display models and formatters), and the layout validator.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { presentableVehicles } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { SimSnapshot } from '@/core/contracts/sim';
 import type { MfdPage } from '@/core/contracts/ui';
@@ -27,7 +28,7 @@ const act = (s: SimSnapshot): InstrumentSource => instrumentSource(s, s.vessels.
 
 beforeAll(async () => {
   defs = await testDefs();
-  vehicleId = Object.values(defs.vehicles).find((v) => v.cockpit)!.id;
+  vehicleId = presentableVehicles(defs).find((v) => v.cockpit)!.id;
   alarms = (await testModel()).layout.alarms;
 });
 

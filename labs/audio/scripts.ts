@@ -3,6 +3,7 @@
  * acceptance spec measures. Every script is a pure function of time built on a FakeSim base snapshot,
  * with the real part definitions driven through the sim's engine law (labVehicle.ts).
  */
+import { firstPresentableVehicleId } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { PartSnapshot, SimEvent, SimEventType, VesselSnapshot } from '@/core/contracts/sim';
 import { quat } from '@/core/math/quat';
@@ -362,7 +363,7 @@ export function ignitionScript(lib: DefLibrary, stack: LabStackId, distance: num
  */
 export function restartScript(lib: DefLibrary, distance: number, stack: LabStackId | 'vehicle' = 'vehicle'): Script {
   const base = baseSnapshot(lib, 'pad');
-  const vehicle = stack === 'vehicle' ? Object.keys(lib.vehicles)[0] : undefined;
+  const vehicle = stack === 'vehicle' ? (firstPresentableVehicleId(lib) ?? undefined) : undefined;
   const e = vehicle ? new LabEngines(placeVehicle(lib, vehicle).parts, lib.parts) : labEngines(lib, stack === 'vehicle' ? 'booster' : stack);
   const lit = (t: number): boolean => (t >= 0.5 && t < 2.5) || t >= 10;
   const last = { t: 0 };

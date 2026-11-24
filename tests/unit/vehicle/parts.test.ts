@@ -14,7 +14,8 @@
 import { capsuleOpenings, projectToShell, shieldGlowLuminance } from '@/render/vehicle/parts/capsule';
 import { HATCH_WINDOW } from '@/render/vehicle/parts/payload';
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { CapsuleMouldLineDef, DefLibrary, PartDef } from '@/core/contracts/defs';
+import { partHasVisual, presentableVehicleIds, presentableVehicles } from '@/core/access/presentable';
+import type { CapsuleMouldLineDef, DefLibrary, PartDef, VehicleDef } from '@/core/contracts/defs';
 import type { PartSnapshot } from '@/core/contracts/sim';
 import type { BuiltMesh } from '@/render/vehicle/geom/builder';
 import { fsDefSource } from '@/core/defs/fsSource';
@@ -48,10 +49,24 @@ beforeAll(async () => {
   defs = await loadDefs(fsDefSource());
 });
 
+// What these tests hold to the model checks: the parts that HAVE a visual definition and the PRESENTABLE
+// vehicles (src/core/access/presentable.ts). The fleet's data lands a wave before its models (request
+// fleet-data-2): a part whose `visual` is null has nothing to check yet, and the first test says how many.
+const shownPartIds = (): string[] => Object.keys(defs.parts).filter((id) => partHasVisual(defs, id));
+const shownParts = (): PartDef[] => Object.values(defs.parts).filter((p) => partHasVisual(defs, p.id));
+const shownVehicleIds = (): string[] => presentableVehicleIds(defs);
+const shownVehicles = (): VehicleDef[] => presentableVehicles(defs);
+
 describe('part visuals', () => {
-  it('every part definition has a visual file and a registered generator', () => {
-    const ids = Object.keys(defs.parts);
+  it('every part of a presentable vehicle has a visual file and a registered generator; the lunar stack is presentable', () => {
+    // The stack every reference image shows must stay presentable whatever joins the library.
+    expect(shownVehicleIds()).toContain('meridian-lunar');
+    const ids = shownPartIds();
     expect(ids.length).toBeGreaterThanOrEqual(25);
+    for (const vehicle of shownVehicles()) for (const p of vehicle.parts) expect(ids, `${vehicle.id}: part ${p.def}`).toContain(p.def);
+    // The known gap, not pinned by name: parts whose models are still to be authored (they are in no presentable vehicle).
+    const without = Object.keys(defs.parts).filter((id) => !partHasVisual(defs, id));
+    console.log(`parts with a visual: ${ids.length}; without one yet: ${without.length} (${without.join(', ')})`);
     for (const id of ids) {
       const def = defs.parts[id]!;
       expect(def.visual, `data/defs/visuals/parts/${id}.json`).not.toBeNull();
@@ -63,7 +78,7 @@ describe('part visuals', () => {
   });
 
   it('every model has three LODs that share one material list', () => {
-    for (const id of Object.keys(defs.parts)) {
+    for (const id of shownPartIds()) {
       for (const [name, model] of Object.entries(visualOf(id).models)) {
         expect(model.lods.length, `${id}.${name}`).toBe(3);
         for (const lod of model.lods) for (const g of lod.groups) expect(model.materials[g.material], `${id}.${name}`).toBeDefined();
@@ -79,7 +94,7 @@ describe('part visuals', () => {
     let closed = 0;
     let flipped = 0;
     let triangles = 0;
-    for (const id of Object.keys(defs.parts)) {
+    for (const id of shownPartIds()) {
       for (const [name, model] of Object.entries(visualOf(id).models)) {
         model.lods.forEach((lod, i) => {
           const r = checkMesh(lod);
@@ -108,7 +123,7 @@ describe('part visuals', () => {
       'boost-cover', 'port-reveal', 'port-pane',
       // Blanket close-outs laid flat across a base (sheets with planar texture coordinates).
       'deck', 'closeout']);
-    for (const id of Object.keys(defs.parts)) {
+    for (const id of shownPartIds()) {
       for (const [name, model] of Object.entries(visualOf(id).models)) {
         for (const lod of model.lods) lod.meta.tags.forEach((tag, c) => lod.meta.closed[c] === 0 && expect(allowed.has(tag), `${id}.${name}: open component "${tag}"`).toBe(true));
       }
@@ -117,7 +132,7 @@ describe('part visuals', () => {
 
   it('posed parts agree with PartDef.bounds within 5 %', () => {
     const rows: string[] = [];
-    for (const vehicleId of Object.keys(defs.vehicles)) {
+    for (const vehicleId of shownVehicleIds()) {
       const seen = new Set<string>();
       for (const p of referenceParts(vehicleId)) {
         if (seen.has(p.def)) continue;
@@ -140,7 +155,7 @@ describe('part visuals', () => {
     const fractions = [0.9, 0.92, 0.94, 0.96, 0.98, 0.99, 0.995];
     const azimuths = 24;
     const rows: string[] = [];
-    for (const vehicle of Object.values(defs.vehicles)) {
+    for (const vehicle of shownVehicles()) {
       const parts = referenceParts(vehicle.id);
       const snap = new Map(parts.map((p) => [p.instanceId, p]));
       const geom = new Map<string, PosedGeometry>();
@@ -200,7 +215,7 @@ describe('part visuals', () => {
   });
 
   it('the hold-down clamps carry the first stage at its base plane', () => {
-    for (const vehicle of Object.values(defs.vehicles)) {
+    for (const vehicle of shownVehicles()) {
       const parts = referenceParts(vehicle.id);
       for (const p of parts) {
         const def = defs.parts[p.def]!;
@@ -219,7 +234,7 @@ describe('part visuals', () => {
     let covers = 0;
     const rows: string[] = [];
     const problems: string[] = [];
-    for (const vehicle of Object.values(defs.vehicles)) {
+    for (const vehicle of shownVehicles()) {
       // The launch configuration: legs stowed, everything attached.
       const parts = vesselPartSnapshots(assembleVessel(defs, vehicle.id));
       const inVes = (p: PartSnapshot): PosedGeometry => {
@@ -289,7 +304,7 @@ describe('part visuals', () => {
   });
 
   it('triangle budgets: full stack LOD0 between 1.0 and 1.6 million, LOD2 under 60 k', () => {
-    for (const vehicleId of Object.keys(defs.vehicles)) {
+    for (const vehicleId of shownVehicleIds()) {
       const totals = [0, 0, 0];
       for (const p of vesselPartSnapshots(assembleVessel(defs, vehicleId))) {
         const def = defs.parts[p.def]!;
@@ -304,7 +319,7 @@ describe('part visuals', () => {
   });
 
   it('fairing petals follow the debris convention: petal k covers [k, k + 1) * 360 / N degrees from +Z toward +X', () => {
-    for (const def of Object.values(defs.parts)) {
+    for (const def of shownParts()) {
       const fairing = def.modules.find((m) => m.type === 'fairing');
       if (!fairing || fairing.type !== 'fairing' || fairing.panels < 2) continue;
       const modules = [{ type: 'fairing' as const, jettisoned: true }];
@@ -373,7 +388,7 @@ function capsuleShell(visual: PartVisual, lod = 0): Pick<BuiltMesh, 'positions' 
 
 describe('capsule exterior and the shared mould line', () => {
   const capsules = (): { def: PartDef; ml: CapsuleMouldLineDef }[] =>
-    Object.values(defs.parts)
+    shownParts()
       .filter((d) => d.visual?.generator === 'capsule.mouldline')
       .map((def) => ({ def, ml: getSection<CapsuleMouldLineDef>(defs, String(def.visual!.params['mouldLine'])) }));
 
@@ -597,7 +612,7 @@ describe('capsule exterior and the shared mould line', () => {
       expect(Object.keys(visual.models)).toEqual(expect.arrayContaining(['body', 'shield', 'shieldChar', 'glass', 'lamp']));
       const index = def.modules.findIndex((m) => m.type === 'heatShield');
       expect(index).toBeGreaterThanOrEqual(0);
-      const launch = vesselPartSnapshots(assembleVessel(defs, Object.keys(defs.vehicles)[0]!)).find((p) => p.def === def.id)!.modules;
+      const launch = vesselPartSnapshots(assembleVessel(defs, shownVehicleIds()[0]!)).find((p) => p.def === def.id)!.modules;
       const pose = (patch: { surfaceTemp?: number; ablatorFraction?: number }) => {
         const seen = new Map<string, { temperature: number | undefined; cold: boolean; emissive: number | undefined }>();
         const modules = launch.map((m) => (m.type === 'heatShield' ? { ...m, ...patch } : m));
@@ -649,7 +664,7 @@ describe('capsule exterior and the shared mould line', () => {
 
   it('the escape system\'s boost cover stays outside the mould line of the capsule under it', () => {
     let covers = 0;
-    for (const vehicle of Object.values(defs.vehicles)) {
+    for (const vehicle of shownVehicles()) {
       const parts = vesselPartSnapshots(assembleVessel(defs, vehicle.id));
       for (const les of parts) {
         const def = defs.parts[les.def]!;
@@ -690,7 +705,7 @@ describe('capsule exterior and the shared mould line', () => {
 
   it('every window the boost cover lists under windowPorts sees out from every seat; the others are covered', () => {
     let ports = 0;
-    for (const vehicle of Object.values(defs.vehicles)) {
+    for (const vehicle of shownVehicles()) {
       const parts = vesselPartSnapshots(assembleVessel(defs, vehicle.id));
       for (const les of parts) {
         const def = defs.parts[les.def]!;

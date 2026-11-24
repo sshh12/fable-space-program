@@ -10,6 +10,7 @@
  *    after the craft it left has gone from the snapshot.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { presentableVehicles } from '@/core/access/presentable';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { CraftSnapshot, PartSnapshot, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import { fsDefSource } from '@/core/defs/fsSource';
@@ -63,15 +64,16 @@ describe('engine mounts from the part list', () => {
       const got = new Map<string, string[]>();
       for (const [host, engines] of engineMounts(defs, parts, () => vehicle.id)) got.set(parts[host]!.instanceId, engines.map((e) => parts[e]!.instanceId).sort());
       expect([...got.entries()].sort(), vehicle.id).toEqual([...expected.entries()].sort());
-      // The stack has engines on node mounts and motor packs without nodes: both kinds are in the comparison.
-      const engines = vehicle.parts.filter((p) => isEngine(p.def));
-      expect(engines.some((p) => defs.parts[p.def]!.attachNodes.length > 0)).toBe(true);
-      expect(engines.some((p) => defs.parts[p.def]!.attachNodes.length === 0)).toBe(true);
     }
+    // Engines on node mounts and motor packs without nodes: both kinds are in the comparison above, in the stack
+    // that has both (not every vehicle of the fleet has a motor pack: request fleet-data-2).
+    const engines = defs.vehicles['meridian-lunar']!.parts.filter((p) => isEngine(p.def));
+    expect(engines.some((p) => defs.parts[p.def]!.attachNodes.length > 0)).toBe(true);
+    expect(engines.some((p) => defs.parts[p.def]!.attachNodes.length === 0)).toBe(true);
   });
 
   it('stay the same after every stage of the stack, in what flies on and in what is left behind', () => {
-    const vehicle = Object.values(defs.vehicles)[0]!;
+    const vehicle = presentableVehicles(defs)[0]!;
     const parentOf = new Map(vehicle.parts.map((p) => [p.id, p.parent]));
     let vessel = assembleVessel(defs, vehicle.id);
     for (let stage = 0; stage < vehicle.stages.length; stage++) {
@@ -93,7 +95,7 @@ describe('engine mounts from the part list', () => {
   });
 
   it('never cross from one craft to another of the same vehicle in one vessel', () => {
-    const vehicle = Object.values(defs.vehicles)[0]!;
+    const vehicle = presentableVehicles(defs)[0]!;
     const a = vesselPartSnapshots(assembleVessel(defs, vehicle.id, { craft: { craftId: 'craft-a', ownerId: null, name: 'A', joinedTick: 0 } }));
     // The second craft of the same vehicle stands beside the first: every part 30 m to starboard.
     const b = vesselPartSnapshots(assembleVessel(defs, vehicle.id, { craft: { craftId: 'craft-b', ownerId: null, name: 'B', joinedTick: 0 } })).map((p) => ({ ...p, localPos: v3.add(p.localPos, v3.new(30, 0, 0)) }));
@@ -112,7 +114,7 @@ describe('engine mounts from the part list', () => {
 
 describe('the lineage key of a part', () => {
   it('differs between two craft of one vehicle in one vessel, part for part', () => {
-    const vehicle = Object.values(defs.vehicles)[0]!;
+    const vehicle = presentableVehicles(defs)[0]!;
     const a = vesselPartSnapshots(assembleVessel(defs, vehicle.id, { craft: { craftId: 'craft-a', ownerId: null, name: 'A', joinedTick: 0 } }));
     const b = vesselPartSnapshots(assembleVessel(defs, vehicle.id, { craft: { craftId: 'craft-b', ownerId: null, name: 'B', joinedTick: 0 } }));
     const vessel = vesselOf('a~craft-a~0', [...a, ...b], [craftBlock('craft-a', null, vehicle.id), craftBlock('craft-b', null, vehicle.id)]);
@@ -128,7 +130,7 @@ describe('the lineage key of a part', () => {
   });
 
   it('is kept by every piece through every stage of the stack, as the simulation names its craft', () => {
-    const vehicle = Object.values(defs.vehicles)[0]!;
+    const vehicle = presentableVehicles(defs)[0]!;
     const lineage = new CraftLineage();
     let vessel = assembleVessel(defs, vehicle.id);
     const launched = vessel.crafts[0]!.craftId;
