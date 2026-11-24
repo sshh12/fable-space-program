@@ -1432,10 +1432,11 @@ get real cabins is the user's decision (OPEN_QUESTIONS Q15).
 - **Mass and diameter limits are rules data, per class**: `UniverseRules.pads.classLimits` gives the
   largest lift-off mass and stack diameter of each class, and a pad states `maxLiftoffMass` /
   `maxDiameter` only to override its class. No pad is without a limit (`Infinity` appears nowhere). The
-  defaults are **provisional** and the lead's to set from `fleet-data`'s table of the fleet: heavy 3,000 t
-  and 9.5 m (what LC-1 states today: 8.7 % over the 2,760 t lunar stack; 9.5 m is under the 9.56 m opening
-  of LC-1's own launch mount, to be settled with the table), medium 700 t and 7 m, light 70 t and 2.5 m
-  (the research's Solstice and Azimuth sheets rounded up; neither vehicle exists yet).
+  defaults are **set from the fleet's table** (lead decision of 2026-11-24 on request `fleet-data-4`;
+  `DEFAULT_PAD_CLASS_LIMITS`): light 70 t and 2.5 m (the heaviest light vehicle is 60.5 t, 2.2 m wide);
+  medium 700 t and 8.5 m (the heaviest is 611.3 t; the Solstice stacks are 8.0 m across with the M-3's RCS
+  pods); heavy 3,000 t and 9.56 m (the heaviest is 2,756.4 t; the stacks are 9.50 m with the M-1's
+  retro-motor ring, and 9.56 m is the opening of LC-1's own launch mount).
 - **The layouts are what the resolve run placed, and the count per site is data** (`site-bake`, closed
   2026-11-12; `data/staged/sites/<site>.pads.json`, `docs/handoff/site-bake.md` section 0.12). Every pad
   passed the pad gates (flat and dry ground over a 500 m disc, clear of the shore, the sea within reach, no
@@ -1457,7 +1458,9 @@ get real cabins is the user's decision (OPEN_QUESTIONS Q15).
 - **Pads are data plus a resolve run, and the pad count is the capacity dial of the launch complex**
   (decision 54). With a mean cycle of 150 s (dwell, lift-off, clearance, 20 s of safing; 90-240 s
   observed range) one pad gives 24 launches per universe hour; the release complex has **25 pads (6
-  heavy, 8 medium, 11 light) and gives 600**. A heavy vehicle can use the 6 heavy pads only: 144. Nothing
+  heavy, 8 medium, 11 light) and gives 600**. A pad hosts its class and anything smaller, so launches per
+  hour by the class of the VEHICLE are: heavy 144 (the 6 heavy pads only), medium 336 (its 8 pads and the 6
+  heavy: 14), light 600 (all 25). Nothing
   in the engine, the tests or the menu states a pad count or a rate: counts come from the site files,
   rates from `pads x 3600 / cycle` with the cycle of the rules. What a player count needs is in 16.3.
 

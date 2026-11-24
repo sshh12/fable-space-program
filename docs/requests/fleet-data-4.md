@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (lead decision of 2026-11-24: accepted as proposed)
 From: fleet-data
 Owner path: src/core/contracts/net.ts (`DEFAULT_PAD_CLASS_LIMITS`, `UniverseRules.pads.classLimits`), the default rules document (the lead)
 Blocking: no (validateVehicle reports the Solstice stacks as over the medium diameter until the limits are set)
@@ -52,3 +52,20 @@ and the three medium vehicles are offered first, so a new player's choices draw 
 hour), and the four heavy vehicles are offered from the hangar with their queue shown. The cost: the original
 mission's stack (meridian-lunar) is heavy and is not in the first offer, and every heavy launch shares 6 pads
 (144 an hour); heavy demand above that queues whatever the mix.
+
+## Resolution (lead, 2026-11-24)
+
+Accepted as proposed. `DEFAULT_PAD_CLASS_LIMITS` (and with it `DEFAULT_UNIVERSE_RULES.pads.classLimits`, the
+default rules document; a rules file is the default with its own values over it, so no file under
+`data/defs/rules` changed): light 70 t and 2.5 m, medium 700 t and 8.5 m, heavy 3,000 t and 9.56 m.
+ARCHITECTURE 9.3 states the limits and the launches per hour by the class of the vehicle (heavy 144,
+medium 336, light 600 at 25 pads). LC-1's own `maxDiameter` of 9.5 m in `data/defs/sites/ka-lae.json` is
+left as it is: an override 6 cm narrower than its class, wide enough for every heavy vehicle that exists;
+dropping it is yours (a site file) and changes no flight.
+
+Followed: `src/core/contracts/net.test.ts` (the default's numbers) and, in your path,
+`tests/unit/fleet/validate.test.ts`: the test "under the provisional defaults ..." now states the
+provisional limits itself (medium 7 m) and keeps its three findings, and a test beside it holds that the
+defaults ARE the proposed limits and report nothing. What rule 7a asks of a rules change, on a clean
+worktree of HEAD (06b05ba) with this change: codec 29 of 29, pins 3 of 3, the mission 36 of 36 at the golden
+72c0893583aa427d.

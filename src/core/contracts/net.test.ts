@@ -79,7 +79,7 @@ describe('UniverseRules: the default document', () => {
     expect(r.planning).toEqual({ workerMaxEstimateMs: 50, weakClientCpuScore: null });
   });
 
-  it('pad class limits: positive finite numbers that rise with the class; heavy is what LC-1 states today', () => {
+  it('pad class limits: positive finite numbers that rise with the class; set from the fleet\'s table (request fleet-data-4)', () => {
     const order: PadClass[] = ['light', 'medium', 'heavy'];
     const limits = DEFAULT_UNIVERSE_RULES.pads.classLimits;
     // The field of the default document IS the constant, in objects of its own (changing one changes no other).
@@ -97,10 +97,12 @@ describe('UniverseRules: the default document', () => {
       expect(limits[order[i]!].maxLiftoffMass, order[i]).toBeGreaterThan(limits[order[i - 1]!].maxLiftoffMass);
       expect(limits[order[i]!].maxDiameter, order[i]).toBeGreaterThan(limits[order[i - 1]!].maxDiameter);
     }
-    // Provisional (the lead sets them from fleet-data's table): LC-1's 3,000 t and 9.5 m, 8.7 % over the 2,760 t stack.
-    expect(limits.heavy).toEqual({ maxLiftoffMass: 3_000_000, maxDiameter: 9.5 });
-    expect(limits.heavy.maxLiftoffMass / 2_760_000 - 1).toBeCloseTo(0.087, 3);
-    expect(limits.medium).toEqual({ maxLiftoffMass: 700_000, maxDiameter: 7 });
+    // Lead decision of 2026-11-24 on request fleet-data-4, from the fleet's table: heavy 3,000 t (8.8 % over the
+    // heaviest stack, 2,756.4 t) and 9.56 m, the opening of LC-1's own launch mount (the heavy stacks are 9.50 m);
+    // medium 700 t and 8.5 m (the Solstice stacks are 8.0 m across with the M-3's RCS pods); light 70 t and 2.5 m.
+    expect(limits.heavy).toEqual({ maxLiftoffMass: 3_000_000, maxDiameter: 9.56 });
+    expect(limits.heavy.maxLiftoffMass / 2_756_400 - 1).toBeCloseTo(0.088, 3);
+    expect(limits.medium).toEqual({ maxLiftoffMass: 700_000, maxDiameter: 8.5 });
     expect(limits.light).toEqual({ maxLiftoffMass: 70_000, maxDiameter: 2.5 });
     expect(JSON.parse(JSON.stringify(limits))).toEqual(limits);
   });

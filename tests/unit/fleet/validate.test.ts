@@ -31,10 +31,15 @@ describe('validateVehicle: the fleet', () => {
     for (const v of Object.values(lib.vehicles)) expect(validateVehicle(lib, v, { rules: PROPOSED }), v.id).toEqual([]);
   });
 
-  it('under the provisional defaults of the contract, only the Solstice stacks are over the medium class diameter (8.0 m with the M-3 RCS pods against 7 m)', () => {
-    expect(DEFAULT_PAD_CLASS_LIMITS.medium.maxDiameter).toBeLessThan(8);
+  it('the defaults of the contract are the proposed limits since the lead\'s decision on request fleet-data-4: nothing is reported without a rules document either', () => {
+    expect(DEFAULT_PAD_CLASS_LIMITS).toEqual(PROPOSED.pads.classLimits);
+    for (const v of Object.values(lib.vehicles)) expect(validateVehicle(lib, v), v.id).toEqual([]);
+  });
+
+  it('under the provisional limits that the defaults were until then (medium 7 m), only the Solstice stacks are over the medium class diameter (8.0 m with the M-3 RCS pods)', () => {
+    const provisional: UniverseRules = { ...DEFAULT_UNIVERSE_RULES, pads: { ...DEFAULT_UNIVERSE_RULES.pads, classLimits: { light: { maxLiftoffMass: 70000, maxDiameter: 2.5 }, medium: { maxLiftoffMass: 700000, maxDiameter: 7 }, heavy: { maxLiftoffMass: 3000000, maxDiameter: 9.5 } } } };
     for (const v of Object.values(lib.vehicles)) {
-      const found = validateVehicle(lib, v);
+      const found = validateVehicle(lib, v, { rules: provisional });
       if (v.id.startsWith('solstice-')) {
         expect(found.map((i) => i.code), v.id).toEqual(['padClassExceeded']);
         expect(found[0]!.value!).toBeCloseTo(8.0, 2);

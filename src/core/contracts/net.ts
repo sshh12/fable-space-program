@@ -263,8 +263,8 @@ export interface UniverseRules {
      * Largest lift-off mass (kg) and stack diameter (m) by pad class. A pad's own `maxLiftoffMass` and
      * `maxDiameter` (PadDef) override them, each on its own; a spawn is refused at a pad whose limit the
      * vehicle exceeds. Every value is a positive finite number: no class and no pad is without a limit.
-     * Defaults: `DEFAULT_PAD_CLASS_LIMITS` (provisional): heavy 3,000 t and 9.5 m, medium 700 t and 7 m,
-     * light 70 t and 2.5 m.
+     * Defaults: `DEFAULT_PAD_CLASS_LIMITS` (set from the fleet's table, lead decision of 2026-11-24 on
+     * request fleet-data-4): heavy 3,000 t and 9.56 m, medium 700 t and 8.5 m, light 70 t and 2.5 m.
      */
     classLimits: Record<PadClass, PadClassLimits>;
     /** Anything at rest inside a keep-out radius is recovered after this long. Default 60 s. */
@@ -382,13 +382,16 @@ export interface UniverseRules {
 /**
  * The default of `UniverseRules.pads.classLimits`: what a pad of each class takes.
  *
- * PROVISIONAL, and the lead's to set from fleet-data's table of the fleet's lift-off masses and diameters
- * (wave 4). The only numbers that come from a vehicle that exists are the heavy class's, which are what
- * data/defs/sites/ka-lae.json states for LC-1: 3,000 t and 9.5 m. 3,000 t leaves 8.7 % over the 2,760 t
- * lunar stack. 9.5 m covers the stack's 9.0 m but is UNDER the 9.56 m opening of LC-1's own launch mount,
- * so the mount takes a wider stack than the class admits: settled with the table. Light and medium are the
- * research's vehicle sheets rounded up (docs/research/v2/fleet-docking.md section 2: Azimuth 60.5 t and
- * 2.2 m, Solstice up to 610.5 t and 6.6 m; 16 % and 15 % over in mass); no vehicle of those classes exists.
+ * SET FROM THE FLEET'S TABLE (lead decision of 2026-11-24 on request fleet-data-4; `analyzeVehicle` of
+ * src/sim/vessel/analyze.ts measures the eight vehicles of the library):
+ *   light   70 t and 2.5 m     the heaviest light vehicle is 60.5 t and 2.2 m wide
+ *   medium  700 t and 8.5 m    the heaviest is 611.3 t; the Solstice stacks are 8.0 m across with the M-3's
+ *                              two RCS pods (their core is 6.6 m: the provisional 7 m refused them)
+ *   heavy   3,000 t and 9.56 m the heaviest is 2,756.4 t; the stacks are 9.50 m with the M-1's retro-motor
+ *                              ring, and 9.56 m is the opening of LC-1's own launch mount: the limit that
+ *                              means something, not a rounder number under it
+ * A pad that states its own limit overrides its class (LC-1 states 3,000 t and 9.5 m: narrower than its
+ * class by 6 cm, and wide enough for every heavy vehicle that exists).
  *
  * These ARE the values of `DEFAULT_UNIVERSE_RULES.pads.classLimits` (net.test.ts holds the two equal), under
  * a name of their own for code that has a pad and no rules document at hand (`padLimitsOf(pad)` of
@@ -396,8 +399,8 @@ export interface UniverseRules {
  */
 export const DEFAULT_PAD_CLASS_LIMITS: Readonly<Record<PadClass, PadClassLimits>> = {
   light: { maxLiftoffMass: 70_000, maxDiameter: 2.5 },
-  medium: { maxLiftoffMass: 700_000, maxDiameter: 7 },
-  heavy: { maxLiftoffMass: 3_000_000, maxDiameter: 9.5 },
+  medium: { maxLiftoffMass: 700_000, maxDiameter: 8.5 },
+  heavy: { maxLiftoffMass: 3_000_000, maxDiameter: 9.56 },
 };
 
 /** The `default` rules document (production). `staging` and `local` are data files that differ from it. */
