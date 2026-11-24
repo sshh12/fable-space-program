@@ -65,3 +65,15 @@ Three things the island needs from the lead's files; each has a workaround insid
    comparison of the record before and after). The one that formation by the join distance needs is
    counted when island-core's successor reports with its table and the trajectory guard's debris entries
    are re-recorded (request island-core-1, accepted).
+
+## Added after the fix round (2026-11-25; island-core)
+4. Two operations the island now journals and executes are not in `IslandOpBody` (src/core/contracts/net.ts):
+   `{ op: 'outcome'; slot: number; outcomes: ThresholdOutcome[]; member: Uint8Array }` and
+   `{ op: 'pose'; slot: number; r: Vec3; v: Vec3; q: Quat; w: Vec3 }` (exact fields and meaning:
+   docs/handoff/island-core.md 1.4; types `OutcomeOp`, `PoseOp`, `ThresholdOutcome` in
+   src/sim/island/api.ts). The wire needs both to carry a threshold outcome and a pose-only correction.
+5. More constants without a rule field: the pose bounds (`POSE_CORRECTION_MAX_DISTANCE` 100 m, `_SPEED`
+   10 m/s, `_ANGLE` 0.2 rad, `_RATE` 1 rad/s), `REFERENCE_OFFSET_MAX` (30 km), `REFERENCE_SETTLE_DISTANCE`
+   (1 m), `REFERENCE_SETTLE_SPEED` (1 mm/s), `SOI_RECHECK_TIME` (600 s).
+6. MIGRATION_V2 principle 5: a third re-baseline, b9f1e8d (`f0c0855ea40d8c59` to `27dd19a26303c181`:
+   a Reduced piece is compared and admitted at the tick; request lead-12).
