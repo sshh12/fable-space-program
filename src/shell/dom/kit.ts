@@ -96,8 +96,9 @@ const SHELL_CSS = `
 .sh-aside { grid-column: 8 / span 5; grid-row: 2 / span 2; align-self: end; display: flex; flex-direction: column; gap: calc(1.2 * var(--u)); min-height: 0; max-height: 100%; padding-bottom: calc(1.6 * var(--u)); }
 .sh-main.sh-wide ~ .sh-aside { grid-column: 9 / span 4; }
 .sh-scroll, .sh-list.sh-scroll { overflow-y: auto; scrollbar-width: none; max-height: calc(44 * var(--u)); overscroll-behavior: contain; }
-.sh-commit { min-height: calc(13 * var(--u)); border-color: rgba(85, 212, 255, 0.55); }
-.sh-commit .sh-card-title { font-size: max(26px, calc(3.6 * var(--u))); }
+.sh-card.sh-commit { min-height: calc(13 * var(--u)); border-color: rgba(85, 212, 255, 0.55); background: var(--fill-strong); }
+.sh-card.sh-commit .sh-card-text { color: var(--ink); }
+.sh-card.sh-commit .sh-card-title { font-size: max(26px, calc(3.6 * var(--u))); }
 .sh-detail-title { font-family: ${SHELL_FONTS.display}; font-weight: 700; font-size: max(24px, calc(3.4 * var(--u))); text-transform: uppercase; line-height: 1; margin: calc(0.4 * var(--u)) 0 calc(0.8 * var(--u)); }
 .sh-panel .sh-body + .sh-body { margin-top: calc(0.5 * var(--u)); }
 .sh-panel > * + .sh-label, .sh-panel > * + .sh-readouts, .sh-panel > * + .sh-ladder { margin-top: calc(1.3 * var(--u)); }
@@ -109,7 +110,7 @@ const SHELL_CSS = `
 .sh-verdict { min-height: 1.6em; margin: calc(0.8 * var(--u)) 0 calc(0.4 * var(--u)); font-family: ${SHELL_FONTS.label}; font-weight: 600; letter-spacing: 0.06em; display: flex; flex-wrap: wrap; align-items: center; gap: calc(0.8 * var(--u)); }
 .sh-chip { font: inherit; color: var(--ink); background: var(--fill-strong); border: 1px solid var(--line); border-radius: 2px; padding: calc(0.2 * var(--u)) calc(0.8 * var(--u)); cursor: pointer; pointer-events: auto; }
 .sh-chip.is-focus { border-color: var(--accent); color: var(--accent); }
-.sh-status { grid-column: 1 / span 7; grid-row: 3; align-self: end; font-family: ${SHELL_FONTS.label}; font-weight: 500; font-size: max(12px, calc(1.25 * var(--u))); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); padding-bottom: calc(0.8 * var(--u)); contain: layout; }
+.sh-status { grid-column: 1 / span 7; grid-row: 3; align-self: end; font-family: ${SHELL_FONTS.label}; font-weight: 500; font-size: max(12px, calc(1.25 * var(--u))); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); padding-bottom: calc(0.8 * var(--u)); contain: layout; }
 .sh-prompts { grid-column: 6 / -1; grid-row: 4; justify-self: end; display: flex; gap: calc(2 * var(--u)); align-items: center; min-height: calc(4.5 * var(--u)); }
 .sh-pointer { pointer-events: auto; }
 
