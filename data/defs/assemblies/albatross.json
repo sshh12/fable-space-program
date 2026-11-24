@@ -35,10 +35,10 @@
     {
       "id": "side-port",
       "def": "dock-port-h",
-      "parent": "tank-1",
+      "parent": "truss",
       "position": [
-        4.5,
-        10.4,
+        2.89,
+        3.5,
         0
       ],
       "rotationDeg": [
@@ -51,11 +51,11 @@
     {
       "id": "quad-1",
       "def": "rcs-quad-440",
-      "parent": "tank-1",
+      "parent": "truss",
       "position": [
-        3.181981,
-        6,
-        3.181981
+        2.531442,
+        2,
+        2.531442
       ],
       "rotationDeg": [
         -90,
@@ -73,11 +73,11 @@
     {
       "id": "quad-2",
       "def": "rcs-quad-440",
-      "parent": "tank-1",
+      "parent": "truss",
       "position": [
-        3.181981,
-        6,
-        -3.181981
+        2.531442,
+        2,
+        -2.531442
       ],
       "rotationDeg": [
         -90,
@@ -95,11 +95,11 @@
     {
       "id": "quad-3",
       "def": "rcs-quad-440",
-      "parent": "tank-1",
+      "parent": "truss",
       "position": [
-        -3.181981,
-        6,
-        -3.181981
+        -2.531442,
+        2,
+        -2.531442
       ],
       "rotationDeg": [
         -90,
@@ -117,11 +117,11 @@
     {
       "id": "quad-4",
       "def": "rcs-quad-440",
-      "parent": "tank-1",
+      "parent": "truss",
       "position": [
-        -3.181981,
-        6,
-        3.181981
+        -2.531442,
+        2,
+        2.531442
       ],
       "rotationDeg": [
         -90,

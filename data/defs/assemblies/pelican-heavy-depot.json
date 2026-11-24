@@ -27,11 +27,11 @@
     {
       "id": "quad-1",
       "def": "rcs-quad-440",
-      "parent": "tank",
+      "parent": "ring",
       "position": [
-        3.181981,
-        6.25,
-        3.181981
+        1.414214,
+        0.3,
+        1.414214
       ],
       "rotationDeg": [
         -90,
@@ -49,11 +49,11 @@
     {
       "id": "quad-2",
       "def": "rcs-quad-440",
-      "parent": "tank",
+      "parent": "ring",
       "position": [
-        3.181981,
-        6.25,
-        -3.181981
+        1.414214,
+        0.3,
+        -1.414214
       ],
       "rotationDeg": [
         -90,
@@ -71,11 +71,11 @@
     {
       "id": "quad-3",
       "def": "rcs-quad-440",
-      "parent": "tank",
+      "parent": "ring",
       "position": [
-        -3.181981,
-        6.25,
-        -3.181981
+        -1.414214,
+        0.3,
+        -1.414214
       ],
       "rotationDeg": [
         -90,
@@ -93,11 +93,11 @@
     {
       "id": "quad-4",
       "def": "rcs-quad-440",
-      "parent": "tank",
+      "parent": "ring",
       "position": [
-        -3.181981,
-        6.25,
-        3.181981
+        -1.414214,
+        0.3,
+        1.414214
       ],
       "rotationDeg": [
         -90,
