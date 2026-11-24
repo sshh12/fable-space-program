@@ -1,0 +1,48 @@
+{
+  "id": "transfer-leo-200",
+  "name": "Transfer: 200 km parking orbit (upper stage and lander stack, 6.5 km/s)",
+  "vehicle": "meridian-lunar",
+  "site": "ka-lae",
+  "pad": "lc-1",
+  "startUt": 959774400,
+  "start": {
+    "kind": "orbit",
+    "bodyId": "earth",
+    "periapsisAltitude": 200000,
+    "apoapsisAltitude": 200000,
+    "inclinationDeg": 19,
+    "lanDeg": 0,
+    "argPeDeg": 0,
+    "trueAnomalyDeg": 0
+  },
+  "stagesAlreadyFired": 4,
+  "resources": {
+    "capsule": {
+      "RCSProp": 150,
+      "Ablator": 150
+    },
+    "ascent-stage": {
+      "LOX": 0,
+      "CH4": 0,
+      "RCSProp": 250
+    },
+    "descent-stage": {
+      "LOX": 5600,
+      "CH4": 1556,
+      "RCSProp": 200
+    },
+    "m3": {
+      "LOX": 46200,
+      "LH2": 7700
+    },
+    "m3-rcs-pod-a": {
+      "RCSProp": 116.957
+    },
+    "m3-rcs-pod-b": {
+      "RCSProp": 116.957
+    }
+  },
+  "target": null,
+  "suggestedLanding": null,
+  "milestones": []
+}
