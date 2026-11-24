@@ -51,6 +51,10 @@ export type ShellEvent =
   | { type: 'commit' }
   | { type: 'seated' }
   | { type: 'spawnFailed' }
+  /** The request went to the launch queue during the transit: back to the briefing, which shows the queue. */
+  | { type: 'waitForPad' }
+  /** The launch queue seated the request while the player was on any deploy screen: the transit begins. */
+  | { type: 'depart' }
   | { type: 'back' }
   | { type: 'openFlightMenu' }
   | { type: 'closeFlightMenu' }
@@ -94,6 +98,10 @@ export function transition(state: ShellState, event: ShellEvent): ShellState | n
       // A refused launch rises back to the pad screen with its explanation; a refused resume to My Ships.
       if (state.main !== 'transit') return null;
       return state.entry === 'launch' ? at({ main: 'deploy', step: 'pad' }) : at({ main: 'hub', tab: 'ships' });
+    case 'waitForPad':
+      return state.main === 'transit' && state.entry === 'launch' ? at({ main: 'deploy', step: 'briefing' }) : null;
+    case 'depart':
+      return state.main === 'deploy' ? at({ main: 'transit', entry: 'launch' }) : null;
     case 'openFlightMenu':
       return state.main === 'flight' ? at({ main: 'flightMenu' }) : null;
     case 'closeFlightMenu':

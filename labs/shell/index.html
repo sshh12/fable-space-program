@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark" />
+    <title>Shell and menu lab</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+      }
+      canvas {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="viewport" tabindex="0"></canvas>
+    <div id="ui-root"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
