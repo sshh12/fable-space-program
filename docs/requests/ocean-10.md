@@ -127,3 +127,13 @@ display white to white at 2.33 pre-exposed (2.5 times sunlit white). Sunlit whit
 From 3 km the glint's core is a warm white and its sparkles clip: it reads as light. From orbit it does
 not: the core is brighter by a hair and no pixel clips, it is still a cream patch. That one is a case for
 option 2 (the glare term), or for the glint's own level from orbit; said to the lead.
+
+
+## Lead decision on the A/B (2026-11-24): look 2 becomes the game's look
+The lead looked at the sheets (out/screens/core-support/curve-ab/: the pad at noon, low orbit with cloud tops, the dawn splashdown sequence) and read the maintainer's numbers for all thirteen. Look 2 is adopted: sunlit white at 225-253 instead of 185-205, cloud tops and frost white, and the exposure at the dawn splashdown HELD (EV100 11.6 through the four frames, where look 1 swings 8.9 -> 12.5 -> 8.5 and the sea goes black for eight seconds).
+ORDER: (1) the presentation sweep's fix round finishes; (2) the tighten step runs and is verified against the reference images AS RECORDED (look 1); (3) then the maintainer flips the default to look 2 (look 1 stays reachable by the page parameter for one round, as the comparison), the lead's records agent re-records all reference images with a note naming this decision, and the budget baseline is re-recorded; (4) every package's NEXT visual round starts by re-running its suite under look 2 and re-stating its level-holding tests, and takes these as its first items, because look 2 exposes them:
+- cockpit: the cabin's gain on the outside was set for the old curve - the sun patch is a white shape that erases the display under it and the Earth in the window loses its clouds (sheet 03);
+- vfx: what was placed several stops over white for the old long shoulder now clips - the canopies at dawn (orange gores go yellow; a real sunlit canopy is about 0.56 of white), the steam's brightest lobes at lift-off, the sheath (and request core-8: keep the sheath's hint to the meter when the sun is on the limb, or the capsule burns out to a white ball at the peak of g);
+- ocean: at dawn the sea is dark right up to the horizon under a bright sky (median Y 0.03): the sky reflection under broken cloud uses the sun's beam share as the share of sky mirrored (the flaw its own hand-off 16.9 names) - a sea near the horizon mirrors the sky above it; and the glint from orbit still reads as paint (the one case for option 2, the glare term, decided after the ocean's round);
+- render core: a thruster pulse in an otherwise dark frame still moves the target by ten stops.
+Requests ocean-10 and ocean-13 are resolved by the flip; the items above are carried by the packages named.
