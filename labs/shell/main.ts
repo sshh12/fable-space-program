@@ -196,8 +196,13 @@ async function boot(): Promise<void> {
     app.renderer.context.resources.publish('ui.navball', navball.view);
     const built = buildFeatures(imported.modules, { defs, sim, ctx: app.renderer.context, gpu: app.gpu, terrain, navball, mfdPainter: createMfdPainter(), query });
     for (const p of [...imported.problems, ...built.problems]) errors(p);
-    bootSteps[2]!.total = built.features.length;
-    for (const f of built.features) {
+    // The vessel visuals are left out: this lab's vessel is the fake's stand-in without parts, and the visuals
+    // of the whole library are warmed at start-up (vehicle art arrives with fleet-data's vehicles, not here).
+    const vessel = built.handles['vehicle.createVesselVisualFeature'] as { id?: string; feature?: { id: string } } | undefined;
+    const vesselIds = new Set([vessel?.id, vessel?.feature?.id].filter((x): x is string => typeof x === 'string'));
+    const features = built.features.filter((f) => !vesselIds.has(f.id));
+    bootSteps[2]!.total = features.length;
+    for (const f of features) {
       await app.renderer.addFeature(f);
       bootSteps[2]!.done++;
     }
