@@ -1200,6 +1200,61 @@ the lead's proof over the integration lab is `tests/browser/shell/baseline-tooli
 
 ---
 
+### 13.1 The look switch: the camera curve and the meter's bounds (requests `ocean-10`, `ocean-13`)
+
+`RendererOptions.look` (1 or 2; default 1), `corelook=2` in a page's address, `VITE_CORE_LOOK=2` in the env
+of a run's page server. **With look 1 nothing is different from before the switch existed**: the tonemap
+pass compiles the text it always compiled and no rule of look 2 is evaluated (the lead's 33 reference
+images compare at 0 pixels; `tests/unit/render-core/exposureLook2.test.ts` holds the meter on recorded
+frames). Look 2 is built for the lead's decision on `ocean-10`; it is not the default and no package's
+level tests are stated for it.
+
+**The curve of look 2** (`post/tonemap.ts`, `CAMERA_*`). The present curve from one stop under mid-grey
+down (shadows, the toe, every dark scene) and mid-grey itself where it is (117 of 255); above it the
+scene's own line (display-linear = 0.989 x scene-linear) up to 0.75 of display white, then a shoulder that
+reaches white at 2.33 pre-exposed, 2.5 times sunlit white paper at sunny 16 (0.93), with no slope left
+there; per channel on AgX's inset primaries, so a bright saturated colour still goes to white through AgX.
+Greys, of 255:
+
+| pre-exposed | 0.18 | 0.36 | 0.52 | 0.75 | 0.93 (sunlit white at sunny 16) | 1.3 | 1.86 | 2.33 | 4 | 8 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| look 1 | 117 | 151 | 168 | 185 | 193 | 206 | 218 | 225 | 237 | 247 |
+| look 2 | 117 | 161 | 190 | 224 | 241 | 253 | 255 | 255 | 255 | 255 |
+
+The meter's bounds under the sun are not moved: it holds a daylight frame between sunny 16 - 0.5 EV and
++ 0.5 EV, so sunlit white lands between 253 and 211 of 255 with look 2 (it is 241 at sunny 16 itself).
+
+**The meter of look 2** (`post/exposure.ts`, `METER2_*`; exterior and map views only, the cabin's metering
+is untouched):
+
+1. *The sky's bulk does not clip.* Inside an atmosphere the target is at least the exposure that shows the
+   sky's 90th percentile at 0.7 pre-exposed (217 of 255: where an overcast sky stands in a photograph), by
+   the sky's share of the frame (none under 2 %, full from 10 %). By day it never binds.
+2. *Under a low sun a small bright subject does not set the exposure.* Inside an atmosphere, with the sun
+   under 25 degrees (fully under 10) and above the end of twilight, and wherever the sky counts, for a frame
+   that is a scene (lit pixels over 10 to 30 % of it): what stands more than 2 stops over the 75th
+   percentile of the metered pixels counts at that level in the mean, and the highlight term may raise the
+   target by 1 EV at most over what the mean and the prior ask for.
+3. *A small emitter does not set the exposure.* A hint that covers up to 2 % of the frame may raise the
+   target by 2 EV over what the frame without emitters asks for (not bounded from 6 %), by what that frame
+   has to show (lit pixels over 2 % of it; a frame that is dark but for the emitter follows the emitter).
+4. *An emitter that fills the frame is the scene.* From 10 to 20 % of the frame covered by one hint the
+   rules under the sun let go.
+5. The scale ends at EV100 18 (16.5 with look 1).
+
+Measured (the A/B of 2026-11-17, `tests/browser/integration/curve-ab.spec.ts`; sheets under
+`out/screens/core-support/curve-ab/`): the dawn splashdown of the real app, EV100 from before the contact
+to 15 s after it, 8.44 to 12.55 with look 1 (the sea black while the canopies stand in the frame) and 11.56
+to 11.86 with look 2; splashdown under overcast 9.90 -> 11.69 (the sky from white to light grey, the sea
+at Y 0.11); the pad at noon, the lift-off, low orbit, the glint, the lunar surface and the night unchanged
+in exposure. Not cured by the meter: the entry's peak of g, where the vfx gives no hint (request `core-8`).
+
+**Read-outs for measurements.** `CoreRenderer.meterInput()` returns a copy of what the meter evaluated in
+the last frame (its three histograms as arrays, the hints, the sun): a recorded scene's metering can be
+replayed with `meterExposure(input)` outside the page. A page opened with `coredebug=1` finds
+`globalThis.__core = { renderer, look, displayLevel(preExposed) }` (any page, the app's included; nothing
+in the game reads it).
+
 ## 14. Perf and attribution
 
 - Name your own passes `<featureId>.<pass>`: `timestampWrites: ctx.perf.gpuPass('my-feature.march')`
