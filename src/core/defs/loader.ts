@@ -3,7 +3,12 @@
  * the browser, fs-based in Node; see fetchSource.ts / fsSource.ts).
  *
  * Layout (paths relative to data/defs):
- *   bodies/*.json  sites/*.json  parts/*.json  vehicles/*.json  scenarios/*.json   one definition per file
+ *   bodies/*.json  sites/*.json  parts/*.json  assemblies/*.json  vehicles/*.json  scenarios/*.json
+ *                                                                                   one definition per file; a vehicle
+ *                                                                                   that `uses` assemblies is flattened
+ *                                                                                   into a flat VehicleDef (assemblies.ts)
+ *                                                                                   and every vehicle is held to the
+ *                                                                                   structural checks (vehicleStructure.ts)
  *   rules/*.json                                                                    one UniverseRules document per file, stored as
  *                                                                                   overrides of the default document (completeRules)
  * A key that starts with '$' other than "$ref" annotates a file ("$comment": JSON has no comments) and is
@@ -21,11 +26,12 @@
  * DefLibrary.sections under its path without the extension ("visuals/plumes", "audio/engines", ...).
  * `regions/` (bake manifests) is not loaded: only the Python bake tools read it.
  *
- * Sites (MIGRATION_V2 step 3.6): a site file states its pads in `pads`; the loader fills the deprecated
- * single pad (`pad`, `padAzimuthDeg`, `structures`) from the first pad, and `location.pads` with the
- * first pad at the reference point, so a loaded site always has both forms (normaliseSite below).
+ * Sites (MIGRATION_V2 step 3.6; the tighten step after sub-wave 3.2): a site file states its pads in `pads`
+ * (v1's single pad is refused by name), and the loader fills `location.pads` with the first pad at the
+ * reference point, so every pad of a loaded site has a location (normaliseSite below).
  */
 import type {
+  AssemblyDef,
   BodyDef,
   DefLibrary,
   LaunchSiteDef,
@@ -36,7 +42,9 @@ import type {
   VehicleDef,
 } from '../contracts/defs';
 import { DEFAULT_UNIVERSE_RULES, type PadClass, type UniverseRules } from '../contracts/net';
+import { AssemblyError, checkAssemblyShape, flattenVehicle } from './assemblies';
 import { padsOf } from './sites';
+import { structuralIssues } from './vehicleStructure';
 
 export interface DefSource {
   /** All JSON file paths under the defs root, relative, forward slashes (e.g. "bodies/earth.json"). */
@@ -389,6 +397,13 @@ export function validateLibrary(lib: DefLibrary): void {
     for (const p of v.parts) {
       if (p.parent !== null && !ids.has(p.parent)) throw new DefError(`vehicles/${v.id}.json`, `part "${p.id}" has unknown parent "${p.parent}"`);
     }
+    // The structural checks (src/core/defs/vehicleStructure.ts): one root, reachability, node kinds and
+    // occupancy, declared stage groups, actions on parts with the module they need, a command part.
+    const found = structuralIssues(lib.parts, v);
+    if (found.length > 0) {
+      const more = found.length > 1 ? ` (and ${found.length - 1} more: ${[...new Set(found.slice(1).map((i) => i.code))].join(', ')})` : '';
+      throw new DefError(`vehicles/${v.id}.json`, `${found[0]!.message}${more}`);
+    }
   }
   for (const s of Object.values(lib.scenarios)) {
     const file = `scenarios/${s.id}.json`;
@@ -462,7 +477,30 @@ export async function loadDefs(source: DefSource): Promise<DefLibrary> {
   const sites = await loadDir<LaunchSiteDef>(source, files, 'sites');
   for (const s of Object.values(sites)) normaliseSite(s, `sites/${s.id}.json`, bodies[s.bodyId]?.radius);
   const parts = await loadDir<PartDef>(source, files, 'parts');
-  const vehicles = await loadDir<VehicleDef>(source, files, 'vehicles');
+  const assemblies = await loadDir<AssemblyDef>(source, files, 'assemblies');
+  for (const a of Object.values(assemblies)) {
+    try {
+      checkAssemblyShape(a, `assemblies/${a.id}.json`);
+    } catch (e) {
+      if (e instanceof AssemblyError) throw new DefError(e.file, e.message.slice(e.file.length + 2));
+      throw e;
+    }
+  }
+  const stated = await loadDir<VehicleDef>(source, files, 'vehicles');
+  const vehicles: Record<string, VehicleDef> = {};
+  for (const [id, v] of Object.entries(stated)) {
+    const file = `vehicles/${id}.json`;
+    for (const k of ['parts', 'stageGroups', 'stages', 'abort']) {
+      if (!Array.isArray((v as unknown as Record<string, unknown>)[k])) throw new DefError(file, `"${k}" must be an array (it may be empty)`);
+    }
+    if (!isObject((v as unknown as Record<string, unknown>)['actionGroups'])) throw new DefError(file, '"actionGroups" must be an object (it may be empty)');
+    try {
+      vehicles[id] = flattenVehicle(v, assemblies, file);
+    } catch (e) {
+      if (e instanceof AssemblyError) throw new DefError(e.file, e.message.slice(e.file.length + 2));
+      throw e;
+    }
+  }
   const scenarios = await loadDir<ScenarioDef>(source, files, 'scenarios');
   const rulesStated = await loadDir<{ id: string }>(source, files, 'rules');
   const rules: Record<string, UniverseRules> = {};
@@ -478,7 +516,7 @@ export async function loadDefs(source: DefSource): Promise<DefLibrary> {
     sections[file.slice(0, -5)] = await resolveRefs(await source.read(file), file, source);
   }
   const rootBodyId = Object.values(bodies).find((b) => b.parent === null)?.id ?? '';
-  const lib: DefLibrary = { bodies, rootBodyId, sites, resources, parts, vehicles, rules, scenarios, sections };
+  const lib: DefLibrary = { bodies, rootBodyId, sites, resources, parts, vehicles, assemblies, rules, scenarios, sections };
   validateLibrary(lib);
   return lib;
 }

@@ -18,6 +18,28 @@ const siteFile = (id: string, bodyId: string, more: Record<string, unknown> = {}
   ...more,
 });
 
+/** A part definition as small as the structural checks take: a command module, so a vehicle of it can be flown. */
+const podPart = (id: string, more: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id,
+  attachNodes: [],
+  modules: [{ type: 'command', crewCapacity: 0, sas: true, maxRateDegPerS: 10, seats: [], remote: true }],
+  ...more,
+});
+
+/** A vehicle file of the given parts (the first is the root), with one stage group and no stages. */
+const vehicleFile = (id: string, parts: Record<string, unknown>[]): Record<string, unknown> => ({
+  id,
+  name: id,
+  parts: parts.map((p) => ({ stageGroup: 'g', ...p })),
+  stageGroups: [{ id: 'g', label: 'G' }],
+  stages: [],
+  abort: [],
+  actionGroups: {},
+  crew: [],
+  cameras: { chase: { defaultDistance: 10, minDistance: 2, maxDistance: 100 } },
+  cockpit: null,
+});
+
 function memorySource(files: Record<string, unknown>): DefSource {
   return {
     list: async () => Object.keys(files).sort(),
@@ -79,7 +101,8 @@ describe('definition loader', () => {
     });
     const load = (site: Record<string, unknown>, more: Record<string, unknown> = {}) => loadDefs(memorySource({ 'bodies/a.json': body, 'sites/k.json': site, ...more }));
     const scenario = (padId?: unknown): Record<string, unknown> => ({
-      'vehicles/v.json': { id: 'v', parts: [] },
+      'parts/p.json': podPart('p'),
+      'vehicles/v.json': vehicleFile('v', [{ id: 'core', def: 'p', parent: null }]),
       'scenarios/s.json': { id: 's', name: 's', vehicle: 'v', site: 'k', startUt: 0, start: { kind: 'pad' }, stagesAlreadyFired: 0, target: null, suggestedLanding: null, milestones: [], ...(padId === undefined ? {} : { pad: padId }) },
     });
 
@@ -220,12 +243,12 @@ describe('definition loader', () => {
     });
 
     it('an id that composes runtime ids is refused where the vehicle is read', async () => {
-      const files = (vehicle: unknown, name = 'v') => ({ 'bodies/a.json': body, 'parts/p.json': { id: 'p' }, [`vehicles/${name}.json`]: vehicle });
-      expect((await loadDefs(memorySource(files({ id: 'v', parts: [{ id: 'core-1', def: 'p', parent: null }] })))).vehicles['v']!.parts).toHaveLength(1);
-      await expect(loadDefs(memorySource(files({ id: 'v', parts: [{ id: 'core/1', def: 'p', parent: null }] })))).rejects.toThrow(/vehicles\/v\.json: part instance id "core\/1" contains '\/'/);
-      await expect(loadDefs(memorySource(files({ id: 'v', parts: [{ id: 'core~1', def: 'p', parent: null }] })))).rejects.toThrow(/contains '~'/);
-      await expect(loadDefs(memorySource(files({ id: 'v', parts: [{ id: 'core.1', def: 'p', parent: null }] })))).rejects.toThrow(/contains '\.'/);
-      await expect(loadDefs(memorySource(files({ id: 'v~2', parts: [{ id: 'core', def: 'p', parent: null }] }, 'v~2')))).rejects.toThrow(/the vehicle id contains '~'/);
+      const files = (vehicle: unknown, name = 'v') => ({ 'bodies/a.json': body, 'parts/p.json': podPart('p'), [`vehicles/${name}.json`]: vehicle });
+      expect((await loadDefs(memorySource(files(vehicleFile('v', [{ id: 'core-1', def: 'p', parent: null }]))))).vehicles['v']!.parts).toHaveLength(1);
+      await expect(loadDefs(memorySource(files(vehicleFile('v', [{ id: 'core/1', def: 'p', parent: null }]))))).rejects.toThrow(/vehicles\/v\.json: part instance id "core\/1" contains '\/'/);
+      await expect(loadDefs(memorySource(files(vehicleFile('v', [{ id: 'core~1', def: 'p', parent: null }]))))).rejects.toThrow(/contains '~'/);
+      await expect(loadDefs(memorySource(files(vehicleFile('v', [{ id: 'core.1', def: 'p', parent: null }]))))).rejects.toThrow(/contains '\.'/);
+      await expect(loadDefs(memorySource(files(vehicleFile('v~2', [{ id: 'core', def: 'p', parent: null }]), 'v~2')))).rejects.toThrow(/the vehicle id contains '~'/);
     });
 
     it('a scenario names a pad of its site, or none (the first pad)', async () => {
@@ -457,7 +480,8 @@ describe('definition loader', () => {
     const files = (milestones: unknown): Record<string, unknown> => ({
       'bodies/a.json': root,
       'sites/k.json': siteFile('k', 'a'),
-      'vehicles/v.json': { id: 'v', parts: [] },
+      'parts/p.json': podPart('p'),
+      'vehicles/v.json': vehicleFile('v', [{ id: 'core', def: 'p', parent: null }]),
       'scenarios/s.json': { ...base, milestones },
     });
     const good = [
@@ -497,9 +521,9 @@ describe('definition loader', () => {
       'bodies/a.json': { id: 'a', parent: null, mu: 1, radius: 1, orbit: null },
       'sites/k.json': siteFile('k', 'a'),
       'resources.json': [{ id: 'LOX' }, { id: 'CH4' }],
-      'parts/tank.json': { id: 'tank', resources: [{ resource: 'LOX', capacity: 1000, tankBottomY: 0, tankHeight: 1 }] },
-      'parts/strut.json': { id: 'strut' },
-      'vehicles/v.json': { id: 'v', parts: [{ id: 't1', def: 'tank', parent: null }, { id: 's1', def: 'strut', parent: 't1' }] },
+      'parts/tank.json': podPart('tank', { resources: [{ resource: 'LOX', capacity: 1000, tankBottomY: 0, tankHeight: 1 }] }),
+      'parts/strut.json': { id: 'strut', attachNodes: [], modules: [] },
+      'vehicles/v.json': vehicleFile('v', [{ id: 't1', def: 'tank', parent: null }, { id: 's1', def: 'strut', parent: 't1', position: [0, 0, 0] }]),
       'scenarios/s.json': { id: 's', name: 's', vehicle: 'v', site: 'k', startUt: 0, start: { kind: 'pad' }, stagesAlreadyFired: 0, target: null, suggestedLanding: null, milestones: [], ...(resources === undefined ? {} : { resources }) },
     });
     // Absent: as before. Present and valid: kept as written, the capacity itself and a rounding error above it included.
