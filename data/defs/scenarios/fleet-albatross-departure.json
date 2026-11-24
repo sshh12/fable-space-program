@@ -1,0 +1,22 @@
+{
+  "id": "fleet-albatross-departure",
+  "name": "Albatross: the departure burn from low Earth orbit",
+  "vehicle": "meridian-albatross",
+  "site": "ka-lae",
+  "pad": "lc-2",
+  "startUt": 938240818.8416667,
+  "start": {
+    "kind": "orbit",
+    "bodyId": "earth",
+    "periapsisAltitude": 200000,
+    "apoapsisAltitude": 210000,
+    "inclinationDeg": 20,
+    "lanDeg": 30,
+    "argPeDeg": 40,
+    "trueAnomalyDeg": 10
+  },
+  "stagesAlreadyFired": 4,
+  "target": null,
+  "suggestedLanding": null,
+  "milestones": []
+}

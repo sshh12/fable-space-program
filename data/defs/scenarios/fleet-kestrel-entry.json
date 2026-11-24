@@ -1,0 +1,55 @@
+{
+  "id": "fleet-kestrel-entry",
+  "name": "Kestrel LF: from low orbit to splashdown",
+  "vehicle": "solstice-kestrel",
+  "site": "ka-lae",
+  "pad": "lc-3",
+  "startUt": 938240818.8416667,
+  "start": {
+    "kind": "orbit",
+    "bodyId": "earth",
+    "periapsisAltitude": 200000,
+    "apoapsisAltitude": 210000,
+    "inclinationDeg": 20,
+    "lanDeg": 30,
+    "argPeDeg": 40,
+    "trueAnomalyDeg": 10
+  },
+  "stagesAlreadyFired": 4,
+  "target": null,
+  "suggestedLanding": null,
+  "milestones": [
+    {
+      "id": "DROGUES",
+      "title": "Drogues out",
+      "trigger": {
+        "kind": "chuteDeployed",
+        "mode": "drogue"
+      }
+    },
+    {
+      "id": "MAINS",
+      "title": "Mains out",
+      "trigger": {
+        "kind": "chuteDeployed",
+        "mode": "main"
+      },
+      "after": [
+        "DROGUES"
+      ]
+    },
+    {
+      "id": "SPLASHDOWN",
+      "title": "Splashdown",
+      "trigger": {
+        "kind": "touchdown",
+        "bodyId": "earth",
+        "surface": "water",
+        "settleTime": 5
+      },
+      "after": [
+        "MAINS"
+      ]
+    }
+  ]
+}

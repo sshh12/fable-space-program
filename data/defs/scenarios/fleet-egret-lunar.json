@@ -1,0 +1,57 @@
+{
+  "id": "fleet-egret-lunar",
+  "name": "Egret: from low lunar orbit to the surface and back",
+  "vehicle": "meridian-egret",
+  "site": "ka-lae",
+  "pad": "lc-2",
+  "startUt": 938240818.8416667,
+  "start": {
+    "kind": "orbit",
+    "bodyId": "moon",
+    "periapsisAltitude": 100000,
+    "apoapsisAltitude": 100000,
+    "inclinationDeg": 20,
+    "lanDeg": 30,
+    "argPeDeg": 0,
+    "trueAnomalyDeg": 0
+  },
+  "stagesAlreadyFired": 5,
+  "target": null,
+  "suggestedLanding": null,
+  "milestones": [
+    {
+      "id": "TOUCHDOWN",
+      "title": "Touchdown on the Moon",
+      "trigger": {
+        "kind": "touchdown",
+        "bodyId": "moon",
+        "surface": "land",
+        "settleTime": 5
+      }
+    },
+    {
+      "id": "LUNAR_LIFTOFF",
+      "title": "Lift-off from the Moon",
+      "trigger": {
+        "kind": "liftoffFromSurface",
+        "bodyId": "moon",
+        "minAltitude": 500
+      },
+      "after": [
+        "TOUCHDOWN"
+      ]
+    },
+    {
+      "id": "LUNAR_ORBIT",
+      "title": "Back in lunar orbit",
+      "trigger": {
+        "kind": "orbit",
+        "bodyId": "moon",
+        "minPeriapsisAltitude": 15000
+      },
+      "after": [
+        "LUNAR_LIFTOFF"
+      ]
+    }
+  ]
+}

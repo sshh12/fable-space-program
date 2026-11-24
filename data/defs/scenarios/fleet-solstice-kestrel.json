@@ -1,0 +1,45 @@
+{
+  "id": "fleet-solstice-kestrel",
+  "name": "Solstice / Kestrel LF to low orbit from Ka Lae",
+  "vehicle": "solstice-kestrel",
+  "site": "ka-lae",
+  "pad": "lc-3",
+  "startUt": 938240818.8416667,
+  "start": {
+    "kind": "pad"
+  },
+  "stagesAlreadyFired": 0,
+  "target": null,
+  "suggestedLanding": null,
+  "milestones": [
+    {
+      "id": "LIFTOFF",
+      "title": "Lift-off",
+      "trigger": {
+        "kind": "liftoff"
+      }
+    },
+    {
+      "id": "MAX_Q",
+      "title": "Max Q",
+      "trigger": {
+        "kind": "maxQ"
+      },
+      "after": [
+        "LIFTOFF"
+      ]
+    },
+    {
+      "id": "ORBIT",
+      "title": "In low Earth orbit",
+      "trigger": {
+        "kind": "orbit",
+        "bodyId": "earth",
+        "minPeriapsisAltitude": 160000
+      },
+      "after": [
+        "LIFTOFF"
+      ]
+    }
+  ]
+}
