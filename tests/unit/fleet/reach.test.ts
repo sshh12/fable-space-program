@@ -1,15 +1,17 @@
 /**
- * Reach by refuelling (fleet-data scope E): the Albatross refuelled by the Pelican Heavy depot in a high Earth
- * orbit, against solar-system-sim's deltaVToOrbit on the staged library of 32 bodies. Every body whose margin is
- * positive is held positive; the bodies this fleet cannot close are named here exactly (they go to the user
- * as OPEN_QUESTIONS Q17), so a change in either direction is seen.
+ * Reach by refuelling (fleet-data scope E): every body of the staged 32-body library closes with the Albatross and
+ * a stated number of Pelican Heavy depot flights (reachTable.ts: deltaVToOrbit's legs at their best window over
+ * six years, broken-plane arcs, no aerobraking, finite-burn losses per leg). The margins under 5 % of their cost
+ * are named MARGINAL here exactly, so a change in either direction is seen; they are not flown (hand-off).
+ * And one answer: `analyzeVehicle`'s ladder, given the same reach function, states the same margins.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
-import { reachTable, stagedLibrary, type ReachTable } from './reachTable';
+import { analyzeVehicle } from '@/sim/vessel/analyze';
+import { reachCostFor, reachTable, stagedLibrary, type ReachTable } from './reachTable';
 
-/** Bodies the refuelled profile does not close (fleet-data hand-off, Q17), with their shortfall in m/s at the time of writing. */
-const NOT_CLOSED: Record<string, number> = { charon: -5042, mercury: -1162, mimas: -382, pluto: -4808 };
+/** Bodies whose margin is under 5 % of their cost (fleet-data hand-off: closed on paper, not flown). */
+const MARGINAL = ['dione', 'enceladus', 'io', 'mercury', 'mimas', 'miranda'];
 
 let defs: DefLibrary;
 let table: ReachTable;
@@ -18,30 +20,46 @@ beforeAll(async () => {
   table = reachTable(defs);
 }, 120_000);
 
-describe('reach by refuelling: the Albatross and the Pelican Heavy depot', () => {
+describe('reach by refuelling: the Albatross and the Pelican Heavy depots', () => {
   it('covers every attractor of the staged library but the launch body', () => {
     const attractors = Object.values(defs.bodies).filter((b) => b.gravityRole === 'attractor' && b.id !== 'earth').map((b) => b.id);
     expect(table.rows.map((r) => r.bodyId).sort()).toEqual(attractors.sort());
     expect(attractors.length).toBeGreaterThanOrEqual(31);
   });
 
-  it('the cruiser has 10.9 km/s with full tanks and keeps them full through its ascent', () => {
-    expect(Math.abs(table.cruiserFull - 10900) / 10900).toBeLessThan(0.02);
-    expect(table.cruiserInLowOrbit).toBeCloseTo(table.cruiserFull, 0);
-  });
-
-  it('the depot carries what the cruiser burns on its way to the refuel orbit, with a margin', () => {
-    expect(table.depotLoad).toBeGreaterThan(table.cruiserBurnToRefuel * 1.05);
-  });
-
-  it('gives a positive margin for every body but the ones named for Q17', () => {
+  it('every body closes with a stated number of depot flights (at most two of them as drop tanks)', () => {
     for (const r of table.rows) {
-      if (r.bodyId in NOT_CLOSED) {
-        expect(r.best, r.bodyId).toBeLessThan(0);
-        expect(r.best, r.bodyId).toBeCloseTo(NOT_CLOSED[r.bodyId]!, -2);
-      } else expect(r.best, `${r.bodyId}: margin ${r.best.toFixed(0)}`).toBeGreaterThan(0);
+      expect(r.margin, `${r.bodyId}: margin ${r.margin.toFixed(0)} with ${r.depots} depot flights`).toBeGreaterThan(0);
+      expect(r.depots).toBeLessThanOrEqual(6);
+      if (r.dropTank) expect(r.dropTanks!).toBeLessThanOrEqual(2);
     }
-    const closed = table.rows.filter((r) => r.best > 0).length;
-    console.log(`reach: ${closed} of ${table.rows.length} bodies closed; not closed: ${Object.keys(NOT_CLOSED).join(', ')}`);
+    expect(table.rows.filter((r) => r.marginal).map((r) => r.bodyId).sort()).toEqual(MARGINAL);
+    console.log(`reach: every body closes; depot flights ${table.rows.map((r) => `${r.bodyId} ${r.depots}`).join(', ')}`);
+  });
+
+  it("analyzeVehicle's ladder, given the same reach function, states the table's margins (one answer)", () => {
+    const albatross = defs.vehicles['meridian-albatross']!;
+    const caps = analyzeVehicle(defs, albatross, { reachCost: reachCostFor(defs, table.cruiser), depotPropellants: table.depot.propellants });
+    for (const r of table.rows) {
+      const entry = caps.reach.find((e) => e.bodyId === r.bodyId && e.kind === 'orbit')!;
+      expect(entry, r.bodyId).toBeDefined();
+      if (r.depots === 0) {
+        expect(entry.needsRefuel, r.bodyId).toBe(false);
+        expect(entry.margin, r.bodyId).toBeCloseTo(r.directMargin, 0);
+      } else if (r.singleRefuelMargin >= 0) {
+        expect(entry.needsRefuel, r.bodyId).toBe(true);
+        expect(entry.margin, r.bodyId).toBeCloseTo(r.singleRefuelMargin, 0);
+      } else expect(entry.margin, `${r.bodyId}: a drop tank is the table's, not the ladder's`).toBeLessThan(0);
+    }
+  });
+
+  it('the ladder offers a refuel only to a craft that reaches the refuel orbit and whose propellants a depot carries', () => {
+    const cost = reachCostFor(defs, table.cruiser);
+    const atoll = analyzeVehicle(defs, defs.vehicles['solstice-atoll']!, { reachCost: cost, depotPropellants: table.depot.propellants });
+    expect(atoll.reach.some((e) => e.needsRefuel)).toBe(false);
+    const albatross = analyzeVehicle(defs, defs.vehicles['meridian-albatross']!, { reachCost: cost, depotPropellants: table.depot.propellants });
+    expect(albatross.reach.some((e) => e.needsRefuel)).toBe(true);
+    // Without a reach function the ladder is empty: the costs come from src/sim/nav, which src/sim/vessel may not import.
+    expect(analyzeVehicle(defs, defs.vehicles['meridian-albatross']!).reach).toEqual([]);
   });
 });

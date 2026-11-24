@@ -16,6 +16,13 @@
     "trueAnomalyDeg": 0
   },
   "stagesAlreadyFired": 5,
+  "resources": {
+    "sc-tank": {
+      "LOX": 25672,
+      "CH4": 7131,
+      "RCSProp": 560
+    }
+  },
   "target": null,
   "suggestedLanding": null,
   "milestones": [

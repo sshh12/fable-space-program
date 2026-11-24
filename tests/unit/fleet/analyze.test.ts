@@ -61,18 +61,18 @@ describe('analyzeVehicle: delta-v per stage against the rocket equation by hand 
     near(c.stages[6]!.deltaVVac, rocket(ispOf('lyra-a'), m0, m0 - aProp), 'Heron ascent');
   });
 
-  it('Azimuth 1 / Pathfinder: both stages and the probe (fleet-docking 2.3: 4 205, 6 170, 4 999 m/s)', () => {
+  it('Azimuth 1 / Pathfinder: both stages and the probe (the sheet: 4 205, 6 170, 4 999 m/s; the Wren-1V and the Lyra-K made consistent with their nozzles since)', () => {
     const v = lib.vehicles['azimuth-pathfinder']!;
     const c = analyzeVehicle(lib, v);
     const L = liftoff(v);
     near(c.massWet, L, 'lift-off mass');
     const s1Prop = cap('azimuth-s1');
-    near(c.stages[0]!.deltaVVac, rocket(330, L, L - s1Prop), 'stage 1');
+    near(c.stages[0]!.deltaVVac, rocket(ispOf('wren-1'), L, L - s1Prop), 'stage 1');
     const m0 = L - s1Prop - dry('azimuth-s1') - 5 * dry('wren-1') - dry('azimuth-interstage') - dry('azimuth-fairing');
-    near(c.stages[1]!.deltaVVac, rocket(355, m0, m0 - cap('azimuth-s2')), 'stage 2');
+    // (The upper stage's RCS propellant is not burnt by its engine.)
+    near(c.stages[1]!.deltaVVac, rocket(ispOf('wren-1v'), m0, m0 - cap('azimuth-s2', 'LOX', 'CH4')), 'stage 2');
     const probe = full('pathfinder-bus') + dry('lyra-k');
-    near(c.stages[3]!.deltaVVac, rocket(325, probe, probe - cap('pathfinder-bus')), 'probe');
-    near(c.stages[3]!.deltaVVac, 4999, 'probe against the sheet');
+    near(c.stages[3]!.deltaVVac, rocket(ispOf('lyra-k'), probe, probe - cap('pathfinder-bus')), 'probe');
   });
 
   it('Solstice / Pelican: with a 23 t payload the ideal ascent is about 9.9 km/s (fleet-docking 2.3: 9 910)', () => {
@@ -93,14 +93,18 @@ describe('analyzeVehicle: delta-v per stage against the rocket equation by hand 
     expect(ideal).toBeLessThan(10000);
   });
 
-  it('the Albatross has 10.9 km/s from low Earth orbit (+/- 2 %), and the Egret 6 261 m/s', () => {
-    const alb = analyzeVehicle(lib, lib.vehicles['meridian-albatross']!);
+  it('the Albatross cruiser by hand (corrected masses, four tanks), and the Egret 6 261 m/s', () => {
+    const v = lib.vehicles['meridian-albatross']!;
+    const alb = analyzeVehicle(lib, v);
     const cruiser = alb.stages.find((s) => s.label === 'Cruiser separation')!;
-    expect(Math.abs(cruiser.deltaVVac - 10900) / 10900).toBeLessThan(0.02);
-    expect(cruiser.massStart).toBeCloseTo(146600, 0);
-    // A 20-minute departure burn: the three engines empty the tanks in about 1 224 s.
-    expect(cruiser.burnTime).toBeGreaterThan(1150);
-    expect(cruiser.burnTime).toBeLessThan(1300);
+    // As it leaves the pad: two of its four tanks full (the others are filled at a depot).
+    const loaded = (p: (typeof v.parts)[number]): number => dry(p.def) + (lib.parts[p.def]!.resources ?? []).reduce((s, r) => s + (p.resources?.[r.resource] ?? r.capacity), 0);
+    const ship = v.parts.filter((p) => p.id.startsWith('sc-') && p.id !== 'sc-adapter' && p.id !== 'sc-nose-cap').reduce((s, p) => s + loaded(p), 0);
+    near(cruiser.massStart, ship, 'cruiser mass');
+    const lh2 = 2 * cap('tank-lh2-9m', 'LH2');
+    near(cruiser.deltaVVac, rocket(ispOf('canopus-n'), ship, ship - lh2), 'cruiser');
+    // Three engines at 28.3 kg/s each empty the 90 t aboard in about 18 minutes.
+    near(cruiser.burnTime, lh2 / (3 * 250000 / (900 * G0)), 'burn time');
     const egret = analyzeVehicle(lib, lib.vehicles['meridian-egret']!);
     near(egret.stages.find((s) => s.label === 'Ferry separation')!.deltaVVac, 6261, 'Egret');
   });
@@ -138,11 +142,13 @@ describe('analyzeVehicle: the read-outs of the hangar', () => {
     expect(egret).toMatchObject({ firstPerson: 'cockpit', cockpit: 'kestrel', remote: true, legs: true, parachutes: false, entrySpeedLimit: null });
     const albatross = analyzeVehicle(lib, lib.vehicles['meridian-albatross']!);
     expect(albatross.transferable).toContain('LH2');
-    expect(albatross.ports.map((p) => `${p.part}:${p.portType}`)).toEqual(['sc-nose-port:c', 'sc-side-port:h']);
+    expect(albatross.ports.map((p) => `${p.part}:${p.portType}`)).toEqual(['sc-nose-port:c', 'sc-side-port:h', 'sc-side-port-2:h']);
   });
 
-  it('the can-reach ladder comes from the bodies of the library, nearest first, never authored', () => {
-    const c = analyzeVehicle(lib, lib.vehicles['azimuth-pathfinder']!);
+  it('the can-reach ladder: every attractor but the launch body at the costs of the reach function the caller gives, nearest first', () => {
+    const cost = (id: string): { flyby: number; orbit: number } => ({ flyby: lib.bodies[id]!.radius / 1000, orbit: lib.bodies[id]!.radius / 500 });
+    const c = analyzeVehicle(lib, lib.vehicles['azimuth-pathfinder']!, { reachCost: (id) => cost(id) });
+    expect(c.reach.length).toBe(2 * Object.values(lib.bodies).filter((b) => b.gravityRole === 'attractor' && b.id !== 'earth').length);
     const bodies = new Set(c.reach.map((r) => r.bodyId));
     for (const b of bodies) expect(lib.bodies[b]).toBeDefined();
     for (let i = 1; i < c.reach.length; i++) expect(c.reach[i]!.deltaVRequired).toBeGreaterThanOrEqual(c.reach[i - 1]!.deltaVRequired);

@@ -2,7 +2,7 @@
   "id": "albatross-hab",
   "name": "Albatross habitat (crew four, remote command, control moment gyros)",
   "category": "habitat",
-  "dryMass": 9000,
+  "dryMass": 22000,
   "comOffset": [
     0,
     4,
@@ -391,9 +391,9 @@
     {
       "type": "reactionWheel",
       "torque": [
-        30000,
-        30000,
-        30000
+        4000,
+        4000,
+        4000
       ]
     },
     {

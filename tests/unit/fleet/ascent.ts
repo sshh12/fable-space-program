@@ -6,6 +6,7 @@
  */
 import { expect } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
+import type { TerrainProvider } from '@/core/contracts/terrain';
 import { createAscentPilot } from '@/pilot/generic/ascent';
 import { analyzeVehicle } from '@/sim/vessel/analyze';
 import { CLEARANCE_WINDOW, fly } from './flights';
@@ -27,16 +28,17 @@ export function weakestJoint(defs: DefLibrary, vehicleId: string): number {
   return min;
 }
 
-export async function ascentToOrbit(defs: DefLibrary, vehicleId: string, separateInOrbit: boolean): Promise<string> {
+export async function ascentToOrbit(defs: DefLibrary, vehicleId: string, separateInOrbit: boolean, opts: { scenario?: string; terrain?: TerrainProvider } = {}): Promise<string> {
   const caps = analyzeVehicle(defs, defs.vehicles[vehicleId]!);
   const pilot = createAscentPilot(caps, { separateInOrbit });
-  const rec = await fly(defs, `fleet-${vehicleId}`, pilot, { maxSimTime: 2400 });
+  const rec = await fly(defs, opts.scenario ?? `fleet-${vehicleId}`, pilot, { maxSimTime: 2400, ...(opts.terrain ? { terrain: opts.terrain } : {}) });
   expect(rec.result.failure, vehicleId).toBeNull();
   expect(rec.result.reason, vehicleId).toBe('done');
   expect(pilot.orbitUt, vehicleId).not.toBeNull();
   const r = rec.final.readouts;
   expect(r.periapsisAltitude, vehicleId).toBeGreaterThanOrEqual(160000);
-  expect(r.apoapsisAltitude, vehicleId).toBeLessThan(400000);
+  // Scope D: a 185-250 km orbit.
+  expect(r.apoapsisAltitude, vehicleId).toBeLessThanOrEqual(250000);
   // Max-q under the structural limits of the stack: q x angle of attack against its weakest joint.
   const weakest = weakestJoint(defs, vehicleId);
   expect(rec.maxQAlpha, vehicleId).toBeLessThan(weakest);

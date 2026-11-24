@@ -49,8 +49,8 @@ export function fleetTerrain(defs: DefLibrary): TerrainProvider {
 }
 
 /** Fly `pilot` on the scenario and watch every separation for CLEARANCE_WINDOW seconds. */
-export async function fly(defs: DefLibrary, scenarioId: string, pilot: Pilot, opts: { maxSimTime: number; until?: (s: SimSnapshot) => boolean }): Promise<FlightRecord> {
-  const session = createSession(defs, scenarioId, { terrain: fleetTerrain(defs) });
+export async function fly(defs: DefLibrary, scenarioId: string, pilot: Pilot, opts: { maxSimTime: number; until?: (s: SimSnapshot) => boolean; terrain?: TerrainProvider }): Promise<FlightRecord> {
+  const session = createSession(defs, scenarioId, { terrain: opts.terrain ?? fleetTerrain(defs) });
   const diag = diagnosticsOf(session);
   const separations: SeparationRecord[] = [];
   let maxQ = 0;

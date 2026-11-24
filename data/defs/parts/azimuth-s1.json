@@ -5,25 +5,25 @@
   "dryMass": 2450,
   "comOffset": [
     0,
-    6.975,
+    7.65,
     0
   ],
   "inertiaShape": {
     "kind": "shellCylinder",
     "r": 1.1,
-    "h": 15.5
+    "h": 17
   },
   "bounds": {
     "radius": 1.1,
     "yMin": 0,
-    "yMax": 15.5
+    "yMax": 17
   },
   "attachNodes": [
     {
       "id": "top",
       "pos": [
         0,
-        15.5,
+        17,
         0
       ],
       "dir": [
@@ -141,21 +141,21 @@
     {
       "resource": "LOX",
       "capacity": 34434.782609,
-      "tankBottomY": 1,
-      "tankHeight": 8.6
+      "tankBottomY": 0.6,
+      "tankHeight": 9.3
     },
     {
       "resource": "CH4",
       "capacity": 9565.217391,
-      "tankBottomY": 9.6,
-      "tankHeight": 5.4
+      "tankBottomY": 9.9,
+      "tankHeight": 6.9
     }
   ],
   "aero": [
     {
       "kind": "axisymBody",
       "refArea": 3.801327,
-      "length": 15.5,
+      "length": 17,
       "diameter": 2.2,
       "cdAxialFwd": [
         [
@@ -240,7 +240,7 @@
   "thermal": {
     "surfaces": [
       {
-        "area": 110.929637,
+        "area": 121.296892,
         "normal": "axisym",
         "noseRadius": 1.1,
         "emissivity": 0.8,
@@ -307,7 +307,7 @@
     {
       "pos": [
         0,
-        15.5,
+        3.4,
         1.1
       ],
       "radius": 0.05,
@@ -316,7 +316,7 @@
     {
       "pos": [
         0.952628,
-        15.5,
+        3.4,
         0.55
       ],
       "radius": 0.05,
@@ -325,7 +325,7 @@
     {
       "pos": [
         0.952628,
-        15.5,
+        3.4,
         -0.55
       ],
       "radius": 0.05,
@@ -334,7 +334,7 @@
     {
       "pos": [
         0,
-        15.5,
+        3.4,
         -1.1
       ],
       "radius": 0.05,
@@ -343,7 +343,7 @@
     {
       "pos": [
         -0.952628,
-        15.5,
+        3.4,
         -0.55
       ],
       "radius": 0.05,
@@ -352,7 +352,223 @@
     {
       "pos": [
         -0.952628,
-        15.5,
+        3.4,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        6.8,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        6.8,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        6.8,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        6.8,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        6.8,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        6.8,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        10.2,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        10.2,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        10.2,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        10.2,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        10.2,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        10.2,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        13.6,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        13.6,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        13.6,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        13.6,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        13.6,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        13.6,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        17,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        17,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        17,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        17,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        17,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        17,
         0.55
       ],
       "radius": 0.05,
@@ -363,7 +579,7 @@
     {
       "pos": [
         0,
-        4.65,
+        5.1,
         0
       ],
       "radius": 0.99
@@ -371,7 +587,7 @@
     {
       "pos": [
         0,
-        10.85,
+        11.9,
         0
       ],
       "radius": 0.99

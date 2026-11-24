@@ -173,7 +173,7 @@
           "LH2",
           "RCSProp"
         ],
-        "maxRate": 300
+        "maxRate": 40
       }
     },
     {
@@ -212,7 +212,7 @@
           "CH4",
           "RCSProp"
         ],
-        "maxRate": 50
+        "maxRate": 10
       }
     }
   ],

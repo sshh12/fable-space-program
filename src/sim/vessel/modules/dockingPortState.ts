@@ -18,7 +18,7 @@
  * merge. Arming is the owner's command (`armPort`) and persists. Pure functions of the vessel.
  */
 import type { DockingPortModuleDef } from '@/core/contracts/defs';
-import type { DockingPortState, ModuleState } from '@/core/contracts/sim';
+import type { DockingPortState } from '@/core/contracts/sim';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import type { DockLink, PartRuntime, Vessel } from '../types';
@@ -29,14 +29,15 @@ const SAME_POINT = 1e-3;
 /** The docking-port modules of a part with their module indices (empty for a part without a port). */
 export function portModulesOf(part: PartRuntime): { module: DockingPortModuleDef; index: number }[] {
   const out: { module: DockingPortModuleDef; index: number }[] = [];
-  const modules = part.def.modules as readonly { type: string }[];
-  for (let m = 0; m < modules.length; m++) if (modules[m]!.type === 'dockingPort') out.push({ module: modules[m] as DockingPortModuleDef, index: m });
+  part.def.modules.forEach((m, index) => {
+    if (m.type === 'dockingPort') out.push({ module: m, index });
+  });
   return out;
 }
 
 /** The stored state of module `index` of a part, which must be a docking port. */
 export function portStateAt(part: PartRuntime, index: number): DockingPortState {
-  const s = part.modules[index] as unknown as DockingPortState | undefined;
+  const s = part.modules[index];
   if (!s || s.type !== 'dockingPort') throw new Error(`part "${part.instanceId}": module ${index} is not a docking port`);
   return s;
 }
@@ -44,11 +45,6 @@ export function portStateAt(part: PartRuntime, index: number): DockingPortState 
 /** The state a port module starts with: disarmed and free (refreshPortStates fills in what the vessel says). */
 export function initialPortState(): DockingPortState {
   return { type: 'dockingPort', state: 'disabled', armed: false, peer: null, progress: 0 };
-}
-
-/** The same port state as a member of the part's module-state list (the list's element type does not name the port yet: request fleet-data-1). */
-export function asModuleState(state: DockingPortState): ModuleState {
-  return state as unknown as ModuleState;
 }
 
 /** A point of a part's frame in the vessel frame. */
@@ -81,7 +77,8 @@ export interface PortConditions {
 
 export function portConditions(vessel: Vessel, partIndex: number, index: number): PortConditions {
   const part = vessel.parts[partIndex]!;
-  const module = part.def.modules[index] as unknown as DockingPortModuleDef;
+  const module = part.def.modules[index];
+  if (module?.type !== 'dockingPort') throw new Error(`part "${part.instanceId}": module ${index} is not a docking port`);
   const state = portStateAt(part, index);
   const face = facePoint(part, module);
   let link: DockLink | null = null;

@@ -48,6 +48,13 @@ const HIGH_Q = 6000;
 const MAX_AOA = deg(2);
 /** From the ground of an airless body: straight up this high (m) before the closed loop steers. */
 const SURFACE_CLEAR_HEIGHT = 150;
+/** The apoapsis may stand this far (m) above the target altitude before the climb is aimed lower. */
+const APOAPSIS_BAND = 15000;
+/** A coast to the apoapsis is taken above this altitude (m) and when the apoapsis is at least this far ahead (s). */
+const COAST_ALTITUDE = 80000;
+const COAST_MIN_TIME = 60;
+/** The circularisation burns only with the nose within this of the horizon (rad). */
+const ALIGNED = deg(4);
 
 export class AscentPilot extends GenericPilot {
   private h0 = 0;
@@ -160,10 +167,60 @@ export class AscentPilot extends GenericPilot {
           if (this.stage('separation in orbit')) this.separationUt = this.ut;
           return;
         }
-        if (!this.separateInOrbit) this.finish(`in orbit: periapsis ${(this.rd.periapsisAltitude / 1000).toFixed(1)} km, apoapsis ${(this.rd.apoapsisAltitude / 1000).toFixed(1)} km`);
+        // Nothing to separate (or not asked to): done.
+        if (!this.separateInOrbit || this.stageCap(this.staged) === null) this.finish(`in orbit: periapsis ${(this.rd.periapsisAltitude / 1000).toFixed(1)} km, apoapsis ${(this.rd.apoapsisAltitude / 1000).toFixed(1)} km`);
+        return;
+      }
+      case 'coast': {
+        // Engines off to the apoapsis, nose along the horizon; light them when half the circularisation burn is left before it.
+        this.out.throttle = 0;
+        this.ensureRcs(true);
+        const pro = horizontalOf(this.v.v, up, heading);
+        this.pointAt(pro, { dorsal: up });
+        const burn = this.circularisationDeltaV() / Math.max(0.05, this.lastAccel);
+        const tta = this.rd.timeToApoapsis ?? 0;
+        if (tta <= 0.5 * burn + 2 || this.rd.verticalSpeed < 0) this.go('circularise', 900, `circularise: ${this.circularisationDeltaV().toFixed(0)} m/s in about ${burn.toFixed(0)} s`);
+        return;
+      }
+      case 'circularise': {
+        const pro = horizontalOf(this.v.v, up, heading);
+        const err = this.pointAt(pro, { dorsal: up });
+        // The lever that gives the speed still missing in about 5 s, under the g limit (a nearly empty stage has much thrust).
+        const full = this.rd.throttle > 0.05 && this.thrustAccel() > 0 ? this.thrustAccel() / this.rd.throttle : this.lastAccel;
+        // (Nothing until the nose is on the horizon: a burn off it would raise the far side of the orbit.)
+        this.out.throttle = err > ALIGNED ? 0 : Math.max(0.05, Math.min(this.periapsisLever(), this.circularisationDeltaV() / (Math.max(full, 0.05) * 5)));
+        if (this.rd.periapsisAltitude >= this.cutoffPeriapsis) {
+          this.out.throttle = 0;
+          this.orbitUt = this.ut;
+          this.go('orbit', 600, `orbit: periapsis ${(this.rd.periapsisAltitude / 1000).toFixed(1)} km, apoapsis ${(this.rd.apoapsisAltitude / 1000).toFixed(1)} km`);
+        } else if (this.phaseTime > BURNOUT_GRACE && this.burntOut()) {
+          // (The engines relight at the start of the burn: no thrust for its first seconds is not a burn-out.)
+          if (this.nextPropulsive() < 0) return this.fail(`out of stages before orbit (periapsis ${(this.rd.periapsisAltitude / 1000).toFixed(1)} km)`);
+          this.out.throttle = 0;
+          this.stage('burn-out');
+        }
         return;
       }
     }
+  }
+
+  /** Last acceleration seen with the engines making thrust, m/s^2 (for the circularisation's burn time). */
+  private lastAccel = 1;
+
+  /** Speed missing at the apoapsis for a circular orbit there, m/s (vis-viva on the read-outs' apsides). */
+  private circularisationDeltaV(): number {
+    const mu = this.muOfBody();
+    const R = v3.len(this.v.r) - this.rd.altitudeAsl;
+    const ra = R + this.rd.apoapsisAltitude;
+    const a = R + 0.5 * (this.rd.apoapsisAltitude + this.rd.periapsisAltitude);
+    return Math.max(0, Math.sqrt(mu / ra) - Math.sqrt(Math.max(0, mu * (2 / ra - 1 / a))));
+  }
+
+  /** The throttle near the end of an insertion: gentle as the periapsis comes close (it rises fast at orbital speed). */
+  private periapsisLever(): number {
+    const short = this.cutoffPeriapsis - this.rd.periapsisAltitude;
+    const near = short < 60000 ? Math.max(0.25, short / 60000) : 1;
+    return Math.min(this.limitedLever(this.maxG), near);
   }
 
   /** The nose no further than MAX_AOA from the airflow. */
@@ -178,6 +235,13 @@ export class AscentPilot extends GenericPilot {
   }
 
   private upper(heading: ReturnType<typeof above>, up: ReturnType<typeof above>): void {
+    if (this.thrustAccel() > 0) this.lastAccel = this.thrustAccel();
+    // A stage with thrust to spare puts the apoapsis on the target out of the air, coasts to it and circularises.
+    if (this.caps.rcs && this.rd.apoapsisAltitude >= this.targetAltitude && this.rd.altitudeAsl > COAST_ALTITUDE && (this.rd.timeToApoapsis ?? 0) > COAST_MIN_TIME && this.rd.periapsisAltitude < this.cutoffPeriapsis) {
+      this.out.throttle = 0;
+      this.go('coast', 1800, `coast to the apoapsis at ${(this.rd.apoapsisAltitude / 1000).toFixed(1)} km`);
+      return;
+    }
     if (this.rd.periapsisAltitude >= this.cutoffPeriapsis) {
       this.out.throttle = 0;
       this.orbitUt = this.ut;
@@ -187,7 +251,11 @@ export class AscentPilot extends GenericPilot {
     const q = this.rd.dynamicPressure;
     const r = v3.len(this.v.r);
     const mu = this.muOfBody();
-    const sinPitch = ascentSinPitch({ mu, r, h: this.rd.altitudeAsl, hTarget: this.targetAltitude, vr: this.rd.verticalSpeed, vh: this.rd.horizontalSpeed, thrustAccel: this.thrustAccel(), tauH: 90, tauV: 12, vrMin: -60, vrMax: 450, sinMin: -0.3, sinMax: 0.92 });
+    // Once the apoapsis is above the target band, aim the climb lower by as much: a stage with much thrust then
+    // spends it horizontally, and the orbit closes near the target instead of high above it.
+    const over = Math.max(0, this.rd.apoapsisAltitude - (this.targetAltitude + APOAPSIS_BAND));
+    const hTarget = this.targetAltitude - Math.min(over, 0.5 * this.targetAltitude);
+    const sinPitch = ascentSinPitch({ mu, r, h: this.rd.altitudeAsl, hTarget, vr: this.rd.verticalSpeed, vh: this.rd.horizontalSpeed, thrustAccel: this.thrustAccel(), tauH: 90, tauV: 12, vrMin: -60, vrMax: 450, sinMin: -0.3, sinMax: 0.92 });
     let dir = above(Math.asin(sinPitch), heading, up);
     if (q > HIGH_Q) dir = this.withinAirflow(dir);
     this.pointAt(dir, { dorsal: above(Math.asin(sinPitch) + Math.PI / 2, heading, up) });

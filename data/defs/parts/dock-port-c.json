@@ -234,7 +234,7 @@
           "CH4",
           "RCSProp"
         ],
-        "maxRate": 50
+        "maxRate": 10
       }
     }
   ],

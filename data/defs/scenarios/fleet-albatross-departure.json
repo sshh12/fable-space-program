@@ -1,6 +1,6 @@
 {
   "id": "fleet-albatross-departure",
-  "name": "Albatross: the departure burn from low Earth orbit",
+  "name": "Albatross: the departure burn from low Earth orbit, all four tanks full",
   "vehicle": "meridian-albatross",
   "site": "ka-lae",
   "pad": "lc-2",
@@ -16,6 +16,14 @@
     "trueAnomalyDeg": 10
   },
   "stagesAlreadyFired": 4,
+  "resources": {
+    "sc-tank-3": {
+      "LH2": 45000
+    },
+    "sc-tank-4": {
+      "LH2": 45000
+    }
+  },
   "target": null,
   "suggestedLanding": null,
   "milestones": []

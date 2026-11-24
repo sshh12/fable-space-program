@@ -28,11 +28,14 @@ describe('beyond the ascent', () => {
     expect(rec.active?.situation).toBe('splashed');
     expect(rec.final.mission.crewAlive).toBe(true);
     expect(rec.final.milestones.map((m) => m.id)).toEqual(expect.arrayContaining(['DROGUES', 'MAINS', 'SPLASHDOWN']));
-    // Under the mains a capsule meets the water at a few m/s.
-    expect(pilot.splashSpeed).toBeLessThan(12);
+    // Under the mains a capsule meets the water at about 8 m/s (taken at first contact); on drogues alone it would be
+    // several times that, and a failed canopy is a damage event.
+    expect(pilot.contactSpeed).not.toBeNull();
+    expect(pilot.contactSpeed!).toBeLessThan(10);
+    expect(rec.damage.filter((d) => d.type === 'chuteFailed')).toEqual([]);
     // Nothing of the capsule was lost (what burns up is the service module, left behind before the air).
     expect(rec.damage.filter((d) => d.detail.includes('/sc-capsule'))).toEqual([]);
-    console.log(`solstice-kestrel entry: splashdown at ${pilot.splashSpeed.toFixed(1)} m/s, ${rec.result.simTime.toFixed(0)} s after the start; peak q ${(rec.maxQ / 1000).toFixed(1)} kPa`);
+    console.log(`solstice-kestrel entry: water entry at ${pilot.contactSpeed!.toFixed(2)} m/s, ${rec.result.simTime.toFixed(0)} s after the start; peak q ${(rec.maxQ / 1000).toFixed(1)} kPa`);
   }, 300_000);
 
   it('the Egret, from low lunar orbit, lands and returns to orbit', async () => {
@@ -49,16 +52,19 @@ describe('beyond the ascent', () => {
     console.log(`meridian-egret lunar: touchdown at ${pilot.touchdownSpeed!.toFixed(2)} m/s; back in orbit ${(rec.final.readouts.periapsisAltitude / 1000).toFixed(1)} x ${(rec.final.readouts.apoapsisAltitude / 1000).toFixed(1)} km with ${rec.final.readouts.deltaVTotal.toFixed(0)} m/s left`);
   }, 300_000);
 
-  it('the Albatross: a departure burn of about 20 minutes completes at 4x and gives 10.9 km/s (+/- 2 %)', async () => {
+  it('the Albatross with all four tanks full: its 35-minute departure burn completes at 4x and gives its delta-v (+/- 2 %)', async () => {
     const caps = analyzeVehicle(defs, defs.vehicles['meridian-albatross']!);
     const pilot = new DeparturePilot(caps);
     const rec = await fly(defs, 'fleet-albatross-departure', pilot, { maxSimTime: 3600 });
     expect(rec.result.failure).toBeNull();
     expect(pilot.maxWarpIndex).toBe(MAX_PHYSICS_WARP_INDEX);
     const burn = pilot.burnEndUt! - pilot.burnStartUt!;
-    expect(burn).toBeGreaterThan(1150);
-    expect(burn).toBeLessThan(1320);
-    expect(Math.abs(pilot.deltaV - 10900) / 10900).toBeLessThan(0.02);
+    // 180 t of LH2 at 85 kg/s (three engines), and the rocket equation over the masses the read-outs showed.
+    expect(burn).toBeGreaterThan(2050);
+    expect(burn).toBeLessThan(2200);
+    const ideal = pilot.idealDeltaV(900);
+    expect(Math.abs(ideal - 10301) / 10301).toBeLessThan(0.01);
+    expect(Math.abs(pilot.deltaV - ideal) / ideal).toBeLessThan(0.02);
     expect(rec.damage).toEqual([]);
     console.log(`meridian-albatross departure: ${burn.toFixed(0)} s at warp index ${pilot.maxWarpIndex}, ${pilot.deltaV.toFixed(0)} m/s; ${rec.active?.situation}`);
   }, 300_000);

@@ -291,9 +291,9 @@
     {
       "type": "reactionWheel",
       "torque": [
-        60,
-        60,
-        60
+        4,
+        4,
+        4
       ]
     },
     {

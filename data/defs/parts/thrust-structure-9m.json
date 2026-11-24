@@ -2,7 +2,7 @@
   "id": "thrust-structure-9m",
   "name": "Nuclear thrust structure, 9 m (three engine mounts, shadow shield ring)",
   "category": "structural",
-  "dryMass": 950,
+  "dryMass": 2400,
   "comOffset": [
     0,
     0.8,

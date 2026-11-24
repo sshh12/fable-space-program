@@ -12,7 +12,15 @@
     {
       "assembly": "albatross",
       "prefix": "sc",
-      "parent": null
+      "parent": null,
+      "resources": {
+        "sc-tank-3": {
+          "LH2": 0
+        },
+        "sc-tank-4": {
+          "LH2": 0
+        }
+      }
     }
   ],
   "padInterface": {

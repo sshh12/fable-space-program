@@ -27,7 +27,6 @@ import { G0 } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
 import { stagnationFlux } from '../dynamics/thermal';
 import { buildVehicle } from './assemble';
-import { REACH_ASSUMPTIONS, refuelOrbitPerigeeSpeed, transferCost, type ReachAssumptions } from './analyzeReach';
 import { portConditions, portModulesOf } from './modules/dockingPortState';
 import { applyStageInstant } from './staging';
 import { legFootLocal, structureOf, type EngineRef } from './structure';
@@ -35,6 +34,8 @@ import type { PartRuntime, Vessel } from './types';
 
 /** Gravity, drag and steering losses of a hand-flown ascent to low orbit, m/s (see the header). */
 export const ASCENT_LOSS = 2000;
+/** Altitude of the low parking orbit the ascent aims at, m. */
+export const PARKING_ALTITUDE = 200000;
 /** Flight-path angle of the design entry for the entry speed limit (a shallow return), deg. */
 export const ENTRY_FLIGHT_PATH_DEG = 6;
 
@@ -43,14 +44,21 @@ export interface AnalysisOptions {
   rules?: UniverseRules;
   /** The body it launches from (default: the body of the library's first site by id). */
   launchBodyId?: string;
-  reach?: ReachAssumptions;
+  /** Altitude of the low parking orbit about the launch body, m (default 200 km). */
+  parkingAltitude?: number;
+  /**
+   * The propellants a depot of the universe carries through a port (what the caller knows of the depots that exist,
+   * e.g. `analyzeVehicle(defs, depot).transferable`). The refuelled profile is offered only to a craft whose main
+   * propellants are all among them and that can take them through a port of its own. Default: none.
+   */
+  depotPropellants?: readonly string[];
   /**
    * What reaching a body costs from low orbit of the launch body, passing it ('flyby') and captured about it
-   * ('orbit'), m/s; efuelled: departing from the depot's high orbit with full tanks. Default: the patched-conic
-   * estimate of analyzeReach.ts. A caller outside src/sim/vessel passes solar-system-sim's deltaVToOrbit
-   * (src/sim/nav may not be imported from here: ARCHITECTURE 2, tools/dev/boundaries.test.ts).
+   * ('orbit'), m/s; efuelled: departing from the depot's high orbit with full tanks. Without it the ladder is
+   * empty: the costs are solar-system-sim's deltaVToOrbit (src/sim/nav), which src/sim/vessel may not import
+   * (ARCHITECTURE 2); the caller passes it with its options (tests/unit/fleet/reachTable.ts, reachCostFor).
    */
-  reachCost?: (bodyId: string, refuelled: boolean) => { flyby: number; orbit: number } | null;
+  reachCost?: (bodyId: string, refuelled: boolean) => ReachCost | null;
 }
 
 /** The library with `vehicle` in it (the definitions are shared, nothing is copied or written). */
@@ -205,8 +213,8 @@ function snapshotOf(v: Vessel): Vessel {
 }
 
 /** Low orbit of the launch body from its first site: circular speed less the ground's eastward speed, plus the ascent loss. */
-export function deltaVToLowOrbit(defs: DefLibrary, body: BodyDef, a: ReachAssumptions = REACH_ASSUMPTIONS): number {
-  const r = body.radius + a.parkingAltitude;
+export function deltaVToLowOrbit(defs: DefLibrary, body: BodyDef, parkingAltitude = PARKING_ALTITUDE): number {
+  const r = body.radius + parkingAltitude;
   const site = Object.values(defs.sites).filter((s) => s.bodyId === body.id).sort((x, y) => (x.id < y.id ? -1 : 1))[0];
   const rate = body.rotation.mode === 'fixedRate' ? (body.rotation.rateDegPerDay * Math.PI) / 180 / 86400 : 0;
   const ground = site ? rate * body.radius * Math.cos((site.location.latDeg * Math.PI) / 180) : 0;
@@ -329,7 +337,6 @@ function padClassFor(vehicle: VehicleDef, mass: number, diameter: number, rules?
 export function analyzeVehicle(defs: DefLibrary, vehicle: VehicleDef, options: AnalysisOptions = {}): VehicleCapabilities {
   const lib = withVehicle(defs, vehicle);
   const body = launchBodyOf(lib, options.launchBodyId);
-  const reachAssumptions = options.reach ?? REACH_ASSUMPTIONS;
   const pad = buildVehicle(lib, vehicle.id);
   structureOf(pad);
   const clampMass = pad.parts.filter(isClamp).reduce((s, p) => s + partMass(p), 0);
@@ -353,7 +360,7 @@ export function analyzeVehicle(defs: DefLibrary, vehicle: VehicleDef, options: A
   }));
   const deltaVTotal = stages.reduce((s, x) => s + x.deltaVVac, 0);
   const ideal = idealDeltaV(stages);
-  const toOrbit = deltaVToLowOrbit(lib, body, reachAssumptions);
+  const toOrbit = deltaVToLowOrbit(lib, body, options.parkingAltitude);
   const deltaVInOrbit = ideal >= toOrbit ? ideal - toOrbit : null;
   // The craft that goes on after the ascent: the vessel when its last engine is lit.
   const lastLit = lastIndex(burns, (b) => b.thrustVac > 0);
@@ -380,8 +387,10 @@ export function analyzeVehicle(defs: DefLibrary, vehicle: VehicleDef, options: A
   for (const p of craft.parts) for (const r of p.def.resources ?? []) if (r.transferable !== false && carried.has(r.resource)) held.add(r.resource);
   const transferable = [...held].sort();
   const mainPropellants = new Set(structureOf(craft).engines.filter((e) => !e.def.fixedBurn).flatMap((e) => e.def.propellants.map((p) => p.resource)));
-  const refillable = mainPropellants.size > 0 && [...mainPropellants].every((r) => held.has(r));
-  const reach = reachLadder(lib, body.id, deltaVInOrbit ?? ideal - toOrbit, refillable ? fullCraftDv : null, reachAssumptions, options.reachCost);
+  // Refuelled: the craft takes its main propellants through a port of its own, and a depot carries them.
+  const depot = new Set(options.depotPropellants ?? []);
+  const refillable = mainPropellants.size > 0 && [...mainPropellants].every((r) => held.has(r) && depot.has(r));
+  const reach = reachLadder(lib, body.id, deltaVInOrbit ?? ideal - toOrbit, refillable ? fullCraftDv : null, options.reachCost);
   return {
     vehicleId: vehicle.id,
     massWet,
@@ -427,20 +436,34 @@ function fullTankDeltaV(defs: DefLibrary, vehicle: VehicleDef, k: number): numbe
   return burnLitEngines(vessel).deltaVVac;
 }
 
-/** The can-reach ladder, nearest first: every attractor of the library other than the launch body, passed and captured. */
-function reachLadder(defs: DefLibrary, launchId: string, available: number, refilled: number | null, a: ReachAssumptions, cost?: AnalysisOptions['reachCost']): ReachEntry[] {
+/** What reaching a body costs from low orbit of the launch body, m/s (`AnalysisOptions.reachCost`). */
+export interface ReachCost {
+  flyby: number;
+  orbit: number;
+  /** The refuelled profile: what is burnt from low orbit to the refuel orbit, from the tanks the ascent left (`flyby` and `orbit` are then from the refuel orbit, with full tanks). */
+  beforeRefuel?: number;
+}
+
+/**
+ * The can-reach ladder, nearest first: every attractor of the library other than the launch body, passed and
+ * captured, at the costs the caller's reach function states (src/sim/nav may not be imported from here; without
+ * one the ladder is empty). The refuelled profile counts only when the craft can reach the refuel orbit with what
+ * the ascent left, and its margin is the smaller of the two slacks.
+ */
+function reachLadder(defs: DefLibrary, launchId: string, available: number, refilled: number | null, cost?: AnalysisOptions['reachCost']): ReachEntry[] {
   const out: ReachEntry[] = [];
-  const heo = refilled !== null ? refuelOrbitPerigeeSpeed(defs, launchId, a) : null;
+  if (!cost) return out;
   for (const b of Object.values(defs.bodies).sort((x, y) => (x.id < y.id ? -1 : 1))) {
     if (b.id === launchId || b.gravityRole !== 'attractor') continue;
-    const direct = cost ? cost(b.id, false) : transferCost(defs, launchId, b.id, a);
+    const direct = cost(b.id, false);
     if (!direct) continue;
-    const viaDepot = refilled !== null && heo ? (cost ? cost(b.id, true) : transferCost(defs, launchId, b.id, a, heo.speed)) : null;
+    const viaDepot = refilled !== null ? cost(b.id, true) : null;
     for (const kind of ['flyby', 'orbit'] as const) {
       const need = direct[kind];
       const margin = available - need;
-      const refMargin = viaDepot ? refilled! - viaDepot[kind] : -Infinity;
-      if (margin < 0 && refMargin >= 0) out.push({ bodyId: b.id, kind, deltaVRequired: viaDepot![kind], margin: refMargin, needsRefuel: true });
+      const before = viaDepot?.beforeRefuel ?? 0;
+      const refMargin = viaDepot && available >= before ? Math.min(available - before, refilled! - viaDepot[kind]) : -Infinity;
+      if (margin < 0 && refMargin >= 0) out.push({ bodyId: b.id, kind, deltaVRequired: before + viaDepot![kind], margin: refMargin, needsRefuel: true });
       else out.push({ bodyId: b.id, kind, deltaVRequired: need, margin, needsRefuel: false });
     }
   }

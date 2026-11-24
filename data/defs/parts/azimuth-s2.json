@@ -5,25 +5,25 @@
   "dryMass": 790,
   "comOffset": [
     0,
-    1.89,
+    2.07,
     0
   ],
   "inertiaShape": {
     "kind": "shellCylinder",
     "r": 1.1,
-    "h": 4.2
+    "h": 4.6
   },
   "bounds": {
     "radius": 1.1,
     "yMin": 0,
-    "yMax": 4.2
+    "yMax": 4.6
   },
   "attachNodes": [
     {
       "id": "top",
       "pos": [
         0,
-        4.2,
+        4.6,
         0
       ],
       "dir": [
@@ -81,21 +81,27 @@
     {
       "resource": "LOX",
       "capacity": 8217.391304,
-      "tankBottomY": 0.5,
-      "tankHeight": 2
+      "tankBottomY": 0.4,
+      "tankHeight": 2.2
     },
     {
       "resource": "CH4",
       "capacity": 2282.608696,
-      "tankBottomY": 2.5,
-      "tankHeight": 1.5
+      "tankBottomY": 2.6,
+      "tankHeight": 1.75
+    },
+    {
+      "resource": "RCSProp",
+      "capacity": 60,
+      "tankBottomY": 4.2,
+      "tankHeight": 0.2
     }
   ],
   "aero": [
     {
       "kind": "axisymBody",
       "refArea": 3.801327,
-      "length": 4.2,
+      "length": 4.6,
       "diameter": 2.2,
       "cdAxialFwd": [
         [
@@ -180,7 +186,7 @@
   "thermal": {
     "surfaces": [
       {
-        "area": 32.829643,
+        "area": 35.594245,
         "normal": "axisym",
         "noseRadius": 1.1,
         "emissivity": 0.8,
@@ -247,7 +253,7 @@
     {
       "pos": [
         0,
-        4.2,
+        2.3,
         1.1
       ],
       "radius": 0.05,
@@ -256,7 +262,7 @@
     {
       "pos": [
         0.952628,
-        4.2,
+        2.3,
         0.55
       ],
       "radius": 0.05,
@@ -265,7 +271,7 @@
     {
       "pos": [
         0.952628,
-        4.2,
+        2.3,
         -0.55
       ],
       "radius": 0.05,
@@ -274,7 +280,7 @@
     {
       "pos": [
         0,
-        4.2,
+        2.3,
         -1.1
       ],
       "radius": 0.05,
@@ -283,7 +289,7 @@
     {
       "pos": [
         -0.952628,
-        4.2,
+        2.3,
         -0.55
       ],
       "radius": 0.05,
@@ -292,7 +298,61 @@
     {
       "pos": [
         -0.952628,
-        4.2,
+        2.3,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        4.6,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        4.6,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0.952628,
+        4.6,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        4.6,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        4.6,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -0.952628,
+        4.6,
         0.55
       ],
       "radius": 0.05,
@@ -303,7 +363,7 @@
     {
       "pos": [
         0,
-        1.26,
+        1.38,
         0
       ],
       "radius": 0.99
@@ -311,7 +371,7 @@
     {
       "pos": [
         0,
-        2.94,
+        3.22,
         0
       ],
       "radius": 0.99
@@ -321,7 +381,119 @@
     "maxAccelG": 7,
     "maxQAlpha": 3000
   },
-  "modules": [],
+  "modules": [
+    {
+      "type": "rcs",
+      "isp": 290,
+      "resource": "RCSProp",
+      "thrusters": [
+        {
+          "pos": [
+            1.1,
+            4.3,
+            0
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "thrust": 100
+        },
+        {
+          "pos": [
+            1.1,
+            4.3,
+            0
+          ],
+          "dir": [
+            0,
+            0,
+            -1
+          ],
+          "thrust": 100
+        },
+        {
+          "pos": [
+            0,
+            4.3,
+            1.1
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "thrust": 100
+        },
+        {
+          "pos": [
+            0,
+            4.3,
+            1.1
+          ],
+          "dir": [
+            1,
+            0,
+            0
+          ],
+          "thrust": 100
+        },
+        {
+          "pos": [
+            -1.1,
+            4.3,
+            0
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "thrust": 100
+        },
+        {
+          "pos": [
+            -1.1,
+            4.3,
+            0
+          ],
+          "dir": [
+            0,
+            0,
+            1
+          ],
+          "thrust": 100
+        },
+        {
+          "pos": [
+            0,
+            4.3,
+            -1.1
+          ],
+          "dir": [
+            0,
+            1,
+            0
+          ],
+          "thrust": 100
+        },
+        {
+          "pos": [
+            0,
+            4.3,
+            -1.1
+          ],
+          "dir": [
+            -1,
+            0,
+            0
+          ],
+          "thrust": 100
+        }
+      ]
+    }
+  ],
   "visual": {
     "$ref": "../visuals/parts/azimuth-s2.json",
     "optional": true

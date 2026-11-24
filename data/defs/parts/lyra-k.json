@@ -2,20 +2,20 @@
   "id": "lyra-k",
   "name": "Lyra-K pressure-fed kick motor",
   "category": "engine",
-  "dryMass": 18,
+  "dryMass": 20,
   "comOffset": [
     0,
-    -0.175,
+    -0.168,
     0
   ],
   "inertiaShape": {
     "kind": "solidCylinder",
-    "r": 0.09,
-    "h": 0.5
+    "r": 0.108,
+    "h": 0.48
   },
   "bounds": {
-    "radius": 0.15,
-    "yMin": -0.5,
+    "radius": 0.18,
+    "yMin": -0.48,
     "yMax": 0
   },
   "attachNodes": [
@@ -37,9 +37,9 @@
   "thermal": {
     "surfaces": [
       {
-        "area": 0.329867,
+        "area": 0.380007,
         "normal": "axisym",
-        "noseRadius": 0.15,
+        "noseRadius": 0.18,
         "emissivity": 0.7,
         "arealHeatCapacity": 12000,
         "maxTemp": 1300
@@ -55,8 +55,8 @@
     {
       "type": "engine",
       "thrustVac": 4000,
-      "ispVac": 325,
-      "ispSL": 120,
+      "ispVac": 315,
+      "ispSL": 90,
       "minThrottle": 1,
       "throttleable": false,
       "spoolUp": 0.1,
@@ -76,7 +76,7 @@
         {
           "pos": [
             0,
-            -0.5,
+            -0.48,
             0
           ],
           "dir": [
@@ -84,8 +84,8 @@
             -1,
             0
           ],
-          "exitDiameter": 0.18,
-          "exitPressure": 3000
+          "exitDiameter": 0.34,
+          "exitPressure": 700
         }
       ],
       "gimbal": {

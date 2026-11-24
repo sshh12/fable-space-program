@@ -238,6 +238,114 @@
     {
       "pos": [
         0,
+        3.2,
+        2.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        1.905256,
+        3.2,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        1.905256,
+        3.2,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        3.2,
+        -2.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -1.905256,
+        3.2,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -1.905256,
+        3.2,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        6.4,
+        2.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        1.905256,
+        6.4,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        1.905256,
+        6.4,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        6.4,
+        -2.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -1.905256,
+        6.4,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -1.905256,
+        6.4,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
         9.6,
         2.2
       ],

@@ -248,6 +248,12 @@
           ]
         },
         {
+          "kind": "enableRcs",
+          "parts": [
+            "s2"
+          ]
+        },
+        {
           "kind": "decouple",
           "part": "interstage",
           "delay": 1

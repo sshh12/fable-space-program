@@ -109,9 +109,9 @@
       "def": "dock-port-h",
       "parent": "core",
       "position": [
-        1.555635,
+        1.414214,
         2,
-        1.555635
+        1.414214
       ],
       "rotationDeg": [
         -90,

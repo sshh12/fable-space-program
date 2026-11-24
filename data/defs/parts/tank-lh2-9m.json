@@ -79,7 +79,7 @@
   "resources": [
     {
       "resource": "LH2",
-      "capacity": 52000,
+      "capacity": 45000,
       "tankBottomY": 0.3,
       "tankHeight": 11.9
     }
@@ -232,6 +232,168 @@
       "pos": [
         -3.897114,
         0,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        3.125,
+        4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        3.897114,
+        3.125,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        3.897114,
+        3.125,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        3.125,
+        -4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -3.897114,
+        3.125,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -3.897114,
+        3.125,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        6.25,
+        4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        3.897114,
+        6.25,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        3.897114,
+        6.25,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        6.25,
+        -4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -3.897114,
+        6.25,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -3.897114,
+        6.25,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        9.375,
+        4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        3.897114,
+        9.375,
+        2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        3.897114,
+        9.375,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        9.375,
+        -4.5
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -3.897114,
+        9.375,
+        -2.25
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -3.897114,
+        9.375,
         2.25
       ],
       "radius": 0.05,

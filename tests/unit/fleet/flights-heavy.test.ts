@@ -17,7 +17,7 @@ beforeAll(async () => {
 describe('the generic ascent pilot flies the heavy vehicles to orbit from a Ka Lae heavy pad', () => {
   for (const id of ['meridian-egret', 'meridian-albatross', 'meridian-pelican-heavy']) {
     it(`${id}: orbit, clean separations, max-q under the stack's limits`, async () => {
-      await ascentToOrbit(defs, id, false);
+      await ascentToOrbit(defs, id, true);
     }, 300_000);
   }
 });

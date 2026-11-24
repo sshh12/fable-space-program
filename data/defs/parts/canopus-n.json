@@ -2,7 +2,7 @@
   "id": "canopus-n",
   "name": "Canopus-N nuclear thermal engine",
   "category": "engine",
-  "dryMass": 3300,
+  "dryMass": 6400,
   "comOffset": [
     0,
     -2.31,

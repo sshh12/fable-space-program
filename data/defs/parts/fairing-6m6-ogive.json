@@ -2,21 +2,21 @@
   "id": "fairing-6m6-ogive",
   "name": "Closed 6.6 m ogive payload fairing",
   "category": "aero",
-  "dryMass": 4000,
+  "dryMass": 5000,
   "comOffset": [
     0,
-    5.6,
+    7.5,
     0
   ],
   "inertiaShape": {
     "kind": "shellCylinder",
     "r": 3.3,
-    "h": 14
+    "h": 18
   },
   "bounds": {
     "radius": 3.3,
     "yMin": 0,
-    "yMax": 14
+    "yMax": 18
   },
   "attachNodes": [
     {
@@ -34,12 +34,27 @@
       "size": 6.6
     }
   ],
+  "collision": [
+    {
+      "kind": "cylinder",
+      "radius": 3.25,
+      "yMin": 0,
+      "yMax": 13
+    },
+    {
+      "kind": "frustum",
+      "r0": 3.25,
+      "y0": 13,
+      "r1": 0.3,
+      "y1": 18
+    }
+  ],
   "crossfeed": false,
   "aero": [
     {
       "kind": "axisymBody",
       "refArea": 34.211944,
-      "length": 14,
+      "length": 18,
       "diameter": 6.6,
       "cdAxialFwd": [
         [
@@ -124,7 +139,7 @@
   "thermal": {
     "surfaces": [
       {
-        "area": 324.495105,
+        "area": 407.433151,
         "normal": "axisym",
         "noseRadius": 3.3,
         "emissivity": 0.8,

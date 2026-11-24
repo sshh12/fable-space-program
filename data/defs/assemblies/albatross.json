@@ -49,6 +49,22 @@
       "stageGroup": "albatross"
     },
     {
+      "id": "side-port-2",
+      "def": "dock-port-h",
+      "parent": "truss",
+      "position": [
+        -2.89,
+        3.5,
+        0
+      ],
+      "rotationDeg": [
+        -90,
+        90,
+        0
+      ],
+      "stageGroup": "albatross"
+    },
+    {
       "id": "quad-1",
       "def": "rcs-quad-440",
       "parent": "truss",
@@ -145,9 +161,25 @@
       "stageGroup": "albatross"
     },
     {
+      "id": "tank-3",
+      "def": "tank-lh2-9m",
+      "parent": "tank-2",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "tank-4",
+      "def": "tank-lh2-9m",
+      "parent": "tank-3",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "albatross"
+    },
+    {
       "id": "thrust",
       "def": "thrust-structure-9m",
-      "parent": "tank-2",
+      "parent": "tank-4",
       "parentNode": "bottom",
       "node": "top",
       "stageGroup": "albatross"
@@ -261,7 +293,7 @@
             "ntr-2",
             "ntr-3"
           ],
-          "delay": 3
+          "delay": 6
         }
       ]
     }

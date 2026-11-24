@@ -262,6 +262,276 @@
     {
       "pos": [
         0,
+        3.666667,
+        3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        3.666667,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        3.666667,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        3.666667,
+        -3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        3.666667,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        3.666667,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        7.333333,
+        3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        7.333333,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        7.333333,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        7.333333,
+        -3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        7.333333,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        7.333333,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        11,
+        3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        11,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        11,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        11,
+        -3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        11,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        11,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        14.666667,
+        3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        14.666667,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        14.666667,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        14.666667,
+        -3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        14.666667,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        14.666667,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        18.333333,
+        3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        18.333333,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        2.857884,
+        18.333333,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
+        18.333333,
+        -3.3
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        18.333333,
+        -1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        -2.857884,
+        18.333333,
+        1.65
+      ],
+      "radius": 0.05,
+      "crashTolerance": 6
+    },
+    {
+      "pos": [
+        0,
         22,
         3.3
       ],

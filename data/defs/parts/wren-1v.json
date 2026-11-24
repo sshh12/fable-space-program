@@ -2,7 +2,7 @@
   "id": "wren-1v",
   "name": "Wren-1V methalox vacuum engine (restartable)",
   "category": "engine",
-  "dryMass": 160,
+  "dryMass": 210,
   "comOffset": [
     0,
     -0.84,
@@ -100,9 +100,9 @@
   "modules": [
     {
       "type": "engine",
-      "thrustVac": 110000,
+      "thrustVac": 190000,
       "ispVac": 355,
-      "ispSL": 160,
+      "ispSL": 250,
       "minThrottle": 0.4,
       "throttleable": true,
       "spoolUp": 0.6,

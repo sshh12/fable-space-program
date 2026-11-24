@@ -18,8 +18,9 @@ import { G0, GenericPilot } from '@/pilot/generic/common';
 /** The Kestrel LF home from low orbit. */
 export class EntryPilot extends GenericPilot {
   splashUt: number | null = null;
-  /** Speed over the water just before the splash, m/s. */
+  /** Speed over the water on the tick before the splash, m/s, and at first contact (the splashdown speed). */
   splashSpeed = 0;
+  contactSpeed: number | null = null;
   /** Periapsis the de-orbit burn aims at, m. */
   constructor(caps: VehicleCapabilities, private readonly entryPeriapsis = 40000) {
     super(caps);
@@ -71,6 +72,8 @@ export class EntryPilot extends GenericPilot {
         return;
       }
       case 'mains': {
+        // The speed at first contact with the water (the lowest probe at the surface), not after it.
+        if (this.contactSpeed === null && this.rd.altitudeRadar <= 0.3) this.contactSpeed = this.rd.speedSurface;
         if (this.v.situation === 'splashed') {
           this.splashUt ??= this.ut;
           if (this.ut - this.splashUt > 8) this.finish(`splashed down at ${this.splashSpeed.toFixed(1)} m/s`);
