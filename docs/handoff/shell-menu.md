@@ -11,6 +11,8 @@ what is measured, what is left in order, and the decisions. The next builder con
 | 9c9ceef | Input contexts (`src/input/contexts.ts`: `MENU_BINDINGS`, `TRANSIT_BINDINGS`, `validateContextTable`, `contextActionOf`, `keysOfAction`); `InputSystem.context` / `setContext` (only 'flight' feeds the flight table; a switch releases every held key; the wheel over a menu panel is left to the page); the shell's pure models (`machine.ts`, `pads.ts`, `solar.ts`, `rulesView.ts`, `leaveOutcome.ts`, `spawnFlow.ts`); the menu store fixture `src/core/fakes/menuStores.ts`; `data/defs/visuals/credits.json` (18 sources); the Barlow family (OFL) in `public/assets/ui/fonts/` |
 | f9ecee8 | The DOM kit (`src/shell/dom/kit.ts`), every screen (`src/shell/screens.ts`), the shell (`src/shell/shell.ts`, `types.ts`, `index.ts`), the camera paths (`src/camera/menuRigs.ts`: `menuEye`, `transitSample`, `transitPose`, `holdProgress`, `lookAt`), the lab `labs/shell/`, the spec `tests/browser/menu/menu.spec.ts` |
 | e03342b | Requests shell-menu-1..4; tests of the leave line and the leave guard |
+| b9b6eb1 | Legibility over a bright scene (a gradient vignette behind the left columns and the bottom bands, text shadows on free text: the first run showed the flight menu's subtitle lost over the sky at the pad), cards with the kicker in flow (it overlapped a two-line title), the menu eye with the sun just behind the limb, the site view from above, the lab's flight-menu key fix |
+| 3849855 | Tests of the transit path and the menu eye (`tests/unit/shell/menuRigs.test.ts`) |
 
 ## 2. Public API (exact signatures)
 
@@ -122,6 +124,25 @@ menuShipsFixture(defs, nowWallMs, rules?): ShipRecord[]
 - Practice in the lab is the menu fixture on the local rules (its own pads, never queuing); the real switch to a
   `LocalSession` is session-switch's (the World session has no `universe`/`stores` yet).
 
-## 7. Browser run
+## 7. Browser runs (real Chrome, real GPU, through the gate)
 
-(filled below when the run finishes)
+- Run 1 (test 1 only, at f9ecee8): the page loaded with the render packages (terrain, ocean, sky, atmosphere,
+  site), and the keyboard-only flow passed every focus assertion through title -> hub/play (`launch`) ->
+  deploy/vehicle (`vehicle-meridian-lunar`) -> deploy/pad (`pad-ka-lae-lc-1`) -> deploy/briefing
+  (`launch-commit`) -> transit -> flight; in flight the shell's root was hidden and NO scrim rectangle was
+  published (`{ hidden: true, scrim: 0 }` asserted); Esc opened the flight menu (`fm-resume`, "If you leave now"
+  present). It then failed: Esc in the flight menu closed it and the LAB's own Esc listener reopened it (fixed in
+  b9b6eb1: the lab ignores a key the shell marked handled).
+- Screenshots looked at from run 1 (out/screens/shell-menu/): `hub-play-1280` (three cards, lobby row, tab bar
+  with Q/E caps, prompt plate; the PRACTICE card's kicker overlapped its title: fixed), `deploy-pad-1280` (class
+  outlook "HEAVY VEHICLE · 1 PAD CAN TAKE IT", Ka Lae with local solar time and sun elevation, LC-1 free; the site
+  view showed too much black sky: camera moved overhead), `flight-menu-1280` over the sunlit pad (panels legible
+  on the scrim; the free subtitle and status line were NOT legible over the sky: vignette and text shadows added).
+  Also saved, not yet looked at: `title-1280`, `deploy-vehicle-1280`, `deploy-briefing-1280`, `transit-1280`,
+  `flight-1280`.
+- Run 2 (all 7 tests, at b9b6eb1): every test failed at page init: the vessel-visual feature reports
+  `vehicle: part "<id>" has no visual definition` for the 32 parts of the vehicles fleet-data added today. The lab
+  now leaves that feature out (31201be; its vessel is the fake's stand-in without parts).
+- Run 3 (all 7 tests, at 31201be): queued behind the lead's image gate (`lead-gate-look1-2`) when this note was
+  written; its log is `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\shell-menu-run3.log`
+  and its pictures land in out/screens/shell-menu/. The next builder reads its result first.
