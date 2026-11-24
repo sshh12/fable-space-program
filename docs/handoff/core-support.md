@@ -1295,3 +1295,119 @@ package are as of the lead's last run, and the table has no rows yet for the ter
 shell: `timedFeature` forwards `resetTemporal`; taken), `core-6` (flight-ui: the action
 `cockpitSeat:next`; the lead: its wiring), `terrain-render-10` and `ocean-10` (above), and section 11's
 list (the contact shadow's half-resolution edge; frost's sparkle).
+
+## 14. Shared-code maintainer, 2026-11-17 and 2026-11-24: the display curve and the meter behind one switch, the A/B, two small items
+
+The first render-core item after the presentation sweep (the coordinator's order of 2026-11-17; cut off by
+the account's limit that evening, resumed 2026-11-24). **The switch is OFF. I did not flip it and re-stated
+nobody's level tests.** Everything is committed; scratch that matters is under `out/core-support/`
+(`core_support_*`), because the session's scratchpad did not survive the week.
+
+### What exists
+
+| Item | State | Where |
+|---|---|---|
+| 1. The display curve (ocean-10, option 1) | built behind the switch, unit-tested, in the A/B | `post/tonemap.ts` (`CAMERA_*`, `tonemapWgsl(look)`), RENDER_API 13.1 |
+| 2. The meter under a low sun and at entry (ocean-13) | five rules of look 2 behind the switch, tuned on recorded frames, unit-tested on ten of them, in the A/B; the entry's peak of g is NOT cured (request `core-8`, vfx) | `post/exposure.ts` (`METER2_*`), `tests/unit/render-core/exposureLook2.test.ts` |
+| 3. One switch, default off; the A/B | `RendererOptions.look`, `corelook=2`, `VITE_CORE_LOOK=2`; thirteen sheets | `out/screens/core-support/curve-ab/`, `tests/browser/integration/curve-ab.spec.ts` |
+| 4a. CI: `tests/unit/render-core/perf.test.ts` | done `89cb2f2` | the recorder takes a clock; its logic asserted exactly on an injected one; the real-time bound is `max(line, the runner's own time for the same frames + 0.5 ms)` |
+| 4b. The scrim's cost (review finding 12) | done `8b93e39`, `affe39a` | RENDER_API 19.3 |
+
+**With the switch off nothing moves.** The lead's image gate on the tree with the switch in it
+(`tests/browser/shell/baselines.record.spec.ts`, no recording): 33 of 33 compare the same, the 30 exact
+checkpoints at 0 pixels, the manifest's three non-exact ones (`lunar-touchdown`, `shoreline`,
+`sweep-lunar-orbit`) inside their tolerances. Twice: 2026-11-24 14:21 UTC (out/core-support/gate1.log; one
+look-2 constant, the scale's top, was committed 42 s after that run began) and 2026-11-24 14:45 UTC on the final tree
+(out/core-support/gate2.log). My suites with the switch off (render-core's browser suite and the lab's
+exposure spec): 54 of 54.
+
+### The curve (look 2)
+The present curve from one stop under mid-grey down and mid-grey where it is (117 of 255); above it the
+scene's own line up to 0.75 of display white; a shoulder to white at 2.33 pre-exposed (2.5 times sunlit
+white paper at sunny 16), no slope left there; per channel on AgX's inset primaries. Sunlit white at sunny
+16: 193 -> 241 of 255 (0.54 -> 0.88 of display-linear white); 1.3 -> 253; 1.86 -> 255 (today 250 needs 10).
+The meter's daylight bounds are not moved, so in the game sunlit white stands between 211 and 253 (the
+A/B's daylight frames: 225 to 253, because the meter sits at the open end of its bound on dark ground).
+
+### The meter (look 2; exterior and map views; the cabin untouched)
+1. The sky's bulk (its 90th percentile) is held at 0.7 pre-exposed, by the sky's share of the frame (2 to
+   10 %), inside an atmosphere.
+2. Under a low sun (under 25 degrees, fully under 10, down to the end of twilight; inside the air; a frame
+   with lit pixels over 10 to 30 % of it) and where the sky counts: the mean without what stands more than
+   2 stops over the 75th percentile, and the highlight term at most 1 EV over the mean and the prior.
+3. A small emitter (hint up to 2 % of the frame, free from 6 %) raises the target by 2 EV at most over the
+   frame without emitters, when that frame has something to show.
+4. An emitter that fills the frame (10 to 20 %) is the scene: the rules under the sun let go.
+5. The scale ends at EV100 18.
+
+How they were found: `CoreRenderer.meterInput()` records what the meter was given; the A/B spec recorded
+both flights of the real app sample by sample; `out/core-support/core_support_meter_replay.ts` replays the
+rules on the records outside the browser (two looks, with the eye's adaptation). The dawn splashdown's four
+stops are not what ocean-13 took them for (the rules under the sun switched off): they hold, to a quarter
+stop over the mean OR THE PRIOR, and the prior is sunny 16 for a sun 2.8 degrees up, 3.3 stops over a sea
+the sky lights. The entry: thruster pulses took the target from 1.7 to 11.8; the sheath holds 16.5 through
+the peak of heating; then the vfx stops giving its hint when the sun's disc comes over the limb (57 km), and
+the meter exposes for the hull (9.4, 12.3 at the peak of g here; 7.7 in the mission flights).
+
+### The A/B: thirteen sheets, old left, new right, 2560 x 1440 reduced; numbers under each picture; the nearest reference photograph's own numbers under the pair
+
+| Sheet | EV100, look 1 -> 2 | Sunlit white of 255 | White pixels | What I see |
+|---|---|---|---|---|
+| `01-pad-noon` | 14.58 = | 205 -> 253 | 0.00 -> 0.00 % | whites and clouds brighter, nothing lost in this frame; no headroom left above white hardware |
+| `02-liftoff-flame` | 14.65 = | 204 -> 252 | 0.00 -> 6.05 % | the steam is a brilliant white cloud; its brightest lobes are flat white |
+| `03-cockpit-sun-patch` | 6.30 = | - | 1.04 -> 4.55 % | WORSE: the sun patch is a white shape that erases the display under it; the Earth in the window loses its clouds |
+| `04-leo-cloud-tops` | 14.90 = | 197 -> 246 | 0.01 -> 0.03 % | better: the cloud tops are white (p95 Y 0.40 -> 0.54; the photographs: 0.62 to 0.72) |
+| `05a-glint-3km` | 15.33 = | 185 -> 225 | 0.08 -> 0.40 % | better: a warm white core, sparkles clip |
+| `05b-glint-orbit` | 14.58 = | 205 -> 253 | 0.00 -> 0.00 % | hardly changed: still a cream patch, no pixel clips (a case for option 2) |
+| `06-frosted-stage` | 15.30 = | 185 -> 225 | 0.00 -> 0.02 % | better: the frost is white against the grey bands (p95 Y 0.47 -> 0.72) |
+| `07-lunar-surface` | 12.15 = | - | 0.00 -> 0.02 % | better: brighter regolith with more relief (p95 Y 0.40 -> 0.52; the photograph: 0.38 median) |
+| `08-splashdown-overcast` | 9.90 -> 11.69 | - | 0.08 -> 0.20 % | better, by the meter: a light-grey sky with its structure, the sea at Y 0.11 (the photograph: 0.13 under a sky at 0.65). With the curve alone the sky was white over a quarter of the frame |
+| `09-splashdown-at-dawn` (before, +3 s, +8 s, +15 s) | 8.89, 12.48, 12.53, 8.48 -> 11.56, 11.56, 11.59, 11.69 | - | 0 -> 0, 2.6, 4.6, 0 % | the exposure holds; a dawn sky with colour over a dark sea (median Y 0.03 to 0.04; 0.25 before and 0.009 during, today). WORSE in one thing: the canopies clip, their orange gores go yellow |
+| `10-entry` (before the sheath, peak heating, peak g) | 3.49, 16.50, 12.31 -> 2.92, 18.00, 12.31 | - | 0, 0.0, 2.1 -> 0, 1.7, 6.5 % | the peak of g is WORSE (no hint: the white ball grows from 2.1 to 6.5 % of the frame); the peak of heating: see below |
+| `11a-night-side-from-orbit` | -5.44 = | - | 0.09 -> 0.37 % | the same; the cities' cores a little whiter |
+| `11b-pad-at-night` | 11.15 -> 11.16 | - | 0.01 -> 0.01 % | the same |
+
+The entry's peak of heating with look 2 depends on where the scale ends, and I looked at three: at 16.5
+(today's top) the sheath is one white ball (3.8 % of the frame white; the present curve shows streaks at
+the same exposure); at 19.6, where the sheath's hint asks, a grey cloud (the picture's 95th percentile at
+Y 0.07); at 18, which is what look 2 has, a luminous sheath with a white core and its streaks towards the
+edge (1.7 % white). The hints' "stops over white" were placed for the present curve; their owner would
+re-state them after a flip.
+
+**Where look 2 is worse, plainly.** (1) The cabin: sun patches and windows clip, and a display under a sun
+patch cannot be read; the gain on the outside of a cabin was set for the present curve and its owners
+would re-state it. (2) Whatever a hint or a level was placed "N stops over white" for the present curve's
+long shoulder now clips: the sheath, the canopies under a low sun, the steam's brightest lobes, saturated
+cloth (orange goes yellow as it clips, channel by channel). (3) White hardware in daylight has no headroom
+at the open end of the meter's bound (253 of 255). (4) Frames with a sky in them under a low sun or an
+overcast are darker on the ground and the sea, on purpose: the sky is held; whether the dawn sea at Y 0.03
+is right is a judgement for the lead and the ocean. (5) The glint from orbit still reads as paint.
+
+### Open
+- `core-8` (vfx, blocking for the entry's pictures): the sheath's hint is withheld once a sun is on the limb.
+- The flip, every package's level tests, the reference images: ordered separately by the lead.
+- `ocean-13`, `ocean-10`: open with my notes (the game is unchanged until the flip).
+- `terrain-render-10` (frame-total rows in the budget spec): still not started.
+- The UI package writes `'ui.scrimRects'` with `writeScrimRects` (NOTICE-core-7).
+- A thruster pulse in a frame that is dark but for it still takes the target up by ten stops (rule 3 holds
+  only when the frame without the emitter has something to show).
+
+### The budget table's core lines (ARCHITECTURE 29.1), switch off and on
+`tests/browser/render-core/core.perf.spec.ts`, 2560 x 1440, p99 under a 7 ms ballast, 2026-11-24
+(out/core-support/gate1.log):
+
+| Line | Budget, ms | Switch off | Switch on (VITE_CORE_LOOK=2) |
+|---|---|---|---|
+| AO + contact | 0.6 | 0.121 | 0.121 |
+| lighting | 1.0 | 0.196 | 0.198 |
+| TAA | 0.55 | 0.112 | 0.112 |
+| bloom | 0.3 | 0.051 | 0.051 |
+| tonemap / exposure | 0.2 | 0.048 | 0.055 |
+| copies + depth pyramid | 0.35 | 0.051 | 0.051 |
+| core fixed | 3.0 | 0.579 | 0.587 |
+
+G-buffer 0.178 + shadows 0.175 = 0.353 of 2.0 at 1.7 M triangles (0.351 with the switch on). The scrim
+(4b): no rectangle 0.0315 ms, the pass before the scrim (the sweep's pass: 0.0326); a zero-area rectangle
+0 (was a flat 0.073); 5 % of the frame + 0.006, 40 % + 0.050, a menu's four panels + 0.069 (was + 0.078);
+0 differing pixels against the sweep's single pass in every comparison (out/core-support/scrim/run-2.log).
+I did not run the per-checkpoint table (`budget.perf.spec.ts`).
