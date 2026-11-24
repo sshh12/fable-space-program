@@ -13,6 +13,8 @@ what is measured, what is left in order, and the decisions. The next builder con
 | e03342b | Requests shell-menu-1..4; tests of the leave line and the leave guard |
 | b9b6eb1 | Legibility over a bright scene (a gradient vignette behind the left columns and the bottom bands, text shadows on free text: the first run showed the flight menu's subtitle lost over the sky at the pad), cards with the kicker in flow (it overlapped a two-line title), the menu eye with the sun just behind the limb, the site view from above, the lab's flight-menu key fix |
 | 3849855 | Tests of the transit path and the menu eye (`tests/unit/shell/menuRigs.test.ts`) |
+| 31201be | The lab leaves the vessel visuals out (fleet-data's new vehicles have no art; the feature reports each part as an error) |
+| be4199b | The history trap armed on a user gesture; the spec independent of the fleet |
 
 ## 2. Public API (exact signatures)
 
@@ -143,6 +145,12 @@ menuShipsFixture(defs, nowWallMs, rules?): ShipRecord[]
 - Run 2 (all 7 tests, at b9b6eb1): every test failed at page init: the vessel-visual feature reports
   `vehicle: part "<id>" has no visual definition` for the 32 parts of the vehicles fleet-data added today. The lab
   now leaves that feature out (31201be; its vessel is the fake's stand-in without parts).
-- Run 3 (all 7 tests, at 31201be): queued behind the lead's image gate (`lead-gate-look1-2`) when this note was
-  written; its log is `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\shell-menu-run3.log`
-  and its pictures land in out/screens/shell-menu/. The next builder reads its result first.
+- Run 3 (all 7 tests, at 31201be; it waited 26 minutes behind the lead's image gate): test 1 failed at the
+  vehicle step because the spec expected `vehicle-meridian-lunar` focused, and fleet-data's new vehicles sort
+  before it (the spec now accepts the first vehicle and pad of whatever the library holds); test 2 failed at
+  `page.goBack()`: Chrome SKIPS a history entry pushed without a user gesture, so Back left the page (the trap now
+  pushes its entry on the first key or pointer press and after each Back; be4199b). Tests 3 and later ran while
+  those two fixes were being written: the dev server reloaded the lab mid-test, so their failures say nothing (test
+  3 timed out waiting for `deploy/vehicle` right after a reload). Log:
+  `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\shell-menu-run3.log`.
+- NEXT: rerun the whole spec at be4199b (or later) on a quiet tree, look at every picture, and fill section 4.
