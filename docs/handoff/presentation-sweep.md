@@ -649,8 +649,13 @@ hold no ROOT position of their own (they read the core's previous camera), so th
 Lab handles added: `__integration.dropVessel(id)`, `cutParachutes()`, `burst(posVes)`, `&twin=<m>` (a copy of
 the vessel beside it); `VesselVisualFeature.ghostPlacements()`, `VfxDebug.domainVelocity()`. The second state
 of the `leo` scene between loads is the atmosphere's when it is stepped by hand (request
-`presentation-sweep-8`); a capture restarts it. Each scene was run once in this form (`sea` and `ghost` twice)
-and again in the full run below; none was flaky. The pictures were looked at (`rebase-ghost.replaced.png`:
+`presentation-sweep-8`); a capture restarts it. ONE THING REMAINED AND IS HANDLED AS THE REFERENCE-IMAGE GATE
+HANDLES IT: in the full lab-spec run two scenes with the sea to the horizon (`leo`, `canopy`) had control
+pairs that differed by 27 and 5 pixels of one level, the rare second state of a load (request lead-9, the
+ocean's). The test now takes a third control run when the first two are not one picture, needs two of the
+three to be one, and prints OTHER STATE (c309106). The whole spec run again after that: 10 of 10, with one
+such line (OTHER STATE, `canopy`: the first two controls differed by 10 pixels of one level; the third was
+the first's picture). The pictures were looked at (`rebase-ghost.replaced.png`:
 two vessels over the Earth; `rebase-ghost.no-ghosts.png`: one; `rebase-particles.replaced.png`: the fireball
 and its debris; `rebase-canopy.replaced.png`: the capsule under canopies adrift).
 
@@ -678,10 +683,49 @@ interface ServedActions (src/input): which of the v2 actions something serves; t
 // labs/integration: &norebase=core|ghosts, &twin=<m>, &pads=<n>; __integration.dropVessel / cutParachutes / burst / syntheticPads
 ```
 
-**Gates of the fix round.** On the tree with findings 1-5, 8-11, 13-15 and 17 in (2026-11-17, before
-findings 6 and 18): the reference images PASSED 33 of 33, the 30 exact at 0 pixels, no OTHER STATE line
-(`lunar-touchdown` mean 0.0013, max 8; `shoreline` mean 0.0010, max 3; `sweep-lunar-orbit` max 4); the
-unit suites 93 files, 1,158 tests, all pass; `npm run typecheck` clean. ON THE FINAL TREE of the fix round
-(0012535: findings 6 and 18 added; they change a lab, a spec, two test-only switches and two debug accessors)
-the reference-image gate, the budget gate, every lab spec and the fetch-against-pack test WERE RUNNING when
-this file was committed; their results are in the next commit of this file.
+**Gates of the fix round, on its final tree** (0012535 for everything below but the origin test's last run,
+which is on c309106; c309106 changes that spec alone). `npm run typecheck` clean; unit suites 93 files, 1,158
+tests, all pass; `check-stubs` OK.
+
+- **Reference images: PASSED 33 of 33; the 30 exact at 0 pixels; no OTHER STATE line** (`lunar-touchdown`
+  mean 0.0012, p99.9 1, max 4; `shoreline` mean 0.0010, max 3; `sweep-lunar-orbit` max 4, 0.001 % of the
+  pixels). The same on the tree with findings 1-5, 8-11, 13-15 and 17 in, before 6 and 18 (2026-11-17: 33 of
+  33, 0 pixels, no OTHER STATE). No reference image moved in the fix round.
+- **Budget gate** (`BUDGET_COMPARE=1`): the full run had 8 rows pass and 2 over; both were run again twice,
+  as the rule says, and pass.
+
+  | Row | Full run | Again | Again |
+  |---|---|---|---|
+  | pad lift-off | 6.17 ms against 6.17 (-0.1 %), but the terrain 2.488 ms against its waived ceiling of 2.47 (its windows 2.42 to 2.80) | 5.65 (-8.5 %), terrain 2.252 | 5.61 (-9.2 %) |
+  | ascent 10-40 km | 3.58 against 3.40 (+5.2 %): core 0.524 -> 0.708 | 3.15 (-7.5 %) | 3.37 (-1.1 %) |
+  | LEO | 3.06 against 3.04 (+0.7 %) | | |
+  | LEO cockpit | 3.48 against 3.57 (-2.5 %) | | |
+  | lunar descent | 3.39 against 3.42 (-0.8 %) | | |
+  | reentry | 2.82 against 3.02 (-6.7 %) | | |
+  | splashdown | 5.42 against 5.66 (-4.2 %) | | |
+  | stony ground | 6.03 against 6.26 (-3.7 %) | | |
+  | among kiawe | 5.44 against 5.60 (-2.9 %) | | |
+  | thickets from 120 m | 6.61 against 6.65 (-0.6 %) | | |
+
+  (The render core's maintainer was working on the same machine through the same GPU slot; the core's and
+  the terrain's times move by a tenth to two tenths of a millisecond between runs of one tree.)
+- **Lab specs, every directory: 500 passed, 9 failed, 17 skipped.** integration 50 (7 failed, 13 skipped:
+  the render core's curve A/B spec, run by hand); flight-ui 94 (1); app 10; vfx 39 (1); vehicle 15 (1
+  skipped); cockpit 41; audio 18; map-view 28; render-core 47; terrain 22 (2 skipped: inside the stack);
+  sky 33; ocean 42; atmosphere 61 (1 skipped). The nine:
+  - six known failures of the tree before the sweep, unchanged: `flight-ui/screens` 4k cockpit view,
+    `vfx/matrix` lift-off, `integration/clouds` (b) aerial perspective, `integration/terrain` (d) and (e),
+    `integration/water` (a);
+  - `origin.spec.ts` `leo` and `canopy`: the control pairs' second state described above; fixed in c309106
+    and the spec run again, 10 of 10;
+  - `integration/shadows.spec.ts` "(c) on the pad with the Earth turning, shadow edges neither crawl nor
+    jump (the ground alone)": one 16-pixel block jumps in one frame of the 64 (worst block 1.447 % of the
+    mean luminance against 1.06 % when it passes; the frame differs from run to run: 20 to 43). NOT THE
+    SWEEP'S: the test has two states on every tree, by which load it is. Run eight times each from exports
+    of the trees: the tag `pre-sweep-2026-11-16` 4 of 8 fail, 0685bd0 (the third context's final tree)
+    7 of 8, the fix round's tree 7 of 12, always with the same 1.447 to 1.450 %. It had passed in the two
+    full runs of the second and third context by chance. A finding for the visual close-out (the page has
+    the terrain and the sky only; something steps once in a window of more than 64 frames).
+- **The fetch-against-pack test** inside the stack: 2 of 2, 0 pixels in the seven views.
+- **`menu-core.spec.ts`** (scrim, exposure hint, lens shift with the 128 x 128 px shift): 3 of 3 on the tree of
+  2026-11-17; in the full run above it passed again as part of `integration`.
