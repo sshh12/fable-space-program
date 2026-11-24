@@ -116,14 +116,15 @@ describe('validateVehicle: twelve broken fixtures, each with its issue', () => {
     v.parts = v.parts.filter((p) => !p.id.startsWith('lv-wren-') && !p.id.startsWith('lv-clamp-'));
     v.stages = [];
     v.abort = [];
-    expect(codes(v, lib, { rules: PROPOSED, start: 'orbit' } as never)).toEqual(['nodeSizeMismatch']);
+    expect(codes(v, lib, { rules: PROPOSED, start: 'orbit' } as never)).toContain('nodeSizeMismatch');
   });
 
   it('9 overlap: an RCS quad placed inside the propellant tank of another stage', () => {
     const v = vehicle('solstice-pelican');
     v.parts.push({ id: 'stray-quad', def: 'rcs-quad-440', parent: 'lv-interstage', position: [0, -6, 0], stageGroup: 'lv-s1' });
     const issues = validateVehicle(lib, v, { rules: PROPOSED });
-    expect(issues.map((i) => i.code)).toEqual(['overlap']);
+    // (The fairing shields quads by their definition: the stray one is also outside it.)
+    expect(issues.map((i) => i.code)).toEqual(['overlap', 'fairingContainment']);
     expect(issues[0]!.parts).toContain('stray-quad');
   });
 

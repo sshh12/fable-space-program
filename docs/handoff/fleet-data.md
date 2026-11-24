@@ -1,5 +1,59 @@
 # Hand-off: fleet-data (wave 4.1)
 
+## FIX ROUND (2026-11-24, after the independent review; this section replaces the sections below where they differ)
+
+Commits 7f9cafb, 16cc5f1 and the one that adds this section ("fleet-data fix round, part 2"). Requests fleet-data-1
+to -4 were resolved meanwhile (the lead; presentation-sweep), -5 and -7 by island-core (4c9a569); -6 is open.
+
+| # | Finding | State | Evidence |
+|---|---|---|---|
+| 1 | Reach table: one synodic period, no broken plane | fixed | `tests/unit/fleet/reachTable.ts`: `deltaVToOrbit(..., { brokenPlane: true, searchSpan: 6 years, aerobrake: false })` |
+| 1 | Mimas (lead decision: more depot flights) | fixed | Mimas closes with 6 depot flights, 2 of them kept docked as drop tanks at the cruiser's two H ports: +384 m/s, MARGINAL. Titan gravity assist is named as the skilled alternative (not modelled). **Q17's answer, for the lead to record: every one of the 31 bodies besides Earth is reachable into orbit by the Albatross with at most 6 Pelican Heavy depot flights (table below); six of them (Dione, Enceladus, Io, Mercury, Mimas, Miranda) close by under 5 % of their cost and are unproven in flight** |
+| 2 | Aerocapture credited to a ship without a shield | fixed | `aerobrake: false` for the cruiser (`entrySpeedLimit` null) |
+| 3 | Flat 2 % burn loss | fixed | finite-burn loss per leg (Robbins, (omega t)^2 / 24, t from the cruiser's thrust and mass at the leg, omega at the burn point); margins under 5 % of cost marked MARGINAL in the table and listed in reach.test.ts. Enceladus, Io and the other MARGINAL bodies are NOT flown: stated unproven |
+| 3 | Depot delivery spare | stated | as flown, the Pelican Heavy reaches 185.6 x 208.6 km with the depot still on its M-3 and 3,426 m/s left (148.2 t; `npx tsx tests/unit/fleet/flyOne.ts meridian-pelican-heavy`). The raise to the refuel orbit costs 3,192 m/s (3,130 impulsive plus allowances, solar-system-sim's function; this leg is NOT flown): 234 m/s to spare on that basis. (The analysis's 38 m/s "in orbit" of this vehicle is the depot's RCS after the M-3 is gone, not the delivery spare.) |
+| 4 | Ladder refuels what cannot reach the refuel orbit; two answers | fixed | `reachLadder` requires `available >= beforeRefuel`, states `min(available - before, refilled - after)`, offers a refuel only where the vehicle's main propellants are ones a depot carries (`AnalysisOptions.depotPropellants`); the patched-conic default (analyzeReach.ts) is removed: without the caller's `reachCost` the ladder is empty; reach.test.ts holds the ladder equal to the table |
+| 5 | validateVehicle accepts cheats | fixed | errors `resourceLoad`, `crewSeats`, `unknownField`, `badId` (lower-kebab), `engineBlocked` (the nozzle axis against every part's bounds for 40 m when the stage lights it; `analyzeVehicle` states 0 m/s for that stage), `clampsNeverReleased`, `separationAtLiftoff`, `emptyStageList`, `fairingContainment`, `fairingOverhang` (the 6.6 m fairing on a 2.2 m stage: base wider than 1.5 x what carries it); warnings `engineNeverIgnited`, `actionRepeated`, `upperStageLitAtLiftoff`, `decouplerAlone`, `craftWithoutCommand` (the stray pre-docked port). One fixture each in `tests/unit/fleet/validate-gate.test.ts`. The checks that need only the definitions (loads, crew, fields, ids, the stage sequence) live in `structuralIssues` (src/core/defs/vehicleStructure.ts); the loader refuses its errors only |
+| 6 | Loader accepts nonsense | fixed | dryMass > 0, thrustVac > 0, ispVac > 0, 0 <= ispSL <= ispVac, propellant ratios positive and summing to 1, capacity >= 0; unknown placement keys and non-kebab instance ids refused; fixtures in validate-gate.test.ts and loader.test.ts (whose fixture parts gained a dry mass and its fixture vehicle a stage). The original stack loads unchanged (codec, pins and mission below) |
+| 7 | Albatross on optimistic masses (lead decision) | fixed | Canopus-N 6.4 t (T/W 4.0 at 250 kN), habitat 22 t, thrust structure 2.4 t, `tank-lh2-9m` 7.5 t dry holding 45 t of LH2 (ellipsoidal domes, 660 m^3 with 3 % ullage; the model has no boil-off: the cryocoolers are in the dry mass), four tanks launched two full, two H ports: cruiser dry 82.3 t, 180 t LH2, 10,234 m/s full. What the masses took is given back as depot flights (table below) |
+| 7 | Blobs | re-recorded, more than once | only my nine `tests/unit/sim-vessel/corpus/fleet-*.v4.bin` and their nine pin lines in tools/dev/guard-pins.test.ts changed, but in three recordings, not one: with the corrected masses, the Albatross again for its second H port (both in 16cc5f1), and all nine again in part 2 for the fairing shield lists, the Egret's quads and the truss fitted to its nose cap. No other blob or pin moved |
+| 8 | Payloads outside their fairings | fixed | `fairing-6m6-ogive` 18 m, `nose-cap-9m` 17 m with its own drag table; the shield lists name only what is inside (the payload adapters, the 4 m to 6.6 m adapter and the Kestrel's Lyra-A stand at or below the base plane); the Egret's quads 0.1 m further in; the truss's frustum 0.1 m narrower at its base, inside the nose cap; `fairingContainment` holds every shielded part inside the fairing's authored shell (32 points on each rim of the part's own shapes, legs at hinge and foot) |
+| 9 | Debris "gentle drop" red | partly | green, but under the owner's new limit (island-core, 4c9a569, resolving fleet-data-7: under 10 % of the drops), not the old count: 12 of 232 drops break by toppling, mine among them azimuth-s1, solstice-s1 and (since its 18 m length) fairing-6m6-ogive, all from the skew attitude, as the Meridian's M-1 to M-3 do |
+| 10 | Cruiser separation 6.4 s; heavy flights without separation in orbit | fixed | adapter-9m 80 kN s, the NTRs light 6 s after: the pieces part in 2.87 s; the heavy flights run with `separateInOrbit` (flights-heavy.test.ts) |
+| 11 | Splashdown speed after impact | fixed | taken at first contact: 7.85 m/s, asserted under 10, and a `chuteFailed` damage event fails the test |
+| 12 | Flat terrain only | fixed | Ka Lae lc-3 (Solstice / Kestrel LF) and Madrakah lc-11 (Azimuth 1 / Pathfinder) on the real terrain (flights-range.test.ts; `it.skipIf` without baked tiles) |
+| 13 | Pilot tail-off, 264 km apoapsis, one TWR | fixed | the pilot coasts to the apoapsis and circularises (stages with RCS), throttling the tail-off; every ascent asserted in 185-250 km (periapsis >= 185, apoapsis <= 250; the Azimuth 190.2 x 205.7, the Albatross 185.4 x 206.5); lift-off TWR range shown by off-loaded variants at 1.64 and 1.99 (flights-range.test.ts) |
+| 14 | Engines and tanks inconsistent | fixed | Lyra-K 315 s with a 0.34 m exit; Wren-1V 190 kN / 355 s vac, 250 s at sea level (a vacuum nozzle on the Wren-1's chamber: 176 kN / 330 s); the generator checks every tank's volume against its propellant (the Azimuth tanks lengthened) |
+| 15 | Numbers beyond flown hardware | fixed | wheels: Pathfinder 4 N m, avionics ring 600, Egret cabin 400, Albatross habitat 4,000 (CMGs); port transfer C 10 kg/s, H 40 kg/s; no boil-off is a stated rule of the model |
+| 16 | Pad limits by exact equality | fixed | mass compared with 1e-6 of the limit, diameter with 1 cm; the diameter envelope sampled at 64 angles (was 8); the sites' limits unchanged |
+| 17 | First offer | fixed | solstice-atoll no longer `firstOffer` |
+| 20 | Egret starts full in lunar orbit | fixed | starts as delivered (12.2 t burnt in the 900 m/s insertion); lands at 0.79 m/s and returns to orbit with 1,080 m/s left |
+| 18 | Authority and port refresh in the simulation | not mine | fleet-data-5, resolved by island-core (4c9a569) |
+
+**Mission.** On a clean copy at HEAD, once alone and once with this round's files: both 35 of 37, with the same two
+failures of `tests/mission/full-mission.test.ts` ("sample 7 (control tick 2806, grid)" and an empty-list
+assertion) that HEAD has without fleet-data's files (island-core's a7d53a5 states 35 of 37 too): fleet-data's
+changes move nothing of the mission.
+
+**Reach, depot flights per body** (`npx tsx tests/unit/fleet/reachTable.ts`; margin in m/s; M = MARGINAL, under 5 %
+of cost). Cruiser 82.3 t dry, 180 t LH2 full, 88.4 t of it after its own ascent; a depot brings 45 t (9.0 t dry).
+- 0 flights (direct): Deimos 862, Mars 1,716, Moon 2,340, Phobos 647, Sun 3,071, Venus 1,690.
+- 1: Jupiter 3,244, Saturn 3,244.
+- 2: Callisto 2,977, Ceres 2,895, Ganymede 2,303, Iapetus 2,081, Neptune 3,244, Titan 2,022, Uranus 3,244.
+- 3: Ariel 900, Europa 955, Mercury 513 M, Miranda 423 M, Oberon 1,423, Rhea 730, Titania 1,246, Triton 1,349,
+  Umbriel 1,045.
+- 4: Dione 173 M.
+- 5 (one depot kept as a drop tank): Charon 759, Enceladus 97 M, Io 679 M, Pluto 988, Tethys 729.
+- 6 (two kept as drop tanks): Mimas 384 M.
+(3,244 is the cap set by the raise to the refuel orbit from what the cruiser has after its ascent.)
+
+**Corrected fleet table** (`analyzeVehicle`; lift-off mass, total vacuum delta-v, delta-v in orbit):
+Azimuth 1 / Pathfinder 60.65 t, 14,983, 5,443 m/s; Solstice / Kestrel LF 600.95 t, 12,887, 3,381; Solstice / Atoll
+611.5 t, 10,553, 1,052; Solstice / Pelican 612.3 t, 15,874, 6,373; Meridian / Egret 2,748.5 t, 19,671, 10,207;
+Meridian / Albatross 2,771.65 t, 15,902, 6,439 (flown: 6,180 in 185.4 x 206.5 km); Meridian / Pelican Heavy
+2,752.4 t, 13,300 (in orbit only the depot's RCS, 38: see finding 3); Meridian / lunar (original) 2,756.1 t,
+unchanged.
+
 The fleet as data: 33 new parts, 13 assemblies, 7 new vehicles (meridian-lunar untouched), menu text, the pads of
 both sites (Ka Lae 9, Madrakah 16), the loader's assemblies and structural checks, `hashLibrary`,
 `analyzeVehicle`, `validateVehicle`, the module behaviour of ports and remote command, a generic ascent pilot,

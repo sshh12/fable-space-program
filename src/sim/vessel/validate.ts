@@ -30,15 +30,106 @@ import { DEFAULT_PAD_CLASS_LIMITS, type PadClass, type UniverseRules } from '@/c
 import type { Issue } from '@/core/contracts/vehicle';
 import { padLimitsOf } from '@/core/defs/sites';
 import { actionParts, nodeOf, structuralIssues } from '@/core/defs/vehicleStructure';
-import { analyzeVehicle } from './analyze';
+import { analyzeVehicle, stageBurns } from './analyze';
 import { buildVehicle } from './assemble';
 import { vesselClearance } from './clearance';
+import { quat } from '@/core/math/quat';
+import { v3 } from '@/core/math/vec3';
+import { legFootLocal } from './structure';
 import type { PartRuntime, Vessel } from './types';
 
 /** Mated node sizes may differ by this share of the larger, or 0.1 m, whichever is more. */
 export const NODE_SIZE_TOLERANCE = 0.1;
 /** Colliders may interpenetrate this much (m) before it is an overlap. */
 export const OVERLAP_TOLERANCE = 0.05;
+/** Pad limits are compared with these tolerances: a share of the mass, and metres of diameter (the envelope is sampled). */
+export const LIMIT_TOLERANCE = 1e-6;
+export const DIAMETER_TOLERANCE = 0.01;
+/** A shielded part may stand this close (m) to its fairing's inner surface. */
+export const CONTAINMENT_TOLERANCE = 0.01;
+
+/** Whether a point of a fairing's frame is inside its volume: its authored shell (cylinders and frustums), else its bounds. */
+function insideFairing(def: PartRuntime['def'], p: { x: number; y: number; z: number }): boolean {
+  const r = Math.hypot(p.x, p.z) + CONTAINMENT_TOLERANCE;
+  const shapes = def.collision ?? [{ kind: 'cylinder' as const, radius: def.bounds.radius, yMin: def.bounds.yMin, yMax: def.bounds.yMax }];
+  return shapes.some((s) => {
+    const t = CONTAINMENT_TOLERANCE;
+    if (s.kind === 'cylinder') return p.y >= s.yMin - t && p.y <= s.yMax + t && r <= s.radius;
+    if (s.kind === 'frustum') return p.y >= s.y0 - t && p.y <= s.y1 + t && r <= s.r0 + ((s.r1 - s.r0) * (p.y - s.y0)) / (s.y1 - s.y0);
+    return false;
+  });
+}
+
+/** Every part a closed fairing shields lies inside it ('fairingContainment'). */
+function containmentIssues(vessel: Vessel): Issue[] {
+  const out: Issue[] = [];
+  for (const f of vessel.parts) {
+    const fm = f.def.modules.find((m) => m.type === 'fairing');
+    // (An escape tower's boost cover is a fairing module on the tower, not a shell round what it covers.)
+    if (!fm || fm.type !== 'fairing' || f.def.modules.some((m) => m.type === 'les')) continue;
+    for (const q of vessel.parts) {
+      if (q === f || !fm.shields.some((s) => s === q.instanceId || s === q.def.id)) continue;
+      const b = q.def.bounds;
+      const legs = q.def.modules.find((m) => m.type === 'legs');
+      const pts: [number, number, number][] = [];
+      if (legs && legs.type === 'legs') legs.legs.forEach((l, i) => pts.push(legFootLocal(legs, i, 0), l.hinge));
+      else {
+        // The part's authored shape where it has one (a frustum's two rims), else its bounds cylinder.
+        const rims: [number, number][] = [];
+        for (const sh of q.def.collision ?? []) {
+          if (sh.kind === 'cylinder') rims.push([sh.radius, sh.yMin], [sh.radius, sh.yMax]);
+          else if (sh.kind === 'frustum') rims.push([sh.r0, sh.y0], [sh.r1, sh.y1]);
+          else if (sh.kind === 'shell') rims.push([sh.rOuter, sh.yMin], [sh.rOuter, sh.yMax]);
+        }
+        if (rims.length === 0) rims.push([b.radius, b.yMin], [b.radius, b.yMax]);
+        for (let k = 0; k < 32; k++) for (const [rr, y] of rims) pts.push([rr * Math.sin((k * Math.PI) / 16), y, rr * Math.cos((k * Math.PI) / 16)]);
+      }
+      let worst = 0;
+      for (const local of pts) {
+        const inVessel = v3.add(q.pos, quat.rotate(q.rot, v3.fromTuple(local)));
+        const inFairing = quat.rotateInv(f.rot, v3.sub(inVessel, f.pos));
+        if (!insideFairing(f.def, inFairing)) worst++;
+      }
+      if (worst > 0) out.push({ severity: 'error', code: 'fairingContainment', message: `Part "${q.instanceId}" reaches outside the fairing "${f.instanceId}" that shields it.`, parts: [q.instanceId, f.instanceId], value: worst });
+    }
+  }
+  return out;
+}
+
+/** How much wider (a share of the diameter) a fairing's base may be than the stage that carries it: a bulbous
+ * fairing reaches about 1.4 (5.4 m on 3.8 m); beyond FAIRING_OVERHANG its base overhangs what carries it. */
+export const FAIRING_OVERHANG = 1.5;
+
+/** A fairing whose base is far wider than the part under it ('fairingOverhang': a 6.6 m fairing on a 2.2 m stage). */
+function overhangIssues(vessel: Vessel): Issue[] {
+  const out: Issue[] = [];
+  for (const f of vessel.parts) {
+    const fm = f.def.modules.find((m) => m.type === 'fairing');
+    if (!fm || fm.type !== 'fairing' || f.def.modules.some((m) => m.type === 'les')) continue;
+    const base = f.def.collision?.find((s) => s.kind === 'cylinder' || s.kind === 'frustum');
+    const baseRadius = base?.kind === 'frustum' ? base.r0 : base?.kind === 'cylinder' ? base.radius : f.def.bounds.radius;
+    const below = v3.add(f.pos, quat.rotate(f.rot, v3.fromTuple([0, f.def.bounds.yMin - 0.05, 0])));
+    let support = 0;
+    for (const q of vessel.parts) {
+      if (q === f || q.panel || fm.shields.some((s) => s === q.instanceId || s === q.def.id)) continue;
+      const p = quat.rotateInv(q.rot, v3.sub(below, q.pos));
+      if (p.y >= q.def.bounds.yMin && p.y <= q.def.bounds.yMax && Math.hypot(p.x, p.z) <= q.def.bounds.radius) support = Math.max(support, q.def.bounds.radius);
+    }
+    if (support > 0 && baseRadius > FAIRING_OVERHANG * support + CONTAINMENT_TOLERANCE) {
+      out.push({ severity: 'error', code: 'fairingOverhang', message: `The fairing "${f.instanceId}" (${(2 * baseRadius).toFixed(1)} m at its base) stands on ${(2 * support).toFixed(1)} m: its base overhangs what carries it.`, parts: [f.instanceId], value: baseRadius / support });
+    }
+  }
+  return out;
+}
+
+/** A craft of a pre-docked vehicle without a command part cannot be flown once it leaves ('craftWithoutCommand', a warning). */
+function craftIssues(vessel: Vessel): Issue[] {
+  if (vessel.crafts.length < 2) return [];
+  return vessel.crafts
+    .map((c, i) => ({ c, i }))
+    .filter(({ i }) => !vessel.parts.some((p) => p.craft === i && p.def.modules.some((m) => m.type === 'command')))
+    .map(({ c }) => ({ severity: 'warning' as const, code: 'craftWithoutCommand', message: `The craft rooted at "${c.root}" has no command part: once undocked nothing flies it.`, parts: [c.root] }));
+}
 
 export interface ValidationContext {
   /** How it starts: 'pad' (the default: a spawn on a pad) needs clamps; any other start does not. */
@@ -65,7 +156,11 @@ export function validateVehicle(defs: DefLibrary, vehicle: VehicleDef, context: 
     issues.push({ severity: 'error', code: 'assembly', message: `The vehicle cannot be assembled: ${(e as Error).message}`, parts: [] });
     return issues;
   }
-  issues.push(...nodeSizeIssues(lib, vehicle), ...overlapIssues(vessel, vehicle), ...sequenceIssues(vessel, vehicle));
+  issues.push(...nodeSizeIssues(lib, vehicle), ...overlapIssues(vessel, vehicle), ...sequenceIssues(vessel, vehicle), ...containmentIssues(vessel), ...overhangIssues(vessel), ...craftIssues(vessel));
+  // An engine whose exhaust runs into the vessel when its stage lights it.
+  for (const b of stageBurns(lib, vehicle).burns) {
+    for (const id of b.blocked ?? []) issues.push({ severity: 'error', code: 'engineBlocked', message: `Stage ${b.stageIndex} lights "${id}", whose exhaust runs into a part of the vessel.`, parts: [id], stageIndex: b.stageIndex });
+  }
   const start = context.start ?? 'pad';
   if (start === 'pad') {
     if (!vessel.parts.some((p) => p.def.modules.some((m) => m.type === 'launchClamp'))) {
@@ -155,10 +250,10 @@ function padIssues(defs: DefLibrary, vehicle: VehicleDef, context: ValidationCon
   if (context.pad && CLASS_ORDER.indexOf(cls) > CLASS_ORDER.indexOf(context.pad.class)) {
     out.push({ severity: 'error', code: 'padClassExceeded', message: `A ${cls} vehicle cannot launch from ${where}, which is ${context.pad.class}.`, parts: [] });
   }
-  if (caps.massWet > limits.maxLiftoffMass) {
+  if (caps.massWet > limits.maxLiftoffMass * (1 + LIMIT_TOLERANCE)) {
     out.push({ severity: 'error', code: 'padClassExceeded', message: `Lift-off mass ${(caps.massWet / 1000).toFixed(1)} t is over the ${(limits.maxLiftoffMass / 1000).toFixed(1)} t that ${where} takes.`, parts: [], value: caps.massWet });
   }
-  if (caps.diameter > limits.maxDiameter) {
+  if (caps.diameter > limits.maxDiameter + DIAMETER_TOLERANCE) {
     out.push({ severity: 'error', code: 'padClassExceeded', message: `The stack is ${caps.diameter.toFixed(2)} m across, over the ${limits.maxDiameter} m that ${where} takes.`, parts: [], value: caps.diameter });
   }
   return out;

@@ -21,6 +21,7 @@ const siteFile = (id: string, bodyId: string, more: Record<string, unknown> = {}
 /** A part definition as small as the structural checks take: a command module, so a vehicle of it can be flown. */
 const podPart = (id: string, more: Record<string, unknown> = {}): Record<string, unknown> => ({
   id,
+  dryMass: 100,
   attachNodes: [],
   modules: [{ type: 'command', crewCapacity: 0, sas: true, maxRateDegPerS: 10, seats: [], remote: true }],
   ...more,
@@ -32,7 +33,7 @@ const vehicleFile = (id: string, parts: Record<string, unknown>[]): Record<strin
   name: id,
   parts: parts.map((p) => ({ stageGroup: 'g', ...p })),
   stageGroups: [{ id: 'g', label: 'G' }],
-  stages: [],
+  stages: [{ label: 'Stage', icon: 'decoupler', actions: [] }],
   abort: [],
   actionGroups: {},
   crew: [],
@@ -525,7 +526,7 @@ describe('definition loader', () => {
       'sites/k.json': siteFile('k', 'a'),
       'resources.json': [{ id: 'LOX' }, { id: 'CH4' }],
       'parts/tank.json': podPart('tank', { resources: [{ resource: 'LOX', capacity: 1000, tankBottomY: 0, tankHeight: 1 }] }),
-      'parts/strut.json': { id: 'strut', attachNodes: [], modules: [] },
+      'parts/strut.json': { id: 'strut', dryMass: 10, attachNodes: [], modules: [] },
       'vehicles/v.json': vehicleFile('v', [{ id: 't1', def: 'tank', parent: null }, { id: 's1', def: 'strut', parent: 't1', position: [0, 0, 0] }]),
       'scenarios/s.json': { id: 's', name: 's', vehicle: 'v', site: 'k', startUt: 0, start: { kind: 'pad' }, stagesAlreadyFired: 0, target: null, suggestedLanding: null, milestones: [], ...(resources === undefined ? {} : { resources }) },
     });

@@ -50,7 +50,7 @@
       "position": [
         0,
         2.6,
-        3
+        2.9
       ],
       "rotationDeg": [
         -90,
@@ -70,7 +70,7 @@
       "def": "rcs-quad-440",
       "parent": "tank",
       "position": [
-        3,
+        2.9,
         2.6,
         0
       ],
@@ -94,7 +94,7 @@
       "position": [
         0,
         2.6,
-        -3
+        -2.9
       ],
       "rotationDeg": [
         -90,
@@ -114,7 +114,7 @@
       "def": "rcs-quad-440",
       "parent": "tank",
       "position": [
-        -3,
+        -2.9,
         2.6,
         0
       ],

@@ -72,15 +72,15 @@ export const GUARD_PINS: Readonly<Record<string, string>> = {
   'tests/unit/sim-vessel/corpus/stack-mid-staging.v2.bin': 'b9b866428997defc648362959e50bc78dccd48b74fa7034327f06aaf53e0aa56',
   'tests/unit/sim-vessel/corpus/stack-mid-staging.v3.bin': 'e8a774a961d4bf587650bbe298d5252bf941982efb9708ceab8cec08ddf6a4e7',
   // fleet-data: one blob of every vehicle of the fleet (tests/unit/sim-vessel/corpus/fleetScenes.ts), added.
-  'tests/unit/sim-vessel/corpus/fleet-orbit-kestrel-lf.v4.bin': '5110faf36e514674488de23880b3943ef2570025423cf545d1708b0a0e55e1b9',
-  'tests/unit/sim-vessel/corpus/fleet-orbit-pelican.v4.bin': '49c3f4ff1e9f1109aabf3300263700c9fe07d35f9cb08d82f16be5c06e51f02e',
-  'tests/unit/sim-vessel/corpus/fleet-pad-azimuth-pathfinder.v4.bin': '9a631c42371bd4f48062879a4bf6551bccd2bb94c073e3178dc91aa5cce244f5',
-  'tests/unit/sim-vessel/corpus/fleet-pad-meridian-albatross.v4.bin': 'c7577c1fced1b70e412912ff99e14422c99308308fe24f7797ee820311abccf2',
-  'tests/unit/sim-vessel/corpus/fleet-pad-meridian-egret.v4.bin': '1f6f52a509c612613df68473bc899caa2f6a73dbfc792894bef8c74cfb263fae',
-  'tests/unit/sim-vessel/corpus/fleet-pad-meridian-pelican-heavy.v4.bin': '8dae8a5fa8308bcf0dde5f972c956d38c0504df1e7a4d74a354f21f5dbf376f2',
-  'tests/unit/sim-vessel/corpus/fleet-pad-solstice-atoll.v4.bin': '86c0b32fa47c57ad5258932ec051dabd57fe02561e60adeabe187dc6b37a96bc',
-  'tests/unit/sim-vessel/corpus/fleet-pad-solstice-kestrel.v4.bin': '8a47b8cd477958b1f0518e38a75250308c2db1e3cda6d67ee9a5205703f59849',
-  'tests/unit/sim-vessel/corpus/fleet-pad-solstice-pelican.v4.bin': 'a64539dc70f524bcb6f630ba4dfbef3b54fac53a0f9138bf6fb56bbb44496d20',
+  'tests/unit/sim-vessel/corpus/fleet-orbit-kestrel-lf.v4.bin': '5a67925efb1d81c11b8f2bc486b9bacb56e1ffc892807789a26fecaaabf95b68',
+  'tests/unit/sim-vessel/corpus/fleet-orbit-pelican.v4.bin': '3cce8226dfef90f650d5e3c3d631aca42f59feb8d0471f4f34604c31ca5ef053',
+  'tests/unit/sim-vessel/corpus/fleet-pad-azimuth-pathfinder.v4.bin': '14ea395db3007b4d8d406ea304db64a7af2e199ee5f0df646b9d7ed84111ce36',
+  'tests/unit/sim-vessel/corpus/fleet-pad-meridian-albatross.v4.bin': 'c90b8e8678a723d634a9b075bc4c2e5cfd8d10e6a5619a6378e05bfeadf77dd9',
+  'tests/unit/sim-vessel/corpus/fleet-pad-meridian-egret.v4.bin': '9f392f3bc7b9593a49eb4ea1dc23ed6010190777406dac4df37b65dd89fed079',
+  'tests/unit/sim-vessel/corpus/fleet-pad-meridian-pelican-heavy.v4.bin': 'dd039ad5ad95c2c2d6e3955d5599850b4178d490391cc1ba1b76efaf70ccaa23',
+  'tests/unit/sim-vessel/corpus/fleet-pad-solstice-atoll.v4.bin': '9ba56a9bf8f66df92094e7e8dbd4a47210ebb4055a1551d9c7e229c333556970',
+  'tests/unit/sim-vessel/corpus/fleet-pad-solstice-kestrel.v4.bin': 'a6f7ad8d9fd83f3ce9cc9d184d38091b7f9116b7a9d3c453cf65b91f209c7586',
+  'tests/unit/sim-vessel/corpus/fleet-pad-solstice-pelican.v4.bin': 'edf274763eaaaf287d857fdbde217adbf51e52e31ae3be0a5b87006ba73108a8',
 };
 
 const WHO =

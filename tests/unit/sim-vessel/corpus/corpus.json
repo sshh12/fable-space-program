@@ -219,52 +219,61 @@
   "file": "fleet-pad-azimuth-pathfinder.v4.bin",
   "scene": "fleet-pad-azimuth-pathfinder",
   "version": 4,
-  "defsHash": "0708b424c7aea3bb",
+  "defsHash": "8de73e8727d3ed73",
   "bytes": 3185,
   "parts": 17,
-  "stateHash": "dc9a50ce2cb13dd5"
+  "stateHash": "1234135c9b3c13c0"
  },
  {
   "file": "fleet-pad-solstice-kestrel.v4.bin",
   "scene": "fleet-pad-solstice-kestrel",
   "version": 4,
-  "defsHash": "0708b424c7aea3bb",
+  "defsHash": "8de73e8727d3ed73",
   "bytes": 4998,
   "parts": 26,
-  "stateHash": "dd289a8c9fa31a60"
+  "stateHash": "dd7b6c9e8198d7e6"
  },
  {
   "file": "fleet-pad-solstice-atoll.v4.bin",
   "scene": "fleet-pad-solstice-atoll",
   "version": 4,
-  "defsHash": "0708b424c7aea3bb",
+  "defsHash": "8de73e8727d3ed73",
   "bytes": 4634,
   "parts": 27,
-  "stateHash": "a54056982e58b8c9"
+  "stateHash": "88c43ef108097d76"
  },
  {
   "file": "fleet-pad-solstice-pelican.v4.bin",
   "scene": "fleet-pad-solstice-pelican",
   "version": 4,
-  "defsHash": "0708b424c7aea3bb",
+  "defsHash": "8de73e8727d3ed73",
   "bytes": 4121,
   "parts": 23,
-  "stateHash": "e9ec9d42b8e7c018"
+  "stateHash": "55081ca1bbcd695d"
  },
  {
   "file": "fleet-pad-meridian-egret.v4.bin",
   "scene": "fleet-pad-meridian-egret",
   "version": 4,
-  "defsHash": "0708b424c7aea3bb",
+  "defsHash": "8de73e8727d3ed73",
   "bytes": 6543,
   "parts": 40,
-  "stateHash": "2f4a66cc9d2aef02"
+  "stateHash": "52906b22c0beb472"
+ },
+ {
+  "file": "fleet-pad-meridian-albatross.v4.bin",
+  "scene": "fleet-pad-meridian-albatross",
+  "version": 4,
+  "defsHash": "8de73e8727d3ed73",
+  "bytes": 6484,
+  "parts": 43,
+  "stateHash": "d94a5e1b35f7790b"
  },
  {
   "file": "fleet-pad-meridian-pelican-heavy.v4.bin",
   "scene": "fleet-pad-meridian-pelican-heavy",
   "version": 4,
-  "defsHash": "0708b424c7aea3bb",
+  "defsHash": "8de73e8727d3ed73",
   "bytes": 6209,
   "parts": 38,
   "stateHash": "f0ca45b1f07248db"
@@ -273,7 +282,7 @@
   "file": "fleet-orbit-kestrel-lf.v4.bin",
   "scene": "fleet-orbit-kestrel-lf",
   "version": 4,
-  "defsHash": "0708b424c7aea3bb",
+  "defsHash": "8de73e8727d3ed73",
   "bytes": 2571,
   "parts": 10,
   "stateHash": "380f7a46f3171e2f"
@@ -282,18 +291,9 @@
   "file": "fleet-orbit-pelican.v4.bin",
   "scene": "fleet-orbit-pelican",
   "version": 4,
-  "defsHash": "0708b424c7aea3bb",
+  "defsHash": "8de73e8727d3ed73",
   "bytes": 2172,
   "parts": 9,
   "stateHash": "3c037e44798f4359"
- },
- {
-  "file": "fleet-pad-meridian-albatross.v4.bin",
-  "scene": "fleet-pad-meridian-albatross",
-  "version": 4,
-  "defsHash": "981d70e486ca6a1c",
-  "bytes": 6484,
-  "parts": 43,
-  "stateHash": "d94a5e1b35f7790b"
  }
 ]

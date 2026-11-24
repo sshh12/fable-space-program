@@ -92,8 +92,8 @@ function envelope(vessel: Vessel): { height: number; diameter: number } {
       legs.legs.forEach((l, i) => pts.push(legFootLocal(legs, i, state?.deploy ?? 0), l.hinge));
     } else {
       const b = p.def.bounds;
-      for (let k = 0; k < 8; k++) {
-        const a = (k * Math.PI) / 4;
+      for (let k = 0; k < 64; k++) {
+        const a = (k * Math.PI) / 32;
         pts.push([b.radius * Math.sin(a), b.yMin, b.radius * Math.cos(a)], [b.radius * Math.sin(a), b.yMax, b.radius * Math.cos(a)]);
       }
     }
@@ -180,6 +180,40 @@ function onlyJettisons(vehicle: VehicleDef, index: number): boolean {
 export interface StageBurn extends Burn {
   stageIndex: number;
   label: string;
+  /** Instance ids of lit engines whose exhaust runs into a part of the vessel (their stage states no delta-v). */
+  blocked?: string[];
+}
+
+/** How far along its exhaust (m) an engine's plume must be clear of the vessel's parts. */
+export const EXHAUST_CLEAR_LENGTH = 40;
+
+/**
+ * The lit engines (active, not fixed-burn motors) of a vessel whose exhaust axis, from each nozzle exit out to
+ * EXHAUST_CLEAR_LENGTH, passes through the bounds of another part (an engine mounted backwards, or with its bell
+ * inside a tank). Parts with landing legs are passed over (their bounds enclose folded struts, not a wall).
+ */
+export function blockedEngines(vessel: Vessel): string[] {
+  const out: string[] = [];
+  for (const e of structureOf(vessel).engines) {
+    if (!e.state.active || e.def.fixedBurn) continue;
+    const part = vessel.parts[e.part]!;
+    let hit = false;
+    for (let n = 0; n < e.def.nozzles.length && !hit; n++) {
+      const o = v3.add(part.pos, quat.rotate(part.rot, v3.fromTuple(e.def.nozzles[n]!.pos)));
+      const d = v3.normalize(quat.rotate(part.rot, v3.fromTuple(e.def.nozzles[n]!.dir)));
+      for (const q of vessel.parts) {
+        if (q === part || q.panel || q.def.modules.some((m) => m.type === 'legs')) continue;
+        const b = q.def.bounds;
+        for (let s = 0.15; s <= EXHAUST_CLEAR_LENGTH && !hit; s += 0.1) {
+          const p = quat.rotateInv(q.rot, v3.sub(v3.addScaled(o, d, s), q.pos));
+          if (p.y > b.yMin && p.y < b.yMax && Math.hypot(p.x, p.z) < b.radius) hit = true;
+        }
+        if (hit) break;
+      }
+    }
+    if (hit) out.push(part.instanceId);
+  }
+  return out;
 }
 
 export function stageBurns(defs: DefLibrary, vehicle: VehicleDef): { burns: StageBurn[]; vessels: Vessel[] } {
@@ -195,8 +229,10 @@ export function stageBurns(defs: DefLibrary, vehicle: VehicleDef): { burns: Stag
       applyStageInstant(vessel, k + 1 + early.length);
       early.push(k + 1 + early.length);
     }
-    const burn = burnLitEngines(vessel);
-    burns.push({ stageIndex: k, label: vehicle.stages[k]!.label, ...burn });
+    // An engine whose exhaust runs into a part of the vessel gives no delta-v that can be stated.
+    const blocked = blockedEngines(vessel);
+    const burn = blocked.length > 0 ? { deltaVVac: 0, deltaVSeaLevel: 0, burnTime: 0, massStart: vesselMassOf(vessel), massEnd: vesselMassOf(vessel), thrustVac: 0, thrustSeaLevel: 0 } : burnLitEngines(vessel);
+    burns.push({ stageIndex: k, label: vehicle.stages[k]!.label, ...burn, blocked });
     vessels.push(snapshotOf(vessel));
     for (const j of early) {
       burns.push({ stageIndex: j, label: vehicle.stages[j]!.label, deltaVVac: 0, deltaVSeaLevel: 0, burnTime: 0, massStart: burn.massEnd, massEnd: burn.massEnd, thrustVac: 0, thrustSeaLevel: 0 });

@@ -183,8 +183,7 @@
       "impulse": 500,
       "shields": [
         "pathfinder-bus",
-        "lyra-k",
-        "azimuth-payload-adapter"
+        "lyra-k"
       ]
     }
   ],

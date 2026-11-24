@@ -5,13 +5,16 @@
  * are named MARGINAL here exactly, so a change in either direction is seen; they are not flown (hand-off).
  * And one answer: `analyzeVehicle`'s ladder, given the same reach function, states the same margins.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import { analyzeVehicle } from '@/sim/vessel/analyze';
 import { reachCostFor, reachTable, stagedLibrary, type ReachTable } from './reachTable';
 
 /** Bodies whose margin is under 5 % of their cost (fleet-data hand-off: closed on paper, not flown). */
 const MARGINAL = ['dione', 'enceladus', 'io', 'mercury', 'mimas', 'miranda'];
+
+// The reach function searches six years of windows for every body: these tests take tens of seconds.
+vi.setConfig({ testTimeout: 300_000 });
 
 let defs: DefLibrary;
 let table: ReachTable;

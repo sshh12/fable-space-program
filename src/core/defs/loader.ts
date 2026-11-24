@@ -379,8 +379,20 @@ export function validateLibrary(lib: DefLibrary): void {
   }
   for (const r of Object.values(lib.rules ?? {})) validateRules(r, `rules/${r.id}.json`);
   for (const p of Object.values(lib.parts)) {
+    const file = `parts/${p.id}.json`;
+    // Numbers a flight rests on: positive and finite where a zero or a negative is nonsense.
+    if (!(isFiniteNumber(p.dryMass) && p.dryMass > 0)) throw new DefError(file, `"dryMass" must be a positive number of kg, got ${String(p.dryMass)}`);
     for (const r of p.resources ?? []) {
-      if (!lib.resources[r.resource]) throw new DefError(`parts/${p.id}.json`, `unknown resource "${r.resource}"`);
+      if (!lib.resources[r.resource]) throw new DefError(file, `unknown resource "${r.resource}"`);
+      if (!(isFiniteNumber(r.capacity) && r.capacity >= 0)) throw new DefError(file, `the capacity of "${r.resource}" must be a number of kg from 0, got ${String(r.capacity)}`);
+    }
+    for (const m of p.modules ?? []) {
+      if (m.type !== 'engine') continue;
+      if (!(isFiniteNumber(m.thrustVac) && m.thrustVac > 0)) throw new DefError(file, `an engine's "thrustVac" must be a positive number of N, got ${String(m.thrustVac)}`);
+      if (!(isFiniteNumber(m.ispVac) && m.ispVac > 0)) throw new DefError(file, `an engine's "ispVac" must be a positive number of s, got ${String(m.ispVac)}`);
+      if (!(isFiniteNumber(m.ispSL) && m.ispSL >= 0 && m.ispSL <= m.ispVac)) throw new DefError(file, `an engine's "ispSL" must be from 0 to its ispVac ${m.ispVac}, got ${String(m.ispSL)}`);
+      const sum = m.propellants.reduce((s, x) => s + x.ratio, 0);
+      if (m.propellants.length === 0 || m.propellants.some((x) => !(isFiniteNumber(x.ratio) && x.ratio > 0)) || Math.abs(sum - 1) > 1e-6) throw new DefError(file, `an engine's propellant ratios must be positive and sum to 1, got ${m.propellants.map((x) => x.ratio).join(' + ')}`);
     }
   }
   for (const v of Object.values(lib.vehicles)) {
@@ -399,7 +411,7 @@ export function validateLibrary(lib: DefLibrary): void {
     }
     // The structural checks (src/core/defs/vehicleStructure.ts): one root, reachability, node kinds and
     // occupancy, declared stage groups, actions on parts with the module they need, a command part.
-    const found = structuralIssues(lib.parts, v);
+    const found = structuralIssues(lib.parts, v).filter((i) => i.severity === 'error');
     if (found.length > 0) {
       const more = found.length > 1 ? ` (and ${found.length - 1} more: ${[...new Set(found.slice(1).map((i) => i.code))].join(', ')})` : '';
       throw new DefError(`vehicles/${v.id}.json`, `${found[0]!.message}${more}`);

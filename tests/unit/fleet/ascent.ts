@@ -36,8 +36,8 @@ export async function ascentToOrbit(defs: DefLibrary, vehicleId: string, separat
   expect(rec.result.reason, vehicleId).toBe('done');
   expect(pilot.orbitUt, vehicleId).not.toBeNull();
   const r = rec.final.readouts;
-  expect(r.periapsisAltitude, vehicleId).toBeGreaterThanOrEqual(160000);
   // Scope D: a 185-250 km orbit.
+  expect(r.periapsisAltitude, vehicleId).toBeGreaterThanOrEqual(185000);
   expect(r.apoapsisAltitude, vehicleId).toBeLessThanOrEqual(250000);
   // Max-q under the structural limits of the stack: q x angle of attack against its weakest joint.
   const weakest = weakestJoint(defs, vehicleId);
