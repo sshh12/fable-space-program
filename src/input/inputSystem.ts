@@ -30,6 +30,7 @@
  */
 import type { ButtonAction } from '@/core/contracts/controls';
 import { DEFAULT_BINDINGS, type Binding, type ServedActions, type UiAction } from './bindings';
+import type { InputContextName } from './contexts';
 import { createInputCore, type FlightInputFrame, type ModifierState } from './inputCore';
 import { createKeyboardCapture } from './keyboardCapture';
 
@@ -69,6 +70,13 @@ export interface InputSystem {
   onKeyboardLockChange(listener: (locked: boolean, fullscreen: boolean) => void): () => void;
   /** Codes currently held (diagnostics / tests). */
   heldCodes(): string[];
+  /**
+   * The input context (contexts.ts). Only 'flight' (the default) feeds keys to the flight table; in 'menu' and
+   * 'transit' the keys belong to the shell, which reads them through its own table. Switching releases every
+   * held key, so nothing held across the switch reaches the next context as held.
+   */
+  readonly context: InputContextName;
+  setContext(context: InputContextName): void;
   dispose(): void;
 }
 
@@ -100,6 +108,7 @@ export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions 
   });
   let autoCapturePending = opts.captureKeyboard ?? false;
   let disposed = false;
+  let context: InputContextName = 'flight';
 
   let rect = canvas.getBoundingClientRect();
   const refreshRect = (): void => {
@@ -118,12 +127,14 @@ export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions 
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if (e.isComposing || isEditable(e.target)) return;
+    if (context !== 'flight') return;
     if (core.keyDown(e.code, e.repeat, modsOf(e))) e.preventDefault();
     else core.setModifiers(modsOf(e));
     if (e.code !== 'Escape') firstGesture(e);
   };
   const onKeyUp = (e: KeyboardEvent): void => {
     if (isEditable(e.target)) return;
+    if (context !== 'flight') return;
     if (core.keyUp(e.code)) e.preventDefault();
     core.setModifiers(modsOf(e));
   };
@@ -159,6 +170,8 @@ export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions 
     if (e.button === 0) core.doubleClick();
   };
   const onWheel = (e: WheelEvent): void => {
+    // Over a menu panel the wheel scrolls its list; over the scene (and always in flight) it is the game's.
+    if (context === 'menu' && isOverUi(e.target)) return;
     e.preventDefault();
     core.setModifiers(modsOf(e));
     if (e.deltaY !== 0) core.wheel(-Math.sign(e.deltaY));
@@ -216,6 +229,14 @@ export function createInputSystem(canvas: HTMLElement, opts: InputSystemOptions 
       return () => listeners.delete(listener);
     },
     heldCodes: () => core.heldCodes(),
+    get context() {
+      return context;
+    },
+    setContext(next) {
+      if (next === context) return;
+      context = next;
+      core.releaseAll();
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

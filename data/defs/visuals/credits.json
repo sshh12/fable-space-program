@@ -1,0 +1,204 @@
+{
+  "$comment": "Every outside source the game ships (ARCHITECTURE 23, Credits). The Credits screen renders this file; tests/browser/menu checks that every entry's title, attribution and licence appear on it. Same entry format as data/staged/credits.json of planet-bake, which bodies-activation merges in. Sources: tools/bake/earth/sources.json, docs/handoff/bake-moon-sky.md section 5, docs/handoff/site-bake.md, tools/audio/manifest.json.",
+  "formatVersion": 1,
+  "entries": [
+    {
+      "id": "etopo-2022",
+      "category": "Earth",
+      "title": "ETOPO 2022 15 Arc-Second Global Relief Model",
+      "author": "NOAA National Centers for Environmental Information",
+      "url": "https://www.ncei.noaa.gov/products/etopo-global-relief-model",
+      "licence": "Public domain",
+      "licenceUrl": "https://www.ncei.noaa.gov/products/etopo-global-relief-model",
+      "attribution": "NOAA National Centers for Environmental Information 2022, ETOPO 2022 15 Arc-Second Global Relief Model, DOI 10.25921/fd45-gt74",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "terrarium",
+      "category": "Earth",
+      "title": "Terrain Tiles (Mapzen Terrarium)",
+      "author": "Mapzen and the Terrain Tiles contributors; USGS 3DEP",
+      "url": "https://registry.opendata.aws/terrain-tiles/",
+      "licence": "Free with attribution",
+      "licenceUrl": "https://github.com/tilezen/joerd/blob/master/docs/attribution.md",
+      "attribution": "Terrain Tiles on AWS, Mapzen Terrarium; USGS 3D Elevation Program (public domain)",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "copernicus-glo30",
+      "category": "Earth",
+      "title": "Copernicus DEM GLO-30",
+      "author": "European Union and ESA",
+      "url": "https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model",
+      "licence": "Copernicus DEM licence (free of charge, any use, with attribution)",
+      "licenceUrl": "https://spacedata.copernicus.eu/documents/20123/121286/CSCDA_ESA_Mission-specific+Annex_31_Oct_22.pdf",
+      "attribution": "Produced using Copernicus WorldDEM-30 (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "blue-marble-ng",
+      "category": "Earth",
+      "title": "Blue Marble: Next Generation",
+      "author": "NASA Earth Observatory, Reto Stockli, NASA GSFC",
+      "url": "https://earthobservatory.nasa.gov/features/BlueMarble",
+      "licence": "Public domain",
+      "licenceUrl": "https://earthobservatory.nasa.gov/image-use-policy",
+      "attribution": "NASA Earth Observatory (Reto Stockli, NASA GSFC)",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "sentinel-2-cloudless",
+      "category": "Earth",
+      "title": "Sentinel-2 cloudless",
+      "author": "EOX IT Services GmbH",
+      "url": "https://s2maps.eu",
+      "licence": "CC BY-NC-SA 4.0",
+      "licenceUrl": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+      "attribution": "Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data)",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "black-marble-2016",
+      "category": "Earth",
+      "title": "Black Marble 2016 (Earth at Night)",
+      "author": "NASA Earth Observatory, Suomi NPP VIIRS",
+      "url": "https://earthobservatory.nasa.gov/features/NightLights",
+      "licence": "Public domain",
+      "licenceUrl": "https://earthobservatory.nasa.gov/image-use-policy",
+      "attribution": "NASA Earth Observatory images by Joshua Stevens, using Suomi NPP VIIRS data",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "modis-water-mask",
+      "category": "Earth",
+      "title": "MODIS Water Mask (MOD44W)",
+      "author": "NASA GIBS",
+      "url": "https://gibs.earthdata.nasa.gov",
+      "licence": "Public domain",
+      "licenceUrl": "https://earthdata.nasa.gov/earth-observation-data/data-use-policy",
+      "attribution": "NASA Global Imagery Browse Services (GIBS), MODIS MOD44W",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "esa-worldcover-2021",
+      "category": "Earth",
+      "title": "ESA WorldCover 10 m 2021 v200",
+      "author": "ESA WorldCover consortium",
+      "url": "https://esa-worldcover.org",
+      "licence": "CC BY 4.0",
+      "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "cloud-map",
+      "category": "Earth",
+      "title": "Global cloud map",
+      "author": "clouds.matteason.co.uk (from EUMETSAT, NOAA and JMA geostationary data)",
+      "url": "https://clouds.matteason.co.uk",
+      "licence": "No licence stated by the service",
+      "licenceUrl": "https://clouds.matteason.co.uk",
+      "attribution": "Cloud map from clouds.matteason.co.uk, derived from EUMETSAT, NOAA and JMA geostationary satellite data",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "solar-system-scope-earth-clouds",
+      "category": "Earth",
+      "title": "8k Earth clouds",
+      "author": "Solar System Scope (based on NASA imagery)",
+      "url": "https://www.solarsystemscope.com/textures/",
+      "licence": "CC BY 4.0",
+      "licenceUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "Solar System Scope, based on NASA imagery",
+      "bodies": ["Earth"]
+    },
+    {
+      "id": "lola-ldem",
+      "category": "Moon",
+      "title": "LRO LOLA Global LDEM 118 m",
+      "author": "NASA/GSFC LRO LOLA Team (Smith et al. 2010); USGS Astrogeology",
+      "url": "https://astrogeology.usgs.gov/search/map/moon_lro_lola_dem_118m",
+      "licence": "Public domain",
+      "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+      "attribution": "NASA/GSFC LRO LOLA Team; USGS Astrogeology mosaic Lunar_LRO_LOLA_Global_LDEM_118m_Mar2014",
+      "bodies": ["Moon"]
+    },
+    {
+      "id": "sldem2015",
+      "category": "Moon",
+      "title": "SLDEM2015 (LOLA and SELENE/Kaguya TC)",
+      "author": "Barker et al. 2016, Icarus 273; NASA GSFC, JAXA; USGS Astrogeology",
+      "url": "https://astrogeology.usgs.gov/search/map/moon_lro_lola_selene_kaguya_tc_dem_merge_60n60s_59m",
+      "licence": "Public domain",
+      "licenceUrl": "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits",
+      "attribution": "Barker et al. 2016, Icarus 273 (LOLA + SELENE/Kaguya TC, NASA GSFC, JAXA); USGS mosaic",
+      "bodies": ["Moon"]
+    },
+    {
+      "id": "lroc-nac-apollo11",
+      "category": "Moon",
+      "title": "LROC NAC DTM Apollo 11 and WAC global morphology mosaic 100 m",
+      "author": "NASA/GSFC/Arizona State University; USGS Astrogeology",
+      "url": "https://www.lroc.asu.edu",
+      "licence": "Public domain",
+      "licenceUrl": "https://www.lroc.asu.edu/about/terms",
+      "attribution": "NASA/GSFC/Arizona State University (LROC NAC DTM Apollo 11, WAC global morphology mosaic, June 2013)",
+      "bodies": ["Moon"]
+    },
+    {
+      "id": "cgi-moon-kit",
+      "category": "Moon",
+      "title": "CGI Moon Kit colour map",
+      "author": "NASA's Scientific Visualization Studio",
+      "url": "https://svs.gsfc.nasa.gov/4720",
+      "licence": "Public domain",
+      "licenceUrl": "https://svs.gsfc.nasa.gov/help/#apiusage",
+      "attribution": "NASA's Scientific Visualization Studio, CGI Moon Kit",
+      "bodies": ["Moon"]
+    },
+    {
+      "id": "deep-star-maps-2020",
+      "category": "Sky",
+      "title": "Deep Star Maps 2020",
+      "author": "NASA's Scientific Visualization Studio, Ernie Wright (Hipparcos-2, Tycho-2, Gaia DR2)",
+      "url": "https://svs.gsfc.nasa.gov/4851",
+      "licence": "Public domain",
+      "licenceUrl": "https://svs.gsfc.nasa.gov/help/#apiusage",
+      "attribution": "NASA's Scientific Visualization Studio, Deep Star Maps 2020 (Ernie Wright; Hipparcos-2, Tycho-2, Gaia DR2)",
+      "bodies": []
+    },
+    {
+      "id": "hyg-v41",
+      "category": "Sky",
+      "title": "HYG Database v4.1",
+      "author": "David Nash / astronexus",
+      "url": "https://github.com/astronexus/HYG-Database",
+      "licence": "CC BY-SA 4.0",
+      "licenceUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "attribution": "HYG Database v4.1 by David Nash (astronexus); the shipped star tables are derived from it and carry its licence",
+      "bodies": []
+    },
+    {
+      "id": "elevenlabs-sound",
+      "category": "Sound",
+      "title": "Generated sound effects",
+      "author": "Generated for this game with the ElevenLabs sound-generation API",
+      "url": "https://elevenlabs.io",
+      "licence": "ElevenLabs terms of service (generated content owned by the subscriber)",
+      "licenceUrl": "https://elevenlabs.io/terms-of-use",
+      "attribution": "Engine, wind, venting and interface sounds generated with ElevenLabs and processed for the game (tools/audio/manifest.json lists every take)",
+      "bodies": []
+    },
+    {
+      "id": "font-barlow",
+      "category": "Type",
+      "title": "Barlow, Barlow Semi Condensed and Barlow Condensed",
+      "author": "Jeremy Tribby",
+      "url": "https://github.com/jpt/barlow",
+      "licence": "SIL Open Font License 1.1",
+      "licenceUrl": "https://openfontlicense.org",
+      "attribution": "Barlow by Jeremy Tribby, Copyright 2017 The Barlow Project Authors",
+      "bodies": []
+    }
+  ]
+}

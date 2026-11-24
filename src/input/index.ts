@@ -27,6 +27,21 @@ export {
   type ServedActions,
   type UiAction,
 } from './bindings';
+export {
+  INPUT_CONTEXTS,
+  MENU_ACTIONS,
+  MENU_BINDINGS,
+  TRANSIT_ACTIONS,
+  TRANSIT_BINDINGS,
+  contextActionOf,
+  keysOfAction,
+  validateContextTable,
+  type ContextAction,
+  type ContextBinding,
+  type InputContextName,
+  type MenuAction,
+  type TransitAction,
+} from './contexts';
 export { createInputCore, type FlightInputFrame, type InputCore, type ModifierState } from './inputCore';
 export { createInputSystem, type InputSystem, type InputSystemOptions } from './inputSystem';
 export { createFlightController, isControllerAction, THROTTLE_RATE, type FlightController, type FlightControllerOptions } from './flightController';
