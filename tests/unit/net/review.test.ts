@@ -6,10 +6,11 @@ import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import type { ClientMessage, ServerMessage } from '@/core/contracts/net';
-import { DEFAULT_UNIVERSE_RULES, WIRE_CONSTANTS, wireLimits } from '@/core/contracts/net';
+import { DEFAULT_UNIVERSE_RULES, MAX_OUTCOME_MEMBER_BYTES, WIRE_CONSTANTS, wireLimits, type IslandOpBody, type WireThresholdOutcome } from '@/core/contracts/net';
+import type { OutcomeOp, PoseOp, ThresholdOutcome } from '@/sim/island/api';
 import { ByteReader } from '@/net/codec/bytes';
 import { assembleFrame, decodeFrame, encodeFrame, encodeMessage } from '@/net/codec/framing';
-import { deltaMatchesKey, obsoletedKeys, supersedeKey } from '@/net/codec/messages';
+import { canonicalPoseOp, deltaMatchesKey, obsoletedKeys, supersedeKey } from '@/net/codec/messages';
 import { ClientSession } from '@/net/session/client';
 import { InputWindow } from '@/net/session/inputs';
 
@@ -137,5 +138,50 @@ describe('finding 16: the client against a bad server frame', () => {
     const t = online();
     t.transportClosed({ code: 4002, reason: '', clean: true });
     expect(t.phase).toBe('takenOver');
+  });
+});
+
+describe('island-core operations on the wire (outcome, pose) and the velocity reference', () => {
+  it('the wire types are the island types (outcome kinds, OutcomeOp, PoseOp)', () => {
+    // Type-level: an island operation of the two kinds is a wire operation body, and the outcome kinds are equal.
+    const kinds: ThresholdOutcome[] = [] as WireThresholdOutcome[];
+    const back: WireThresholdOutcome[] = [] as ThresholdOutcome[];
+    const ops: IslandOpBody[] = [] as (OutcomeOp | PoseOp)[];
+    expect([kinds, back, ops].every((x) => x.length === 0)).toBe(true);
+  });
+
+  it('a pose correction keeps r and v exact and puts q and w on the delta grids; the receiver holds canonicalPoseOp', () => {
+    const op = { op: 'pose' as const, slot: 3, r: { x: 1.5e11 + 0.123456, y: -2.5e10, z: 7.25 }, v: { x: 29_780.5, y: -0.001, z: 3 }, q: { x: 0.1, y: -0.7, z: 0.2, w: Math.sqrt(1 - 0.01 - 0.49 - 0.04) }, w: { x: 0.0123456789, y: -0.5, z: 0 } };
+    const f = encodeFrame([{ type: 'islandOp', island: 1, epoch: 0, tick: 100, seq: 1, body: op, checksum: null }]);
+    const r = decodeFrame(f, { source: 'server' });
+    expect(r.ok).toBe(true);
+    const got = r.ok ? (r.messages[0] as { body: typeof op }).body : null;
+    expect(got).toEqual(canonicalPoseOp(op));
+    expect(got!.r).toEqual(op.r);
+    // The attitude within 2^-34 per component (5.8e-11 rad), the rates within 0.5 urad/s.
+    // (q and -q are one attitude: the grid keeps the largest component positive.)
+    const sign = got!.q.x * op.q.x + got!.q.y * op.q.y + got!.q.z * op.q.z + got!.q.w * op.q.w < 0 ? -1 : 1;
+    for (const k of ['x', 'y', 'z', 'w'] as const) expect(Math.abs(got!.q[k] - sign * op.q[k])).toBeLessThan(2 ** -33);
+    for (const k of ['x', 'y', 'z'] as const) expect(Math.abs(got!.w[k] - op.w[k])).toBeLessThanOrEqual(0.5e-6);
+    console.log(`pose correction: ${f.length} B in a frame of its own`);
+    expect(f.length).toBeLessThan(90);
+  });
+
+  it('an outcome carries the member blob opaquely, capped by MAX_OUTCOME_MEMBER_BYTES', () => {
+    const sizes: string[] = [];
+    for (const [what, n] of [['capsule', 2200], ['42-part stack', 7700]] as const) {
+      const member = new Uint8Array(n).map((_, i) => (i * 31) & 0xff);
+      const f = encodeFrame([{ type: 'islandOp', island: 1, epoch: 0, tick: 100, seq: 2, body: { op: 'outcome', slot: 0, outcomes: ['touchdown', 'asleep'], member }, checksum: { partCount: 12, craftHash: 7, massKg: 4200 } }]);
+      const r = decodeFrame(f, { source: 'server' });
+      expect(r.ok && (r.messages[0] as { body: { member: Uint8Array } }).body.member).toEqual(member);
+      sizes.push(`${what} ${f.length} B`);
+    }
+    console.log(`outcome: ${sizes.join(', ')}`);
+    expect(() => encodeFrame([{ type: 'islandOp', island: 1, epoch: 0, tick: 1, seq: 3, body: { op: 'outcome', slot: 0, outcomes: [], member: new Uint8Array(MAX_OUTCOME_MEMBER_BYTES + 1) }, checksum: null }])).toThrow();
+  });
+
+  it('the velocity reference travels in the control state (one bit) and as a command', () => {
+    const c = decodeFrame(encodeFrame([{ type: 'command', cmdId: 1, tick: 5, command: { kind: 'velocityReference', reference: 'surface' } } as ClientMessage]), { source: 'client' });
+    expect(c.ok && (c.messages[0] as { command: unknown }).command).toEqual({ kind: 'velocityReference', reference: 'surface' });
   });
 });

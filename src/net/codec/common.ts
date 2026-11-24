@@ -185,7 +185,9 @@ const CS_FINE = 4;
 const AXIS_HOLD = 0x80;
 /** The SAS mode index sits above the three flag bits of the second byte. */
 const MODE_SHIFT = 3;
-if (SAS_MODE_LIST.length > 256 >> MODE_SHIFT) throw new Error('controlState: the SAS modes no longer fit the packed byte');
+/** The top bit of the flag byte: the velocity reference is the surface (else the orbit). */
+const CS_SURFACE = 0x80;
+if (SAS_MODE_LIST.length > 16) throw new Error('controlState: the SAS modes no longer fit beside the velocity reference in the packed byte');
 
 /**
  * Applied control state, packed (review of the sizes, 2026-11-17): an axis mask (bit i: axis i is non-zero, in
@@ -208,7 +210,8 @@ export const controlState: Codec<WireControlState> = {
     if (mask & 64) axis8.write(w, z);
     const mode = SAS_MODE_LIST.indexOf(v.sasMode);
     if (mode < 0) throw new WireEncodeError(`sasMode: ${String(v.sasMode)} is not a SAS mode`);
-    w.u8((v.sasEnabled ? CS_SAS : 0) | (v.rcsEnabled ? CS_RCS : 0) | (v.fineControl ? CS_FINE : 0) | (mode << MODE_SHIFT));
+    if (v.velocityReference !== 'surface' && v.velocityReference !== 'orbit') throw new WireEncodeError(`velocityReference: ${String(v.velocityReference)}`);
+    w.u8((v.sasEnabled ? CS_SAS : 0) | (v.rcsEnabled ? CS_RCS : 0) | (v.fineControl ? CS_FINE : 0) | (mode << MODE_SHIFT) | (v.velocityReference === 'surface' ? CS_SURFACE : 0));
     if (v.sasHold) {
       if (!isUnit(v.sasHold)) throw new WireEncodeError('sasHold: not a unit vector');
       unitF32.write(w, v.sasHold);
@@ -220,7 +223,7 @@ export const controlState: Codec<WireControlState> = {
     return out;
   },
   random(g) {
-    return { ...randomControls(g), sasEnabled: g.chance(0.5), rcsEnabled: g.chance(0.5), fineControl: g.chance(0.5), sasMode: g.pick(SAS_MODE_LIST), sasHold: g.chance(0.5) ? randomUnitF32(g) : null };
+    return { ...randomControls(g), sasEnabled: g.chance(0.5), rcsEnabled: g.chance(0.5), fineControl: g.chance(0.5), sasMode: g.pick(SAS_MODE_LIST), velocityReference: g.chance(0.5) ? 'surface' : 'orbit', sasHold: g.chance(0.5) ? randomUnitF32(g) : null };
   },
 };
 
@@ -237,7 +240,8 @@ export function readControlStateInto(r: ByteReader, out: WireControlState): void
   out.tz = mask & 64 ? axis8.read(r) : 0;
   if (((mask & 1) && out.throttle === 0) || ((mask & 2) && out.pitch === 0) || ((mask & 4) && out.yaw === 0) || ((mask & 8) && out.roll === 0) || ((mask & 16) && out.tx === 0) || ((mask & 32) && out.ty === 0) || ((mask & 64) && out.tz === 0)) r.fail('badValue');
   const flags = r.u8();
-  const mode = flags >> MODE_SHIFT;
+  const mode = (flags & ~CS_SURFACE) >> MODE_SHIFT;
+  out.velocityReference = flags & CS_SURFACE ? 'surface' : 'orbit';
   if (mode >= SAS_MODE_LIST.length) r.fail('badEnum');
   out.sasEnabled = (flags & CS_SAS) !== 0;
   out.rcsEnabled = (flags & CS_RCS) !== 0;

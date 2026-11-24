@@ -2,7 +2,7 @@
   "leo-coast-rcs": {
     "file": "leo-coast-rcs.fspw",
     "frames": 205,
-    "bytes": 15782,
+    "bytes": 15875,
     "messages": {
       "clock": 1,
       "islandKey": 21,
@@ -17,7 +17,7 @@
   "ascent-staging": {
     "file": "ascent-staging.fspw",
     "frames": 410,
-    "bytes": 47175,
+    "bytes": 47813,
     "messages": {
       "clock": 1,
       "islandKey": 41,

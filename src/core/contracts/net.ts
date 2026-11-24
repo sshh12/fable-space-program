@@ -1118,7 +1118,7 @@ export interface CapabilityReport {
 // added here by request.
 
 /** Version of the wire protocol. `HelloMessage.protocol` must equal the server's or the session is refused. */
-export const WIRE_PROTOCOL_VERSION = 2;
+export const WIRE_PROTOCOL_VERSION = 3;
 
 /**
  * The wire layer's limits as the DEFAULT rules document states them (`DEFAULT_UNIVERSE_RULES.limits`: one
@@ -1238,6 +1238,11 @@ export interface WireControlState extends WireControls {
   sasMode: import('./controls').SasMode | import('./controls').SasTargetMode;
   /** Hold direction of a maneuver or target mode, unit vector in inertial (ICRF-parallel) axes, float32 values; null when the mode needs none. */
   sasHold: import('../math/vec3').Vec3 | null;
+  /**
+   * The velocity the prograde / normal / radial holds refer to (the seat's state in the island, its input
+   * `kind: 'reference'`): the surface or the orbit. The target modes refer to the target (`sasMode`).
+   */
+  velocityReference: 'surface' | 'orbit';
 }
 
 /** A blob in another codec (the island codec, the vessel codec), deflated by the application or not. */
@@ -1451,6 +1456,8 @@ export type WireCommand =
   | { kind: 'crossfeed'; portId: string; on: boolean }
   | { kind: 'rename'; craftId: string; name: string }
   | { kind: 'abandon'; craftId: string }
+  /** The velocity reference of the SAS holds (request lead-10): applied at the stamped tick as the island's `reference` input. */
+  | { kind: 'velocityReference'; reference: 'surface' | 'orbit' }
   | { kind: 'cycleVessel'; direction: 1 | -1 };
 
 /** Client -> server: a command stamped with the tick the pilot pressed it at; answered by `commandResult`. */
@@ -1588,7 +1595,29 @@ export type IslandOpBody =
   /** A new reference orbit at the op tick: the anchor's slot and the orbit's state about its body, BCI, float64. */
   | { op: 'rebase'; anchor: number; bodyId: BodyId; r: import('../math/vec3').Vec3; v: import('../math/vec3').Vec3 }
   /** The complete state of one vessel (the answer to a checksum mismatch). */
-  | { op: 'replace'; slot: number; vessel: WireBlob };
+  | { op: 'replace'; slot: number; vessel: WireBlob }
+  /**
+   * A threshold outcome the authoritative island journals for one member after a step (island-core
+   * `OutcomeOp`): what happened (each kind once, in the island's order) and the WHOLE member in the island
+   * codec's own form (`encodeMember`), carried opaquely, at most `MAX_OUTCOME_MEMBER_BYTES`. A predicting
+   * replica holds at the limit and applies it when it arrives. Reliable and counted against the downstream
+   * budget like every island operation (about 2.2 kB for a capsule, 7.7 kB for a 42-part stack).
+   */
+  | { op: 'outcome'; slot: number; outcomes: WireThresholdOutcome[]; member: Uint8Array }
+  /**
+   * A pose-only correction of one member (island-core `PoseOp`): position and velocity of its VES origin in
+   * the island's frame (BCI of the island's body, or the offset from the reference point where the island has
+   * a reference orbit), float64; attitude (VES to inertial, unit) on the delta's grid (smallest three, 2^-34);
+   * body rates on the delta's grid (1 urad/s). The receiver holds `canonicalPoseOp(op)`, which is what the
+   * sender's island applies too. Beyond the island's correction bounds the server sends `replace`.
+   */
+  | { op: 'pose'; slot: number; r: import('../math/vec3').Vec3; v: import('../math/vec3').Vec3; q: import('../math/quat').Quat; w: import('../math/vec3').Vec3 };
+
+/** A threshold outcome of a member, as the island names them (island-core `ThresholdOutcome`; a type test keeps the two equal). */
+export type WireThresholdOutcome = 'partDestroyed' | 'jointBroken' | 'crewLost' | 'chuteFailed' | 'touchdown' | 'splash' | 'splashed' | 'asleep' | 'awake';
+
+/** Largest member blob an `outcome` operation carries, bytes (a 42-part stack is about 7.7 kB). */
+export const MAX_OUTCOME_MEMBER_BYTES = 64 * 1024;
 
 /** The check both sides compute after an operation: parts, a hash of the craft ids in order, and the summed mass (compared to 1e-9 relative). */
 export interface IslandOpChecksum {

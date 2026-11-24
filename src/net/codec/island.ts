@@ -84,7 +84,7 @@ class Pool<T> {
 }
 
 function emptyControlState(): WireControlState {
-  return { throttle: 0, pitch: 0, yaw: 0, roll: 0, tx: 0, ty: 0, tz: 0, sasEnabled: false, rcsEnabled: false, fineControl: false, sasMode: 'stability', sasHold: null };
+  return { throttle: 0, pitch: 0, yaw: 0, roll: 0, tx: 0, ty: 0, tz: 0, velocityReference: 'orbit', sasEnabled: false, rcsEnabled: false, fineControl: false, sasMode: 'stability', sasHold: null };
 }
 
 function randomControlState(g: Gen): WireControlState {

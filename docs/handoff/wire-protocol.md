@@ -147,7 +147,7 @@ What cannot be met in this format, for the lead to decide:
 
 ### 0.6 The lead's two decisions of 2026-11-17 (protocol version 2)
 
-`WIRE_PROTOCOL_VERSION` is now 2. The control state, the delta's tick, the conic elements, the key and the census
+`WIRE_PROTOCOL_VERSION` became 2 here (3 since 0.7). The control state, the delta's tick, the conic elements, the key and the census
 documents changed layout. The Hello and `refused` layouts did not change (their frozen bytes still pass). The
 transcripts and fixtures were re-recorded, and `version-mismatch`'s skew client now speaks version 1.
 
@@ -213,6 +213,63 @@ Per scenario now (`bandwidth.test.ts`, island alone at its rate, then what the b
 | Ten at 3 g, all steering | 372 B | 12.1 kB/s at 30 Hz | 7.18 kB/s | 10.7 Hz |
 | A pair in contact, exact form | 259 B | 15.7 kB/s at 60 Hz | 7.19 kB/s | 16.6 Hz |
 | A landed pair, four probes each | 447 B | 27.0 kB/s at 60 Hz | 7.81 kB/s | 10.0 Hz |
+
+### 0.7 The island's operations and the velocity reference (protocol version 3, 2026-11-24)
+
+`WIRE_PROTOCOL_VERSION` is now 3: `islandOp` gained two kinds, the control state gained a bit, and
+`WireCommand` gained a kind. The Hello and `refused` layouts are unchanged. The transcripts were re-recorded.
+The fixtures were re-recorded too; their bytes changed because the real simulation they come from changed
+(island-core), not because of this codec.
+
+- **`outcome`** `{ op, slot, outcomes, member }`: island-core's `OutcomeOp` exactly. The kinds are
+  `WireThresholdOutcome`; a type test in `review.test.ts` keeps it equal to the island's `ThresholdOutcome`,
+  and both op types assignable to `IslandOpBody`.
+  - `member` is carried opaquely (the island codec's `encodeMember`), at most `MAX_OUTCOME_MEMBER_BYTES` (64 KiB).
+  - It is reliable, in class 1 of the budget, and charged in full (unlike an `islandEnter`'s free 256 kB).
+  - On the wire, with framing: 2,233 B for a capsule (about 0.37 s of the 6 kB/s budget) and 7,733 B for a
+    42-part stack (about 1.3 s). The member sizes are island-core's measurement: 139 kB / 64 capsules,
+    490 kB / 64 stacks.
+  - Frequency at the design load: a few per flight per vessel (touchdown or splash, sleep and wake, a chute or
+    crew event), about one every few minutes per pilot.
+  - Limit for the lead: a crash that destroys parts on several consecutive steps journals one outcome per
+    member per step. At 7.7 kB each, a second of that is 0.9 MB of reliable records. That is over the socket's
+    1 MiB / 10 s send cap, so the gateway would close the pilot as a slow consumer. The universe should send at
+    most one outcome per member per control tick and fold the steps in between (the last member blob holds
+    them). That is the universe's to decide; the wire carries what it is given.
+- **`pose`** `{ op, slot, r, v, q, w }`: island-core's `PoseOp`, in the island's frame (BCI of its body, or
+  the offset from the reference point).
+  - `r` and `v` are float64, exact.
+  - `q` is on the delta's smallest-three grid (2^-34: 5.8e-11 rad) and `w` on the delta's 1 µrad/s, so both are
+    within the delta's bounds.
+  - The receiver holds `canonicalPoseOp(op)`; the sender's island must apply that same canonical op so the two
+    sides agree to the bit.
+  - 88 B in a frame of its own. Beyond the island's correction bounds the server sends `replace`.
+- **Velocity reference** (request lead-10):
+  - `WireCommand { kind: 'velocityReference'; reference: 'surface' | 'orbit' }` is a command: reliable, stamped,
+    counted under `commandsPerSecond`, and handed to the universe like every command as the island's
+    `reference` input.
+  - The applied state travels in `WireControlState.velocityReference`, one bit (the top bit of the packed
+    flags byte, beside the SAS mode, which needs at most 4 bits; a guard fails at load if the modes outgrow it).
+  - "target" is not a velocity reference of the island: the target holds are SAS modes.
+  - On lead-10's question 2: the rules document carries optional fields, so a longer document is an addition,
+    not a layout change. The version step to 3 comes from the layouts above.
+
+**What the key and the delta carry of a member, and in which frame.**
+- `KeyVessel.pos` / `vel` (and the delta's residuals against them) are the member vessel's own `r`, `v` as
+  the island holds them. That is BCI of the island's body when the island has no reference orbit, and since
+  island-core's 26d272a, in the star's sphere and wherever it keeps one, the offset from the reference point.
+  The reference itself arrives with `islandEnter` / `rebase` (BCI, float64).
+- The wire carries the island's state, not the view's body-centred state (`stateOf`). A client rebuilds the
+  body-centred position as reference(t) + offset, exactly as the island's view does.
+- Precision: the offsets are at most `claim.referenceOffsetMax` (30 km), where float64 resolves 3.6e-12 m.
+  The delta bounds (16 µm, 1 µm/s, 5e-10 rad) hold on the offset.
+- The final sum at 1 AU (1.5e11 m) rounds to the float64 grid there: 30.5 µm per unit in the last place, so
+  at most 15.3 µm off, which is within the 16 µm bound. The view does the same addition, so client and server
+  agree on the sum given the same inputs.
+- The "float64 limit beyond 5e10 m" of section 0 concerns an island WITHOUT a reference orbit there, whose
+  absolute BCI coordinates sit on a 7.6 µm grid at 5e10 m and a 30.5 µm grid at 1 AU. A delta's residuals are
+  then still exact against the key, but the absolute pose is only as fine as that grid. With the reference
+  orbit, which island-core now keeps in the star's sphere, this no longer applies to the offsets.
 
 ## 1. Acceptance, as the reviewer laid it out: proven / claimed / not done
 

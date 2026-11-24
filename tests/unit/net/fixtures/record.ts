@@ -58,7 +58,7 @@ const SCENES: Scene[] = [
 const q8 = (x: number) => Math.max(-127, Math.min(127, Math.round(x * 127)));
 
 function controlState(v: VesselSnapshot, c: { throttle: number; pitch: number; roll: number; translate: { x: number; y: number; z: number } }): WireControlState {
-  return { throttle: Math.round(c.throttle * 255), pitch: q8(c.pitch), yaw: 0, roll: q8(c.roll), tx: q8(c.translate.x), ty: q8(c.translate.y), tz: q8(c.translate.z), sasEnabled: true, rcsEnabled: true, fineControl: false, sasMode: 'stability', sasHold: null };
+  return { velocityReference: 'orbit', throttle: Math.round(c.throttle * 255), pitch: q8(c.pitch), yaw: 0, roll: q8(c.roll), tx: q8(c.translate.x), ty: q8(c.translate.y), tz: q8(c.translate.z), sasEnabled: true, rcsEnabled: true, fineControl: false, sasMode: 'stability', sasHold: null };
 }
 
 function partFast(v: VesselSnapshot): PartFastEntry[] {

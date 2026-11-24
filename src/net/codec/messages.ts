@@ -18,9 +18,10 @@ import type {
   WireMessageType,
   WorldlineMessage,
 } from '@/core/contracts/net';
-import { ByteWriter, WireEncodeError, type ByteReader } from './bytes';
+import { ByteWriter, MAX_VARINT_SIGNED, WireEncodeError, type ByteReader } from './bytes';
 import { documentEntry, readElements, readEntryList, readFrames, readSegments, randomElements, randomEntry, randomSegment, writeElements, writeEntryList, writeSegments, writeWithFrames } from './census';
 import {
+  exhaustive,
   assemblyView,
   clockState,
   conjunction,
@@ -47,7 +48,9 @@ import { DocumentStrings } from './handles';
 import { inputAckCodec, inputCodec, islandDeltaCodec, islandKeyCodec, islandSlowCodec, nearCodec, type HotCodec } from './island';
 import { array, blob, bool, enumOf, f64, id, name as clientName, nullable, ranged, str, struct, text, tick, uint, union, varUint, type Codec, type Fields, type Gen } from './schema';
 import { WARP_LEVELS } from '@/core/contracts/defs';
-import { WIRE_RANGES } from '@/core/contracts/net';
+import { MAX_OUTCOME_MEMBER_BYTES, WIRE_RANGES, type WireThresholdOutcome } from '@/core/contracts/net';
+import type { Quat } from '@/core/math/quat';
+import type { Vec3 } from '@/core/math/vec3';
 
 /** Who sends a message. */
 export type Sender = 'client' | 'server' | 'both' | 'role' | 'document';
@@ -294,6 +297,7 @@ const wireCommand = union<import('@/core/contracts/net').WireCommand, 'kind'>('k
   crossfeed: { portId: id, on: bool },
   rename: { craftId: id, name: clientName },
   abandon: { craftId: id },
+  velocityReference: { reference: enumOf(['surface', 'orbit'] as const) },
   cycleVessel: { direction: enumOf([1, -1] as const) },
 });
 
@@ -311,6 +315,92 @@ const timeRequest = union<import('@/core/contracts/net').TimeRequest, 'kind'>('k
   askAdvance: { vesselId: id },
 });
 
+const THRESHOLD_OUTCOMES = exhaustive<WireThresholdOutcome>()(['partDestroyed', 'jointBroken', 'crewLost', 'chuteFailed', 'touchdown', 'splash', 'splashed', 'asleep', 'awake'] as const);
+
+/** The attitude grid of a pose correction: the delta's smallest-three grid. */
+const POSE_Q_SCALE = 2 ** 34;
+/** The rate grid of a pose correction: the delta's 1 urad/s. */
+const POSE_W_SCALE = 1e6;
+
+/** A unit quaternion as a pose correction carries it: the largest component's index, the other three on the 2^-34 grid (largest made positive). */
+function quatOnGrid(q: Quat): { L: number; k: number[] } {
+  const c = [q.x, q.y, q.z, q.w];
+  let L = 0;
+  for (let i = 1; i < 4; i++) if (Math.abs(c[i]!) > Math.abs(c[L]!)) L = i;
+  const s = c[L]! < 0 ? -1 : 1;
+  const k: number[] = [];
+  for (let i = 0; i < 4; i++) if (i !== L) k.push(Math.round(s * c[i]! * POSE_Q_SCALE) || 0);
+  return { L, k };
+}
+
+function quatFromGrid(L: number, k: readonly number[]): Quat | null {
+  const c = [0, 0, 0, 0];
+  let j = 0;
+  let s2 = 0;
+  for (let i = 0; i < 4; i++) {
+    if (i === L) continue;
+    c[i] = k[j++]! / POSE_Q_SCALE;
+    s2 += c[i]! * c[i]!;
+  }
+  if (!(s2 <= 1)) return null;
+  c[L] = Math.sqrt(1 - s2);
+  return { x: c[0]!, y: c[1]!, z: c[2]!, w: c[3]! };
+}
+
+const poseQuat: Codec<Quat> = {
+  min: 4,
+  write(w, q) {
+    const n = Math.hypot(q.x, q.y, q.z, q.w);
+    if (!(Math.abs(n - 1) <= 1e-6)) throw new WireEncodeError('pose.q: not a unit quaternion');
+    const { L, k } = quatOnGrid(q);
+    w.u8(L);
+    for (const v of k) w.varInt(v);
+  },
+  read(r) {
+    const L = r.u8();
+    if (L > 3) r.fail('badEnum');
+    const k = [r.varInt(), r.varInt(), r.varInt()];
+    const q = quatFromGrid(L, k);
+    if (!q) {
+      r.fail('badValue');
+      return { x: 0, y: 0, z: 0, w: 1 };
+    }
+    return q;
+  },
+  random(g) {
+    const q = { x: g.next() - 0.5, y: g.next() - 0.5, z: g.next() - 0.5, w: g.next() - 0.5 };
+    const n = Math.hypot(q.x, q.y, q.z, q.w) || 1;
+    return canonicalQuat({ x: q.x / n, y: q.y / n, z: q.z / n, w: q.w / n });
+  },
+};
+
+const poseRate: Codec<Vec3> = {
+  min: 3,
+  write(w, v) {
+    for (const x of [v.x, v.y, v.z]) {
+      const k = Math.round(x * POSE_W_SCALE);
+      if (!Number.isSafeInteger(k) || Math.abs(k) > MAX_VARINT_SIGNED) throw new WireEncodeError(`pose.w: ${x} rad/s is out of range`);
+      w.varInt(k);
+    }
+  },
+  read: (r) => ({ x: r.varInt() / POSE_W_SCALE, y: r.varInt() / POSE_W_SCALE, z: r.varInt() / POSE_W_SCALE }),
+  random: (g) => canonicalRate({ x: (g.next() - 0.5) * 2, y: (g.next() - 0.5) * 2, z: (g.next() - 0.5) * 2 }),
+};
+
+function canonicalQuat(q: Quat): Quat {
+  const { L, k } = quatOnGrid(q);
+  return quatFromGrid(L, k)!;
+}
+
+function canonicalRate(v: Vec3): Vec3 {
+  return { x: (Math.round(v.x * POSE_W_SCALE) || 0) / POSE_W_SCALE, y: (Math.round(v.y * POSE_W_SCALE) || 0) / POSE_W_SCALE, z: (Math.round(v.z * POSE_W_SCALE) || 0) / POSE_W_SCALE };
+}
+
+/** The pose correction a receiver holds (attitude and rates on the delta's grids; r and v exact): the sender's island applies this one too. */
+export function canonicalPoseOp(op: Extract<import('@/core/contracts/net').IslandOpBody, { op: 'pose' }>): Extract<import('@/core/contracts/net').IslandOpBody, { op: 'pose' }> {
+  return { op: 'pose', slot: op.slot, r: { ...op.r }, v: { ...op.v }, q: canonicalQuat(op.q), w: canonicalRate(op.w) };
+}
+
 const islandOpBody = union<import('@/core/contracts/net').IslandOpBody, 'op'>('op', {
   split: { slot: uint, cutJoints: array(uint, 4096), newVesselIds: array(id, 4096) },
   merge: { base: uint, other: uint, basePort: uint, otherPort: uint, rollStep: f64 },
@@ -321,6 +411,8 @@ const islandOpBody = union<import('@/core/contracts/net').IslandOpBody, 'op'>('o
   remove: { slot: uint, reason: enumOf(['left', 'destroyed', 'removed'] as const) },
   rebase: { anchor: uint, bodyId: id, r: vec3, v: vec3 },
   replace: { slot: uint, vessel: wireBlob },
+  outcome: { slot: uint, outcomes: array(enumOf(THRESHOLD_OUTCOMES), THRESHOLD_OUTCOMES.length), member: blob(MAX_OUTCOME_MEMBER_BYTES) },
+  pose: { slot: uint, r: vec3, v: vec3, q: poseQuat, w: poseRate },
 });
 
 const checksum = struct<import('@/core/contracts/net').IslandOpChecksum>({ partCount: uint, craftHash: uint, massKg: f64 });

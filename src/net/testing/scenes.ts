@@ -23,7 +23,7 @@ function unitQuat(p: Prng): Quat {
 
 /** The controls a pilot holds: SAS on in a hold mode, throttle as given. */
 export function heldControls(throttle: number, rcs: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 }): WireControlState {
-  return { throttle, pitch: 0, yaw: 0, roll: 0, tx: rcs.x, ty: rcs.y, tz: rcs.z, sasEnabled: true, rcsEnabled: true, fineControl: false, sasMode: 'prograde', sasHold: null };
+  return { throttle, pitch: 0, yaw: 0, roll: 0, tx: rcs.x, ty: rcs.y, tz: rcs.z, velocityReference: 'orbit', sasEnabled: true, rcsEnabled: true, fineControl: false, sasMode: 'prograde', sasHold: null };
 }
 
 /** The exact poses of `n` vessels at the key tick, within `spread` metres of the reference orbit. */

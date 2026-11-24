@@ -42,7 +42,7 @@ function makeKey(g: Gen): KeyVessel {
     rate: { x: Math.fround((g.next() - 0.5) * 0.2), y: Math.fround((g.next() - 0.5) * 0.2), z: Math.fround((g.next() - 0.5) * 0.2) },
     // Half the keys are under thrust (up to 3 g per axis).
     acc: g.chance(0.5) ? { x: Math.fround((g.next() - 0.5) * 60), y: Math.fround((g.next() - 0.5) * 60), z: Math.fround((g.next() - 0.5) * 60) } : null,
-    controls: { throttle: 0, pitch: 0, yaw: 0, roll: 0, tx: 0, ty: 0, tz: 0, sasEnabled: false, rcsEnabled: false, fineControl: false, sasMode: 'stability', sasHold: null },
+    controls: { throttle: 0, pitch: 0, yaw: 0, roll: 0, tx: 0, ty: 0, tz: 0, velocityReference: 'orbit', sasEnabled: false, rcsEnabled: false, fineControl: false, sasMode: 'stability', sasHold: null },
   };
 }
 

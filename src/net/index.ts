@@ -9,7 +9,7 @@
 export { ByteReader, ByteWriter, WireEncodeError, type DecodeError, type DecodeErrorCode, type StringTableIn, type StringTableOut } from './codec/bytes';
 export { assembleFrame, decodeDocument, decodeFrame, encodeDocument, encodeFrame, encodeMessage, FrameReader, FrameWriter, MAX_CLIENT_FRAME_MESSAGES, writeMessage, type DecodeOptions, type FrameResult, type FrameSource } from './codec/framing';
 export { DocumentStrings, HandleTableIn, HandleTableOut, MAX_HANDLES } from './codec/handles';
-export { deltaMatchesKey, MESSAGE_SPECS, obsoletedKeys, randomMessage, specByCode, specOf, supersedeKey, type Delivery, type MessageSpec, type Sender as MessageSender } from './codec/messages';
+export { canonicalPoseOp, deltaMatchesKey, MESSAGE_SPECS, obsoletedKeys, randomMessage, specByCode, specOf, supersedeKey, type Delivery, type MessageSpec, type Sender as MessageSender } from './codec/messages';
 export { canonicalConic, canonicalRadius, expandConic } from './codec/census';
 export {
   ATT_SCALE,
