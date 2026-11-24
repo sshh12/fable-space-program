@@ -7,6 +7,7 @@
  *   ?shot=<id>              the shot the page opens on (default: the table's first)
  *   &ballast=<iterations>   a slower GPU (slowGpu.ts): a march over every internal pixel, counted as fixed cost
  *   &safe=1                 the seed is the safe preset (as the gate's ?safe=1)
+ *   &timestamps=0           measure as a device without timestamp queries does (queue completion latency per frame)
  * The page's library holds the presentable vehicles (src/core/access/presentable.ts; request
  * capability-settings-2) and their scenarios; the shots fly meridian-lunar.
  * plus the camera / renderer parameters of createLabApp.
@@ -175,6 +176,8 @@ async function main(): Promise<void> {
   };
   const seconds = (s: number): Promise<void> => new Promise((r) => setTimeout(r, 1000 * s));
 
+  // Per-pass GPU timings when the device has timestamp queries; else the coarser path of runShot.
+  const timestamps = app.gpu.hasFeature('timestamp-query') && query.get('timestamps') !== '0';
   // The shots' needs that this page has prefetched (the app streams them behind the title the same way).
   const resident = new Set<string>();
   let prefetchFailed: string[] = [];
@@ -194,12 +197,25 @@ async function main(): Promise<void> {
       await seconds(o.settleS);
       const frames: FrameSample[] = [];
       const cpuFrameMs: number[] = [];
-      app.renderer.onGpuFrame((f) => {
-        frames.push({ total: f.total, passes: f.passes });
-        cpuFrameMs.push(f.cpuMs);
-      });
-      await seconds(o.measureS);
-      app.renderer.onGpuFrame(null);
+      if (timestamps) {
+        app.renderer.onGpuFrame((f) => {
+          frames.push({ total: f.total, passes: f.passes });
+          cpuFrameMs.push(f.cpuMs);
+        });
+        await seconds(o.measureS);
+        app.renderer.onGpuFrame(null);
+      } else {
+        // No timestamp queries (frontend-ux 9.3): the frame's GPU time is the latency from the end of its
+        // encoding to the queue's completion, one sample per displayed frame; no per-pass split.
+        const end = performance.now() + 1000 * o.measureS;
+        while (performance.now() < end) {
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
+          const t0 = performance.now();
+          await app.gpu.device.queue.onSubmittedWorkDone();
+          frames.push({ total: performance.now() - t0, passes: {} });
+          cpuFrameMs.push(app.renderer.perfSnapshot().cpu.p50);
+        }
+      }
       app.renderer.setPerfAttribution(false);
       app.renderer.setGovernor(true);
       const [w, h] = app.renderer.frameContext?.renderSize ?? [canvas.width, canvas.height];

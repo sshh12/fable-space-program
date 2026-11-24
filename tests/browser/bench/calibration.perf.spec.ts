@@ -186,3 +186,19 @@ test('with the slow-GPU ballast the calibration chooses a lower profile that hol
     await expectNoErrors(page, pageLog);
   });
 });
+
+test('without timestamp queries the calibration measures whole presets and holds the budget', async ({ page, pageLog }) => {
+  await withGpuLock(async () => {
+    // &timestamps=0: the bench lab measures as a device without timestamp queries does (frontend-ux 9.3).
+    await openPage(page, '/labs/bench/?timestamps=0', { timeoutMs: 240_000 });
+    await assertDiscreteGpu(page);
+    expect((await page.evaluate(() => window.__bench!.warmUp())).failed).toEqual([]);
+    const result: CalibrationResult = await page.evaluate(() => window.__bench!.calibrate());
+    record['coarseCalibration'] = result;
+    save();
+    console.log(`[bench] without timestamps: ${result.preset}, confirmation p95 ${result.confirm.measuredP95.toFixed(2)} ms in ${result.confirm.steps} steps; ${result.notes.join(' | ')}`);
+    expect(result.notes.join(' ')).toMatch(/no per-pass GPU timings/);
+    expect(result.confirm.held).toBe(true);
+    await expectNoErrors(page, pageLog);
+  });
+});
