@@ -34,10 +34,15 @@ const shot = async (page: Page, name: string): Promise<void> => {
   await settle(page);
   await saveScreenshot(page, 'shell-menu', name);
 };
+/** Press a key; then wait for the state and for the focus (an id, or a prefix ending in '-*'). */
 async function press(page: Page, key: string, state?: string, focus?: string): Promise<void> {
   await page.keyboard.press(key);
   if (state) await waitState(page, state);
-  if (focus !== undefined) await page.waitForFunction((f) => window.__shell!.hooks().focus === f, focus, { timeout: 10_000 });
+  if (focus !== undefined)
+    await page.waitForFunction((f) => {
+      const id = window.__shell!.hooks().focus ?? '';
+      return f.endsWith('-*') ? id.startsWith(f.slice(0, -1)) : id === f;
+    }, focus, { timeout: 10_000 });
 }
 async function openLab(page: Page, query = ''): Promise<void> {
   await openPage(page, `/labs/shell/?governor=off${query}`, { timeoutMs: 600_000 });
@@ -51,9 +56,10 @@ test('the deploy flow by keyboard only, with the focus at every step, to control
   await shot(page, 'title-1280');
   await press(page, 'Enter', 'hub/play', 'launch');
   await shot(page, 'hub-play-1280');
-  await press(page, 'Enter', 'deploy/vehicle', 'vehicle-meridian-lunar');
+  // The list holds every vehicle of the library (one today, more as fleet-data lands them): the first is focused.
+  await press(page, 'Enter', 'deploy/vehicle', 'vehicle-*');
   await shot(page, 'deploy-vehicle-1280');
-  await press(page, 'Enter', 'deploy/pad', 'pad-ka-lae-lc-1');
+  await press(page, 'Enter', 'deploy/pad', 'pad-*');
   await shot(page, 'deploy-pad-1280');
   await press(page, 'Enter', 'deploy/briefing', 'launch-commit');
   await shot(page, 'deploy-briefing-1280');

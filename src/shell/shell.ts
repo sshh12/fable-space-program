@@ -10,7 +10,7 @@
  * Keys. In the menu and transit contexts the shell reads `keydown` through the context tables it was given
  * (src/input/contexts.ts): Control, Alt or Meta chords are never the game's. In flight the keys are the flight
  * table's; the host calls `openFlightMenu()` on its `flightMenu` action. The browser's Back and the mouse's back
- * button are menu-back (a history entry is kept, so Back never leaves the page).
+ * button are menu-back (a history entry is kept from the first key or pointer press, so Back does not leave the page).
  *
  * A closed menu costs nothing and moves no pixel: in flight the root is hidden, no element is over the canvas,
  * and the scrim rectangles are published empty once.
@@ -518,8 +518,16 @@ export function createShell(deps: ShellDeps): Shell {
     if (machine.state().main === 'title' && deps.boot().playReady && !root.contains(e.target as Node)) send({ type: 'begin' });
   };
   // History trap: one entry is kept above the page's; Back (and the mouse's back button) is menu-back.
-  const onPopState = (): void => {
+  // Chrome skips, on Back, a history entry that was pushed without a user gesture (its history intervention), so
+  // the trap's entry is pushed (and re-pushed after each Back) on the next key press or pointer press.
+  let trapArmed = false;
+  const armTrap = (): void => {
+    if (trapArmed) return;
+    trapArmed = true;
     history.pushState({ shell: true }, '');
+  };
+  const onPopState = (): void => {
+    trapArmed = false;
     const st = machine.state();
     if (st.main === 'flight') send({ type: 'openFlightMenu' });
     else runAction('menu:back');
@@ -530,7 +538,8 @@ export function createShell(deps: ShellDeps): Shell {
       if (e.button === 3) onPopState();
     }
   };
-  history.pushState({ shell: true }, '');
+  window.addEventListener('keydown', armTrap, { capture: true });
+  window.addEventListener('pointerdown', armTrap, { capture: true });
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('popstate', onPopState);
   window.addEventListener('mouseup', onMouseUp);
@@ -608,6 +617,8 @@ export function createShell(deps: ShellDeps): Shell {
       return { state: stateName(st), main: st.main, side: st.side, focus: focusId, scrimRects: lastScrimCount, spawn: spawn.phase().kind, practice: practiceOn() };
     },
     dispose() {
+      window.removeEventListener('keydown', armTrap, { capture: true });
+      window.removeEventListener('pointerdown', armTrap, { capture: true });
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('popstate', onPopState);
       window.removeEventListener('mouseup', onMouseUp);
