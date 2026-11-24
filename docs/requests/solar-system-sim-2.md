@@ -1,4 +1,4 @@
-Status: open
+Status: open (lead, 2026-11-24: proven on a clean worktree and HELD; see the note at the end)
 From: solar-system-sim
 Owner path: src/core/contracts/defs.ts (WARP_LEVELS, BodyDef.warpAltitudeLimits; the lead)
 Blocking: no
@@ -35,3 +35,24 @@ the count formula only. The provider already honours `BodyTerrainDef.residentLev
 min(manifest.residentHeightLevel, residentLevel)); the shipped Earth and Moon state none, so nothing moved.
 
 Must NOT change: the shipped bodies' seven stated limits (they stay as the first seven entries).
+
+## Lead note (2026-11-24): proven, and held for one recording that is not the lead's
+
+Made on a clean worktree of HEAD (06b05ba) exactly as requested (`WARP_LEVELS` with 1e6 and 1e7,
+`BodyDef.warpAltitudeLimits?`): `npm run typecheck` clean after two narrowings in tests
+(`src/core/defs/loader.test.ts:68`, `tests/unit/solar-system/bodySystem.test.ts:228`: the Earth's stated
+list read with `!`), and THE MISSION FLIES 36 OF 36 AT THE GOLDEN 72c0893583aa427d: the pilot's margin
+never reaches the two new levels, so the flight does not move. NOT COMMITTED, because the headless suites do
+not stay green without changing a recording of a package that is in the middle of its work:
+- `tests/unit/sim-world/viewReference.test.ts` (island-core's snapshot reference of the wave-3 World, 200
+  states): the block "clock" differs from sample 0 on. The clock block states the warp table, so EVERY
+  recorded state changes; the reference has to be re-recorded, and island-core holds it as the proof that
+  its refactor of World changes no snapshot. That re-record is island-core's, at a moment of its choosing.
+- `tests/unit/sim-orbits/warp.test.ts:39` expects the top index of the table above every limit of the Earth
+  (12 with nine rails levels; the body system's default limit of the top level, 25 radii, gives 11 at the
+  test's altitude), and `tests/unit/sim-world/warp.test.ts:201` counts frames "at the top level" of a
+  15-day orbit, which is 100,000x there and no longer the table's top: both are restatements of "the top
+  level" as "the highest level the limits allow", not changes of behaviour.
+With the table at eleven levels and everything else of this note in place those three files pass. The
+patch is two edits in `src/core/contracts/defs.ts` and the two narrowings; it goes in with the reference's
+re-record, in one commit, as the migration row says.
