@@ -18,6 +18,8 @@ export {
   decodeVessel,
   encodeVessel,
   hashBytes,
+  legacyPartFingerprint,
+  legacyVehicleHash,
   libraryResolver,
   partFingerprint,
   readHeader,

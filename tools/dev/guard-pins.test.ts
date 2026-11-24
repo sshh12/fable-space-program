@@ -10,6 +10,8 @@
  *   tests/mission/controls-v1.json                 four flights of the unmodified v1 code with shifted starts
  *   tests/mission/baseline-v1.json                 the mission record of the v1 code: the reference of the ENVELOPE
  *   tests/unit/sim-vessel/corpus/*.bin             vessel blobs as earlier builds wrote them (only ever added)
+ *   src/sim/vessel/migrations/legacyV3.ts          the fingerprints and vehicle hashes of codec versions 1 to 3
+ *                                                  against today's kind, recorded at the version 4 step
  *
  * Not pinned, on purpose: tests/mission/golden.json (re-baselined behind a guard at the steps MIGRATION_V2
  * principle 5 names) and the terrain guard's two files (the lead re-records them when pads are added; they
@@ -21,7 +23,8 @@
  * Last recorded: the trajectory guard with the tick-pure rule (lead decision D1 of the sim-core-v2 review);
  * the corpus gained its version 3 blobs in the same change. The six fixtures, the reference and the
  * controls are as first recorded. The mission baseline was pinned by the lead at the review of this file
- * (2026-11-12), as recorded in 431930f.
+ * (2026-11-12), as recorded in 431930f. The tighten step after sub-wave 3.2 (2026-11-24, codec version 4)
+ * ADDED the six version 4 blobs of the corpus and the table of the version 3 hashes; no pin was replaced.
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -37,6 +40,13 @@ export const GUARD_PINS: Readonly<Record<string, string>> = {
   'tests/mission/reference-v1-aligned.json': 'b6a5e00d809f679d7018eec875bfcb5f60dff7be2057847acdb7dad770a5e640',
   'tests/mission/controls-v1.json': '7582dcb1408e410a1e11b297a10aeef5effda965f27eb5ad9cc69885107ce49f',
   'tests/mission/baseline-v1.json': '4e77752a47a08e743e39e6592c13d2ee671a3968ae4f69156461ce383b342932',
+  'tests/unit/sim-vessel/corpus/capsule-peak-heating.v4.bin': 'c007e7b9b7e041fb9ec2b66e6255d0cf759daa7fe1820939982b51f93a74d59e',
+  'tests/unit/sim-vessel/corpus/coasting.v4.bin': '30a7dcb7ee78d786f659c8e842a4c1ce4e71ccd01bbce78617d161f66c182347',
+  'tests/unit/sim-vessel/corpus/lander-touchdown-150.v4.bin': 'ea2f4df008be1765d53ac55023aeb1ff4ec3d15e4415872a2f859795e367d725',
+  'tests/unit/sim-vessel/corpus/lander-touchdown-60.v4.bin': '35f7f523ffe3ed55a6885d3676790e8ac7107bd5c760acbe096a2edb0b4db611',
+  'tests/unit/sim-vessel/corpus/stack-ascent.v4.bin': '68f0c5d3214d1da0ac1eec67a37c2a401f2fbcd3d9eb9ea57a0154c2dc7e901e',
+  'tests/unit/sim-vessel/corpus/stack-mid-staging.v4.bin': '29d4af766c4cb8dd8a8c91936e5645ffc2fbecabc1fb4a6eb3984a34abab5443',
+  'src/sim/vessel/migrations/legacyV3.ts': '365453d0cac7f3745574299e1b5b4ac76e58681b846e7636e121f83fb11d4e6e',
   'tests/unit/sim-vessel/trajectory-fixtures/ascent.json': 'e2139f9227cf88f0abc949867155d604277511f77844eb9c86fa481abf292f25',
   'tests/unit/sim-vessel/trajectory-fixtures/entry.json': 'cd8934642aa3f2d4d2115e9b129f84e820f6615f27625c5b40a8ecbcb5152634',
   'tests/unit/sim-vessel/trajectory-fixtures/lunar-ascent.json': '35763b3cbb4b7afa6d95916020a750a9f9b677f442cec9114fc8b58e2ff7f4d9',
@@ -90,7 +100,8 @@ describe('recorded files are what was recorded', () => {
     expect(fixtures).toHaveLength(6);
     for (const f of fixtures) expect(pinned, WHO).toContain(`tests/unit/sim-vessel/trajectory-fixtures/${f}`);
     const blobs = fs.readdirSync(path.join(repoRoot, 'tests/unit/sim-vessel/corpus')).filter((f) => f.endsWith('.bin'));
-    expect(blobs.length).toBeGreaterThanOrEqual(18);
+    expect(blobs.length).toBeGreaterThanOrEqual(24);
+    expect(pinned, WHO).toContain('src/sim/vessel/migrations/legacyV3.ts');
     for (const f of blobs) expect(pinned, `a blob without a pin: ${WHO}`).toContain(`tests/unit/sim-vessel/corpus/${f}`);
   });
 

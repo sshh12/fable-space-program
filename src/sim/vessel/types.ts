@@ -53,10 +53,13 @@ export type ModuleRt =
   | { type: 'none' };
 
 /**
- * What the vehicle says about one command part, copied onto it by the assembler (ARCHITECTURE 7.2: crew,
- * cockpit interior, camera seat, sensor camera and the remote flag live on the command part; seats and the
- * hatch are read from its definition). `VehicleDef.crew`, `.cockpit` and `.cameras.cockpit` are the authoring
- * conveniences they come from.
+ * What the vehicle says about one command part, set on it when the part is made (by the assembler, and by
+ * the decoder from the same definitions). Of these only WHO SITS WHERE (`crew`, by seat) and the g dose are
+ * saved state. The crew's names, the cockpit interior, the camera seat, the sensor camera and the remote
+ * flag are read from the definitions each time (`commandRuntime` of ./assemble): they are held here for the
+ * snapshot, are not written by the codec from version 4 on and are not in the state hash, so a name, a
+ * cockpit or a camera can change in a definition without touching a save (the tighten step after sub-wave
+ * 3.2).
  */
 export interface CommandRuntime {
   /** Index of the command module in `def.modules`. */

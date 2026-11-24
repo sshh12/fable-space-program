@@ -255,7 +255,7 @@ export function createPart(instanceId: string, def: PartDef, stageGroup: string)
 }
 
 /** What the vehicle says about the command part `instanceId` whose command module is `md` (module index `module`). */
-function commandRuntime(vehicle: VehicleDef, instanceId: string, md: Extract<ModuleDef, { type: 'command' }>, module: number): CommandRuntime {
+export function commandRuntime(vehicle: VehicleDef, instanceId: string, md: Extract<ModuleDef, { type: 'command' }>, module: number): CommandRuntime {
   // `cameras.cockpit` is an authoring convenience that an uncrewed vehicle does not have.
   const camera = vehicle.cameras.cockpit as VehicleDef['cameras']['cockpit'] | undefined;
   const here = camera !== undefined && camera.part === instanceId;

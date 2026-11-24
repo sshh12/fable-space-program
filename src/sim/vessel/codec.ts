@@ -13,9 +13,10 @@
  *
  * Blocks of this version: STRINGS (every string of the body, referenced by index), DEFS (the id and the
  * FINGERPRINT of every part definition in use), CRAFTS (each with its vehicle reference: a library id plus
- * the content hash of that VehicleDef, or an embedded design), VESSEL (the vessel-level state), PARTS
- * (each part a length-prefixed record whose resource block and module blocks are length-prefixed in turn),
- * CARRIED (contact, wetness and wake state). A block this build does not know is reported and skipped,
+ * the hash of that VehicleDef's simulation projection, or an embedded design), VESSEL (the vessel-level
+ * state), PARTS (each part a length-prefixed record whose resource block and module blocks are
+ * length-prefixed in turn), CARRIED (contact, wetness and wake state), LABELS (the names of the vessel and
+ * of its craft: carried, never hashed). A block this build does not know is reported and skipped,
  * never mis-read. A module or resource block whose content does not fit the part's definition is an error
  * unless the migration registry (./migrations) holds the way from the fingerprint the blob was written
  * under to the current one.
@@ -23,19 +24,31 @@
  * Definitions never travel by index into a library: vehicles and parts are resolved through an injected
  * `DefResolver`.
  *
- * The STATE HASH is the hash of the body: it does not depend on `defsHash` (a change of an unrelated
- * definition does not move it), only on what the vessel is and which definitions its parts and craft use.
+ * The STATE HASH is the hash of the body WITHOUT the LABELS block: it does not depend on `defsHash` (a
+ * change of an unrelated definition does not move it), only on what the vessel is and on the SIMULATION
+ * PROJECTION of the definitions its parts and craft use (src/core/defs/simProjection.ts).
+ *
+ * WHAT IS NOT IN THE HASH, since version 4 (lead decision of 2026-11-12, made at the tighten step after
+ * sub-wave 3.2): the presentation fields of a definition. A vehicle is referenced by the hash of its
+ * simulation projection and a part by the fingerprint of its own, so cameras, the cockpit interior, display
+ * names and labels, plume and sound references are not in either. A command part's record holds who sits
+ * where and the g dose, nothing copied from a definition. The names of the vessel and of its craft are
+ * display strings (the name of a vehicle, of a part, the label of a stage group, or what a player typed):
+ * they are saved in the LABELS block and left out of the hash. So a name, a camera, a cockpit, a plume or a
+ * sound can change in a definition file, and a craft can be renamed, without moving a state hash.
  */
 import { SAS_MODES } from '@/core/contracts/controls';
 import type { ControlInputs } from '@/core/contracts/controls';
 import type { DefLibrary, PartDef, VehicleDef } from '@/core/contracts/defs';
+import { partSimProjection, vehicleSimProjection } from '@/core/defs/simProjection';
 import { rememberStages } from '@/core/defs/stageWords';
 import { hashU32 } from '@/core/math/hash';
-import { cloneModuleState, createCraft, createModuleRt, createModuleState, createPart, emptyVessel } from './assemble';
+import { cloneModuleState, commandRuntime, createCraft, createModuleRt, createModuleState, createPart, emptyVessel } from './assemble';
 import { pieceCraftId } from './ids';
 import { computeMassProps } from './massProps';
 import { MIGRATIONS, type MigrationRegistry, type SavedModule, type SavedPart } from './migrations';
-import type { CarriedState, CraftRuntime, HoldKind, ModuleRt, PartRuntime, PendingAction, SurfaceState, Vessel } from './types';
+import { LEGACY_PART_FINGERPRINTS, LEGACY_VEHICLE_HASHES } from './migrations/legacyV3';
+import type { CarriedState, CommandRuntime, CraftRuntime, HoldKind, ModuleRt, PartRuntime, PendingAction, SurfaceState, Vessel } from './types';
 
 /**
  * Version this build writes.
@@ -45,14 +58,25 @@ import type { CarriedState, CraftRuntime, HoldKind, ModuleRt, PartRuntime, Pendi
  *      carries its sun sample; a command part carries its crew's g dose; the keys of every plain object
  *      (module states, command data, queued actions) are written in sorted order, so the bytes do not
  *      depend on the order in which code happened to set the fields.
+ *   4  (the tighten step after sub-wave 3.2, 2026-11-24) presentation fields leave the hashed state: a
+ *      vehicle reference carries the hash of the vehicle's SIMULATION PROJECTION and a part definition the
+ *      fingerprint of its own (src/core/defs/simProjection.ts), where versions 1 to 3 hashed the whole
+ *      vehicle and the whole module definitions; a command part's record is the seats of its crew and
+ *      their g dose (versions 1 to 3 wrote the names, the cockpit id, the camera seat and the sensor mount
+ *      that the assembler had copied from the definitions); the names of the vessel and of its craft are in
+ *      the LABELS block and no longer in the CRAFTS and VESSEL blocks.
+ *      READING 1 TO 3: a hash or a fingerprint of the old kind is brought to the new kind through the table
+ *      recorded at this step (./migrations/legacyV3.ts), so a blob written before it reads without a
+ *      migration whatever presentation field changes afterwards; what a command record copied from the
+ *      definitions is dropped and read from the definitions, as for version 4.
  * Versions 1 and 2 were written by earlier states of THIS build during the package that introduced the
  * codec; no released build wrote them. Reading them proves the version dispatch and the conversions below
  * (a piece that carried a copy of its parent's craft record becomes a craft of its own), not compatibility
  * with a blob in the field.
  */
-export const CODEC_VERSION = 3;
+export const CODEC_VERSION = 4;
 /** Versions this build reads. */
-export const CODEC_VERSIONS_READ: readonly number[] = [1, 2, 3];
+export const CODEC_VERSIONS_READ: readonly number[] = [1, 2, 3, 4];
 
 const MAGIC = [0x46, 0x53, 0x50, 0x56];
 
@@ -63,6 +87,8 @@ const BLOCK_CRAFTS = 3;
 const BLOCK_VESSEL = 4;
 const BLOCK_PARTS = 5;
 const BLOCK_CARRIED = 6;
+/** Names of the vessel and of its craft (version 4): in the blob, not in the state hash. */
+const BLOCK_LABELS = 7;
 
 // ------------------------------------------------------------------------------------------------ errors
 
@@ -137,27 +163,64 @@ export function contentHash(def: unknown): string {
 
 const fingerprints = new WeakMap<PartDef, string>();
 /**
- * Fingerprint of a part definition: what its saved state depends on. A change of its modules, its
- * resources or its mass is a new fingerprint (and needs an entry in the migration registry); a change of
- * its looks, bounds or aerodynamics is not.
+ * Fingerprint of a part definition: the hash of what its saved state depends on, which is the SIMULATION
+ * PROJECTION of the definition (src/core/defs/simProjection.ts). A change of its modules' simulated fields,
+ * its resources or its mass is a new fingerprint (and needs an entry in the migration registry); a change
+ * of its looks, bounds, aerodynamics, cockpit, cameras, plume or sound is not.
  */
 export function partFingerprint(def: PartDef): string {
   let f = fingerprints.get(def);
   if (f === undefined) {
-    f = contentHash({ dryMass: def.dryMass, resources: def.resources ?? [], modules: def.modules, thermalSurfaces: def.thermal.surfaces.length });
+    f = contentHash(partSimProjection(def));
     fingerprints.set(def, f);
   }
   return f;
 }
 
+const legacyFingerprints = new WeakMap<PartDef, string>();
+/** The fingerprint of codec versions 1 to 3: over the whole module definitions, presentation fields included. */
+export function legacyPartFingerprint(def: PartDef): string {
+  let f = legacyFingerprints.get(def);
+  if (f === undefined) {
+    f = contentHash({ dryMass: def.dryMass, resources: def.resources ?? [], modules: def.modules, thermalSurfaces: def.thermal.surfaces.length });
+    legacyFingerprints.set(def, f);
+  }
+  return f;
+}
+
 const vehicleHashes = new WeakMap<VehicleDef, string>();
+/** The hash a vehicle is referenced by: of its SIMULATION PROJECTION (its name, cameras, cockpit and labels are not in it). */
 export function vehicleHash(vehicle: VehicleDef): string {
   let h = vehicleHashes.get(vehicle);
   if (h === undefined) {
-    h = contentHash(vehicle);
+    h = contentHash(vehicleSimProjection(vehicle));
     vehicleHashes.set(vehicle, h);
   }
   return h;
+}
+
+/** The vehicle hash of codec versions 1 to 3: over the whole definition. */
+export function legacyVehicleHash(vehicle: VehicleDef): string {
+  return contentHash(vehicle);
+}
+
+/**
+ * A fingerprint read from a blob of version 1 to 3, as the fingerprint of today's kind: through the table
+ * recorded at the version step; or, for a definition the table does not hold (one written since), the
+ * present fingerprint when the definition is, field for field, what the blob was written under. Anything
+ * else stays what it was and is the registry's to bring forward, or a refusal.
+ */
+function fingerprintOfLegacy(def: PartDef, written: string): string {
+  const recorded = LEGACY_PART_FINGERPRINTS[def.id]?.[written];
+  if (recorded !== undefined) return recorded;
+  return written === legacyPartFingerprint(def) ? partFingerprint(def) : written;
+}
+
+/** The same for a vehicle hash. */
+function vehicleHashOfLegacy(vehicle: VehicleDef, written: string): string {
+  const recorded = LEGACY_VEHICLE_HASHES[written];
+  if (recorded !== undefined) return recorded;
+  return written === legacyVehicleHash(vehicle) ? vehicleHash(vehicle) : written;
 }
 
 /** A vehicle named by its id and content, whoever holds it: the reference a state hash is computed with. */
@@ -576,7 +639,8 @@ function writeCrafts(st: Strings, crafts: readonly CraftRuntime[], refs: Vehicle
     if (ref.kind === 'library') {
       w.u8(0);
       w.uint(st.ref(ref.id));
-      w.uint(st.ref(ref.hash));
+      // Versions 1 to 3 name the vehicle by the hash of the whole definition.
+      w.uint(st.ref(version >= 4 ? ref.hash : legacyVehicleHash(c.vehicle)));
     } else {
       w.u8(1);
       const json = utf8.encode(canonicalJson(ref.design));
@@ -584,7 +648,7 @@ function writeCrafts(st: Strings, crafts: readonly CraftRuntime[], refs: Vehicle
       w.bytes(json);
     }
     optStr(w, st, c.ownerId);
-    w.uint(st.ref(c.name));
+    if (version < 4) w.uint(st.ref(c.name));
     w.num(c.joinedTick);
     w.uint(c.nextStage);
     w.num(c.stageLockout);
@@ -606,7 +670,7 @@ function writeCrafts(st: Strings, crafts: readonly CraftRuntime[], refs: Vehicle
 function writeVesselCore(st: Strings, v: Vessel, version: number): Writer {
   const w = new Writer();
   w.uint(st.ref(v.id));
-  w.uint(st.ref(v.name));
+  if (version < 4) w.uint(st.ref(v.name));
   optStr(w, st, v.helm.accountId);
   w.uint(v.helm.craft);
   w.uint(v.helm.controlPart);
@@ -688,7 +752,7 @@ function writeVesselCore(st: Strings, v: Vessel, version: number): Writer {
   return w;
 }
 
-function writeParts(st: Strings, v: Vessel, defIndex: Map<PartDef, number>): Writer {
+function writeParts(st: Strings, v: Vessel, defIndex: Map<PartDef, number>, version: number): Writer {
   const w = new Writer();
   w.uint(v.parts.length);
   for (const p of v.parts) {
@@ -721,7 +785,14 @@ function writeParts(st: Strings, v: Vessel, defIndex: Map<PartDef, number>): Wri
     }
     rec.num(p.stress);
     rec.bool(p.command !== null);
-    if (p.command) writePlain(rec, st, p.command);
+    if (p.command) {
+      if (version >= 4) {
+        // Who sits where, and their g dose: the state of a command part. The rest is the definitions'.
+        rec.uint(p.command.crew.length);
+        for (const c of p.command.crew) rec.uint(st.ref(c.seat));
+        rec.num(p.command.gDose);
+      } else writePlain(rec, st, p.command);
+    }
     rec.uint(p.modules.length);
     for (let m = 0; m < p.modules.length; m++) {
       const block = new Writer();
@@ -772,8 +843,25 @@ function writeCarried(c: CarriedState | null, version: number): Writer {
   return w;
 }
 
-/** The body of a blob (everything after the header) in a given layout version. */
-function writeBody(vessel: Vessel, refs: VehicleRefSource, version: number): Uint8Array {
+/** The LABELS block: the vessel's name, then the name of each craft in order. Its strings are its own (not in the table the hash covers). */
+function writeLabels(vessel: Vessel): Writer {
+  const w = new Writer();
+  const text = (s: string): void => {
+    const b = utf8.encode(s);
+    w.uint(b.length);
+    w.bytes(b);
+  };
+  text(vessel.name);
+  w.uint(vessel.crafts.length);
+  for (const c of vessel.crafts) text(c.name);
+  return w;
+}
+
+/**
+ * The body of a blob (everything after the header) in a given layout version. `labels`: with the LABELS
+ * block (a blob) or without it (what the state hash is taken of); versions 1 to 3 have the names inside.
+ */
+function writeBody(vessel: Vessel, refs: VehicleRefSource, version: number, labels: boolean): Uint8Array {
   const st = new Strings();
   st.sorted = version >= 3;
   const defIndex = new Map<PartDef, number>();
@@ -788,11 +876,11 @@ function writeBody(vessel: Vessel, refs: VehicleRefSource, version: number): Uin
   defs.uint(defList.length);
   for (const d of defList) {
     defs.uint(st.ref(d.id));
-    defs.uint(st.ref(partFingerprint(d)));
+    defs.uint(st.ref(version >= 4 ? partFingerprint(d) : legacyPartFingerprint(d)));
   }
   const crafts = writeCrafts(st, vessel.crafts, refs, version);
   const core = writeVesselCore(st, vessel, version);
-  const parts = writeParts(st, vessel, defIndex);
+  const parts = writeParts(st, vessel, defIndex, version);
   const carried = writeCarried(vessel.carried, version);
   const strings = new Writer();
   strings.uint(st.list.length);
@@ -813,6 +901,10 @@ function writeBody(vessel: Vessel, refs: VehicleRefSource, version: number): Uin
     out.u8(tag);
     out.block(block);
   }
+  if (labels && version >= 4) {
+    out.u8(BLOCK_LABELS);
+    out.block(writeLabels(vessel));
+  }
   out.u8(BLOCK_END);
   return out.done();
 }
@@ -830,7 +922,7 @@ export interface EncodeOptions {
 export function encodeVessel(vessel: Vessel, options: EncodeOptions): Uint8Array {
   const version = options.version ?? CODEC_VERSION;
   if (!CODEC_VERSIONS_READ.includes(version)) throw new Error(`vessel codec: cannot write version ${version}`);
-  const body = writeBody(vessel, options.refs ?? REFS_BY_CONTENT, version);
+  const body = writeBody(vessel, options.refs ?? REFS_BY_CONTENT, version, true);
   const head = new Writer();
   for (const b of MAGIC) head.u8(b);
   head.u16(version);
@@ -842,11 +934,12 @@ export function encodeVessel(vessel: Vessel, options: EncodeOptions): Uint8Array
 }
 
 /**
- * Hash of the complete dynamic state of a vessel: the hash of its codec body. Two vessels with the same
- * hash are the same state under the same definitions.
+ * Hash of the complete dynamic state of a vessel: the hash of its codec body without the LABELS block. Two
+ * vessels with the same hash are the same state under the same simulation projection of the definitions;
+ * they may be called differently.
  */
 export function stateHash(vessel: Vessel, refs: VehicleRefSource = REFS_BY_CONTENT): string {
-  return hashBytes(writeBody(vessel, refs, CODEC_VERSION));
+  return hashBytes(writeBody(vessel, refs, CODEC_VERSION, false));
 }
 
 // ------------------------------------------------------------------------------------------------ decode
@@ -902,7 +995,7 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
     const tag = r.u8();
     if (tag === BLOCK_END) break;
     const block = r.block();
-    if (tag >= BLOCK_STRINGS && tag <= BLOCK_CARRIED) blocks.set(tag, block);
+    if (tag >= BLOCK_STRINGS && tag <= BLOCK_LABELS) blocks.set(tag, block);
     else report.unknownBlocks.push(tag);
   }
   const need = (tag: number, name: string): Reader => {
@@ -921,9 +1014,11 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
   const written: { id: string; fingerprint: string; def: PartDef }[] = [];
   for (let n = dr.uint(), i = 0; i < n; i++) {
     const id = str(strings, dr.uint());
-    const fingerprint = str(strings, dr.uint());
+    const writtenAs = str(strings, dr.uint());
     const def = options.resolver.part(id);
     if (!def) throw new VesselDecodeError('part', `part definition "${id}" is not known`);
+    // A fingerprint of versions 1 to 3 is of the whole module definitions: read it as today's kind.
+    const fingerprint = head.version >= 4 ? writtenAs : fingerprintOfLegacy(def, writtenAs);
     written.push({ id, fingerprint, def });
   }
 
@@ -942,7 +1037,8 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
       if (!found) throw new VesselDecodeError('vehicle', `craft "${craftId}": vehicle "${id}" (content ${hash}) is not known`);
       vehicle = found;
       const current = vehicleHash(found);
-      if (current !== hash) report.vehicleChanged.push({ craftId, vehicleId: id, written: hash, current });
+      // A hash of versions 1 to 3 is of the whole definition: compared as today's kind.
+      if (current !== (head.version >= 4 ? hash : vehicleHashOfLegacy(found, hash))) report.vehicleChanged.push({ craftId, vehicleId: id, written: hash, current });
     } else if (kind === 1) {
       vehicle = embeddedDesign(utf8Decoder.decode(cr.bytes(cr.uint())), craftId);
     } else throw new VesselDecodeError('format', `craft "${craftId}": unknown vehicle reference kind ${kind}`);
@@ -954,7 +1050,8 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
       c.root = lineage.root;
     }
     c.ownerId = optStrIn(cr, strings);
-    c.name = str(strings, cr.uint());
+    // From version 4 the name is in the LABELS block (read at the end); until it is read the craft is called as its vehicle.
+    if (head.version < 4) c.name = str(strings, cr.uint());
     c.joinedTick = cr.num();
     c.nextStage = cr.uint();
     c.stageLockout = cr.num();
@@ -971,7 +1068,8 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
 
   // Vessel-level state.
   const vr = need(BLOCK_VESSEL, 'vessel');
-  const v = emptyVessel(str(strings, vr.uint()), str(strings, vr.uint()), crafts[0]!);
+  const vesselId = str(strings, vr.uint());
+  const v = emptyVessel(vesselId, head.version >= 4 ? crafts[0]!.name : str(strings, vr.uint()), crafts[0]!);
   v.crafts = crafts;
   v.helm = { accountId: optStrIn(vr, strings), craft: vr.uint(), controlPart: vr.uint() };
   for (let n = vr.uint(), i = 0; i < n; i++) v.links.push({ a: vr.uint(), b: vr.uint(), roll: vr.num() });
@@ -1060,7 +1158,28 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
     const shielded = rec.bool();
     const panel = rec.bool() ? { index: rec.uint(), count: rec.uint() } : null;
     const stress = rec.num();
-    const command = rec.bool() ? (readPlain(rec, strings) as PartRuntime['command']) : null;
+    let command: PartRuntime['command'] = null;
+    if (rec.bool()) {
+      // Saved: who sits where and their g dose. Versions 1 to 3 wrote the whole record, with what the
+      // assembler had copied from the definitions; that part is read from the definitions now.
+      let seats: string[];
+      let gDose: number;
+      if (head.version >= 4) {
+        seats = [];
+        for (let k = rec.uint(), j = 0; j < k; j++) seats.push(str(strings, rec.uint()));
+        gDose = rec.num();
+      } else {
+        const old = readPlain(rec, strings) as { crew?: unknown; gDose?: unknown } | null;
+        if (old === null || typeof old !== 'object' || !Array.isArray(old.crew)) throw new VesselDecodeError('block', `part "${instanceId}": its command record is not one this version reads`);
+        seats = old.crew.map((c) => {
+          const seat = (c as { seat?: unknown } | null)?.seat;
+          if (typeof seat !== 'string') throw new VesselDecodeError('block', `part "${instanceId}": a crew entry of its command record names no seat`);
+          return seat;
+        });
+        gDose = typeof old.gDose === 'number' ? old.gDose : 0;
+      }
+      command = commandFromSaved(crafts[craft]!.vehicle, instanceId, w.def, seats, gDose);
+    }
     const modules: SavedModule[] = [];
     for (let k = rec.uint(), j = 0; j < k; j++) {
       const type = str(strings, rec.uint());
@@ -1100,6 +1219,16 @@ export function decodeVessel(bytes: Uint8Array, options: DecodeOptions): { vesse
     }
   }
   if (head.version < 3) upgradeBeforeLineage(v);
+  // The names (version 4): display strings, outside the hashed blocks. A blob without the block is named by its definitions.
+  const lr = blocks.get(BLOCK_LABELS);
+  if (lr) {
+    const text = (): string => utf8Decoder.decode(lr.bytes(lr.uint()));
+    v.name = text();
+    const n = lr.uint();
+    if (n !== crafts.length) throw new VesselDecodeError('format', `the labels block names ${n} craft and the vessel has ${crafts.length}`);
+    for (const c of crafts) c.name = text();
+    if (lr.left !== 0) throw new VesselDecodeError('block', `the labels block has ${lr.left} bytes this version does not read`);
+  }
   for (const l of v.links) if (l.a >= v.parts.length || l.b >= v.parts.length) throw new VesselDecodeError('format', 'a dock link names a part the vessel does not have');
 
   // Carried state.
@@ -1145,6 +1274,21 @@ function readCarried(r: Reader, version: number): CarriedState | null {
   for (let k = r.uint(), i = 0; i < k; i++) c.wake.push(r.num());
   if (r.left !== 0) throw new VesselDecodeError('block', `the carried block has ${r.left} bytes this version does not read`);
   return c;
+}
+
+/**
+ * The command record of a part from its saved state (the seats of its crew, their g dose) and the
+ * definitions: the cockpit, the cameras, the remote flag and the crew's names are what the vehicle and the
+ * part's definition say now (`commandRuntime`, as at assembly).
+ */
+function commandFromSaved(vehicle: VehicleDef, instanceId: string, def: PartDef, seats: readonly string[], gDose: number): CommandRuntime {
+  const module = def.modules.findIndex((m) => m.type === 'command');
+  const md = def.modules[module];
+  if (!md || md.type !== 'command') throw new VesselDecodeError('block', `part "${instanceId}": a command record on a part whose definition "${def.id}" has no command module`);
+  const command = commandRuntime(vehicle, instanceId, md, module);
+  command.crew = seats.map((seat) => ({ seat, name: vehicle.crew.find((c) => c.seat === seat)?.name ?? '' }));
+  command.gDose = gDose;
+  return command;
 }
 
 /** Build the runtime part from saved state that is at the current fingerprint of its definition; any misfit is a changed block. */

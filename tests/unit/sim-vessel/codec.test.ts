@@ -25,6 +25,7 @@ import {
   restoreVessel,
   stateHash,
   structureOf,
+  vehicleHash,
   VesselDecodeError,
   type Vessel,
 } from '@/sim/vessel';
@@ -269,10 +270,128 @@ describe('definitions that changed since the blob was written', () => {
     expect(() => decode(bytes, { ...defs, parts })).toThrow(/part definition "kestrel-capsule" is not known/);
     const { [scene.vessel.crafts[0]!.vehicleId]: _vehicle, ...vehicles } = defs.vehicles;
     expect(() => decode(bytes, { ...defs, vehicles })).toThrow(/vehicle "meridian-lunar" \(content [0-9a-f]{16}\) is not known/);
-    const renamed = { ...defs.vehicles['meridian-lunar']!, name: 'Meridian (renamed)' };
-    const { report } = decode(bytes, { ...defs, vehicles: { ...defs.vehicles, 'meridian-lunar': renamed } });
+    // A vehicle is its SIMULATION PROJECTION: one whose stage does something else is another vehicle and is reported...
+    const vehicle = defs.vehicles['meridian-lunar']!;
+    const restaged = { ...vehicle, stages: vehicle.stages.map((st, i) => (i === 0 ? { ...st, actions: st.actions.slice(1) } : st)) };
+    const { report } = decode(bytes, { ...defs, vehicles: { ...defs.vehicles, 'meridian-lunar': restaged } });
     expect(report.vehicleChanged).toHaveLength(1);
     expect(report.vehicleChanged[0]).toMatchObject({ craftId: 'meridian-lunar', vehicleId: 'meridian-lunar' });
+    // ... and one that is only called differently is the same vehicle (see "presentation fields are free").
+    const renamed = { ...vehicle, name: 'Meridian (renamed)' };
+    expect(decode(bytes, { ...defs, vehicles: { ...defs.vehicles, 'meridian-lunar': renamed } }).report.vehicleChanged).toEqual([]);
+  });
+});
+
+describe('presentation fields are free (codec version 4)', () => {
+  /** The library with every presentation field of every vehicle and of every part's modules changed. */
+  function restyled(lib: DefLibrary): DefLibrary {
+    const vehicles: DefLibrary['vehicles'] = {};
+    for (const [id, v] of Object.entries(lib.vehicles)) {
+      const seats = Object.values(lib.parts).flatMap((p) => p.modules.flatMap((m) => (m.type === 'command' ? m.seats.map((x) => x.id) : [])));
+      vehicles[id] = {
+        ...v,
+        name: `${v.name} (renamed)`,
+        cockpit: v.cockpit === null ? null : `${v.cockpit}-other`,
+        cameras: { ...(v.cameras.cockpit ? { cockpit: { part: v.cameras.cockpit.part, seat: seats.find((x) => x !== v.cameras.cockpit!.seat) ?? v.cameras.cockpit.seat } } : {}), chase: { defaultDistance: 1, minDistance: 0.5, maxDistance: 2 } },
+        stageGroups: v.stageGroups.map((g) => ({ id: g.id, label: `${g.label}!` })),
+        stages: v.stages.map((st) => ({ ...st, label: `${st.label}!`, icon: 'other' })),
+        crew: v.crew.map((c) => ({ seat: c.seat, name: `${c.name} Jr.` })),
+      };
+    }
+    const parts: DefLibrary['parts'] = {};
+    for (const [id, p] of Object.entries(lib.parts)) {
+      parts[id] = {
+        ...p,
+        modules: p.modules.map((m) => {
+          if (m.type === 'engine') return { ...m, plume: `${m.plume}-other`, sound: `${m.sound}-other` };
+          if (m.type === 'command') return { ...m, cockpit: 'another-cabin', sensorCamera: { pos: [1, 2, 3], lookDir: [0, 0, 1], upDir: [0, 1, 0] }, seats: m.seats.map((x) => ({ ...x, lookDir: [0, 0, -1], upDir: [1, 0, 0] })) };
+          return m;
+        }),
+      };
+    }
+    return { ...lib, vehicles, parts };
+  }
+
+  it('the same flight under a restyled library has the same state hash, in every regime', () => {
+    const other = restyled(defs);
+    // The restyled library differs in every one of those fields, and in no fingerprint or vehicle hash.
+    expect(other.vehicles[VEHICLE]!.name).not.toBe(defs.vehicles[VEHICLE]!.name);
+    for (const id of Object.keys(defs.parts)) expect(partFingerprint(other.parts[id]!), id).toBe(partFingerprint(defs.parts[id]!));
+    for (const id of Object.keys(defs.vehicles)) expect(vehicleHash(other.vehicles[id]!), id).toBe(vehicleHash(defs.vehicles[id]!));
+    for (const name of SCENE_NAMES) {
+      expect(stateHash(buildScene(other, name).vessel), name).toBe(stateHash(buildScene(defs, name).vessel));
+    }
+  });
+
+  it('a blob written under the library as it was reads under the restyled one without a migration and without a changed vehicle; the snapshot says what the definitions say now', () => {
+    const other = restyled(defs);
+    for (const name of SCENE_NAMES) {
+      const scene = buildScene(defs, name);
+      const { vessel, report } = decode(encode(scene.vessel), other);
+      expect(report.migrated, name).toEqual([]);
+      expect(report.vehicleChanged, name).toEqual([]);
+      expect(stateHash(vessel), name).toBe(stateHash(scene.vessel));
+      // What a command part holds of the definitions is read from them: the cockpit and the crew's names of the restyled library.
+      for (const p of vessel.parts) {
+        if (!p.command) continue;
+        const md = p.def.modules[p.command.module]!;
+        expect(md.type).toBe('command');
+        expect(p.command.cockpit, `${name} ${p.instanceId}`).toBe('another-cabin');
+        for (const c of p.command.crew) expect(c.name.endsWith(' Jr.'), `${name} ${p.instanceId} ${c.seat}`).toBe(true);
+      }
+    }
+  });
+
+  it('every blob of the corpus, whatever version wrote it, reads under the restyled library to the state it was written from', () => {
+    const other = restyled(defs);
+    const list = JSON.parse(fs.readFileSync(path.join(corpusDir, 'corpus.json'), 'utf8')) as CorpusEntry[];
+    for (const e of list) {
+      const { vessel, report } = decode(new Uint8Array(fs.readFileSync(path.join(corpusDir, e.file))), other);
+      expect(report.migrated, e.file).toEqual([]);
+      expect(report.vehicleChanged, e.file).toEqual([]);
+      expect(stateHash(vessel), e.file).toBe(e.stateHash);
+    }
+  });
+
+  it('a name is carried by the blob and is not in the hash', () => {
+    const scene = buildScene(defs, 'coasting');
+    const before = stateHash(scene.vessel);
+    const plain = encode(scene.vessel);
+    scene.vessel.name = 'Halcyon';
+    scene.vessel.crafts[0]!.name = 'Halcyon One';
+    expect(stateHash(scene.vessel)).toBe(before);
+    const named = encode(scene.vessel);
+    expect(sameBytes(named, plain)).toBe(false);
+    const { vessel } = decode(named);
+    expect(vessel.name).toBe('Halcyon');
+    expect(vessel.crafts[0]!.name).toBe('Halcyon One');
+    expect(stateHash(vessel)).toBe(before);
+  });
+
+  it('a simulated field is not free: another seat position, another thrust, another stage action is another fingerprint or vehicle', () => {
+    const capsule = defs.parts['kestrel-capsule']!;
+    const moved = { ...capsule, modules: capsule.modules.map((m) => (m.type === 'command' ? { ...m, seats: m.seats.map((x, i) => (i === 0 ? { ...x, pos: [x.pos[0] + 0.01, x.pos[1], x.pos[2]] as [number, number, number] } : x)) } : m)) };
+    expect(partFingerprint(moved)).not.toBe(partFingerprint(capsule));
+    const engine = Object.values(defs.parts).find((p) => p.modules.some((m) => m.type === 'engine'))!;
+    const stronger = { ...engine, modules: engine.modules.map((m) => (m.type === 'engine' ? { ...m, thrustVac: m.thrustVac * 1.01 } : m)) };
+    expect(partFingerprint(stronger)).not.toBe(partFingerprint(engine));
+    const vehicle = defs.vehicles[VEHICLE]!;
+    expect(vehicleHash({ ...vehicle, crew: vehicle.crew.slice(1) })).not.toBe(vehicleHash(vehicle));
+    expect(vehicleHash({ ...vehicle, abort: [] })).not.toBe(vehicleHash({ ...vehicle, abort: [{ kind: 'cutParachute', parts: [] }] }));
+  });
+
+  it('a blob of the version before, written now, reads back: the fingerprints of the old kind are recognised without the recorded table', () => {
+    // A part that has no entry in the table (a definition made after the step) under its own name.
+    const capsule = defs.parts['kestrel-capsule']!;
+    const lib: DefLibrary = { ...defs, parts: { ...defs.parts, 'kestrel-capsule': { ...capsule, dryMass: capsule.dryMass + 1 } } };
+    const scene = buildScene(lib, 'coasting');
+    const old = encodeVessel(scene.vessel, { defsHash: 't', refs: libraryResolver(lib), version: CODEC_VERSION - 1 });
+    expect(readHeader(old).version).toBe(CODEC_VERSION - 1);
+    const { vessel, report } = decode(old, lib);
+    expect(report.migrated).toEqual([]);
+    expect(report.vehicleChanged).toEqual([]);
+    expect(stateHash(vessel)).toBe(stateHash(scene.vessel));
+    expect(vessel.name).toBe(scene.vessel.name);
   });
 });
 
