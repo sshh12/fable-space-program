@@ -32,7 +32,10 @@
  *    one, and the last one is the frame compared. What a feature keeps a phase of beyond the 64 frames the
  *    sequences are aligned to (the atmosphere does when it is stepped by hand: request presentation-sweep-8)
  *    starts over with the capture, and TWO RUNS WITHOUT A REPLACEMENT ARE ONE PICTURE TO THE BIT: that is the
- *    precondition of every comparison of a picture, asserted as 0 differing pixels.
+ *    precondition of every comparison of a picture, asserted as 0 differing pixels. (As the reference-image
+ *    gate does, request lead-9: a view with the sea to the horizon has a rare second state between loads, a
+ *    few pixels by one level. When the first two runs are not one picture a third is taken, two of the three
+ *    must be, and the line OTHER STATE says so; three pictures that all differ fail.)
  *
  *    The checks, in this order (`judge`):
  *      eye step, vessel step   what the core forms from the two frames across the replacement (`prevEyeOffset`;
@@ -491,9 +494,25 @@ for (const scene of REBASE_SCENES.filter((s) => only.length === 0 || only.includ
     fs.mkdirSync(outDir, { recursive: true });
     const save = (file: string, image: Buffer): void => fs.writeFileSync(path.join(outDir, `rebase-${scene.name}.${file}.png`), image);
 
-    // ---- the runs: two without a replacement, one with it, and one for every rebase switched off
-    const control = await runScene(page, pageLog, scene, { replace: false });
-    const again = await runScene(page, pageLog, scene, { replace: false });
+    // ---- the runs: two without a replacement (a third when those two are not one picture), one with it, and
+    // one for every rebase switched off
+    const first = await runScene(page, pageLog, scene, { replace: false });
+    const second = await runScene(page, pageLog, scene, { replace: false });
+    const firstPair = imageDifference(first.image, second.image);
+    let control = first;
+    let again = second;
+    if (firstPair.maxAbs > 0) {
+      // The rare second state of a load (request lead-9): another load decides which two are the picture.
+      const third = await runScene(page, pageLog, scene, { replace: false });
+      console.log(`${tag}: OTHER STATE: the first two runs without a replacement differ (${describe(firstPair)}); a third was taken`);
+      fs.mkdirSync(outDir, { recursive: true });
+      fs.writeFileSync(path.join(outDir, `rebase-${scene.name}.other-state.diff.png`), firstPair.diff);
+      if (imageDifference(first.image, third.image).maxAbs === 0) again = third;
+      else if (imageDifference(second.image, third.image).maxAbs === 0) {
+        control = second;
+        again = third;
+      }
+    }
     const replaced = await runScene(page, pageLog, scene, { replace: true });
     const offRuns: { norebase: Switch; fails: CheckName[]; run: Run }[] = [];
     for (const o of scene.off) offRuns.push({ ...o, run: await runScene(page, pageLog, scene, { replace: true, norebase: o.norebase }) });
@@ -533,7 +552,7 @@ for (const scene of REBASE_SCENES.filter((s) => only.length === 0 || only.includ
     const self = imageDifference(control.image, again.image);
     console.log(`${tag}: two runs without a replacement: ${describe(self)}; velocity max ${control.velocity.max.toExponential(3)} and ${again.velocity.max.toExponential(3)}`);
     if (self.maxAbs > 0) save('control.diff', self.diff);
-    expect(Math.round(self.differingFraction * self.width * self.height), `rebase ${scene.name}: two runs WITHOUT a replacement are not one picture (${describe(self)}; rebase-${scene.name}.control.diff.png): no comparison with them means anything`).toBe(0);
+    expect(Math.round(self.differingFraction * self.width * self.height), `rebase ${scene.name}: no two of three runs WITHOUT a replacement are one picture (${describe(self)}; rebase-${scene.name}.control.diff.png): no comparison with them means anything`).toBe(0);
     expect(control.velocity.max, 'the scene moves on screen (else the motion vectors prove nothing)').toBeGreaterThan(1e-5);
     const drawn = judgePicture(control, replaced);
     save('diff', drawn.diff);
