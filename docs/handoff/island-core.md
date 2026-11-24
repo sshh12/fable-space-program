@@ -2,8 +2,8 @@
 
 Work package `island-core` (wave 4.1a, MIGRATION_V2): the island and the view builders; `World` shrinks in
 place to a thin single-clock host. State of 2026-11-24, second builder (the first stopped at 06b05ba with
-the island, the view and the host built and the mission flying on them). **Open: section 5** (vessel and
-port targets in the view; three smaller items). Everything else of the brief is built, measured and
+the island, the view and the host built and the mission flying on them). **Open: section 5** (the docking
+instrument `Readouts.docking`; four smaller items). Everything else of the brief is built, measured and
 committed. Continue from this file and
 `git log --oneline -- src/sim tests/mission tests/unit/sim-island tests/unit/sim-world tools/sim`.
 
@@ -20,14 +20,17 @@ committed. Continue from this file and
 | **SOI crossing of an island of two; snapshot of 64 vessels; step paths asserted on the mission** | done; section 4 | 4c9a569 |
 | **The reference orbit's rebase at 30 km and at burn end** | done | 8e029b8 |
 | **Requests solar-system-sim-1 (items 1-4, 6), fleet-data-5, fleet-data-7** | resolved in their files | 4c9a569, 6847116 |
-| Vessel and port targets in the view (`Readouts.target` / `.docking` for a vessel or port, the SAS target modes, the navball's target mode) | **NOT done**; section 5 | - |
+| **Vessel and port targets in the view** (`Readouts.target` for a vessel or a port, the navball's target direction, relative markers and target mode, the SAS modes `target`, `antiTarget`, `portAlign`) | done; `tests/unit/sim-world/vesselTarget.test.ts` | a7d53a5 |
+| The docking instrument (`Readouts.docking`) | **NOT done**: null for every target; section 5 | - |
 
 Expected red until the lead's records agent re-records the pinned guard: two tests of `npm run test:mission`
 (section 6). Red in the working tree and NOT this package's: `tests/unit/sim-vessel/codec.test.ts` (two
 corpus tests: "pathfinder-bus was 7940b14643a94c75 ... and is fe5a659608638419 now") and several
 `tests/unit/fleet` flights, from uncommitted edits of part definitions by another agent
 (`git diff -- data/defs/parts`); `tools/dev/boundaries.test.ts` (one line of
-`src/pilot/generic/transfer.ts`, solar-system-sim's file).
+`src/pilot/generic/transfer.ts`, solar-system-sim's file). Both were green again at the last run of this
+package (a7d53a5: 398 of 398 in the suites of section 3, boundaries 93 of 93); they are named because
+they come and go with other packages' working files.
 
 ## 1. The island API, exactly (`src/sim/island/index.ts`; types and doc comments in `api.ts`)
 
@@ -223,7 +226,7 @@ orbit only in the star's sphere; the predict list; the fixtures are not flown th
 - `node tools/dev/heavy.mjs --class=cpu -- npm run test:mission`: 35 of 37 at `f0c0855ea40d8c59`, 596,933
   steps, 85 s (the two red tests: section 6).
 - `node tools/dev/heavy.mjs --class=cpu -- npx vitest run src/sim src/pilot tests/unit/sim-island
-  tests/unit/sim-world tests/unit/sim-vessel`: 392 tests, all green but the two corpus tests named in
+  tests/unit/sim-world tests/unit/sim-vessel`: 398 tests, green (see the note on other packages' working files in
   section 0.
 - The proofs of the golden: `npx tsx tools/dev/record-mission-baseline.ts --exact
   tests/mission/rebaseline/2026-11-24-formation-after.json --reference
@@ -250,6 +253,7 @@ orbit only in the star's sphere; the predict list; the fixtures are not flown th
 | Predict mode: 1,000 seeded runs | **Met** |
 | Measured: step cost per regime | 2.5 us integrated in low orbit, 2.9 us coasting attended, 3.1 / 3.5 us at 30 AU (the audit: 2.6-14.5 us); contact regimes not re-measured (first builder's numbers) |
 | Measured: armed-tier cost | 0.20 us per member per tick in low orbit, 0.32 us at 30 AU (first builder's numbers) |
+| Scope D: target readouts through the navigation signatures | **Met for vessel and port targets** (5 tests: read-out, navball, target mode, SAS toward and away within 0.05 rad, port to port, portAlign from 0.2 rad to under 0.1 rad); the docking instrument is open (section 5) |
 | Measured: snapshot build for 64 vessels, relevance cut 10 (budget 1.0 ms) | **0.45 ms** (64 capsules of 5 parts), **0.62 ms** (64 whole lunar stacks of 42 parts); worst 1.0 / 1.2 ms (`tests/unit/sim-world/snapshotCost.test.ts`). `World` passes no cut (one pilot, a handful of vessels) |
 | Measured: island codec | 4.6 kB for two vessels; encode 0.22 ms, decode 0.19 ms, hash 0.05 ms |
 
@@ -257,18 +261,30 @@ All timings were taken with other agents' jobs running (PACKAGE_RULES 16): provi
 
 ## 5. What is left, in order
 
-1. **Vessel and port targets in the view** (brief D; request solar-system-sim-1 item 5). Nothing of it is
-   built: `PlayerCommands.setTarget` still refuses a vessel or a port, `setSasMode` the three target modes,
-   `setNavballMode` 'target'; `Readouts.target` is filled for a body only, `.docking` is null,
-   `NavballMarkers.relativePrograde` / `.relativeRetrograde` are null. Where it goes: the target is
-   `Planning` state (a `TargetRef` beside `targetBodyId`); `buildReadouts` / `buildSnapshot` call
-   `vesselTargetReadout`, `navballTargetVectors` and `computeNavball({ relativeVelocity })` of
-   `src/sim/nav/target.ts` with the two `ViewVessel`s of the `SnapshotSource` (the second vessel is in
-   `source.vessels`; both states in BCI of their bodies); `PilotSeat.sendHold` sends the direction to the
-   target (or away from it, or the port axis from `dockFace` of `src/sim/vessel/dock.ts`) as `sasHold` for
-   the modes `target`, `antiTarget`, `portAlign` (the island already holds `seat.sasHold` for them);
-   `Planning.sasModesAvailable` offers them while a vessel or port is targeted; the docking instrument
-   needs the two port frames. No island change is needed.
+1. **The docking instrument, `Readouts.docking`** (brief D; the lead's note of 2026-11-24). It is null
+   for every target. What it needs and why it was not built here: the offsets, angles, roll to the nearest
+   step, speeds and the six `within` flags are the capture envelope of the two ports
+   (`DockingPortModuleDef.capture`), measured between the two port frames, and `contact-docking` measures
+   the very same quantities to decide a capture in the island's pair pass. Two implementations would
+   disagree at the edge of the envelope, where the pilot looks at the lamps. The geometry is at hand:
+   `targetGeometry` of `src/sim/view/target.ts` gives the two port states and axes; the roll reference is
+   `linkRoll` of `src/sim/vessel/assemble.ts`; `phase` follows the port's stored state (`dockingPortState`).
+   Build the envelope measurement once (in `src/sim/vessel` or the island) and let both call it.
+   What IS built of vessel and port targets (a7d53a5): the target is `Planning` state (`targetBodyId` or
+   `targetCraft { vesselId, portId }`, `Planning.setTarget`, `targetRef`); `PlayerCommands.setTarget` takes
+   a body, a vessel of the clock or a docking port of one (refused by name: an unknown vessel, the pilot's
+   own, a part that is no port); `Readouts.target` through `vesselTargetReadout` between the centres of
+   mass, or port to port when the helm's control part is a port and a port is targeted; its
+   `closestApproaches` are `chainClosestApproaches` of the own chain (the plan's when there is one)
+   against the target's forecast, with `targetApproach` markers on the patches; the navball's `target` /
+   `antiTarget` markers, `relativePrograde` / `relativeRetrograde`, and the mode `target` (it stays the
+   pilot's: the altitude switch leaves it); the SAS modes `target`, `antiTarget`, `portAlign` are a hold
+   direction the `PilotSeat` sends with the controls every step (`Presenter.targetHold`); a target that is
+   deselected or gone ends the modes that referred to it. Limits: the target must be a vessel of this
+   clock's roster (the universe's lineage of a craft id is `universe-directory`'s); the approaches are
+   refreshed with the patches and when the target's revision changes; the session state hash does not
+   cover a vessel target (it is view state, and adding it would move the golden); the control part is
+   moved to a port only by a `helm` input (there is no player command for "control from here").
 2. The view over an island with a reference orbit: `viewOfMember` hands the view the member's `Vessel`
    whose `r`, `v` are OFFSETS there; the snapshot builders read them as BCI. Nothing reaches this with the
    shipped library; on the staged one a host must give the view BCI states (`stateOf`).
@@ -346,15 +362,14 @@ debris meets its recorded fate within 2 s and 500 m" (the three rows).
 - `docs/requests/island-core-2.md` (open, with the lead): rule fields for the island's constants (now also
   `REFERENCE_OFFSET_MAX`, `REFERENCE_SETTLE_DISTANCE`, `REFERENCE_SETTLE_SPEED`); a wire form for the
   velocity reference; the two re-baselines in MIGRATION_V2 principle 5.
-- Against this package's paths: `solar-system-sim-1` (items 1-4 and 6 resolved; item 5 is section 5.1),
-  `fleet-data-5`, `fleet-data-7` (resolved).
+- Against this package's paths: `solar-system-sim-1`, `fleet-data-5`, `fleet-data-7`: resolved.
 
 ## 9. The golden's history through this package
 
 `72c0893583aa427d` (post-tighten) through e1d4d18, 8edcf83, 3d50295; `f6efbe54f52a40de` since 91119ab (the
 Armed tier; EXACT: 17 of 17 milestones, 596,933 steps); `f0c0855ea40d8c59` since 2e23f69 (formation by the
 join distance; EXACT: 17 of 17, 596,933 steps, 400 of 400 attended samples) and unchanged through the
-restructure of `World`, the three requests and the rebase triggers.
+restructure of `World`, the three requests, the rebase triggers and the target wiring.
 
 ## 10. For the next packages
 
@@ -369,7 +384,8 @@ restructure of `World`, the three requests and the rebase triggers.
   what the golden depends on.
 - **contact-docking**: `PairHook` and `SubstepRun` are the seam (the lockstep holds through an SOI
   crossing: tested); `IslandOp` gains `merge`, `capture`, `release`; port states follow every structure
-  rebuild; the SAS target modes need only a `sasHold` (section 5.1).
+  rebuild; the SAS target modes are a `sasHold` the view sends; the docking instrument is yours to share
+  with the capture test (section 5.1).
 - **netcode-client**: section 1.5 and 1.6; the velocity reference needs a wire form.
 - **server-persistence**: `island.encode()` is `island_ckpt.state`; `islandHash` compares replays; a journal
   of `IslandInput` applied at their ticks reproduces the hash.

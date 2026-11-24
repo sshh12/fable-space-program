@@ -1,4 +1,4 @@
-Status: resolved for items 1 to 4 and 6 (island-core, commit 4c9a569); item 5 (vessel and port targets in the view) is OPEN: docs/handoff/island-core.md, section 5.1
+Status: resolved (island-core, commits 4c9a569 and a7d53a5)
 From: solar-system-sim
 Owner path: src/sim/world/sim.ts, src/sim/world/environment.ts, src/sim/island/**, src/sim/view/**, tests/unit/sim-world/viewReference.json (island-core)
 Blocking: no
@@ -94,8 +94,13 @@ Must NOT change: anything on the shipped library (each item above is identical t
    floor of a body without a surface is destroyed by a `destroy` operation with cause 'overstress'.
    Tested on the staged library (`tests/unit/sim-island/shape.test.ts`: the air over the pole and the
    equator of the first shaped body without a surface, the floor in both step modes).
-5. NOT done: the view does not call the vessel-target functions yet (`setTarget` still refuses a vessel or a
-   port). Where each call goes is written in docs/handoff/island-core.md, section 5.1, for whoever takes it.
+5. Wired (a7d53a5): `vesselTargetReadout` for `Readouts.target` of a vessel or port target (centre to centre,
+   or port to port when the control part is a port), `chainClosestApproaches` / `ownChain` /
+   `targetApproachMarkers` for its closest approaches and the pair markers on the patches,
+   `navballTargetVectors` and `computeNavball({ relativeVelocity })` for the target direction, the relative
+   markers and the navball's target mode (src/sim/view/target.ts, planning.ts, snapshot.ts;
+   tests/unit/sim-world/vesselTarget.test.ts). `lvlhOffset` and `relativeState` are reached through the
+   read-out. The docking instrument (`Readouts.docking`) is not built: docs/handoff/island-core.md, 5.1.
 6. `createRealTerrain` (tools/sim/realWorld.ts) passes `preload: 'launchSystems'`.
 Verified: mission 35 of 37 at the unchanged golden `f0c0855ea40d8c59` (the two red tests are the pinned
 guard's, request island-core-1); `npx vitest run tests/unit/sim-world tests/unit/sim-island`.
