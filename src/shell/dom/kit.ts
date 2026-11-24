@@ -130,7 +130,7 @@ const SHELL_CSS = `
 .sh-num { font-family: ${SHELL_FONTS.display}; font-weight: 600; font-feature-settings: 'tnum' 1; }
 .sh-warn { color: var(--warn); } .sh-alert { color: var(--alert); } .sh-ok { color: var(--ok); } .sh-accent { color: var(--accent); }
 
-.sh-tabs { display: flex; align-items: center; gap: calc(2.6 * var(--u)); }
+.sh-tabs { display: flex; align-items: center; gap: calc(2.6 * var(--u)); background: var(--fill); border: 1px solid var(--line); border-radius: 2px; padding: calc(0.3 * var(--u)) calc(1.4 * var(--u)); pointer-events: auto; }
 .sh-tab { font-family: ${SHELL_FONTS.display}; font-weight: 600; font-size: max(16px, calc(1.9 * var(--u))); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); background: none; border: 0; padding: calc(0.6 * var(--u)) 0; position: relative; cursor: pointer; pointer-events: auto; }
 .sh-tab[aria-selected="true"] { color: var(--ink); }
 .sh-tab[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: calc(-0.4 * var(--u)); height: max(2px, calc(0.25 * var(--u))); background: var(--accent); }

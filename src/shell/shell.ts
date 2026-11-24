@@ -254,6 +254,7 @@ export function createShell(deps: ShellDeps): Shell {
     if (st.main !== 'hub' && st.main !== 'deploy') return;
     const tabs = el('div', 'sh-tabs');
     tabs.setAttribute('role', 'tablist');
+    tabs.dataset['scrim'] = '0.7';
     const q = keyOf('menu', 'menu:prevTab');
     const e = keyOf('menu', 'menu:nextTab');
     if (q) tabs.append(el('span', 'sh-key', deps.keys.label(q)));

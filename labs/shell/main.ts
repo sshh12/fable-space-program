@@ -129,6 +129,8 @@ async function boot(): Promise<void> {
   /** The last transit's record and the exposure at its hand-over (EV100), kept for the test after the transit ends. */
   let lastTransit: (TransitRun & { handOverEv: number | null; handOverTarget: number | null; handOverAt: number | null }) | null = null;
   let flightCamera = false;
+  /** The transit's last point, body-fixed: the lab's flight camera stands there (it turns with the Earth). */
+  let flightSample: ReturnType<typeof transitSample> | null = null;
   const eyeFor = (s: Subject): EyePose => {
     const earth = earthOf();
     if (s === 'site') {
@@ -367,10 +369,14 @@ async function boot(): Promise<void> {
         // pose the app's chase rig must start from: TransitPlan.endOffsetEnu), so the hand-over has no cut and the
         // meter settles on the view the transit's exposure was led to.
         flightCamera = true;
+        flightSample = sample;
         app.camera.settings.exposureHint = null;
         shell.handOver();
       }
-    } else if (!flightCamera) {
+    } else if (flightCamera) {
+      // Held body-fixed: ROOT moves with the Earth's orbit and spin, the pad with the Earth.
+      if (flightSample) place(transitPose(earth, flightSample), null);
+    } else {
       const target = eyeFor(subject);
       if (glide) {
         glide.t += dt / GLIDE_S;
