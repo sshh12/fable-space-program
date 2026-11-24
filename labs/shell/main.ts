@@ -74,8 +74,18 @@ async function boot(): Promise<void> {
   // a visual; today the lunar stack), assembled with the frozen facade. A vehicle that cannot be shown is never built here.
   const displayVehicle = presentableVehicles(defs)[0] ?? null;
   const displayId = displayVehicle?.id ?? null;
-  const display = displayId ? { vehicleId: displayId, parts: vesselPartSnapshots(assembleVessel(defs, displayId)) } : {};
-  const sim = createFakeSession(defs, { scene: 'pad', siteId: site.id, ut, ground: { height: padElevation, originHeight: 0 }, ...display });
+  const displayParts = displayId ? vesselPartSnapshots(assembleVessel(defs, displayId)) : [];
+  // The stack stands on the pad's mount: its lowest point (part bounds along +Y) at the mount height above the pad.
+  let stackLow = 0;
+  let stackHigh = 0;
+  for (const p of displayParts) {
+    const bounds = defs.parts[p.def]?.bounds;
+    if (!bounds) continue;
+    stackLow = Math.min(stackLow, p.localPos.y + bounds.yMin);
+    stackHigh = Math.max(stackHigh, p.localPos.y + bounds.yMax);
+  }
+  const display = displayId ? { vehicleId: displayId, parts: displayParts } : {};
+  const sim = createFakeSession(defs, { scene: 'pad', siteId: site.id, ut, ground: { height: padElevation, originHeight: -stackLow, clearance: padOf(site).mountHeight }, ...display });
   const app = await createLabApp({ canvas, name: 'shell', defs, sim, features: [], autoReady: false });
   const errors = (m: string): void => app.testApi.reportError(m);
   const fonts = loadShellFonts('/assets/ui/fonts/', errors).then(() => {
@@ -161,7 +171,7 @@ async function boot(): Promise<void> {
     const yaw = turntable.yaw + (reduced ? 0 : ((performance.now() - t0) / 1000) * 0.05);
     const pitch = 0.1;
     const dist = displayHeight * 1.3 * turntable.zoom;
-    const target = v3.add(vessel.rRoot, v3.scale(up, displayHeight * 0.05));
+    const target = v3.add(vessel.rRoot, v3.scale(up, (stackLow + stackHigh) / 2));
     const around = v3.add(v3.scale(east, Math.cos(yaw)), v3.scale(north, Math.sin(yaw)));
     const eye = v3.add(target, v3.add(v3.scale(around, dist * Math.cos(pitch)), v3.scale(up, dist * Math.sin(pitch))));
     return { positionRoot: eye, qViewToRoot: lookAt(eye, target, up) };
