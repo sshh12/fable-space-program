@@ -52,10 +52,17 @@
  * since moved 9-41 km north along the coast. 2026-11-12, 11:30: site-bake closed with 16 pads at Madrakah
  * and 9 at Ka Lae; one PAD-FIELD group per site appended, `pads:madrakah` and `pads:ka-lae`
  * (`--add-pads`): PAD_POINTS points about every pad, inside its future flatten disc, either side of both
- * rims and beyond (`PAD_LAYOUT`), with the pads and radii stored in the group. STILL TO COME: the flatten
- * discs of the new pads exist only once fleet-data writes the site files; the heights are then re-recorded
- * (`--resample`) by the lead under the rule "only points inside new flatten discs may change"
- * (`padZoneOf` says on which side a changed point lies; LC-1's disc exists already and does not move).
+ * rims and beyond (`PAD_LAYOUT`), with the pads and radii stored in the group. 2026-11-24: fleet-data wrote
+ * the site files (commit c441308: Ka Lae 9 pads, LC-1 untouched; Madrakah 16), so the flatten discs of the 24
+ * new pads exist, and the heights were re-recorded (`--resample`) under the rule "only points inside new
+ * flatten discs may change", after an audit against the record: 884 points changed (`pads:ka-lae` 289,
+ * `pads:madrakah` 594, and one point of `site:madrakah` that lies in the blend ring of Madrakah's lc-1),
+ * every one inside the disc of a new pad (`buildFlattenDiscs` / `discWeight` of src/terrain/modifiers.ts) and
+ * none inside LC-1's; the Earth's `uniform` group, `site:ka-lae-lc1` and both groups of the Moon equal to
+ * the string. The audit agrees point for point and bit for bit with fleet-data's own list
+ * (tests/unit/fleet/terrain-guard-pad-changes.json, which is now a record of what changed and must not be
+ * regenerated). The Earth's `tilesetContentHash` in the heights file is the live manifest's since this
+ * re-record (an information field; no test reads it).
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
