@@ -1,4 +1,4 @@
-Status: open
+Status: resolved in the code (lead decision of 2026-11-24: formation by the join distance goes in; commit 2e23f69). OPEN with the lead: the re-record of the pinned guard
 From: island-core
 Owner path: tests/mission/trajectory-guard.json (pinned, tools/dev/guard-pins.test.ts); the tolerance of the brief's acceptance line ("debris by fate within 2 s and 500 m")
 Blocking: yes        (scope item E, "the 25 km bubble becomes island formation by the join distance", cannot be switched on with the mission green)
@@ -34,3 +34,16 @@ A decision, then the island-core successor or session-switch applies the diff an
     fall; 500 m asked), or a longer stay in the Full tier for debris in an atmosphere, which is a rule the
     architecture does not have.
 What must NOT change: the attended craft's 400 samples, the six fixtures, the pins.
+
+## Resolution
+The lead decided: formation by the join distance is the v2 design; the guard protects the flight a player
+flies, and unattended debris stepped in another regime may differ. Applied in 2e23f69 with the proof and the
+table in docs/handoff/island-core.md, section 6: every attended vessel EXACTLY equal (17 of 17 milestones in
+every field, 596,933 steps, all 400 guard samples), golden `f0c0855ea40d8c59`.
+CORRECTION of this request's evidence: it named one fate outside the tolerance. There are three (the test
+stopped at the first row; it now names all): "Lander adapter fairing panel 3" (511.9 m), "Heron ascent
+stage" (8.6 s and 57.9 km: it is taken over by the Reduced tier during the entry at 11 km/s) and "Kestrel
+apex cover" (1.6 s inside the time tolerance, 695.8 m). The clamps differ at samples 7 to 11 by up to 8 ulp.
+To re-record (the lead's records agent; `tests/mission/trajectory-guard.json` and its pin): `samples[7..11]
+.firstShed` and the three `debris` entries above (or the whole debris list from one flight of this tree).
+Until then `npm run test:mission` has two red tests, both of the guard.

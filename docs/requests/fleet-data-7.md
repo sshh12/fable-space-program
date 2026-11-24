@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (island-core, commit 4c9a569)
 From: fleet-data
 Owner path: tests/unit/sim-vessel/debris.test.ts (island-core this wave)
 Blocking: no
@@ -23,3 +23,13 @@ Hold the toppling breaks to a share of the drops instead of an absolute count (f
 raised the ground tolerance of its structures to the rules' default (6 m/s) and gave its ports' contact probes
 6 m/s (their 2.5 m/s docking tolerance stays `PartDef.crashTolerance`); it did not raise the two stages further to
 fit the count. Must NOT change: the other expectations of the test.
+
+## Resolution
+The test's counting was wrong for a library of any other size; no new vehicle breaks more than the rules
+allow. The two new breaks are first stages of 15.5 m and 22 m falling over from the skew attitude: the far
+end of a body that topples about its contact edge lands at about sqrt(3 g D), 8.7 and 10.6 m/s on the Moon
+for those levers, against their 6 m/s tolerance, exactly as the Meridian's three stages do against 3 m/s.
+`tests/unit/sim-vessel/debris.test.ts` now judges EACH toppling break by that rule (the speed of the drop
+plus sqrt(3 g D) for the diagonal D of the part's bounds must exceed the lowest crash tolerance of its
+contact points, so a compact part can never break this way), and the count is the share you proposed: under
+10 % of the drops (11 of 232 today). The other expectations of the test are unchanged; 7 of 7 pass.

@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (island-core, commit 4c9a569)
 From: fleet-data
 Owner path: src/sim/vessel/staging.ts, src/sim/vessel/split.ts, src/sim/vessel/dock.ts, src/sim/vessel/facade.ts (island-core this wave)
 Blocking: no
@@ -30,3 +30,19 @@ command part, so the mission is not concerned either way.
    failure).
 Must NOT change: the golden mission hash (port states and authority do not enter a flight without ports and with
 crew aboard).
+
+## Resolution
+1. `rebuildStructure` (src/sim/vessel/structure.ts) calls `refreshPortStates(vessel)` right after it has
+   recomputed the fairing shielding of every part. Every structural change (a stage, `separateVessel`, a
+   jettisoned fairing, `dockMerge`, the clamp weld, a destroyed part) invalidates the structure, so each one
+   passes there before anything reads the vessel again; a call inside `separateVessel` itself would have read
+   the shielding of before the change. A port's 'soft' and 'cooldown' are kept, as `derivedPortState` says.
+2. `isControllable(vessel)` (src/sim/vessel/facade.ts) is `hasCommandAuthority(vessel)`. In the island the
+   member's `controllable` flag follows the command parts AND their crew (it is looked at again when the part
+   count or `Vessel.crewAlive` changes in a step), and a seat on a vessel without command authority commands
+   nothing: its `controls` and `command` inputs are refused with the reason 'No command authority' (the
+   latched controls stay where they were). `VesselSnapshot.controllable`, the debris rules, the vessel disc
+   of the terrain policy and "every command part was lost" all read the same flag.
+What to re-run: `npx vitest run tests/unit/fleet/modules.test.ts`. The mission is unchanged (golden
+`f0c0855ea40d8c59`, 35 of 37 with the two guard tests that wait for the lead's re-record): the lunar stack
+has no port, and its one command part has living crew throughout.
