@@ -42,7 +42,9 @@ import {
 } from '../vessel';
 import type { StructuralRecord } from '../vessel/types';
 import {
+  ARMED_TEST_TICKS,
   COAST_TIME_TO_RAILS,
+  REACH_ACCELERATION,
   type AddOptions,
   type AdvanceReport,
   type AppliedOp,
@@ -827,6 +829,10 @@ export class IslandImpl implements Island {
 
   /** One physics step of a member. Returns true when a terrain query ran on data that was not final. */
   private stepMember(rec: Rec, ut0: number, utNew: number, dt: number, born: Rec[]): boolean {
+    if (rec.mode === 'armed') {
+      this.stepArmed(rec, ut0, utNew);
+      return false;
+    }
     const pre = this.preStep(rec, ut0);
     const res = stepVessel(rec.vessel, pre.env, this.controlsOf(rec), dt, this.stepOptions());
     return this.postStep(rec, pre, res, ut0, utNew, dt, born);
@@ -1080,25 +1086,73 @@ export class IslandImpl implements Island {
     this.watchThresholds();
   }
 
-  /** Free members close to each other stay integrated: closer than the armed margin, between their bounding spheres. */
+  /**
+   * The armed margin (ARCHITECTURE 6.2): free members closer to each other than `armedMarginBase +
+   * armedClosingTime x closing speed`, between their bounding spheres, are integrated (Full tier). A
+   * quiescent member that nobody attends and that is outside the margin of every other member is ARMED:
+   * not stepped at all, on its conic, looked at by this test alone. A pair with an Armed member is tested
+   * every `ARMED_TEST_TICKS` (the swept test: the margin's closing term covers the travel between two
+   * tests twenty times over); every other pair at every control tick.
+   */
   refreshMargins(): void {
     const claim = this.deps.rules.claim;
+    const armedTick = this.tick % ARMED_TEST_TICKS === 0;
     const free: Rec[] = [];
     for (const rec of this.recs) {
-      rec.nearOther = false;
+      // A flag found by the armed test stands until the next one.
+      if (rec.mode !== 'armed' || armedTick) rec.nearOther = false;
       if (rec.vessel.hold === null) free.push(rec);
     }
     for (let i = 0; i < free.length; i++) {
       for (let j = i + 1; j < free.length; j++) {
         const p = free[i]!;
         const q = free[j]!;
-        const gap = v3.dist(p.vessel.r, q.vessel.r) - structureOf(p.vessel).boundingRadius - structureOf(q.vessel).boundingRadius;
-        if (gap < claim.armedMarginBase) {
+        if ((p.mode === 'armed' || q.mode === 'armed') && !armedTick) continue;
+        if (p.mode === 'armed' || q.mode === 'armed') this.counters.armedTests++;
+        const dx = q.vessel.r.x - p.vessel.r.x;
+        const dy = q.vessel.r.y - p.vessel.r.y;
+        const dz = q.vessel.r.z - p.vessel.r.z;
+        const range = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const gap = range - structureOf(p.vessel).boundingRadius - structureOf(q.vessel).boundingRadius;
+        let margin = claim.armedMarginBase;
+        if (gap >= margin && range > 0) {
+          // Closing speed along the line between the two (positive = approaching).
+          const closing = -((q.vessel.v.x - p.vessel.v.x) * dx + (q.vessel.v.y - p.vessel.v.y) * dy + (q.vessel.v.z - p.vessel.v.z) * dz) / range;
+          if (closing > 0) margin += claim.armedClosingTime * closing;
+        }
+        if (gap < margin) {
           p.nearOther = true;
           q.nearOther = true;
         }
       }
     }
+    for (const rec of this.recs) {
+      if (rec.mode === 'armed') {
+        // Inside a margin, or attended again: back to the Full tier (on rails until the next step integrates it).
+        if (rec.nearOther || rec.attended || rec.pilot !== null) {
+          rec.mode = 'rails';
+          rec.tier = 'full';
+        }
+      } else if (rec.mode === 'rails' && !rec.attended && rec.pilot === null && !rec.nearOther && rec.orbit !== null) {
+        rec.mode = 'armed';
+        rec.tier = 'armed';
+        rec.previous = null;
+      }
+    }
+  }
+
+  /** One tick of an Armed member: nothing is stepped. It is placed on its conic, and an event of the conic takes it back to the Full tier. */
+  private stepArmed(rec: Rec, ut0: number, utNew: number): void {
+    // The sun sample at a tenth of the rate, as for every vessel that is not stepped.
+    if (this.tick % (SUN_SAMPLE_TICKS * 10) === 0) this.refreshSun(rec, ut0);
+    const ev = rec.railsEvent;
+    if (ev && ev.ut <= utNew) {
+      rec.mode = 'rails';
+      rec.tier = 'full';
+      this.advanceOnRails(rec, utNew);
+      return;
+    }
+    this.placeCom(rec, railsStateAt(rec.orbit!, utNew), utNew);
   }
 
   /** Pairs born overlapping stop ignoring each other once their bounding spheres are clear by the rules' clearance. */
@@ -1348,6 +1402,10 @@ export class IslandImpl implements Island {
           } else this.seats.set(input.accountId, this.newSeat(input.accountId, rec));
           rec.pilot = input.accountId;
           rec.attended = true;
+          if (rec.mode === 'armed') {
+            rec.mode = 'rails';
+            rec.tier = 'full';
+          }
         } else {
           if (rec.pilot === input.accountId) rec.pilot = null;
           rec.attended = false;
@@ -1552,18 +1610,13 @@ export class IslandImpl implements Island {
 
   // ------------------------------------------------------------------------------------------- reach
 
-  reach(point: { r: Vec3; v: Vec3; radius: number }): Reach {
+  reach(point: { r: Vec3; v: Vec3; radius: number }, exceptId?: string): Reach {
     const claim = this.deps.rules.claim;
     let best: Reach = { distance: Infinity, closingSpeed: 0, joinDistance: claim.joinDistanceBase, joins: false, parted: true, tau: Infinity, vesselId: null };
     const ut = this.ut;
     for (const rec of this.recs) {
-      const d = v3.sub(this.posOf(rec, ut), point.r);
-      const range = v3.len(d);
-      const distance = range - structureOf(rec.vessel).boundingRadius - point.radius;
-      const closingSpeed = range > 0 ? -v3.dot(d, v3.sub(this.velOf(rec, ut), point.v)) / range : 0;
-      const joinDistance = claim.joinDistanceBase + claim.joinClosingTime * Math.max(0, closingSpeed);
-      const tau = reachTime(distance - joinDistance, closingSpeed);
-      const r: Reach = { distance, closingSpeed, joinDistance, joins: distance < joinDistance, parted: distance > claim.islandPartFactor * joinDistance, tau, vesselId: rec.vessel.id };
+      if (rec.vessel.id === exceptId) continue;
+      const r: Reach = { ...pairReach(claim, point, { r: this.posOf(rec, ut), v: this.velOf(rec, ut), radius: structureOf(rec.vessel).boundingRadius }), vesselId: rec.vessel.id };
       if (r.tau < best.tau || (r.tau === best.tau && r.distance < best.distance)) best = { ...r, parted: best.parted && r.parted };
       else best.parted = best.parted && r.parted;
     }
@@ -1628,8 +1681,21 @@ export function underThresholdWatch(v: Vessel): boolean {
   return false;
 }
 
+/**
+ * Reach between two spheres about one body (ARCHITECTURE 6.2 `tau`, 7.3): the distance between them, the
+ * closing speed along the line, the join distance of the pair, and whether they join or have parted.
+ */
+export function pairReach(claim: IslandDeps['rules']['claim'], a: { r: Vec3; v: Vec3; radius: number }, b: { r: Vec3; v: Vec3; radius: number }): Omit<Reach, 'vesselId'> {
+  const d = v3.sub(b.r, a.r);
+  const range = v3.len(d);
+  const distance = range - a.radius - b.radius;
+  const closingSpeed = range > 0 ? -v3.dot(d, v3.sub(b.v, a.v)) / range : 0;
+  const joinDistance = claim.joinDistanceBase + claim.joinClosingTime * Math.max(0, closingSpeed);
+  return { distance, closingSpeed, joinDistance, joins: distance < joinDistance, parted: distance > claim.islandPartFactor * joinDistance, tau: reachTime(distance - joinDistance, closingSpeed, REACH_ACCELERATION) };
+}
+
 /** Time to close `gap` metres at `closingSpeed` with the worst-case mutual acceleration (ARCHITECTURE 6.2), s. */
-export function reachTime(gap: number, closingSpeed: number, acceleration = 60): number {
+export function reachTime(gap: number, closingSpeed: number, acceleration: number): number {
   if (gap <= 0) return 0;
   // gap = u t + a t^2 / 2 with u the closing speed (negative = opening): the positive root.
   const u = closingSpeed;

@@ -448,8 +448,12 @@ export interface Island {
   seatOf(accountId: string): { vesselId: string; controls: ControlInputs; sasHold: Vec3 | null; reference: 'surface' | 'orbit'; latchOpenTick: number | null } | null;
   /** The step environment of a member at the island's tick (start-of-step values for the next step). */
   environmentOf(vesselId: string): VesselEnvironment | null;
-  /** Reach between the island and a sphere outside it, given in the island's frame at the island's tick. */
-  reach(point: { r: Vec3; v: Vec3; radius: number }): Reach;
+  /**
+   * Reach between the island and a sphere, given in BCI of the island's body at the island's tick. With
+   * `exceptId` the member of that id is left out: the reach between a member and the rest of its island
+   * (`parted` then says that the member has left it).
+   */
+  reach(point: { r: Vec3; v: Vec3; radius: number }, exceptId?: string): Reach;
   /** Any member under a threshold watch (ARCHITECTURE 6.2: the commit lag is 0 then). */
   thresholdWatch(): boolean;
   /** Null when no terrain request is outstanding; otherwise a promise that settles when every request so far is in. */

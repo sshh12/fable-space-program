@@ -14,7 +14,7 @@ export { computeRailsEvent, railsStateAt, orbitOf, type RailsEvent, type RailsEv
 export { TerrainPolicy } from './terrainPolicy';
 export { checksumOfVessel, checksumsAgree, craftListHash, IslandOpError } from './ops';
 export { ISLAND_CODEC_VERSION } from './codec';
-export { reachTime, underThresholdWatch, ROTATION_WARP_LIMIT, SAS_TRACK_ERROR, type Seat } from './island';
+export { pairReach, reachTime, underThresholdWatch, ROTATION_WARP_LIMIT, SAS_TRACK_ERROR, type Seat } from './island';
 
 /** A new, empty island at a tick about a body. */
 export function createIsland(deps: IslandDeps, init: IslandInit): Island {
