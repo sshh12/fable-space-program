@@ -4,6 +4,7 @@
  * pair regime forced through the hook; operations as data; the order of a merge; the two step modes.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
+import { Prng } from '@/core/math/hash';
 import { v3 } from '@/core/math/vec3';
 import { decodeIsland, islandHash, IslandOpError, type Island, type IslandInput, type IslandOp, type PairHook } from '@/sim/island';
 import { encodeVessel, stateHash } from '@/sim/vessel';
@@ -251,26 +252,38 @@ describe('the island', () => {
       expect(island.tick).toBe(TICK0 + 11);
     });
 
-    it('predict mode produces no threshold outcome where the authoritative mode does, on the same inputs', () => {
-      // The capsule stack thrown at the atmosphere far too steep and fast, chutes out: heat, loads and canopies all pass their limits.
-      const fly = (mode: 'authoritative' | 'predict'): { events: Set<string>; parts: number; alive: boolean } => {
+    it('in 1,000 seeded runs predict mode produces no threshold outcome; the authoritative mode produces them on the same inputs', () => {
+      // The capsule thrown at the atmosphere too steep and too fast, its chutes commanded out at seeded ticks:
+      // heat, loads and canopies pass their limits. Speed, height, the tick of each command and the pitch input are the seed's.
+      const fly = (mode: 'authoritative' | 'predict', seed: number): { events: Set<string>; parts: number; alive: boolean } => {
+        const rng = new Prng(seed);
         const island = islandAt(s, 'earth', mode);
-        const v = orbiter(s.defs, 'alpha', 7, EARTH_MU, 6_371_000 + 60_000, v3.zero(), { x: -3000, y: 0, z: 0 });
+        const v = orbiter(s.defs, 'alpha', 7, EARTH_MU, 6_371_000 + 35_000 + 25_000 * rng.next(), v3.zero(), { x: -2500 - 3500 * rng.next(), y: -4000 * rng.next(), z: 0 });
         island.add(v, { pilot: PILOT, attended: true });
+        const first = 5 + Math.floor(60 * rng.next());
+        const second = first + 5 + Math.floor(60 * rng.next());
+        island.applyInput(input(island.tick, { kind: 'controls', vesselId: 'alpha', controls: controls({ pitch: 2 * rng.next() - 1 }), sasHold: null }));
         const seen = new Set<string>();
-        for (let k = 0; k < 4000 && island.members.length > 0; k++) {
-          if (k === 20 || k === 40) island.applyInput(input(island.tick, { kind: 'command', vesselId: 'alpha', command: { kind: 'stage' } }));
+        for (let k = 0; k < 900 && island.members.length > 0; k++) {
+          if (k === first || k === second) island.applyInput(input(island.tick, { kind: 'command', vesselId: 'alpha', command: { kind: 'stage' } }));
           for (const e of island.step().events) if (THRESHOLD_EVENTS.includes(e.type)) seen.add(e.type);
         }
         const m = island.member('alpha');
         return { events: seen, parts: m ? m.vessel.parts.length : 0, alive: m ? m.vessel.crewAlive : false };
       };
-      const authoritative = fly('authoritative');
-      const predict = fly('predict');
-      expect(authoritative.events.size).toBeGreaterThan(0);
-      expect([...predict.events]).toEqual([]);
-      expect(predict.alive).toBe(true);
-      expect(predict.parts).toBeGreaterThan(0);
-    }, 120_000);
+      let withOutcome = 0;
+      const kinds = new Set<string>();
+      for (let seed = 1; seed <= 1000; seed++) {
+        const authoritative = fly('authoritative', seed);
+        const predict = fly('predict', seed);
+        if (authoritative.events.size > 0) withOutcome++;
+        for (const k of authoritative.events) kinds.add(k);
+        if (predict.events.size > 0) throw new Error(`seed ${seed}: predict mode produced ${[...predict.events].join(', ')}`);
+        if (!predict.alive || predict.parts === 0) throw new Error(`seed ${seed}: the predicted vessel lost its crew or its parts`);
+      }
+      // The authoritative island produces outcomes in (nearly) every one of them, of several kinds.
+      expect(withOutcome).toBeGreaterThan(950);
+      expect(kinds.size).toBeGreaterThanOrEqual(3);
+    }, 300_000);
   });
 });
