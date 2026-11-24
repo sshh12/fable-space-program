@@ -104,8 +104,12 @@ export interface ShellDeps {
   boot(): BootProgress;
   /** The live snapshot (site solar views, the flight menu); null before the first frame. */
   snapshot(): SimSnapshot | null;
-  /** The analysis of a vehicle (`analyzeVehicle`, fleet-data) through the host; null where none is produced yet. */
-  capabilities(vehicleId: string): VehicleCapabilities | null;
+  /**
+   * The analysis of a vehicle under the rules in force (`analyzeVehicle(defs, vehicle, { rules })` of fleet-data,
+   * through the host, which may cache it): the read-outs, the reach ladder and the PAD CLASS, which is derived
+   * there from the class limits of the rules and the vehicle's lift-off mass and diameter (or its pad interface).
+   */
+  capabilities(vehicleId: string, rules: UniverseRules): VehicleCapabilities;
   settings: SettingsHost | null;
   identity: IdentityHost | null;
   /** Mean pad cycle of the rules in force, s (launches per hour per class); null while the rules state none (request shell-menu-1). */

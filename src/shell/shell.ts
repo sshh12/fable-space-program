@@ -90,8 +90,13 @@ export function createShell(deps: ShellDeps): Shell {
   let lastScrimCount = 0;
   let overlayPanel: 'controls' | 'rules' | 'settings' | null = null;
 
+  // A change of screen is drawn at once (the next key acts on what the player sees: a key pressed in the frame
+  // after a change must not reach the screen before it); store changes and live text wait for the text clock.
+  let shown = '';
   const send = (e: ShellEvent): void => {
-    if (machine.send(e)) dirty = true;
+    if (!machine.send(e)) return;
+    dirty = true;
+    if (stateName(machine.state()) !== shown) render();
   };
 
   const ensureSpawnSession = (): void => {
@@ -339,8 +344,10 @@ export function createShell(deps: ShellDeps): Shell {
 
   const render = (): void => {
     dirty = false;
+    textClock = 0;
     const st = machine.state();
     const name = stateName(st);
+    shown = name;
     ensureSpawnSession();
     if (focusId) focusMemory.set(lastName, focusId);
     const v = screenFor(st);
@@ -481,6 +488,8 @@ export function createShell(deps: ShellDeps): Shell {
     const st = machine.state();
     if (st.main === 'flight' || st.main === 'leaving') return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
+    // A key acts on the screen as it stands: a rebuild the text clock has not drawn yet is drawn first.
+    if (dirty) render();
     const editing = e.target instanceof HTMLInputElement;
     const table = st.main === 'transit' ? deps.keys.transit : deps.keys.menu;
     if (st.main === 'title' && !e.repeat && deps.boot().playReady && e.code !== keyOf('menu', 'menu:secondary')) {

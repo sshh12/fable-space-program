@@ -8,7 +8,7 @@
  */
 import { TICKS_PER_SECOND, type PadClass, type PadState, type UniverseRules } from '@/core/contracts/net';
 import type { LaunchSiteDef } from '@/core/contracts/defs';
-import { padsOf } from '@/core/defs/sites';
+import { padLimitsOf, padsOf } from '@/core/defs/sites';
 
 /** Classes from the smallest to the largest: the order in which a pad hosts "its class and anything smaller". */
 export const PAD_CLASSES: readonly PadClass[] = ['light', 'medium', 'heavy'];
@@ -52,19 +52,30 @@ export interface ClassOutlook {
 
 const waitSeconds = (tick: number | null, liveTick: number): number | null => (tick === null ? null : Math.max(0, (tick - liveTick) / TICKS_PER_SECOND));
 
+/**
+ * What a pad must take besides the class: the vehicle's lift-off mass (kg) and stack diameter (m) against the
+ * pad's own limits (`padLimitsOf`: the class limits of the rules, or the pad's own values where it states them).
+ */
+export interface VehicleFit {
+  massWet: number;
+  diameter: number;
+  rules: UniverseRules;
+}
+
 /** The pads of `sites` with the lobby's states, the site order of the definitions and each site's pad order. */
-export function padRows(sites: readonly LaunchSiteDef[], states: readonly PadState[], vehicleClass: PadClass, liveTick: number): PadRow[] {
+export function padRows(sites: readonly LaunchSiteDef[], states: readonly PadState[], vehicleClass: PadClass, liveTick: number, fit?: VehicleFit): PadRow[] {
   const rows: PadRow[] = [];
   for (const site of sites) {
     for (const pad of padsOf(site)) {
       const state = states.find((s) => s.siteId === site.id && s.padId === pad.id) ?? null;
+      const limits = fit ? padLimitsOf(pad, fit.rules) : null;
       rows.push({
         siteId: site.id,
         padId: pad.id,
         name: pad.name,
         class: pad.class,
         state,
-        usable: padHosts(pad.class, vehicleClass),
+        usable: padHosts(pad.class, vehicleClass) && (!fit || !limits || (fit.massWet <= limits.maxLiftoffMass && fit.diameter <= limits.maxDiameter)),
         liveWaitSeconds: state === null ? null : state.state === 'free' ? 0 : waitSeconds(state.nextLiveTick, liveTick),
       });
     }
@@ -73,8 +84,8 @@ export function padRows(sites: readonly LaunchSiteDef[], states: readonly PadSta
 }
 
 /** The outlook of one vehicle class over the pads of `sites`. */
-export function classOutlook(sites: readonly LaunchSiteDef[], states: readonly PadState[], vehicleClass: PadClass, liveTick: number, rules: UniverseRules): ClassOutlook {
-  const rows = padRows(sites, states, vehicleClass, liveTick).filter((r) => r.usable);
+export function classOutlook(sites: readonly LaunchSiteDef[], states: readonly PadState[], vehicleClass: PadClass, liveTick: number, rules: UniverseRules, fit?: VehicleFit): ClassOutlook {
+  const rows = padRows(sites, states, vehicleClass, liveTick, fit).filter((r) => r.usable);
   const waits = rows.map((r) => r.liveWaitSeconds).filter((w): w is number => w !== null);
   const cohorts = rows.map((r) => r.state?.nextCohortTick ?? null).filter((t): t is number => t !== null);
   const liveWaitSeconds = waits.length > 0 ? Math.min(...waits) : null;
@@ -106,15 +117,3 @@ export function launchesPerHour(padCount: number, cycleSeconds: number | null): 
 
 /** How far ahead of the live clock a cohort slot is, s. */
 export const cohortLeadSeconds = (cohortTick: number, liveTick: number): number => (cohortTick - liveTick) / TICKS_PER_SECOND;
-
-/**
- * The pad class a vehicle needs, from what is known about it: the analysis (`VehicleCapabilities.padClass`)
- * first, then the definition's pad interface. Null when neither states one (the screen says so and offers only
- * the largest class, `assumedPadClass`).
- */
-export function vehiclePadClass(capabilityClass: PadClass | null, interfaceClass: PadClass | null): PadClass | null {
-  return capabilityClass ?? interfaceClass;
-}
-
-/** The class assumed for a vehicle whose class nothing states: the largest, so no pad that cannot take it is offered. */
-export const assumedPadClass = (): PadClass => PAD_CLASSES[PAD_CLASSES.length - 1]!;

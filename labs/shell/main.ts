@@ -17,6 +17,8 @@ import { padLocationOf, padOf } from '@/core/defs/sites';
 import type { LinkState, UniverseRules } from '@/core/contracts/net';
 import type { SpawnRequest } from '@/core/contracts/session';
 import type { BodySnapshot } from '@/core/contracts/sim';
+import type { VehicleCapabilities } from '@/core/contracts/vehicle';
+import { analyzeVehicle } from '@/sim/vessel/analyze';
 import { createFakeSession } from '@/core/fakes/fakeSession';
 import { createMenuFixture, menuShipsFixture } from '@/core/fakes/menuStores';
 import { quat } from '@/core/math/quat';
@@ -106,6 +108,7 @@ async function boot(): Promise<void> {
   };
 
   const ev = (): number => app.renderer.exposureInfo().ev100;
+  const analyses = new WeakMap<UniverseRules, Map<string, VehicleCapabilities>>();
   const shell = createShell({
     root: uiRoot,
     canvas,
@@ -123,7 +126,14 @@ async function boot(): Promise<void> {
     publishScrim: (rects) => app.setScrim(rects.length > 0 ? rects : null),
     boot: () => ({ steps: bootSteps, playReady: bootSteps.every((s) => s.finished) }),
     snapshot: () => app.snapshot(),
-    capabilities: () => null,
+    capabilities: (vehicleId, rules) => {
+      // fleet-data's analysis under the rules in force (its pad class from the rules' class limits), once per vehicle and rules document.
+      let byVehicle = analyses.get(rules);
+      if (!byVehicle) analyses.set(rules, (byVehicle = new Map()));
+      let caps = byVehicle.get(vehicleId);
+      if (!caps) byVehicle.set(vehicleId, (caps = analyzeVehicle(defs, defs.vehicles[vehicleId]!, { rules })));
+      return caps;
+    },
     settings: null,
     identity: null,
     padCycleSeconds: () => null,

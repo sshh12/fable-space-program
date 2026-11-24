@@ -12,7 +12,7 @@ import { padLocationOf } from '@/core/defs/sites';
 import { el, focusable } from './dom/kit';
 import { leaveOutcome } from './leaveOutcome';
 import type { HubTab, ShellEvent, ShellState } from './machine';
-import { assumedPadClass, classOutlook, cohortLeadSeconds, launchesPerHour, padRows, vehiclePadClass, type PadRow } from './pads';
+import { classOutlook, cohortLeadSeconds, launchesPerHour, padRows, type PadRow, type VehicleFit } from './pads';
 import { formatSpan, isNever, rulesView } from './rulesView';
 import { formatSolarClock, solarViewAt } from './solar';
 import { formatEstimate, ordinal, type SpawnFlow, type SpawnPhase } from './spawnFlow';
@@ -102,11 +102,11 @@ const vehiclesOf = (ctx: ScreenCtx): VehicleDef[] => Object.values(ctx.deps.defs
 const rulesOf = (ctx: ScreenCtx): UniverseRules => ctx.session.stores.rules.get();
 const liveTickOf = (ctx: ScreenCtx): number => ctx.deps.snapshot()?.time.liveTick ?? ctx.session.stores.presence.get().lobbies[0]?.liveTick ?? 0;
 
-/** The pad class of a vehicle and whether it was assumed (nothing states one). */
-function classOfVehicle(ctx: ScreenCtx, v: VehicleDef): { cls: PadClass; assumed: boolean; caps: VehicleCapabilities | null } {
-  const caps = ctx.deps.capabilities(v.id);
-  const known = vehiclePadClass(caps?.padClass ?? null, v.padInterface?.class ?? null);
-  return { cls: known ?? assumedPadClass(), assumed: known === null, caps };
+/** The analysis of a vehicle under the rules in force, its pad class (derived there) and what a pad must take. */
+function classOfVehicle(ctx: ScreenCtx, v: VehicleDef): { cls: PadClass; caps: VehicleCapabilities; fit: VehicleFit } {
+  const rules = rulesOf(ctx);
+  const caps = ctx.deps.capabilities(v.id, rules);
+  return { cls: caps.padClass, caps, fit: { massWet: caps.massWet, diameter: caps.diameter, rules } };
 }
 
 // ---------------------------------------------------------------------------------------------- title
@@ -235,34 +235,27 @@ export function lobbyScreen(ctx: ScreenCtx): ScreenView {
 function vehicleDetail(ctx: ScreenCtx, v: VehicleDef): HTMLElement {
   const { deps } = ctx;
   const fmt = deps.format;
-  const { cls, assumed, caps } = classOfVehicle(ctx, v);
+  const { cls, caps } = classOfVehicle(ctx, v);
   const p = panel('', 0.65);
+  p.dataset['testid'] = 'vehicle-detail';
   p.append(el('div', 'sh-label', 'Selected craft'), el('div', 'sh-row-main', v.name));
   const grid = el('div', 'sh-readouts');
-  if (caps) {
-    grid.append(
-      readout('Δv vacuum', fmt.deltaV(caps.deltaVTotal)),
-      readout('TWR at the pad', caps.stages[0] ? caps.stages[0].twrSeaLevel.toFixed(2) : '—'),
-      readout('Lift-off mass', fmt.mass(caps.massWet)),
-      readout('Stages', fmt.number(caps.stages.length)),
-      readout('Crew', caps.crewCapacity > 0 ? fmt.number(caps.crewCapacity) : 'uncrewed'),
-      readout('First person', caps.firstPerson === 'cockpit' ? 'cabin' : 'sensor camera'),
-    );
-  } else {
-    grid.append(readout('Stages', fmt.number(v.stages.length)), readout('Crew', v.crew.length > 0 ? fmt.number(v.crew.length) : 'uncrewed'), readout('First person', v.cockpit ? 'cabin' : 'sensor camera'));
-  }
+  grid.append(
+    readout('Δv vacuum', fmt.deltaV(caps.deltaVTotal)),
+    readout('TWR at the pad', caps.stages[0] ? caps.stages[0].twrSeaLevel.toFixed(2) : '—'),
+    readout('Lift-off mass', fmt.mass(caps.massWet)),
+    readout('Stages', fmt.number(caps.stages.length)),
+    readout('Crew', caps.crewCapacity > 0 ? fmt.number(caps.crewCapacity) : 'uncrewed'),
+    readout('First person', caps.firstPerson === 'cockpit' ? 'cabin' : 'sensor camera'),
+  );
   p.append(grid);
-  p.append(el('p', 'sh-body sh-dim', `Pad class ${upper(cls)}${assumed ? ' (assumed: nothing states this vehicle’s class)' : ''}`));
-  if (caps) {
-    const ladder = el('div', 'sh-ladder');
-    for (const r of caps.reach) {
-      const body = deps.defs.bodies[r.bodyId]?.name ?? r.bodyId;
-      ladder.append(el('span', r.margin >= 0 ? 'sh-ok' : 'sh-dim', `${r.margin >= 0 ? '✓' : '✗'} ${body} ${r.kind}`));
-    }
-    p.append(el('div', 'sh-label', 'Can reach (estimate)'), ladder);
-  } else {
-    p.append(el('p', 'sh-body sh-dim', 'Performance figures appear when the vehicle analysis is published for this build.'));
+  p.append(el('p', 'sh-body sh-dim', `${upper(cls)} pad class · ${fmt.mass(caps.massWet)} · ${caps.diameter.toFixed(2)} m across`));
+  const ladder = el('div', 'sh-ladder');
+  for (const r of caps.reach) {
+    const body = deps.defs.bodies[r.bodyId]?.name ?? r.bodyId;
+    ladder.append(el('span', r.margin >= 0 ? 'sh-ok' : 'sh-dim', `${r.margin >= 0 ? '✓' : '✗'} ${body} ${r.kind}`));
   }
+  p.append(el('div', 'sh-label', 'Can reach (estimate)'), ladder);
   return p;
 }
 
@@ -363,12 +356,12 @@ export function padScreen(ctx: ScreenCtx): ScreenView {
   const main = el('div', '');
   main.append(titleBlock('Choose a pad', vehicle ? `${vehicle.name}${ctx.practice ? ' · Practice' : ''}` : null));
   if (!vehicle) return { main, prompts: [{ action: 'menu:back', text: 'Back' }], subject: 'site' };
-  const { cls } = classOfVehicle(ctx, vehicle);
+  const { cls, fit } = classOfVehicle(ctx, vehicle);
   const rules = rulesOf(ctx);
   const states = ctx.session.stores.pads.get();
   const sites = sitesOf(ctx);
   const tick = liveTickOf(ctx);
-  const outlook = classOutlook(sites, states, cls, tick, rules);
+  const outlook = classOutlook(sites, states, cls, tick, rules, fit);
   const perHour = launchesPerHour(outlook.padCount, deps.padCycleSeconds(rules));
   const head = panel('', 0.6);
   head.dataset['testid'] = 'class-outlook';
@@ -395,7 +388,7 @@ export function padScreen(ctx: ScreenCtx): ScreenView {
     group.append(solar);
     solarNodes.push({ node: solar, site });
     rowsEl.append(group);
-    for (const r of padRows([site], states, cls, tick)) {
+    for (const r of padRows([site], states, cls, tick, fit)) {
       const w = padStateWords(r, fmt);
       const id = `pad-${site.id}-${r.padId}`;
       if (r.usable && firstUsable.id === null) firstUsable.id = id;
@@ -415,8 +408,8 @@ export function padScreen(ctx: ScreenCtx): ScreenView {
     const cohortTick = outlook.cohortTick;
     rowsEl.append(
       row('slot-cohort', 'sh-free', 'Cohort slot', `Start ${formatSpan(lead)} ahead of the live clock, with the others of your bucket`, right(formatSpan(lead), 'ahead'), () => {
-        const firstSite = sites.find((s) => padRows([s], states, cls, tick).some((p) => p.usable));
-        const pad = firstSite ? padRows([firstSite], states, cls, tick).find((p) => p.usable) : undefined;
+        const firstSite = sites.find((s) => padRows([s], states, cls, tick, fit).some((p) => p.usable));
+        const pad = firstSite ? padRows([firstSite], states, cls, tick, fit).find((p) => p.usable) : undefined;
         if (!firstSite || !pad) return;
         ctx.sel.siteId = firstSite.id;
         ctx.sel.padId = pad.padId;
