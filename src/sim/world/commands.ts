@@ -11,7 +11,7 @@ import { v3, type Vec3 } from '@/core/math/vec3';
 import { nearestTick, utOfTick } from '../clock';
 import { computeRailsEvent, orbitOf, type AddOptions, type IslandCommand } from '../island';
 import { propagate } from '../orbit/kepler';
-import { rideBody, type Vessel } from '../vessel';
+import { dockFace, findPartByKey, rideBody, type Vessel } from '../vessel';
 import { PILOT_ACCOUNT } from './api';
 import type { World } from './sim';
 
@@ -45,8 +45,12 @@ export function makeCommands(w: World): PlayerCommands {
     setSasEnabled: (on: boolean): CommandResult => seat({ kind: 'sas', on }, 'No SAS on this vessel'),
     setSasMode: (mode: SasMode): CommandResult => {
       if (!w.view.present) return refuse('No vessel');
-      // The three target modes hold on a vessel or a port, which this session does not have.
-      if ((SAS_TARGET_MODES as readonly SasMode[]).includes(mode)) return refuse('No vessel or port target');
+      // The three target modes hold on the selected vessel or port ('portAlign': on a port, with a port as the control part).
+      if ((SAS_TARGET_MODES as readonly SasMode[]).includes(mode)) {
+        if (w.view.target() === null) return refuse('No vessel or port target');
+        if (w.view.targetHold(mode) === null) return refuse(mode === 'portAlign' ? 'No docking port to align' : 'No direction to the target');
+        return seat({ kind: 'sasMode', mode }, 'Unknown SAS mode');
+      }
       if (!SAS_MODES.includes(mode)) return refuse('Unknown SAS mode');
       if (mode === 'maneuver' && w.plan.nodes.length === 0) return refuse('No maneuver node');
       return seat({ kind: 'sasMode', mode }, 'Unknown SAS mode');
@@ -56,9 +60,9 @@ export function makeCommands(w: World): PlayerCommands {
     toggleLights: (): CommandResult => seat({ kind: 'lights' }, 'No lights'),
     setFineControl: (on: boolean): CommandResult => seat({ kind: 'fineControl', on }, 'No fine control'),
     setNavballMode: (mode: NavballMode): CommandResult => {
-      // 'target' shows the velocity relative to a vessel or a port, which this session does not have.
-      if (mode === 'target') return refuse('No vessel or port target');
-      if (mode !== 'surface' && mode !== 'orbit') return refuse('Unknown navball mode');
+      // 'target' shows the velocity relative to the selected vessel or port.
+      if (mode === 'target' && w.view.target() === null) return refuse('No vessel or port target');
+      if (mode !== 'surface' && mode !== 'orbit' && mode !== 'target') return refuse('Unknown navball mode');
       w.plan.navballMode = mode;
       w.seat.sendReference();
       w.touch();
@@ -100,13 +104,19 @@ export function makeCommands(w: World): PlayerCommands {
       return ok;
     },
     setTarget: (ref: TargetRef | null): CommandResult => {
-      // Body targets only in this session. A refused target leaves the one that was selected.
-      if (ref !== null && ref.kind !== 'body') return refuse(ref.kind === 'vessel' ? 'Vessel targets are not available in this session' : 'Docking-port targets are not available in this session');
-      const bodyId = ref === null ? null : ref.id;
-      if (bodyId !== null && !w.defs.bodies[bodyId]) return refuse('Unknown body');
-      w.plan.targetBodyId = bodyId;
-      w.plan.patchesDirty = true;
-      w.touch();
+      // A body, a vessel of this clock, or a docking port of one. A refused target leaves the one that was selected.
+      if (ref !== null && ref.kind === 'body' && !w.defs.bodies[ref.id]) return refuse('Unknown body');
+      if (ref !== null && ref.kind !== 'body') {
+        const id = ref.kind === 'vessel' ? ref.id : ref.vesselId;
+        const vessel = w.roster.find((x) => x.id === id && w.view.entry(x) !== null);
+        if (!vessel) return refuse('Unknown vessel');
+        if (vessel === w.active) return refuse('A vessel cannot target itself');
+        if (ref.kind === 'port') {
+          const part = vessel.parts[findPartByKey(vessel, ref.portId)];
+          if (!part || dockFace(part) === null) return refuse('Unknown docking port');
+        }
+      }
+      w.seat.setTarget(ref);
       return ok;
     },
     cycleActiveVessel: (direction: 1 | -1): CommandResult => {

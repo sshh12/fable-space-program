@@ -4,17 +4,20 @@
  * queue in the render frame, the render root, and the snapshot with its peek cache. It reads the host and
  * never changes the simulation; the host tells it what happened to the pilot's vessel.
  */
+import type { SasMode } from '@/core/contracts/controls';
 import type { TimeView } from '@/core/contracts/net';
 import type { SimEvent, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
+import type { Vec3 } from '@/core/math/vec3';
 import { utOfTick } from '../clock';
 import { IslandEnv, type Departure, type FarSet, type Island } from '../island';
-import type { BodyFrames } from '../island/frames';
+import { comStateOf, type BodyFrames } from '../island/frames';
 import { vesselClearance, type Vessel } from '../vessel';
 import { RenderRoot } from './frame';
 import { planSubject, viewOfDeparted, viewOfFar, viewOfMember } from './host';
 import type { Planning, PlanSubject } from './planning';
 import { buildSnapshot, StageFigures, wreckSnapshot, type SnapshotSource, type ViewVessel } from './snapshot';
+import { craftTargetHold } from './target';
 
 /** Pending events kept for consumers that never drain the queue. */
 export const MAX_PENDING_EVENTS = 1024;
@@ -64,6 +67,27 @@ export class Presenter {
     this.root = new RenderRoot(h.frames.system, renderRoot);
     this.figures = new StageFigures(h.frames);
     this.lostEnv = new IslandEnv(h.frames.terrain);
+    h.plan.resolveTarget = (vesselId) => {
+      const e = this.vesselById(vesselId);
+      return e ? { bodyId: e.bodyId, ...comStateOf(e.vessel), revision: e.revision } : null;
+    };
+  }
+
+  private vesselById(vesselId: string): ViewVessel | null {
+    const v = this.h.roster.find((x) => x.id === vesselId);
+    return v ? this.entry(v) : null;
+  }
+
+  /** The targeted vessel as the view reads it; null without a vessel or port target, or once it is gone. */
+  target(): ViewVessel | null {
+    const craft = this.h.plan.targetCraft;
+    return craft && this.present ? this.vesselById(craft.vesselId) : null;
+  }
+
+  /** The direction (ROOT axes, unit) a SAS target mode holds now; null when there is nothing to hold. */
+  targetHold(mode: SasMode): Vec3 | null {
+    const t = this.target();
+    return t ? craftTargetHold(this.h.frames.system, mode, this.focus(), t, this.h.plan.targetCraft!, utOfTick(this.h.tick)) : null;
   }
 
   /** The pilot's vessel exists (false once it is gone and nothing has taken over). */
@@ -159,6 +183,7 @@ export class Presenter {
 
   private build(lag: number): SimSnapshot {
     const h = this.h;
+    h.plan.noteTargetRevision();
     h.refresh();
     const vessels: ViewVessel[] = [];
     for (const v of h.roster) {
@@ -181,6 +206,7 @@ export class Presenter {
       wreck: this.wreck,
       subject: this.subject(),
       envOf: (e) => this.envOf(e),
+      target: h.plan.targetCraft ? (vessels.find((e) => e.vessel.id === h.plan.targetCraft!.vesselId) ?? null) : null,
       events: this.eventsView,
     });
   }

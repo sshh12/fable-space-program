@@ -23,6 +23,7 @@ import { bodyTargetReadout, computeOrbitalReadouts } from '../nav/readouts';
 import { makeOrbit, propagate, type Orbit } from '../orbit/kepler';
 import { G_DOSE_LIMIT, helmCraft, nextLiveStage, shownRadarAltitude, stagingInfo, surfaceSituation, toVesselSnapshot, vesselReadouts, type Vessel } from '../vessel';
 import type { RenderRoot } from './frame';
+import { craftTargetReadout, craftTargetVectors } from './target';
 import { PATCH_REFRESH_STEPS, type Planning, type PlanSubject } from './planning';
 
 /** A vessel as the view reads it: an island member, or an object of the clock outside the island. */
@@ -296,6 +297,8 @@ export interface SnapshotSource {
   subject: PlanSubject;
   /** The step environment of a vessel at the tick. */
   envOf(e: ViewVessel): VesselEnvironment;
+  /** The targeted vessel among `vessels` (a vessel or port target of the planner); null or absent = none. */
+  target?: ViewVessel | null;
   /** Full part snapshots only for vessels inside the relevance cut; absent = every vessel. */
   relevant?: (e: ViewVessel) => boolean;
   time: TimeView;
@@ -377,12 +380,18 @@ export function buildSnapshot(s: SnapshotSource): SimSnapshot {
     readouts = buildReadouts(frames, a, env, planning, s.subject, s.surfaceTargets, s.liftoffUt);
     const dv = planning.remainingDv();
     let targetDir: Vec3 | null = null;
+    let relativeVelocity: Vec3 | null = null;
+    const craft = planning.targetCraft;
     if (planning.targetBodyId !== null) {
       const tb = bodies[bodyIndex.get(planning.targetBodyId)!]!;
       const ab = bodies[bodyIndex.get(a.bodyId)!]!;
       targetDir = v3.sub(tb.rRoot, v3.add(ab.rRoot, v.r));
+    } else if (craft && s.target) {
+      // A vessel or a port: the read-out, the direction to it and the velocity relative to it (the relative markers; prograde in the target mode).
+      readouts.target = craftTargetReadout(system, a, s.target, craft, planning.approaches, simUt);
+      ({ targetDir, relativeVelocity } = craftTargetVectors(system, a, s.target, craft, simUt));
     }
-    navball = computeNavball({ mode: planning.navballMode, q: v.q, r: v.r, v: v.v, qFixedToInertial: env.qFixedToInertial, spin: env.spin, maneuverDv: dv, targetDir, liftVectorVes: v.aero.liftDirVes });
+    navball = computeNavball({ mode: planning.navballMode, q: v.q, r: v.r, v: v.v, qFixedToInertial: env.qFixedToInertial, spin: env.spin, maneuverDv: dv, targetDir, relativeVelocity, liftVectorVes: v.aero.liftDirVes });
     stages = planning.stageInfos(s.subject).map((x) => ({ ...x, actionKinds: x.actionKinds.slice() }));
     nextStage = nextLiveStage(v);
     lockout = helmCraft(v).stageLockout > 0;

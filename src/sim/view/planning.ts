@@ -7,17 +7,20 @@
  * The algorithms are v1's `World` planning code, moved here unchanged in numerics.
  */
 import type { NavballMode, NodeEdit, SasMode } from '@/core/contracts/controls';
-import { SAS_MODES } from '@/core/contracts/controls';
+import { SAS_MODES, SAS_TARGET_MODES } from '@/core/contracts/controls';
+import type { TargetRef } from '@/core/contracts/net';
 import type { ManeuverNode, NodeBurnInfo, Patch, SimEvent, StageInfo } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import { G0 } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import type { BodyFrames } from '../island/frames';
 import { defaultNavballMode, navballModeAfter } from '../nav/navball';
+import { chainClosestApproaches, ownChain, targetApproachMarkers, type ChainApproach } from '../orbit/chainApproach';
 import { nodeBurnInfo, nodeDeltaVInertial, type BurnEngine } from '../orbit/maneuver';
 import { predictPatchesWithOrbits, stateOnPatches, THREE_PERIOD_ENCOUNTER_SEARCH, type PatchWithOrbit } from '../orbit/patches';
 import type { WarpEvent } from '../orbit/warp';
 import { helmCraft, nextLiveStage, stagingInfo, type Vessel } from '../vessel';
+import { targetRefOf, type TargetCraft } from './target';
 
 /** Patch refresh interval while the vessel is integrated, steps (10 Hz), and the bucket of the stage figures. */
 export const PATCH_REFRESH_STEPS = 12;
@@ -53,6 +56,13 @@ export class Planning {
   private nodeSerial = 0;
   burn: BurnState | null = null;
   targetBodyId: string | null = null;
+  /** The selected target when it is a vessel or a port of one (a body target is `targetBodyId`). */
+  targetCraft: TargetCraft | null = null;
+  /** The next closest approaches of the own trajectory (the plan's, when there is one) to a vessel target; refreshed with the patches. */
+  approaches: ChainApproach[] = [];
+  /** How the planner finds a target vessel's state (centre of mass, BCI of its body) and revision; set by whoever holds the vessels. */
+  resolveTarget: (vesselId: string) => { bodyId: string; r: Vec3; v: Vec3; revision: number } | null = () => null;
+  private targetRevision = -1;
   navballMode: NavballMode = 'surface';
   prevNavAltitude = 0;
 
@@ -80,10 +90,34 @@ export class Planning {
     this.prevNavAltitude = altitude;
   }
 
-  /** The automatic switch between the surface and the orbit mode by altitude, with hysteresis. */
+  /** The automatic switch between the surface and the orbit mode by altitude, with hysteresis (the target mode is the pilot's choice and stays). */
   followAltitude(altitude: number, switchAltitude: number): void {
-    this.navballMode = navballModeAfter(this.navballMode, this.prevNavAltitude, altitude, switchAltitude);
+    if (this.navballMode !== 'target') this.navballMode = navballModeAfter(this.navballMode, this.prevNavAltitude, altitude, switchAltitude);
     this.prevNavAltitude = altitude;
+  }
+
+  // ------------------------------------------------------------------------------------------ target
+
+  /** The selected target as the contract names it. */
+  get targetRef(): TargetRef | null {
+    if (this.targetCraft) return targetRefOf(this.targetCraft);
+    return this.targetBodyId === null ? null : { kind: 'body', id: this.targetBodyId };
+  }
+
+  /** Select a target (null = none). A navball in target mode without a vessel or port to refer to falls back to the mode of the altitude `altitude`. */
+  setTarget(ref: TargetRef | null, altitude: number, switchAltitude: number): void {
+    this.targetBodyId = ref !== null && ref.kind === 'body' ? ref.id : null;
+    this.targetCraft = ref === null || ref.kind === 'body' ? null : ref.kind === 'vessel' ? { vesselId: ref.id, portId: null } : { vesselId: ref.vesselId, portId: ref.portId };
+    this.approaches = [];
+    this.targetRevision = -1;
+    if (this.targetCraft === null && this.navballMode === 'target') this.resetNavball(altitude, switchAltitude);
+    this.patchesDirty = true;
+  }
+
+  /** The target vessel changed its orbit otherwise than by coasting: the approaches are stale. */
+  noteTargetRevision(): void {
+    const t = this.targetCraft ? this.resolveTarget(this.targetCraft.vesselId) : null;
+    if (t && t.revision !== this.targetRevision) this.patchesDirty = true;
   }
 
   /**
@@ -131,6 +165,7 @@ export class Planning {
     this.patchItems = p;
     this.patches = { current: p.current.map((x) => x.patch), planned: p.planned.map((x) => x.patch) };
     this.patchRefreshes++;
+    this.approachTarget(s, p);
     // Any integrated interval (burn, staging impulse, RCS translation) makes the old prediction void.
     if (!s.onRails) this.soiPrediction = null;
     else {
@@ -143,6 +178,26 @@ export class Planning {
     }
     this.onPatches();
     return true;
+  }
+
+  /**
+   * The closest approaches to a vessel target: the own chain (the plan's when there is one) against the
+   * target's forecast from its state now, with their pair markers on the patches they fall on.
+   */
+  private approachTarget(s: PlanSubject, p: { current: PatchWithOrbit[]; planned: PatchWithOrbit[] }): void {
+    this.approaches = [];
+    const craft = this.targetCraft;
+    const t = craft ? this.resolveTarget(craft.vesselId) : null;
+    if (!craft || !t) return;
+    this.targetRevision = t.revision;
+    const system = this.frames.system;
+    const forecast = predictPatchesWithOrbits(system, { bodyId: t.bodyId, r: t.r, v: t.v }, s.ut, [], { terrainHeight: this.frames.coarseHeight });
+    this.approaches = chainClosestApproaches(system, ownChain(p.current, p.planned), forecast.current, { count: 3 });
+    const shown = this.patches.planned.length > 0 ? this.patches.planned : this.patches.current;
+    for (const m of targetApproachMarkers(this.approaches, craft.vesselId)) {
+      const patch = shown.find((x) => x.bodyId === m.bodyId && m.ut >= x.tStart && m.ut <= x.tEnd) ?? this.patches.current.find((x) => x.bodyId === m.bodyId && m.ut >= x.tStart && m.ut <= x.tEnd);
+      if (patch) patch.markers.push(m);
+    }
   }
 
   /** The predicted impact point of the current trajectory (before any atmosphere entry), for the terrain disc there. */
@@ -319,8 +374,11 @@ export class Planning {
     return best;
   }
 
+  /** The SAS modes on offer: 'maneuver' while there is a node, the target modes while a vessel or a port is targeted ('portAlign': a port). */
   sasModesAvailable(): SasMode[] {
-    return this.nodes.length > 0 ? SAS_MODES.slice() : SAS_MODES.filter((m) => m !== 'maneuver');
+    const out: SasMode[] = this.nodes.length > 0 ? SAS_MODES.slice() : SAS_MODES.filter((m) => m !== 'maneuver');
+    if (this.targetCraft) for (const m of SAS_TARGET_MODES) if (m !== 'portAlign' || this.targetCraft.portId !== null) out.push(m);
+    return out;
   }
 
   // ----------------------------------------------------------------------------- planning commands

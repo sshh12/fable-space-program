@@ -143,14 +143,14 @@ describe('commands and read-outs', () => {
     expect(sim.peek().navball.markers.target).toBeNull();
     expect(sim.commands.setTarget({ kind: 'body', id: 'earth' }).ok).toBe(true);
     expect(sim.peek().navball.markers.target).not.toBeNull();
-    // A target is a body, a vessel or a docking port since sub-wave 3.2; this session has body targets
-    // only, refuses the two others by name and keeps the target it had.
+    // A target is a body, a vessel or a docking port (tests/unit/sim-world/vesselTarget.test.ts flies the last
+    // two). A vessel cannot target itself or a port of its own; a refused target keeps the one it had.
     const own = active(s).id;
     const vessel = sim.commands.setTarget({ kind: 'vessel', id: own });
-    expect(vessel).toEqual({ ok: false, reason: 'Vessel targets are not available in this session' });
-    expect(sim.commands.setTarget({ kind: 'port', vesselId: own, portId: 'x/y' })).toEqual({ ok: false, reason: 'Docking-port targets are not available in this session' });
+    expect(vessel).toEqual({ ok: false, reason: 'A vessel cannot target itself' });
+    expect(sim.commands.setTarget({ kind: 'port', vesselId: own, portId: 'x/y' })).toEqual({ ok: false, reason: 'A vessel cannot target itself' });
     expect(sim.peek().readouts.target!.ref).toEqual({ kind: 'body', id: 'earth' });
-    // The SAS and navball modes that need such a target exist in the contract and are refused here.
+    // The SAS and navball modes that need a vessel or a port are refused while the target is a body.
     expect(sim.commands.setSasMode('target')).toEqual({ ok: false, reason: 'No vessel or port target' });
     expect(sim.commands.setSasMode('portAlign').ok).toBe(false);
     expect(sim.commands.setNavballMode('target')).toEqual({ ok: false, reason: 'No vessel or port target' });

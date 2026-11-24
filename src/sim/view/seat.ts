@@ -6,7 +6,8 @@
  * the navball's mode), a flown node ends its SAS mode by a command, and the predicted impact point is a
  * terrain hint. A host calls this around its steps; nothing here advances time.
  */
-import { NEUTRAL_CONTROLS, type ControlInputs } from '@/core/contracts/controls';
+import { NEUTRAL_CONTROLS, SAS_TARGET_MODES, type ControlInputs, type SasMode } from '@/core/contracts/controls';
+import type { TargetRef } from '@/core/contracts/net';
 import { PHYSICS_DT } from '@/core/contracts/defs';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
@@ -61,12 +62,13 @@ export class PilotSeat {
     if (p.throttle !== n.throttle || p.pitch !== n.pitch || p.yaw !== n.yaw || p.roll !== n.roll || p.translate.x !== n.translate.x || p.translate.y !== n.translate.y || p.translate.z !== n.translate.z) h.touch();
   }
 
-  /** The hold direction of the 'maneuver' SAS mode reaches the island with the pilot's controls. */
+  /** The hold direction of the 'maneuver' and of the target SAS modes reaches the island with the pilot's controls. */
   private sendHold(): void {
     const h = this.h;
     const seat = h.view.present ? h.island.seatOf(this.accountId) : null;
     if (!seat) return;
-    const hold = h.active.sas.mode === 'maneuver' ? h.plan.maneuverHold() : null;
+    const mode = h.active.sas.mode;
+    const hold = mode === 'maneuver' ? h.plan.maneuverHold() : (SAS_TARGET_MODES as readonly SasMode[]).includes(mode) ? h.view.targetHold(mode) : null;
     if (hold !== null || seat.sasHold !== null) this.input({ kind: 'controls', vesselId: h.active.id, controls: seat.controls, sasHold: hold });
   }
 
@@ -76,6 +78,22 @@ export class PilotSeat {
     if (!h.view.present) return;
     const reference = h.plan.navballMode === 'surface' ? 'surface' : 'orbit';
     if (h.island.seatOf(this.accountId)?.reference !== reference) this.input({ kind: 'reference', vesselId: h.active.id, reference });
+  }
+
+  /**
+   * Select a target (null = none); the caller has checked that it exists. A SAS target mode and a navball in
+   * target mode end with the vessel or port they referred to.
+   */
+  setTarget(ref: TargetRef | null): void {
+    const h = this.h;
+    const a = h.view.focus();
+    h.plan.setTarget(ref, h.frames.altitudeAt(a.bodyId, comStateOf(a.vessel).r, h.island.ut), h.frames.base(a.bodyId).def.navballSwitchAltitude);
+    const mode = h.active.sas.mode;
+    const needsPort = mode === 'portAlign' && h.plan.targetCraft?.portId == null;
+    if (h.view.present && (SAS_TARGET_MODES as readonly SasMode[]).includes(mode) && (h.plan.targetCraft === null || needsPort)) this.input({ kind: 'command', vesselId: h.active.id, command: { kind: 'sasMode', mode: 'stability' } });
+    this.sendReference();
+    h.relimit();
+    h.touch();
   }
 
   /** The terrain disc at the predicted impact point of the pilot's vessel (the island does the rest of the terrain work itself). */
@@ -120,6 +138,8 @@ export class PilotSeat {
     const alt = h.frames.altitudeAt(a.bodyId, comStateOf(a.vessel).r, h.island.ut);
     h.plan.followAltitude(alt, h.frames.base(a.bodyId).def.navballSwitchAltitude);
     this.sendReference();
+    // A targeted vessel that is gone is no target.
+    if (h.plan.targetCraft && h.view.target() === null) this.setTarget(null);
     const dropped = h.plan.updateBurn(h.view.subject());
     if (dropped) this.dropNode(dropped.id, dropped.completed);
   }
