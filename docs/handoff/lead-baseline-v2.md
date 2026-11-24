@@ -1551,3 +1551,17 @@ RE-RECORDED.** Flown on a clean worktree of HEAD 55995c5: the mission is 35 of 3
 **Step 4.1c, the two warp levels: IN** (c56ea35). The view reference differs in the clock block of 6 of
 200 states (two numbers each), not in every state as the earlier note said; six by-design entries, the
 recording untouched (request lead-11).
+
+**From the lead and the independent review of island-core, the same evening.** The review found the same
+defect as the audit above (a Reduced object re-joins with a state up to 0.49 s old); island-core's fix
+round has started, and the debris fates and the golden move once more. Therefore: NOTHING of the guard is
+re-recorded now (neither the clamps' five samples nor a debris entry: the audit had stopped before any);
+the three debris entries are recorded only from island-core's NEW table, on the lead's word; MIGRATION_V2
+principle 5 counts SEVEN and holds formation open (the hash `f0c0855ea40d8c59` is provisional). Two more
+things from that review that concern the lead's own tools: (1) `sampleDifference` in
+`tools/sim/trajectoryGuard.ts` returns at the first difference, so while a clamp row is red the suite
+checks the attended craft only up to that sample (island-core is changing it to report all; the audit
+above compared all 400 samples with its own script); (2) one read-out of the mission record did not
+reproduce between a committed record and a re-flight of identical state (`LUNAR_ORBIT.data.radarAltitude`
+104688.159 against 104688.063): until island-core reports the cause, an EXACT comparison of two records
+is evidence for the states and the elements, and NOT for the read-outs.
