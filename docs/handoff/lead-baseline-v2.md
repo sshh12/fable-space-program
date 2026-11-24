@@ -1455,3 +1455,57 @@ its reason in the contract:** `VesselSnapshot.presentation`, `EventBase.provisio
 
 **For the next packages.** The LEAD NOTES of 2026-11-24 on `island-core`, `solar-system-sim`, `fleet-data`,
 `shell-menu` and `capability-settings` say what changed under each. PACKAGE_RULES 7a is rewritten.
+
+## 28. After the tighten: four lead items, and the look-2 re-recording HELD (2026-11-24, 12:30-14:00)
+
+**Lead items (each its own commit).**
+- **The terrain guard's pad groups, re-recorded after an audit** (d1b6aac). fleet-data's site files
+  (c441308) gave the 24 new pads their flatten discs. Audit with the guard's own sampling and the terrain
+  code's own discs: 884 heights changed (`pads:ka-lae` 289, `pads:madrakah` 594, `site:madrakah` 1), every
+  one inside a new pad's disc, none in LC-1's; the Earth's `uniform` group, `site:ka-lae-lc1` and the Moon
+  equal to the string; point for point and bit for bit the list fleet-data wrote. Scratch of the audit:
+  `out/lead-baseline-v2/terrain-guard/`.
+- **The docking port in the module unions** (d4d6d61, request fleet-data-1).
+- **Pad class limits** (efc708f, request fleet-data-4 accepted): light 70 t / 2.5 m, medium 700 t / 8.5 m,
+  heavy 3,000 t / 9.56 m; ARCHITECTURE 9.3 has the launches per hour by vehicle class (144 / 336 / 600).
+  LC-1 still states its own 9.5 m in the site file (fleet-data's to drop).
+- **The two warp levels (MIGRATION_V2 4.1c, request solar-system-sim-2): PROVEN AND HELD** (60c2da1 is the
+  note only). With nine rails levels the mission flies 36 of 36 at the golden; but the clock block of every
+  snapshot states the warp table, so island-core's snapshot reference
+  (`tests/unit/sim-world/viewReference.test.ts`) differs in every state, and island-core holds that
+  recording as the proof of its refactor. It goes in, in one commit, with that reference's re-record; two
+  warp tests restate "the top level" (the request's note names the lines).
+- **How the mission was verified while the shared tree's World was in flight** (island-core's uncommitted
+  work gives the shared tree another hash): a clean worktree of HEAD outside the repository
+  (`git worktree add --detach <dir> HEAD`), with `node_modules` and `data/tiles` linked by directory
+  junctions, the change applied by the same script as in the shared tree, and the gate called by its
+  path in the main tree (its locks are shared). REMOVE THE JUNCTIONS FIRST (`cmd /c rmdir <link>`), then
+  `git worktree remove --force`: a recursive delete through a junction would empty the main tree's
+  directory.
+
+**The reference images under look 2: NOT RECORDED. The proof that the tree still draws the look-1 pictures
+failed twice, both times on a tree that moved under the run.**
+- Custody tool: `tests/browser/shell/baseline-look.spec.ts` (run in the same invocation as the gate, with
+  `BASELINE_EXPECT_LOOK=<1|2>`): it reads the look the renderer says it runs on the first checkpoint of
+  each page of the manifest. With `VITE_CORE_LOOK=1` both pages (the integration lab and the app) ran look 1.
+- The look-1 set and its manifest are copied aside:
+  `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\baselines-look1\` (33 PNGs, `baselines.manifest.look1.json`).
+- Run 1 (12:30-12:57): 12 of 33 the same (11 exact at 0), exactly the checkpoints with no vessel in view.
+  Cause: `labs/integration/main.ts:461` takes the FIRST vehicle of the library when the address names none,
+  and since fleet-data's 7ebd5ee that is `azimuth-pathfinder`, whose parts have no visuals: no vessel was
+  drawn, the camera framed another radius, and `cabinView` had no cabin. The two app pages did not open
+  (the vessel feature reports every library part without a visual: request fleet-data-2).
+- THE MANIFEST NOW STATES THE VEHICLE: the 31 checkpoints of the integration lab carry
+  `&vehicle=meridian-lunar` (a checkpoint must not depend on which vehicle the library lists first).
+- Run 2 (13:01-13:36, with that): 19 the same (17 exact at 0), 14 differ; the app pages open
+  (`sweep-app-pad` differs in 188 pixels by up to 7 levels). The vessel pictures still differ: `leo-day`
+  shows a small black cone where the M-3 stack is. The vessel feature was being changed during that run
+  (the fix for fleet-data-2 in `src/render/vehicle`), so nothing more can be said from it.
+- NEXT, on the lead's word (the vessel feature's fix committed, the tree quiet): the look-1 gate once more
+  (33 of 33, the 30 exact at 0; the pad checkpoints may legitimately show the new pads of Ka Lae: list
+  them), THEN the recording of all 33 under look 2 with `BASELINE_ONLY=<all names>` and a note naming the
+  decision and 1d91c88, the look at every PNG beside its look-1 predecessor
+  (`C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\look-compare.cjs <look-1 dir> <look-2 dir> <out dir>` writes half-size sheets and the
+  clipped-white and mean-level numbers), rule 15a, STATUS, the LEAD NOTES of `shell-menu` and
+  `capability-settings`. The budget baseline is NOT re-recorded (it predates the flip; look 2 adds 0.007 ms
+  to the tonemap and exposure line).
