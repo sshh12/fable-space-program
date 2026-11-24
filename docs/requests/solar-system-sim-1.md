@@ -1,4 +1,4 @@
-Status: open
+Status: resolved for items 1 to 4 and 6 (island-core, commit 4c9a569); item 5 (vessel and port targets in the view) is OPEN: docs/handoff/island-core.md, section 5.1
 From: solar-system-sim
 Owner path: src/sim/world/sim.ts, src/sim/world/environment.ts, src/sim/island/**, src/sim/view/**, tests/unit/sim-world/viewReference.json (island-core)
 Blocking: no
@@ -77,3 +77,25 @@ view reference passes 3 of 3); each item is what the island needs to be right on
    are (the giants and the Sun have none). Details of the call site in docs/handoff/solar-system-sim.md section 6.
 
 Must NOT change: anything on the shipped library (each item above is identical there or not reached).
+
+## Resolution
+1. The view predicts with `encounterRevolutions: THREE_PERIOD_ENCOUNTER_SEARCH` (`Planning.ensurePatches`,
+   src/sim/view/planning.ts). The recording of the wave-3 World is not re-recorded: the `patches` block of
+   twelve states of `qa-translunar` (samples 46 to 55, 66, 67) differs by design and
+   `tests/unit/sim-world/viewReference.test.ts` states each with its old and new value; every other block of
+   every state is still equal. The mission is unchanged.
+2. `BodyFrames.sunSample` (src/sim/island/frames.ts; the one place the island, the far set and the start
+   state take the sun sample) uses `sunDirectionAt` / `sunVisibilityAt` with the BCI position.
+3. `BodyFrames.aim` gives the environment the offset of the spheroid under the vessel, and the environment
+   samples the air at the altitude above it (`IslandEnv.aim(..., surfaceOffset)`); `BodyFrames.altitudeAt`
+   is that altitude for the far set's tier decisions, the navball's switch, the `flying` situation and
+   `Readouts.altitudeAsl` on a body with a shape. A body without a shape takes the expressions it took.
+4. `Island` (control-tick cadence, authoritative mode only: it is a threshold outcome): a member below the
+   floor of a body without a surface is destroyed by a `destroy` operation with cause 'overstress'.
+   Tested on the staged library (`tests/unit/sim-island/shape.test.ts`: the air over the pole and the
+   equator of the first shaped body without a surface, the floor in both step modes).
+5. NOT done: the view does not call the vessel-target functions yet (`setTarget` still refuses a vessel or a
+   port). Where each call goes is written in docs/handoff/island-core.md, section 5.1, for whoever takes it.
+6. `createRealTerrain` (tools/sim/realWorld.ts) passes `preload: 'launchSystems'`.
+Verified: mission 35 of 37 at the unchanged golden `f0c0855ea40d8c59` (the two red tests are the pinned
+guard's, request island-core-1); `npx vitest run tests/unit/sim-world tests/unit/sim-island`.
