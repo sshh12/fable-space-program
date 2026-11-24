@@ -113,7 +113,7 @@ padTakes(limits: { maxLiftoffMass; maxDiameter }, fit: VehicleFit): boolean     
   full fleet in the Hangar); My Ships does not resume a ship of a vehicle that cannot be shown; the turntable intent
   names only a presentable vehicle; the lab builds its display vessel from `presentableVehicles(defs)[0]`. NOTE:
   presentable.ts and the vessel feature's use of it were in the working tree, NOT committed, when 1fb6167 was
-  made; 1fb6167 needs that commit to compile on its own.
+  made; the presentation side committed it in 29cd39f, so every commit from then on compiles on its own.
 - The pad class is the analysis' (`VehicleCapabilities.padClass`, derived by fleet-data from the class limits of
   the rules in force and the vehicle's lift-off mass and diameter, or its pad interface). No "assumed" class.
 - A change of screen is drawn at once; store changes and live text wait for the 10 Hz text clock; a store
