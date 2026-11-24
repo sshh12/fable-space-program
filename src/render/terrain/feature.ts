@@ -169,6 +169,8 @@ export interface TerrainDebug {
    * One walk over the body's nodes: cheap enough for every frame of a loading screen.
    */
   residency(bodyId: string): { wantedLevel: number; residentLevel: number; wanted: number[]; resident: number[] } | null;
+  /** Ground plans the body's material holds: one per pad of its sites, at most MAX_SITES (sitePlan.ts). For tests. */
+  groundPlans(bodyId: string): number;
 }
 
 export interface TerrainFeature extends RenderFeature, TemporalFeature {
@@ -1260,6 +1262,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       },
       provider: () => provider,
       bodies: () => bodies.map((b) => b.id),
+      groundPlans: (bodyId) => bodies.find((x) => x.id === bodyId)?.sites.length ?? 0,
       residency(bodyId) {
         const b = bodies.find((x) => x.id === bodyId);
         if (!b || b.frameIndex < 0) return null;

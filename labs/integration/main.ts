@@ -57,6 +57,7 @@ import { createMapView, type MapViewApi } from '@/map';
 import { createProbes } from '../render-core/probes';
 import { createEndBallast } from './ballast';
 import { sunAtSite, withSnapshotMap, withSunOverride, type Site, type SunOverride } from '../render-core/world';
+import { withSyntheticPads } from './syntheticPads';
 import { availablePackages, buildFeatures, FEATURE_PACKAGES, importPackages, importRealSession, realSessionAvailable, realVesselParts, type FeaturePackage } from './features';
 
 export interface IntegrationLab {
@@ -70,6 +71,8 @@ export interface IntegrationLab {
   quarantined: { pkg: FeaturePackage; featureId: string; errors: string[] }[];
   /** What each factory returned, keyed `<package>.<export>` (debug handles of the features). */
   handles: Record<string, unknown>;
+  /** The synthetic multi-pad site of `&pads=<n>` (its site, body and pad ids), or null. */
+  syntheticPads: { siteId: string; bodyId: string; padIds: string[] } | null;
   /** Package of each registered wave-2 feature id. */
   packageOf: Record<string, FeaturePackage>;
   /** Iterations of the ballast pass per pixel (?ballast=1; 0 = off). Its GPU time is pass 'lab-ballast.overlay'. */
@@ -408,7 +411,21 @@ async function boot(): Promise<void> {
   const info = document.getElementById('info') as HTMLDivElement;
   const problems: string[] = [];
 
-  const defs: DefLibrary = await loadDefs(fetchDefSource());
+  // &pads=<n>: the first site with n pads, in memory (syntheticPads.ts): the per-pad paths of the site feature
+  // and of the terrain in a picture. No definition file changes.
+  const library: DefLibrary = await loadDefs(fetchDefSource());
+  let syntheticPads: Awaited<ReturnType<typeof withSyntheticPads>> | null = null;
+  if (query.has('pads')) {
+    // The natural ground under the new pads, from a height authority of the library as it is.
+    const natural = await createTerrainProvider(library, createFetchTileSource('/tiles'));
+    const bodyId = Object.values(library.sites)[0]?.bodyId ?? library.rootBodyId;
+    syntheticPads = await withSyntheticPads(library, Number(query.get('pads')), async (latDeg, lonDeg) => {
+      const dir = latLonToDir(latDeg * DEG, lonDeg * DEG);
+      await natural.ensureLoaded(bodyId, dir, 400, 'lab:pads');
+      return natural.heightAt(bodyId, dir);
+    });
+  }
+  const defs: DefLibrary = syntheticPads ? syntheticPads.defs : library;
   const terrain = await createTerrainProvider(defs, createFetchTileSource('/tiles'));
   const wanted = wantedPackages();
   const imported = await importPackages(wanted);
@@ -830,6 +847,7 @@ async function boot(): Promise<void> {
         },
       };
     },
+    syntheticPads: syntheticPads ? { siteId: syntheticPads.siteId, bodyId: syntheticPads.bodyId, padIds: syntheticPads.padIds } : null,
     setRenderRoot(bodyId) {
       if (!fakeSession) return false;
       fakeSession.setRenderRoot(bodyId);
