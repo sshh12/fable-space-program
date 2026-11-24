@@ -22,6 +22,7 @@ import { presentableVehicles } from '@/core/access/presentable';
 import { createIdentityFixture } from '@/core/fakes/identityFixture';
 import { deltaVToOrbit } from '@/sim/nav/reach';
 import { analyzeVehicle } from '@/sim/vessel/analyze';
+import { DIAMETER_TOLERANCE, LIMIT_TOLERANCE } from '@/sim/vessel/validate';
 import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { createFakeSession, FAKE_SESSION_DEFAULT_UT } from '@/core/fakes/fakeSession';
 import { createMenuFixture, menuShipsFixture } from '@/core/fakes/menuStores';
@@ -208,6 +209,7 @@ async function boot(): Promise<void> {
     publishScrim: (rects) => app.setScrim(rects.length > 0 ? rects : null),
     boot: () => ({ steps: bootSteps, playReady: bootSteps.every((s) => s.finished) }),
     snapshot: () => app.snapshot(),
+    padLimitTolerance: { massShare: LIMIT_TOLERANCE, diameter: DIAMETER_TOLERANCE },
     capabilities: (vehicle, rules) => {
       // fleet-data's analysis of the definition the menu lists, under the rules in force (its pad class from the
       // rules' class limits), once per vehicle and rules document.

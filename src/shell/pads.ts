@@ -60,6 +60,13 @@ export interface VehicleFit {
   massWet: number;
   diameter: number;
   rules: UniverseRules;
+  /** The validation's tolerances (`ShellDeps.padLimitTolerance`): a share of the mass, and metres of diameter. */
+  tolerance: { massShare: number; diameter: number };
+}
+
+/** True when a pad's own limits take the vehicle, compared as the spawn's validation compares them. */
+export function padTakes(limits: { maxLiftoffMass: number; maxDiameter: number }, fit: VehicleFit): boolean {
+  return fit.massWet <= limits.maxLiftoffMass * (1 + fit.tolerance.massShare) && fit.diameter <= limits.maxDiameter + fit.tolerance.diameter;
 }
 
 /** The pads of `sites` with the lobby's states, the site order of the definitions and each site's pad order. */
@@ -75,7 +82,7 @@ export function padRows(sites: readonly LaunchSiteDef[], states: readonly PadSta
         name: pad.name,
         class: pad.class,
         state,
-        usable: padHosts(pad.class, vehicleClass) && (!fit || !limits || (fit.massWet <= limits.maxLiftoffMass && fit.diameter <= limits.maxDiameter)),
+        usable: padHosts(pad.class, vehicleClass) && (!fit || !limits || padTakes(limits, fit)),
         liveWaitSeconds: state === null ? null : state.state === 'free' ? 0 : waitSeconds(state.nextLiveTick, liveTick),
       });
     }

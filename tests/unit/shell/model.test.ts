@@ -8,7 +8,7 @@ import type { DefLibrary, LaunchSiteDef, PadDef } from '@/core/contracts/defs';
 import { DEFAULT_UNIVERSE_RULES, TICKS_PER_SECOND, type PadState } from '@/core/contracts/net';
 import { quat } from '@/core/math/quat';
 import { createShellMachine, DEPLOY_STEPS, HUB_TABS, INITIAL_SHELL_STATE, MAIN_STATES, stateName, transition, type ShellState } from '@/shell/machine';
-import { classOutlook, launchesPerHour, padHosts, padRows, usableClasses } from '@/shell/pads';
+import { classOutlook, launchesPerHour, padHosts, padRows, padTakes, usableClasses } from '@/shell/pads';
 import { formatSpan, rulesView } from '@/shell/rulesView';
 import { solarViewAt } from '@/shell/solar';
 import { createFakeSession } from '@/core/fakes/fakeSession';
@@ -151,7 +151,10 @@ describe('pads and waits per class', () => {
     const narrow = { ...pad('h2', 'heavy'), maxDiameter: big.maxDiameter / 2 };
     const s1 = site('s', [pad('h1', 'heavy'), narrow]);
     const states = padsOfSite(s1).map(([s, p]) => state(s, p, false, 0));
-    const fit = { massWet: big.maxLiftoffMass * 0.9, diameter: big.maxDiameter * 0.9, rules };
+    const fit = { massWet: big.maxLiftoffMass * 0.9, diameter: big.maxDiameter * 0.9, rules, tolerance: { massShare: 1e-6, diameter: 0.01 } };
+    // Compared as the validation compares: within its tolerance a limit is met (a 9.50 m stack on a 9.5 m pad).
+    expect(padTakes({ maxLiftoffMass: 1000, maxDiameter: 9.5 }, { ...fit, massWet: 1000, diameter: 9.5 + 0.005 })).toBe(true);
+    expect(padTakes({ maxLiftoffMass: 1000, maxDiameter: 9.5 }, { ...fit, massWet: 1000, diameter: 9.5 + 0.02 })).toBe(false);
     expect(padRows([s1], states, 'heavy', 0, fit).map((r) => r.usable)).toEqual([true, false]);
     expect(classOutlook([s1], states, 'heavy', 0, rules, fit).padCount).toBe(1);
     // Over the class limit itself: no pad of the class takes it.

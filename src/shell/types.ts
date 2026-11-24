@@ -124,6 +124,12 @@ export interface ShellDeps {
    * there from the class limits of the rules and the vehicle's lift-off mass and diameter (or its pad interface).
    */
   capabilities(vehicle: VehicleDef, rules: UniverseRules): VehicleCapabilities;
+  /**
+   * The tolerances a pad's limits are compared with (fleet-data's `LIMIT_TOLERANCE`, a share of the mass, and
+   * `DIAMETER_TOLERANCE`, m, of src/sim/vessel/validate.ts): the pad screen offers exactly the pads the spawn's
+   * validation accepts.
+   */
+  padLimitTolerance: { massShare: number; diameter: number };
   settings: SettingsHost | null;
   identity: IdentityHost | null;
   /** Mean pad cycle of the rules in force, s (launches per hour per class); null while the rules state none (request shell-menu-1). */

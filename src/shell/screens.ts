@@ -111,7 +111,7 @@ const liveTickOf = (ctx: ScreenCtx): number => ctx.session.stores.presence.get()
 function classOfVehicle(ctx: ScreenCtx, v: VehicleDef): { cls: PadClass; caps: VehicleCapabilities; fit: VehicleFit } {
   const rules = rulesOf(ctx);
   const caps = ctx.deps.capabilities(v, rules);
-  return { cls: caps.padClass, caps, fit: { massWet: caps.massWet, diameter: caps.diameter, rules } };
+  return { cls: caps.padClass, caps, fit: { massWet: caps.massWet, diameter: caps.diameter, rules, tolerance: ctx.deps.padLimitTolerance } };
 }
 
 // ---------------------------------------------------------------------------------------------- title
