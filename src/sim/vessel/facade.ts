@@ -91,6 +91,11 @@ export interface WorldSideSnapshotFields {
   revision?: number;
   /** Whether there is air at the vessel now (density above 0): without it no chute envelope is stated. Absent = true. */
   inAir?: boolean;
+  /**
+   * Pose only: the snapshot lists no parts (a vessel outside the viewer's relevance cut, which is drawn as a
+   * point or not at all). Everything else is stated as for any vessel. Absent = false.
+   */
+  poseOnly?: boolean;
 }
 
 /** The craft of a vessel as the snapshot shows them, base craft first. */
@@ -155,7 +160,7 @@ export function toVesselSnapshot(vessel: Vessel, world: WorldSideSnapshotFields)
     mass: vessel.mp.mass,
     comLocal: v3.clone(vessel.mp.com),
     boundingRadius: st.boundingRadius,
-    parts: vesselPartSnapshots(vessel, world.inAir ?? true),
+    parts: world.poseOnly ? [] : vesselPartSnapshots(vessel, world.inAir ?? true),
     aero: {
       q: a.q,
       mach: reportedMach(vessel),

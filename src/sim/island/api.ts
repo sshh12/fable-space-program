@@ -35,8 +35,11 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import type { Quat } from '@/core/math/quat';
 import type { Vec3 } from '@/core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
+import type { SubstepRun } from '../dynamics/integrator';
 import type { Orbit } from '../orbit/kepler';
 import type { DefResolver, Vessel } from '../vessel';
+import type { RailsEvent } from './rails';
+import type { TerrainPolicy } from './terrainPolicy';
 
 // ------------------------------------------------------------------------------------------ vocabulary
 
@@ -68,6 +71,11 @@ export interface IslandDeps {
   rules: UniverseRules;
   /** Resolves the vehicle references of vessel blobs (`add`, `replace`, `decode`). Default: the library. */
   resolver?: DefResolver;
+  /**
+   * The terrain request policy the island pins its discs with. Default: one of its own. A host that holds
+   * several islands over one terrain store, or that outlives its island, hands them its own.
+   */
+  policy?: TerrainPolicy;
 }
 
 /** The reference orbit of an island in the Sun's sphere of influence (frame ISL): an exact Kepler orbit about `bodyId`. */
@@ -86,6 +94,8 @@ export interface IslandMember {
   readonly tier: MemberTier;
   /** Orbit of the centre of mass in the island's frame body while the mode is 'rails' or 'armed'; null otherwise. */
   readonly orbit: Orbit | null;
+  /** The next event of that conic (the end of its first patch); null = none, or not on a conic. */
+  readonly railsEvent: RailsEvent | null;
   /** Account whose latched controls steer this vessel (the pilot at the helm); null = nobody: neutral controls. */
   readonly pilot: string | null;
   /** A connected pilot is aboard, or the server still carries the vessel for one (ARCHITECTURE 5.1, "attended"). */
@@ -153,6 +163,12 @@ interface InputBase {
 export type IslandInput =
   /** Continuous controls of a pilot, latched until replaced; `sasHold` is the hold direction of a 'maneuver' or target SAS mode (unit, island axes), null otherwise. */
   | (InputBase & { kind: 'controls'; vesselId: string; controls: ControlInputs; sasHold: Vec3 | null })
+  /**
+   * The velocity the pilot's prograde, normal and radial holds refer to: relative to the rotating surface or
+   * to the body's inertial frame (the pilot's navball mode; v1 switched it by altitude). It changes the held
+   * direction, so it is an input and the seat's state.
+   */
+  | (InputBase & { kind: 'reference'; vesselId: string; reference: 'surface' | 'orbit' })
   | (InputBase & { kind: 'command'; vesselId: string; command: IslandCommand })
   /** A pilot takes or leaves a vessel: the island latches that account's controls for it. `accountId` of the base is the pilot; `aboard` false = left. */
   | (InputBase & { kind: 'seat'; vesselId: string; aboard: boolean })
@@ -179,6 +195,10 @@ export interface InputReceipt {
   /** False when the input can never apply (unknown vessel, a pilot who is not at the helm): it is not queued. */
   accepted: boolean;
   reason?: string;
+  /** The result of a command that was applied at once (an input stamped at or before the island's tick). */
+  outcome?: CommandOutcome;
+  /** Events, operations and arrivals of an input that was applied at once (a staging command's, a destruct's). */
+  report?: AdvanceReport;
 }
 
 /** The result of a command once it has been applied at its tick (`CommandResult` of the seat). */
@@ -221,6 +241,9 @@ export interface Departure {
   bodyId: string;
   latitude: number;
   longitude: number;
+  /** The vessel as it was when it went (no longer the island's) and its revision counter. */
+  vessel: Vessel;
+  revision: number;
 }
 
 /** What one `step` or `advanceTo` did. The arrays are fresh per call and in canonical order. */
@@ -231,20 +254,30 @@ export interface AdvanceReport {
   ops: AppliedOp[];
   commands: CommandOutcome[];
   departures: Departure[];
-  /** Vessels that came into being (a split): their ids, in member order. */
-  arrivals: string[];
+  /** Vessels that came into being (a split, a jettison): each with the vessel it left, in the order they were made. */
+  arrivals: { vesselId: string; fromVesselId: string }[];
+  /**
+   * Members whose trajectory changed otherwise than by coasting, or whose conic was examined again (it went
+   * on rails or left them, left the ground, passed the end of its predicted patch): a host that holds a
+   * prediction for one of them refreshes it. An id may be listed more than once.
+   */
+  replan: string[];
   /** A terrain query of the advance ran on data that was not final (ARCHITECTURE 7.6). */
   incompleteTerrain: boolean;
   /** The frame changed: the SOI body before, or a new reference orbit (the view starts a new frame epoch). */
   frameChange: { fromBodyId: string; toBodyId: string; ut: number } | null;
 }
 
-/** The next instant at which the island cannot go on coasting on rails. */
+/**
+ * The next instant at which the island cannot go on coasting on rails: a member enters an atmosphere or
+ * meets the ground and must be integrated from there. (A sphere-of-influence change does not stop a rails
+ * advance: the island hands over at the event's own instant and goes on.)
+ */
 export interface IslandEvent {
-  /** Event instant, s; the island lands on the first whole tick at or after it. */
+  /** Event instant, s; a rails advance lands on the first whole tick at or after it. */
   ut: number;
   tick: number;
-  kind: 'soi' | 'atmosphere' | 'impact';
+  kind: 'atmosphere' | 'impact';
   vesselId: string;
 }
 
@@ -308,13 +341,16 @@ export interface CaptureConstraint extends PairRef {
  * The pair pass (ARCHITECTURE 7.4). The island calls `regime` for every pair of Full-tier members at each
  * tick BEFORE stepping; a pair it answers 'contact' for takes the sub-stepped path TOGETHER in that tick,
  * both vessels, whatever their own probes say, and leaves it together at the first tick it answers 'free'.
- * `solve` is called once per sub-step after the per-vessel force evaluation of both (the vessel-vessel
- * contact and capture forces). This wave the island's own hook is empty (it answers 'free' and solves
- * nothing); contact-docking supplies the sweep, the speculative contacts and the response.
+ * `solve` is called once per sub-step for each such pair, after the per-vessel force evaluation of EVERY
+ * vessel of the group and before any of them is integrated: it reads and changes the two runs (the bodies'
+ * sub-states and the force and torque totals; src/sim/dynamics/integrator.ts, `SubstepRun`). A run is null
+ * for a vessel that does not move in the step (held on the body, or gone). This wave the island's own hook
+ * is empty (it answers 'free' and solves nothing); contact-docking supplies the sweep, the speculative
+ * contacts and the response.
  */
 export interface PairHook {
   regime(a: IslandMember, b: IslandMember, tick: number): 'free' | 'contact';
-  solve(a: IslandMember, b: IslandMember, tick: number, subStep: number, h: number): void;
+  solve(a: IslandMember, b: IslandMember, runA: SubstepRun | null, runB: SubstepRun | null, tick: number, subStep: number): void;
 }
 
 // ---------------------------------------------------------------------------------------------- island
@@ -344,15 +380,20 @@ export interface Island {
 
   // ---- membership (the host's direct calls; `applyInput` 'add' / 'remove' are the journaled forms of the same)
 
-  /**
-   * Put a vessel into the island at the current tick. Its state must be in the island's frame. `bornTick`
-   * defaults to the island's tick; `quiescent` true places it on rails at once when nothing forces
-   * integration (a host that materialises a coasting vessel), false leaves it integrated until it has
-   * coasted `COAST_TIME_TO_RAILS`.
-   */
-  add(vessel: Vessel, options?: { bornTick?: number; pilot?: string | null; attended?: boolean; quiescent?: boolean; admittedFromHead?: number | null }): IslandMember;
-  /** Take a vessel out at the current tick; returns it in the island's frame at that tick (null = no such member). */
+  /** Put a vessel into the island at the current tick. Its state is given in BCI of the island's body at that tick. */
+  add(vessel: Vessel, options?: AddOptions): IslandMember;
+  /** Take a vessel out at the current tick; returns it in BCI of the island's body at that tick (null = no such member). */
   remove(vesselId: string, reason?: 'left' | 'removed'): Vessel | null;
+  /**
+   * Decide a member's mode now: on rails at once when nothing forces integration (a vessel that starts on a
+   * coast), else integrated. Without it a free member is integrated until it has coasted `COAST_TIME_TO_RAILS`.
+   */
+  settle(vesselId: string): void;
+  /**
+   * Evaluate the armed margin between the members now (the island does it at every control tick). A host
+   * that changed the membership between two control ticks calls it once it is done.
+   */
+  refreshMargins(): void;
 
   // ---- time
 
@@ -397,6 +438,10 @@ export interface Island {
   // ---- queries
 
   tierOf(vesselId: string): MemberTier | null;
+  /** Position and velocity of a member's VES origin in BCI of the island's body (the vessel's own `r`, `v` while there is no reference orbit). */
+  stateOf(vesselId: string): { r: Vec3; v: Vec3 } | null;
+  /** The pilot's seat as the island holds it: the latched controls, the hold direction and the velocity reference; null = no such pilot. */
+  seatOf(accountId: string): { vesselId: string; controls: ControlInputs; sasHold: Vec3 | null; reference: 'surface' | 'orbit'; latchOpenTick: number | null } | null;
   /** The step environment of a member at the island's tick (start-of-step values for the next step). */
   environmentOf(vesselId: string): VesselEnvironment | null;
   /** Reach between the island and a sphere outside it, given in the island's frame at the island's tick. */
@@ -426,6 +471,26 @@ export interface Island {
   setNascent(pair: PairRef, on: boolean): void;
   setClearing(pair: ClearingPair | PairRef, on: boolean): void;
   setCapture(constraint: CaptureConstraint | PairRef, on: boolean): void;
+}
+
+/** How a vessel enters an island (`Island.add`). */
+export interface AddOptions {
+  /** Tick the vessel came into being; default the island's tick. */
+  bornTick?: number;
+  /** The account whose controls steer it, and whether it is attended. Defaults: nobody, not attended. */
+  pilot?: string | null;
+  attended?: boolean;
+  /**
+   * The conic the vessel is on (a passive vessel's committed orbit of its centre of mass about the island's
+   * body, with its next event): the member is on rails on it from the same epoch state, so nothing moves
+   * by a rounding at the admission. Absent: the member is integrated until it has coasted
+   * `COAST_TIME_TO_RAILS`.
+   */
+  conic?: { orbit: Orbit; event: RailsEvent | null };
+  /** Counter the member's `revision` continues from. */
+  revision?: number;
+  /** The head the admitted copy had as a passive vessel (ARCHITECTURE U4); null or absent = not an admitted copy. */
+  admittedFromHead?: number | null;
 }
 
 /** What `createIsland` starts from. */

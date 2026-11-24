@@ -240,7 +240,8 @@ export function libraryResolver(defs: DefLibrary): DefResolver & VehicleRefSourc
 
 // ------------------------------------------------------------------------------------------------- bytes
 
-class Writer {
+/** The byte writer of the codec (the island codec writes with the same one). */
+export class Writer {
   private buf = new Uint8Array(1024);
   length = 0;
 
@@ -323,7 +324,8 @@ class Writer {
   }
 }
 
-class Reader {
+/** The byte reader of the codec. Reading past the end throws `VesselDecodeError` ('format'). */
+export class Reader {
   at: number;
   constructor(
     private readonly buf: Uint8Array,
@@ -916,13 +918,18 @@ export interface EncodeOptions {
   refs?: VehicleRefSource;
   /** Layout version to write (for the corpus of earlier versions). Default: CODEC_VERSION. */
   version?: number;
+  /**
+   * Write the LABELS block (the names of the vessel and of its craft). Default true. The island codec writes
+   * its vessels without it and carries the names in a section of its own that the island hash leaves out.
+   */
+  labels?: boolean;
 }
 
 /** The complete dynamic state of a vessel as bytes. */
 export function encodeVessel(vessel: Vessel, options: EncodeOptions): Uint8Array {
   const version = options.version ?? CODEC_VERSION;
   if (!CODEC_VERSIONS_READ.includes(version)) throw new Error(`vessel codec: cannot write version ${version}`);
-  const body = writeBody(vessel, options.refs ?? REFS_BY_CONTENT, version, true);
+  const body = writeBody(vessel, options.refs ?? REFS_BY_CONTENT, version, options.labels ?? true);
   const head = new Writer();
   for (const b of MAGIC) head.u8(b);
   head.u16(version);
