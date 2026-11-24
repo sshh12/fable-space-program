@@ -2,6 +2,21 @@
  * createTerrainProvider: THE height authority (src/core/contracts/terrain.ts TerrainProvider) plus the
  * RockField and the TerrainBaker the renderer's workers use. Headless and deterministic; the same code runs
  * on the main thread, in workers and in Node.
+ *
+ * LAZY PER-BODY RESIDENCY (ARCHITECTURE 10.2, 10.5; MIGRATION_V2 4.1c). A served body is either PRELOADED (its
+ * manifest read and its resident pyramid pinned at creation and held for the provider's life: v1's behaviour)
+ * or LAZY: nothing of it is read at creation; it is loaded (manifest, resident pyramid, sampled flatten discs)
+ * by the first `ensureLoaded`, `prepareTile` or `loadBody` that names it, and RELEASED (every tile of it dropped,
+ * its collision memo with it) when no slot holds it any more. A slot holds the body its latest request named:
+ * a request of the same slot for another body, or `release(slot)`, lets go of it. Synchronous queries never
+ * start a load (a load whose completion no step awaits would make the simulation depend on I/O timing): on a
+ * body that is not loaded they answer from the datum surface (height 0, the radial normal) and `residency`
+ * reports no level resident and the data incomplete, exactly as a query outside the resident tiles of a loaded
+ * body reports it; `diagnostics().unloadedQueries` counts them.
+ *
+ * Which bodies are preloaded is `TerrainProviderOptions.preload`: 'all' (the default, v1's behaviour for every
+ * caller that exists), 'launchSystems' (the planet systems of the library's launch sites: Earth and the Moon in
+ * the Sun-rooted library; every served body when the library has no site), or a list of body ids.
  */
 import type { DefLibrary } from '../core/contracts/defs';
 import type { RockField, RockInstance, SurfaceKind, TerrainProvider, TerrainResidency, TileSource } from '../core/contracts/terrain';
@@ -12,7 +27,8 @@ import { BodyTerrain } from './body';
 import { CollisionSurface } from './collision';
 import { tangentBasis } from './discTiles';
 import { toInstance } from './rocks';
-import { TileStore } from './tileStore';
+import type { SharedTileStore } from './sharedStore';
+import { TileStore, type LayerRef } from './tileStore';
 
 export interface TerrainProviderOptions {
   /** Byte budget of the decoded-tile cache (resident pyramid + pins + LRU), default 384 MiB. */
@@ -26,6 +42,16 @@ export interface TerrainProviderOptions {
    * manifest.residentHeightLevel). Workers may pass a lower level to save memory.
    */
   residentLevel?: number;
+  /**
+   * Bodies loaded at creation and held for the provider's life; every other served body is lazy (the module
+   * comment). Default 'all'.
+   */
+  preload?: 'all' | 'launchSystems' | readonly string[];
+  /**
+   * The shard-wide decoded-tile store to take every tile from instead of decoding from the tile source
+   * (src/terrain/sharedStore.ts; ARCHITECTURE 10.5). Manifests still come from the tile source.
+   */
+  sharedStore?: SharedTileStore;
 }
 
 /** Products and preparation for the renderer's tile workers. */
@@ -59,6 +85,10 @@ export interface TerrainDiagnostics {
   /** Shared height samples rewritten by seam reconciliation (tiles quantised with different scales), per body. */
   seamWrites: Record<string, number>;
   cache: { tiles: number; resident: number; pending: number; bytes: number; budget: number };
+  /** Per served body: 'preloaded', 'loaded' (lazy, held), 'loading' or 'unloaded', and the slots holding a lazy one. */
+  residency: Record<string, { state: 'preloaded' | 'loaded' | 'loading' | 'unloaded'; holders: string[] }>;
+  /** Synchronous queries answered from the datum because their body was not loaded, per body. */
+  unloadedQueries: Record<string, number>;
 }
 
 export interface HeightParts {
@@ -81,6 +111,17 @@ export type TerrainAuthority = TerrainProvider &
     heightParts(bodyId: string, dir: Vec3, lambdaMin: number): HeightParts;
     /** Ids of the bodies served. */
     readonly bodyIds: readonly string[];
+    /** Ids of the bodies preloaded at creation (held for the provider's life). */
+    readonly preloadedIds: readonly string[];
+    /** Ids of the served bodies loaded now (preloaded, and lazy ones some slot holds), sorted. */
+    loadedBodies(): string[];
+    /**
+     * Load a lazy body (manifest, resident pyramid, flatten discs) and hold it under `slot` (default
+     * 'body:<id>'): resolves when its resident pyramid is in. A preloaded body is loaded already.
+     */
+    loadBody(bodyId: string, slot?: string): Promise<void>;
+    /** Let go of a slot: its pinned tiles become evictable, and a lazy body no slot holds any more is released. */
+    release(slot: string): void;
   };
 
 const DEFAULT_CACHE_BYTES = 384 * 1024 * 1024;
@@ -92,45 +133,143 @@ interface BodyRuntime {
   baker: TileBaker;
 }
 
+/**
+ * The planet systems of the library's launch sites: every body whose system (the highest ancestor that is not
+ * the star and whose parent is the star or nothing) is that of a site's body. Null when the library has no site.
+ */
+function launchSystemBodies(defs: DefLibrary): Set<string> | null {
+  const siteBodies = Object.values(defs.sites).map((s) => s.bodyId);
+  if (!siteBodies.length) return null;
+  const isStar = (id: string): boolean => (defs.bodies[id]?.emission ?? null) !== null;
+  const systemOf = (id: string): string => {
+    let cur = id;
+    for (;;) {
+      const p = defs.bodies[cur]?.parent ?? null;
+      if (p === null || isStar(p)) return cur;
+      cur = p;
+    }
+  };
+  const systems = new Set(siteBodies.map(systemOf));
+  return new Set(Object.keys(defs.bodies).filter((id) => !isStar(id) && systems.has(systemOf(id))));
+}
+
+interface LazyBody {
+  /** Bumped at every release, so a load that a release overtook does not install its runtime. */
+  generation: number;
+  loading: Promise<void> | null;
+  holders: Set<string>;
+  refs: LayerRef[];
+}
+
 export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSource, opts: TerrainProviderOptions = {}): Promise<TerrainAuthority> {
-  const store = new TileStore(tileSource, opts.cacheBytes ?? DEFAULT_CACHE_BYTES);
+  const store = new TileStore(tileSource, opts.cacheBytes ?? DEFAULT_CACHE_BYTES, opts.sharedStore ?? null);
   const sites = Object.values(defs.sites);
   const ids = (opts.bodies ?? Object.keys(defs.bodies).filter((id) => defs.bodies[id]!.terrain !== null)).slice().sort();
-  const bodies = new Map<string, BodyRuntime>();
   for (const id of ids) {
     const def = defs.bodies[id];
     if (!def) throw new Error(`createTerrainProvider: unknown body "${id}"`);
     if (!def.terrain) throw new Error(`createTerrainProvider: body "${id}" has no terrain definition`);
-    const manifest = await tileSource.manifest(def.terrain.tileset);
-    const terrain = new BodyTerrain(def, manifest, store, sites, opts.residentLevel);
-    bodies.set(id, {
-      terrain,
-      collision: new CollisionSurface(terrain, opts.collisionCacheTiles ?? DEFAULT_COLLISION_TILES),
-      baker: new TileBaker(terrain),
-    });
   }
-  // Resident pyramid (pinned forever).
-  for (const b of bodies.values()) await store.ensure(b.terrain.pyramidRequests(b.terrain.residentLevel), null, true);
-  // Resolve 'sample' flatten-disc elevations from final data at the disc centres.
-  for (const b of bodies.values()) {
+  const pre = opts.preload ?? 'all';
+  const launch = pre === 'launchSystems' ? launchSystemBodies(defs) : null;
+  if (typeof pre !== 'string') for (const id of pre) if (!ids.includes(id)) throw new Error(`createTerrainProvider: preload names "${id}", which this provider does not serve (served: ${ids.join(', ')})`);
+  const preloaded = ids.filter((id) => (pre === 'all' ? true : pre === 'launchSystems' ? launch === null || launch.has(id) : pre.includes(id)));
+  const bodies = new Map<string, BodyRuntime>();
+  const makeRuntime = (id: string, manifest: Awaited<ReturnType<TileSource['manifest']>>): BodyRuntime => {
+    const terrain = new BodyTerrain(defs.bodies[id]!, manifest, store, sites, opts.residentLevel);
+    return { terrain, collision: new CollisionSurface(terrain, opts.collisionCacheTiles ?? DEFAULT_COLLISION_TILES), baker: new TileBaker(terrain) };
+  };
+  /** Resolve the 'sample' flatten-disc elevations of a body from final data at the disc centres. */
+  const sampleDiscs = async (b: BodyRuntime, slot: string): Promise<void> => {
     const t = b.terrain;
     for (const disc of t.discs) {
       if (!disc.sample) continue;
       const centre = { x: disc.cx, y: disc.cy, z: disc.cz };
-      await store.ensure(t.discRequests(centre, 1), '__disc-elevation');
+      await store.ensure(t.discRequests(centre, 1), slot);
       t.main.setDir(centre.x, centre.y, centre.z);
       t.main.incomplete = false;
       const h = t.main.naturalDataHeight();
       if (t.main.incomplete) throw new Error(`${disc.source}: data at the disc centre did not load`);
       disc.elevation = h;
     }
-    await store.ensure([], '__disc-elevation');
+    await store.ensure([], slot);
+  };
+  // The preloaded bodies: v1's sequence exactly (every manifest, then every pyramid pinned forever, then the discs).
+  for (const id of preloaded) bodies.set(id, makeRuntime(id, await tileSource.manifest(defs.bodies[id]!.terrain!.tileset)));
+  for (const id of preloaded) {
+    const b = bodies.get(id)!;
+    await store.ensure(b.terrain.pyramidRequests(b.terrain.residentLevel), null, true);
   }
+  for (const id of preloaded) await sampleDiscs(bodies.get(id)!, '__disc-elevation');
+
+  // Lazy bodies (the module comment).
+  const lazy = new Map<string, LazyBody>();
+  for (const id of ids) if (!preloaded.includes(id)) lazy.set(id, { generation: 0, loading: null, holders: new Set(), refs: [] });
+  /** The body each slot holds (its latest request named it). */
+  const slotBody = new Map<string, string>();
+  const unloadedQueries: Record<string, number> = {};
+
+  const releaseBody = (id: string): void => {
+    const l = lazy.get(id)!;
+    l.generation++;
+    l.loading = null;
+    if (bodies.has(id)) {
+      store.releaseSlot(`__resident:${id}`);
+      store.dropLayers(l.refs);
+      bodies.delete(id);
+    }
+  };
+  /** Point `slot` at `bodyId`; the lazy body it held before is released when nothing else holds it. */
+  const holdWith = (slot: string, bodyId: string): void => {
+    const prev = slotBody.get(slot);
+    if (prev === bodyId) return;
+    slotBody.set(slot, bodyId);
+    lazy.get(bodyId)?.holders.add(slot);
+    if (prev !== undefined) {
+      const l = lazy.get(prev);
+      if (l) {
+        l.holders.delete(slot);
+        if (l.holders.size === 0) releaseBody(prev);
+      }
+    }
+  };
+  const load = (id: string): Promise<void> => {
+    const l = lazy.get(id);
+    if (!l || (bodies.has(id) && l.loading === null)) return Promise.resolve();
+    if (l.loading) return l.loading;
+    const gen = l.generation;
+    const job = (async (): Promise<void> => {
+      const manifest = await tileSource.manifest(defs.bodies[id]!.terrain!.tileset);
+      if (l.generation !== gen) return;
+      const b = makeRuntime(id, manifest);
+      l.refs = b.terrain.lcRef ? [b.terrain.heightRef, b.terrain.lcRef] : [b.terrain.heightRef];
+      bodies.set(id, b);
+      await store.ensure(b.terrain.pyramidRequests(b.terrain.residentLevel), `__resident:${id}`);
+      if (l.generation !== gen) return;
+      await sampleDiscs(b, `__disc-elevation:${id}`);
+    })();
+    l.loading = job.then(() => {
+      if (l.generation === gen) l.loading = null;
+    });
+    return l.loading;
+  };
 
   const get = (bodyId: string): BodyRuntime => {
     const b = bodies.get(bodyId);
-    if (!b) throw new Error(`terrain: body "${bodyId}" is not served by this provider (served: ${ids.join(', ')})`);
+    if (!b) {
+      if (lazy.has(bodyId)) throw new Error(`terrain: body "${bodyId}" is not loaded (lazy residency): await ensureLoaded, prepareTile or loadBody first`);
+      throw new Error(`terrain: body "${bodyId}" is not served by this provider (served: ${ids.join(', ')})`);
+    }
     return b;
+  };
+  /** The runtime of a served body, or null when it is lazy and not loaded (the query is counted). */
+  const loaded = (bodyId: string): BodyRuntime | null => {
+    const b = bodies.get(bodyId);
+    const l = lazy.get(bodyId);
+    if (b && (!l || l.loading === null)) return b;
+    if (!b && !l) throw new Error(`terrain: body "${bodyId}" is not served by this provider (served: ${ids.join(', ')})`);
+    unloadedQueries[bodyId] = (unloadedQueries[bodyId] ?? 0) + 1;
+    return null;
   };
   const unit = (d: Vec3): Vec3 => {
     const l2 = d.x * d.x + d.y * d.y + d.z * d.z;
@@ -145,7 +284,9 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
 
   const heightAt = (bodyId: string, dir: Vec3, lambdaMin?: number): number => {
     store.tick++;
-    const b = get(bodyId);
+    const b = loaded(bodyId);
+    // a lazy body that is not loaded: the datum surface (the module comment)
+    if (!b) return 0;
     const d = unit(dir);
     if (lambdaMin === undefined) return b.collision.heightAt(d);
     const ev = b.terrain.main;
@@ -156,13 +297,37 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
 
   const authority: TerrainAuthority = {
     bodyIds: ids,
+    preloadedIds: preloaded,
+
+    loadedBodies(): string[] {
+      return [...bodies.keys()].filter((id) => lazy.get(id)?.loading == null).sort();
+    },
+
+    loadBody(bodyId: string, slot?: string): Promise<void> {
+      if (!ids.includes(bodyId)) throw new Error(`terrain: body "${bodyId}" is not served by this provider (served: ${ids.join(', ')})`);
+      holdWith(slot ?? `body:${bodyId}`, bodyId);
+      return load(bodyId);
+    },
+
+    release(slot: string): void {
+      store.releaseSlot(slot);
+      const prev = slotBody.get(slot);
+      if (prev === undefined) return;
+      slotBody.delete(slot);
+      const l = lazy.get(prev);
+      if (l) {
+        l.holders.delete(slot);
+        if (l.holders.size === 0) releaseBody(prev);
+      }
+    },
 
     heightAt,
 
     normalAt(bodyId: string, dir: Vec3, baseline: number): Vec3 {
       store.tick++;
-      const b = get(bodyId);
+      const b = loaded(bodyId);
       const d = unit(dir);
+      if (!b) return d;
       const R = b.terrain.radius;
       const half = Math.max(1e-3, baseline) / 2;
       const { ex, ey } = tangentBasis(d);
@@ -195,20 +360,39 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
 
     surfaceKind(bodyId: string, dir: Vec3): SurfaceKind {
       store.tick++;
-      const b = get(bodyId);
-      const ocean = b.terrain.def.ocean;
+      const b = loaded(bodyId);
+      const ocean = defs.bodies[bodyId]!.ocean;
       if (!ocean) return 'land';
-      return b.collision.heightAt(unit(dir)) < ocean.seaLevel ? 'water' : 'land';
+      return (b ? b.collision.heightAt(unit(dir)) : 0) < ocean.seaLevel ? 'water' : 'land';
     },
 
     ensureLoaded(bodyId: string, dir: Vec3, radius: number, slot?: string): Promise<void> {
       store.tick++;
-      const b = get(bodyId);
-      // The collision memo is allocated here (async context) rather than inside the first contact query.
-      b.collision.allocate();
-      return store.ensure(b.terrain.discRequests(unit(dir), Math.max(0, radius)), slot ?? 'default');
+      const name = slot ?? 'default';
+      const pinDisc = (): Promise<void> => {
+        const b = get(bodyId);
+        // The collision memo is allocated here (async context) rather than inside the first contact query.
+        b.collision.allocate();
+        return store.ensure(b.terrain.discRequests(unit(dir), Math.max(0, radius)), name);
+      };
+      if (!lazy.has(bodyId)) {
+        if (!bodies.has(bodyId)) get(bodyId);
+        const p = pinDisc();
+        holdWith(name, bodyId);
+        return p;
+      }
+      holdWith(name, bodyId);
+      const l = lazy.get(bodyId)!;
+      if (bodies.has(bodyId) && l.loading === null) return pinDisc();
+      const gen = l.generation;
+      return load(bodyId).then(() => {
+        // a release in between (the slot moved on): nothing to pin
+        if (l.generation !== gen || slotBody.get(name) !== bodyId) return;
+        return pinDisc();
+      });
     },
 
+    /** On a lazy body that is not loaded this throws: the protocol warms an area only after ensureLoaded resolved. */
     prewarmCollision(bodyId: string, dir: Vec3, radius: number, maxVertices: number): number {
       store.tick++;
       return get(bodyId).collision.prewarm(unit(dir), Math.max(0, radius), maxVertices);
@@ -216,7 +400,8 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
 
     residency(bodyId: string, dir: Vec3): TerrainResidency {
       store.tick++;
-      const b = get(bodyId);
+      const b = loaded(bodyId);
+      if (!b) return { residentLevel: -1, availableLevel: -1, effectiveLevel: 0, complete: false };
       const d = unit(dir);
       const ev = b.terrain.main;
       ev.setDir(d.x, d.y, d.z);
@@ -229,13 +414,15 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
     },
 
     elevationRange(bodyId: string): { min: number; max: number } {
-      const t = get(bodyId).terrain.def.terrain!;
+      if (!ids.includes(bodyId)) get(bodyId);
+      const t = defs.bodies[bodyId]!.terrain!;
       return { min: t.minElevation, max: t.maxElevation };
     },
 
     rocksNear(bodyId: string, dir: Vec3, radius: number, minRadius: number): RockInstance[] {
       store.tick++;
-      const b = get(bodyId);
+      const b = loaded(bodyId);
+      if (!b) return [];
       const model = b.terrain.model;
       if (!model.rocks) return [];
       const d = unit(dir);
@@ -252,8 +439,21 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
 
     prepareTile(bodyId: string, key: TileKey, slot?: string): Promise<void> {
       store.tick++;
-      const b = get(bodyId);
-      return store.ensure(b.terrain.tileRequests(key.face, key.level, key.x, key.y), slot ?? 'bake');
+      const name = slot ?? 'bake';
+      const pinTile = (): Promise<void> => store.ensure(get(bodyId).terrain.tileRequests(key.face, key.level, key.x, key.y), name);
+      if (!lazy.has(bodyId)) {
+        const p = pinTile();
+        holdWith(name, bodyId);
+        return p;
+      }
+      holdWith(name, bodyId);
+      const l = lazy.get(bodyId)!;
+      if (bodies.has(bodyId) && l.loading === null) return pinTile();
+      const gen = l.generation;
+      return load(bodyId).then(() => {
+        if (l.generation !== gen || slotBody.get(name) !== bodyId) return;
+        return pinTile();
+      });
     },
 
     bakeGeometry(bodyId: string, key: TileKey): GeometryBake {
@@ -291,7 +491,14 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
         prewarm[id] = b.collision.prewarmState;
         seamWrites[id] = b.terrain.seams.writes;
       }
-      return { vertexEvaluations, collisionTiles, collisionMemoBytes, prewarmWork, prewarm, seamWrites, cache: store.stats() };
+      const residency: TerrainDiagnostics['residency'] = {};
+      for (const id of ids) {
+        const l = lazy.get(id);
+        residency[id] = !l
+          ? { state: 'preloaded', holders: [] }
+          : { state: l.loading !== null ? 'loading' : bodies.has(id) ? 'loaded' : 'unloaded', holders: [...l.holders].sort() };
+      }
+      return { vertexEvaluations, collisionTiles, collisionMemoBytes, prewarmWork, prewarm, seamWrites, cache: store.stats(), residency, unloadedQueries: { ...unloadedQueries } };
     },
 
     cachedTiles(): string[] {

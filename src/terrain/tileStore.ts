@@ -13,6 +13,7 @@ import type { FaceId } from '../core/geo/cubeSphere';
 import type { TileSource } from '../core/contracts/terrain';
 import { decodeTileFile, HEIGHT_TILE_BORDER, HEIGHT_TILE_STORED, IMAGE_TILE_SIZE } from '../core/geo/tileCodec';
 import type { LayerCoverage } from './coverage';
+import type { SharedTileStore } from './sharedStore';
 import { tileNumber } from './util';
 
 /** Fixed bookkeeping cost per entry counted against the budget, bytes. */
@@ -57,6 +58,10 @@ export class TileEntry {
   data: Uint8Array | null = null;
   /** Height tiles: bit mask of the reconciled seam bands (seams.ts); 0xff = every shared sample canonical. */
   seamDone = 0;
+  /** True while `q` is a view into a SharedTileStore (read-only: seam reconciliation copies it before it writes). */
+  sharedQ = false;
+  /** The shared store holds this tile for this entry (acquired and not yet released). */
+  sharedHeld = false;
   lastUse = 0;
   pins = 0;
   permanent = false;
@@ -94,7 +99,14 @@ export class TileStore {
   constructor(
     private readonly source: TileSource,
     readonly budgetBytes: number,
+    /** The shard-wide decoded-tile store the tiles are read from instead of the source (ARCHITECTURE 10.5), if any. */
+    private readonly shared: SharedTileStore | null = null,
   ) {}
+
+  /** Bytes an entry costs this cache: the decoded tile, or only the bookkeeping when the tile lives in a shared store. */
+  private cost(e: TileEntry): number {
+    return this.shared ? ENTRY_OVERHEAD : e.ref.bytesPerTile;
+  }
 
   /** Resident entry or undefined; marks the tile as used by the current call (also while pending). */
   get(ref: LayerRef, level: number, num: number): TileEntry | undefined {
@@ -170,14 +182,14 @@ export class TileStore {
 
     // Make room for the new entries (synchronously, in call order).
     let need = 0;
-    for (const e of fresh) need += e.ref.bytesPerTile;
+    for (const e of fresh) need += this.cost(e);
     if (this.bytesUsed + need > this.budgetBytes) {
       const victims: TileEntry[] = [];
       for (const e of this.all) if (e.pins === 0 && !e.permanent && !seen.has(e)) victims.push(e);
       victims.sort((a, b) => a.lastUse - b.lastUse || a.seq - b.seq);
       let freed = 0;
       let k = 0;
-      while (this.bytesUsed - freed + need > this.budgetBytes && k < victims.length) freed += victims[k++]!.ref.bytesPerTile;
+      while (this.bytesUsed - freed + need > this.budgetBytes && k < victims.length) freed += this.cost(victims[k++]!);
       if (this.bytesUsed - freed + need > this.budgetBytes) {
         // Undo the pin change and refuse: the caller asked for more than the budget can hold.
         if (slot !== null) {
@@ -197,10 +209,44 @@ export class TileStore {
     for (const e of fresh) {
       e.ref.maps[e.level]!.set(e.num, e);
       this.all.add(e);
-      this.bytesUsed += e.ref.bytesPerTile;
+      this.bytesUsed += this.cost(e);
       e.promise = this.load(e);
     }
     return Promise.all(wanted.map((e) => e.promise!)).then(() => undefined);
+  }
+
+  /**
+   * Release a slot: its pins are dropped (the tiles become evictable). The slot's name may be used again.
+   */
+  releaseSlot(slot: string): void {
+    const previous = this.slots.get(slot);
+    if (!previous) return;
+    for (const e of previous) e.pins--;
+    this.slots.delete(slot);
+  }
+
+  /** Names of the slots that pin at least one tile of `refs` (a body's layers). */
+  slotsHolding(refs: readonly LayerRef[]): string[] {
+    const out: string[] = [];
+    for (const [name, list] of this.slots) if (list.some((e) => refs.includes(e.ref))) out.push(name);
+    return out.sort();
+  }
+
+  /**
+   * Remove every entry of the layers `refs` from the cache (a body released by lazy residency): permanent and
+   * pinned ones included, pending loads discard their result. The slots that pinned them keep only their other
+   * tiles.
+   */
+  dropLayers(refs: readonly LayerRef[]): void {
+    for (const [name, list] of this.slots) {
+      const kept = list.filter((e) => !refs.includes(e.ref));
+      if (kept.length !== list.length) {
+        for (const e of list) if (refs.includes(e.ref)) e.pins--;
+        if (kept.length) this.slots.set(name, kept);
+        else this.slots.delete(name);
+      }
+    }
+    for (const e of [...this.all]) if (refs.includes(e.ref)) this.remove(e);
   }
 
   private remove(e: TileEntry): void {
@@ -208,7 +254,11 @@ export class TileStore {
     e.removed = true;
     e.ref.maps[e.level]?.delete(e.num);
     this.all.delete(e);
-    this.bytesUsed -= e.ref.bytesPerTile;
+    this.bytesUsed -= this.cost(e);
+    if (this.shared && e.sharedHeld) {
+      e.sharedHeld = false;
+      this.shared.release({ tileset: e.ref.tileset, layer: e.ref.layer, face: e.face, level: e.level, x: e.x, y: e.y });
+    }
     if (e.state === 'resident') e.ref.generation++;
     e.q = null;
     e.data = null;
@@ -216,6 +266,7 @@ export class TileStore {
 
   private async load(e: TileEntry): Promise<void> {
     const key = { face: e.face as FaceId, level: e.level, x: e.x, y: e.y };
+    if (this.shared) return this.loadShared(e);
     try {
       const bytes = await this.source.tile(e.ref.tileset, e.ref.layer, key);
       if (bytes === null) throw new Error(`tile ${e.ref.tileset}/${e.ref.layer}/${e.face}/${e.level}/${e.x}/${e.y}: the tile source returned no data for a tile the manifest promises`);
@@ -237,6 +288,38 @@ export class TileStore {
         if (raster.kind !== 'u8' || raster.width !== IMAGE_TILE_SIZE || raster.height !== IMAGE_TILE_SIZE || raster.channels !== e.ref.channels)
           throw new Error(`tile ${e.ref.tileset}/${e.ref.layer}/${e.face}/${e.level}/${e.x}/${e.y}: expected a ${IMAGE_TILE_SIZE}x${IMAGE_TILE_SIZE}x${e.ref.channels} FRT1 u8 tile`);
         e.data = raster.data;
+      }
+      e.state = 'resident';
+      if (e.ref.onResident) e.ref.onResident(e);
+      e.ref.generation++;
+    } catch (err) {
+      this.remove(e);
+      throw err;
+    }
+  }
+
+  /** A tile taken from the shared store: its decoded samples as they are there (no copy, no decode). */
+  private async loadShared(e: TileEntry): Promise<void> {
+    const id = { tileset: e.ref.tileset, layer: e.ref.layer, face: e.face, level: e.level, x: e.x, y: e.y };
+    try {
+      const t = await this.shared!.acquire(id);
+      if (t !== null && e.removed) {
+        this.shared!.release(id);
+        return;
+      }
+      if (t !== null) e.sharedHeld = true;
+      if (t === null) throw new Error(`tile ${e.ref.tileset}/${e.ref.layer}/${e.face}/${e.level}/${e.x}/${e.y}: the shared tile store has no data for a tile the manifest promises`);
+      if (e.ref.kind === 'height') {
+        if (t.kind !== 'height' || t.q.length !== HEIGHT_TILE_STORED * HEIGHT_TILE_STORED) throw new Error(`tile ${id.tileset}/${id.layer}: the shared store holds no ${HEIGHT_TILE_STORED}x${HEIGHT_TILE_STORED} height tile there`);
+        e.q = t.q;
+        e.sharedQ = true;
+        e.scale = t.scale;
+        e.offset = t.offset;
+        e.hMin = t.hMin;
+        e.hMax = t.hMax;
+      } else {
+        if (t.kind !== 'u8' || t.channels !== e.ref.channels || t.data.length !== IMAGE_TILE_SIZE * IMAGE_TILE_SIZE * t.channels) throw new Error(`tile ${id.tileset}/${id.layer}: the shared store holds no matching u8 tile there`);
+        e.data = t.data;
       }
       e.state = 'resident';
       if (e.ref.onResident) e.ref.onResident(e);

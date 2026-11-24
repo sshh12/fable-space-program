@@ -91,7 +91,8 @@ export class BodyTerrain implements EvalBody {
     this.lcClassCount = Math.max(...Object.values(LANDCOVER_CLASS)) + 1;
     this.maxRenderLevel = terrain.maxRenderLevel;
     this.collisionLog2Lambda = Math.log2(meanTileSizeAt(this.radius, this.maxRenderLevel) / GEOMETRY_BAND_DIVISOR);
-    this.residentLevel = Math.min(this.g, residentLevelOverride ?? manifest.residentHeightLevel);
+    // The definition may cap the resident coarse levels (BodyTerrainDef.residentLevel; absent = the manifest's).
+    this.residentLevel = Math.min(this.g, residentLevelOverride ?? Math.min(manifest.residentHeightLevel, terrain.residentLevel ?? Infinity));
     this.seaLevel = def.ocean ? def.ocean.seaLevel : null;
     this.discs = buildFlattenDiscs(def, sites);
 

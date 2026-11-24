@@ -165,6 +165,11 @@ export class SeamReconciler {
           else if (q < -32768) q = -32768;
           const idx = this.sIdx[s]!;
           if (t.q![idx] !== q) {
+            // a tile read from a shared store is a view into shared memory: copy it before the first write
+            if (t.sharedQ) {
+              t.q = t.q!.slice();
+              t.sharedQ = false;
+            }
             t.q![idx] = q;
             this.writes++;
           }
