@@ -44,6 +44,13 @@ export interface AnalysisOptions {
   /** The body it launches from (default: the body of the library's first site by id). */
   launchBodyId?: string;
   reach?: ReachAssumptions;
+  /**
+   * What reaching a body costs from low orbit of the launch body, passing it ('flyby') and captured about it
+   * ('orbit'), m/s; efuelled: departing from the depot's high orbit with full tanks. Default: the patched-conic
+   * estimate of analyzeReach.ts. A caller outside src/sim/vessel passes solar-system-sim's deltaVToOrbit
+   * (src/sim/nav may not be imported from here: ARCHITECTURE 2, tools/dev/boundaries.test.ts).
+   */
+  reachCost?: (bodyId: string, refuelled: boolean) => { flyby: number; orbit: number } | null;
 }
 
 /** The library with `vehicle` in it (the definitions are shared, nothing is copied or written). */
@@ -374,7 +381,7 @@ export function analyzeVehicle(defs: DefLibrary, vehicle: VehicleDef, options: A
   const transferable = [...held].sort();
   const mainPropellants = new Set(structureOf(craft).engines.filter((e) => !e.def.fixedBurn).flatMap((e) => e.def.propellants.map((p) => p.resource)));
   const refillable = mainPropellants.size > 0 && [...mainPropellants].every((r) => held.has(r));
-  const reach = reachLadder(lib, body.id, deltaVInOrbit ?? ideal - toOrbit, refillable ? fullCraftDv : null, reachAssumptions);
+  const reach = reachLadder(lib, body.id, deltaVInOrbit ?? ideal - toOrbit, refillable ? fullCraftDv : null, reachAssumptions, options.reachCost);
   return {
     vehicleId: vehicle.id,
     massWet,
@@ -421,14 +428,14 @@ function fullTankDeltaV(defs: DefLibrary, vehicle: VehicleDef, k: number): numbe
 }
 
 /** The can-reach ladder, nearest first: every attractor of the library other than the launch body, passed and captured. */
-function reachLadder(defs: DefLibrary, launchId: string, available: number, refilled: number | null, a: ReachAssumptions): ReachEntry[] {
+function reachLadder(defs: DefLibrary, launchId: string, available: number, refilled: number | null, a: ReachAssumptions, cost?: AnalysisOptions['reachCost']): ReachEntry[] {
   const out: ReachEntry[] = [];
   const heo = refilled !== null ? refuelOrbitPerigeeSpeed(defs, launchId, a) : null;
   for (const b of Object.values(defs.bodies).sort((x, y) => (x.id < y.id ? -1 : 1))) {
     if (b.id === launchId || b.gravityRole !== 'attractor') continue;
-    const direct = transferCost(defs, launchId, b.id, a);
+    const direct = cost ? cost(b.id, false) : transferCost(defs, launchId, b.id, a);
     if (!direct) continue;
-    const viaDepot = refilled !== null && heo ? transferCost(defs, launchId, b.id, a, heo.speed) : null;
+    const viaDepot = refilled !== null && heo ? (cost ? cost(b.id, true) : transferCost(defs, launchId, b.id, a, heo.speed)) : null;
     for (const kind of ['flyby', 'orbit'] as const) {
       const need = direct[kind];
       const margin = available - need;

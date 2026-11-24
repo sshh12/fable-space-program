@@ -29,7 +29,7 @@
       "parent": null,
       "resources": {
         "dp-tank": {
-          "LH2": 45000
+          "LH2": 50000
         }
       }
     }
