@@ -1,0 +1,49 @@
+{
+  "id": "meridian-albatross",
+  "name": "Meridian / Albatross nuclear cruiser",
+  "uses": [
+    {
+      "assembly": "meridian-core",
+      "prefix": "core",
+      "parent": "sc-adapter",
+      "parentNode": "bottom",
+      "node": "top"
+    },
+    {
+      "assembly": "albatross",
+      "prefix": "sc",
+      "parent": null
+    }
+  ],
+  "padInterface": {
+    "class": "heavy",
+    "umbilicals": [
+      {
+        "y": -20,
+        "radius": 4.5
+      },
+      {
+        "y": -50,
+        "radius": 4.5
+      },
+      {
+        "y": -80,
+        "radius": 4.5
+      }
+    ]
+  },
+  "parts": [],
+  "stageGroups": [],
+  "stages": [],
+  "abort": [],
+  "actionGroups": {},
+  "crew": [],
+  "cockpit": null,
+  "cameras": {
+    "chase": {
+      "defaultDistance": 160,
+      "minDistance": 12,
+      "maxDistance": 4000
+    }
+  }
+}

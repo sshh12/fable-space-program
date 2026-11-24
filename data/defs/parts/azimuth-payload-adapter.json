@@ -1,0 +1,132 @@
+{
+  "id": "azimuth-payload-adapter",
+  "name": "Azimuth payload adapter and separation ring",
+  "category": "decoupler",
+  "dryMass": 40,
+  "comOffset": [
+    0,
+    0.2,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 0.95,
+    "h": 0.4
+  },
+  "bounds": {
+    "radius": 1.1,
+    "yMin": 0,
+    "yMax": 0.4
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        0.4,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 1.6
+    },
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 2.2
+    }
+  ],
+  "crossfeed": false,
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 6.565929,
+        "normal": "axisym",
+        "noseRadius": 1.1,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 6000,
+        "maxTemp": 800
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        0,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0.952628,
+        0,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0.952628,
+        0,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        0,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -0.952628,
+        0,
+        -0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -0.952628,
+        0,
+        0.55
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 15
+  },
+  "modules": [
+    {
+      "type": "decoupler",
+      "impulse": 300,
+      "separationPlaneY": 0.4
+    }
+  ],
+  "visual": null
+}

@@ -1,0 +1,349 @@
+{
+  "id": "kestrel-lf",
+  "name": "Kestrel LF crew ferry",
+  "parts": [
+    {
+      "id": "capsule",
+      "def": "kestrel-capsule",
+      "parent": null,
+      "stageGroup": "capsule"
+    },
+    {
+      "id": "apex-cover",
+      "def": "kestrel-apex-cover",
+      "parent": "capsule",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "capsule"
+    },
+    {
+      "id": "port",
+      "def": "dock-port-c",
+      "parent": "apex-cover",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "capsule"
+    },
+    {
+      "id": "les",
+      "def": "kestrel-les",
+      "parent": "port",
+      "parentNode": "face",
+      "node": "bottom",
+      "stageGroup": "les"
+    },
+    {
+      "id": "les-jettison-motor",
+      "def": "kestrel-les-jettison-motor",
+      "parent": "les",
+      "position": [
+        0,
+        3.869617,
+        0
+      ],
+      "stageGroup": "les-jettison"
+    },
+    {
+      "id": "capsule-adapter",
+      "def": "heron-capsule-adapter",
+      "parent": "capsule",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "sm"
+    },
+    {
+      "id": "sm",
+      "def": "plover-sm",
+      "parent": "capsule-adapter",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "sm"
+    },
+    {
+      "id": "lyra-a",
+      "def": "lyra-a",
+      "parent": "sm",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "sm"
+    },
+    {
+      "id": "quad-1",
+      "def": "rcs-quad-220",
+      "parent": "sm",
+      "position": [
+        1.414214,
+        2.2,
+        1.414214
+      ],
+      "rotationDeg": [
+        -90,
+        225,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 0,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "sm"
+    },
+    {
+      "id": "quad-2",
+      "def": "rcs-quad-220",
+      "parent": "sm",
+      "position": [
+        1.414214,
+        2.2,
+        -1.414214
+      ],
+      "rotationDeg": [
+        -90,
+        315,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 1,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "sm"
+    },
+    {
+      "id": "quad-3",
+      "def": "rcs-quad-220",
+      "parent": "sm",
+      "position": [
+        -1.414214,
+        2.2,
+        -1.414214
+      ],
+      "rotationDeg": [
+        -90,
+        45,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 2,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "sm"
+    },
+    {
+      "id": "quad-4",
+      "def": "rcs-quad-220",
+      "parent": "sm",
+      "position": [
+        -1.414214,
+        2.2,
+        1.414214
+      ],
+      "rotationDeg": [
+        -90,
+        135,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 3,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "sm"
+    },
+    {
+      "id": "sm-adapter",
+      "def": "adapter-4m-6m6",
+      "parent": "sm",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "adapter"
+    },
+    {
+      "id": "sm-fairing",
+      "def": "kestrel-sm-fairing",
+      "parent": "sm-adapter",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "sm-fairing"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "capsule",
+      "label": "Kestrel capsule"
+    },
+    {
+      "id": "les",
+      "label": "Launch escape motor"
+    },
+    {
+      "id": "les-jettison",
+      "label": "Tower jettison motor"
+    },
+    {
+      "id": "sm",
+      "label": "Plover service module"
+    },
+    {
+      "id": "adapter",
+      "label": "Payload adapter"
+    },
+    {
+      "id": "sm-fairing",
+      "label": "Service module fairing"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Tower and fairing jettison",
+      "icon": "fairing",
+      "actions": [
+        {
+          "kind": "fireSeparationMotors",
+          "parts": [
+            "les-jettison-motor"
+          ]
+        },
+        {
+          "kind": "jettisonLES",
+          "part": "les"
+        },
+        {
+          "kind": "jettisonFairing",
+          "part": "sm-fairing"
+        }
+      ]
+    },
+    {
+      "label": "Spacecraft separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "decouple",
+          "part": "sm-adapter"
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "quad-1",
+            "quad-2",
+            "quad-3",
+            "quad-4"
+          ],
+          "delay": 0.5
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "lyra-a"
+          ],
+          "delay": 2
+        }
+      ]
+    },
+    {
+      "label": "Service module jettison",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "shutdownEngines",
+          "parts": [
+            "lyra-a"
+          ]
+        },
+        {
+          "kind": "decouple",
+          "part": "capsule-adapter",
+          "delay": 0.8
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "capsule"
+          ],
+          "delay": 0.8
+        }
+      ]
+    },
+    {
+      "label": "Drogues",
+      "icon": "chute",
+      "actions": [
+        {
+          "kind": "decouple",
+          "part": "apex-cover"
+        },
+        {
+          "kind": "deployParachute",
+          "parts": [
+            "capsule"
+          ],
+          "mode": "drogue",
+          "delay": 0.4
+        }
+      ]
+    },
+    {
+      "label": "Mains",
+      "icon": "chute",
+      "actions": [
+        {
+          "kind": "cutParachute",
+          "parts": [
+            "capsule"
+          ]
+        },
+        {
+          "kind": "deployParachute",
+          "parts": [
+            "capsule"
+          ],
+          "mode": "main",
+          "delay": 0.5
+        }
+      ]
+    }
+  ],
+  "abort": [
+    {
+      "kind": "shutdownEngines",
+      "parts": [
+        "lyra-a"
+      ]
+    },
+    {
+      "kind": "igniteEngines",
+      "parts": [
+        "les"
+      ]
+    },
+    {
+      "kind": "decouple",
+      "part": "capsule-adapter"
+    },
+    {
+      "kind": "enableRcs",
+      "parts": [
+        "capsule"
+      ]
+    },
+    {
+      "kind": "fireSeparationMotors",
+      "parts": [
+        "les-jettison-motor"
+      ],
+      "delay": 14
+    },
+    {
+      "kind": "jettisonLES",
+      "part": "les",
+      "delay": 14
+    }
+  ],
+  "actionGroups": {}
+}

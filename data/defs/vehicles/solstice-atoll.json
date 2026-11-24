@@ -1,0 +1,45 @@
+{
+  "id": "solstice-atoll",
+  "name": "Solstice / Atoll station core",
+  "uses": [
+    {
+      "assembly": "solstice",
+      "prefix": "lv",
+      "parent": "sc-adapter",
+      "parentNode": "bottom",
+      "node": "top"
+    },
+    {
+      "assembly": "atoll",
+      "prefix": "sc",
+      "parent": null
+    }
+  ],
+  "padInterface": {
+    "class": "medium",
+    "umbilicals": [
+      {
+        "y": -14,
+        "radius": 3.3
+      },
+      {
+        "y": -33,
+        "radius": 3.3
+      }
+    ]
+  },
+  "parts": [],
+  "stageGroups": [],
+  "stages": [],
+  "abort": [],
+  "actionGroups": {},
+  "crew": [],
+  "cockpit": null,
+  "cameras": {
+    "chase": {
+      "defaultDistance": 100,
+      "minDistance": 8,
+      "maxDistance": 2500
+    }
+  }
+}

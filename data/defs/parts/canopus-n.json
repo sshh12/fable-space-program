@@ -1,0 +1,143 @@
+{
+  "id": "canopus-n",
+  "name": "Canopus-N nuclear thermal engine",
+  "category": "engine",
+  "dryMass": 3300,
+  "comOffset": [
+    0,
+    -2.31,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 0.63,
+    "h": 6.6
+  },
+  "bounds": {
+    "radius": 1.05,
+    "yMin": -6.6,
+    "yMax": 0
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 1.2
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 30.479732,
+        "normal": "axisym",
+        "noseRadius": 1.05,
+        "emissivity": 0.7,
+        "arealHeatCapacity": 12000,
+        "maxTemp": 1300
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        -6.5,
+        0
+      ],
+      "radius": 0.1,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0,
+        -6.55,
+        1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        1,
+        -6.55,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0,
+        -6.55,
+        -1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        -1,
+        -6.55,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 6
+  },
+  "modules": [
+    {
+      "type": "engine",
+      "thrustVac": 250000,
+      "ispVac": 900,
+      "ispSL": 380,
+      "minThrottle": 0.5,
+      "throttleable": true,
+      "spoolUp": 6.7,
+      "spoolDown": 10,
+      "maxIgnitions": null,
+      "propellants": [
+        {
+          "resource": "LH2",
+          "ratio": 1
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            0,
+            -6.6,
+            0
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "exitDiameter": 2,
+          "exitPressure": 2000
+        }
+      ],
+      "gimbal": {
+        "rangeDeg": 4,
+        "rateDegPerS": 2
+      },
+      "chamberPressure": 7000000,
+      "plume": "plume.hydrolox-vacuum",
+      "sound": "engine.hydrolox-vacuum"
+    }
+  ],
+  "visual": null
+}

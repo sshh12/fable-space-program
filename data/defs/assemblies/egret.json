@@ -1,0 +1,205 @@
+{
+  "id": "egret",
+  "name": "Egret lunar ferry",
+  "parts": [
+    {
+      "id": "cabin",
+      "def": "egret-cabin",
+      "parent": null,
+      "stageGroup": "egret"
+    },
+    {
+      "id": "port",
+      "def": "dock-port-c",
+      "parent": "cabin",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "egret"
+    },
+    {
+      "id": "tank",
+      "def": "egret-tank",
+      "parent": "cabin",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "egret"
+    },
+    {
+      "id": "lyra-d",
+      "def": "lyra-d",
+      "parent": "tank",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "egret"
+    },
+    {
+      "id": "legs",
+      "def": "heron-landing-legs",
+      "parent": "tank",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "stageGroup": "egret"
+    },
+    {
+      "id": "quad-1",
+      "def": "rcs-quad-440",
+      "parent": "tank",
+      "position": [
+        0,
+        2.6,
+        3
+      ],
+      "rotationDeg": [
+        -90,
+        180,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 0,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "egret"
+    },
+    {
+      "id": "quad-2",
+      "def": "rcs-quad-440",
+      "parent": "tank",
+      "position": [
+        3,
+        2.6,
+        0
+      ],
+      "rotationDeg": [
+        -90,
+        270,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 1,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "egret"
+    },
+    {
+      "id": "quad-3",
+      "def": "rcs-quad-440",
+      "parent": "tank",
+      "position": [
+        0,
+        2.6,
+        -3
+      ],
+      "rotationDeg": [
+        -90,
+        0,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 2,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "egret"
+    },
+    {
+      "id": "quad-4",
+      "def": "rcs-quad-440",
+      "parent": "tank",
+      "position": [
+        -3,
+        2.6,
+        0
+      ],
+      "rotationDeg": [
+        -90,
+        90,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 3,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "egret"
+    },
+    {
+      "id": "adapter",
+      "def": "meridian-payload-adapter",
+      "parent": "tank",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "adapter"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "egret",
+      "label": "Egret"
+    },
+    {
+      "id": "adapter",
+      "label": "Payload adapter"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Ferry separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "decouple",
+          "part": "adapter"
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "quad-1",
+            "quad-2",
+            "quad-3",
+            "quad-4"
+          ],
+          "delay": 0.5
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "lyra-d"
+          ],
+          "delay": 2
+        }
+      ]
+    },
+    {
+      "label": "Landing gear",
+      "icon": "legs",
+      "actions": [
+        {
+          "kind": "deployLegs",
+          "parts": [
+            "legs"
+          ]
+        }
+      ]
+    }
+  ],
+  "abort": [],
+  "actionGroups": {
+    "legs": [
+      {
+        "kind": "deployLegs",
+        "parts": [
+          "legs"
+        ]
+      }
+    ]
+  }
+}

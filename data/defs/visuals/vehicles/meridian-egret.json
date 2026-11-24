@@ -1,0 +1,15 @@
+{
+  "vehicle": "meridian-egret",
+  "title": "Meridian / Egret",
+  "tagline": "Reusable lunar ferry",
+  "description": "A single-stage lander that shuttles between lunar orbit and the surface and refuels from a depot. It has no heat shield: crews come home in a Kestrel.",
+  "role": "lunar ferry",
+  "tags": [
+    "heavy",
+    "moon",
+    "landing",
+    "refuelling"
+  ],
+  "difficulty": "advanced",
+  "firstOffer": false
+}

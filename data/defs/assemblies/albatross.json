@@ -1,0 +1,280 @@
+{
+  "id": "albatross",
+  "name": "Albatross nuclear cruiser",
+  "parts": [
+    {
+      "id": "hab",
+      "def": "albatross-hab",
+      "parent": null,
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "nose-port",
+      "def": "dock-port-c",
+      "parent": "hab",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "truss",
+      "def": "truss-9m",
+      "parent": "hab",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "tank-1",
+      "def": "tank-lh2-9m",
+      "parent": "truss",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "side-port",
+      "def": "dock-port-h",
+      "parent": "tank-1",
+      "position": [
+        4.5,
+        10.4,
+        0
+      ],
+      "rotationDeg": [
+        -90,
+        270,
+        0
+      ],
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "quad-1",
+      "def": "rcs-quad-440",
+      "parent": "tank-1",
+      "position": [
+        3.181981,
+        6,
+        3.181981
+      ],
+      "rotationDeg": [
+        -90,
+        225,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 0,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "quad-2",
+      "def": "rcs-quad-440",
+      "parent": "tank-1",
+      "position": [
+        3.181981,
+        6,
+        -3.181981
+      ],
+      "rotationDeg": [
+        -90,
+        315,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 1,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "quad-3",
+      "def": "rcs-quad-440",
+      "parent": "tank-1",
+      "position": [
+        -3.181981,
+        6,
+        -3.181981
+      ],
+      "rotationDeg": [
+        -90,
+        45,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 2,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "quad-4",
+      "def": "rcs-quad-440",
+      "parent": "tank-1",
+      "position": [
+        -3.181981,
+        6,
+        3.181981
+      ],
+      "rotationDeg": [
+        -90,
+        135,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 3,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "tank-2",
+      "def": "tank-lh2-9m",
+      "parent": "tank-1",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "thrust",
+      "def": "thrust-structure-9m",
+      "parent": "tank-2",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "ntr-1",
+      "def": "canopus-n",
+      "parent": "thrust",
+      "parentNode": "engine-1",
+      "node": "top",
+      "symmetry": {
+        "group": "ntr",
+        "index": 0,
+        "count": 3,
+        "mode": "radial"
+      },
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "ntr-2",
+      "def": "canopus-n",
+      "parent": "thrust",
+      "parentNode": "engine-2",
+      "node": "top",
+      "symmetry": {
+        "group": "ntr",
+        "index": 1,
+        "count": 3,
+        "mode": "radial"
+      },
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "ntr-3",
+      "def": "canopus-n",
+      "parent": "thrust",
+      "parentNode": "engine-3",
+      "node": "top",
+      "symmetry": {
+        "group": "ntr",
+        "index": 2,
+        "count": 3,
+        "mode": "radial"
+      },
+      "stageGroup": "albatross"
+    },
+    {
+      "id": "adapter",
+      "def": "adapter-9m",
+      "parent": "thrust",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "adapter"
+    },
+    {
+      "id": "nose-cap",
+      "def": "nose-cap-9m",
+      "parent": "tank-1",
+      "parentNode": "fairing",
+      "node": "bottom",
+      "stageGroup": "nose-cap"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "albatross",
+      "label": "Albatross"
+    },
+    {
+      "id": "adapter",
+      "label": "Interstage"
+    },
+    {
+      "id": "nose-cap",
+      "label": "Nose cap"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Nose cap jettison",
+      "icon": "fairing",
+      "actions": [
+        {
+          "kind": "jettisonFairing",
+          "part": "nose-cap"
+        }
+      ]
+    },
+    {
+      "label": "Cruiser separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "decouple",
+          "part": "adapter"
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "quad-1",
+            "quad-2",
+            "quad-3",
+            "quad-4"
+          ],
+          "delay": 0.5
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "ntr-1",
+            "ntr-2",
+            "ntr-3"
+          ],
+          "delay": 3
+        }
+      ]
+    }
+  ],
+  "abort": [
+    {
+      "kind": "shutdownEngines",
+      "parts": [
+        "ntr-1",
+        "ntr-2",
+        "ntr-3"
+      ]
+    }
+  ],
+  "actionGroups": {}
+}

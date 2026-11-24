@@ -5,7 +5,7 @@
  */
 import { NEUTRAL_CONTROLS } from '@/core/contracts/controls';
 import { rememberStages } from '@/core/defs/stageWords';
-import type { DefLibrary, ModuleDef, PartDef, VehicleDef, VehiclePartPlacement } from '@/core/contracts/defs';
+import type { DefLibrary, DockingPortModuleDef, ModuleDef, PartDef, VehicleDef, VehiclePartPlacement } from '@/core/contracts/defs';
 import { DEFAULT_UNIVERSE_RULES, type LendPolicy } from '@/core/contracts/net';
 import type { ModuleState } from '@/core/contracts/sim';
 import { quat, type Quat } from '@/core/math/quat';
@@ -13,6 +13,7 @@ import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { INITIAL_PART_TEMP, type CommandRuntime, type CraftRuntime, type ModuleRt, type PartRuntime, type Vessel } from './types';
 import { assemblyId, assertIssuedId, type CraftIdSource } from './ids';
+import { asModuleState, initialPortState, refreshPortStates } from './modules/dockingPortState';
 
 export class VesselAssemblyError extends Error {
   constructor(vehicleId: string, message: string) {
@@ -22,6 +23,9 @@ export class VesselAssemblyError extends Error {
 }
 
 export function createModuleState(def: ModuleDef): ModuleState {
+  // The docking port (DockingPortModuleDef) is a module the part data states before the contract's ModuleDef
+  // union names it (request fleet-data-1); its state is DockingPortState (modules/dockingPortState.ts).
+  if ((def as ModuleDef | DockingPortModuleDef).type === 'dockingPort') return asModuleState(initialPortState());
   switch (def.type) {
     case 'command':
       return { type: 'command', crew: 0, crewAlive: true };
@@ -397,6 +401,8 @@ export function buildVehicle(defs: DefLibrary, vehicleId: string, identity: Craf
     vessel.surface = 'prelaunch';
   }
   vessel.helm.controlPart = defaultControlPart(vessel, 0);
+  // Ports: a pair mated in the file is docked, a port under a stacked part is occupied, the rest disarmed.
+  refreshPortStates(vessel);
   return vessel;
 }
 

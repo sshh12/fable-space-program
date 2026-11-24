@@ -1,0 +1,68 @@
+{
+  "id": "meridian-pelican-heavy",
+  "name": "Meridian / Pelican Heavy propellant depot",
+  "uses": [
+    {
+      "assembly": "meridian-core",
+      "prefix": "core",
+      "parent": "us-interstage",
+      "parentNode": "bottom",
+      "node": "top"
+    },
+    {
+      "assembly": "payload-nose-cap-9m",
+      "prefix": "cap",
+      "parent": "dp-tank",
+      "parentNode": "fairing",
+      "node": "bottom"
+    },
+    {
+      "assembly": "meridian-m3-stage",
+      "prefix": "us",
+      "parent": "dp-interstage",
+      "parentNode": "top",
+      "node": "top"
+    },
+    {
+      "assembly": "pelican-heavy-depot",
+      "prefix": "dp",
+      "parent": null,
+      "resources": {
+        "dp-tank": {
+          "LH2": 45000
+        }
+      }
+    }
+  ],
+  "padInterface": {
+    "class": "heavy",
+    "umbilicals": [
+      {
+        "y": -8,
+        "radius": 3.3
+      },
+      {
+        "y": -30,
+        "radius": 4.5
+      },
+      {
+        "y": -60,
+        "radius": 4.5
+      }
+    ]
+  },
+  "parts": [],
+  "stageGroups": [],
+  "stages": [],
+  "abort": [],
+  "actionGroups": {},
+  "crew": [],
+  "cockpit": null,
+  "cameras": {
+    "chase": {
+      "defaultDistance": 150,
+      "minDistance": 10,
+      "maxDistance": 3500
+    }
+  }
+}

@@ -1,0 +1,158 @@
+{
+  "id": "pelican-heavy-depot",
+  "name": "Pelican Heavy propellant depot",
+  "parts": [
+    {
+      "id": "tank",
+      "def": "tank-lh2-9m",
+      "parent": null,
+      "stageGroup": "depot"
+    },
+    {
+      "id": "ring",
+      "def": "avionics-ring-4",
+      "parent": "tank",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "depot"
+    },
+    {
+      "id": "port",
+      "def": "dock-port-h",
+      "parent": "ring",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "depot"
+    },
+    {
+      "id": "quad-1",
+      "def": "rcs-quad-440",
+      "parent": "tank",
+      "position": [
+        3.181981,
+        6.25,
+        3.181981
+      ],
+      "rotationDeg": [
+        -90,
+        225,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 0,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "depot"
+    },
+    {
+      "id": "quad-2",
+      "def": "rcs-quad-440",
+      "parent": "tank",
+      "position": [
+        3.181981,
+        6.25,
+        -3.181981
+      ],
+      "rotationDeg": [
+        -90,
+        315,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 1,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "depot"
+    },
+    {
+      "id": "quad-3",
+      "def": "rcs-quad-440",
+      "parent": "tank",
+      "position": [
+        -3.181981,
+        6.25,
+        -3.181981
+      ],
+      "rotationDeg": [
+        -90,
+        45,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 2,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "depot"
+    },
+    {
+      "id": "quad-4",
+      "def": "rcs-quad-440",
+      "parent": "tank",
+      "position": [
+        -3.181981,
+        6.25,
+        3.181981
+      ],
+      "rotationDeg": [
+        -90,
+        135,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 3,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "depot"
+    },
+    {
+      "id": "interstage",
+      "def": "meridian-interstage-2",
+      "parent": "tank",
+      "parentNode": "bottom",
+      "node": "bottom",
+      "stageGroup": "adapter"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "depot",
+      "label": "Depot"
+    },
+    {
+      "id": "adapter",
+      "label": "Depot adapter"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Depot separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "decouple",
+          "part": "interstage"
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "quad-1",
+            "quad-2",
+            "quad-3",
+            "quad-4"
+          ],
+          "delay": 0.5
+        }
+      ]
+    }
+  ],
+  "abort": [],
+  "actionGroups": {}
+}

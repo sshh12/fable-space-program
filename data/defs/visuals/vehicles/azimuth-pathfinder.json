@@ -1,0 +1,14 @@
+{
+  "vehicle": "azimuth-pathfinder",
+  "title": "Azimuth 1 / Pathfinder",
+  "tagline": "The quickest way off the pad",
+  "description": "A two-stage light launcher with a small restartable probe. Pathfinder carries about 5 km/s of its own from low orbit: enough to orbit the Moon, Venus or Mars.",
+  "role": "probe",
+  "tags": [
+    "uncrewed",
+    "light",
+    "interplanetary"
+  ],
+  "difficulty": "beginner",
+  "firstOffer": true
+}

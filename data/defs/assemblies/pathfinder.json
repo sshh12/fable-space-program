@@ -1,0 +1,84 @@
+{
+  "id": "pathfinder",
+  "name": "Pathfinder probe",
+  "parts": [
+    {
+      "id": "bus",
+      "def": "pathfinder-bus",
+      "parent": null,
+      "stageGroup": "probe"
+    },
+    {
+      "id": "engine",
+      "def": "lyra-k",
+      "parent": "bus",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "probe"
+    },
+    {
+      "id": "adapter",
+      "def": "azimuth-payload-adapter",
+      "parent": "bus",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "adapter"
+    },
+    {
+      "id": "fairing",
+      "def": "azimuth-fairing",
+      "parent": "adapter",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "stageGroup": "fairing"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "probe",
+      "label": "Pathfinder probe"
+    },
+    {
+      "id": "adapter",
+      "label": "Payload adapter"
+    },
+    {
+      "id": "fairing",
+      "label": "Payload fairing"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Fairing jettison",
+      "icon": "fairing",
+      "actions": [
+        {
+          "kind": "jettisonFairing",
+          "part": "fairing"
+        }
+      ]
+    },
+    {
+      "label": "Probe separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "decouple",
+          "part": "adapter"
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "engine"
+          ],
+          "delay": 2
+        }
+      ]
+    }
+  ],
+  "abort": [],
+  "actionGroups": {}
+}

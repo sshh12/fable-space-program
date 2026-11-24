@@ -1,0 +1,317 @@
+{
+  "id": "pelican-tank",
+  "name": "Pelican tug and tanker body",
+  "category": "tank",
+  "dryMass": 2310,
+  "comOffset": [
+    0,
+    2.7,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 2,
+    "h": 6
+  },
+  "bounds": {
+    "radius": 2,
+    "yMin": 0,
+    "yMax": 6
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        6,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 1
+    },
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 4
+    }
+  ],
+  "surfaceAttach": {
+    "attachable": false,
+    "pos": [
+      0,
+      0,
+      0
+    ],
+    "dir": [
+      0,
+      0,
+      1
+    ],
+    "accepts": true
+  },
+  "resources": [
+    {
+      "resource": "LOX",
+      "capacity": 14556.521739,
+      "tankBottomY": 0.4,
+      "tankHeight": 3
+    },
+    {
+      "resource": "CH4",
+      "capacity": 4043.478261,
+      "tankBottomY": 3.4,
+      "tankHeight": 2
+    },
+    {
+      "resource": "RCSProp",
+      "capacity": 500,
+      "tankBottomY": 5.4,
+      "tankHeight": 0.5
+    }
+  ],
+  "aero": [
+    {
+      "kind": "axisymBody",
+      "refArea": 12.566371,
+      "length": 6,
+      "diameter": 4,
+      "cdAxialFwd": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdAxialAft": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdCross": 1.1,
+      "cpFraction": 0.5
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 87.964594,
+        "normal": "axisym",
+        "noseRadius": 2,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 6000,
+        "maxTemp": 800
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        0,
+        2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        1.732051,
+        0,
+        1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        1.732051,
+        0,
+        -1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        0,
+        -2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -1.732051,
+        0,
+        -1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -1.732051,
+        0,
+        1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        6,
+        2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        1.732051,
+        6,
+        1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        1.732051,
+        6,
+        -1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        6,
+        -2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -1.732051,
+        6,
+        -1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -1.732051,
+        6,
+        1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    }
+  ],
+  "buoyancy": [
+    {
+      "pos": [
+        0,
+        1.8,
+        0
+      ],
+      "radius": 1.8
+    },
+    {
+      "pos": [
+        0,
+        4.2,
+        0
+      ],
+      "radius": 1.8
+    }
+  ],
+  "joint": {
+    "maxAccelG": 8,
+    "maxQAlpha": 3500
+  },
+  "modules": [],
+  "visual": null
+}

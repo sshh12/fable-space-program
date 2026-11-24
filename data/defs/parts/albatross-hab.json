@@ -1,0 +1,413 @@
+{
+  "id": "albatross-hab",
+  "name": "Albatross habitat (crew four, remote command, control moment gyros)",
+  "category": "habitat",
+  "dryMass": 9000,
+  "comOffset": [
+    0,
+    4,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 2.2,
+    "h": 8
+  },
+  "bounds": {
+    "radius": 2.2,
+    "yMin": 0,
+    "yMax": 8
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        8,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 1
+    },
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 4.4
+    }
+  ],
+  "aero": [
+    {
+      "kind": "axisymBody",
+      "refArea": 15.205308,
+      "length": 8,
+      "diameter": 4.4,
+      "cdAxialFwd": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdAxialAft": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdCross": 1.1,
+      "cpFraction": 0.5
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 125.78937,
+        "normal": "axisym",
+        "noseRadius": 2.2,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 6000,
+        "maxTemp": 800
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        0,
+        2.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        1.905256,
+        0,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        1.905256,
+        0,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        0,
+        -2.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -1.905256,
+        0,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -1.905256,
+        0,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        8,
+        2.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        1.905256,
+        8,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        1.905256,
+        8,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        0,
+        8,
+        -2.2
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -1.905256,
+        8,
+        -1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    },
+    {
+      "pos": [
+        -1.905256,
+        8,
+        1.1
+      ],
+      "radius": 0.05,
+      "crashTolerance": 3
+    }
+  ],
+  "buoyancy": [
+    {
+      "pos": [
+        0,
+        2.4,
+        0
+      ],
+      "radius": 1.98
+    },
+    {
+      "pos": [
+        0,
+        5.6,
+        0
+      ],
+      "radius": 1.98
+    }
+  ],
+  "joint": {
+    "maxAccelG": 6
+  },
+  "modules": [
+    {
+      "type": "command",
+      "crewCapacity": 4,
+      "sas": true,
+      "maxRateDegPerS": 2,
+      "seats": [
+        {
+          "id": "cdr",
+          "pos": [
+            -0.8,
+            5,
+            0.5
+          ],
+          "lookDir": [
+            0,
+            1,
+            0
+          ],
+          "upDir": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "plt",
+          "pos": [
+            0.8,
+            5,
+            0.5
+          ],
+          "lookDir": [
+            0,
+            1,
+            0
+          ],
+          "upDir": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "ms1",
+          "pos": [
+            -0.8,
+            5,
+            -0.5
+          ],
+          "lookDir": [
+            0,
+            1,
+            0
+          ],
+          "upDir": [
+            0,
+            0,
+            1
+          ]
+        },
+        {
+          "id": "ms2",
+          "pos": [
+            0.8,
+            5,
+            -0.5
+          ],
+          "lookDir": [
+            0,
+            1,
+            0
+          ],
+          "upDir": [
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "hatch": {
+        "pos": [
+          0,
+          8,
+          0
+        ],
+        "dir": [
+          0,
+          1,
+          0
+        ]
+      },
+      "remote": true,
+      "sensorCamera": {
+        "pos": [
+          0,
+          8.05,
+          1.6
+        ],
+        "lookDir": [
+          0,
+          1,
+          0
+        ],
+        "upDir": [
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "type": "reactionWheel",
+      "torque": [
+        30000,
+        30000,
+        30000
+      ]
+    },
+    {
+      "type": "light",
+      "params": {
+        "intensity": 1
+      }
+    },
+    {
+      "type": "antenna",
+      "params": {
+        "gainDb": 30
+      }
+    }
+  ],
+  "visual": null
+}

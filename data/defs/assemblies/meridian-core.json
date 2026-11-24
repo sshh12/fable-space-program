@@ -1,0 +1,379 @@
+{
+  "id": "meridian-core",
+  "name": "Meridian core: M-1 and M-2",
+  "parts": [
+    {
+      "id": "m2",
+      "def": "meridian-m2",
+      "parent": null,
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-1",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-1",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-2",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-2",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-3",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-3",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-4",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-4",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-5",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-5",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "vela-2-6",
+      "def": "vela-2",
+      "parent": "m2",
+      "parentNode": "engine-6",
+      "node": "top",
+      "stageGroup": "m2"
+    },
+    {
+      "id": "m2-ullage",
+      "def": "meridian-m2-ullage-motors",
+      "parent": "m2",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "stageGroup": "m2"
+    },
+    {
+      "id": "interstage-1",
+      "def": "meridian-interstage-1",
+      "parent": "m2",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "m1-retro",
+      "def": "meridian-m1-retro-motors",
+      "parent": "interstage-1",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "stageGroup": "m1"
+    },
+    {
+      "id": "m1",
+      "def": "meridian-m1",
+      "parent": "interstage-1",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-1",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-1",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-2",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-2",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-3",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-3",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-4",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-4",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-5",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-5",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-6",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-6",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-7",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-7",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-8",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-8",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "atlas-9",
+      "def": "atlas-9m",
+      "parent": "m1",
+      "parentNode": "engine-9",
+      "node": "top",
+      "stageGroup": "m1"
+    },
+    {
+      "id": "clamp-1",
+      "def": "meridian-launch-clamp",
+      "parent": "m1",
+      "position": [
+        3.959798,
+        -3.5,
+        3.959798
+      ],
+      "rotationDeg": [
+        0,
+        45,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 0,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-2",
+      "def": "meridian-launch-clamp",
+      "parent": "m1",
+      "position": [
+        3.959798,
+        -3.5,
+        -3.959798
+      ],
+      "rotationDeg": [
+        0,
+        135,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 1,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-3",
+      "def": "meridian-launch-clamp",
+      "parent": "m1",
+      "position": [
+        -3.959798,
+        -3.5,
+        -3.959798
+      ],
+      "rotationDeg": [
+        0,
+        225,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 2,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-4",
+      "def": "meridian-launch-clamp",
+      "parent": "m1",
+      "position": [
+        -3.959798,
+        -3.5,
+        3.959798
+      ],
+      "rotationDeg": [
+        0,
+        315,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 3,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "m2",
+      "label": "Meridian M-2"
+    },
+    {
+      "id": "m1",
+      "label": "Meridian M-1"
+    },
+    {
+      "id": "pad",
+      "label": "Launch pad"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Launch",
+      "icon": "engine",
+      "actions": [
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "atlas-1",
+            "atlas-2",
+            "atlas-3",
+            "atlas-4",
+            "atlas-5",
+            "atlas-6",
+            "atlas-7",
+            "atlas-8",
+            "atlas-9"
+          ]
+        },
+        {
+          "kind": "releaseClamps",
+          "parts": [
+            "clamp-1",
+            "clamp-2",
+            "clamp-3",
+            "clamp-4"
+          ],
+          "minThrustToWeight": 1.1,
+          "delay": 3
+        }
+      ]
+    },
+    {
+      "label": "M-1 separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "shutdownEngines",
+          "parts": [
+            "atlas-1",
+            "atlas-2",
+            "atlas-3",
+            "atlas-4",
+            "atlas-5",
+            "atlas-6",
+            "atlas-7",
+            "atlas-8",
+            "atlas-9"
+          ]
+        },
+        {
+          "kind": "fireSeparationMotors",
+          "parts": [
+            "m2-ullage"
+          ],
+          "delay": 1.7
+        },
+        {
+          "kind": "fireSeparationMotors",
+          "parts": [
+            "m1-retro"
+          ],
+          "delay": 2
+        },
+        {
+          "kind": "decouple",
+          "part": "interstage-1",
+          "delay": 2
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "vela-2-1",
+            "vela-2-2",
+            "vela-2-3",
+            "vela-2-4",
+            "vela-2-5",
+            "vela-2-6"
+          ],
+          "delay": 3.5
+        }
+      ]
+    }
+  ],
+  "abort": [
+    {
+      "kind": "shutdownEngines",
+      "parts": [
+        "atlas-1",
+        "atlas-2",
+        "atlas-3",
+        "atlas-4",
+        "atlas-5",
+        "atlas-6",
+        "atlas-7",
+        "atlas-8",
+        "atlas-9",
+        "vela-2-1",
+        "vela-2-2",
+        "vela-2-3",
+        "vela-2-4",
+        "vela-2-5",
+        "vela-2-6"
+      ]
+    }
+  ],
+  "actionGroups": {}
+}

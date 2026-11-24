@@ -1,0 +1,15 @@
+{
+  "vehicle": "meridian-lunar",
+  "title": "Meridian / Heron / Kestrel",
+  "tagline": "Direct-ascent lunar landing and return",
+  "description": "The heavy launcher with the Heron lander and the Kestrel capsule: land on the Moon, lift off, come home and splash down.",
+  "role": "lunar landing",
+  "tags": [
+    "crewed",
+    "heavy",
+    "moon",
+    "reentry"
+  ],
+  "difficulty": "advanced",
+  "firstOffer": false
+}

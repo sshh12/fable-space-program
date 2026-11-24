@@ -1,0 +1,66 @@
+{
+  "id": "solstice-kestrel",
+  "name": "Solstice / Kestrel LF crew ferry",
+  "uses": [
+    {
+      "assembly": "solstice",
+      "prefix": "lv",
+      "parent": "sc-sm-adapter",
+      "parentNode": "bottom",
+      "node": "top"
+    },
+    {
+      "assembly": "kestrel-lf",
+      "prefix": "sc",
+      "parent": null
+    }
+  ],
+  "padInterface": {
+    "class": "medium",
+    "umbilicals": [
+      {
+        "y": -11,
+        "radius": 3.3
+      },
+      {
+        "y": -30,
+        "radius": 3.3
+      }
+    ],
+    "crewArm": {
+      "y": 1.2,
+      "reach": 4.5
+    }
+  },
+  "parts": [],
+  "stageGroups": [],
+  "stages": [],
+  "abort": [],
+  "actionGroups": {},
+  "crew": [
+    {
+      "seat": "cdr",
+      "name": "Amara Okonjo"
+    },
+    {
+      "seat": "plt",
+      "name": "Henrik Saltvik"
+    },
+    {
+      "seat": "ms",
+      "name": "Lucia Ferrand"
+    }
+  ],
+  "cockpit": "kestrel",
+  "cameras": {
+    "cockpit": {
+      "part": "sc-capsule",
+      "seat": "cdr"
+    },
+    "chase": {
+      "defaultDistance": 90,
+      "minDistance": 6,
+      "maxDistance": 2500
+    }
+  }
+}

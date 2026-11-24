@@ -1,0 +1,45 @@
+{
+  "id": "azimuth-pathfinder",
+  "name": "Azimuth 1 / Pathfinder probe",
+  "uses": [
+    {
+      "assembly": "azimuth-1",
+      "prefix": "lv",
+      "parent": "sc-adapter",
+      "parentNode": "bottom",
+      "node": "top"
+    },
+    {
+      "assembly": "pathfinder",
+      "prefix": "sc",
+      "parent": null
+    }
+  ],
+  "padInterface": {
+    "class": "light",
+    "umbilicals": [
+      {
+        "y": -2.5,
+        "radius": 1.1
+      },
+      {
+        "y": -9,
+        "radius": 1.1
+      }
+    ]
+  },
+  "parts": [],
+  "stageGroups": [],
+  "stages": [],
+  "abort": [],
+  "actionGroups": {},
+  "crew": [],
+  "cockpit": null,
+  "cameras": {
+    "chase": {
+      "defaultDistance": 30,
+      "minDistance": 3,
+      "maxDistance": 800
+    }
+  }
+}

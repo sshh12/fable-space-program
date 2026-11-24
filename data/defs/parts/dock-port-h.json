@@ -1,0 +1,252 @@
+{
+  "id": "dock-port-h",
+  "name": "Docking port, type H (heavy)",
+  "category": "dock",
+  "dryMass": 900,
+  "comOffset": [
+    0,
+    0.35,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "shellCylinder",
+    "r": 1.4,
+    "h": 0.8
+  },
+  "bounds": {
+    "radius": 1.45,
+    "yMin": 0,
+    "yMax": 0.8
+  },
+  "attachNodes": [
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 2.9
+    },
+    {
+      "id": "face",
+      "pos": [
+        0,
+        0.8,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 2.9,
+      "kind": "dock",
+      "rollStepDeg": 90
+    }
+  ],
+  "surfaceAttach": {
+    "attachable": true,
+    "pos": [
+      0,
+      0,
+      0
+    ],
+    "dir": [
+      0,
+      -1,
+      0
+    ],
+    "accepts": false
+  },
+  "crossfeed": false,
+  "crashTolerance": 2.5,
+  "aero": [
+    {
+      "kind": "axisymBody",
+      "refArea": 6.605199,
+      "length": 0.8,
+      "diameter": 2.9,
+      "cdAxialFwd": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdAxialAft": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdCross": 1.1,
+      "cpFraction": 0.5
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 13.893694,
+        "normal": "axisym",
+        "noseRadius": 1.45,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 9000,
+        "maxTemp": 900
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        0.8,
+        1.45
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2.5
+    },
+    {
+      "pos": [
+        1.45,
+        0.8,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2.5
+    },
+    {
+      "pos": [
+        0,
+        0.8,
+        -1.45
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2.5
+    },
+    {
+      "pos": [
+        -1.45,
+        0.8,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2.5
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 12
+  },
+  "modules": [
+    {
+      "type": "dockingPort",
+      "node": "face",
+      "portType": "h",
+      "gender": "androgynous",
+      "capture": {
+        "range": 0.1,
+        "maxLateral": 0.3,
+        "maxAngleDeg": 5,
+        "maxRollDeg": 5,
+        "rollStepDeg": 90,
+        "minClosing": 0.01,
+        "maxClosing": 0.15,
+        "maxLateralSpeed": 0.05,
+        "maxRateDegPerS": 0.3
+      },
+      "soft": {
+        "frequencyHz": 0.2,
+        "damping": 1,
+        "maxForce": 40000,
+        "maxTorque": 30000,
+        "retractRate": 0.02,
+        "timeout": 60
+      },
+      "hard": {
+        "maxForce": 2000000,
+        "maxTorque": 1500000
+      },
+      "undockImpulse": 2000,
+      "transfer": {
+        "crew": true,
+        "resources": [
+          "LOX",
+          "CH4",
+          "LH2",
+          "RCSProp"
+        ],
+        "maxRate": 300
+      }
+    }
+  ],
+  "visual": null
+}

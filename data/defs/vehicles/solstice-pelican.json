@@ -1,0 +1,45 @@
+{
+  "id": "solstice-pelican",
+  "name": "Solstice / Pelican tug and tanker",
+  "uses": [
+    {
+      "assembly": "solstice",
+      "prefix": "lv",
+      "parent": "sc-adapter",
+      "parentNode": "bottom",
+      "node": "top"
+    },
+    {
+      "assembly": "pelican",
+      "prefix": "sc",
+      "parent": null
+    }
+  ],
+  "padInterface": {
+    "class": "medium",
+    "umbilicals": [
+      {
+        "y": -9,
+        "radius": 3.3
+      },
+      {
+        "y": -28,
+        "radius": 3.3
+      }
+    ]
+  },
+  "parts": [],
+  "stageGroups": [],
+  "stages": [],
+  "abort": [],
+  "actionGroups": {},
+  "crew": [],
+  "cockpit": null,
+  "cameras": {
+    "chase": {
+      "defaultDistance": 90,
+      "minDistance": 6,
+      "maxDistance": 2500
+    }
+  }
+}

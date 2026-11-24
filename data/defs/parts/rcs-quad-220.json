@@ -1,0 +1,122 @@
+{
+  "id": "rcs-quad-220",
+  "name": "RCS thruster quad, 4 x 220 N",
+  "category": "utility",
+  "dryMass": 35,
+  "comOffset": [
+    0,
+    0.08,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "box",
+    "size": [
+      0.5,
+      0.25,
+      0.5
+    ]
+  },
+  "bounds": {
+    "radius": 0.28,
+    "yMin": 0,
+    "yMax": 0.25
+  },
+  "attachNodes": [],
+  "surfaceAttach": {
+    "attachable": true,
+    "pos": [
+      0,
+      0,
+      0
+    ],
+    "dir": [
+      0,
+      -1,
+      0
+    ],
+    "accepts": false
+  },
+  "symmetry": {
+    "maxRadial": 8,
+    "mirror": true
+  },
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 0.6,
+        "normal": "axisym",
+        "noseRadius": 0.25,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 9000,
+        "maxTemp": 1100
+      }
+    ]
+  },
+  "contactPoints": [],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 15
+  },
+  "modules": [
+    {
+      "type": "rcs",
+      "isp": 290,
+      "resource": "RCSProp",
+      "thrusters": [
+        {
+          "pos": [
+            0,
+            0.15,
+            0.22
+          ],
+          "dir": [
+            0,
+            0,
+            1
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            0,
+            0.15,
+            -0.22
+          ],
+          "dir": [
+            0,
+            0,
+            -1
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            0.22,
+            0.15,
+            0
+          ],
+          "dir": [
+            1,
+            0,
+            0
+          ],
+          "thrust": 220
+        },
+        {
+          "pos": [
+            -0.22,
+            0.15,
+            0
+          ],
+          "dir": [
+            -1,
+            0,
+            0
+          ],
+          "thrust": 220
+        }
+      ]
+    }
+  ],
+  "visual": null
+}

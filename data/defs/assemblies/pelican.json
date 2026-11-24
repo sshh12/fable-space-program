@@ -1,0 +1,214 @@
+{
+  "id": "pelican",
+  "name": "Pelican tug and tanker",
+  "parts": [
+    {
+      "id": "tank",
+      "def": "pelican-tank",
+      "parent": null,
+      "stageGroup": "pelican"
+    },
+    {
+      "id": "nose-port",
+      "def": "dock-port-c",
+      "parent": "tank",
+      "parentNode": "top",
+      "node": "bottom",
+      "stageGroup": "pelican"
+    },
+    {
+      "id": "side-port",
+      "def": "dock-port-c",
+      "parent": "tank",
+      "position": [
+        2,
+        4.5,
+        0
+      ],
+      "rotationDeg": [
+        -90,
+        270,
+        0
+      ],
+      "stageGroup": "pelican"
+    },
+    {
+      "id": "quad-1",
+      "def": "rcs-quad-220",
+      "parent": "tank",
+      "position": [
+        1.414214,
+        3,
+        1.414214
+      ],
+      "rotationDeg": [
+        -90,
+        225,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 0,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pelican"
+    },
+    {
+      "id": "quad-2",
+      "def": "rcs-quad-220",
+      "parent": "tank",
+      "position": [
+        1.414214,
+        3,
+        -1.414214
+      ],
+      "rotationDeg": [
+        -90,
+        315,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 1,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pelican"
+    },
+    {
+      "id": "quad-3",
+      "def": "rcs-quad-220",
+      "parent": "tank",
+      "position": [
+        -1.414214,
+        3,
+        -1.414214
+      ],
+      "rotationDeg": [
+        -90,
+        45,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 2,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pelican"
+    },
+    {
+      "id": "quad-4",
+      "def": "rcs-quad-220",
+      "parent": "tank",
+      "position": [
+        -1.414214,
+        3,
+        1.414214
+      ],
+      "rotationDeg": [
+        -90,
+        135,
+        0
+      ],
+      "symmetry": {
+        "group": "quad",
+        "index": 3,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pelican"
+    },
+    {
+      "id": "ring",
+      "def": "avionics-ring-4",
+      "parent": "tank",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "pelican"
+    },
+    {
+      "id": "lyra-d",
+      "def": "lyra-d",
+      "parent": "ring",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "pelican"
+    },
+    {
+      "id": "adapter",
+      "def": "adapter-4m-6m6",
+      "parent": "ring",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "adapter"
+    },
+    {
+      "id": "fairing",
+      "def": "fairing-6m6-ogive",
+      "parent": "adapter",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "stageGroup": "fairing"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "pelican",
+      "label": "Pelican"
+    },
+    {
+      "id": "adapter",
+      "label": "Payload adapter"
+    },
+    {
+      "id": "fairing",
+      "label": "Payload fairing"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Fairing jettison",
+      "icon": "fairing",
+      "actions": [
+        {
+          "kind": "jettisonFairing",
+          "part": "fairing"
+        }
+      ]
+    },
+    {
+      "label": "Tug separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "decouple",
+          "part": "adapter"
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "quad-1",
+            "quad-2",
+            "quad-3",
+            "quad-4"
+          ],
+          "delay": 0.5
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "lyra-d"
+          ],
+          "delay": 3
+        }
+      ]
+    }
+  ],
+  "abort": [],
+  "actionGroups": {}
+}

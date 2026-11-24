@@ -1,0 +1,15 @@
+{
+  "vehicle": "solstice-pelican",
+  "title": "Solstice / Pelican",
+  "tagline": "Tug and tanker",
+  "description": "A remote tug with two crew ports and 18.6 t of methalox it can burn or pump into another craft. Pushes modules and refuels ferries in low orbit.",
+  "role": "tug and tanker",
+  "tags": [
+    "uncrewed",
+    "medium",
+    "docking",
+    "refuelling"
+  ],
+  "difficulty": "intermediate",
+  "firstOffer": true
+}

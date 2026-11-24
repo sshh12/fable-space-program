@@ -1,0 +1,307 @@
+{
+  "id": "pathfinder-bus",
+  "name": "Pathfinder probe bus",
+  "category": "command",
+  "dryMass": 232,
+  "comOffset": [
+    0,
+    0.7,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 0.8,
+    "h": 1.6
+  },
+  "bounds": {
+    "radius": 0.8,
+    "yMin": 0,
+    "yMax": 1.6
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        1.6,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 1
+    },
+    {
+      "id": "bottom",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 1.6
+    },
+    {
+      "id": "engine",
+      "pos": [
+        0,
+        0.1,
+        0
+      ],
+      "dir": [
+        0,
+        -1,
+        0
+      ],
+      "size": 0.2,
+      "kind": "mount"
+    }
+  ],
+  "resources": [
+    {
+      "resource": "LOX",
+      "capacity": 743.478261,
+      "tankBottomY": 0.2,
+      "tankHeight": 0.6
+    },
+    {
+      "resource": "CH4",
+      "capacity": 206.521739,
+      "tankBottomY": 0.8,
+      "tankHeight": 0.6
+    }
+  ],
+  "aero": [
+    {
+      "kind": "axisymBody",
+      "refArea": 2.010619,
+      "length": 1.6,
+      "diameter": 1.6,
+      "cdAxialFwd": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdAxialAft": [
+        [
+          0,
+          0.85
+        ],
+        [
+          0.6,
+          0.85
+        ],
+        [
+          0.9,
+          1
+        ],
+        [
+          1.1,
+          1.25
+        ],
+        [
+          1.3,
+          1.35
+        ],
+        [
+          2,
+          1.45
+        ],
+        [
+          3,
+          1.5
+        ],
+        [
+          5,
+          1.55
+        ],
+        [
+          10,
+          1.6
+        ]
+      ],
+      "cdCross": 1.1,
+      "cpFraction": 0.5
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 10.053096,
+        "normal": "axisym",
+        "noseRadius": 0.8,
+        "emissivity": 0.8,
+        "arealHeatCapacity": 8000,
+        "maxTemp": 700
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        0,
+        0.8
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0.8,
+        0,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0,
+        0,
+        -0.8
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        -0.8,
+        0,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0,
+        1.6,
+        0.8
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0.8,
+        1.6,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0,
+        1.6,
+        -0.8
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        -0.8,
+        1.6,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    }
+  ],
+  "buoyancy": [
+    {
+      "pos": [
+        0,
+        0.8,
+        0
+      ],
+      "radius": 0.7
+    }
+  ],
+  "joint": {
+    "maxAccelG": 15
+  },
+  "modules": [
+    {
+      "type": "command",
+      "crewCapacity": 0,
+      "sas": true,
+      "maxRateDegPerS": 10,
+      "seats": [],
+      "remote": true,
+      "sensorCamera": {
+        "pos": [
+          0,
+          1.62,
+          0.5
+        ],
+        "lookDir": [
+          0,
+          1,
+          0
+        ],
+        "upDir": [
+          0,
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "type": "reactionWheel",
+      "torque": [
+        60,
+        60,
+        60
+      ]
+    },
+    {
+      "type": "antenna",
+      "params": {
+        "gainDb": 12
+      }
+    }
+  ],
+  "visual": null
+}

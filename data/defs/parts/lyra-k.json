@@ -1,0 +1,147 @@
+{
+  "id": "lyra-k",
+  "name": "Lyra-K pressure-fed kick motor",
+  "category": "engine",
+  "dryMass": 18,
+  "comOffset": [
+    0,
+    -0.175,
+    0
+  ],
+  "inertiaShape": {
+    "kind": "solidCylinder",
+    "r": 0.09,
+    "h": 0.5
+  },
+  "bounds": {
+    "radius": 0.15,
+    "yMin": -0.5,
+    "yMax": 0
+  },
+  "attachNodes": [
+    {
+      "id": "top",
+      "pos": [
+        0,
+        0,
+        0
+      ],
+      "dir": [
+        0,
+        1,
+        0
+      ],
+      "size": 0.2
+    }
+  ],
+  "thermal": {
+    "surfaces": [
+      {
+        "area": 0.329867,
+        "normal": "axisym",
+        "noseRadius": 0.15,
+        "emissivity": 0.7,
+        "arealHeatCapacity": 12000,
+        "maxTemp": 1300
+      }
+    ]
+  },
+  "contactPoints": [
+    {
+      "pos": [
+        0,
+        -0.4,
+        0
+      ],
+      "radius": 0.1,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0,
+        -0.45,
+        0.09
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0.09,
+        -0.45,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        0,
+        -0.45,
+        -0.09
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    },
+    {
+      "pos": [
+        -0.09,
+        -0.45,
+        0
+      ],
+      "radius": 0.05,
+      "crashTolerance": 2
+    }
+  ],
+  "buoyancy": [],
+  "joint": {
+    "maxAccelG": 15
+  },
+  "modules": [
+    {
+      "type": "engine",
+      "thrustVac": 4000,
+      "ispVac": 325,
+      "ispSL": 120,
+      "minThrottle": 1,
+      "throttleable": false,
+      "spoolUp": 0.1,
+      "spoolDown": 0.1,
+      "maxIgnitions": null,
+      "propellants": [
+        {
+          "resource": "LOX",
+          "ratio": 0.782608695652174
+        },
+        {
+          "resource": "CH4",
+          "ratio": 0.2173913043478261
+        }
+      ],
+      "nozzles": [
+        {
+          "pos": [
+            0,
+            -0.5,
+            0
+          ],
+          "dir": [
+            0,
+            -1,
+            0
+          ],
+          "exitDiameter": 0.18,
+          "exitPressure": 3000
+        }
+      ],
+      "gimbal": {
+        "rangeDeg": 3,
+        "rateDegPerS": 10
+      },
+      "chamberPressure": 1000000,
+      "plume": "plume.methalox-lander",
+      "sound": "engine.lander-ascent"
+    }
+  ],
+  "visual": null
+}

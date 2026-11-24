@@ -1,0 +1,32 @@
+{
+  "id": "payload-fairing-6m6",
+  "name": "Closed 6.6 m payload fairing",
+  "parts": [
+    {
+      "id": "fairing",
+      "def": "fairing-6m6-ogive",
+      "parent": null,
+      "stageGroup": "fairing"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "fairing",
+      "label": "Payload fairing"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Fairing jettison",
+      "icon": "fairing",
+      "actions": [
+        {
+          "kind": "jettisonFairing",
+          "part": "fairing"
+        }
+      ]
+    }
+  ],
+  "abort": [],
+  "actionGroups": {}
+}

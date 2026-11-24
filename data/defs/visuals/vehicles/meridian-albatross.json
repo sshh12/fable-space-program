@@ -1,0 +1,15 @@
+{
+  "vehicle": "meridian-albatross",
+  "title": "Meridian / Albatross",
+  "tagline": "Nuclear cruiser for the outer planets",
+  "description": "Three nuclear thermal engines and 104 t of hydrogen: 10.9 km/s from low Earth orbit, capture at every planet. Refuelled from a depot in high orbit, it reaches the hardest destinations too.",
+  "role": "interplanetary cruiser",
+  "tags": [
+    "uncrewed",
+    "heavy",
+    "interplanetary",
+    "refuelling"
+  ],
+  "difficulty": "advanced",
+  "firstOffer": false
+}

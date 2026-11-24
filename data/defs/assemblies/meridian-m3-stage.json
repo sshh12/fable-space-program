@@ -1,0 +1,101 @@
+{
+  "id": "meridian-m3-stage",
+  "name": "Meridian M-3 upper stage",
+  "parts": [
+    {
+      "id": "m3",
+      "def": "meridian-m3",
+      "parent": null,
+      "stageGroup": "m3"
+    },
+    {
+      "id": "vela-2v",
+      "def": "vela-2v",
+      "parent": "m3",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "m3"
+    },
+    {
+      "id": "m3-rcs-pod-a",
+      "def": "meridian-m3-rcs-pod",
+      "parent": "m3",
+      "position": [
+        3.45,
+        1,
+        0
+      ],
+      "stageGroup": "m3"
+    },
+    {
+      "id": "m3-rcs-pod-b",
+      "def": "meridian-m3-rcs-pod",
+      "parent": "m3",
+      "position": [
+        -3.45,
+        1,
+        0
+      ],
+      "rotationDeg": [
+        0,
+        180,
+        0
+      ],
+      "stageGroup": "m3"
+    },
+    {
+      "id": "interstage",
+      "def": "meridian-interstage-2",
+      "parent": "m3",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "interstage"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "m3",
+      "label": "Meridian M-3"
+    },
+    {
+      "id": "interstage",
+      "label": "M-2 / M-3 interstage"
+    }
+  ],
+  "stages": [
+    {
+      "label": "M-2 separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "m3-rcs-pod-a",
+            "m3-rcs-pod-b"
+          ]
+        },
+        {
+          "kind": "decouple",
+          "part": "interstage",
+          "delay": 1.5
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "vela-2v"
+          ],
+          "delay": 3.5
+        }
+      ]
+    }
+  ],
+  "abort": [
+    {
+      "kind": "shutdownEngines",
+      "parts": [
+        "vela-2v"
+      ]
+    }
+  ],
+  "actionGroups": {}
+}

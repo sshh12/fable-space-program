@@ -1,0 +1,32 @@
+{
+  "id": "payload-nose-cap-9m",
+  "name": "Nose cap, 9 m",
+  "parts": [
+    {
+      "id": "cap",
+      "def": "nose-cap-9m",
+      "parent": null,
+      "stageGroup": "cap"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "cap",
+      "label": "Nose cap"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Nose cap jettison",
+      "icon": "fairing",
+      "actions": [
+        {
+          "kind": "jettisonFairing",
+          "part": "cap"
+        }
+      ]
+    }
+  ],
+  "abort": [],
+  "actionGroups": {}
+}

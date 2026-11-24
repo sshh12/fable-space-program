@@ -1,0 +1,15 @@
+{
+  "vehicle": "solstice-kestrel",
+  "title": "Solstice / Kestrel LF",
+  "tagline": "Crew ferry for rendezvous and docking",
+  "description": "A medium launcher and a three-seat crew ferry with a docking port. Meet a station or another player in low orbit, dock, then come home under parachutes.",
+  "role": "crew ferry",
+  "tags": [
+    "crewed",
+    "medium",
+    "docking",
+    "reentry"
+  ],
+  "difficulty": "intermediate",
+  "firstOffer": true
+}

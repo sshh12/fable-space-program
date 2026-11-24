@@ -1,0 +1,67 @@
+{
+  "id": "meridian-egret",
+  "name": "Meridian / Egret lunar ferry",
+  "uses": [
+    {
+      "assembly": "meridian-core",
+      "prefix": "core",
+      "parent": "us-interstage",
+      "parentNode": "bottom",
+      "node": "top"
+    },
+    {
+      "assembly": "payload-fairing-6m6",
+      "prefix": "fr",
+      "parent": "us-m3",
+      "parentNode": "top",
+      "node": "bottom"
+    },
+    {
+      "assembly": "meridian-m3-stage",
+      "prefix": "us",
+      "parent": "sc-adapter",
+      "parentNode": "bottom",
+      "node": "top"
+    },
+    {
+      "assembly": "egret",
+      "prefix": "sc",
+      "parent": null
+    }
+  ],
+  "padInterface": {
+    "class": "heavy",
+    "umbilicals": [
+      {
+        "y": -8,
+        "radius": 3.3
+      },
+      {
+        "y": -30,
+        "radius": 4.5
+      },
+      {
+        "y": -60,
+        "radius": 4.5
+      }
+    ]
+  },
+  "parts": [],
+  "stageGroups": [],
+  "stages": [],
+  "abort": [],
+  "actionGroups": {},
+  "crew": [],
+  "cockpit": "kestrel",
+  "cameras": {
+    "cockpit": {
+      "part": "sc-cabin",
+      "seat": "cdr"
+    },
+    "chase": {
+      "defaultDistance": 140,
+      "minDistance": 8,
+      "maxDistance": 3000
+    }
+  }
+}

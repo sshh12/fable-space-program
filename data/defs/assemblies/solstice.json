@@ -1,0 +1,262 @@
+{
+  "id": "solstice",
+  "name": "Solstice medium launcher",
+  "parts": [
+    {
+      "id": "m3",
+      "def": "meridian-m3",
+      "parent": null,
+      "stageGroup": "s2"
+    },
+    {
+      "id": "vela-2v",
+      "def": "vela-2v",
+      "parent": "m3",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "s2"
+    },
+    {
+      "id": "m3-rcs-pod-a",
+      "def": "meridian-m3-rcs-pod",
+      "parent": "m3",
+      "position": [
+        3.45,
+        1,
+        0
+      ],
+      "stageGroup": "s2"
+    },
+    {
+      "id": "m3-rcs-pod-b",
+      "def": "meridian-m3-rcs-pod",
+      "parent": "m3",
+      "position": [
+        -3.45,
+        1,
+        0
+      ],
+      "rotationDeg": [
+        0,
+        180,
+        0
+      ],
+      "stageGroup": "s2"
+    },
+    {
+      "id": "interstage",
+      "def": "solstice-interstage",
+      "parent": "m3",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "s1"
+    },
+    {
+      "id": "s1",
+      "def": "solstice-s1",
+      "parent": "interstage",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "s1"
+    },
+    {
+      "id": "atlas-1",
+      "def": "atlas-9m",
+      "parent": "s1",
+      "parentNode": "engine-1",
+      "node": "top",
+      "symmetry": {
+        "group": "atlas",
+        "index": 0,
+        "count": 2,
+        "mode": "mirror"
+      },
+      "stageGroup": "s1"
+    },
+    {
+      "id": "atlas-2",
+      "def": "atlas-9m",
+      "parent": "s1",
+      "parentNode": "engine-2",
+      "node": "top",
+      "symmetry": {
+        "group": "atlas",
+        "index": 1,
+        "count": 2,
+        "mode": "mirror"
+      },
+      "stageGroup": "s1"
+    },
+    {
+      "id": "clamp-1",
+      "def": "meridian-launch-clamp",
+      "parent": "s1",
+      "position": [
+        3.05,
+        -3.5,
+        3.05
+      ],
+      "rotationDeg": [
+        0,
+        45,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 0,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-2",
+      "def": "meridian-launch-clamp",
+      "parent": "s1",
+      "position": [
+        3.05,
+        -3.5,
+        -3.05
+      ],
+      "rotationDeg": [
+        0,
+        135,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 1,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-3",
+      "def": "meridian-launch-clamp",
+      "parent": "s1",
+      "position": [
+        -3.05,
+        -3.5,
+        -3.05
+      ],
+      "rotationDeg": [
+        0,
+        225,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 2,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-4",
+      "def": "meridian-launch-clamp",
+      "parent": "s1",
+      "position": [
+        -3.05,
+        -3.5,
+        3.05
+      ],
+      "rotationDeg": [
+        0,
+        315,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 3,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "s2",
+      "label": "Solstice second stage (Meridian M-3)"
+    },
+    {
+      "id": "s1",
+      "label": "Solstice first stage"
+    },
+    {
+      "id": "pad",
+      "label": "Launch pad"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Launch",
+      "icon": "engine",
+      "actions": [
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "atlas-1",
+            "atlas-2"
+          ]
+        },
+        {
+          "kind": "releaseClamps",
+          "parts": [
+            "clamp-1",
+            "clamp-2",
+            "clamp-3",
+            "clamp-4"
+          ],
+          "minThrustToWeight": 1.1,
+          "delay": 3
+        }
+      ]
+    },
+    {
+      "label": "Stage 1 separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "shutdownEngines",
+          "parts": [
+            "atlas-1",
+            "atlas-2"
+          ]
+        },
+        {
+          "kind": "enableRcs",
+          "parts": [
+            "m3-rcs-pod-a",
+            "m3-rcs-pod-b"
+          ]
+        },
+        {
+          "kind": "decouple",
+          "part": "interstage",
+          "delay": 1.5
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "vela-2v"
+          ],
+          "delay": 3.5
+        }
+      ]
+    }
+  ],
+  "abort": [
+    {
+      "kind": "shutdownEngines",
+      "parts": [
+        "atlas-1",
+        "atlas-2",
+        "vela-2v"
+      ]
+    }
+  ],
+  "actionGroups": {}
+}

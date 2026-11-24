@@ -1,0 +1,15 @@
+{
+  "vehicle": "meridian-pelican-heavy",
+  "title": "Meridian / Pelican Heavy",
+  "tagline": "Propellant depot for high orbit",
+  "description": "A hydrogen depot with a heavy docking port that the Meridian third stage carries to a high Earth orbit, where the Albatross fills its tanks before it departs.",
+  "role": "propellant depot",
+  "tags": [
+    "uncrewed",
+    "heavy",
+    "refuelling",
+    "station"
+  ],
+  "difficulty": "advanced",
+  "firstOffer": false
+}

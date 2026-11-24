@@ -1,0 +1,279 @@
+{
+  "id": "azimuth-1",
+  "name": "Azimuth 1 light launcher",
+  "parts": [
+    {
+      "id": "s2",
+      "def": "azimuth-s2",
+      "parent": null,
+      "stageGroup": "s2"
+    },
+    {
+      "id": "s2-engine",
+      "def": "wren-1v",
+      "parent": "s2",
+      "parentNode": "engine",
+      "node": "top",
+      "stageGroup": "s2"
+    },
+    {
+      "id": "interstage",
+      "def": "azimuth-interstage",
+      "parent": "s2",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "s1"
+    },
+    {
+      "id": "s1",
+      "def": "azimuth-s1",
+      "parent": "interstage",
+      "parentNode": "bottom",
+      "node": "top",
+      "stageGroup": "s1"
+    },
+    {
+      "id": "wren-1",
+      "def": "wren-1",
+      "parent": "s1",
+      "parentNode": "engine-1",
+      "node": "top",
+      "symmetry": {
+        "group": "wren",
+        "index": 0,
+        "count": 5,
+        "mode": "radial"
+      },
+      "stageGroup": "s1"
+    },
+    {
+      "id": "wren-2",
+      "def": "wren-1",
+      "parent": "s1",
+      "parentNode": "engine-2",
+      "node": "top",
+      "symmetry": {
+        "group": "wren",
+        "index": 1,
+        "count": 5,
+        "mode": "radial"
+      },
+      "stageGroup": "s1"
+    },
+    {
+      "id": "wren-3",
+      "def": "wren-1",
+      "parent": "s1",
+      "parentNode": "engine-3",
+      "node": "top",
+      "symmetry": {
+        "group": "wren",
+        "index": 2,
+        "count": 5,
+        "mode": "radial"
+      },
+      "stageGroup": "s1"
+    },
+    {
+      "id": "wren-4",
+      "def": "wren-1",
+      "parent": "s1",
+      "parentNode": "engine-4",
+      "node": "top",
+      "symmetry": {
+        "group": "wren",
+        "index": 3,
+        "count": 5,
+        "mode": "radial"
+      },
+      "stageGroup": "s1"
+    },
+    {
+      "id": "wren-5",
+      "def": "wren-1",
+      "parent": "s1",
+      "parentNode": "engine-5",
+      "node": "top",
+      "symmetry": {
+        "group": "wren",
+        "index": 4,
+        "count": 5,
+        "mode": "radial"
+      },
+      "stageGroup": "s1"
+    },
+    {
+      "id": "clamp-1",
+      "def": "launch-clamp-s",
+      "parent": "s1",
+      "position": [
+        0.95,
+        -1.5,
+        0.95
+      ],
+      "rotationDeg": [
+        0,
+        45,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 0,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-2",
+      "def": "launch-clamp-s",
+      "parent": "s1",
+      "position": [
+        0.95,
+        -1.5,
+        -0.95
+      ],
+      "rotationDeg": [
+        0,
+        135,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 1,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-3",
+      "def": "launch-clamp-s",
+      "parent": "s1",
+      "position": [
+        -0.95,
+        -1.5,
+        -0.95
+      ],
+      "rotationDeg": [
+        0,
+        225,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 2,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    },
+    {
+      "id": "clamp-4",
+      "def": "launch-clamp-s",
+      "parent": "s1",
+      "position": [
+        -0.95,
+        -1.5,
+        0.95
+      ],
+      "rotationDeg": [
+        0,
+        315,
+        0
+      ],
+      "symmetry": {
+        "group": "clamps",
+        "index": 3,
+        "count": 4,
+        "mode": "radial"
+      },
+      "stageGroup": "pad"
+    }
+  ],
+  "stageGroups": [
+    {
+      "id": "s2",
+      "label": "Azimuth 1 second stage"
+    },
+    {
+      "id": "s1",
+      "label": "Azimuth 1 first stage"
+    },
+    {
+      "id": "pad",
+      "label": "Launch pad"
+    }
+  ],
+  "stages": [
+    {
+      "label": "Launch",
+      "icon": "engine",
+      "actions": [
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "wren-1",
+            "wren-2",
+            "wren-3",
+            "wren-4",
+            "wren-5"
+          ]
+        },
+        {
+          "kind": "releaseClamps",
+          "parts": [
+            "clamp-1",
+            "clamp-2",
+            "clamp-3",
+            "clamp-4"
+          ],
+          "minThrustToWeight": 1.1,
+          "delay": 2.5
+        }
+      ]
+    },
+    {
+      "label": "Stage 1 separation",
+      "icon": "decoupler",
+      "actions": [
+        {
+          "kind": "shutdownEngines",
+          "parts": [
+            "wren-1",
+            "wren-2",
+            "wren-3",
+            "wren-4",
+            "wren-5"
+          ]
+        },
+        {
+          "kind": "decouple",
+          "part": "interstage",
+          "delay": 1
+        },
+        {
+          "kind": "igniteEngines",
+          "parts": [
+            "s2-engine"
+          ],
+          "delay": 2
+        }
+      ]
+    }
+  ],
+  "abort": [
+    {
+      "kind": "shutdownEngines",
+      "parts": [
+        "wren-1",
+        "wren-2",
+        "wren-3",
+        "wren-4",
+        "wren-5",
+        "s2-engine"
+      ]
+    }
+  ],
+  "actionGroups": {}
+}

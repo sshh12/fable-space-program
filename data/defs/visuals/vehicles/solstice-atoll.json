@@ -1,0 +1,15 @@
+{
+  "vehicle": "solstice-atoll",
+  "title": "Solstice / Atoll",
+  "tagline": "The first module of a station",
+  "description": "A station core with six docking ports (two heavy, four crew) and its own avionics and engine. Launch it, circularise, and wait for visitors.",
+  "role": "station module",
+  "tags": [
+    "uncrewed",
+    "medium",
+    "station",
+    "docking"
+  ],
+  "difficulty": "intermediate",
+  "firstOffer": true
+}
