@@ -58,14 +58,33 @@ close-out package), `src/core/contracts/*.ts`, `docs/requests/README.md`, and th
    `DefLibrary.sections`). Every number of the time model, contact, docking, pads, expiry and the rate
    limits is a field of `UniverseRules` (`src/core/contracts/net.ts`), read from the rules document in
    force, never written into code.
-7a. Until the tighten step after sub-wave 3.2, no field of a vehicle, part, body, site or rules definition
-    that the state hash or the codec's vehicle reference covers may change; any edit under
-    `data/defs/{vehicles,parts,bodies,sites,rules}` is followed, before its commit, by `npx vitest run
-    tests/unit/sim-vessel/codec.test.ts tools/dev/guard-pins.test.ts` and `npm run test:mission` through the
-    gate. (The corpus of `tests/unit/sim-vessel/corpus` holds vessel blobs written by earlier codec versions
-    against the definitions as they were; they cannot be re-written, and the mission alone does not show the
-    break. MIGRATION_V2 principle 5 has the episode; from the tighten step on, presentation fields such as
-    cameras, seats, names and references to visuals are outside the hash and free to change.)
+7a. What is frozen in a definition is its hashed SIMULATION PROJECTION; its presentation fields are free
+    (rewritten at the tighten step after sub-wave 3.2, 2026-11-24; until then every hashed field was
+    frozen, and the whole vehicle was hashed).
+    - FREE, without the lead, without a migration and without a codec or mission run: of a vehicle its
+      `name`, `cameras` (the cockpit camera's part and seat, the chase distances), `cockpit`, the `label` of
+      a stage group, the `label` and `icon` of a stage, the `name` of a crew member; of a part its `name`,
+      `visual`, and in its modules a command module's `cockpit`, `sensorCamera` and each seat's `lookDir`
+      and `upDir`, an engine's `plume` and `sound`. `src/core/defs/simProjection.ts` is the list in force:
+      what it does not name as outside is inside, a field added later included.
+    - FROZEN (the lead's decision; for a part an entry in the migration registry): every other field of a
+      vehicle and of a part's modules, a part's mass and resources, a seat's position (the crew's g dose is
+      taken at it). Such an edit changes the state hash of every state that uses the definition; before its
+      commit run `npx vitest run tests/unit/sim-vessel/codec.test.ts tools/dev/guard-pins.test.ts` and
+      `npm run test:mission` through the gate.
+    - NEW definitions freeze nothing that exists: a new vehicle, a new part, a new site, a new pad of an
+      existing site, a new rules file. A new pad changes the terrain inside its own flatten disc and
+      nowhere else, and the terrain guard's `pads:*` groups are the check (only points inside a new disc may
+      change; re-recording the guard's two files is the lead's).
+    - Bodies, sites and rules are not in a vessel's hash, but a field of theirs that the simulation reads
+      (gravity, rotation, the atmosphere's physical model, a pad's position, disc or mount height, a rule a
+      session applies) changes the FLIGHT, and the golden mission hash with it: that is a change of
+      behaviour and the lead's decision, as before. Their looks (colours, clouds, the sea's appearance,
+      structures of a pad that nothing collides with) are free.
+    (The corpus of `tests/unit/sim-vessel/corpus` holds vessel blobs written by earlier codec versions;
+    they cannot be re-written. Blobs of versions 1 to 3 are read through the table recorded at the step,
+    `src/sim/vessel/migrations/legacyV3.ts`, which is pinned and never edited. MIGRATION_V2 principle 5 has
+    the episode that led here.)
 
 ## Shared working tree
 

@@ -1071,20 +1071,29 @@ interface Vessel {
   rollback ring.
 - **The codec is versioned, because ships outlive deploys.** Every blob starts with a codec version and
   the `defsHash` it was written under. Per craft it carries a vehicle reference of one of two kinds: a
-  library id with the content hash of that `VehicleDef`, or an embedded design (the future builder's
-  `craft.design`); vehicles are resolved through an injected resolver, never by indexing the library.
-  **What that hash covers** (lead decision of 2026-11-12, in force from the tighten step after sub-wave
-  3.2): the SIMULATION PROJECTION of the vehicle, not the whole definition. Presentation-only definition
-  fields (cameras and seats, display names and labels, references to visuals and audio) are outside the
-  projection and outside the state hash, so a camera, name or cockpit edit can never change the golden hash
-  or invalidate a save; the snapshot still states them (`CraftSnapshot.cockpit`), read from the
-  definitions. Until that step the reference hashes the whole `VehicleDef` and the command part's camera
-  seat is hashed vessel state: one such edit, the cockpit seat of request cockpit-18, changed the golden
-  hash of a flight that was the same in every number and made the corpus's earlier blobs decode to another
-  state, and was taken back. Until that step no hashed definition field changes (MIGRATION_V2 principle 5,
-  PACKAGE_RULES 7a); from it on the default cockpit seat, like every presentation field, is a free choice.
-  The change alters saved bytes, so it is made with that step's other codec changes: one codec version
-  step, the corpus recorded once for it. Per
+  library id with the hash of that `VehicleDef`'s SIMULATION PROJECTION, or an embedded design (the future
+  builder's `craft.design`); vehicles are resolved through an injected resolver, never by indexing the
+  library. **What is hashed** (lead decision of 2026-11-12, made at the tighten step after sub-wave 3.2 on
+  2026-11-24 as codec version 4): the simulation projection of a definition
+  (`src/core/defs/simProjection.ts`), not the whole definition. Outside it are a vehicle's name, its
+  `cameras` (the cockpit camera's part and seat, the chase distances), its cockpit interior id, the labels of
+  its stage groups, the label and icon of a stage and the names of its crew; and of a part's modules the
+  command module's cockpit id, sensor camera and each seat's look and up directions, and an engine's plume
+  and sound references. (A seat's position stays in: the crew's g dose is taken at it. A field added to a
+  definition later is inside until it is named in that file.) The state hash is the hash of the codec body
+  under those references, and nothing copied from a presentation field is in the body: a command part's
+  record is who sits in which seat and their g dose, and the names of the vessel and of its craft, which
+  are display strings, travel in a LABELS block that a blob carries and the hash leaves out. So a camera,
+  a name, a cockpit, a plume or a sound can change in a definition file, and a craft can be renamed,
+  without changing the golden hash or invalidating a save; the snapshot states them
+  (`CraftSnapshot.cockpit`, the stage words, the crew), read from the definitions when it is built.
+  Before that step the reference hashed the whole `VehicleDef` and the command part's camera seat was
+  hashed vessel state: one such edit, the cockpit seat of request cockpit-18, changed the golden hash of a
+  flight that was the same in every number and made the corpus's earlier blobs decode to another state,
+  and was taken back. Blobs of versions 1 to 3 carry hashes and fingerprints of the old kind, which cannot
+  be recomputed once a presentation field has changed; they are read through a table recorded at the step
+  (`src/sim/vessel/migrations/legacyV3.ts`), so every earlier blob still decodes without a migration.
+  What is frozen now is the projection (MIGRATION_V2 principle 5, PACKAGE_RULES 7a). Per
   part it carries the fingerprint of its `PartDef`, and module and resource blocks are length-prefixed, so
   an unknown or changed block is detected instead of mis-read. Rules that keep old blobs readable: part,
   module and resource ids are never removed or renumbered, only deprecated; a change of a part's modules,

@@ -1367,3 +1367,91 @@ them).
    ten minutes for as long as its island keeps records waiting, which is 30 % over those rows. Not
    changed here: whether the cost model is restated at 7.8 or the burst is argued to be rare is a decision.
 3. `Readouts.target` is still filled by no session (section 25, item 1).
+
+## 27. The tighten step after sub-wave 3.2 (2026-11-24, 10:40-12:00; commits 29cbf3a contracts and headless, c6942d8 codec, 6bd50cd rules, d0af519 presentation, and the documents after them)
+
+MIGRATION_V2's row "after 3.2" lists the step and, under AS MADE, what it came to. In short:
+
+**Removed.** `SimSnapshot.tick`; `Readouts.targetBodyId`, `.targetClosestApproach`; the aliases `Sim`,
+`SimDebug`; `LaunchSiteDef.pad`, `.padAzimuthDeg`, `.structures` (with `SINGLE_PAD_ID`, `singlePadOf`, and
+the loader's reading of a v1 site file: refused by name); the button action `pause`; the `createSim` export
+(`src/sim/index.ts` exports no session; `createWorld(..., { renderRoot: 'rootBody' })` is what it was, used
+by `tools/audio/entryProfile.ts` and `deploy/bench/derating.ts`).
+
+**Required.** `SimSnapshot.revision`, `.frame`, `.time`; `VesselSnapshot.crafts`, `.links`, `.helm`,
+`.presence`, `.timeOffset`, `.revision`; `PartSnapshot.craftId`, `.stageGroup`, `.stageLabel`, `.panel`,
+and the new `.stageOrder` (request presentation-sweep-10); `CraftSnapshot.parent`, `.cockpit`;
+`CraftCockpit.crew`; the five `StageInfo` words; `Readouts.target`, `.docking`;
+`NavballMarkers.relativePrograde`, `.relativeRetrograde`; `LaunchSiteDef.pads`; the 24 wire limits of
+`UniverseRules.limits`; `LinkState.queueEtaSeconds`. **Nullable:** `activeVesselId`, `scenario`, the
+parachute state's `envelope`. **Optional now:** `VehicleDef.cameras.cockpit`. **Still optional, each with
+its reason in the contract:** `VesselSnapshot.presentation`, `EventBase.provisional`,
+`SnapshotFrame.previous`.
+
+**Decisions made in the step, each with its reason.**
+1. `Readouts.target` HAS A PRODUCER for a body target (`bodyTargetReadout`, `closestApproachToBody` in
+   `src/sim/nav/readouts.ts`): range and range rate to the body's centre, the relative inclination, and
+   ONE closest approach, the one `targetClosestApproach` stated, with the speed relative to the body at it
+   (the vessel's velocity on the patch at the marker less the body's; for a periapsis about the target the
+   speed at periapsis). One entry and not the contract's "up to three in time order": the HUD reads entry 0
+   as THE approach, and the least distance is what it showed. `tests/unit/sim-world/targetReadout.test.ts`
+   holds every number against a second computation (ROOT states; vis-viva).
+2. The chute `envelope` is null in the SNAPSHOT, not in the vessel's state. The state's judgement is what
+   the step fails a canopy by (above its altitude limit, also without air), and a blob of an earlier
+   version could not have been upgraded (the codec does not know the air). `vesselPartSnapshots(vessel,
+   inAir)` states null without air, and World passes the air at the vessel now, which is the rule of
+   `Readouts.chuteEnvelope` and holds on rails and on the ground too. No saved byte changed for it.
+3. A v1 site file is REFUSED, not converted: the repository's site states `pads`, and a second way to
+   state a pad is a second thing to keep. The terrain fixture states its pad in the list (id `pad`, the
+   values the single pad had): the terrain guard is unchanged.
+4. The wire keeps the LAYOUT of protocol 2 for the rules document: the 24 limits were optional members
+   with presence bits when it was frozen; they are required in the contract and the bits are always set
+   (`statedLimits` in `src/net/codec/common.ts`; a document without one is refused as `badValue`). No
+   protocol version step and no recorded file of the wire layer changed.
+5. The default rules document "receives" its fields in `DEFAULT_UNIVERSE_RULES.limits`: a rules FILE is the
+   default with its own values over it (`completeRules`), so every document has the 24 fields and no file
+   under `data/defs/rules` changed. `WIRE_LIMIT_DEFAULTS` reads them from the default document.
+
+**The codec step: version 4.**
+- `src/core/defs/simProjection.ts` is the simulation projection (what is OUT: a vehicle's `name`,
+  `cameras`, `cockpit`, the labels of its stage groups, the label and icon of a stage, the names of its
+  crew; a command module's `cockpit`, `sensorCamera` and each seat's `lookDir` / `upDir`; an engine's
+  `plume` and `sound`). A seat's POSITION stays in: `structure.ts` takes the crew's g dose at it. Not
+  taken out, because the decision does not name them and nothing was measured: `hatch`, a parachute's
+  `canopyDiameter` and `lineLength`, the `params` of lights and antennas, `padInterface`.
+- `vehicleHash` and `partFingerprint` are taken of the projection; a command part's record is seats and g
+  dose; names are in the LABELS block (tag 7), which `encodeVessel` writes and `stateHash` leaves out.
+- Versions 1 to 3 are read through `src/sim/vessel/migrations/legacyV3.ts`, recorded once (25 parts, 1
+  vehicle; 11 parts and the vehicle have another value than before, the 14 parts without an engine or a
+  command module the same). A blob of an old version written now (two tests do) is recognised by the
+  old-kind value of the definition as it stands.
+- Corpus: six version 4 blobs added (24); the recorder decoded all 18 earlier blobs to the state of their
+  scenes under the new hash before it wrote the list. Pins: 7 added (the six blobs, the table), none
+  replaced. Codec tests: 29 (23 + 6: a restyled library gives the same hash in every regime and reads
+  every blob of the corpus without a migration; a name is carried and not hashed; a simulated field is not
+  free).
+- **The golden: `72c0893583aa427d`, it was `b8221b0fd316207e`; 596,933 steps both.** The proof: the
+  mission record flown before the step, after the contract changes and after the codec step
+  (`out/lead-baseline-v2/tighten/record-{before,mid,after}.json`); `--exact after --reference before`: all 17
+  milestones equal; the before and after files differ in two lines, the label and the hash. The record
+  after the contract changes alone still had the old hash (the event part ids and the readouts are not
+  state).
+
+**Gates.**
+
+| Gate | Result |
+|---|---|
+| `npm run typecheck` | clean, both configurations |
+| Headless suites, codec corpus (29), pins (3), terrain guard | 87 files pass, 2 skipped; 945 tests pass, 13 skipped (src/sim, src/session, src/terrain, src/pilot, src/net, src/core/defs, math and contracts, tools; tests/unit/sim-*, terrain-core, platform, net) |
+| `npm run test:mission` | 36 of 36 at the new golden `72c0893583aa427d` |
+| The whole unit suite | 190 files pass, 2 skipped; 2,333 tests pass, 15 skipped, 0 fail |
+| The deprecation test (`tests/unit/fakes/deprecated.test.ts`) | passes; the rules `tick`, `target`, `pad`, `createSim` and `Sim` are taken out with their exceptions and self-test lines (their members left the contracts); `vehicles`, `cockpitCamera`, `origin`, `pause` and `html` stay; 27 per-line exceptions of 35 remain (pause 1, vehicles 14, cockpitCamera 5, origin 7), each a producer, a list of every vehicle, or a word that is another thing |
+| Reference images (33; the 30 exact at 0 pixels) | 33 of 33; the 30 exact at 0 pixels, each on its first load; `shoreline`, `lunar-touchdown` and `sweep-lunar-orbit` inside their tolerances (12.8 minutes) |
+| Budget compare | 10 of 10; every row under its recorded sum (-0.9 % to -8.8 %) |
+
+**Presentation (half B).** 49 files (21 under `src`, 11 under `labs`, 16 under `tests`, `data/defs/audio/ui.json`), commit d0af519. The access module lost `revisionOf`, `targetOf`, the derived target view and every fallback for a missing block; `eventPartOf` / `findEventPart` take part keys only; the producers (the fakes, the labs' vessels and simulations, the map's synthetic snapshot) state the required members with the value they had or the value the removed fallback gave, and their events by part key; `describeResources` orders by `stageOrder`. Not pictures, and changed: the one-shot audio variant and rate of an event are seeded with its `partId` string, which is a key now (`stageFired`, `rcsPulse`, `decoupled`, `chuteInflated`, `partDestroyed`, `explosion` sound as another variant of the same set); the click watch of `ui.json` is `readouts.target` (decision D14 of the sweep), so it also clicks on a change of a vessel or port target; the MFD's target page (outside the page cycle) shows range, range rate and the speed at the approach for a body target in a real session, because the session states them. `docs/handoff/presentation-sweep.md` section 4 still names `revisionOf`, `targetOf` and the two-argument `targetNameOf`: they are gone.
+
+**Left for the lead's decision.** (1) `src/app/game.ts`, the unload guard (`inFlight`): a session WITHOUT A SCENARIO counts as a flight under way, so the page asks before it is left unless the mission failed; with a scenario it is what it was. Whether a lobby or a menu session should arm that guard is a decision about behaviour. No site needed a decision about a missing active vessel: every use in `src` was a comparison or a lookup that already returned null. (2) The cost of presentation freedom was drawn narrowly: `hatch`, a parachute's `canopyDiameter` and `lineLength`, the `params` of lights and antennas and `padInterface` are still inside the projection (frozen), because the decision names cameras, seats, names, labels and references to visuals and audio, and nothing else was measured; each can be named in `simProjection.ts` later, but that is a hash change of its own (a codec step and a golden). (3) The fake states `targetRelativeInclination` for a VESSEL target; the contract's comment says the field is about a body. One line in `src/core/fakes/fakeSession.ts` if it should conform. (4) The three `.fspw` recordings of the wire layer (`tests/unit/net/fixtures`) were recorded when a vessel of one craft named an event's part by its instance id; they still decode and re-encode (their test passes), and a re-record would differ in those ids: for whoever records them next. (5) `tools/vehicle/site-ground.ts` surveys the first pad only; a second pad with structures needs its own survey before `fleet-data` adds one.
+
+**For the next packages.** The LEAD NOTES of 2026-11-24 on `island-core`, `solar-system-sim`, `fleet-data`,
+`shell-menu` and `capability-settings` say what changed under each. PACKAGE_RULES 7a is rewritten.
