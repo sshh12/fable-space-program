@@ -121,7 +121,7 @@ export function applyIslandOp(island: IslandImpl, op: IslandOp): IslandOpChecksu
       const anchor = memberAt(island, op.anchor);
       if (op.bodyId !== island.bodyId) throw new IslandOpError('frame', `the rebase is about "${op.bodyId}", the island is about "${island.bodyId}"`);
       if (!v3.isFinite(op.r) || !v3.isFinite(op.v)) throw new IslandOpError('frame', 'the reference state is not finite');
-      access.rebaseTo({ r: op.r, v: op.v });
+      access.rebaseTo({ r: op.r, v: op.v }, anchor);
       const checksum = checksumOfVessel(anchor.vessel);
       access.pushOp({ tick: island.tick, body: op, checksum });
       return checksum;

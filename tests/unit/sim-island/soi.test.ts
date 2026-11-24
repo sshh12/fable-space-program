@@ -114,6 +114,34 @@ describe('an island of two across a sphere of influence', () => {
     expect(v3.dist(stepped.stateOf('alpha')!.r, advanced.stateOf('alpha')!.r)).toBeLessThan(1e-4);
   });
 
+  it('a member whose own conic grazes the sphere while the island stays outside keeps its conic and its later events', () => {
+    const island = islandAt(s, 'earth');
+    // Both drift past the Moon at 300 m/s, on closed orbits about the Earth: alpha 3,000 km outside the Moon's
+    // sphere all the way, bravo 200 km inside it at its nearest (it is in the sphere from a quarter of an hour
+    // on, for nearly ten hours).
+    const moon = s.system.stateRelParent('moon', utOfTick(TICK0));
+    const place = (id: string, clear: number): Vessel => {
+      const v = craft(id, 0);
+      v.r = v3.add(moon.r, v3.add(v3.scale(out, soi + clear), v3.scale(across, -5_400_000)));
+      v.v = v3.add(moon.v, v3.scale(across, 300));
+      return v;
+    };
+    island.add(place('alpha', 3_000_000), { pilot: PILOT, attended: true });
+    island.add(place('bravo', -200_000));
+    island.settle('alpha');
+    island.settle('bravo');
+    expect(island.member('alpha')!.railsEvent?.kind ?? 'none').not.toBe('soiEnter');
+    expect(island.member('bravo')!.railsEvent?.kind).toBe('soiEnter');
+    island.advanceTo(TICK0 + 120 * 3600 * 12);
+    // The island is about the Earth still, bravo on its Earth conic, and its conic is still watched for what comes next.
+    expect(island.bodyId).toBe('earth');
+    const b = island.member('bravo')!;
+    expect(b.orbit).not.toBeNull();
+    expect(b.orbit!.bodyId).toBe('earth');
+    expect(b.railsEvent).not.toBeNull();
+    expect(b.railsEvent!.ut).toBeGreaterThan(island.ut);
+  });
+
   describe('a pair in the contact regime (forced by the hook)', () => {
     const solved: { tick: number; both: boolean }[] = [];
     const hook: PairHook = { regime: () => 'contact', solve: (_a, _b, runA, runB, tick, sub) => void (sub === 0 && solved.push({ tick, both: runA !== null && runB !== null })) };

@@ -5,7 +5,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { v3 } from '@/core/math/vec3';
-import { comStateOf, decodeIsland, REFERENCE_OFFSET_MAX, REFERENCE_SETTLE_SPEED, type AdvanceReport, type Island, type PairHook } from '@/sim/island';
+import { checksumsAgree, comStateOf, decodeIsland, REFERENCE_OFFSET_MAX, REFERENCE_SETTLE_SPEED, type AdvanceReport, type Island, type PairHook } from '@/sim/island';
 import { controls, input, islandAt, loadLibraryOver, orbiter, PILOT, relative, setup, TICK0, type Setup } from './helpers';
 
 const AU = 1.495978707e11;
@@ -25,6 +25,8 @@ describe('an island at 30 AU', () => {
     island.add(orbiter(s.defs, 'alpha', 7, mu, 30 * AU), { pilot: PILOT, attended: true });
     island.add(orbiter(s.defs, 'bravo', 7, mu, 30 * AU, { x: 0, y: separation, z: 0 }));
     island.refreshMargins();
+    // The reference orbit is made for the member set at the first step, advance or encoding: here.
+    island.hash();
     return island;
   }
 
@@ -97,7 +99,9 @@ describe('an island at 30 AU', () => {
       const com = comStateOf(v);
       return { r: v3.len(com.r), v: v3.len(com.v) };
     };
-    // Coasting: the anchor stays on the reference orbit and nothing is replaced.
+    // The first step reports the operation that made the reference orbit for the member set; coasting, the anchor
+    // stays on it and nothing is replaced.
+    expect(rebases(island.step())).toBe(1);
     let count = 0;
     for (let k = 0; k < 240; k++) count += rebases(island.step());
     expect(count).toBe(0);
@@ -136,14 +140,6 @@ describe('an island at 30 AU', () => {
     count = 0;
     for (let k = 0; k < 240; k++) count += rebases(island.step());
     expect(count).toBe(0);
-    // The offset limit: a reference point 40 km from the anchor (given as a rebase operation) is replaced at the next control tick.
-    const far = island.stateOf('alpha')!;
-    island.applyOp({ op: 'rebase', anchor: island.member('alpha')!.slot, bodyId: star, r: v3.add(far.r, { x: 40_000, y: 0, z: 0 }), v: far.v });
-    expect(anchorOffset().r).toBeGreaterThan(REFERENCE_OFFSET_MAX);
-    count = 0;
-    for (let k = 0; k < 4; k++) count += rebases(island.step());
-    expect(count).toBe(1);
-    expect(anchorOffset().r).toBeLessThan(1);
     // A checkpoint taken in the middle of a burn rebases at the same tick as the island it was taken from.
     const burning = pair(100);
     burning.applyInput(input(burning.tick, { kind: 'command', vesselId: 'alpha', command: { kind: 'rcs', on: true } }));
@@ -161,4 +157,67 @@ describe('an island at 30 AU', () => {
     expect(count).toBe(1);
     expect(copy.hash()).toBe(burning.hash());
   }, 60_000);
+
+  it('a long burn: the reference orbit is replaced when the anchor is 30 km from it, while it still burns; the server\u2019s rebase operation applied to a replica that rebased itself changes nothing', () => {
+    // A stack with a main engine: the lunar stack's upper part, staged until an engine burns, at 40 % throttle (the
+    // tank lasts for 21 km of offset at full throttle).
+    const island = islandAt(s, star);
+    island.add(orbiter(s.defs, 'alpha', 3, mu, 30 * AU), { pilot: PILOT, attended: true });
+    island.add(orbiter(s.defs, 'bravo', 7, mu, 30 * AU, { x: 0, y: 100, z: 0 }));
+    island.applyInput(input(island.tick, { kind: 'controls', vesselId: 'alpha', controls: controls({ throttle: 0.4 }), sasHold: null }));
+    for (let n = 0; n < 4 && island.member('alpha')!.vessel.thrust === 0; n++) {
+      island.applyInput(input(island.tick, { kind: 'command', vesselId: 'alpha', command: { kind: 'stage' } }));
+      for (let k = 0; k < 360; k++) island.step();
+    }
+    expect(island.member('alpha')!.vessel.thrust).toBeGreaterThan(0);
+    let farthest = 0;
+    let op: AdvanceReport['ops'][number] | null = null;
+    // (A rebase at each staging on the way here is behind us: from now on the engine burns without a pause.)
+    for (let k = 0; k < 160_000 && op === null; k++) {
+      farthest = Math.max(farthest, v3.len(comStateOf(island.member('alpha')!.vessel).r));
+      const report = island.step();
+      op = report.ops.find((o) => o.body.op === 'rebase') ?? null;
+    }
+    expect(op).not.toBeNull();
+    // (`farthest` is read before each step; the limit is looked at on the control-tick cadence after it.)
+    expect(farthest).toBeGreaterThan(REFERENCE_OFFSET_MAX - 500);
+    expect(farthest).toBeLessThan(REFERENCE_OFFSET_MAX + 500);
+    expect(island.member('alpha')!.mode).toBe('integrated');
+    expect(v3.len(comStateOf(island.member('alpha')!.vessel).r)).toBeLessThan(1e-3);
+    // A replica (the same state, the same code) has rebased at the same tick: the operation finds its reference in place.
+    const replica = decodeIsland(s.deps, island.encode(), { mode: 'predict' });
+    const before = replica.hash();
+    if (op!.body.op === 'rebase') expect(checksumsAgree(replica.applyOp(op!.body)!, op!.checksum!)).toBe(true);
+    expect(replica.hash()).toBe(before);
+    expect(replica.hash()).toBe(island.hash());
+  }, 120_000);
+
+  for (const [name, distance] of [
+    ['1 AU', AU],
+    ['30 AU', 30 * AU],
+  ] as const) {
+    it(`at ${name} three vessels added in two orders are one island: the reference orbit and every offset are a function of the set`, () => {
+      const make = (order: readonly string[]): Island => {
+        const island = islandAt(s, star);
+        for (const id of order) {
+          const k = ['alpha', 'bravo', 'charlie'].indexOf(id);
+          island.add(orbiter(s.defs, id, 7, mu, distance, { x: 40 * k, y: 150 * k, z: -30 * k }), id === 'bravo' ? { pilot: PILOT, attended: true } : {});
+        }
+        island.refreshMargins();
+        return island;
+      };
+      const x = make(['alpha', 'bravo', 'charlie']);
+      const y = make(['charlie', 'alpha', 'bravo']);
+      const z = make(['bravo', 'charlie', 'alpha']);
+      // The anchor is the attended member, whichever was added first.
+      for (const i of [x, y, z]) expect(i.anchorId).toBe('bravo');
+      expect(y.hash()).toBe(x.hash());
+      expect(z.hash()).toBe(x.hash());
+      expect(x.reference).not.toBeNull();
+      expect(y.reference).toEqual(x.reference);
+      for (let k = 0; k < 600; k++) for (const i of [x, y, z]) i.step();
+      expect(y.hash()).toBe(x.hash());
+      expect(z.hash()).toBe(x.hash());
+    });
+  }
 });

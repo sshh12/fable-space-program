@@ -86,6 +86,8 @@ import { IMPACT_DISC_RADIUS, IMPACT_REFRESH_DISTANCE, TerrainPolicy, VESSEL_DISC
 export const ROTATION_WARP_LIMIT = 0.5 * DEG;
 /** SAS pointing error below which the attitude tracks the hold direction across a rails advance, rad. */
 export const SAS_TRACK_ERROR = 2 * DEG;
+/** After a member's own sphere-of-influence crossing was put off (the island crosses with its anchor), its conic is examined again this much later, s. */
+export const SOI_RECHECK_TIME = 600;
 /** Collision vertices warmed per control tick around the predicted touchdown point of a piloted member. */
 export const PREWARM_BUDGET = 48;
 /** Radar altitude below which the touchdown area is warmed, m. */
@@ -394,6 +396,21 @@ export class IslandImpl implements Island {
     if (coasting && (offset > REFERENCE_SETTLE_DISTANCE || v3.len(com.v) > REFERENCE_SETTLE_SPEED)) this.rebase(this.ut, 'burn');
   }
 
+  /**
+   * In the sphere of influence of the root star the island integrates offsets from a reference orbit. It is
+   * made here, before the first step, rails advance or encoding after the island has its members: at the
+   * ANCHOR's centre of mass, in slot order, whichever member was added first. The reference orbit and
+   * every offset are therefore a function of the member set (a merge is independent of arrival order).
+   */
+  private frameUp(into: AdvanceReport): void {
+    if (this.reference !== null || this.recs.length === 0 || !this.usesReference(this.bodyId)) return;
+    for (const rec of this.recs) if (rec.vessel.hold !== null) return;
+    const saved = this.report;
+    this.report = into;
+    this.rebase(this.ut, 'frame');
+    this.report = saved;
+  }
+
   /** Give the reference orbit up: every member's state becomes its BCI state. */
   private dropReference(ut: number): void {
     if (this.reference === null) return;
@@ -458,7 +475,6 @@ export class IslandImpl implements Island {
 
   add(vessel: Vessel, options: AddOptions = {}): IslandMember {
     const rec = this.newRec(vessel, options);
-    const first = this.recs.length === 0;
     this.insert(rec);
     this.sunToEnv(rec);
     // The age of a member is the island's time since it came into being (the vessel package only counts the steps it is given).
@@ -468,7 +484,8 @@ export class IslandImpl implements Island {
       const o = this.refAt(this.ut);
       vessel.r = v3.sub(vessel.r, o.r);
       vessel.v = v3.sub(vessel.v, o.v);
-    } else if (first && this.usesReference(this.bodyId) && vessel.hold === null) this.rebase(this.ut, 'frame');
+    }
+    // (Without a reference orbit yet the state stays BCI: `frameUp` makes the orbit for the whole member set.)
     if (options.conic && vessel.hold === null) {
       rec.orbit = options.conic.orbit;
       rec.railsEvent = options.conic.event;
@@ -609,14 +626,16 @@ export class IslandImpl implements Island {
       if (!ev || ev.ut > utNew || rec.orbit === null) break;
       if (ev.kind === 'soiEnter' || ev.kind === 'soiExit') {
         if (rec !== this.anchor()) {
-          // The island crosses as a unit at its anchor's instant: until then the member stays on its conic.
-          rec.railsEvent = null;
+          // The island crosses as a unit at its anchor's instant: until then the member stays on its conic. Its
+          // conic is looked at again a little later (the hand-over gives it a new one before that, when there is
+          // one): what comes after the crossing on it, the air or the ground, is not lost.
+          rec.railsEvent = { ut: Math.max(ev.ut, utNew) + SOI_RECHECK_TIME, kind: 'recheck', nextBodyId: null };
           continue;
         }
         if (this.anyIntegrated()) {
           // A companion is being integrated: the island hands over at the tick, when every state is one instant's.
           this.pendingHandOver = { ut: ev.ut, kind: ev.kind, nextBodyId: ev.nextBodyId };
-          rec.railsEvent = null;
+          rec.railsEvent = { ut: Math.max(ev.ut, utNew) + SOI_RECHECK_TIME, kind: 'recheck', nextBodyId: null };
           continue;
         }
         this.handOver({ ut: ev.ut, kind: ev.kind, nextBodyId: ev.nextBodyId }, utNew);
@@ -772,6 +791,7 @@ export class IslandImpl implements Island {
     if (this.mergeTick !== null && this.tick >= this.mergeTick) throw new Error(`island ${this.id}: step past the pending merge tick ${this.mergeTick}`);
     this.policy.throwIfBroken();
     const report = this.begin();
+    this.frameUp(report);
     this.applyQueued();
     if (this.tick % CONTROL_TICKS === 0) this.terrainWork();
     const ut0 = this.ut;
@@ -1331,6 +1351,7 @@ export class IslandImpl implements Island {
   advanceTo(tick: number): AdvanceReport {
     this.policy.throwIfBroken();
     this.begin();
+    this.frameUp(this.report);
     // The inputs of this tick first: one of them may forbid the coast.
     this.applyQueued();
     let landing = tick;
@@ -1707,11 +1728,15 @@ export class IslandImpl implements Island {
       this.report.arrivals.push({ vesselId, fromVesselId: vesselId });
     },
     envOf: (rec: Rec): IslandEnv => this.envAt(rec, this.ut),
-    rebaseTo: (state: { r: Vec3; v: Vec3 }): void => {
-      // A replica's rebase: the offsets move by the difference of the two reference points at the tick.
-      const ut = this.ut;
-      const old = this.reference !== null ? this.refAt(ut) : { r: v3.zero(), v: v3.zero() };
-      const delta = { r: v3.sub(old.r, state.r), v: v3.sub(old.v, state.v) };
+    rebaseTo: (state: { r: Vec3; v: Vec3 }, anchor: Rec): void => {
+      // A replica that rebased by the same rule at this tick has this reference already: nothing moves, to the bit.
+      const have = this.reference;
+      if (have !== null && have.tick === this.tick && v3.dist(have.r0, state.r) === 0 && v3.dist(have.v0, state.v) === 0) return;
+      // Else it does what the sender did: the new reference point is the anchor's centre of mass, so every
+      // state moves by that anchor's own state (its offset from the old reference, or its BCI state), with the
+      // same expression; the orbit is the stated one. Equal states give equal states, to the bit.
+      const com = comStateOf(anchor.vessel);
+      const delta = { r: v3.neg(com.r), v: v3.neg(com.v) };
       for (const rec of this.recs) {
         rec.vessel.r = v3.add(rec.vessel.r, delta.r);
         rec.vessel.v = v3.add(rec.vessel.v, delta.v);
@@ -1759,10 +1784,12 @@ export class IslandImpl implements Island {
   // -------------------------------------------------------------------------------------------- codec
 
   encode(options?: { names?: boolean }): Uint8Array {
+    this.frameUp(this.carried);
     return encodeIsland(this, options?.names ?? true);
   }
 
   hash(): string {
+    this.frameUp(this.carried);
     return islandHash(encodeIsland(this, false));
   }
 }
