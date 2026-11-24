@@ -73,7 +73,21 @@ export function listTilesets(tilesRoot: string): string[] {
     .sort();
 }
 
-export function fableDataPlugin(repoRoot: string): Plugin {
+/**
+ * The definition files as they are NOW: the listing and every file's bytes. A server started with
+ * FSP_FREEZE_DEFS=1 (the browser tests' server: tests/browser/globalSetup.ts) serves /defs from this copy
+ * for as long as it lives, so that every page of a run loads the same library whatever another agent
+ * saves under data/defs meanwhile. (Tiles and sky data are not copied: they are large, and a bake that
+ * rewrites them while a run reads them is a thing to avoid, not to hide.)
+ */
+export function snapshotDefs(defsRoot: string): { listing: string; files: Map<string, Buffer> } {
+  const files = new Map<string, Buffer>();
+  const names = listJson(defsRoot);
+  for (const f of names) files.set(f, fs.readFileSync(path.join(defsRoot, f)));
+  return { listing: JSON.stringify({ files: names }), files };
+}
+
+export function fableDataPlugin(repoRoot: string, options: { freezeDefs?: boolean } = {}): Plugin {
   const mounts: { prefix: string; dir: string }[] = [
     { prefix: '/tiles/', dir: path.join(repoRoot, 'data', 'tiles') },
     { prefix: '/sky/', dir: path.join(repoRoot, 'data', 'sky') },
@@ -81,6 +95,7 @@ export function fableDataPlugin(repoRoot: string): Plugin {
   ];
   const defsRoot = path.join(repoRoot, 'data', 'defs');
   const tilesRoot = path.join(repoRoot, 'data', 'tiles');
+  const frozen = (options.freezeDefs ?? process.env.FSP_FREEZE_DEFS === '1') ? snapshotDefs(defsRoot) : null;
 
   const handler = (req: IncomingMessage, res: ServerResponse, next: () => void): void => {
     const rawUrl = req.url ?? '/';
@@ -96,6 +111,17 @@ export function fableDataPlugin(repoRoot: string): Plugin {
       res.writeHead(status, { ...ISOLATION_HEADERS, ...headers });
       res.end(body);
     };
+    if (frozen && mount.prefix === '/defs/') {
+      // The library as it was when this server started (see snapshotDefs).
+      if (pathname === '/defs/index.json') {
+        send(200, { 'Content-Type': MIME['.json']!, 'Cache-Control': 'no-cache' }, frozen.listing);
+        return;
+      }
+      const body = frozen.files.get(pathname.slice(mount.prefix.length));
+      if (!body) send(404, { 'Cache-Control': 'no-store' }, 'not found');
+      else send(200, { 'Content-Type': MIME['.json']!, 'Content-Length': String(body.length), 'Cache-Control': 'no-cache' }, req.method === 'HEAD' ? undefined : body);
+      return;
+    }
     if (pathname === '/defs/index.json') {
       send(200, { 'Content-Type': MIME['.json']!, 'Cache-Control': 'no-cache' }, JSON.stringify({ files: listJson(defsRoot) }));
       return;

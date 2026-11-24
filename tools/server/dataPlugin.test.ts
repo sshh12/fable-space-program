@@ -120,3 +120,43 @@ describe('fableDataPlugin', () => {
     expect([...emitted.keys()].filter((k) => k.startsWith('tiles/'))).toEqual(['tiles/index.json']);
   });
 });
+
+describe('frozen definitions (the browser tests\' server)', () => {
+  it('serves the library as it was when the server started, whatever is saved, added or removed afterwards', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fable-data-frozen-'));
+    const put = (rel: string, content: string): void => {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), content);
+    };
+    put('data/defs/parts/tank.json', '{"dryMass":1}');
+    put('data/defs/vehicles/stack.json', '{"id":"stack"}');
+    put('data/tiles/earth/manifest.json', '{"id":"earth"}');
+    const live = handler;
+    try {
+      const plugin = fableDataPlugin(dir, { freezeDefs: true });
+      (plugin.configureServer as unknown as (server: { middlewares: { use(h: Handler): void } }) => void)({ middlewares: { use: (h) => (handler = h) } });
+      // Another agent saves a definition, adds one and removes one.
+      put('data/defs/parts/tank.json', '{"dryMass":2}');
+      put('data/defs/parts/new-part.json', '{}');
+      fs.rmSync(path.join(dir, 'data/defs/vehicles/stack.json'));
+      expect(JSON.parse((await get('/defs/index.json')).body)).toEqual({ files: ['parts/tank.json', 'vehicles/stack.json'] });
+      expect((await get('/defs/parts/tank.json')).body).toBe('{"dryMass":1}');
+      expect((await get('/defs/vehicles/stack.json')).body).toBe('{"id":"stack"}');
+      expect((await get('/defs/parts/new-part.json')).status).toBe(404);
+      const reply = await get('/defs/parts/tank.json');
+      expect(reply.status).toBe(200);
+      for (const [k, v] of Object.entries(ISOLATION_HEADERS)) expect(reply.headers[k]).toBe(v);
+      // Tiles are not copied: they are read from disk as they are.
+      put('data/tiles/earth/manifest.json', '{"id":"earth","v":2}');
+      expect((await get('/tiles/earth/manifest.json')).body).toBe('{"id":"earth","v":2}');
+      // Without the switch the same directory is read live.
+      const plain = fableDataPlugin(dir, { freezeDefs: false });
+      (plain.configureServer as unknown as (server: { middlewares: { use(h: Handler): void } }) => void)({ middlewares: { use: (h) => (handler = h) } });
+      expect((await get('/defs/parts/tank.json')).body).toBe('{"dryMass":2}');
+      expect(JSON.parse((await get('/defs/index.json')).body)).toEqual({ files: ['parts/new-part.json', 'parts/tank.json'] });
+    } finally {
+      handler = live;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

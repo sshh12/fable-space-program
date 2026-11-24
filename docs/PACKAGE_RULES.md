@@ -173,6 +173,13 @@ VIDEO_SCHEDULER_INTERNAL_ERROR, in the GPU driver): at 15:35 with four WebGPU Ch
     `expectNoErrors`, `saveScreenshot` into `out/screens/<package>/`. Real Chrome, real GPU; assert the
     adapter. Close loops on state with `waitForFunction`, never sleep. Then LOOK at every PNG you save (Read
     it) and iterate until it is convincing; a screenshot nobody looked at proves nothing.
+14a. A browser run you draw a conclusion from starts from a COMMITTED state of your own paths (commit, or
+     at least stop saving, before you start it). The page server the harness starts
+     (`tests/browser/globalSetup.ts`) is FROZEN AT THE START OF THE RUN: it watches no file, never reloads a
+     page, and serves every module the pages import and every definition file as they were when the run
+     began, whatever anyone saves meanwhile; it does NOT freeze the HTML files, the tile and sky data or
+     your spec files, and at its end it prints every file that was saved and every commit that was made
+     under the run, so a failure may be discounted only after a look at that list.
 15. Photometric rendering: luminance in cd/m^2 times `frame.exposure`, written through `writeHdr()`.
 15a. Reference images (ARCHITECTURE 31.3): where your brief names them, open a checkpoint with
      `openCheckpoint(page, name)` (its page and its setup steps, at the manifest's viewport) and compare with

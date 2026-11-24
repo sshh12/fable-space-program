@@ -1565,3 +1565,26 @@ above compared all 400 samples with its own script); (2) one read-out of the mis
 reproduce between a committed record and a re-flight of identical state (`LUNAR_ORBIT.data.radarAltitude`
 104688.159 against 104688.063): until island-core reports the cause, an EXACT comparison of two records
 is evidence for the states and the elements, and NOT for the read-outs.
+
+**The harness's page server is frozen at the start of a run (2026-11-24, 15:00).** It had no watcher and no
+hot reload since 2026-11-11 (`watch: null`, `hmr: false`): it never reloaded a page. What ruined runs was
+that it transformed a module at its FIRST REQUEST and read the definition files from disk at EVERY page
+load, so a run on a tree that others were saving in saw part of one state and part of another (the lead's
+own look-1 gate saw fleet-data's new vehicles arrive that way). Now `tests/browser/globalSetup.ts`
+transforms every module the pages can load before the first test (the module scripts of index.html and of
+every labs/<name>/index.html, then everything they import, also by a literal dynamic import), the data
+plugin serves /defs from a copy made when the server starts (`FSP_FREEZE_DEFS`,
+`tools/server/dataPlugin.ts`), and at the end of the run the harness prints the files saved and the commits
+made under it. NOT frozen: the HTML files, tile and sky data, a module only a non-literal dynamic import
+reaches, the spec files. Proof: `tests/browser/shell/harness-freeze.spec.ts` saves `labs/harness/probe.ts`
+during the run and gets the module as it was, from a request and from two fresh page loads; the unit test
+of the data plugin does the same for definitions in a temporary directory. The proof run's line:
+`page server frozen at the start of the run: 503 modules from 18 pages in 861 ms`. PACKAGE_RULES 14a says what a runner may rely on.
+- The harness keeps the frozen text ITSELF and answers every request for such a module in front of the
+  server's own handling (`freezeModules`): the server's own cache alone gave the probe module in its saved
+  form in one of the first proof runs (two spec files in the run, a page of another spec loading at the
+  same time), so it is not relied on. The freeze takes under a second (about 500 modules of 18 pages).
+  Three runs after that change, each with the template lab's spec beside the proof: all pass.
+- Seen on the way, not the lead's: `tests/unit/fakes/deprecated.test.ts` is red on `labs/shell/main.ts:160`
+  and `tests/unit/fakes/menuStores.test.ts:77` (a vehicle looked up by a value: shell-menu) and on
+  `index.html:106` (a module script written into the page, `data-fsp-gate`: capability-settings).
