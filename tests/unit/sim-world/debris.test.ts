@@ -16,7 +16,7 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import type { DiagnosedSession } from '../../../tools/sim/realWorld';
-import { BUBBLE_EXIT_RADIUS, FRAGMENT_LIFETIME, FRAGMENT_MASS, MAX_DEBRIS } from '@/sim/world/sim';
+import { FRAGMENT_LIFETIME, FRAGMENT_MASS, MAX_DEBRIS } from '@/sim/world/sim';
 import { active, controls, flatTerrain, loadLibrary, makeSim, orbitScenario } from './helpers';
 
 let defs: DefLibrary;
@@ -334,8 +334,8 @@ describe('vessel cycling', () => {
     // Controllable vessels are not debris: neither expires, and neither counts as lost.
     steps(sim, FRAGMENT_LIFETIME + 5);
     expect(sim.peek().vessels).toHaveLength(2);
-    // Outside the bubble the other vessel cannot be taken over.
-    jumpAhead(sim, 4 * BUBBLE_EXIT_RADIUS);
+    // Outside the island (far past the parting distance) the other vessel cannot be taken over.
+    jumpAhead(sim, 100000);
     steps(sim, 1);
     s = sim.peek();
     expect(s.vessels.find((v) => v.id === b)!.tier).toBe('rails');

@@ -175,48 +175,67 @@ All timings were taken with other agents' jobs running (PACKAGE_RULES 16): provi
 5. Reference orbit: the 30 km and end-of-burn rebase triggers, dropping the reference near a surface.
 6. `IslandImpl.recordOps` into the `Island` interface; `helm` input beyond setting the helm fields.
 
-## 6. Formation by the join distance (built, measured, not switched on)
+## 6. Formation by the join distance (IN since the second builder; lead decision on request island-core-1)
 
-`World.form()` with the rules' join distance: the island is what hangs together with the active vessel
-(members linked one to the next by less than `islandPartFactor` times the pair's join distance, computed
-with `pairReach`); a vessel outside joins inside the join distance of any member (`island.reach(...).joins`).
-Flown on 2026-11-24: 33 of 36. The attended craft is bit-identical; the launch-clamp vessel differs by
-2 ulp at the samples where v1 still had it in the full tier (a held vessel rides the body through another
-expression of the same instant outside the island); one fairing panel lands 511.9 m from its recorded
-place (500 m asked), because the reduced tier takes it over at 2 km instead of 27 km. Both are checks of
-the pinned guard: request `docs/requests/island-core-1.md`. The replacement of the middle of `form()`:
+`World.form()` reads the rules' join distance: the island is what hangs together with the pilot's vessel
+(members linked one to the next by less than `islandPartFactor` times the pair's join distance, `pairReach`);
+a vessel outside joins inside the join distance of any member (`island.reach(...).joins`); a member with
+something burning or pending stays. The 25 / 27 km constants are gone.
 
-```ts
-    const sphere = (v: Vessel): { r: Vec3; v: Vec3; radius: number } => ({ ...this.island.stateOf(v.id)!, radius: structureOf(v).boundingRadius });
-    const members = this.island.members.map((m) => m.vessel);
-    const linked = new Set<Vessel>([this.active]);
-    const open = [this.active];
-    while (open.length > 0) {
-      const x = sphere(open.pop()!);
-      for (const y of members) {
-        if (linked.has(y) || pairReach(this.rules.claim, x, sphere(y)).parted) continue;
-        linked.add(y);
-        open.push(y);
-      }
-    }
-    for (const v of members) {
-      if (linked.has(v) || anyPending(v) || anyEngineBurning(v)) continue;
-      this.demote(v);
-      changed = true;
-    }
-    for (const v of this.roster) {
-      if (v === this.active || this.island.member(v.id)) continue;
-      const o = this.far.find(v.id);
-      if (!o) continue;
-      this.far.sync(o, tick);
-      if (o.removed || o.bodyId !== here) continue;
-      if (!this.island.reach({ r: v.r, v: v.v, radius: structureOf(v).boundingRadius }).joins) continue;
-      this.far.take(v.id, tick);
-      this.island.add(v, { bornTick: o.bornTick, revision: o.revision, conic: o.orbit ? { orbit: o.orbit, event: o.railsEvent } : undefined });
-      changed = true;
-    }
-    if (changed) this.island.refreshMargins();
-```
+**Golden: `f0c0855ea40d8c59`** (it was `f6efbe54f52a40de`); 596,933 steps, 65,670 rails advances, 214,908
+control ticks and the end tick are unchanged.
+
+**(a) Every attended vessel is EXACTLY equal before and after.**
+- `npx tsx tools/dev/record-mission-baseline.ts --exact tests/mission/rebaseline/2026-11-24-formation-after.json
+  --reference tests/mission/rebaseline/2026-11-24-armed-after.json`: "EXACT: all 17 milestones equal"
+  (every field of every milestone; the step count).
+- `npx tsx tools/sim/vesselRecord.ts --compare <before> <after>` (the record of EVERY vessel of the snapshot at
+  the guard's 400 control ticks, float64 bit patterns; flown on the tree before and after the change): the
+  one vessel that is ever attended, `meridian-lunar`, has 400 samples in both and 0 differ (body, r, v, q,
+  mass); sample ticks and the active vessel at each are equal.
+- The pinned guard itself says the same of the attended craft: its first difference is in the first shed
+  vessel at sample 7, none in the attended craft before or after it (the per-vessel record covers all 400).
+
+**(b) Every unattended piece** (before = the tree at `f6efbe54f52a40de`, after = this tree; "ulp" = units in
+the last place of the float64; fates are after minus before; the last column is the same fate against the
+PINNED guard, which is what its test judges at 2 s and 500 m):
+
+| Vessel | Samples in both / differing | Max ulp r / v / q where it is still a few ulp; else max dr, dv | Fate, after - before | Against the pinned guard |
+|---|---|---|---|---|
+| Launch clamps (`~clamp-1`, the guard's "first shed vessel") | 395 / 5 (samples 7 to 11: control ticks 2806, 3367, 3928, 4183, 4489, while v1 still had it in the full tier) | 8 / 5 / 17 ulp (5.3e-9 m, 3.6e-13 m/s) | survives, landed on Earth, same place | **bit-exact check fails at sample 7** (2 ulp in r[0]); as a survivor 0.000 m |
+| Meridian M-1 (`~interstage-1`) | 24 / 20 | 1.43 km, 5.3 m/s | impact: +0.100 s, 62.0 m | +0.100 s, 62.0 m (inside) |
+| Launch escape system (`~les`) | 28 / 25 | 1.09 km, 4.1 m/s | impact: -0.008 s, 16.0 m | -0.008 s, 18.2 m (inside) |
+| Fairing panel 1 (`~fairing#panel0`) | 33 / 30 | 0.98 km, 13.5 m/s | impact: +0.125 s, 240.3 m | +0.125 s, 240.3 m (inside) |
+| Fairing panel 2 (`~fairing#panel1`) | 33 / 30 | 0.98 km, 5.3 m/s | impact: +0.100 s, 493.8 m | +0.100 s, 493.8 m (inside, by 6 m) |
+| Fairing panel 3 (`~fairing#panel2`) | 33 / 30 | 1.00 km, 5.4 m/s | impact: +0.100 s, 511.9 m | **+0.100 s, 511.9 m: OUTSIDE** |
+| Fairing panel 4 (`~fairing#panel3`) | 33 / 30 | 0.99 km, 17.5 m/s | impact: +0.175 s, 242.7 m | +0.175 s, 242.7 m (inside) |
+| Meridian M-2 (`~interstage-2`) | 360 / 0 | 0 | survives in Earth orbit, equal | 0 |
+| Meridian M-3 (`~payload-adapter`) | 69 / 0 | 0 | lunar impact: 0.000 s, 0.000 m | 0 |
+| Heron descent stage (`~stage-separator`) | 160 / 6 (samples 244 to 249) | 10 / 13 / 66 ulp (1.3e-9 m, 3.4e-15 m/s) | survives, landed on the Moon, same place | 0.000 m (inside) |
+| Heron ascent stage (`~capsule-adapter`) | 12 / 5 | 1.84 km, 2.2 m/s | burned up: -8.567 s, 57,869 m | **-8.567 s, 57,949 m: OUTSIDE** |
+| Lyra-A ascent engine (`~lyra-a`) | 1 / 1 | 1.84 km, 1.6 m/s | burned up: +0.267 s, 105.0 m | +0.258 s, 157.7 m (inside) |
+| Kestrel apex cover (`~apex-cover`) | 11 / 3 | 0.71 km, 17.4 m/s | impact: -1.567 s, 695.8 m | **-1.567 s, 695.8 m: OUTSIDE** |
+
+Why each differs: a piece now leaves the island at twice the join distance (about 2 km) instead of 27 km, and
+from there it is on its conic in vacuum and in the Reduced tier (a point mass with a tumbling-average drag
+area at 2 Hz) in an atmosphere. The M-1, the escape system and the fairing panels fall about 100 km through
+the atmosphere in the Reduced tier instead of the Full one; the ascent stage and its engine enter at
+11 km/s beside the capsule and are now taken over by the Reduced tier during the entry (5.3 s of flight at
+that speed are the 58 km); the apex cover falls under the parachutes' altitude in the Reduced tier. The two
+held structures (clamps, descent stage) ride their body through the tick-pure expression outside the island
+instead of the step's (a few ulp), from the tick they leave it.
+
+**What the lead's records agent re-records in `tests/mission/trajectory-guard.json`** (pinned; not edited
+here): (1) `samples[7..11].firstShed` (control ticks 2806, 3367, 3928, 4183, 4489: 5 of the 395 samples that
+hold the clamps; or the clamps judged as a survivor, which they meet at 0.000 m); (2) `debris` entries
+"Lander adapter fairing panel 3", "Heron ascent stage" and "Kestrel apex cover" (and, for a file that is one
+flight's, the other seven fates that moved inside the tolerance). The first builder's request named only
+panel 3: the test stopped at the first row outside; it now names every one.
+
+**Expected red until then** (`npm run test:mission`: 34 of 36): "trajectory guard: the attended craft and
+the launch clamps at 400 ticks are bit-identical to the recording" (the clamps, sample 7) and "trajectory
+guard: every piece of debris meets its recorded fate within 2 s and 500 m" (the three rows above). The
+golden test is green on `f0c0855ea40d8c59`.
 
 ## 7. Known limits and notes
 

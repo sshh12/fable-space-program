@@ -454,7 +454,8 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     const guard = readGuard();
     const rows = debrisDifferences(guard, fatesOf(a.debris), survivorsOf(a.run.last), (id) => a.defs.bodies[id]!);
     expect(rows).toHaveLength(guard.debris.length + guard.survivors.length);
-    for (const r of rows) expect(r.problem, r.name).toBeNull();
+    // Every row outside is named (not only the first one).
+    expect(rows.filter((r) => r.problem !== null).map((r) => `${r.name}: ${r.problem}`)).toEqual([]);
     const worstTime = Math.max(...rows.map((r) => Math.abs(r.dTime)));
     const worstDistance = Math.max(...rows.map((r) => r.distance));
     note('debris', `${guard.debris.length} fates and ${guard.survivors.length} survivors as recorded: at most ${worstTime.toFixed(3)} s and ${worstDistance.toFixed(3)} m from the recording`, `${DEBRIS_TIME_TOLERANCE} s, ${DEBRIS_DISTANCE_TOLERANCE} m`);

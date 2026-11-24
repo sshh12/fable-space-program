@@ -15,11 +15,11 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import { padLocationOf, padOf } from '@/core/defs/sites';
 import { quat } from '@/core/math/quat';
 import { DEG, RAD } from '@/core/math/scalar';
-import { v3 } from '@/core/math/vec3';
+import { v3, type Vec3 } from '@/core/math/vec3';
 import { createBodySystem, type BodySystem } from '../bodies/bodySystem';
 import { ceilTick, TICK_EPSILON, TICKS_PER_SECOND, tickOfInstant, utOfTick } from '../clock';
 import { dirFromLatLon } from '../frames/bodyFrames';
-import { BodyFrames, comStateOf, createIsland, FarSet, IslandEnv, TerrainPolicy, type AddOptions, type AdvanceReport, type FarObject, type InputReceipt, type Island, type IslandInput } from '../island';
+import { BodyFrames, comStateOf, createIsland, FarSet, IslandEnv, pairReach, TerrainPolicy, type AddOptions, type AdvanceReport, type FarObject, type InputReceipt, type Island, type IslandInput } from '../island';
 import { VESSEL_DISC_RADIUS, WARP_CLAMP_RADAR_ALTITUDE } from '../island/terrainPolicy';
 import { buildSurfaceTargets } from '../nav/surfaceTargets';
 import { nextRadiusCrossing } from '../orbit/events';
@@ -37,9 +37,6 @@ import { placeStart, settleLanded } from './start';
 import { StateHasher } from './stateHash';
 import { WarpLadder } from './warpLadder';
 
-/** Formation about the active vessel: a vessel joins the island inside the first distance and leaves it beyond the second, m. */
-export const BUBBLE_RADIUS = 25000;
-export const BUBBLE_EXIT_RADIUS = 27000;
 export const MAX_DEBRIS = 24;
 /** Uncontrollable fragments lighter than this (kg) expire after FRAGMENT_LIFETIME seconds (the rules' contact.fragmentMassLimit and fragmentLifetime). */
 export const FRAGMENT_MASS = DEFAULT_UNIVERSE_RULES.contact.fragmentMassLimit;
@@ -650,9 +647,11 @@ export class World implements SimWorld, MilestoneHost {
   }
 
   /**
-   * Island formation about the active vessel: a vessel of the clock joins the island inside the formation
-   * distance and leaves it beyond the exit distance (a vessel with something burning or pending stays).
-   * Outside the island a vessel is on rails, held on its body, or in the reduced tier (the far set).
+   * Island formation about the active vessel (ARCHITECTURE 7.3): a vessel of the clock joins the island inside
+   * the rules' join distance (`joinDistanceBase + joinClosingTime x closing speed`, between bounding spheres)
+   * of any member, and a member leaves it once it is past `islandPartFactor` times that from everything that
+   * hangs together with the pilot's vessel (a vessel with something burning or pending stays). Outside the
+   * island a vessel is on rails, held on its body, or in the reduced tier (the far set).
    */
   form(): void {
     const tick = this.tick;
@@ -668,27 +667,36 @@ export class World implements SimWorld, MilestoneHost {
     }
     if (!a) return;
     const here = this.island.bodyId;
-    const aRoot = v3.add(this.system.stateRoot(here, this.ut).r, this.active.r);
     let changed = false;
-    for (const v of this.roster) {
-      if (v === this.active) continue;
-      const m = this.island.member(v.id);
-      const o = m ? null : this.far.find(v.id);
-      if (!m && !o) continue;
-      if (o) this.far.sync(o, tick);
-      if (o && o.removed) continue;
-      const bodyId = m ? here : o!.bodyId;
-      const d = bodyId === here ? v3.dist(v.r, this.active.r) : v3.dist(v3.add(this.system.stateRoot(bodyId, this.ut).r, v.r), aRoot);
-      const busy = anyPending(v) || anyEngineBurning(v);
-      const inside = d < (m ? BUBBLE_EXIT_RADIUS : BUBBLE_RADIUS) || (m !== null && busy);
-      if (inside && o && o.bodyId === here) {
-        this.far.take(v.id, tick);
-        this.island.add(v, { bornTick: o.bornTick, revision: o.revision, conic: o.orbit ? { orbit: o.orbit, event: o.railsEvent } : undefined });
-        changed = true;
-      } else if (!inside && m) {
-        this.demote(v);
-        changed = true;
+    // The island is what hangs together with the pilot's vessel: members linked one to the next by less than the parting distance.
+    const sphere = (v: Vessel): { r: Vec3; v: Vec3; radius: number } => ({ ...this.island.stateOf(v.id)!, radius: structureOf(v).boundingRadius });
+    const members = this.island.members.map((m) => m.vessel);
+    const linked = new Set<Vessel>([this.active]);
+    const open = [this.active];
+    while (open.length > 0) {
+      const x = sphere(open.pop()!);
+      for (const y of members) {
+        if (linked.has(y) || pairReach(this.rules.claim, x, sphere(y)).parted) continue;
+        linked.add(y);
+        open.push(y);
       }
+    }
+    for (const v of members) {
+      if (linked.has(v) || anyPending(v) || anyEngineBurning(v)) continue;
+      this.demote(v);
+      changed = true;
+    }
+    // A vessel of the clock outside the island joins it inside the join distance of any member.
+    for (const v of this.roster) {
+      if (v === this.active || this.island.member(v.id)) continue;
+      const o = this.far.find(v.id);
+      if (!o) continue;
+      this.far.sync(o, tick);
+      if (o.removed || o.bodyId !== here) continue;
+      if (!this.island.reach({ r: v.r, v: v.v, radius: structureOf(v).boundingRadius }).joins) continue;
+      this.far.take(v.id, tick);
+      this.island.add(v, { bornTick: o.bornTick, revision: o.revision, conic: o.orbit ? { orbit: o.orbit, event: o.railsEvent } : undefined });
+      changed = true;
     }
     if (changed) this.island.refreshMargins();
   }
