@@ -45,4 +45,12 @@ view reference passes 3 of 3); each item is what the island needs to be right on
    `targetApproachMarkers(approaches, otherVesselId)` in src/sim/orbit/chainApproach.ts. Exact signatures in
    docs/handoff/solar-system-sim.md section 2.
 
+6. **Terrain on the Sun-rooted library.** `createTerrainProvider` keeps v1's default (`preload: 'all'`: every
+   served body's resident pyramid at creation). On the staged library that is 27 pyramids and fails the
+   384 MiB cache budget, so `createRealTerrain` (tools/sim/realWorld.ts) should pass `preload: 'launchSystems'`
+   (Earth and the Moon eager, every other body loaded by its first `ensureLoaded` and released after its last
+   slot; identical to 'all' on the shipped library: both bodies are the launch site's system). The World's
+   terrain policy already requests discs with `ensureLoaded` before contact; a band-limited query on a body
+   that is not loaded yet answers the datum and `residency()` says it is not resident.
+
 Must NOT change: anything on the shipped library (each item above is identical there or not reached).
