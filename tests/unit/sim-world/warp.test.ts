@@ -7,7 +7,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import { MAX_PHYSICS_WARP_INDEX, PHYSICS_DT, WARP_LEVELS } from '@/core/contracts/defs';
-import type { Sim } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
@@ -27,7 +27,7 @@ const TOP = WARP_LEVELS.length - 1;
 const HIGH = WARP_LEVELS.indexOf(10000);
 
 /** One frame of a player holding the warp key down: ask for the top level, advance a 60 Hz frame. */
-function frame(sim: Sim): void {
+function frame(sim: LocalSession): void {
   sim.commands.setWarpLevel(TOP);
   sim.advance(1 / 60);
 }
@@ -288,7 +288,7 @@ describe('warp rules', () => {
     track.commands.setRcsEnabled(true);
     track.commands.setSasMode('prograde');
     for (let i = 0; i < 120 * 60; i++) track.step();
-    const err = (sim: Sim): number => Math.acos(Math.max(-1, Math.min(1, sim.peek().navball.markers.prograde.y)));
+    const err = (sim: LocalSession): number => Math.acos(Math.max(-1, Math.min(1, sim.peek().navball.markers.prograde.y)));
     expect(err(track)).toBeLessThan(2 * DEG);
     const nose0 = quat.rotate(active(track.peek()).q, { x: 0, y: 1, z: 0 });
     const tStart = track.peek().simUt;

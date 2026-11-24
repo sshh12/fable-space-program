@@ -16,7 +16,7 @@ describe('ascent to the parking orbit', () => {
   it('reaches orbit from the pad without a cheat, on final terrain data', () => {
     expect(f.run.failure).toBeNull();
     expect(f.run.reason).toBe('until');
-    expect(f.run.last.scenario.startKind).toBe('pad');
+    expect(f.run.last.scenario?.startKind).toBe('pad');
     expect(f.run.last.cheatCounter).toBe(0);
     expect(f.run.last.mission.failed).toBe(false);
     expect(f.run.last.terrain.incompleteQueries).toBe(0);

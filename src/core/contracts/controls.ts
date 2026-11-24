@@ -230,8 +230,6 @@ export type ButtonAction =
   | 'nextVessel'
   | 'prevVessel'
   | 'toggleHud'
-  /** @deprecated Becomes 'flightMenu' (ButtonActionV2): nothing pauses in a shared universe. Still bound; removed at the tighten step after sub-wave 3.2. */
-  | 'pause'
   /** Cycle the page of cockpit multi-function display 0 (left), 1 (centre) or 2 (right). */
   | `mfdCycle:${0 | 1 | 2}`
   | `sas:${SasMode}`
@@ -245,7 +243,7 @@ export type ButtonAction =
 
 /**
  * v2 button actions (ARCHITECTURE 19): 'flightMenu' opens or closes the flight menu over the live flight
- * (Esc, P; it replaces 'pause'); 'cycleTarget' selects the next target of the relevant set (B);
+ * (Esc, P; it replaced v1's 'pause': nothing pauses in a shared universe); 'cycleTarget' selects the next target of the relevant set (B);
  * 'toggleRoster' shows or hides the roster (O); 'dockingView' is the view at the control port (the Equal
  * key: V is the next couch, `ui:nextSeat`; the presentation sweep's choice, accepted by the lead);
  * 'openQuickComms' opens the quick-comms wheel (Enter); 'acceptPrompt' accepts the oldest open prompt (Y).

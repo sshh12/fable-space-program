@@ -5,7 +5,8 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary, LaunchSiteDef, PadDef, ScenarioDef } from '@/core/contracts/defs';
-import { padLocationOf, padOf, padsOf, padTitle, SINGLE_PAD_ID } from '@/core/defs/sites';
+import { normaliseSite } from '@/core/defs/loader';
+import { padLocationOf, padOf, padsOf, padTitle } from '@/core/defs/sites';
 import { quat } from '@/core/math/quat';
 import { DEG, RAD } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
@@ -130,16 +131,24 @@ describe('the pad of a scenario', () => {
 });
 
 describe('site helpers', () => {
-  it('a site built in memory with the single pad only has that pad as its one pad', () => {
+  it('a site built in memory states its one pad in the list; with the single pad of v1 it is refused by name', () => {
     const base = defs.sites[defs.scenarios['lunar-direct']!.site]!;
-    const v1: LaunchSiteDef = { id: 'old', name: 'Old Site', bodyId: base.bodyId, location: { latDeg: 1, lonDeg: 2, padElevation: 'terrain' }, padAzimuthDeg: 75, pad: { flatRadius: 10, blendRadius: 30, clampHeight: 5 }, structures: [], recoveryZones: [] };
-    const pads = padsOf(v1);
+    const place = { id: 'old', name: 'Old Site', bodyId: base.bodyId, location: { latDeg: 1, lonDeg: 2, padElevation: 'terrain' as const }, recoveryZones: [] };
+    // The single pad of v1 is no pad any more: the check every site of a library passes names the member.
+    const v1 = { ...place, padAzimuthDeg: 75, pad: { flatRadius: 10, blendRadius: 30, clampHeight: 5 }, structures: [] };
+    expect(() => normaliseSite(v1 as unknown as LaunchSiteDef, 'sites/old.json')).toThrow('sites/old.json: "pad" is the single pad of a v1 site file, which is no longer read');
+    expect(() => normaliseSite({ ...place, padAzimuthDeg: 75 } as unknown as LaunchSiteDef, 'sites/old.json')).toThrow('sites/old.json: "padAzimuthDeg" is the single pad of a v1 site file');
+    expect(() => normaliseSite({ ...place } as unknown as LaunchSiteDef, 'sites/old.json')).toThrow('sites/old.json: "pads" must be a non-empty array');
+    // The same pad as the one entry of the list (mountHeight is what clampHeight was), read by the helpers
+    // without the loader: the first pad stands at the reference point.
+    const site: LaunchSiteDef = { ...place, pads: [{ id: 'pad', name: 'Pad 1', offsetEnu: [0, 0], azimuthDeg: 75, class: 'heavy', flatRadius: 10, blendRadius: 30, mountHeight: 5, structures: [] }] };
+    const pads = padsOf(site);
     expect(pads).toHaveLength(1);
-    expect(padsOf(v1)).toBe(pads);
-    expect(pads[0]).toMatchObject({ id: SINGLE_PAD_ID, azimuthDeg: 75, flatRadius: 10, blendRadius: 30, mountHeight: 5, class: 'heavy' });
-    expect(padOf(v1)).toBe(pads[0]);
-    expect(padLocationOf(v1)).toEqual({ latDeg: 1, lonDeg: 2, padElevation: 'terrain' });
-    expect(padTitle(v1)).toBe('Old Site');
-    expect(() => padOf(v1, 'lc-9')).toThrow('sites/old.json: no pad "lc-9" (pads: pad)');
+    expect(pads).toBe(site.pads);
+    expect(pads[0]).toMatchObject({ id: 'pad', azimuthDeg: 75, flatRadius: 10, blendRadius: 30, mountHeight: 5, class: 'heavy' });
+    expect(padOf(site)).toBe(pads[0]);
+    expect(padLocationOf(site)).toEqual({ latDeg: 1, lonDeg: 2, padElevation: 'terrain' });
+    expect(padTitle(site)).toBe('Old Site, Pad 1');
+    expect(() => padOf(site, 'lc-9')).toThrow('sites/old.json: no pad "lc-9" (pads: pad)');
   });
 });

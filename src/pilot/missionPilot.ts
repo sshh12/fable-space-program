@@ -209,7 +209,8 @@ class LunarMissionPilot extends PilotCore implements MissionPilot {
 
   protected start(): void {
     const s = this.s;
-    if (this.rd.targetBodyId !== this.moonId) this.cmd.setTarget({ kind: 'body', id: this.moonId });
+    const target = this.rd.target?.ref;
+    if (!(target && target.kind === 'body' && target.id === this.moonId)) this.cmd.setTarget({ kind: 'body', id: this.moonId });
     const v = this.v;
     const next = s.staging.nextStage;
     if (v.situation === 'prelaunch') this.go('prelaunch', 6 * 3600);

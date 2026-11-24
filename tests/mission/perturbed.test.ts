@@ -17,7 +17,7 @@ function check(f: Flight): void {
   expect(f.run.failure).toBeNull();
   expect(f.run.reason).toBe('done');
   const last = f.run.last;
-  expect(last.scenario.startKind).toBe('pad');
+  expect(last.scenario?.startKind).toBe('pad');
   expect(last.cheatCounter).toBe(0);
   expect(last.mission.failed).toBe(false);
   expect(last.mission.crewAlive).toBe(true);

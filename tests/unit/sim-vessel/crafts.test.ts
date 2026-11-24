@@ -308,9 +308,12 @@ describe('per-craft stage stacks and flow groups', () => {
     expect(partIndex(v, 'ferry-a/tank')).toBeGreaterThanOrEqual(0);
     expect(partIndex(v, 'ferry-b/tank')).toBe(-1);
     expect(v.crafts.map((c) => c.nextStage)).toEqual([0, 2]);
-    // Events of an assembly name parts by key; a vessel of one craft by instance id.
+    // Events name parts by key, of an assembly and of a vessel of one craft alike: the piece that left
+    // names its parts with its own craft's id.
     expect(eventPartId(v, v.parts[partIndex(v, 'ferry-a/engine')]!)).toBe('ferry-a/engine');
-    expect(eventPartId(spawned[0]!, spawned[0]!.parts[0]!)).toBe('sep');
+    expect(spawned[0]!.parts[0]!.instanceId).toBe('sep');
+    expect(eventPartId(spawned[0]!, spawned[0]!.parts[0]!)).toBe('ferry-b.sep/sep');
+    expect(eventPartId(spawned[0]!, spawned[0]!.parts[0]!)).toBe(partKeyOf(spawned[0]!, 0));
   });
 
   it('a part is found by its key; an instance id alone is not a key and names nothing', () => {
@@ -491,7 +494,7 @@ describe('pre-mated ports and the command part', () => {
     expect(capsule.command).not.toBeNull();
     expect(capsule.command!.crew).toEqual(vehicle.crew);
     expect(capsule.command!.cockpit).toBe(vehicle.cockpit);
-    expect(capsule.command!.cameraSeat).toBe(vehicle.cameras.cockpit.seat);
+    expect(capsule.command!.cameraSeat).toBe(vehicle.cameras.cockpit!.seat);
     expect(capsule.command!.remote).toBe(false);
     expect(v.parts.filter((p) => p.command !== null)).toHaveLength(1);
     expect(v.helm).toEqual({ accountId: null, craft: 0, controlPart: 0 });

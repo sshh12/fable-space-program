@@ -1,10 +1,12 @@
 /**
  * Orbital parts of the HUD readouts (Readouts in src/core/contracts/sim.ts) for a vessel about its SOI
  * body: altitude, sub-point, speeds, osculating apsides and times, inclination (to the body's equator),
- * eccentricity, period, and the target relations (relative inclination, closest approach on the planned or
- * else the current trajectory).
+ * eccentricity, period, and the navigation to a targeted body (`Readouts.target`: range and range rate to
+ * its centre, relative inclination, the closest approach on the planned or else the current trajectory with
+ * the speed relative to the body at it).
  */
-import type { Patch, Readouts } from '../../core/contracts/sim';
+import type { Patch, Readouts, TargetReadout } from '../../core/contracts/sim';
+import { conicTrueAnomaly, conicVelocity } from '../../core/math/conic';
 import { quat } from '../../core/math/quat';
 import { v3, type Vec3 } from '../../core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
@@ -29,9 +31,8 @@ export type OrbitalReadouts = Pick<
   | 'inclination'
   | 'eccentricity'
   | 'period'
-  | 'targetBodyId'
   | 'targetRelativeInclination'
-  | 'targetClosestApproach'
+  | 'target'
 >;
 
 export interface OrbitalReadoutInput {
@@ -63,6 +64,63 @@ export function closestApproachOnPatches(patches: readonly Patch[], targetId: st
   return best;
 }
 
+/**
+ * Navigation to a targeted BODY (`Readouts.target`): range and range rate to its centre from the state
+ * `r`, `v` about `bodyId` (a vessel inside the target's own sphere of influence is about the target),
+ * with the relative inclination and the closest approach the caller found. What only a vessel or a port
+ * target has is null.
+ */
+export function bodyTargetReadout(
+  system: BodySystem,
+  bodyId: string,
+  r: Vec3,
+  v: Vec3,
+  ut: number,
+  targetId: string,
+  relativeInclination: number | null,
+  closest: { ut: number; distance: number; relSpeed: number } | null,
+): TargetReadout {
+  const rel = targetId === bodyId ? null : system.stateRelative(targetId, bodyId, ut);
+  const d = rel ? v3.sub(rel.r, r) : v3.neg(r);
+  const dv = rel ? v3.sub(rel.v, v) : v3.neg(v);
+  const range = v3.len(d);
+  return {
+    ref: { kind: 'body', id: targetId },
+    name: system.body(targetId).def.name,
+    presence: 'solid',
+    timeOffset: 0,
+    range,
+    rangeRate: range > 0 ? v3.dot(d, dv) / range : 0,
+    relVelocity: null,
+    relSpeed: null,
+    relativeInclination,
+    closestApproaches: closest ? [closest] : [],
+    lvlh: null,
+    offer: null,
+  };
+}
+
+/**
+ * The same approach as `closestApproachOnPatches` with the speed relative to the target at it: the
+ * vessel's velocity on the patch at the marker (the marker's position is on the conic) less the target's
+ * about the patch's body at that time; for a periapsis about the target itself, the speed at periapsis.
+ */
+export function closestApproachToBody(system: BodySystem, patches: readonly Patch[], targetId: string): { ut: number; distance: number; relSpeed: number } | null {
+  let best: { ut: number; distance: number; patch: Patch; r: Vec3 } | null = null;
+  for (const p of patches) {
+    for (const m of p.markers) {
+      let d: number | null = null;
+      if (m.kind === 'closestApproach' && m.value !== undefined && p.bodyId !== targetId) d = m.value;
+      else if (m.kind === 'periapsis' && p.bodyId === targetId) d = v3.len(m.r);
+      if (d !== null && (!best || d < best.distance)) best = { ut: m.ut, distance: d, patch: p, r: m.r };
+    }
+  }
+  if (!best) return null;
+  const own = conicVelocity(best.patch.conic, conicTrueAnomaly(best.patch.conic, best.r));
+  const relSpeed = best.patch.bodyId === targetId ? v3.len(own) : v3.len(v3.sub(own, system.stateRelative(targetId, best.patch.bodyId, best.ut).v));
+  return { ut: best.ut, distance: best.distance, relSpeed };
+}
+
 export function computeOrbitalReadouts(input: OrbitalReadoutInput): OrbitalReadouts {
   const { system, bodyId, r, v, ut } = input;
   const body = system.body(bodyId);
@@ -85,13 +143,14 @@ export function computeOrbitalReadouts(input: OrbitalReadoutInput): OrbitalReado
 
   const targetId = input.targetBodyId ?? null;
   let relInc: number | null = null;
-  let closest: { ut: number; distance: number } | null = null;
+  let closest: { ut: number; distance: number; relSpeed: number } | null = null;
   if (targetId !== null && targetId !== bodyId) {
-    const target = system.body(targetId);
-    if (target.parentId === bodyId && target.kepler) relInc = relativeInclination(c.W, target.kepler.normal);
+    const tb = system.body(targetId);
+    if (tb.parentId === bodyId && tb.kepler) relInc = relativeInclination(c.W, tb.kepler.normal);
     const pp = input.patches;
-    if (pp) closest = closestApproachOnPatches(pp.planned.length ? pp.planned : pp.current, targetId);
+    if (pp) closest = closestApproachToBody(system, pp.planned.length ? pp.planned : pp.current, targetId);
   }
+  const target = targetId === null ? null : bodyTargetReadout(system, bodyId, r, v, ut, targetId, relInc, closest);
 
   return {
     altitudeAsl: rm - R - (def.ocean ? def.ocean.seaLevel : 0),
@@ -108,8 +167,7 @@ export function computeOrbitalReadouts(input: OrbitalReadoutInput): OrbitalReado
     inclination: v3.angle(c.W, pole),
     eccentricity: c.e,
     period: o.period,
-    targetBodyId: targetId,
     targetRelativeInclination: relInc,
-    targetClosestApproach: closest,
+    target,
   };
 }

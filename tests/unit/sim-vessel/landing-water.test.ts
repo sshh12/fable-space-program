@@ -9,7 +9,7 @@ import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
 import { assembleVessel, computeMassProps, fireNextStage, needsIntegration, radarAltitude, setSasEnabled, structureOf, toggleLegs, vesselReadouts, type Vessel } from '@/sim/vessel';
-import { controls, earthAir, loadLibrary, makeEnv, MOON_MU, MOON_RADIUS, run, VEHICLE, type FakeEnv } from './helpers';
+import { controls, earthAir, eventKey, loadLibrary, makeEnv, MOON_MU, MOON_RADIUS, run, VEHICLE, type FakeEnv } from './helpers';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -74,7 +74,7 @@ describe('landing legs', () => {
         expect(touchdown).toBeDefined();
         if (touchdown?.type === 'touchdown') {
           expect(touchdown.surface).toBe('land');
-          expect(touchdown.partId).toBe('landing-legs');
+          expect(touchdown.partId).toBe(eventKey(v, 'landing-legs'));
           expect(touchdown.vesselId).toBe(v.id);
           expect(touchdown.speed).toBeGreaterThan(speed * 0.95);
           expect(touchdown.speed).toBeLessThan(speed + 0.5);
@@ -328,7 +328,7 @@ describe('water', () => {
     fast.r = { x: 0, y: env2.radius + 3, z: 0 };
     fast.v = { x: 0, y: -15, z: 0 };
     const crash = run(fast, env2, 2, controls());
-    expect(crash.events.find((e) => e.type === 'partDestroyed')).toMatchObject({ partId: 'capsule', cause: 'impact' });
+    expect(crash.events.find((e) => e.type === 'partDestroyed')).toMatchObject({ partId: eventKey(fast, 'capsule'), cause: 'impact' });
     expect(crash.events.some((e) => e.type === 'crewLost')).toBe(true);
     expect(fast.destroyed).toBe(true);
   });
@@ -344,9 +344,9 @@ describe('water', () => {
     };
     const ok = land(8);
     expect(ok.res.events.some((e) => e.type === 'partDestroyed')).toBe(false);
-    expect(ok.res.events.find((e) => e.type === 'touchdown')).toMatchObject({ surface: 'land', partId: 'capsule' });
+    expect(ok.res.events.find((e) => e.type === 'touchdown')).toMatchObject({ surface: 'land', partId: eventKey(ok.v, 'capsule') });
     expect(ok.v.hold).toBe('asleep');
     const bad = land(11);
-    expect(bad.res.events.find((e) => e.type === 'partDestroyed')).toMatchObject({ partId: 'capsule', cause: 'impact' });
+    expect(bad.res.events.find((e) => e.type === 'partDestroyed')).toMatchObject({ partId: eventKey(bad.v, 'capsule'), cause: 'impact' });
   });
 });

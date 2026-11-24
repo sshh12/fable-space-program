@@ -109,6 +109,9 @@ export function computeNavball(input: NavballInput): NavballState {
     target: tgt ? toVes(tgt) : null,
     antiTarget: tgt ? toVes(v3.neg(tgt)) : null,
     liftVector: lift,
+    // The velocity relative to a vessel or port target: this session has body targets only.
+    relativePrograde: null,
+    relativeRetrograde: null,
   };
   const qHorizonToInertial = qEnuToInertial(enu);
   const qVesselToHorizon = quat.normalize(quat.mul(quat.conj(qHorizonToInertial), q));

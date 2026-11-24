@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import type { MilestoneId, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
-import { padLocationOf } from '@/core/defs/sites';
+import { padLocationOf, padOf } from '@/core/defs/sites';
 import { DEG, RAD } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
 import { createBodySystem } from '@/sim/bodies';
@@ -143,8 +143,8 @@ describe('lunar-direct', () => {
     expect(Math.abs(s.readouts.launchWindow!.timeToPlaneCrossing - 600)).toBeLessThanOrEqual(0.5 / 120 + 1e-6);
     expect(s.readouts.launchWindow!.launchAzimuthDeg).toBeCloseTo(st.launch.launchAzimuthDeg, 3);
     expect(s.surfaceTargets.map((t) => t.kind).sort()).toEqual(['landing', 'recovery', 'recovery', 'recovery', 'site']);
-    // The base of the clamps stands on the launch mount: pad elevation + clamp height.
-    const base = v3.len(v.r) - 6371000 - (site.location.padElevation as number) - site.pad.clampHeight;
+    // The base of the clamps stands on the launch mount: pad elevation + mount height.
+    const base = v3.len(v.r) - 6371000 - (site.location.padElevation as number) - padOf(site).mountHeight;
     expect(base).toBeGreaterThan(100);
     expect(base).toBeLessThan(102);
     expect(s.cheatCounter).toBe(0);
@@ -263,7 +263,7 @@ describe('QA scenarios', () => {
     const sim = await makeSim(defs, 'qa-leo', terrain);
     const s = sim.peek();
     const v = active(s);
-    expect(s.scenario.startKind).toBe('state');
+    expect(s.scenario?.startKind).toBe('state');
     expect(v.bodyId).toBe('earth');
     expect(v.situation).toBe('orbiting');
     expect(v.translationMode).toBe('rails');
@@ -333,7 +333,7 @@ describe('QA scenarios', () => {
     await settleTerrain(sim);
     const s = sim.peek();
     const v = active(s);
-    expect(s.scenario.startKind).toBe('landed');
+    expect(s.scenario?.startKind).toBe('landed');
     expect(v.bodyId).toBe('moon');
     expect(v.situation).toBe('landed');
     expect(v.translationMode).toBe('landed');

@@ -36,7 +36,7 @@ import type {
   VehicleDef,
 } from '../contracts/defs';
 import { DEFAULT_UNIVERSE_RULES, type PadClass, type UniverseRules } from '../contracts/net';
-import { padsOf, singlePadOf } from './sites';
+import { padsOf } from './sites';
 
 export interface DefSource {
   /** All JSON file paths under the defs root, relative, forward slashes (e.g. "bodies/earth.json"). */
@@ -196,14 +196,13 @@ function checkPad(pad: unknown, index: number, file: string, seen: Set<string>):
 }
 
 /**
- * A site as the library holds it (MIGRATION_V2 step 3.6): its pad list and the deprecated single pad filled
- * from each other, and a location for every pad.
+ * A site as the library holds it (MIGRATION_V2 step 3.6; the tighten step after sub-wave 3.2): its pad
+ * list checked, and a location for every pad.
  *
- * - A file with `pads` states its pads THERE ONLY. `pad`, `padAzimuthDeg` and `structures` are then
- *   written from the first pad (the deprecated single pad IS `pads[0]`), so code that still reads them
- *   sees the first pad; a file that states them as well is refused, because two statements of one pad can
- *   disagree.
- * - A file with the deprecated single pad and no list gets that pad as its one pad (`singlePadOf`).
+ * - A site states its pads in `pads`, at least one. v1's single pad (`pad`, `padAzimuthDeg`, `structures`
+ *   of the site) is no longer read: a file that states one of the three is refused by name, with or
+ *   without a list (its pad is the first entry of `pads`: `flatRadius`, `blendRadius`, `mountHeight` for
+ *   v1's `clampHeight`, `azimuthDeg`, `structures`).
  * - `location.pads` holds every pad afterwards: the first pad at the reference point (an entry for it in
  *   the file must equal the reference point), every other pad at the resolved coordinates the file states
  *   (the site-resolve bake tool writes them; an elevation cannot be derived from an offset).
@@ -211,25 +210,13 @@ function checkPad(pad: unknown, index: number, file: string, seen: Set<string>):
 export function normaliseSite(site: LaunchSiteDef, file: string, bodyRadius?: number): void {
   const raw = site as unknown as Record<string, unknown>;
   if (!isPlace(raw['location'])) throw new DefError(file, '"location" needs latDeg, lonDeg and padElevation (metres, or "terrain")');
-  if (raw['pads'] !== undefined) {
-    const list = raw['pads'];
-    if (!Array.isArray(list) || list.length === 0) throw new DefError(file, '"pads" must be a non-empty array');
-    for (const k of ['pad', 'padAzimuthDeg', 'structures']) {
-      if (raw[k] !== undefined) throw new DefError(file, `"${k}" is the deprecated single pad: a site with "pads" states its pads in the list only`);
-    }
-    const seen = new Set<string>();
-    list.forEach((p, i) => checkPad(p, i, file, seen));
-    const first = (list as PadDef[])[0]!;
-    site.padAzimuthDeg = first.azimuthDeg;
-    site.pad = { flatRadius: first.flatRadius, blendRadius: first.blendRadius, clampHeight: first.mountHeight, ...(first.shape ? { shape: first.shape } : {}) };
-    site.structures = first.structures;
-  } else {
-    const single = raw['pad'];
-    if (!isObject(single) || !isFiniteNumber(single['flatRadius']) || !isFiniteNumber(single['blendRadius']) || !isFiniteNumber(single['clampHeight']) || !isFiniteNumber(raw['padAzimuthDeg']) || !Array.isArray(raw['structures'])) {
-      throw new DefError(file, 'a site needs "pads" (or the deprecated single pad: "pad" with flatRadius, blendRadius and clampHeight, "padAzimuthDeg" and "structures")');
-    }
-    site.pads = [singlePadOf(site)];
+  for (const k of ['pad', 'padAzimuthDeg', 'structures']) {
+    if (raw[k] !== undefined) throw new DefError(file, `"${k}" is the single pad of a v1 site file, which is no longer read: a site states its pads in "pads" (the single pad is the first entry)`);
   }
+  const list = raw['pads'];
+  if (!Array.isArray(list) || list.length === 0) throw new DefError(file, '"pads" must be a non-empty array');
+  const seen = new Set<string>();
+  list.forEach((p, i) => checkPad(p, i, file, seen));
   const pads = padsOf(site);
   const stated = (raw['location'] as Record<string, unknown>)['pads'];
   if (stated !== undefined && !isObject(stated)) throw new DefError(file, '"location.pads" must be an object: pad id -> latDeg, lonDeg, padElevation');

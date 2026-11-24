@@ -3,7 +3,7 @@
  * readouts, the integration predicate and the state hash.
  */
 import type { TimedStageAction } from '@/core/contracts/defs';
-import type { ChuteEnvelope, CraftSnapshot, FidelityTier, PartSnapshot, Readouts, StageInfo, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
+import type { ChuteEnvelope, CraftSnapshot, FidelityTier, ModuleState, PartSnapshot, Readouts, StageInfo, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import { quat } from '@/core/math/quat';
 import { describeStages, rememberedStages, type StageWords } from '@/core/defs/stageWords';
@@ -23,9 +23,22 @@ import { G_DOSE_LIMIT, type EngineDef, type Vessel } from './types';
 
 // ---------------------------------------------------------------------------------------- snapshots
 
-/** Poses and module states of every part (deep copies; no environment needed). Fits FakeSimOptions.parts. */
-export function vesselPartSnapshots(vessel: Vessel): PartSnapshot[] {
+/**
+ * Poses and module states of every part (deep copies). Fits FakeSimOptions.parts.
+ *
+ * `inAir`: whether there is air at the vessel now. Without air a parachute's `envelope` is stated as null:
+ * a parachute needs air, and nothing is judged where there is none (as `Readouts.chuteEnvelope`, request
+ * flight-ui-9). The vessel's own state keeps the judgement it steps with (a canopy above its altitude limit
+ * fails by it), so the saved state and its hash are what they were. Default true: a caller that knows no
+ * environment (a lab's display vessel) states the judgement as it is.
+ */
+export function vesselPartSnapshots(vessel: Vessel, inAir = true): PartSnapshot[] {
   structureOf(vessel);
+  const stated = (m: ModuleState): ModuleState => {
+    const copy = cloneModuleState(m);
+    if (!inAir && copy.type === 'parachute') copy.envelope = null;
+    return copy;
+  };
   return vessel.parts.map((p) => {
     const [temp, maxTemp] = partSkinTemperature(p.temps, p.def.thermal.surfaces);
     const resources: Record<string, number> = {};
@@ -37,13 +50,15 @@ export function vesselPartSnapshots(vessel: Vessel): PartSnapshot[] {
       craftId: craft.craftId,
       stageGroup: p.stageGroup,
       stageLabel: craft.vehicle.stageGroups.find((g) => g.id === p.stageGroup)?.label ?? p.stageGroup,
+      // The place of the group in the vehicle's own list of flow groups (request presentation-sweep-10).
+      stageOrder: craft.vehicle.stageGroups.findIndex((g) => g.id === p.stageGroup),
       def: p.def.id,
       localPos: v3.clone(p.pos),
       localRot: quat.clone(p.rot),
       tempSkin: temp,
       maxTemp,
       resources,
-      modules: p.modules.map(cloneModuleState),
+      modules: p.modules.map(stated),
       shielded: p.shielded,
       // A jettisoned fairing petal says which one it is and of which fairing (nothing reads its id for that).
       panel: p.panel ? { index: p.panel.index, count: p.panel.count, of: fairingOfPanel(p) ?? p.instanceId } : null,
@@ -74,6 +89,8 @@ export interface WorldSideSnapshotFields {
   stages?: (craft: number) => StageInfo[];
   /** Counter that changes when the vessel's orbit or plan changes (`VesselSnapshot.revision`). */
   revision?: number;
+  /** Whether there is air at the vessel now (density above 0): without it no chute envelope is stated. Absent = true. */
+  inAir?: boolean;
 }
 
 /** The craft of a vessel as the snapshot shows them, base craft first. */
@@ -138,7 +155,7 @@ export function toVesselSnapshot(vessel: Vessel, world: WorldSideSnapshotFields)
     mass: vessel.mp.mass,
     comLocal: v3.clone(vessel.mp.com),
     boundingRadius: st.boundingRadius,
-    parts: vesselPartSnapshots(vessel),
+    parts: vesselPartSnapshots(vessel, world.inAir ?? true),
     aero: {
       q: a.q,
       mach: reportedMach(vessel),

@@ -39,7 +39,7 @@ import {
 } from '@/sim/vessel';
 import { assembleVessel, setModuleStateForLab, splitForStage, vesselPartSnapshots } from '@/sim/vessel/public';
 import type { StepContext } from '@/sim/vessel/types';
-import { controls, DT, earthAir, isFiniteVessel, loadLibrary, makeEnv, placeUpright, run, runAll, STANDARD_DENSITY, VEHICLE, type FakeEnv } from './helpers';
+import { controls, DT, earthAir, eventKey, isFiniteVessel, loadLibrary, makeEnv, placeUpright, run, runAll, STANDARD_DENSITY, VEHICLE, type FakeEnv } from './helpers';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -372,7 +372,7 @@ describe('structural failure', () => {
     const index = v.parts.findIndex((p) => p.instanceId === 'm2');
     const v0 = v3.clone(v.v);
     destroyParts(v, [index], 'overstress', ctx);
-    expect(ctx.events.find((e) => e.type === 'partDestroyed')).toMatchObject({ partId: 'm2', cause: 'overstress' });
+    expect(ctx.events.find((e) => e.type === 'partDestroyed')).toMatchObject({ partId: eventKey(v, 'm2'), cause: 'overstress' });
     const boom = ctx.events.find((e) => e.type === 'explosion');
     expect(boom && boom.type === 'explosion' ? boom.energy : 0).toBeCloseTo(634000 * 4e6, -6);
     // Six engines and the ullage ring become debris; the upper stack flies on, kicked forward.

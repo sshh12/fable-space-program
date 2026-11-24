@@ -296,9 +296,8 @@ export async function fixtureDefs(repoRoot: string, o: FixtureDefOptions = {}): 
     name: 'Fixture pad',
     bodyId: 'earth',
     location: { latDeg: FIXTURE_PAD.latDeg, lonDeg: FIXTURE_PAD.lonDeg, padElevation: o.padElevation ?? 'terrain' },
-    padAzimuthDeg: 90,
-    pad: { flatRadius: 450, blendRadius: 900, clampHeight: 18, ...(o.padShape ? { shape: o.padShape } : {}) },
-    structures: [],
+    // One pad at the reference point: what v1's single pad of this fixture was (id 'pad', the heavy class).
+    pads: [{ id: 'pad', name: 'Fixture pad', offsetEnu: [0, 0], azimuthDeg: 90, class: 'heavy', flatRadius: 450, blendRadius: 900, ...(o.padShape ? { shape: o.padShape } : {}), mountHeight: 18, structures: [] }],
     recoveryZones: [],
   };
   return {

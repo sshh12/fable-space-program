@@ -9,6 +9,7 @@
  */
 import { fsDefSource } from '../../src/core/defs/fsSource';
 import { loadDefs } from '../../src/core/defs/loader';
+import { padsOf } from '../../src/core/defs/sites';
 import { boundingCylinder, checkMesh } from '../../src/render/vehicle/geom/validate';
 import { generatePart } from '../../src/render/vehicle/parts';
 import { posedTriangles } from '../../src/render/vehicle/parts/assemble';
@@ -59,13 +60,18 @@ async function main(): Promise<void> {
   for (const site of Object.values(defs.sites)) {
     const totals = [0, 0, 0];
     const rows: string[] = [];
-    for (const s of site.structures) {
-      const v = generateStructure(defs, site, s.model, s.params ?? {}, s);
-      const t = [0, 1, 2].map((lod) => Object.values(v.models).reduce((n, m) => n + m.lods[lod]!.indices.length / 3, 0));
-      t.forEach((n, i) => (totals[i] = totals[i]! + n));
-      rows.push(`  ${s.model.padEnd(30)} ${t.join(' / ')}`);
+    let structures = 0;
+    // The structures of every pad of the site, each on its own pad's ground.
+    for (const pad of padsOf(site)) {
+      for (const s of pad.structures) {
+        const v = generateStructure(defs, site, s.model, s.params ?? {}, s, undefined, pad);
+        const t = [0, 1, 2].map((lod) => Object.values(v.models).reduce((n, m) => n + m.lods[lod]!.indices.length / 3, 0));
+        t.forEach((n, i) => (totals[i] = totals[i]! + n));
+        rows.push(`  ${s.model.padEnd(30)} ${t.join(' / ')}`);
+        structures++;
+      }
     }
-    console.log(`${site.id}: ${site.structures.length} structures, triangles of all models LOD0 ${totals[0]} LOD1 ${totals[1]} LOD2 ${totals[2]}`);
+    console.log(`${site.id}: ${structures} structures, triangles of all models LOD0 ${totals[0]} LOD1 ${totals[1]} LOD2 ${totals[2]}`);
     console.log(rows.join('\n'));
   }
 }

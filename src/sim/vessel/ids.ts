@@ -113,12 +113,6 @@ export function findCraftPart(vessel: Vessel, craft: number, instanceId: string)
   return -1;
 }
 
-/**
- * The `partId` an event names a part with. A vessel of ONE craft names it by its instance id, which is what
- * every consumer of the v1 events matches against `PartSnapshot.instanceId`; a vessel of several craft names
- * it by its part key, the only unambiguous form there. (The presentation sweep moves the consumers to part
- * keys; from then on this can return the key always.)
- */
 /** Instance id of petal `k` of the fairing part `fairingInstanceId` (the one part of a vessel of its own). */
 export const panelInstanceId = (fairingInstanceId: string, k: number): string => `${fairingInstanceId}#panel${k}`;
 
@@ -133,8 +127,13 @@ export function fairingOfPanel(part: PartRuntime): string | null {
   return part.instanceId.endsWith(suffix) ? part.instanceId.slice(0, -suffix.length) : null;
 }
 
+/**
+ * The `partId` an event names a part with: its part key `craftId/instanceId`, in every event and for a vessel
+ * of one craft too (one form since the tighten step after sub-wave 3.2; until then a vessel of one craft
+ * named the part by its instance id). A consumer compares it with the key of a part.
+ */
 export function eventPartId(vessel: Vessel, part: PartRuntime): string {
-  return vessel.crafts.length === 1 ? part.instanceId : partKey(vessel.crafts[part.craft]!.craftId, part.instanceId);
+  return partKey(vessel.crafts[part.craft]!.craftId, part.instanceId);
 }
 
 /** Instance id of the root part of a craft (the part the craft's identity goes with). */

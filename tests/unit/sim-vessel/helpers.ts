@@ -10,7 +10,7 @@ import { fsDefSource } from '@/core/defs/fsSource';
 import { loadDefs } from '@/core/defs/loader';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
-import { stepVessel, type Vessel } from '@/sim/vessel';
+import { partKey, stepVessel, type Vessel } from '@/sim/vessel';
 
 export const VEHICLE = 'meridian-lunar';
 export const DT = 1 / 120;
@@ -201,3 +201,11 @@ export function findPart(v: Vessel, id: string): Vessel['parts'][number] {
   if (!p) throw new Error(`no part ${id}`);
   return p;
 }
+
+/**
+ * What an event names the part `instanceId` with while it is a part of `v`'s first craft: its part key,
+ * `craftId/instanceId` (one form for every event, a vessel of one craft included). `v` is the vessel that
+ * holds the part when the event is made: a decoupler is named by the vessel it was fired on, an engine of
+ * a spent stage by that stage's own craft. The key is compared, never taken apart.
+ */
+export const eventKey = (v: Vessel, instanceId: string): string => partKey(v.crafts[0]!.craftId, instanceId);

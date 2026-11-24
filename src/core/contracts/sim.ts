@@ -31,14 +31,14 @@
  *        craft is `a~<vessel id>~<tick>`. The vessel of one launched craft has that craft's id.
  * The simulation composes these forms; A CONSUMER NEVER TAKES AN ID APART. Ids are compared, and what an id
  * would tell is a field: the craft a piece left is `CraftSnapshot.parent`, the craft of a part is
- * `PartSnapshot.craftId`, the craft of a vessel are `VesselSnapshot.crafts`. The one test on a string that
- * the contract allows is of an event part id while it has two forms (see `SimEvent`).
+ * `PartSnapshot.craftId`, the craft of a vessel are `VesselSnapshot.crafts`. A part in an event is named by
+ * its part key, which is compared with the key of a part and never taken apart (see `SimEvent`).
  *
- * v2 fields (MIGRATION_V2 section 4). Fields marked "v2, optional until the tighten step" were added
- * before their producers exist: the session fills them from MIGRATION_V2 step 3.5 on, a hand-built snapshot
- * (labs, tests) may leave them out, and a consumer treats an absent one as the neutral value its comment
- * states. The lead makes them required when every producer fills them. Fields marked @deprecated are still
- * filled and are removed at the tighten step after sub-wave 3.2.
+ * v2 fields (MIGRATION_V2 section 4) are REQUIRED since the tighten step after sub-wave 3.2 (2026-11-24):
+ * every producer states them, the session and the hand-built snapshots of the fakes, the labs and the tests
+ * alike, and no consumer has a fallback for a missing one. The v1 members they replaced are gone
+ * (`SimSnapshot.tick`, `Readouts.targetBodyId` and `.targetClosestApproach`, the aliases `Sim` and
+ * `SimDebug`). A member that is still optional says why in its own comment.
  */
 import type { ConicElements } from '../math/conic';
 import type { FrameEpochOrigin, FrameRebase } from '../math/frame';
@@ -211,7 +211,12 @@ export type ModuleState =
       inflation: number;
       /** Seconds since deployment (-1 when stowed). */
       deployAge: number;
-      envelope: ChuteEnvelope;
+      /**
+       * The envelope light of THIS chute at the vessel's present altitude, Mach number and dynamic pressure;
+       * null where there is no atmosphere at the vessel (on the Moon, above the air: a parachute needs air,
+       * and nothing is judged there), as `Readouts.chuteEnvelope` is. A consumer shows no light for null.
+       */
+      envelope: ChuteEnvelope | null;
       /** Unit direction from the attach point to the canopy in the VES frame (trails the airflow). */
       lineDir: Vec3;
     }
@@ -247,15 +252,22 @@ export interface PartSnapshot {
    * assembly share instance ids). It contains none of '/', '~' and '.' (the header's "Ids").
    */
   instanceId: string;
-  /** v2, optional until the tighten step: the craft this part belongs to (`VesselSnapshot.crafts[].id`). Absent = the vessel's only craft. */
-  craftId?: string;
+  /** v2: the craft this part belongs to (`VesselSnapshot.crafts[].id`). */
+  craftId: string;
   /**
-   * v2, optional until the tighten step: the propellant-flow group of the part within its craft
+   * v2: the propellant-flow group of the part within its craft
    * (VehiclePartPlacement.stageGroup) and that group's label, so that resource bars and stage displays never
    * index `defs.vehicles` by a runtime id (a design that is not in the library draws correctly).
    */
-  stageGroup?: string;
-  stageLabel?: string;
+  stageGroup: string;
+  stageLabel: string;
+  /**
+   * v2 (request presentation-sweep-10): the place of the part's group in the list of flow groups of the
+   * vehicle its craft was built from (`VehicleDef.stageGroups`; 0 = the first). Resource bars and the
+   * systems page list the groups of a craft in this order, which is the vehicle designer's and not the
+   * order in which the part list happens to show them. -1 for a part whose group the vehicle does not list.
+   */
+  stageOrder: number;
   def: string;
   /** Pose of the part frame in the vessel frame: v_VES = rotate(localRot, v_part) + localPos. */
   localPos: Vec3;
@@ -269,14 +281,13 @@ export interface PartSnapshot {
   /** True while hidden inside a closed fairing (no aero/heating; still rendered). */
   shielded: boolean;
   /**
-   * v2 (request presentation-sweep-2), optional until the tighten step: set on the one part of a jettisoned
+   * v2 (request presentation-sweep-2): set on the one part of a jettisoned
    * fairing PETAL, which is a vessel and a craft of its own: sector `index` (0-based) of `count`, and `of`,
    * the instance id of the fairing part it was a petal of. That fairing was a part of the craft this petal's
    * craft left (`CraftSnapshot.parent`), and it is the part a `fairingJettisoned` event names. null for
-   * every other part. Absent = not stated (a producer that does not fill it yet). With it nothing reads a
-   * petal's instance id, which is opaque like every other id.
+   * every other part. With it nothing reads a petal's instance id, which is opaque like every other id.
    */
-  panel?: { index: number; count: number; of: string } | null;
+  panel: { index: number; count: number; of: string } | null;
 }
 
 export interface VesselAeroState {
@@ -321,13 +332,13 @@ export interface CraftCockpit {
    */
   sensorMount: { pos: Vec3Tuple; lookDir: Vec3Tuple; upDir: Vec3Tuple } | null;
   /**
-   * v2 (request presentation-sweep-3), optional until the tighten step: the crew of the craft by seat, as
+   * v2 (request presentation-sweep-3): the crew of the craft by seat, as
    * the vehicle the craft was built from lists them (`VehicleDef.crew`): `seat` is the id of a seat of the
-   * command part (`command.seats`), `name` the crew member's. Empty for a craft without crew. Absent = not
-   * stated. A seat's readable name is the cockpit layout's label where it has one, else this name, else
-   * the seat's id; nothing looks a vehicle up for it.
+   * command part (`command.seats`), `name` the crew member's. Empty for a craft without crew. A seat's
+   * readable name is the cockpit layout's label where it has one, else this name, else the seat's id;
+   * nothing looks a vehicle up for it.
    */
-  crew?: { seat: string; name: string }[];
+  crew: { seat: string; name: string }[];
 }
 
 /** One craft of a vessel (v2; ARCHITECTURE 7.2). A vessel that never docked has exactly one. */
@@ -343,14 +354,13 @@ export interface CraftSnapshot {
    */
   id: string;
   /**
-   * v2, optional until the tighten step: lineage. The id of the craft this one separated from; null for a
+   * v2: lineage. The id of the craft this one separated from; null for a
    * craft that was launched. A piece of debris is a craft of its own, and this is how a consumer finds what
    * it came from (to carry per-part presentation state across a separation, to name it) without taking an
    * id apart. The parent may itself be a piece (follow `parent` to the launched craft) and need not be in
-   * the snapshot any more. No separation tick is recorded. Absent = not produced (a hand-built snapshot):
-   * treat as null.
+   * the snapshot any more. No separation tick is recorded.
    */
-  parent?: string | null;
+  parent: string | null;
   /** Vehicle the craft was built from: for labels and icons only (never index `defs.vehicles` with it for behaviour). */
   vehicleId: string;
   name: string;
@@ -360,11 +370,11 @@ export interface CraftSnapshot {
   /** Instance id of the craft's command part (crew, seats, cockpit interior id, the remote flag live on it); null when it has none (debris). */
   commandPart: string | null;
   /**
-   * v2, optional until the tighten step: the cockpit of `commandPart`, resolved. null = the craft has no
-   * command part. Absent = not produced yet (the world fills it with request sim-core-v2-3); until then a
-   * consumer keeps the source it has today, and from the tighten step none reads `defs.vehicles` for it.
+   * v2: the cockpit of `commandPart`, resolved from the definitions the craft was built from (it is not
+   * part of the saved state: a cockpit, a camera seat or a sensor mount may change in a definition without
+   * touching a save). null = the craft has no command part. No consumer reads `defs.vehicles` for it.
    */
-  cockpit?: CraftCockpit | null;
+  cockpit: CraftCockpit | null;
   /** The craft's own stage stack: only its owner fires it, docked or not. */
   staging: { nextStage: number; stages: StageInfo[]; lockout: boolean };
   /** Chase-camera distances for this craft, m (from its vehicle's camera data; the rig combines them with the vessel's bounding radius). */
@@ -389,31 +399,31 @@ export interface VesselSnapshot {
    * labels only. Per-craft data is in `crafts`.
    */
   vehicleId: string;
-  /** v2, optional until the tighten step: the craft of this vessel, base craft first. Absent = one craft that is the whole vessel. */
-  crafts?: CraftSnapshot[];
-  /** v2, optional until the tighten step: dock links between the craft. Absent or empty = never docked. */
-  links?: DockLinkSnapshot[];
+  /** v2: the craft of this vessel, base craft first: at least one for a vessel with parts (what a session keeps in view of a destroyed vessel has no parts and describes no craft). */
+  crafts: CraftSnapshot[];
+  /** v2: dock links between the craft; empty = never docked. */
+  links: DockLinkSnapshot[];
   /**
-   * v2, optional until the tighten step: who flies the vessel and from where. `accountId` null = the helm is
+   * v2: who flies the vessel and from where. `accountId` null = the helm is
    * vacant; `craftId` and `controlPart` (part key) name the craft whose pilot holds it and the part whose
-   * axes are the CTL frame. Absent = the viewer flies it from its root part.
+   * axes are the CTL frame.
    */
-  helm?: { accountId: string | null; callsign: string | null; craftId: string; controlPart: string };
-  /** v2, optional until the tighten step: how the vessel exists for the viewer (ARCHITECTURE 5.4). Absent = 'solid'. */
-  presence?: Presence;
-  /** v2, optional until the tighten step: the vessel's time minus the viewer's clock, in ticks (0 when on the viewer's clock). Absent = 0. */
-  timeOffset?: number;
+  helm: { accountId: string | null; callsign: string | null; craftId: string; controlPart: string };
+  /** v2: how the vessel exists for the viewer (ARCHITECTURE 5.4). */
+  presence: Presence;
+  /** v2: the vessel's time minus the viewer's clock, in ticks (0 when on the viewer's clock). */
+  timeOffset: number;
   /**
    * v2: true for a presentation-only vessel (the turntable's display vessel in the menu). It has no physics
    * and no owner; nameplates, the map, audio and LOD observers ignore it. Absent = false.
    */
   presentation?: boolean;
   /**
-   * v2, optional until the tighten step: monotonic counter that changes when the vessel's orbit or its plan
+   * v2: monotonic counter that changes when the vessel's orbit or its plan
    * changes (end of a burn, an SOI change, a node edit, a dock): the key of planning results
-   * (`PlanningKey.vesselRevision`). Absent = 0.
+   * (`PlanningKey.vesselRevision`).
    */
-  revision?: number;
+  revision: number;
   controllable: boolean;
   tier: FidelityTier;
   situation: VesselSituation;
@@ -488,12 +498,12 @@ export interface NavballMarkers {
   /** Capsule lift vector during atmospheric flight; null otherwise. */
   liftVector: Vec3 | null;
   /**
-   * v2, optional until the tighten step: direction of the velocity relative to the target and its opposite
+   * v2: direction of the velocity relative to the target and its opposite
    * (what prograde and retrograde show in navball mode 'target'); null without a vessel or port target or
-   * when the relative speed is below 1 mm/s. Absent = null.
+   * when the relative speed is below 1 mm/s.
    */
-  relativePrograde?: Vec3 | null;
-  relativeRetrograde?: Vec3 | null;
+  relativePrograde: Vec3 | null;
+  relativeRetrograde: Vec3 | null;
 }
 
 export interface NavballState {
@@ -534,17 +544,16 @@ export interface StageInfo {
   propellantFraction: number | null;
   /** Icons of the individual actions (engine, decoupler, chute...). */
   actionKinds: string[];
-  // v2 (request presentation-sweep-3), all optional until the tighten step: what the stage says about itself
+  // v2 (request presentation-sweep-3): what the stage says about itself
   // that does not change during a flight, from the vehicle the craft was built from and its parts'
-  // definitions (src/core/defs/stageWords.ts, `describeStages`: one derivation for every producer). Absent =
-  // not stated (a producer that does not fill them yet): a consumer then says less, and never looks the
-  // vehicle up by a runtime id.
+  // definitions (src/core/defs/stageWords.ts, `describeStages`: one derivation for every producer). No
+  // consumer looks the vehicle up by a runtime id for them.
   /**
    * What the stage burns: the labels of the stage groups of the engines its ignite actions light, each group
    * once, in the order the actions name them, joined with ' + ' ("Meridian M-3"). null for a stage that
    * ignites none.
    */
-  burnLabel?: string | null;
+  burnLabel: string | null;
   /**
    * The engines the stage ignites, fixed-burn motors and engines without a vacuum Isp left out: their thrust
    * in vacuum, N, and their propellant's weight flow at standard gravity, N/s (the sum of thrustVac /
@@ -552,20 +561,20 @@ export interface StageInfo {
    * stage's present mass is ve (1 - exp(-deltaVVac / ve)) / burnTime with ve = g0 thrustVac / weightFlowVac:
    * a figure that does not depend on local gravity (request flight-ui-8).
    */
-  thrustVac?: number;
-  weightFlowVac?: number;
+  thrustVac: number;
+  weightFlowVac: number;
   /**
    * One entry per entry of `actionKinds`: for a 'deployParachute' action the kind of canopy it deploys; for
    * a 'cutParachute' action the kind it releases (what the latest deploy action before it put out; null
    * when nothing was deployed before it); null for every other action.
    */
-  actionChutes?: ('drogue' | 'main' | null)[];
+  actionChutes: ('drogue' | 'main' | null)[];
   /**
    * The envelopes of the canopy the stage's first deploy action puts out (`safe` and `destroy` of that
    * parachute's definition); null when the stage deploys none. The chute envelope light
    * (`Readouts.chuteEnvelope`) is about the first stage from `nextStage` on that deploys a parachute.
    */
-  chuteEnvelopes?: { safe: ParachuteEnvelope; destroy: ParachuteEnvelope } | null;
+  chuteEnvelopes: { safe: ParachuteEnvelope; destroy: ParachuteEnvelope } | null;
 }
 
 /** Everything numeric the HUD, the cockpit MFDs and pilots display/read. Active vessel only. */
@@ -621,16 +630,21 @@ export interface Readouts {
   rcsFraction: number | null;
   /** Total remaining delta-v (vacuum) over all unfired stages. */
   deltaVTotal: number;
-  /** @deprecated Use `target` (`target.ref` of kind 'body'). Still filled; removed at the tighten step after sub-wave 3.2. */
-  targetBodyId: string | null;
-  /** Relative inclination to the target's orbit plane, rad; null without target. */
+  /**
+   * Relative inclination to the orbit plane of a targeted BODY that orbits the body the vessel is about,
+   * rad; null without such a target. The same number as `target.relativeInclination`.
+   */
   targetRelativeInclination: number | null;
-  /** @deprecated Use `target.closestApproaches[0]`. Still filled; removed at the tighten step after sub-wave 3.2. */
-  targetClosestApproach: { ut: number; distance: number } | null;
-  /** v2, optional until the tighten step: navigation to the selected target (a body, a vessel or a port); null without one. Absent = derive from the deprecated fields. */
-  target?: TargetReadout | null;
-  /** v2, optional until the tighten step: the docking instrument; null unless a port is targeted and an own port is the control point. Absent = null. */
-  docking?: DockingReadout | null;
+  /**
+   * v2: navigation to the selected target (a body, a vessel or a port); null without one. The in-process
+   * session (`World`) has body targets only and states for one: `ref`, the body's name, `presence` 'solid',
+   * range and range rate to the body's centre, the relative inclination, and in `closestApproaches` the ONE
+   * approach that is the closest on the planned (or current) trajectory, with the speed relative to the
+   * body at it; `relVelocity`, `relSpeed`, `lvlh` and `offer` are null for a body.
+   */
+  target: TargetReadout | null;
+  /** v2: the docking instrument; null unless a port is targeted and an own port is the control point. */
+  docking: DockingReadout | null;
   /** Launch-window helper while landed on the root body with a target set. */
   launchWindow: { timeToPlaneCrossing: number; launchAzimuthDeg: number } | null;
   nodeBurn: NodeBurnInfo | null;
@@ -784,15 +798,10 @@ interface EventBase {
 export type CaptureLimit = 'lateral' | 'angle' | 'roll' | 'closing' | 'lateralSpeed' | 'rate';
 
 /**
- * Part ids in events (`partId`, `otherPartId`, `partsDestroyed`) have TWO forms until the tighten step
- * after sub-wave 3.2 (MIGRATION_V2, lead steps):
- *  - the events of v1 (`engineIgnition` ... `jointBroken`) name a part by its INSTANCE id while the vessel
- *    is one craft, which is what every v1 consumer compares with `PartSnapshot.instanceId`, and by its PART
- *    KEY `craftId/instanceId` in a vessel of several craft, where instance ids repeat between craft;
- *  - the v2 events (`SimEventV2`) carry part keys always.
- * A consumer written now accepts both: a string with a '/' is a part key (no craft id and no instance id
- * contains one), a string without is an instance id of the vessel's only craft. At the tighten step every event part id
- * becomes the part key, in that one form, and this paragraph goes.
+ * Part ids in events (`partId`, `otherPartId`, `partsDestroyed`) are PART KEYS, `craftId/instanceId`, in
+ * every event and for a vessel of one craft too (one form since the tighten step after sub-wave 3.2). A
+ * consumer finds the part by comparing with the key of a part (`craftId` + '/' + `instanceId`, which the
+ * access module of the presentation builds once per part); it never takes a key apart.
  */
 export type SimEvent =
   | (EventBase & { type: 'stageFired'; stageIndex: number; label: string })
@@ -915,33 +924,24 @@ export interface SimSnapshot {
   /** Time of the latest completed physics step or rails advance: the true simulation state time. */
   simUt: number;
   /**
-   * @deprecated Use `revision`. Monotonic count of physics steps + rails advances. Still filled; removed at
-   * the tighten step after sub-wave 3.2 (in v2 "tick" means the universe tick of 1/120 s).
+   * v2: monotonic counter that changes whenever anything in the snapshot may have changed (lets consumers
+   * detect "no change"). It replaced v1's `tick` (in v2 "tick" means the universe tick of 1/120 s).
    */
-  tick: number;
+  revision: number;
+  /** v2: the render root this snapshot's ROOT positions are relative to (ARCHITECTURE section 3). */
+  frame: SnapshotFrame;
   /**
-   * v2, optional until the tighten step: monotonic counter that changes whenever anything in the snapshot
-   * may have changed (lets consumers detect "no change"). Absent = use `tick`.
+   * v2: the viewer's clock for the time strip (ARCHITECTURE 5.4). `warp` below stays and is derived from
+   * it.
    */
-  revision?: number;
-  /**
-   * v2, optional until the tighten step: the render root this snapshot's ROOT positions are relative to
-   * (ARCHITECTURE section 3). Absent = `{ epoch: 0, origin: { kind: 'body', bodyId: <the library's root
-   * body> }, rebase: null }`.
-   */
-  frame?: SnapshotFrame;
-  /**
-   * v2, optional until the tighten step: the viewer's clock for the time strip (ARCHITECTURE 5.4). `warp`
-   * below stays and is derived from it. Absent = one private clock nobody else is on, described by `warp`.
-   */
-  time?: TimeView;
+  time: TimeView;
   warp: WarpState;
   /**
-   * The scenario the session was created from. v2: a session without a scenario (a lobby) will carry null
-   * here from the tighten step on; `milestones`, `mission` and `cheatCounter` then describe the active
-   * craft's objectives and are empty / not failed / 0 without them.
+   * The scenario the session was created from; null for a session without one (a lobby). `milestones`,
+   * `mission` and `cheatCounter` then describe the active craft's objectives and are empty / not failed /
+   * 0 without them.
    */
-  scenario: { id: string; startKind: ScenarioDef['start']['kind']; stagesAlreadyFired: number };
+  scenario: { id: string; startKind: ScenarioDef['start']['kind']; stagesAlreadyFired: number } | null;
   /** Named surface places of this scenario (landing target, recovery zones, launch site). */
   surfaceTargets: SurfaceTarget[];
   /**
@@ -956,11 +956,11 @@ export interface SimSnapshot {
   starId: string;
   vessels: VesselSnapshot[];
   /**
-   * The vessel the viewer is seated in. v2: becomes `string | null` at the tighten step (the menu, a spectator
-   * and a pilot between ships have none); the singleton blocks below are then still present with neutral
-   * values (`neutralFlightBlocks()` in src/sim/view). Write consumers so that a missing vessel is handled.
+   * The vessel the viewer is seated in; null when there is none (the menu, a spectator, a pilot between
+   * ships). The singleton blocks below are then still present with neutral values (`neutralFlightBlocks()`
+   * of the session). Every consumer handles null.
    */
-  activeVesselId: string;
+  activeVesselId: string | null;
   /** Controls actually applied this step (after SAS, fine-control scaling and clamping). */
   appliedControls: ControlInputs;
   navball: NavballState;
@@ -990,12 +990,6 @@ export interface SimSnapshot {
 /** A pilot/controller gets a control tick every this many physics steps (30 Hz of simulation time). */
 export const CONTROL_TICK_STEPS = 4;
 
-/** @deprecated Use `SessionDebug` (session.ts). Alias kept during wave 3. */
-export type SimDebug = SessionDebug;
-
-/**
- * @deprecated Use `LocalSession` (session.ts; `FlightSession` for code that also runs on a network session).
- * v1's simulation facade: the same contract, moved. The alias exists only during wave 3 and is removed at
- * the tighten step after sub-wave 3.2, with the `createSim` export of src/sim.
- */
-export type Sim = LocalSession;
+// v1's names `Sim` and `SimDebug` are gone (the tighten step after sub-wave 3.2): the session contract is
+// `LocalSession` / `FlightSession` and `SessionDebug` of session.ts, and `createSession` of src/session
+// makes one.

@@ -1,8 +1,9 @@
 /**
  * The session speaks the v2 snapshot (MIGRATION_V2 step 3.5; ARCHITECTURE section 3 and 7.2): the render
  * root at the active vessel's SOI body with a frame epoch and a rebase when it changes, a private clock,
- * the revision, craft blocks with stage figures and chase hints, part keys. The deprecated fields are
- * still filled, and the deprecated `createSim` keeps the v1 render root.
+ * the revision, craft blocks with stage figures and chase hints, part keys. The members of v1 they replaced
+ * are gone (the tighten step after sub-wave 3.2), and `renderRoot: 'rootBody'` of `createWorld` is what
+ * keeps the root body as the render root.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -12,7 +13,8 @@ import { describeStages } from '@/core/defs/stageWords';
 import { FrameEpochTracker, rebasePoint, rebaseVelocity } from '@/core/math/frame';
 import { v3 } from '@/core/math/vec3';
 import { createSession, diagnosticsOf } from '@/session';
-import { createSim } from '@/sim';
+import { createWorld } from '@/sim';
+import * as simPackage from '@/sim';
 import { nearestTick } from '@/sim/clock';
 import { active, controls, flatTerrain, loadLibrary, makeSim, orbitScenario, stepUntil } from './helpers';
 
@@ -56,20 +58,20 @@ describe('the render root', () => {
     const sim = await makeSim(defs, 'qa-translunar', terrain);
     const tracker = new FrameEpochTracker();
     const before = sim.snapshot();
-    expect(tracker.observe(before.frame!)).toBeNull();
+    expect(tracker.observe(before.frame)).toBeNull();
     // What a camera rig would hold: a point 40 m beside the vessel, and the vessel's ROOT velocity.
     const heldOffset = { x: 40, y: -10, z: 5 };
     coastInto(sim, 'moon');
 
     // peek() shows the pending rebase and does not drain it.
     const peeked = sim.peek();
-    expect(peeked.frame!.epoch).toBe(1);
-    expect(peeked.frame!.origin).toEqual({ kind: 'body', bodyId: 'moon' });
-    expect(peeked.frame!.rebase).not.toBeNull();
-    expect(sim.peek().frame!.rebase).not.toBeNull();
+    expect(peeked.frame.epoch).toBe(1);
+    expect(peeked.frame.origin).toEqual({ kind: 'body', bodyId: 'moon' });
+    expect(peeked.frame.rebase).not.toBeNull();
+    expect(sim.peek().frame.rebase).not.toBeNull();
 
     const s = sim.snapshot();
-    const frame = s.frame!;
+    const frame = s.frame;
     expect(frame.epoch).toBe(1);
     // The rebase is the old origin (the Earth) in the new frame at this snapshot's time.
     expect(frame.rebase!.offset).toEqual(body(s, 'earth').rRoot);
@@ -90,18 +92,20 @@ describe('the render root', () => {
     // Drained: the next snapshot has no rebase, and still says where the old origin is now.
     sim.step();
     const next = sim.snapshot();
-    expect(next.frame!.epoch).toBe(1);
-    expect(next.frame!.rebase).toBeNull();
-    expect(next.frame!.previous).toEqual([{ epoch: 0, offset: body(next, 'earth').rRoot, velocity: body(next, 'earth').vRoot }]);
+    expect(next.frame.epoch).toBe(1);
+    expect(next.frame.rebase).toBeNull();
+    expect(next.frame.previous).toEqual([{ epoch: 0, offset: body(next, 'earth').rRoot, velocity: body(next, 'earth').vRoot }]);
     // A consumer that slept through the change rebases from the history.
     const sleeper = new FrameEpochTracker();
-    sleeper.observe(before.frame!);
-    expect(sleeper.observe(next.frame!)).toEqual({ offset: body(next, 'earth').rRoot, velocity: body(next, 'earth').vRoot });
+    sleeper.observe(before.frame);
+    expect(sleeper.observe(next.frame)).toEqual({ offset: body(next, 'earth').rRoot, velocity: body(next, 'earth').vRoot });
     expect(next.cheatCounter).toBe(0);
   });
 
-  it('the deprecated createSim keeps the v1 root: the library root body, one epoch, no rebase through the same change', async () => {
-    const sim = createSim(defs, 'qa-translunar', { terrain });
+  it('createWorld with renderRoot rootBody keeps the v1 root: the library root body, one epoch, no rebase through the same change', async () => {
+    // v1's createSim was this option under a name of its own; the package exports no session maker any more.
+    expect('createSim' in simPackage).toBe(false);
+    const sim = createWorld(defs, 'qa-translunar', { renderRoot: 'rootBody', terrain });
     await sim.ready;
     coastInto(sim, 'moon');
     const s = sim.snapshot();
@@ -116,8 +120,8 @@ describe('the render root', () => {
   });
 });
 
-describe('time, revision and the deprecated fields', () => {
-  it('a private clock on the tick grid; revision beside the deprecated tick', async () => {
+describe('time, revision and the target read-out', () => {
+  it('a private clock on the tick grid; the revision counts the steps; the target is one read-out', async () => {
     const sim = await makeSim(defs, orbitScenario(defs.scenarios['lunar-direct']!, 't-v2-time', 'earth', 300000, 400000, 4), terrain);
     const s0 = sim.snapshot();
     expect(s0.time).toEqual({
@@ -135,28 +139,38 @@ describe('time, revision and the deprecated fields', () => {
       proposals: [],
       offers: [],
     });
-    expect(s0.revision).toBe(s0.tick);
+    // v1's `tick` is gone: the revision is the one counter.
+    expect('tick' in s0).toBe(false);
     for (let i = 0; i < 5; i++) sim.step();
     const s1 = sim.snapshot();
-    expect(s1.time!.myTick).toBe(s0.time!.myTick + 5);
-    expect(s1.revision).toBe(s0.revision! + 5);
-    expect(s1.tick).toBe(s1.revision);
+    expect(s1.time.myTick).toBe(s0.time.myTick + 5);
+    expect(s1.revision).toBe(s0.revision + 5);
     sim.commands.setWarpLevel(6);
     sim.advance(1 / 60);
     const s2 = sim.snapshot();
-    expect(s2.time!.rate).toBe(s2.warp.factor);
-    expect(s2.time!.rate).toBeGreaterThan(1);
-    expect(s2.time!.maxRate).toBeGreaterThanOrEqual(s2.time!.rate);
-    // The deprecated target fields are still there.
-    expect(s2.readouts.targetBodyId).toBe('moon');
-    expect('targetClosestApproach' in s2.readouts).toBe(true);
+    expect(s2.time.rate).toBe(s2.warp.factor);
+    expect(s2.time.rate).toBeGreaterThan(1);
+    expect(s2.time.maxRate).toBeGreaterThanOrEqual(s2.time.rate);
+    // The navigation to the targeted body is one read-out; the members v1 had beside it are gone (its
+    // numbers are held in targetReadout.test.ts).
+    const target = s2.readouts.target!;
+    expect(target.ref).toEqual({ kind: 'body', id: 'moon' });
+    expect(target).toMatchObject({ name: defs.bodies['moon']!.name, presence: 'solid', timeOffset: 0, relVelocity: null, relSpeed: null, lvlh: null, offer: null });
+    expect('targetBodyId' in s2.readouts).toBe(false);
+    expect('targetClosestApproach' in s2.readouts).toBe(false);
+    expect(target.relativeInclination).toBe(s2.readouts.targetRelativeInclination);
+    expect(target.closestApproaches.length).toBeLessThanOrEqual(1);
+    expect(s2.readouts.docking).toBeNull();
+    // This session has body targets only: no velocity relative to a vessel or a port on the navball.
+    expect(s2.navball.markers.relativePrograde).toBeNull();
+    expect(s2.navball.markers.relativeRetrograde).toBeNull();
     // A burn bounds the clock: physics warp only, and the strip says why.
     sim.setControls(controls({ throttle: 1 }));
     sim.commands.stage();
     stepUntil(sim, (x) => x.readouts.thrust > 0, 600);
     const burning = sim.snapshot();
-    expect(burning.time!.limitedBy).toMatchObject({ kind: 'physics', vesselIds: [], accountIds: [] });
-    expect(burning.time!.limitedBy!.text).toBe(burning.warp.limitedBy);
+    expect(burning.time.limitedBy).toMatchObject({ kind: 'physics', vesselIds: [], accountIds: [] });
+    expect(burning.time.limitedBy!.text).toBe(burning.warp.limitedBy);
   });
 });
 
@@ -167,12 +181,12 @@ describe('craft blocks and part keys', () => {
     const v = active(s);
     const vehicle = defs.vehicles['meridian-lunar']!;
     expect(v.crafts).toHaveLength(1);
-    const craft = v.crafts![0]!;
+    const craft = v.crafts[0]!;
     expect(craft.id).toBe(v.id);
     expect(craft).toMatchObject({ vehicleId: 'meridian-lunar', name: vehicle.name, ownerId: null, ownerCallsign: null, commandPart: 'capsule', chase: vehicle.cameras.chase });
     // The cockpit of the command part, resolved: the interior id and the camera seat the vehicle names for it,
     // and the crew by seat as the vehicle lists them (request presentation-sweep-3).
-    expect(craft.cockpit).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit.seat, sensorMount: null, crew: vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) });
+    expect(craft.cockpit).toEqual({ id: vehicle.cockpit, cameraSeat: vehicle.cameras.cockpit!.seat, sensorMount: null, crew: vehicle.crew.map((m) => ({ seat: m.seat, name: m.name })) });
     // The staging panel says what each stage burns and what its chute actions do: the session's whole path
     // (the world's snapshot, not only the vessel's facade) carries the words of the vehicle the craft was built from.
     const words = describeStages(vehicle, (id) => defs.parts[id]);
@@ -193,6 +207,9 @@ describe('craft blocks and part keys', () => {
       const placement = vehicle.parts.find((x) => x.id === p.instanceId)!;
       expect(p.stageGroup).toBe(placement.stageGroup);
       expect(p.stageLabel).toBe(vehicle.stageGroups.find((g) => g.id === placement.stageGroup)!.label);
+      // The place of the group in the vehicle's own list of flow groups (request presentation-sweep-10).
+      expect(p.stageOrder).toBe(vehicle.stageGroups.findIndex((g) => g.id === placement.stageGroup));
+      expect(p.stageOrder).toBeGreaterThanOrEqual(0);
     }
     expect(v.boundingRadius).toBeGreaterThan(5);
   });
@@ -200,7 +217,7 @@ describe('craft blocks and part keys', () => {
   it('debris carries its craft: the id of the craft it came from, no command part, no stages; the vessel revision moves with the orbit', async () => {
     // The trans-Earth coast: the next stage is the capsule separation, which leaves the ascent stage behind.
     const sim = await makeSim(defs, 'qa-trans-earth', terrain);
-    const r0 = active(sim.snapshot()).revision!;
+    const r0 = active(sim.snapshot()).revision;
     expect(sim.commands.stage().ok).toBe(true);
     stepUntil(sim, (x) => x.vessels.length > 1, 2400);
     const s = sim.snapshot();
@@ -211,15 +228,15 @@ describe('craft blocks and part keys', () => {
     expect(debris.crafts).toHaveLength(1);
     // What left is a craft of its own: an id derived from the craft it left, unique in the snapshot.
     const piece = debris.id.slice(v.id.length + 1);
-    expect(debris.crafts![0]).toMatchObject({ id: `${v.id}.${piece}`, vehicleId: 'meridian-lunar', commandPart: null, cockpit: null });
-    const craftIds = s.vessels.flatMap((x) => x.crafts!.map((c) => c.id));
+    expect(debris.crafts[0]).toMatchObject({ id: `${v.id}.${piece}`, vehicleId: 'meridian-lunar', commandPart: null, cockpit: null });
+    const craftIds = s.vessels.flatMap((x) => x.crafts.map((c) => c.id));
     expect(new Set(craftIds).size).toBe(craftIds.length);
-    expect(debris.crafts![0]!.staging.stages).toEqual([]);
+    expect(debris.crafts[0]!.staging.stages).toEqual([]);
     expect(debris.controllable).toBe(false);
     for (const p of debris.parts) expect(p.craftId).toBe(`${v.id}.${piece}`);
     // The separation pushed the capsule onto another orbit: once it coasts on rails again its revision has moved.
     expect(stepUntil(sim, (x) => active(x).translationMode === 'rails', 60000)).toBeGreaterThan(0);
-    expect(active(sim.snapshot()).revision!).toBeGreaterThan(r0);
+    expect(active(sim.snapshot()).revision).toBeGreaterThan(r0);
   });
 });
 
@@ -232,7 +249,7 @@ describe('createSession', () => {
     const d = diagnosticsOf(session);
     expect(d.stats().steps).toBe(1);
     expect(d.debrisLog()).toEqual([]);
-    expect(session.peek().frame!.origin).toEqual({ kind: 'body', bodyId: 'earth' });
+    expect(session.peek().frame.origin).toEqual({ kind: 'body', bodyId: 'earth' });
     expect(() => diagnosticsOf({} as never)).toThrow(/not a session made by createSession/);
   });
 });

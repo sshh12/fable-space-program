@@ -19,7 +19,7 @@ describe('lunar-direct through Sim.advance, one 60 Hz frame at a time', () => {
     expect(f.failure).toBeNull();
     expect(f.done).toBe(true);
     expect(f.milestones.map((m) => m.id)).toEqual(f.sim.scenario.milestones.map((m) => m.id));
-    expect(f.last.scenario.startKind).toBe('pad');
+    expect(f.last.scenario?.startKind).toBe('pad');
     expect(f.last.cheatCounter).toBe(0);
     expect(f.last.mission.failed).toBe(false);
     expect(f.last.mission.crewAlive).toBe(true);

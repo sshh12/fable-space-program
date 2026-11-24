@@ -11,8 +11,8 @@
  *    with different owners (e.g. a body's physical constants vs. its atmosphere look).
  *
  * v2 (MIGRATION_V2 section 4, ARCHITECTURE 8.3, 9.2, 9.3, 12). Every v2 addition is an optional field or a
- * new union member, so every existing file still loads. Fields marked @deprecated are still read and are
- * removed at the tighten step after sub-wave 3.2.
+ * new union member, so every existing file still loads. The single pad of a v1 site file (`pad`,
+ * `padAzimuthDeg`, `structures`) left the contract at the tighten step after sub-wave 3.2.
  */
 import type { SwellComponent } from '../geo/oceanSwell';
 import type { Vec3Tuple } from '../math/vec3';
@@ -391,17 +391,12 @@ export interface LaunchSiteDef {
   /** Resolved coordinates (written by the site-resolve bake tool so the pad sits on real, flat, dry terrain). */
   location: SiteLocationDef;
   /**
-   * v2: the pads of the site. Optional until MIGRATION_V2 step 3.6 writes them (the loader then exposes the
-   * deprecated single pad as `pads[0]`); required from the tighten step. Flatten-disc terrain modifiers are
-   * derived from the pads at load.
+   * v2: the pads of the site, at least one. A scenario names its pad (`ScenarioDef.pad`; absent = the
+   * first). Flatten-disc terrain modifiers are derived from the pads at load. v1's single pad (`pad`,
+   * `padAzimuthDeg`, `structures` of the site) is gone since the tighten step after sub-wave 3.2: a site
+   * file that still states it is refused by name.
    */
-  pads?: PadDef[];
-  /** @deprecated Use `pads[].azimuthDeg`. Compass direction (deg, clockwise from north) that the vessel's ventral side (-Z) faces on the pad. */
-  padAzimuthDeg: number;
-  /** @deprecated Use `pads[]` (`flatRadius`, `blendRadius`, `mountHeight`, `shape`). */
-  pad: { flatRadius: number; blendRadius: number; clampHeight: number; shape?: SitePadShapeDef };
-  /** @deprecated Use `pads[].structures`. Static structures of the single pad. */
-  structures: SiteStructureDef[];
+  pads: PadDef[];
   recoveryZones: { name: string; latDeg: number; lonDeg: number; radiusKm: number }[];
 }
 
@@ -798,11 +793,13 @@ export interface VehicleDef {
   crew: { seat: string; name: string }[];
   cameras: {
     /**
-     * Instance id of the command part and seat id the cockpit camera sits in. v2: an authoring convenience
-     * that the assembler copies onto the command part; it becomes OPTIONAL at the tighten step after
-     * sub-wave 3.2 (uncrewed vehicles have none), so consumers read the viewer's own command part instead.
+     * Instance id of the command part and seat id the cockpit camera sits in: an authoring convenience
+     * that the snapshot resolves per craft (`CraftSnapshot.cockpit`), which is what consumers read. Optional:
+     * an uncrewed vehicle has none. PRESENTATION: it is outside the simulation projection of a vehicle
+     * (src/core/defs/simProjection.ts), so it is neither in a vehicle reference nor in the state hash, and
+     * may change without touching a save.
      */
-    cockpit: { part: string; seat: string };
+    cockpit?: { part: string; seat: string };
     chase: { defaultDistance: number; minDistance: number; maxDistance: number };
   };
   /**

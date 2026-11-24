@@ -6,9 +6,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { dirToTile } from '../../../src/core/geo/cubeSphere';
 import type { TerrainAuthority } from '../../../src/terrain/provider';
 import { buildFlattenDiscs, discWeight } from '../../../src/terrain/modifiers';
-import { loadDefs } from '../../../src/core/defs/loader';
+import { loadDefs, normaliseSite } from '../../../src/core/defs/loader';
 import { fsDefSource } from '../../../src/core/defs/fsSource';
-import { padLocationOf, padsOf, SINGLE_PAD_ID } from '../../../src/core/defs/sites';
+import { padLocationOf, padsOf } from '../../../src/core/defs/sites';
 import type { LaunchSiteDef, PadDef } from '../../../src/core/contracts/defs';
 import { latLonToDir } from '../../../src/core/geo/cubeSphere';
 import { DEG } from '../../../src/core/math/scalar';
@@ -208,7 +208,7 @@ describe('flatten discs are derived from the pads of a site', () => {
   });
   const single: LaunchSiteDef = {
     id: 'one', name: 'One', bodyId: 'b', location: { latDeg: 10, lonDeg: 20, padElevation: 30 },
-    padAzimuthDeg: 90, pad: { flatRadius: 100, blendRadius: 250, clampHeight: 3 }, structures: [], recoveryZones: [],
+    pads: [pad('only', 100, 250)], recoveryZones: [],
   };
   const many: LaunchSiteDef = {
     ...single,
@@ -234,12 +234,16 @@ describe('flatten discs are derived from the pads of a site', () => {
     }
   });
 
-  it('a site that states the single pad only has that one disc; sites in id order, pads in their order', () => {
+  it('a site of one pad has that one disc; sites in id order, pads in their order; the single pad of v1 is refused by name', () => {
     const discs = buildFlattenDiscs(body, [single, many]);
     expect(discs.map((d) => d.source)).toEqual([
-      'sites/many.json pad "first"', 'sites/many.json pad "north"', 'sites/many.json pad "south"', `sites/one.json pad "${SINGLE_PAD_ID}"`,
+      'sites/many.json pad "first"', 'sites/many.json pad "north"', 'sites/many.json pad "south"', 'sites/one.json pad "only"',
     ]);
     expect(discs[3]).toMatchObject({ flatRadius: 100, blendRadius: 250, elevation: 30 });
+    // The same site with v1's single pad in place of the list: the check every site of a library passes
+    // refuses it by name, so no disc is derived from one.
+    const v1 = { id: 'one', name: 'One', bodyId: 'b', location: { latDeg: 10, lonDeg: 20, padElevation: 30 }, padAzimuthDeg: 90, pad: { flatRadius: 100, blendRadius: 250, clampHeight: 3 }, structures: [], recoveryZones: [] };
+    expect(() => normaliseSite(v1 as unknown as LaunchSiteDef, 'sites/one.json')).toThrow('sites/one.json: "pad" is the single pad of a v1 site file, which is no longer read');
   });
 
   it('a pad after the first without resolved coordinates is refused by name', () => {

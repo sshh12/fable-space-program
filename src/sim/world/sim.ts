@@ -22,8 +22,6 @@ import {
   type NodeBurnInfo,
   type Patch,
   type Readouts,
-  type Sim,
-  type SimDebug,
   type SimEvent,
   type SimSnapshot,
   type StageInfo,
@@ -31,6 +29,7 @@ import {
   type VesselSituation,
   type VesselSnapshot,
 } from '@/core/contracts/sim';
+import type { LocalSession, SessionDebug } from '@/core/contracts/session';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { padLocationOf, padOf } from '@/core/defs/sites';
 import type { TargetRef, TimeLimitKind } from '@/core/contracts/net';
@@ -46,7 +45,7 @@ import { resolvePadElevation } from '../frames/padState';
 import { computeLandingTargetReadout, greatCircle, groundTrackDirection, targetDirection } from '../nav/landingTarget';
 import { launchWindowReadout } from '../nav/launchWindow';
 import { computeNavball, defaultNavballMode, flightDirections, navballModeAfter } from '../nav/navball';
-import { computeOrbitalReadouts } from '../nav/readouts';
+import { bodyTargetReadout, computeOrbitalReadouts } from '../nav/readouts';
 import { buildSurfaceTargets } from '../nav/surfaceTargets';
 import { nextRadiusCrossing } from '../orbit/events';
 import { makeOrbit, propagate, type Orbit } from '../orbit/kepler';
@@ -164,8 +163,8 @@ export interface CreateSimOptions {
    * The render root of the snapshots (ARCHITECTURE section 3). 'soiBody' (the default, what `createSession`
    * gives): the origin of every `...Root` field is the centre of the active vessel's SOI body, replaced
    * with a new frame epoch and a rebase when that body changes. 'rootBody': the origin is the library's root
-   * body and is never replaced, as in v1; this is what the deprecated `createSim` gives, so that
-   * presentation code that does not apply rebases yet sees no origin change. It goes with that alias.
+   * body and is never replaced, as in v1 (what v1's `createSim` gave): for a tool that wants every ROOT
+   * position of a whole flight about one body. No presentation code relies on it.
    */
   renderRoot?: 'soiBody' | 'rootBody';
 }
@@ -193,7 +192,7 @@ export interface WorldStats {
 }
 
 /** The Sim plus read-only diagnostics for tests and tools (not part of the contract). */
-export interface SimWorld extends Sim {
+export interface SimWorld extends LocalSession {
   debrisLog(): readonly DebrisFate[];
   stats(): WorldStats;
   /** Clearance between the part envelopes of two vessels on the same body, m (null when unknown ids or different bodies). */
@@ -275,7 +274,7 @@ class World implements SimWorld, MilestoneHost {
   readonly scenario: ScenarioDef;
   readonly ready: Promise<void>;
   readonly commands: PlayerCommands;
-  readonly debug: SimDebug;
+  readonly debug: SessionDebug;
 
   private readonly system: BodySystem;
   private readonly terrain: TerrainProvider;
@@ -1412,6 +1411,13 @@ class World implements SimWorld, MilestoneHost {
       id: v.id,
       name: v.name,
       vehicleId: v.crafts[0]!.vehicleId,
+      // What is left in view of a destroyed vessel has no parts and describes no craft.
+      crafts: [],
+      links: [],
+      helm: { accountId: null, callsign: null, craftId: v.crafts[v.helm.craft]?.craftId ?? '', controlPart: '' },
+      presence: 'solid',
+      timeOffset: 0,
+      revision: e.revision,
       controllable: false,
       tier: 'full',
       situation: 'landed',
@@ -2205,7 +2211,7 @@ class World implements SimWorld, MilestoneHost {
 
   // -------------------------------------------------------------------------------------------- debug
 
-  private makeDebug(): SimDebug {
+  private makeDebug(): SessionDebug {
     return {
       setVesselState: (vesselId: string, bodyId: string, r: Vec3, v: Vec3): void => {
         const e = this.entries.find((x) => x.vessel.id === vesselId && !x.removed);
@@ -2492,6 +2498,7 @@ class World implements SimWorld, MilestoneHost {
     return {
       met: this.liftoffUt === null ? 0 : Math.max(0, this.ut - this.liftoffUt),
       ...orbital,
+      docking: null,
       altitudeRadar: shownRadarAltitude(v, env),
       ...vr,
       sasModesAvailable: this.sasModesAvailable(),
@@ -2542,6 +2549,8 @@ class World implements SimWorld, MilestoneHost {
         gravity: this.localGravity(e),
         stages: (craft: number) => this.stagesOf(e, craft),
         revision: e.revision,
+        // The air at the vessel now (the rule of `Readouts.chuteEnvelope`): without it no chute envelope is stated.
+        inAir: e.env.atmosphereAt(v3.len(v.r) - e.env.radius).density > 0,
       });
       if (lag > 0) {
         this.present(e, snap, utP, lag, alpha, b.rRoot, b.vRoot);
@@ -2561,7 +2570,7 @@ class World implements SimWorld, MilestoneHost {
     let lockout = false;
     let complete = true;
     if (a.removed) {
-      readouts = EMPTY_READOUTS(this.targetBodyId);
+      readouts = EMPTY_READOUTS(this.targetBodyId === null ? null : bodyTargetReadout(this.system, a.bodyId, a.vessel.r, a.vessel.v, this.ut, this.targetBodyId, null, null));
       navball = computeNavball({ mode: this.navballMode, q: a.vessel.q, r: a.vessel.r, v: a.vessel.v, qFixedToInertial: env.qFixedToInertial, spin: env.spin });
     } else {
       const v = a.vessel;
@@ -2596,7 +2605,6 @@ class World implements SimWorld, MilestoneHost {
     return {
       ut: utP,
       simUt: this.ut,
-      tick: this.revision,
       revision: this.revision,
       frame: { epoch: this.frameEpoch, origin: { kind: 'body', bodyId: this.frameBody }, rebase, previous },
       // One private clock nobody else is on: the pilot's tick is the live tick.
@@ -2775,7 +2783,7 @@ class World implements SimWorld, MilestoneHost {
   }
 }
 
-const EMPTY_READOUTS = (targetBodyId: string | null): Readouts => ({
+const EMPTY_READOUTS = (target: Readouts['target']): Readouts => ({
   met: 0,
   altitudeAsl: 0,
   altitudeRadar: 0,
@@ -2815,9 +2823,9 @@ const EMPTY_READOUTS = (targetBodyId: string | null): Readouts => ({
   chuteEnvelope: null,
   rcsFraction: null,
   deltaVTotal: 0,
-  targetBodyId,
   targetRelativeInclination: null,
-  targetClosestApproach: null,
+  target,
+  docking: null,
   launchWindow: null,
   nodeBurn: null,
   liftVectorUp: null,
@@ -2834,12 +2842,6 @@ export function createWorld(defs: DefLibrary, scenarioId: string, opts: CreateSi
   return new World(defs, scenarioId, opts);
 }
 
-/**
- * @deprecated Use `createSession` of src/session. The same session with the v1 render root: the origin of
- * every `...Root` field is the library's root body and never changes (`renderRoot: 'rootBody'`), so
- * presentation code that does not yet apply `SimSnapshot.frame.rebase` keeps working. The lead removes it
- * after the presentation sweep.
- */
-export function createSim(defs: DefLibrary, scenarioId: string, opts: CreateSimOptions): SimWorld {
-  return new World(defs, scenarioId, { renderRoot: 'rootBody', ...opts });
-}
+// v1's `createSim` (the session with the root body as the render root) is gone since the tighten step after
+// sub-wave 3.2: `createSession` of src/session makes the session; `renderRoot: 'rootBody'` remains an option
+// of `createWorld` for the tools that want every ROOT position about one body for a whole flight.

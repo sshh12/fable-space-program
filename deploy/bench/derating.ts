@@ -5,7 +5,7 @@
  * nothing spins), with per-thread step times (p50, p99), billed vCPU-seconds per vessel-second and the idle
  * CPU of the process, so the numbers can be compared between the development machine and a Railway replica.
  *
- * Regimes: the whole world step of `createSim` (stepVessel and the world around it, real terrain) in six states
+ * Regimes: the whole world step of `createWorld` (stepVessel and the world around it, real terrain) in six states
  * of the real mission: the pad ascent with the first stage burning (the stack, nine engines, SAS), low Earth
  * orbit coasting (qa-leo), Earth entry with heating (qa-entry), the descent under drogues (qa-drogues), the
  * lunar powered descent (qa-powered-descent, throttle on) and landed on the Moon (qa-lunar-surface). Each
@@ -24,7 +24,7 @@ import { isMainThread, parentPort, Worker, workerData } from 'node:worker_thread
 import type { ControlInputs } from '../../src/core/contracts/controls';
 import { fsDefSource } from '../../src/core/defs/fsSource';
 import { loadDefs } from '../../src/core/defs/loader';
-import { createSim } from '../../src/sim';
+import { createWorld } from '../../src/sim';
 import { createTerrainProvider } from '../../src/terrain/provider';
 import { createTileSource } from '../../src/terrain/tileSource.node';
 import type { RoleContext, RoleHandle, RoleModule } from '../roles/types';
@@ -64,7 +64,7 @@ async function workerMain(init: WorkerInit): Promise<void> {
   const terrain = await createTerrainProvider(defs, source);
   const sims = [];
   for (const r of REGIMES) {
-    const sim = createSim(defs, r.scenario, { terrain });
+    const sim = createWorld(defs, r.scenario, { renderRoot: 'rootBody', terrain });
     await sim.ready;
     sim.setControls(controls(r.throttle));
     if (r.stage) sim.commands.stage();

@@ -11,7 +11,7 @@ import { quat } from '@/core/math/quat';
 import { DEG, G0 } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
 import { abort, assembleVessel, computeMassProps, fireNextStage, nextChuteEnvelope, setSasEnabled, vesselBaseY, type Vessel } from '@/sim/vessel';
-import { controls, earthAir, loadLibrary, makeEnv, placeUpright, run, runAll, VEHICLE, type FakeEnv } from './helpers';
+import { controls, earthAir, eventKey, loadLibrary, makeEnv, placeUpright, run, runAll, VEHICLE, type FakeEnv } from './helpers';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -193,7 +193,7 @@ describe('launch escape aborts', () => {
     const press = fireNextStage(v, env);
     expect(press.ok).toBe(true);
     expect(press.events[0]).toMatchObject({ type: 'stageFired', stageIndex: 2 });
-    expect(press.events.some((e) => e.type === 'decoupled' && e.partId === 'les')).toBe(true);
+    expect(press.events.some((e) => e.type === 'decoupled' && e.partId === eventKey(v, 'les'))).toBe(true);
     vessels.push(...press.spawned);
     expect(v.parts.map((p) => p.instanceId).sort()).toEqual(['apex-cover', 'capsule']);
     // The automatic jettison at 14 s then finds nothing to do, and the next press is the drogue stage.

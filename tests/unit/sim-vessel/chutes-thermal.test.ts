@@ -12,7 +12,7 @@ import { v3 } from '@/core/math/vec3';
 import { STEFAN_BOLTZMANN } from '@/sim/dynamics/thermal';
 import { assembleVessel, chuteEnvelope, convectiveFlux, fireNextStage, inflationAt, nextChuteEnvelope, radiativeFlux, stagnationFlux, vesselReadouts, type Vessel } from '@/sim/vessel';
 import type { ParachuteDef } from '@/sim/vessel/types';
-import { controls, DT, loadLibrary, makeEnv, run, runAll, VEHICLE, type FakeEnv } from './helpers';
+import { controls, DT, eventKey, loadLibrary, makeEnv, run, runAll, VEHICLE, type FakeEnv } from './helpers';
 
 let defs: DefLibrary;
 let heating: AtmosphereHeatingDef;
@@ -238,7 +238,7 @@ describe('heating of a vessel', () => {
     expect(v.age).toBeGreaterThan(5);
     expect(v.age).toBeLessThan(25);
     const destroyed = res.events.find((e) => e.type === 'partDestroyed');
-    expect(destroyed).toMatchObject({ partId: 'capsule', cause: 'overheat' });
+    expect(destroyed).toMatchObject({ partId: eventKey(v, 'capsule'), cause: 'overheat' });
     expect(res.events.some((e) => e.type === 'crewLost')).toBe(true);
     expect(v.crewAlive).toBe(false);
   });
@@ -263,7 +263,7 @@ describe('heating of a vessel', () => {
     const vessels = [bare];
     const ev = runAll(vessels, env2, 14, controls());
     const lost = ev.filter((e) => e.type === 'partDestroyed' && e.cause === 'overheat').map((e) => (e.type === 'partDestroyed' ? e.partId : ''));
-    expect(lost).toContain('descent-stage');
+    expect(lost).toContain(eventKey(bare, 'descent-stage'));
 
     // Same flight with the fairing on: the lander inside does not heat at all.
     const env3 = thinAir();

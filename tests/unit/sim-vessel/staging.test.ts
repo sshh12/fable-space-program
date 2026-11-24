@@ -11,7 +11,7 @@ import { v3, type Vec3 } from '@/core/math/vec3';
 import { abort, assembleVessel, computeMassProps, fireNextStage, needsIntegration, nextLiveStage, stagingInfo, type Vessel } from '@/sim/vessel';
 import { executeAction } from '@/sim/vessel/staging';
 import type { StepContext } from '@/sim/vessel/types';
-import { controls, DT, earthAir, loadLibrary, makeEnv, momentum, placeUpright, run, runAll, VEHICLE } from './helpers';
+import { controls, DT, earthAir, eventKey, loadLibrary, makeEnv, momentum, placeUpright, run, runAll, VEHICLE } from './helpers';
 import { stageScenario } from './scenarios';
 
 let defs: DefLibrary;
@@ -105,24 +105,30 @@ describe('the ten stages', () => {
     {
       label: 'M-1 separation',
       spawned: [['atlas-1', 'atlas-2', 'atlas-3', 'atlas-4', 'atlas-5', 'atlas-6', 'atlas-7', 'atlas-8', 'atlas-9', 'interstage-1', 'm1', 'm1-retro']],
-      check: (ev, main) => {
+      check: (ev, main, all) => {
         expect(count(ev, 'engineShutdown')).toBeGreaterThanOrEqual(9);
-        expect(ev.filter((e) => e.type === 'decoupled' && e.partId === 'interstage-1')).toHaveLength(1);
+        // The interstage is named by the vessel it was fired on; the retro motors light on the spent stage,
+        // which is a craft of its own by then.
+        expect(all[1]!.crafts[0]!.craftId).not.toBe(main.crafts[0]!.craftId);
+        expect(ev.filter((e) => e.type === 'decoupled' && e.partId === eventKey(main, 'interstage-1'))).toHaveLength(1);
         const ign = ev.filter((e) => e.type === 'engineIgnition').map((e) => (e.type === 'engineIgnition' ? e.partId : ''));
-        expect(ign).toContain('m2-ullage');
-        expect(ign).toContain('m1-retro');
-        expect(ign.filter((x) => x.startsWith('vela-2-'))).toHaveLength(6);
+        expect(ign).toContain(eventKey(main, 'm2-ullage'));
+        expect(ign).toContain(eventKey(all[1]!, 'm1-retro'));
+        const vela = [1, 2, 3, 4, 5, 6].map((k) => eventKey(main, `vela-2-${k}`));
+        expect(ign.filter((x) => vela.includes(x)).sort()).toEqual([...vela].sort());
         expect(main.thrust).toBeGreaterThan(6.5e6);
       },
     },
     {
       label: 'Tower + fairing jettison',
       spawned: [['les', 'les-jettison-motor'], ['fairing#panel0'], ['fairing#panel1'], ['fairing#panel2'], ['fairing#panel3']],
-      check: (ev, main) => {
-        expect(ev.filter((e) => e.type === 'decoupled' && e.partId === 'les')).toHaveLength(1);
+      check: (ev, main, all) => {
+        expect(ev.filter((e) => e.type === 'decoupled' && e.partId === eventKey(main, 'les'))).toHaveLength(1);
         const f = ev.find((e) => e.type === 'fairingJettisoned');
         expect(f && f.type === 'fairingJettisoned' ? f.newVesselIds : []).toHaveLength(4);
-        expect(ev.some((e) => e.type === 'engineIgnition' && e.partId === 'les-jettison-motor')).toBe(true);
+        expect(f && f.type === 'fairingJettisoned' ? f.partId : '').toBe(eventKey(main, 'fairing'));
+        // The jettison motor lights on the tower, which has left by then.
+        expect(ev.some((e) => e.type === 'engineIgnition' && e.partId === eventKey(all[1]!, 'les-jettison-motor'))).toBe(true);
         // The lander is no longer shielded.
         expect(main.parts.find((p) => p.instanceId === 'descent-stage')!.shielded).toBe(false);
         expect(main.parts.find((p) => p.instanceId === 'capsule')!.shielded).toBe(false);
@@ -133,8 +139,8 @@ describe('the ten stages', () => {
       spawned: [['interstage-2', 'm2', 'm2-ullage', 'vela-2-1', 'vela-2-2', 'vela-2-3', 'vela-2-4', 'vela-2-5', 'vela-2-6']],
       check: (ev, main) => {
         expect(count(ev, 'engineShutdown')).toBe(6);
-        expect(ev.some((e) => e.type === 'decoupled' && e.partId === 'interstage-2')).toBe(true);
-        expect(ev.some((e) => e.type === 'engineIgnition' && e.partId === 'vela-2v')).toBe(true);
+        expect(ev.some((e) => e.type === 'decoupled' && e.partId === eventKey(main, 'interstage-2'))).toBe(true);
+        expect(ev.some((e) => e.type === 'engineIgnition' && e.partId === eventKey(main, 'vela-2v'))).toBe(true);
         expect(main.thrust).toBeGreaterThan(0.99e6);
         expect(main.rcsEnabled).toBe(true);
       },
@@ -143,9 +149,10 @@ describe('the ten stages', () => {
       label: 'M-3 separation',
       spawned: [['m3', 'm3-rcs-pod-a', 'm3-rcs-pod-b', 'payload-adapter', 'vela-2v']],
       check: (ev, main, all) => {
-        expect(ev.some((e) => e.type === 'decoupled' && e.partId === 'payload-adapter')).toBe(true);
+        expect(ev.some((e) => e.type === 'decoupled' && e.partId === eventKey(main, 'payload-adapter'))).toBe(true);
         // Retro-evasion burn of the two pods on the spent stage.
-        expect(ev.filter((e) => e.type === 'engineIgnition' && e.partId.startsWith('m3-rcs-pod')).length).toBe(2);
+        const pods = [eventKey(all[1]!, 'm3-rcs-pod-a'), eventKey(all[1]!, 'm3-rcs-pod-b')];
+        expect(ev.filter((e) => e.type === 'engineIgnition' && pods.includes(e.partId)).map((e) => (e.type === 'engineIgnition' ? e.partId : '')).sort()).toEqual(pods);
         expect(main.parts.find((p) => p.instanceId === 'lyra-d')!.modules[0]).toMatchObject({ active: true, thrust: 0 });
         expect(all[1]!.parts.find((p) => p.instanceId === 'm3-rcs-pod-a')!.resources[0]).toBeLessThan(120);
       },
@@ -162,8 +169,8 @@ describe('the ten stages', () => {
       label: 'Lunar lift-off',
       spawned: [['descent-stage', 'landing-legs', 'lyra-d', 'stage-separator']],
       check: (ev, main, all) => {
-        expect(ev.some((e) => e.type === 'decoupled' && e.partId === 'stage-separator')).toBe(true);
-        expect(ev.some((e) => e.type === 'engineIgnition' && e.partId === 'lyra-a')).toBe(true);
+        expect(ev.some((e) => e.type === 'decoupled' && e.partId === eventKey(main, 'stage-separator'))).toBe(true);
+        expect(ev.some((e) => e.type === 'engineIgnition' && e.partId === eventKey(main, 'lyra-a'))).toBe(true);
         expect(count(ev, 'partDestroyed')).toBe(0);
         expect(main.thrust).toBeGreaterThan(59000);
         // The descent stage stays behind, intact and asleep on its legs.
@@ -175,7 +182,7 @@ describe('the ten stages', () => {
       label: 'Capsule separation',
       spawned: [['ascent-stage', 'capsule-adapter', 'lyra-a']],
       check: (ev, main) => {
-        expect(ev.some((e) => e.type === 'decoupled' && e.partId === 'capsule-adapter')).toBe(true);
+        expect(ev.some((e) => e.type === 'decoupled' && e.partId === eventKey(main, 'capsule-adapter'))).toBe(true);
         expect(ids(main)).toEqual(['apex-cover', 'capsule']);
         const rcs = main.parts[0]!.modules.find((m) => m.type === 'rcs');
         expect(rcs).toMatchObject({ enabled: true });
@@ -186,8 +193,10 @@ describe('the ten stages', () => {
       label: 'Drogues',
       spawned: [['apex-cover']],
       check: (ev, main) => {
-        expect(ev.some((e) => e.type === 'decoupled' && e.partId === 'apex-cover')).toBe(true);
+        expect(ev.some((e) => e.type === 'decoupled' && e.partId === eventKey(main, 'apex-cover'))).toBe(true);
         expect(ev.filter((e) => e.type === 'chuteDeployed' && e.mode === 'drogue')).toHaveLength(1);
+        // The canopy's part (the capsule) is named by its key, like every part in an event.
+        expect(ev.find((e) => e.type === 'chuteDeployed')).toMatchObject({ partId: eventKey(main, main.parts[0]!.instanceId) });
         expect(count(ev, 'chuteInflated')).toBe(1);
         expect(count(ev, 'chuteFailed')).toBe(0);
         expect(main.parts[0]!.modules.find((m) => m.type === 'parachute')).toMatchObject({ state: 'full', inflation: 1 });
@@ -311,8 +320,8 @@ describe('abort', () => {
     runAll(vessels, env, 2, controls({ throttle: 1 }));
     const res = abort(v, env);
     expect(res.ok).toBe(true);
-    expect(res.events.some((e) => e.type === 'lesFired' && e.partId === 'les')).toBe(true);
-    expect(res.events.some((e) => e.type === 'decoupled' && e.partId === 'capsule-adapter')).toBe(true);
+    expect(res.events.some((e) => e.type === 'lesFired' && e.partId === eventKey(v, 'les'))).toBe(true);
+    expect(res.events.some((e) => e.type === 'decoupled' && e.partId === eventKey(v, 'capsule-adapter'))).toBe(true);
     vessels.push(...res.spawned);
     expect(ids(v)).toEqual(['apex-cover', 'capsule', 'les', 'les-jettison-motor']);
     let peakG = 0;
@@ -328,10 +337,10 @@ describe('abort', () => {
     expect(count(events, 'engineShutdown')).toBeGreaterThanOrEqual(9);
     // The tower stays on through the coast (the stack flies apex-first like a dart) and goes 14 s after the abort.
     const coast = runAll(vessels, env, 9, controls());
-    expect(coast.some((e) => e.type === 'decoupled' && e.partId === 'les')).toBe(false);
+    expect(coast.some((e) => e.type === 'decoupled' && e.partId === eventKey(v, 'les'))).toBe(false);
     expect(ids(v)).toEqual(['apex-cover', 'capsule', 'les', 'les-jettison-motor']);
     const later = runAll(vessels, env, 2, controls());
-    expect(later.some((e) => e.type === 'decoupled' && e.partId === 'les')).toBe(true);
+    expect(later.some((e) => e.type === 'decoupled' && e.partId === eventKey(v, 'les'))).toBe(true);
     expect(ids(v)).toEqual(['apex-cover', 'capsule']);
     expect(v.crewAlive).toBe(true);
     // The capsule is free and its RCS is on, so "Capsule separation" has nothing left to do: the very next

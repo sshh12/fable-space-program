@@ -15,6 +15,7 @@ import { DEG } from '../../../src/core/math/scalar';
 import type { Vec3 } from '../../../src/core/math/vec3';
 import { fsDefSource } from '../../../src/core/defs/fsSource';
 import { loadDefs } from '../../../src/core/defs/loader';
+import { padLocationOf, padsOf } from '../../../src/core/defs/sites';
 import { createFsTileSource } from '../../../src/terrain/fsTileSource';
 import { createTerrainProvider, type TerrainAuthority } from '../../../src/terrain/provider';
 import { boundaryPoints, edgeStats, loadAround, sourceHeldSource, truncatedSource, type LayerWithSource } from './edgeChecks';
@@ -401,26 +402,30 @@ describe.skipIf(!HAS_EARTH)('real Earth tiles', () => {
   }, 300_000);
 
   it('launch-site pads are flat within 5 cm: over flatRadius, or over the core and the areas of a shaped pad', async () => {
-    for (const s of Object.values(defs.sites).filter((x) => x.bodyId === 'earth')) {
-      const c = latLonToDir(s.location.latDeg * DEG, s.location.lonDeg * DEG);
-      await tp.ensureLoaded('earth', c, s.pad.blendRadius, `pad-${s.id}`);
+    // Every pad of every site, at its own place (the first pad stands at the site's reference point).
+    const pads = Object.values(defs.sites).filter((x) => x.bodyId === 'earth').flatMap((s) => padsOf(s).map((p) => ({ s, p })));
+    expect(pads.length).toBeGreaterThan(0);
+    for (const { s, p } of pads) {
+      const where = padLocationOf(s, p.id);
+      const c = latLonToDir(where.latDeg * DEG, where.lonDeg * DEG);
+      await tp.ensureLoaded('earth', c, p.blendRadius, `pad-${s.id}-${p.id}`);
       const h0 = tp.heightAt('earth', c, 1);
-      if (typeof s.location.padElevation === 'number') expect(h0).toBeCloseTo(s.location.padElevation, 6);
+      if (typeof where.padElevation === 'number') expect(h0).toBeCloseTo(where.padElevation, 6);
       const rng = prng(31);
       const deviation = (east: number, north: number): number => {
         const d = offset(c, east, north, R);
         return Math.max(Math.abs(tp.heightAt('earth', d) - h0), Math.abs(tp.heightAt('earth', d, 0.3) - h0));
       };
-      const shape = s.pad.shape;
+      const shape = p.shape;
       // The exactly flat part: the whole disc, or (request terrain-render-6) the core of a shaped pad.
-      const flat = shape ? shape.coreRadius : s.pad.flatRadius;
+      const flat = shape ? shape.coreRadius : p.flatRadius;
       let worst = 0;
       for (let i = 0; i < 2000; i++) {
         const r = (flat - 1) * Math.sqrt(rng.next());
         const a = rng.range(0, 2 * Math.PI);
         worst = Math.max(worst, deviation(r * Math.cos(a), r * Math.sin(a)));
       }
-      console.log(`[real earth] pad ${s.id}: elevation ${h0.toFixed(3)} m, max deviation over ${shape ? 'the core' : 'flatRadius'} (${flat} m) ${worst.toExponential(2)} m`);
+      console.log(`[real earth] pad ${s.id} ${p.id}: elevation ${h0.toFixed(3)} m, max deviation over ${shape ? 'the core' : 'flatRadius'} (${flat} m) ${worst.toExponential(2)} m`);
       expect(worst).toBeLessThan(0.05);
       if (!shape) continue;
       // Its level areas (rectangles in the pad's east / north frame, turned clockwise by their heading).
@@ -436,11 +441,11 @@ describe.skipIf(!HAS_EARTH)('real Earth tiles', () => {
       // Elsewhere inside flatRadius the ground keeps a share of its relief: not flat, and not the natural slope either.
       let relief = 0;
       for (let i = 0; i < 2000; i++) {
-        const r = (s.pad.flatRadius - 1) * Math.sqrt(rng.next());
+        const r = (p.flatRadius - 1) * Math.sqrt(rng.next());
         const a = rng.range(0, 2 * Math.PI);
         relief = Math.max(relief, deviation(r * Math.cos(a), r * Math.sin(a)));
       }
-      console.log(`[real earth] pad ${s.id}: max deviation on the ${shape.areas.length} areas ${worstArea.toExponential(2)} m, inside flatRadius (${s.pad.flatRadius} m, relief share ${shape.reliefShare}) ${relief.toFixed(2)} m`);
+      console.log(`[real earth] pad ${s.id} ${p.id}: max deviation on the ${shape.areas.length} areas ${worstArea.toExponential(2)} m, inside flatRadius (${p.flatRadius} m, relief share ${shape.reliefShare}) ${relief.toFixed(2)} m`);
       expect(worstArea).toBeLessThan(0.05);
       if (shape.reliefShare > 0) expect(relief).toBeGreaterThan(0.05);
       expect(relief).toBeLessThan(15);

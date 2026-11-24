@@ -17,7 +17,8 @@
 import { NEUTRAL_CONTROLS, type CommandResult, type ControlInputs, type NavballMode, type NodeEdit, type Pilot, type PlayerCommands, type SasMode } from '@/core/contracts/controls';
 import { MAX_PHYSICS_WARP_INDEX, PHYSICS_DT, WARP_LEVELS } from '@/core/contracts/defs';
 import { TICKS_PER_SECOND, type TargetRef } from '@/core/contracts/net';
-import { CONTROL_TICK_STEPS, type Sim, type SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import { CONTROL_TICK_STEPS, type SimSnapshot } from '@/core/contracts/sim';
 
 /** Real-time frame the rails quantum mirrors (the browser's 60 Hz). */
 export const RAILS_FRAME = 1 / 60;
@@ -58,7 +59,7 @@ export interface RunStats {
 }
 
 export interface RunContext {
-  sim: Sim;
+  sim: LocalSession;
   stats: RunStats;
   /** Wall time of every physics step in the last `seconds` of simulation time, oldest first, ms (needs `clock`). */
   recentStepMs(seconds: number): Float32Array;
@@ -192,7 +193,7 @@ interface Driver {
 
 const STEP_RING = 16384;
 
-async function runLoop(sim: Sim, driver: Driver, opts: RunOptions, log: InputLogEntry[] | null): Promise<RunResult> {
+async function runLoop(sim: LocalSession, driver: Driver, opts: RunOptions, log: InputLogEntry[] | null): Promise<RunResult> {
   await sim.ready;
   const awaitTerrain = opts.awaitTerrain !== false;
   const maxSimTime = opts.maxSimTime ?? 14 * 86400;
@@ -310,7 +311,7 @@ async function runLoop(sim: Sim, driver: Driver, opts: RunOptions, log: InputLog
  * Fly `pilot` on `sim` until the pilot is done or gives up, the mission fails, a debug API is used, the
  * state stops being finite, or a limit of `opts` is reached.
  */
-export function runHeadless(sim: Sim, pilot: Pilot, opts: RunOptions = {}): Promise<RunResult> {
+export function runHeadless(sim: LocalSession, pilot: Pilot, opts: RunOptions = {}): Promise<RunResult> {
   const driver: Driver = {
     act: (snapshot, _tick, dt, commands) => {
       const controls = pilot.update(snapshot, commands, dt);
@@ -325,7 +326,7 @@ export function runHeadless(sim: Sim, pilot: Pilot, opts: RunOptions = {}): Prom
  * terrain protocol the replay passes through the same states as the original run; it ends after the last
  * recorded tick (`ticks` of the original run, when given) or when a limit of `opts` is reached.
  */
-export function replayHeadless(sim: Sim, inputLog: readonly InputLogEntry[], opts: RunOptions & { ticks?: number } = {}): Promise<RunResult> {
+export function replayHeadless(sim: LocalSession, inputLog: readonly InputLogEntry[], opts: RunOptions & { ticks?: number } = {}): Promise<RunResult> {
   let next = 0;
   let controls = copyControls(NEUTRAL_CONTROLS);
   const lastTick = opts.ticks !== undefined ? opts.ticks - 1 : inputLog.length > 0 ? inputLog[inputLog.length - 1]!.tick : -1;

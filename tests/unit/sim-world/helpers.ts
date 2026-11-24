@@ -5,7 +5,8 @@
  */
 import type { ControlInputs } from '@/core/contracts/controls';
 import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
-import type { Sim, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider, TerrainResidency } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
@@ -63,7 +64,7 @@ export function comState(v: VesselSnapshot): { r: Vec3; v: Vec3 } {
 }
 
 /** Step until `cond` holds (checked after every step); returns the number of steps, -1 on the limit. */
-export function stepUntil(sim: Sim, cond: (s: SimSnapshot) => boolean, maxSteps: number): number {
+export function stepUntil(sim: LocalSession, cond: (s: SimSnapshot) => boolean, maxSteps: number): number {
   for (let i = 1; i <= maxSteps; i++) {
     sim.step();
     if (cond(sim.peek())) return i;
@@ -72,7 +73,7 @@ export function stepUntil(sim: Sim, cond: (s: SimSnapshot) => boolean, maxSteps:
 }
 
 /** Wait for every terrain request of the sim (the await protocol). */
-export async function settleTerrain(sim: Sim): Promise<void> {
+export async function settleTerrain(sim: LocalSession): Promise<void> {
   for (let p = sim.terrainPending(); p !== null; p = sim.terrainPending()) await p;
 }
 

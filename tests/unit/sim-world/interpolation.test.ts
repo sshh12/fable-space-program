@@ -12,6 +12,9 @@
  *  - a landed vessel rides the rotating body at the presentation time: uniform per-frame displacement to
  *    1e-6 relative;
  *  - the state after the frames equals the state after the same number of step() calls (hash).
+ *
+ * Steps are counted with `SimSnapshot.revision`, which this session advances by one per physics step and
+ * per rails advance (what v1's `tick` was).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
@@ -47,9 +50,9 @@ describe('presentation interpolation', () => {
       const twin = await burningStack();
       expect(sim.stateHash()).toBe(twin.stateHash());
       expect(active(sim.peek()).thrust).toBeGreaterThan(5e5);
-      const tick0 = sim.peek().tick;
+      const rev0 = sim.peek().revision;
       const frameDt = 1 / hz;
-      // Twin state per step: [r, q] by tick offset.
+      // Twin state per step: [r, q] by step offset.
       const states: { r: Vec3; q: Quat }[] = [{ r: active(twin.peek()).r, q: active(twin.peek()).q }];
       const stateAt = (n: number): { r: Vec3; q: Quat } => {
         while (states.length <= n) {
@@ -69,7 +72,7 @@ describe('presentation interpolation', () => {
         sim.advance(frameDt);
         const s = sim.snapshot();
         const v = active(s);
-        const n = s.tick - tick0;
+        const n = s.revision - rev0;
         // Lag of the presentation behind the sim state, known exactly from the frame and step counts.
         const lag = n * PHYSICS_DT - k * frameDt;
         expect(lag).toBeGreaterThanOrEqual(-1e-12);
@@ -106,10 +109,10 @@ describe('presentation interpolation', () => {
       expect(worstJump).toBeLessThan(1e-4);
       expect(worstCurve).toBeLessThan(2e-5);
       // The final state equals the same number of step() calls.
-      const n = sim.peek().tick - tick0;
+      const n = sim.peek().revision - rev0;
       stateAt(n);
-      while (twin.peek().tick - tick0 < n) twin.step();
-      expect(twin.peek().tick).toBe(sim.peek().tick);
+      while (twin.peek().revision - rev0 < n) twin.step();
+      expect(twin.peek().revision).toBe(sim.peek().revision);
       expect(sim.stateHash()).toBe(twin.stateHash());
       // peek() is never interpolated.
       const p = sim.peek();
@@ -170,33 +173,33 @@ describe('presentation interpolation', () => {
   it('surplus real time is dropped, never integrated with a bigger step', async () => {
     const sim = await makeSim(defs, 'qa-leo', terrain);
     const t0 = sim.peek().simUt;
-    const tick0 = sim.peek().tick;
+    const rev0 = sim.peek().revision;
     // A 0.5 s hitch at 1x: at most 16 steps are run.
     sim.advance(0.5);
     const s = sim.peek();
-    expect(s.tick - tick0).toBe(16);
+    expect(s.revision - rev0).toBe(16);
     expect(s.simUt - t0).toBeCloseTo(16 * PHYSICS_DT, 6);
     // At 4x physics warp four times as many steps fit into a frame.
     sim.commands.setWarpLevel(3);
-    const tick1 = sim.peek().tick;
+    const rev1 = sim.peek().revision;
     sim.advance(1 / 60);
-    expect(sim.peek().tick - tick1).toBe(8);
+    expect(sim.peek().revision - rev1).toBe(8);
   });
 
   it('control ticks arrive every fourth step and before each rails advance', async () => {
     const sim = await makeSim(defs, 'qa-leo', terrain);
     const ticksAt: number[] = [];
-    for (let k = 0; k < 30; k++) sim.advance(1 / 60, () => ticksAt.push(sim.peek().tick));
+    for (let k = 0; k < 30; k++) sim.advance(1 / 60, () => ticksAt.push(sim.peek().revision));
     // 30 frames at 60 Hz = 60 steps: a tick before steps 0, 4, 8, ...
     expect(ticksAt.length).toBe(15);
     for (let i = 1; i < ticksAt.length; i++) expect(ticksAt[i]! - ticksAt[i - 1]!).toBe(4);
     // On rails: one tick per frame.
     sim.commands.setWarpLevel(5);
     let calls = 0;
-    const before = sim.peek().tick;
+    const before = sim.peek().revision;
     for (let k = 0; k < 10; k++) sim.advance(1 / 60, () => calls++);
     expect(calls).toBe(10);
-    expect(sim.peek().tick - before).toBe(10);
+    expect(sim.peek().revision - before).toBe(10);
     expect(sim.peek().warp.onRails).toBe(true);
   });
 });

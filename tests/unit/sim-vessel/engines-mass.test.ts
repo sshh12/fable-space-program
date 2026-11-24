@@ -10,7 +10,7 @@ import { v3 } from '@/core/math/vec3';
 import { assembleVessel, computeMassProps, fireNextStage, setSasEnabled, throttleTarget, type Vessel } from '@/sim/vessel';
 import { unitInertia } from '@/sim/vessel/massProps';
 import type { EngineState } from '@/sim/vessel/types';
-import { controls, DT, earthAir, findPart, loadLibrary, makeEnv, run, runAll, VEHICLE } from './helpers';
+import { controls, DT, earthAir, eventKey, findPart, loadLibrary, makeEnv, run, runAll, VEHICLE } from './helpers';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -150,8 +150,8 @@ describe('engines', () => {
     const events = runAll(vessels, env, 8, controls({ throttle: 0 }));
     const ullage = engine(v, 'm2-ullage');
     const ign = events.filter((e) => e.type === 'engineIgnition').map((e) => (e.type === 'engineIgnition' ? e.partId : ''));
-    expect(ign).toContain('m2-ullage');
-    expect(ign).toContain('m1-retro');
+    expect(ign).toContain(eventKey(v, 'm2-ullage'));
+    expect(ign).toContain(eventKey(vessels[1]!, 'm1-retro'));
     // Vela-2 are armed but the lever is at zero.
     expect(engine(v, 'vela-2-3').active).toBe(true);
     expect(engine(v, 'vela-2-3').thrust).toBe(0);

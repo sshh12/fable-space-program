@@ -5,7 +5,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary } from '@/core/contracts/defs';
 import { PHYSICS_DT } from '@/core/contracts/defs';
-import type { Sim, SimSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { SimSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { DEG, G0 } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
@@ -18,7 +19,7 @@ beforeAll(async () => {
   terrain = flatTerrain(defs, { earth: 21.62, moon: -1900 });
 });
 
-const steps = (sim: Sim, seconds: number): void => {
+const steps = (sim: LocalSession, seconds: number): void => {
   for (let i = 0; i < Math.round(seconds / PHYSICS_DT); i++) sim.step();
 };
 const pointingError = (s: SimSnapshot): number => (s.navball.markers.maneuver ? Math.acos(Math.max(-1, Math.min(1, s.navball.markers.maneuver.y))) : Math.PI);
@@ -133,19 +134,22 @@ describe('commands and read-outs', () => {
   it('target, navball mode, lights, fine control, legs, staging lock-out', async () => {
     const sim = await makeSim(defs, 'qa-lunar-orbit', terrain);
     let s = sim.peek();
-    expect(s.readouts.targetBodyId).toBe('moon');
+    expect(s.readouts.target!.ref).toEqual({ kind: 'body', id: 'moon' });
+    expect(s.readouts.target!.name).toBe(defs.bodies['moon']!.name);
+    expect(s.readouts.docking).toBeNull();
     expect(sim.commands.setTarget({ kind: 'body', id: 'nowhere' }).ok).toBe(false);
     expect(sim.commands.setTarget(null).ok).toBe(true);
-    expect(sim.peek().readouts.targetBodyId).toBeNull();
+    expect(sim.peek().readouts.target).toBeNull();
     expect(sim.peek().navball.markers.target).toBeNull();
     expect(sim.commands.setTarget({ kind: 'body', id: 'earth' }).ok).toBe(true);
     expect(sim.peek().navball.markers.target).not.toBeNull();
     // A target is a body, a vessel or a docking port since sub-wave 3.2; this session has body targets
     // only, refuses the two others by name and keeps the target it had.
-    const vessel = sim.commands.setTarget({ kind: 'vessel', id: s.activeVesselId });
+    const own = active(s).id;
+    const vessel = sim.commands.setTarget({ kind: 'vessel', id: own });
     expect(vessel).toEqual({ ok: false, reason: 'Vessel targets are not available in this session' });
-    expect(sim.commands.setTarget({ kind: 'port', vesselId: s.activeVesselId, portId: 'x/y' })).toEqual({ ok: false, reason: 'Docking-port targets are not available in this session' });
-    expect(sim.peek().readouts.targetBodyId).toBe('earth');
+    expect(sim.commands.setTarget({ kind: 'port', vesselId: own, portId: 'x/y' })).toEqual({ ok: false, reason: 'Docking-port targets are not available in this session' });
+    expect(sim.peek().readouts.target!.ref).toEqual({ kind: 'body', id: 'earth' });
     // The SAS and navball modes that need such a target exist in the contract and are refused here.
     expect(sim.commands.setSasMode('target')).toEqual({ ok: false, reason: 'No vessel or port target' });
     expect(sim.commands.setSasMode('portAlign').ok).toBe(false);

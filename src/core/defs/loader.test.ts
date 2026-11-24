@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fsDefSource } from './fsSource';
 import type { CapsuleMouldLineDef } from '../contracts/defs';
 import { DEFAULT_PAD_CLASS_LIMITS, DEFAULT_UNIVERSE_RULES, UNIVERSE_RULE_TIMERS } from '../contracts/net';
-import { padLimitsOf } from './sites';
+import { padLimitsOf, padOf, padsOf } from './sites';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DefError, getSection, listSections, loadDefs, overlayDefSource, resolveRefs, TABLE_FILES, type DefSource } from './loader';
@@ -50,7 +50,7 @@ describe('definition loader', () => {
     const site = lib.sites['ka-lae']!;
     expect(site.location.latDeg).toBeGreaterThan(18);
     expect(site.location.latDeg).toBeLessThan(20.9);
-    expect(site.structures.length).toBeGreaterThan(0);
+    expect(padOf(site).structures.length).toBeGreaterThan(0);
   });
 
   it('resolves nested and optional refs relative to the referencing file', async () => {
@@ -83,18 +83,21 @@ describe('definition loader', () => {
       'scenarios/s.json': { id: 's', name: 's', vehicle: 'v', site: 'k', startUt: 0, start: { kind: 'pad' }, stagesAlreadyFired: 0, target: null, suggestedLanding: null, milestones: [], ...(padId === undefined ? {} : { pad: padId }) },
     });
 
-    it('the repository site: a pad list, and the deprecated single pad is its first pad', async () => {
+    it('the repository site: a pad list and nothing beside it; the first pad is the pad of the site', async () => {
       const lib = await loadDefs(fsDefSource());
       for (const site of Object.values(lib.sites)) {
-        const pads = site.pads!;
+        const pads = site.pads;
         expect(pads.length, site.id).toBeGreaterThan(0);
         const first = pads[0]!;
-        expect(site.padAzimuthDeg).toBe(first.azimuthDeg);
-        expect(site.pad.flatRadius).toBe(first.flatRadius);
-        expect(site.pad.blendRadius).toBe(first.blendRadius);
-        expect(site.pad.clampHeight).toBe(first.mountHeight);
-        expect(site.pad.shape).toBe(first.shape);
-        expect(site.structures).toBe(first.structures);
+        // The list is what is read: the pad of the site is its first entry, and the single pad of v1 is
+        // neither in the file (it would have been refused) nor written beside the list by the loader.
+        expect(padsOf(site)).toBe(pads);
+        expect(padOf(site)).toBe(first);
+        for (const k of ['pad', 'padAzimuthDeg', 'structures']) expect(k in site, `${site.id}: ${k}`).toBe(false);
+        expect(Number.isFinite(first.azimuthDeg), site.id).toBe(true);
+        expect(first.flatRadius, site.id).toBeGreaterThan(0);
+        expect(first.blendRadius, site.id).toBeGreaterThan(first.flatRadius);
+        expect(Number.isFinite(first.mountHeight), site.id).toBe(true);
         expect(first.structures.length).toBeGreaterThan(0);
         // Every pad has its location; the first pad stands at the reference point.
         expect(Object.keys(site.location.pads!).sort()).toEqual(pads.map((p) => p.id).sort());
@@ -103,11 +106,11 @@ describe('definition loader', () => {
       }
       // Every scenario stands on a pad of its site.
       for (const sc of Object.values(lib.scenarios)) {
-        if (sc.pad !== undefined) expect(lib.sites[sc.site]!.pads!.map((p) => p.id), sc.id).toContain(sc.pad);
+        if (sc.pad !== undefined) expect(lib.sites[sc.site]!.pads.map((p) => p.id), sc.id).toContain(sc.pad);
       }
     });
 
-    it('a file with pads: the single pad is written from the first pad; the other pads need resolved coordinates', async () => {
+    it('a file with pads: the first pad is read from the list, nothing is written beside it; the other pads need resolved coordinates', async () => {
       const shape = { coreRadius: 10, coreBlend: 5, reliefShare: 0.2, areas: [], edgeNoise: { amplitude: 0.1, wavelength: 10 } };
       const site = {
         id: 'k', name: 'K', bodyId: 'a', recoveryZones: [],
@@ -115,10 +118,15 @@ describe('definition loader', () => {
         pads: [pad('m', { azimuthDeg: 72, shape }), pad('n', { class: 'light', flatRadius: 50, blendRadius: 120, mountHeight: 2 })],
       };
       const k = (await load(site)).sites['k']!;
-      expect(k.pads!.map((p) => p.id)).toEqual(['m', 'n']);
-      expect(k.padAzimuthDeg).toBe(72);
-      expect(k.pad).toEqual({ flatRadius: 100, blendRadius: 250, clampHeight: 6, shape });
-      expect(k.structures).toBe(k.pads![0]!.structures);
+      expect(k.pads.map((p) => p.id)).toEqual(['m', 'n']);
+      // What v1's single pad said is said by the first entry of the list (mountHeight is what clampHeight
+      // was), and the loader writes no single pad from it.
+      const first = padOf(k);
+      expect(first).toBe(k.pads[0]);
+      expect(first.azimuthDeg).toBe(72);
+      expect({ flatRadius: first.flatRadius, blendRadius: first.blendRadius, mountHeight: first.mountHeight, shape: first.shape }).toEqual({ flatRadius: 100, blendRadius: 250, mountHeight: 6, shape });
+      expect(first.structures).toEqual([{ model: 'm', offsetEnu: [0, 0, 0], headingDeg: 0 }]);
+      for (const key of ['pad', 'padAzimuthDeg', 'structures']) expect(key in k, key).toBe(false);
       expect(k.location.pads).toEqual({ m: { latDeg: 10, lonDeg: 20, padElevation: 30 }, n: { latDeg: 10.1, lonDeg: 20.2, padElevation: 'terrain' } });
       // The first pad may be stated in location.pads when it equals the reference point, and only then.
       const same = { ...site, location: { ...site.location, pads: { ...site.location.pads, m: { latDeg: 10, lonDeg: 20, padElevation: 30 } } } };
@@ -131,24 +139,34 @@ describe('definition loader', () => {
       await expect(load(stray)).rejects.toThrow(/location\.pads names "zz", which is not a pad of the site \(pads: m, n\)/);
     });
 
-    it('a file with the deprecated single pad only gets it as its one pad', async () => {
-      const site = { id: 'k', name: 'K', bodyId: 'a', recoveryZones: [], location: { latDeg: 10, lonDeg: 20, padElevation: 'terrain' }, padAzimuthDeg: 45, pad: { flatRadius: 30, blendRadius: 90, clampHeight: 4 }, structures: [] };
-      const k = (await load(site)).sites['k']!;
+    it('a file with the single pad of v1 only is refused by name; the same pad as the one entry of the list is what is read', async () => {
+      const base = { id: 'k', name: 'K', bodyId: 'a', recoveryZones: [], location: { latDeg: 10, lonDeg: 20, padElevation: 'terrain' } };
+      const single = { padAzimuthDeg: 45, pad: { flatRadius: 30, blendRadius: 90, clampHeight: 4 }, structures: [] };
+      await expect(load({ ...base, ...single })).rejects.toThrow(/sites\/k\.json: "pad" is the single pad of a v1 site file, which is no longer read: a site states its pads in "pads" \(the single pad is the first entry\)/);
+      // Each of its three members is refused by its own name.
+      await expect(load({ ...base, pad: single.pad })).rejects.toThrow(/sites\/k\.json: "pad" is the single pad of a v1 site file/);
+      await expect(load({ ...base, padAzimuthDeg: single.padAzimuthDeg })).rejects.toThrow(/sites\/k\.json: "padAzimuthDeg" is the single pad of a v1 site file/);
+      await expect(load({ ...base, structures: single.structures })).rejects.toThrow(/sites\/k\.json: "structures" is the single pad of a v1 site file/);
+      // The same pad stated as the first entry of the list: mountHeight is what clampHeight was, azimuthDeg
+      // what padAzimuthDeg was.
+      const listed = { id: 'pad', name: 'K', offsetEnu: [0, 0], azimuthDeg: 45, class: 'heavy', flatRadius: 30, blendRadius: 90, mountHeight: 4, structures: [] };
+      const k = (await load({ ...base, pads: [listed] })).sites['k']!;
       expect(k.pads).toHaveLength(1);
-      expect(k.pads![0]).toMatchObject({ id: 'pad', name: 'K', offsetEnu: [0, 0], azimuthDeg: 45, class: 'heavy', flatRadius: 30, blendRadius: 90, mountHeight: 4, structures: [] });
-      // No pad is without a limit: the single pad states none of its own, so it takes what its class takes.
-      expect(k.pads![0]!.maxLiftoffMass).toBeUndefined();
-      expect(padLimitsOf(k.pads![0]!)).toEqual(DEFAULT_PAD_CLASS_LIMITS.heavy);
+      expect(k.pads[0]).toMatchObject({ id: 'pad', name: 'K', offsetEnu: [0, 0], azimuthDeg: 45, class: 'heavy', flatRadius: 30, blendRadius: 90, mountHeight: 4, structures: [] });
+      // No pad is without a limit: this pad states none of its own, so it takes what its class takes.
+      expect(k.pads[0]!.maxLiftoffMass).toBeUndefined();
+      expect(padLimitsOf(k.pads[0]!)).toEqual(DEFAULT_PAD_CLASS_LIMITS.heavy);
       expect(k.location.pads).toEqual({ pad: { latDeg: 10, lonDeg: 20, padElevation: 'terrain' } });
-      expect(k.pad.clampHeight).toBe(4);
+      expect(padOf(k).mountHeight).toBe(4);
     });
 
-    it('refuses a site without a pad, two statements of one pad, and a malformed pad, by file and pad', async () => {
+    it('refuses a site without a pad, a single pad of v1 beside the list, and a malformed pad, by file and pad', async () => {
       const base = { id: 'k', name: 'K', bodyId: 'a', recoveryZones: [], location: { latDeg: 10, lonDeg: 20, padElevation: 30 } };
-      await expect(load(base)).rejects.toThrow(/sites\/k\.json: a site needs "pads"/);
+      await expect(load(base)).rejects.toThrow(/sites\/k\.json: "pads" must be a non-empty array/);
       await expect(load({ ...base, pads: [] })).rejects.toThrow(/"pads" must be a non-empty array/);
-      await expect(load({ ...base, pads: [pad('m')], padAzimuthDeg: 90 })).rejects.toThrow(/"padAzimuthDeg" is the deprecated single pad: a site with "pads" states its pads in the list only/);
-      await expect(load({ ...base, pads: [pad('m')], structures: [] })).rejects.toThrow(/"structures" is the deprecated single pad/);
+      await expect(load({ ...base, pads: [pad('m')], padAzimuthDeg: 90 })).rejects.toThrow(/"padAzimuthDeg" is the single pad of a v1 site file, which is no longer read: a site states its pads in "pads"/);
+      await expect(load({ ...base, pads: [pad('m')], structures: [] })).rejects.toThrow(/"structures" is the single pad of a v1 site file/);
+      await expect(load({ ...base, pads: [pad('m')], pad: { flatRadius: 100, blendRadius: 250, clampHeight: 6 } })).rejects.toThrow(/"pad" is the single pad of a v1 site file/);
       await expect(load({ ...base, location: { latDeg: 10, lonDeg: 20 }, pads: [pad('m')] })).rejects.toThrow(/"location" needs latDeg, lonDeg and padElevation/);
       await expect(load({ ...base, pads: [pad('m'), pad('m')] })).rejects.toThrow(/pad "m" \(pads\[1\]\): duplicate pad id/);
       await expect(load({ ...base, pads: [pad('m', { class: 'huge' })] })).rejects.toThrow(/pad "m" \(pads\[0\]\): "class" must be one of light, medium, heavy/);
@@ -164,16 +182,16 @@ describe('definition loader', () => {
       delete none['maxLiftoffMass'];
       delete none['maxDiameter'];
       const k = (await load({ ...base, pads: [none] })).sites['k']!;
-      expect(padLimitsOf(k.pads![0]!)).toEqual(DEFAULT_PAD_CLASS_LIMITS.medium);
+      expect(padLimitsOf(k.pads[0]!)).toEqual(DEFAULT_PAD_CLASS_LIMITS.medium);
       const own = (await load({ ...base, pads: [{ ...none, maxDiameter: 5 }] })).sites['k']!;
-      expect(padLimitsOf(own.pads![0]!)).toEqual({ maxLiftoffMass: DEFAULT_PAD_CLASS_LIMITS.medium.maxLiftoffMass, maxDiameter: 5 });
+      expect(padLimitsOf(own.pads[0]!)).toEqual({ maxLiftoffMass: DEFAULT_PAD_CLASS_LIMITS.medium.maxLiftoffMass, maxDiameter: 5 });
       // A rules document that states class limits is where they come from.
       const rules = { ...DEFAULT_UNIVERSE_RULES, pads: { ...DEFAULT_UNIVERSE_RULES.pads, classLimits: { ...DEFAULT_PAD_CLASS_LIMITS, medium: { maxLiftoffMass: 9e5, maxDiameter: 8 } } } };
-      expect(padLimitsOf(k.pads![0]!, rules)).toEqual({ maxLiftoffMass: 9e5, maxDiameter: 8 });
-      expect(padLimitsOf(own.pads![0]!, rules)).toEqual({ maxLiftoffMass: 9e5, maxDiameter: 5 });
+      expect(padLimitsOf(k.pads[0]!, rules)).toEqual({ maxLiftoffMass: 9e5, maxDiameter: 8 });
+      expect(padLimitsOf(own.pads[0]!, rules)).toEqual({ maxLiftoffMass: 9e5, maxDiameter: 5 });
       // The repository's pad: the heavy class's limits, stated on the pad as provisional numbers.
       const lib = await loadDefs(fsDefSource());
-      for (const site of Object.values(lib.sites)) for (const p of site.pads!) {
+      for (const site of Object.values(lib.sites)) for (const p of site.pads) {
         const limits = padLimitsOf(p, lib.rules!['default']);
         expect(Number.isFinite(limits.maxLiftoffMass) && limits.maxLiftoffMass > 0, p.id).toBe(true);
         expect(Number.isFinite(limits.maxDiameter) && limits.maxDiameter > 0, p.id).toBe(true);

@@ -17,7 +17,7 @@ import type { DefLibrary } from '@/core/contracts/defs';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import { createMissionPilot, runHeadless } from '@/pilot';
-import { createSim } from '@/sim';
+import { createWorld } from '@/sim';
 import { entryScenario } from '../sim/entryCorridor';
 import { createRealTerrain, loadLibrary, repoRoot } from '../sim/realWorld';
 
@@ -52,7 +52,8 @@ async function main(): Promise<void> {
   const base = defs.scenarios['lunar-direct']!;
   const sc = entryScenario(defs, base, perigeeKm * 1000);
   const lib: DefLibrary = { ...defs, scenarios: { ...defs.scenarios, [sc.id]: sc } };
-  const sim = createSim(lib, sc.id, { terrain });
+  // The render root stays the root body for the whole flight (v1's createSim): the profile reads ROOT positions.
+  const sim = createWorld(lib, sc.id, { renderRoot: 'rootBody', terrain });
   const pilot = createMissionPilot(lib, sc);
   await sim.ready;
 

@@ -9,7 +9,7 @@ import { DEG } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
 import { aeroOut, evalAero, machLookup, refreshAeroCoefficients } from '@/sim/dynamics/aero';
 import { assembleVessel, computeMassProps, structureOf, type Vessel } from '@/sim/vessel';
-import { controls, earthAir, loadLibrary, makeEnv, run, runAll, VEHICLE } from './helpers';
+import { controls, earthAir, eventKey, loadLibrary, makeEnv, run, runAll, VEHICLE } from './helpers';
 
 let defs: DefLibrary;
 beforeAll(async () => {
@@ -183,7 +183,7 @@ describe('launch stack', () => {
     expect(gentle.vessels).toHaveLength(1);
     const hard = fly(9);
     expect(hard.qAlpha).toBeGreaterThan(3500);
-    expect(hard.events).toContain('jointBroken:interstage-2');
+    expect(hard.events).toContain(`jointBroken:${eventKey(hard.vessels[0]!, 'interstage-2')}`);
     expect(hard.vessels.length).toBeGreaterThan(1);
     // The limit in the data: 6 degrees at 33 kPa (sim-design 8.2).
     const limit = defs.parts['meridian-interstage-2']!.joint.maxQAlpha!;

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary, LaunchSiteDef, ScenarioDef } from '../../../src/core/contracts/defs';
 import type { Patch, SurfaceTarget } from '../../../src/core/contracts/sim';
+import { padOf } from '../../../src/core/defs/sites';
 import { quat, type Quat } from '../../../src/core/math/quat';
 import { DEG, RAD } from '../../../src/core/math/scalar';
 import { v3, type Vec3 } from '../../../src/core/math/vec3';
@@ -45,7 +46,7 @@ describe('navball', () => {
       const nb = computeNavball({ mode, q: pad.q, r: pad.r, v: pad.v, qFixedToInertial: sys.orientation(EARTH, T0), spin: sys.spin(EARTH) });
       expect(allFinite(nb)).toBe(true);
       expect(nb.pitchDeg).toBeCloseTo(90, 9);
-      expect(nb.headingDeg).toBeCloseTo(site.padAzimuthDeg, 9);
+      expect(nb.headingDeg).toBeCloseTo(padOf(site).azimuthDeg, 9);
       expect(nb.rollDeg).toBeCloseTo(0, 9);
       if (mode === 'surface') {
         // at rest relative to the ground: prograde = up = the nose
@@ -63,8 +64,16 @@ describe('navball', () => {
     let worst = 0;
     for (let i = 0; i < 400; i++) {
       const t = T0 + i * 7919.3;
-      const s: LaunchSiteDef = { ...site, location: { ...site.location, latDeg: -85 + (i * 37.1) % 170, lonDeg: -180 + (i * 53.7) % 360 }, padAzimuthDeg: (i * 29) % 360 };
+      // One pad at the moved reference point, facing another way each time (no resolved coordinates beside
+      // the reference point: the first pad stands on it).
+      const s: LaunchSiteDef = {
+        ...site,
+        location: { latDeg: -85 + (i * 37.1) % 170, lonDeg: -180 + (i * 53.7) % 360, padElevation: site.location.padElevation },
+        pads: [{ ...padOf(site), azimuthDeg: (i * 29) % 360 }],
+      };
       const pad = padState(sys, s, t, 0);
+      expect(pad.latitude).toBeCloseTo(s.location.latDeg * DEG, 12);
+      expect(pad.azimuth).toBeCloseTo(((i * 29) % 360) * DEG, 12);
       const nb = computeNavball({ mode: 'surface', q: pad.q, r: pad.r, v: pad.v, qFixedToInertial: sys.orientation(EARTH, t), spin: sys.spin(EARTH) });
       worst = Math.max(worst, Math.abs(nb.pitchDeg - 90));
     }
@@ -175,8 +184,15 @@ describe('orbital readouts', () => {
     expect(ro.speedOrbital).toBeCloseTo(vp, 9);
     expect(ro.horizontalSpeed).toBeLessThan(vp);
     expect(ro.targetRelativeInclination).toBeNull();
+    expect(ro.target).toBeNull();
     const t = computeOrbitalReadouts({ system: sys, bodyId: EARTH, r, v, ut: T0, targetBodyId: MOON });
     expect(t.targetRelativeInclination!).toBeGreaterThan(0);
+    // The navigation to the targeted body: the same inclination, the range to its centre, and no approach
+    // without predicted patches.
+    expect(t.target!.ref).toEqual({ kind: 'body', id: MOON });
+    expect(t.target!.relativeInclination).toBe(t.targetRelativeInclination);
+    expect(t.target!.range).toBeCloseTo(v3.dist(sys.stateRelative(MOON, EARTH, T0).r, r), 3);
+    expect(t.target!.closestApproaches).toEqual([]);
     // hyperbola: no apoapsis, no period
     const h = computeOrbitalReadouts({ system: sys, bodyId: EARTH, r, v: v3.scale(v, 1.5), ut: T0 });
     expect(h.apoapsisAltitude).toBe(Infinity);
@@ -332,7 +348,7 @@ describe('surface targets and landing-target readout', () => {
     const t = buildSurfaceTargets(defs, scenario);
     expect(t[0]).toMatchObject({ id: 'landing', kind: 'landing', bodyId: MOON, radius: 0 });
     expect(t[0]!.latitude).toBeCloseTo(0.674 * DEG, 15);
-    expect(t[1]).toMatchObject({ id: `site:${site.id}`, kind: 'site', bodyId: site.bodyId, radius: site.pad.flatRadius });
+    expect(t[1]).toMatchObject({ id: `site:${site.id}`, kind: 'site', bodyId: site.bodyId, radius: padOf(site).flatRadius });
     expect(t.filter((x) => x.kind === 'recovery')).toHaveLength(site.recoveryZones.length);
     expect(t[2]!.radius).toBe(site.recoveryZones[0]!.radiusKm * 1000);
     expect(buildSurfaceTargets(defs, { ...scenario, suggestedLanding: null })[0]!.kind).toBe('site');

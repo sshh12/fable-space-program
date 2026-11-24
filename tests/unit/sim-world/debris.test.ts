@@ -10,7 +10,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { DefLibrary, PartDef, ScenarioDef, VehicleDef, VehiclePartPlacement } from '@/core/contracts/defs';
 import { PHYSICS_DT } from '@/core/contracts/defs';
-import type { Sim, SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
+import type { LocalSession } from '@/core/contracts/session';
+import type { SimSnapshot, VesselSnapshot } from '@/core/contracts/sim';
 import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
@@ -25,7 +26,7 @@ beforeAll(async () => {
   terrain = flatTerrain(defs, { earth: 21.62, moon: -1900 });
 });
 
-const steps = (sim: Sim, seconds: number): void => {
+const steps = (sim: LocalSession, seconds: number): void => {
   for (let i = 0; i < Math.round(seconds / PHYSICS_DT); i++) sim.step();
 };
 
@@ -88,7 +89,7 @@ function inOrbit(lib: DefLibrary, vehicle: string, id: string): ScenarioDef {
 }
 
 /** Move the active vessel `metres` ahead along its orbit (out of the physics bubble of what it left behind). */
-function jumpAhead(sim: Sim, metres: number): void {
+function jumpAhead(sim: LocalSession, metres: number): void {
   const v = active(sim.peek());
   const q = quat.fromAxisAngle(v3.normalize(v3.cross(v.r, v.v)), metres / v3.len(v.r));
   sim.debug.setVesselState(v.id, v.bodyId, quat.rotate(q, v.r), quat.rotate(q, v.v));

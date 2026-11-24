@@ -1,6 +1,7 @@
 /**
- * Site ground report: the real terrain height under every structure of every launch site, relative to the
- * pad plane, from the baked tiles (data/tiles) through the terrain provider.
+ * Site ground report: the real terrain height under every structure of the first pad of every launch site
+ * (the pad at the site's reference point), relative to the pad plane, from the baked tiles (data/tiles)
+ * through the terrain provider.
  *
  *   node tools/dev/heavy.mjs --class=cpu -- npx tsx tools/vehicle/site-ground.ts [radial | survey | verify]
  *
@@ -19,6 +20,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fsDefSource } from '../../src/core/defs/fsSource';
 import { loadDefs } from '../../src/core/defs/loader';
+import { padOf } from '../../src/core/defs/sites';
 import { latLonToDir } from '../../src/core/geo/cubeSphere';
 import { v3 } from '../../src/core/math';
 import { createFsTileSource } from '../../src/terrain/fsTileSource';
@@ -41,7 +43,10 @@ async function main(): Promise<void> {
     let east = v3.cross({ x: 0, y: 0, z: 1 }, up);
     east = v3.normalize(east);
     const north = v3.cross(up, east);
-    await terrain.ensureLoaded(site.bodyId, up, site.pad.blendRadius + 200, 'site-ground');
+    // The site's first pad, which stands at the reference point: its disc, its structures and its survey
+    // (`survey` of the site's section) are what this report is about.
+    const first = padOf(site);
+    await terrain.ensureLoaded(site.bodyId, up, first.blendRadius + 200, 'site-ground');
     const pad = typeof site.location.padElevation === 'number' ? site.location.padElevation : terrain.heightAt(site.bodyId, up);
     const R = body.radius + pad;
     /** Terrain height above the pad's tangent plane at an east / north offset, m. */
@@ -58,8 +63,8 @@ async function main(): Promise<void> {
       let e1 = -Infinity;
       let n0 = Infinity;
       let n1 = -Infinity;
-      for (const s of site.structures) {
-        const v = generateStructure(defs, site, s.model, s.params ?? {}, s, LEVEL_GROUND);
+      for (const s of first.structures) {
+        const v = generateStructure(defs, site, s.model, s.params ?? {}, s, LEVEL_GROUND, first);
         const h = s.headingDeg * DEG;
         for (const m of Object.values(v.models)) {
           const p = m.lods[m.lods.length - 1]!.positions;
@@ -144,7 +149,7 @@ async function main(): Promise<void> {
       if (worst > 0.01) failed = true;
       continue;
     }
-    console.log(`site ${site.id}: pad elevation ${pad.toFixed(2)} m, terrain at the centre ${terrain.heightAt(site.bodyId, up).toFixed(2)} m, flat ${site.pad.flatRadius} m, blend ${site.pad.blendRadius} m`);
+    console.log(`site ${site.id}: pad elevation ${pad.toFixed(2)} m, terrain at the centre ${terrain.heightAt(site.bodyId, up).toFixed(2)} m, flat ${first.flatRadius} m, blend ${first.blendRadius} m`);
     if (radial) {
       for (let b = 0; b < 360; b += 45) {
         const row: string[] = [];
@@ -152,7 +157,7 @@ async function main(): Promise<void> {
         console.log(`  bearing ${String(b).padStart(3)}  ${row.join('  ')}`);
       }
     }
-    for (const s of site.structures) {
+    for (const s of first.structures) {
       const [e, n, u] = s.offsetEnu;
       const p = (s.params ?? {}) as Record<string, unknown>;
       const reach = Math.max(Number(p['radius'] ?? 0), Number(p['length'] ?? 0) / 2, Number(p['width'] ?? 0) / 2, Number(p['size'] ?? 0) / 2, 5);
