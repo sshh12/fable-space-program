@@ -299,11 +299,13 @@ export interface BodyDef {
   ocean: OceanDef | null;
   terrain: BodyTerrainDef | null;
   /**
-   * Lowest allowed altitude (m) for each rails warp level (see WARP_LEVELS; RAILS_WARP_LEVEL_COUNT entries on
-   * an attractor). v2: becomes OPTIONAL when the warp table grows to nine rails levels (the lead step before
-   * wave 4, with the body-system change): an absent list then defaults from the radius and the atmosphere top.
+   * Lowest allowed altitude (m) for each rails warp level, from the lowest (5x) up (see WARP_LEVELS). OPTIONAL
+   * since the table has nine rails levels: an absent list is the default from the radius and the atmosphere
+   * top, and a list shorter than RAILS_WARP_LEVEL_COUNT is completed by that default for the levels it does
+   * not state (`warpAltitudeLimitsOf`, src/sim/bodies/shape.ts); a longer one is refused. The shipped Earth
+   * and Moon state seven.
    */
-  warpAltitudeLimits: number[];
+  warpAltitudeLimits?: number[];
   /** Navball switches between surface and orbit mode when crossing this altitude, m. */
   navballSwitchAltitude: number;
   render: BodyRenderDef;
@@ -929,15 +931,14 @@ export interface DefLibrary {
 }
 
 /**
- * Warp table shared by sim, UI and pilot. Indices 0..3 are physics warp; 4.. are rails warp.
+ * Warp table shared by sim, UI and pilot. Indices 0..3 are physics warp; 4.. are rails warp (nine levels).
  *
- * v2 (decision 40) adds 1,000,000x and 10,000,000x (nine rails levels). They are NOT in the table yet: the
- * body system requires one `warpAltitudeLimits` entry per rails level and the shipped bodies list seven, so
- * the two levels are added by the lead together with the body-system change of wave 4 (optional limits that
- * default from the radius), never alone. Code must use RAILS_WARP_LEVEL_COUNT and `WARP_LEVELS.length`,
- * never a literal count.
+ * The two levels of decision 40, 1,000,000x and 10,000,000x, are in since MIGRATION_V2 step 4.1c
+ * (2026-11-24). They were made together with the body system's default of the limits (a body states one
+ * `warpAltitudeLimits` entry per rails level, fewer, or none; the shipped bodies state seven), never alone.
+ * Code uses RAILS_WARP_LEVEL_COUNT and `WARP_LEVELS.length`, never a literal count.
  */
-export const WARP_LEVELS = [1, 2, 3, 4, 5, 10, 50, 100, 1000, 10000, 100000] as const;
+export const WARP_LEVELS = [1, 2, 3, 4, 5, 10, 50, 100, 1000, 10000, 100000, 1e6, 1e7] as const;
 export const MAX_PHYSICS_WARP_INDEX = 3;
 /** Number of rails warp levels (entries of an attractor's `warpAltitudeLimits`). */
 export const RAILS_WARP_LEVEL_COUNT = WARP_LEVELS.length - MAX_PHYSICS_WARP_INDEX - 1;

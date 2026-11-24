@@ -12,7 +12,7 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3 } from '@/core/math/vec3';
-import { warpAltitudeLimit } from '@/sim/orbit';
+import { WARP_LOOKAHEAD_REAL_SECONDS, warpAltitudeLimit } from '@/sim/orbit';
 import { active, controls, flatTerrain, loadLibrary, makeSim, orbitScenario } from './helpers';
 
 let defs: DefLibrary;
@@ -187,18 +187,30 @@ describe('warp at 100 000x', () => {
     sim.commands.setNode(id, { dv: { prograde: -40 } });
     const burn = sim.peek().readouts.nodeBurn!;
     const lead = nodeUt - burn.burnTime! / 2 - 30;
-    let framesAtTop = 0;
+    // The top level is requested in every frame. At 250 000 km the altitude limits allow every level of the table
+    // (the Earth's highest limit is 25 radii, 159 275 km), so the level is the look-ahead's: the highest that
+    // keeps four seconds of real time before the node's lead time.
+    const FAST = WARP_LEVELS.indexOf(100000);
+    expect(warpAltitudeLimit(defs.bodies['earth']!, TOP)!).toBeLessThan(2.5e8);
+    let framesAtFast = 0;
+    let highest = 0;
     let frames = 0;
     for (; frames < 100000; frames++) {
+      const remaining = lead - sim.peek().simUt;
       frame(sim);
       const s = sim.peek();
-      if (s.warp.index === TOP) framesAtTop++;
+      if (s.warp.index === FAST) framesAtFast++;
+      highest = Math.max(highest, s.warp.index);
+      // Never a rails level whose four seconds the leg no longer has.
+      if (s.warp.index > MAX_PHYSICS_WARP_INDEX) expect(remaining / WARP_LEVELS[s.warp.index]!).toBeGreaterThanOrEqual(WARP_LOOKAHEAD_REAL_SECONDS);
       expect(s.simUt).toBeLessThanOrEqual(lead + 1e-6 + (s.warp.onRails ? 0 : 1));
       expect(s.patches.planned[0]!.tStart).toBeCloseTo(nodeUt, 5);
       if (s.simUt >= lead - 1e-6) break;
     }
-    // 48 days in a few thousand frames, most of them at the top level, the last ones stepping down.
-    expect(framesAtTop).toBeGreaterThan(1000);
+    // 48 days in a few thousand frames, most of them at 100 000x, the last ones stepping down. The leg is
+    // 4 134 000 s long: its first frames run at 1 000 000x (four seconds of it are 4 000 000 s), none at 10 000 000x.
+    expect(framesAtFast).toBeGreaterThan(1000);
+    expect(highest).toBe(WARP_LEVELS.indexOf(1e6));
     expect(frames).toBeLessThan(20000);
     const s = sim.peek();
     expect(s.simUt).toBeGreaterThanOrEqual(lead - 1e-6);

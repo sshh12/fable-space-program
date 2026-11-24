@@ -242,7 +242,7 @@ describe('shapes, surfaces and warp limits', () => {
       if (def.atmosphere) expect(lim[0]!).toBeGreaterThanOrEqual(def.atmosphere.simTop);
     }
     const earth = shipped.defs.bodies['earth']!;
-    expect(warpAltitudeLimitsOf(earth).slice(0, earth.warpAltitudeLimits.length)).toEqual(earth.warpAltitudeLimits);
+    expect(warpAltitudeLimitsOf(earth).slice(0, earth.warpAltitudeLimits!.length)).toEqual(earth.warpAltitudeLimits);
     // Phobos: rails warp from a few tens of metres up; the highest level only far outside its tiny sphere
     const phobos = staged.defs.bodies['phobos']!;
     expect(maxWarpIndexForAltitude(phobos, 100)).toBeGreaterThan(3);

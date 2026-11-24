@@ -66,7 +66,7 @@ describe('definition loader', () => {
     expect(earth.ocean?.swell.length).toBeGreaterThan(0);
     expect(earth.ocean!.swell.length).toBeLessThanOrEqual(8);
     for (const c of earth.ocean!.swell) expect(Math.hypot(...c.dir)).toBeCloseTo(1, 9);
-    expect(earth.warpAltitudeLimits.length).toBe(7);
+    expect(earth.warpAltitudeLimits!.length).toBe(7);
     expect(lib.bodies['moon']!.parent).toBe('earth');
     expect(lib.bodies['moon']!.render.surface?.brdf).toBe('hapke');
     expect(lib.bodies['sun']!.emission?.illuminance).toBe(128000);

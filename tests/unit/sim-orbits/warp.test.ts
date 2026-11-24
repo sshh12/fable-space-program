@@ -30,18 +30,41 @@ beforeAll(async () => {
 });
 
 describe('warp altitude limits', () => {
-  it('rails levels follow warpAltitudeLimits; physics levels always allowed', () => {
+  it('rails levels follow warpAltitudeLimits; physics levels always allowed; the two highest levels open at the default limits', () => {
+    const TOP = WARP_LEVELS.length - 1;
     const earth = defs.bodies[EARTH]!;
     expect(maxWarpIndexForAltitude(earth, 0)).toBe(MAX_PHYSICS_WARP_INDEX);
     expect(maxWarpIndexForAltitude(earth, 139e3)).toBe(MAX_PHYSICS_WARP_INDEX);
     expect(maxWarpIndexForAltitude(earth, 150e3)).toBe(WARP_LEVELS.indexOf(10));
     expect(maxWarpIndexForAltitude(earth, 200e3)).toBe(WARP_LEVELS.indexOf(50));
-    expect(maxWarpIndexForAltitude(earth, 50e6)).toBe(WARP_LEVELS.length - 1);
+    // The Earth states seven limits, the last 30,000 km for 100,000x. The two levels above it open at the body
+    // system's default: 1,000,000x at 6 radii (38,226 km), 10,000,000x, the top of the table, at 25 radii (159,275 km).
+    expect(earth.warpAltitudeLimits).toHaveLength(7);
+    expect(maxWarpIndexForAltitude(earth, 30e6)).toBe(WARP_LEVELS.indexOf(100000));
+    expect(maxWarpIndexForAltitude(earth, 6 * earth.radius - 1)).toBe(WARP_LEVELS.indexOf(100000));
+    expect(maxWarpIndexForAltitude(earth, 6 * earth.radius)).toBe(WARP_LEVELS.indexOf(1e6));
+    expect(maxWarpIndexForAltitude(earth, 50e6)).toBe(WARP_LEVELS.indexOf(1e6));
+    expect(maxWarpIndexForAltitude(earth, 25 * earth.radius - 1)).toBe(WARP_LEVELS.indexOf(1e6));
+    expect(maxWarpIndexForAltitude(earth, 25 * earth.radius)).toBe(TOP);
+    expect(WARP_LEVELS[TOP]).toBe(1e7);
     const moon = defs.bodies[MOON]!;
     expect(maxWarpIndexForAltitude(moon, 0)).toBe(WARP_LEVELS.indexOf(5));
-    expect(maxWarpIndexForAltitude(moon, 4e6)).toBe(WARP_LEVELS.length - 1);
+    // The Moon's last stated limit is 3,000 km for 100,000x; its defaults are 6 radii (10,424 km) and 25 radii (43,435 km).
+    expect(maxWarpIndexForAltitude(moon, 4e6)).toBe(WARP_LEVELS.indexOf(100000));
+    expect(maxWarpIndexForAltitude(moon, 6 * moon.radius)).toBe(WARP_LEVELS.indexOf(1e6));
+    expect(maxWarpIndexForAltitude(moon, 25 * moon.radius)).toBe(TOP);
     expect(warpAltitudeLimit(earth, 2)).toBeNull();
     expect(warpAltitudeLimit(earth, 10)).toBe(30e6);
+    expect(warpAltitudeLimit(earth, WARP_LEVELS.indexOf(1e6))).toBe(6 * earth.radius);
+    expect(warpAltitudeLimit(earth, TOP)).toBe(25 * earth.radius);
+    // Every level, the top of the table included, is allowed from its own limit up and not one metre below it.
+    for (const body of [earth, moon]) {
+      for (let i = MAX_PHYSICS_WARP_INDEX + 1; i <= TOP; i++) {
+        const limit = warpAltitudeLimit(body, i)!;
+        expect(maxWarpIndexForAltitude(body, limit)).toBeGreaterThanOrEqual(i);
+        if (limit > 0) expect(maxWarpIndexForAltitude(body, limit - 1)).toBeLessThan(i);
+      }
+    }
   });
 });
 
