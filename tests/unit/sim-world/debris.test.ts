@@ -16,7 +16,7 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import type { DiagnosedSession } from '../../../tools/sim/realWorld';
-import { FRAGMENT_LIFETIME, FRAGMENT_MASS, MAX_DEBRIS } from '@/sim/world/sim';
+import { FRAGMENT_LIFETIME, FRAGMENT_MASS, MAX_DEBRIS } from '@/sim/world/debris';
 import { active, controls, flatTerrain, loadLibrary, makeSim, orbitScenario } from './helpers';
 
 let defs: DefLibrary;

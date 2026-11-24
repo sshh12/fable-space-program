@@ -454,6 +454,13 @@ export interface Island {
    * (`parted` then says that the member has left it).
    */
   reach(point: { r: Vec3; v: Vec3; radius: number }, exceptId?: string): Reach;
+  /**
+   * The ids of the members that hang together with `vesselId` (itself included): linked one to the next by
+   * less than the parting distance, `islandPartFactor` times the pair's join distance between their bounding
+   * spheres (ARCHITECTURE 7.3). A member that is not in the set has parted from that member's island; an
+   * island that is one set for any of its members has nothing to split off. Empty for an unknown id.
+   */
+  linkedTo(vesselId: string): ReadonlySet<string>;
   /** Any member under a threshold watch (ARCHITECTURE 6.2: the commit lag is 0 then). */
   thresholdWatch(): boolean;
   /** Null when no terrain request is outstanding; otherwise a promise that settles when every request so far is in. */

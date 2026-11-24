@@ -8,7 +8,7 @@
  */
 import type { NavballMode, NodeEdit, SasMode } from '@/core/contracts/controls';
 import { SAS_MODES } from '@/core/contracts/controls';
-import type { ManeuverNode, NodeBurnInfo, Patch, StageInfo } from '@/core/contracts/sim';
+import type { ManeuverNode, NodeBurnInfo, Patch, SimEvent, StageInfo } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import { G0 } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
@@ -84,6 +84,36 @@ export class Planning {
   followAltitude(altitude: number, switchAltitude: number): void {
     this.navballMode = navballModeAfter(this.navballMode, this.prevNavAltitude, altitude, switchAltitude);
     this.prevNavAltitude = altitude;
+  }
+
+  /**
+   * The vessel changed frame (another sphere of influence, a new reference orbit) at `altitude` above the new
+   * body: the prediction is void and the navball starts from that body's default mode. Returns the instant
+   * the plan had predicted for this change, when it had predicted it.
+   */
+  frameChanged(fromBodyId: string, toBodyId: string, altitude: number, switchAltitude: number): number | null {
+    const predicted = this.soiPrediction && this.soiPrediction.from === fromBodyId && this.soiPrediction.to === toBodyId ? this.soiPrediction.ut : null;
+    this.soiPrediction = null;
+    this.patchesDirty = true;
+    this.resetNavball(Math.max(altitude, 0), switchAltitude);
+    this.prevNavAltitude = altitude;
+    return predicted;
+  }
+
+  /** An event of a vessel in view: a change of the part set or of what burns makes the stage figures stale. */
+  noteEvent(ev: SimEvent): void {
+    switch (ev.type) {
+      case 'stageFired':
+      case 'engineIgnition':
+      case 'engineShutdown':
+      case 'decoupled':
+      case 'fairingJettisoned':
+      case 'partDestroyed':
+        this.stageInfoDirty = true;
+        break;
+      default:
+        break;
+    }
   }
 
   // ----------------------------------------------------------------------------------------- patches

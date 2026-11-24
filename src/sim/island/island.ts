@@ -719,7 +719,7 @@ export class IslandImpl implements Island {
 
   step(): AdvanceReport {
     if (this.mergeTick !== null && this.tick >= this.mergeTick) throw new Error(`island ${this.id}: step past the pending merge tick ${this.mergeTick}`);
-    this.throwIfBroken();
+    this.policy.throwIfBroken();
     const report = this.begin();
     this.applyQueued();
     if (this.tick % CONTROL_TICKS === 0) this.terrainWork();
@@ -773,13 +773,6 @@ export class IslandImpl implements Island {
     const r = this.report;
     this.report = emptyReport();
     return r;
-  }
-
-  private throwIfBroken(): void {
-    if (this.policy.error !== null) {
-      const e = this.policy.error;
-      throw e instanceof Error ? e : new Error(String(e));
-    }
   }
 
   private stampAges(): void {
@@ -1263,7 +1256,7 @@ export class IslandImpl implements Island {
   // ----------------------------------------------------------------------------------- rails advance
 
   advanceTo(tick: number): AdvanceReport {
-    this.throwIfBroken();
+    this.policy.throwIfBroken();
     this.begin();
     let landing = tick;
     if (this.mergeTick !== null) landing = Math.min(landing, this.mergeTick);
@@ -1621,6 +1614,26 @@ export class IslandImpl implements Island {
       else best.parted = best.parted && r.parted;
     }
     return best;
+  }
+
+  linkedTo(vesselId: string): ReadonlySet<string> {
+    const linked = new Set<string>();
+    const start = this.rec(vesselId);
+    if (!start) return linked;
+    const claim = this.deps.rules.claim;
+    const ut = this.ut;
+    const sphere = (rec: Rec): { r: Vec3; v: Vec3; radius: number } => ({ r: this.posOf(rec, ut), v: this.velOf(rec, ut), radius: structureOf(rec.vessel).boundingRadius });
+    linked.add(vesselId);
+    const open = [start];
+    while (open.length > 0) {
+      const x = sphere(open.pop()!);
+      for (const y of this.recs) {
+        if (linked.has(y.vessel.id) || pairReach(claim, x, sphere(y)).parted) continue;
+        linked.add(y.vessel.id);
+        open.push(y);
+      }
+    }
+    return linked;
   }
 
   // -------------------------------------------------------------------------------------------- codec

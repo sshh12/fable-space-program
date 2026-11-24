@@ -117,7 +117,7 @@ describe('read-outs of a vessel that is not flying through air (request flight-u
     // (The lowest contact probe of the stack is within two metres of the point it stands on.)
     expect(Math.abs(s0.readouts.altitudeRadar - expected)).toBeLessThan(2);
     // What the simulation's own rules read is unchanged: a held vessel is on the ground.
-    expect((sim as unknown as { radarAltitude(): number }).radarAltitude()).toBe(0);
+    expect((sim as unknown as { mission: { radarAltitude(): number } }).mission.radarAltitude()).toBe(0);
     // 1.00 g on the pad (the local gravity at the pad's radius), steady from the first snapshot.
     const r = v3.len(active(s0).r);
     expect(s0.readouts.gLoad).toBe(defs.bodies['earth']!.mu / (r * r) / G0);

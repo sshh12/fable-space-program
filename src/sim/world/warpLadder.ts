@@ -4,14 +4,18 @@
  * physics warp (more steps), the rest rails warp. The host asks before it advances; the rules are v1's.
  */
 import { MAX_PHYSICS_WARP_INDEX, WARP_LEVELS } from '@/core/contracts/defs';
-import type { TimeLimitKind } from '@/core/contracts/net';
-import type { Patch } from '@/core/contracts/sim';
+import type { TimeLimitKind, TimeView } from '@/core/contracts/net';
+import type { Patch, SimSnapshot } from '@/core/contracts/sim';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import type { BodyDef } from '@/core/contracts/defs';
 import type { BodySystem } from '../bodies/bodySystem';
-import { lookAheadWarpIndex, maxWarpIndexForAltitude, nextWarpEvent, type WarpEvent } from '../orbit/warp';
+import { lookAheadWarpIndex, maxWarpIndexForAltitude, nextWarpEvent, warpFactor, type WarpEvent } from '../orbit/warp';
 import type { ManeuverNode } from '@/core/contracts/sim';
+import { WARP_CLAMP_RADAR_ALTITUDE } from '../island/terrainPolicy';
+import { radarAltitude, structureOf } from '../vessel';
+import { privateClockView } from '../view/snapshot';
+import type { World } from './sim';
 
 /** Inertial body rate above which rails warp is refused, rad/s. */
 export const ROTATION_WARP_LIMIT = 0.5 * DEG;
@@ -56,6 +60,46 @@ export class WarpLadder {
   terrainClampActive = false;
 
   constructor(private readonly system: BodySystem) {}
+
+  /** The clock blocks of a snapshot for a pilot alone on this ladder's private clock, at `tick`; `onRails`: the last advance was a rails advance. */
+  blocks(tick: number, onRails: boolean): { time: TimeView; warp: SimSnapshot['warp'] } {
+    const rate = warpFactor(this.index);
+    return {
+      // One private clock nobody else is on: the pilot's tick is the live tick.
+      time: privateClockView(tick, rate, warpFactor(this.max), this.limitedBy === null ? null : { kind: this.limitKind ?? 'event', text: this.limitedBy }),
+      warp: { index: this.index, factor: rate, maxIndex: this.max, limitedBy: this.limitedBy, onRails },
+    };
+  }
+
+  /** `refresh` with what the host's state says of the pilot's vessel, its plan and its terrain. */
+  refreshFor(w: World): void {
+    const a = w.view.focus();
+    const v = a.vessel;
+    const base = w.frames.base(a.bodyId);
+    const subject = w.view.subject();
+    const com = subject.com;
+    const present = w.view.present;
+    // Terrain rule: 1x below 300 m radar altitude until final data is resident.
+    const terrainLoading =
+      present && v.hold === null && base.hasTerrain && v.groundClearance < WARP_CLAMP_RADAR_ALTITUDE + structureOf(v).boundingRadius && radarAltitude(v, w.view.envOf(a)) < WARP_CLAMP_RADAR_ALTITUDE && !w.island.terrainFinalUnder(v.id);
+    this.refresh({
+      gone: !present,
+      mustIntegrate: present && w.mustIntegrate(),
+      held: v.hold !== null,
+      rate: v3.len(v.w),
+      railsWarpActive: w.railsWarpActive,
+      ut: w.ut,
+      bodyId: a.bodyId,
+      bodyDef: base.def,
+      bodyRadius: base.info.radius,
+      com,
+      patches: w.plan.patches.current,
+      nodes: () => w.plan.nodes.map((node) => ({ node, burnTime: w.plan.burnTimeFor(subject, node) })),
+      alarms: () => w.mission.altitudeAlarms(a, com),
+      nodeEvent: () => w.plan.nodeEvent(subject),
+      terrainLoading,
+    });
+  }
 
   /** Recompute the highest allowed level, why, and the next warp-limiting event. */
   refresh(s: LadderSubject): void {

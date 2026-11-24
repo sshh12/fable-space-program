@@ -56,6 +56,11 @@ export class TerrainPolicy {
   constructor(private readonly terrain: TerrainProvider) {}
 
   /** Null when nothing is outstanding; otherwise a promise that resolves when every request so far is in. */
+  /** Throw the error of a request that failed (a host and an island ask before they advance). */
+  throwIfBroken(): void {
+    if (this.error !== null) throw this.error instanceof Error ? this.error : new Error(String(this.error));
+  }
+
   pending(): Promise<void> | null {
     return this.outstanding > 0 ? this.waiter : null;
   }

@@ -11,7 +11,7 @@ import { v3 } from '@/core/math/vec3';
 import { ceilTick, nearestTick, SUN_SAMPLE_TICKS, TICKS_PER_SECOND, utOfTick } from '../clock';
 import { propagate, type Orbit } from '../orbit/kepler';
 import { isControllable, rideBody, stepVesselReduced, structureOf, type Vessel } from '../vessel';
-import { REDUCED_DT } from './api';
+import { REDUCED_DT, type Island, type IslandMember } from './api';
 import { IslandEnv } from './environment';
 import { comStateOf, setFromCom, type BodyFrames } from './frames';
 import { computeRailsEvent, crossSoi, eventAfterCrossing, orbitOf, railsStateAt, shifted, type RailsEvent } from './rails';
@@ -92,6 +92,46 @@ export class FarSet {
     if (o.removed) return null;
     this.objects.splice(this.objects.indexOf(o), 1);
     return o;
+  }
+
+  /**
+   * A member leaves `island` for the far set at the island's tick (it has parted: ARCHITECTURE 7.3): it goes on
+   * from the conic it is on, is held on its body, or enters the reduced tier. `order` as for `add`.
+   */
+  receive(island: Island, vesselId: string, order: number): FarObject | null {
+    const m = island.member(vesselId);
+    if (!m) return null;
+    const from = { bornTick: m.bornTick, revision: m.revision, orbit: m.orbit, railsEvent: m.railsEvent, order };
+    const bodyId = island.bodyId;
+    const vessel = island.remove(vesselId, 'left')!;
+    return this.add(vessel, bodyId, island.tick, from);
+  }
+
+  /** An object enters `island` at `tick` (brought to the tick first), on its conic when it is on one. Null when it is gone or about another body. */
+  release(island: Island, vesselId: string, tick: number): IslandMember | null {
+    const found = this.find(vesselId);
+    if (found) this.sync(found, tick);
+    if (!found || found.removed || found.bodyId !== island.bodyId) return null;
+    const o = this.take(vesselId, tick)!;
+    return island.add(o.vessel, { bornTick: o.bornTick, revision: o.revision, conic: o.orbit ? { orbit: o.orbit, event: o.railsEvent } : undefined });
+  }
+
+  /**
+   * Formation, the joining half (ARCHITECTURE 7.3): every object is brought to `tick`, and one about the
+   * island's body inside the join distance of any member (`Island.reach`) enters the island, in the set's
+   * order, each seeing the members that joined before it. Returns how many joined.
+   */
+  joinInto(island: Island, tick: number): number {
+    let joined = 0;
+    for (const o of this.objects.slice()) {
+      if (o.removed) continue;
+      this.sync(o, tick);
+      if (o.removed || o.bodyId !== island.bodyId) continue;
+      if (!island.reach({ r: o.vessel.r, v: o.vessel.v, radius: structureOf(o.vessel).boundingRadius }).joins) continue;
+      this.release(island, o.vessel.id, tick);
+      joined++;
+    }
+    return joined;
   }
 
   /** Drop the objects that are gone. */
