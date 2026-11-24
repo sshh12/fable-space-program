@@ -61,7 +61,7 @@ test('every setting through every level and every preset: no GPU error, no leake
     };
   });
   await page.setViewportSize({ width: 1600, height: 900 });
-  await openPage(page, '/labs/integration/?scene=pad&sun=95,8&sunsite=earth,18.987556,-155.603239&throttle=1&hud=0&withart=1', { timeoutMs: 240_000 });
+  await openPage(page, '/labs/integration/?scene=pad&stage=1&sun=95,8&sunsite=earth,18.987556,-155.603239&throttle=1&hud=0&withart=1', { timeoutMs: 240_000 });
   await assertDiscreteGpu(page);
   await page.waitForFunction(() => window.__test!.isIdle(), undefined, { timeout: 180_000 });
   const count = (): Promise<Record<string, number>> =>

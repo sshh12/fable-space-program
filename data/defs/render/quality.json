@@ -1,0 +1,39 @@
+{
+  "$comment": "Graphics presets, the calibration's shots and its cost attribution (capability-settings; ARCHITECTURE 24, frontend-ux 9.3-9.6; read by src/bench/table.ts). A preset is an internal pixel cap plus every declared setting at the preset's own level; the class hint seeds the preset before a calibration has run. Timings of the reference GPU are in docs/handoff/capability-settings.md.",
+  "benchVersion": 1,
+  "targetFps": 60,
+  "presets": {
+    "low": { "pixelCap": 0.9, "renderScaleMin": 0.5 },
+    "medium": { "pixelCap": 1.6, "renderScaleMin": 0.5 },
+    "high": { "pixelCap": 2.4, "renderScaleMin": 0.6 },
+    "ultra": { "pixelCap": 3.7, "renderScaleMin": 0.6 }
+  },
+  "classHint": { "discrete": "high", "unknown": "medium", "integrated": "low" },
+  "safePreset": "low",
+  "solver": {
+    "budgetShare": 0.85,
+    "pixelCaps": [0.9, 1.2, 1.6, 2.0, 2.4, 3.0, 3.7],
+    "resolutionWeight": 6,
+    "confirmStepsMax": 2,
+    "minimum": { "preset": "low", "frameMs": 33.3 }
+  },
+  "shots": [
+    { "id": "pad-dawn", "label": "pad at dawn", "scenario": "bench-pad-dawn", "camera": "chase", "chaseDistanceM": 300, "settleS": 2, "measureS": 3, "ignite": false },
+    { "id": "liftoff", "label": "lift-off", "scenario": "bench-pad-dawn", "camera": "chase", "chaseDistanceM": 300, "settleS": 1, "measureS": 4, "ignite": true },
+    { "id": "leo-terminator", "label": "LEO terminator", "scenario": "bench-leo-terminator", "camera": "chase", "chaseDistanceM": 60, "settleS": 2, "measureS": 3, "ignite": false },
+    { "id": "cockpit", "label": "cockpit", "scenario": "bench-leo-terminator", "camera": "cockpit", "chaseDistanceM": 0, "settleS": 1, "measureS": 3, "ignite": false }
+  ],
+  "confirm": { "shot": "liftoff", "measureS": 3 },
+  "cpuReference": { "frameP95Ms": 6.86, "simMs": 43.7, "simSteps": 1200 },
+  "attribution": {
+    "$comment": "Which GPU passes (attribution mode: <featureId>.<pass>) a setting's cost is taken from. A setting not listed takes the passes of the feature that declares it, less those another rule claims; whatever no setting claims is fixed cost, scaled with the internal pixels by fixedExponent. Passes of the lab ballast are never counted.",
+    "rules": {
+      "shadows": "(^|\\.)shadow(\\.clear)?$|^core\\.spotShadows$",
+      "ambientOcclusion": "^core\\.ao$",
+      "clouds": "^atmosphere\\.cloud",
+      "terrain": "^terrain(-cover|-rocks)?\\."
+    },
+    "ignore": "^lab-ballast\\.",
+    "fixedExponent": 0.8
+  }
+}

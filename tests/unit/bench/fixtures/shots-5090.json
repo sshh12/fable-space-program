@@ -1,0 +1,121 @@
+{
+ "$comment": "Recorded by tests/browser/bench/calibration.perf.spec.ts on the reference GPU (RTX 5090, 2560 x 1440), 2026-11-24",
+ "displayPx": [
+  2560,
+  1440
+ ],
+ "shots": [
+  {
+   "shotId": "pad-dawn",
+   "pixels": 3686400,
+   "levels": {
+    "shadows": "ultra",
+    "ambientOcclusion": "ultra",
+    "terrain": "ultra",
+    "ocean": "ultra",
+    "clouds": "ultra",
+    "atmosphere": "ultra",
+    "effects": "ultra"
+   },
+   "frames": 180,
+   "gpuP95": 6.009312,
+   "gpuMean": 5.656151644444446,
+   "groups": {
+    "fixed": 0.6300819555555534,
+    "ocean": 0.35551644444444463,
+    "clouds": 1.062810311111111,
+    "atmosphere": 0.6198776888888881,
+    "effects": 0.3865100444444437,
+    "shadows": 0.8309187555555574,
+    "terrain": 1.6929226666666666,
+    "ambientOcclusion": 0.07751377777777775
+   },
+   "cpuP95": 3.7649998664855957,
+   "perPass": true
+  },
+  {
+   "shotId": "liftoff",
+   "pixels": 3686400,
+   "levels": {
+    "shadows": "ultra",
+    "ambientOcclusion": "ultra",
+    "terrain": "ultra",
+    "ocean": "ultra",
+    "clouds": "ultra",
+    "atmosphere": "ultra",
+    "effects": "ultra"
+   },
+   "frames": 240,
+   "gpuP95": 6.41392,
+   "gpuMean": 6.019909866666667,
+   "groups": {
+    "fixed": 0.7083554666666694,
+    "ocean": 0.43359880000000073,
+    "clouds": 1.0635366666666655,
+    "atmosphere": 0.612666266666667,
+    "effects": 0.5920226666666671,
+    "shadows": 0.8297106666666695,
+    "terrain": 1.7026702666666678,
+    "ambientOcclusion": 0.07734906666666669
+   },
+   "cpuP95": 6.859999895095825,
+   "perPass": true
+  },
+  {
+   "shotId": "leo-terminator",
+   "pixels": 3686400,
+   "levels": {
+    "shadows": "ultra",
+    "ambientOcclusion": "ultra",
+    "terrain": "ultra",
+    "ocean": "ultra",
+    "clouds": "ultra",
+    "atmosphere": "ultra",
+    "effects": "ultra"
+   },
+   "frames": 181,
+   "gpuP95": 1.956736,
+   "gpuMean": 1.8289104972375692,
+   "groups": {
+    "fixed": 0.5225865193370144,
+    "clouds": 0.5824026519337009,
+    "atmosphere": 0.31551292817679577,
+    "effects": 0.204932419889503,
+    "shadows": 0.04388419889502767,
+    "terrain": 0.11548923756906077,
+    "ambientOcclusion": 0.044035712707182324,
+    "ocean": 0.00006682872928176785
+   },
+   "cpuP95": 2.430000066757202,
+   "perPass": true
+  },
+  {
+   "shotId": "cockpit",
+   "pixels": 3686400,
+   "levels": {
+    "shadows": "ultra",
+    "ambientOcclusion": "ultra",
+    "terrain": "ultra",
+    "ocean": "ultra",
+    "clouds": "ultra",
+    "atmosphere": "ultra",
+    "effects": "ultra"
+   },
+   "frames": 180,
+   "gpuP95": 2.394624,
+   "gpuMean": 2.252904888888889,
+   "groups": {
+    "fixed": 1.1016362666666657,
+    "clouds": 0.4067199999999999,
+    "atmosphere": 0.2287619555555555,
+    "effects": 0.2118348444444441,
+    "shadows": 0.0776853333333329,
+    "terrain": 0.04008248888888889,
+    "ambientOcclusion": 0.18611822222222216,
+    "ocean": 0.00006577777777777764
+   },
+   "cpuP95": 2.7149999141693115,
+   "perPass": true
+  }
+ ]
+}
