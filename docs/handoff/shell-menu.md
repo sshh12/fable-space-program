@@ -1,156 +1,136 @@
-# Hand-off: shell-menu (wave 4.1) - RUNNING STATE, stopped at two thirds of the builder's context
+# Hand-off: shell-menu (wave 4.1) - RUNNING STATE of the second builder
 
-The package is NOT finished. This note is the running state the brief asks for: what is done (with commits),
-what is measured, what is left in order, and the decisions. The next builder continues from here and
-`git log --oneline -- src/shell labs/shell tests/browser/menu`.
+The package is NOT finished (section 5 lists what is left, in order). This note is the running state: what is
+done (with commits), what is measured, the decisions. Continue from here and
+`git log --oneline -- src/shell src/camera src/input labs/shell tests/browser/menu`.
 
 ## 1. Done (commits)
 
 | Commit | What |
 |---|---|
-| 9c9ceef | Input contexts (`src/input/contexts.ts`: `MENU_BINDINGS`, `TRANSIT_BINDINGS`, `validateContextTable`, `contextActionOf`, `keysOfAction`); `InputSystem.context` / `setContext` (only 'flight' feeds the flight table; a switch releases every held key; the wheel over a menu panel is left to the page); the shell's pure models (`machine.ts`, `pads.ts`, `solar.ts`, `rulesView.ts`, `leaveOutcome.ts`, `spawnFlow.ts`); the menu store fixture `src/core/fakes/menuStores.ts`; `data/defs/visuals/credits.json` (18 sources); the Barlow family (OFL) in `public/assets/ui/fonts/` |
-| f9ecee8 | The DOM kit (`src/shell/dom/kit.ts`), every screen (`src/shell/screens.ts`), the shell (`src/shell/shell.ts`, `types.ts`, `index.ts`), the camera paths (`src/camera/menuRigs.ts`: `menuEye`, `transitSample`, `transitPose`, `holdProgress`, `lookAt`), the lab `labs/shell/`, the spec `tests/browser/menu/menu.spec.ts` |
-| e03342b | Requests shell-menu-1..4; tests of the leave line and the leave guard |
-| b9b6eb1 | Legibility over a bright scene (a gradient vignette behind the left columns and the bottom bands, text shadows on free text: the first run showed the flight menu's subtitle lost over the sky at the pad), cards with the kicker in flow (it overlapped a two-line title), the menu eye with the sun just behind the limb, the site view from above, the lab's flight-menu key fix |
-| 3849855 | Tests of the transit path and the menu eye (`tests/unit/shell/menuRigs.test.ts`) |
-| 31201be | The lab leaves the vessel visuals out (fleet-data's new vehicles have no art; the feature reports each part as an error) |
-| be4199b | The history trap armed on a user gesture; the spec independent of the fleet |
+| 9c9ceef | Input contexts (`src/input/contexts.ts`), `InputSystem.context` / `setContext` (release-all on switch); the shell's pure models (`machine.ts`, `pads.ts`, `solar.ts`, `rulesView.ts`, `leaveOutcome.ts`, `spawnFlow.ts`); `src/core/fakes/menuStores.ts`; `data/defs/visuals/credits.json`; the Barlow family (OFL) |
+| f9ecee8 | The DOM kit, every screen, the shell, the camera paths (`src/camera/menuRigs.ts`), `labs/shell`, `tests/browser/menu/menu.spec.ts` |
+| e03342b, b9b6eb1, 3849855, 31201be, be4199b, 3e66c40 | Requests shell-menu-1..4; leave-line tests; legibility pass 1; rig tests; history trap on a user gesture (first builder) |
+| 822c443 | A change of screen is drawn AT ONCE and a key acts on the screen as it stands (run 3's tests 3-7 failed because the second Enter reached the hub before the 10 Hz text clock drew it: a real bug, not a reload). The pad class is the ANALYSIS' (`ShellDeps.capabilities(vehicleId, rules)` = `analyzeVehicle` under the rules in force; the "assumed heavy" fallback is gone); a pad is usable when its class hosts the vehicle and `padLimitsOf(pad, rules)` takes its mass and diameter (`VehicleFit`) |
+| 14723e1 | The specs of the remaining acceptance lines (mouse, legibility, perf, cold start) and the lab hooks for them (`&padhour`, `&holdboot`, `setMenuHidden`, `lastTransit`); `transitPathLength` (the path's own motion bound) |
+| 1fb6167 | Presentable vehicles only (see 6); the identity screen (`src/shell/identity.ts`, `createIdentityFixture`); the Hangar turntable (`ShellIntent` `turntable`; the lab's display vessel); layout (scrolling column and lists, detail and Launch in the right column, banner at the right, plates behind the top-right status and "Press any key", stronger fills); the click-through-a-rebuilt-control fix; the transit status read live; pad focus on a free pad of the vehicle's own class; the transit's exposure follows the meter below the hold |
 
 ## 2. Public API (exact signatures)
 
 ```ts
-// src/shell (imports only src/core; the host hands in everything else)
+// src/shell (imports src/core only; the host hands in everything else)
 createShell(deps: ShellDeps): Shell
 interface Shell {
   readonly machine: ShellMachine; readonly spawn: SpawnFlow;
-  action(action: string): boolean;               // run a menu/transit action as its key would
-  update(realDt: number): void;                  // every frame; text at most 10 Hz; scrim while panels move
-  booted(): void; gatePassed(): void;
-  transitStatus(text: string | null, holding: boolean): void;
-  handOver(): void;                              // transit -> flight (control enabled)
-  left(): void;                                  // reverse transit done -> hub
-  openFlightMenu(): void;                        // the host calls it on the flight table's `flightMenu`
+  action(action: string): boolean; update(realDt: number): void; booted(): void; gatePassed(): void;
+  transitStatus(text: string | null, holding: boolean): void; handOver(): void; left(): void; openFlightMenu(): void;
   focused(): string | null;
-  hooks(): { state: string; main: string; side: readonly string[]; focus: string | null; scrimRects: number; spawn: string; practice: boolean };
+  hooks(): { state; main; side; focus; scrimRects: number; spawn: string; practice: boolean; textRefreshes: number; screenChanges: number };
   dispose(): void;
 }
 ShellDeps { root, canvas, defs, format: NumberFormat, keys: ShellKeys, lobby: ShellSession, practice: ShellSession | null,
-  publishScrim(rects), boot(): BootProgress, snapshot(): SimSnapshot | null, capabilities(vehicleId): VehicleCapabilities | null,
+  publishScrim(rects), boot(): BootProgress, snapshot(): SimSnapshot | null,
+  capabilities(vehicleId: string, rules: UniverseRules): VehicleCapabilities,      // analyzeVehicle(defs, v, { rules, reachCost }) of the host
   settings: SettingsHost | null, identity: IdentityHost | null, padCycleSeconds(rules): number | null,
-  capacityReport(): string | null, wallNow(): number, captured(): boolean, intent(i: ShellIntent): void,
-  reportError(m): void, reducedMotion?, uiScale? }            // src/shell/types.ts has every member documented
-ShellIntent = context | frame (subject + free area) | transit (request, practice) | spawnAcknowledged | riseBack
-            | resume | leave | capture (opt-in) | watchPad | trackShip
-
-transition(state: ShellState, event: ShellEvent): ShellState | null      // states of ARCHITECTURE 23 + side states
-createSpawnFlow(universe: UniverseCommands, stores: Pick<ClientStores, 'launchQueue' | 'link'>): SpawnFlow
-  // phases idle | requesting | queued(entry, stale) | seated | refused(cause: left | lost | refused, alternative)
-classOutlook(sites, padStates, vehicleClass, liveTick, rules): ClassOutlook   // pads per class, wait, cohort, horizonFull
-launchesPerHour(padCount, cycleSeconds | null): number | null
-rulesView(rules, fmt, formatWallDate): RulesView                              // every number a rules field
-leaveOutcome(snapshot, rules, fmt): LeaveOutcome | null                        // "If you leave now" (U16)
-shouldGuardUnload(snapshot): boolean                                           // the leave-guard rule (request shell-menu-2)
-solarViewAt(body, latDeg, lonDeg): { localSolarHours, sunElevationDeg, phase }
-loadShellFonts(baseUrl, onError): Promise<void>; scrimRectsOf(root, canvasRect, dpr, opacity): ScrimRect[]
-
-// src/input
-MENU_BINDINGS, TRANSIT_BINDINGS, MENU_ACTIONS, TRANSIT_ACTIONS, validateContextTable(table, actions): string[]
-InputSystem.context; InputSystem.setContext(c: 'menu' | 'transit' | 'flight'): void
-
-// src/camera (pure, body-fixed float64 path)
-menuEye(body, radius, { altitude, sunBehindLimbDeg, t, drift }): EyePose
-transitSample(plan: TransitPlan, u: number, holdAngle?): TransitSample   // position, look, altitude, exposureHint
-holdProgress(plan): number; transitPose(body, sample): EyePose
-
-// src/core/fakes
-createMenuFixture(defs, opts?: MenuStoresOptions): MenuFixture   // ClientStores + UniverseCommands for every menu state
-menuShipsFixture(defs, nowWallMs, rules?): ShipRecord[]
+  capacityReport(): string | null, wallNow(): number, captured(): boolean, intent(i: ShellIntent): void, reportError(m), reducedMotion?, uiScale? }
+IdentityHost { callsign(): string | null; check(name): Promise<CallsignCheck>; generate(): string; rule(): string; create(name): Promise<{ recoveryCode: string }> }
+CallsignCheck = { status: 'available' } | { status: 'taken'; suggestions: string[] } | { status: 'invalid'; reason: string }
+ShellIntent = context | frame (subject earth|turntable|site|flight, vehicleId: a PRESENTABLE vehicle for 'turntable', free area)
+            | transit (request, practice) | spawnAcknowledged | riseBack | resume | leave | capture (opt-in)
+            | turntable { turn, zoom } | watchPad | trackShip
+classOutlook(sites, padStates, vehicleClass, liveTick, rules, fit?: VehicleFit); padRows(sites, states, cls, liveTick, fit?)
+VehicleFit { massWet: number; diameter: number; rules: UniverseRules }
+// src/camera: menuEye, transitSample, transitPose, holdProgress, transitPathLength(plan, u0, a0, u1, a1, steps = 8): number
+// src/core/fakes: createMenuFixture, menuShipsFixture, createIdentityFixture(opts?: IdentityFixtureOptions): IdentityFixture
 ```
 
 ## 3. How to run and verify
 
-- Unit: `npx vitest run tests/unit/shell tests/unit/fakes/menuStores.test.ts src/input tools/dev/boundaries.test.ts`
-  (145 + the leave tests: all pass at e03342b).
-- Lab: `/labs/shell/?governor=off&queue=free|busy|full&rules=default|staging|local&ack=<s>&refuse=1&link=<state>&admission=queued&scale=<x>&reduced=1&planet=1`.
-- Browser: `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/menu --project=functional`.
+- Unit: `npx vitest run tests/unit/shell src/input tests/unit/fakes/menuStores.test.ts tests/unit/fakes/identityFixture.test.ts tools/dev/boundaries.test.ts` (155 pass at 1fb6167).
+- Lab: `/labs/shell/?governor=off&queue=free|busy|full&rules=default|staging|local&ack=<s>&refuse=1&link=<state>&admission=queued&scale=<x>&reduced=1&planet=1&padhour=<local solar hour at the pad>&holdboot=1&identity=new`.
+- Browser (GPU slot, one at a time): `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/menu --project=functional --project=perf`.
+  Specs: `menu.spec.ts` (keyboard flow, Back everywhere, launch queue, holding drift, first Play + turntable, four resolutions),
+  `mouse.spec.ts`, `legibility.spec.ts` (contrast by day and at a night pad, transit on its path, night exposure at the hand-over),
+  `coldstart.spec.ts`, `menu.perf.spec.ts` (CDP A/B, text rate, transit frame times). Helpers in `menuPage.ts`.
 
-## 4. Acceptance, as measured so far
-
-(see section 7 for the browser run's result; filled when it finished)
+## 4. Acceptance, as measured (run 4 at 14723e1; run 5 at 1fb6167: section 7)
 
 | Line | State |
 |---|---|
-| Binding tables: no Ctrl/Alt/Meta, no conflicts, every action reachable in every context | MET: `tests/unit/shell/bindingTables.test.ts` (7 tests) |
-| Rules screen renders default and staging with different numbers, no code change | MET (unit): `tests/unit/shell/model.test.ts` "the rules screen"; the browser screen renders the same model |
-| Credits: every source and licence line on the screen | spec written (`menu.spec.ts`, test 2); see section 7 |
-| Deploy flow by keyboard with a focus assertion per step; Back from every screen | spec written (tests 1 and 2); see section 7 |
-| The same by mouse | NOT DONE (no mouse spec yet; hover moves the focus and every control is clickable) |
-| Four resolutions | spec written (tests 5-7); see section 7 |
-| Transition: motion bound, no frame >= 33 ms, HUD after the gate, holding drift, refused re-targets, night pad within 1 EV | PARTLY: the holding drift is specified (test 4); the per-frame steps are recorded (`__shell.transit().steps`) but not yet asserted against the path's own bound; no frame-time, HUD or night-exposure assertion yet; the lab has no HUD |
-| Contrast >= 4.5:1 over the brightest backdrop frame | NOT DONE (no sampler yet) |
-| Menu DOM main-thread <= 0.5 ms/frame; text <= 10 Hz | text refresh is held to 10 Hz in `Shell.update`; the CDP measurement is NOT DONE |
-| Practice keyboard flow with requests blocked; from a simulated unreachable server | PARTLY: Practice runs through the same deploy flow on the local rules (lab); the reconnecting/offline banner offers it; no spec with blocked requests yet |
-| Cold start: title with only the boot pack, progress reported, Play enabled when the hangar's data is resident | PARTLY: the title shows the host's boot steps with real counts and enables "press any key" only when `playReady`; the fixture-driven test is NOT written |
-| Wave-2 flight-ui, map and audio specs; FakeSession conformance | not re-run (nothing of theirs changed except `InputSystem`, whose default context is 'flight') |
+| Binding tables (no Ctrl/Alt/Meta, no conflicts, every action reachable) | MET (unit, 7 tests) |
+| Rules screen: default and staging, different numbers, no code change | MET (unit) |
+| Credits: every source and licence line on the screen | MET (browser, run 4 test 5) |
+| Deploy flow by keyboard, focus per step, Back from every screen | MET (run 4 tests 4, 5) |
+| The same by mouse | spec `mouse.spec.ts`; run 4 failed on a real bug (a click whose control rebuilt the screen fell through to "begin" on the title), fixed in 1fb6167 |
+| Four resolutions | MET at 1280x720 (test 4), 2560x1440, 3840x2160, 3440x1440 (run 4 tests 8-10); pictures looked at |
+| Transition: camera on its path every frame | MET: 599 frames, largest step 18.8 km, 0 steps above `transitPathLength` + 1 cm (run 4, day) |
+| No frame >= 33 ms in the transit | MET: worst 27.4 ms, p99 18.1, p50 16.7 (run 4, perf, GPU lock) |
+| HUD only after the spawn gate | the shell hides itself and publishes no scrim until `handOver()` (asserted); the lab has no HUD: the HUD's own gate is app-integration-1's |
+| Holding drift on a slow acknowledgement | run 4 failed on a real bug (the transit text was a stale copy), fixed in 1fb6167 |
+| A refused spawn re-targets | the spawn flow and the fixture's `refuseNext` exist and the refusal panel offers the alternative; no browser assertion yet |
+| Night pad exposure within 1 EV at hand-over | run 4: 1.93 EV (hand-over 9.55, settled 11.48): NOT MET; fixed in 1fb6167 (the pad's exposure is the meter's reading from the hold down, rate >= 2 EV/s): see run 5 |
+| Contrast >= 4.5:1 over the brightest backdrop, every text box | run 4 by day: 16 texts below (top-right status 1.0 over cloud, "Press any key" 1.08 over the limb, a label under a tab underline 1.12, a few dim captions 3.8-4.3): layout fixed in 1fb6167; see run 5 |
+| Menu DOM main thread <= 0.5 ms/frame; text <= 10 Hz | MET: 0.145 ms (hub, open 1.281 / hidden 1.136) and 0.070 ms (pad screen); 9.7 Hz (run 4, perf, thread ticks) |
+| Practice: keyboard flow with requests blocked; from an unreachable server | PARTLY: Practice runs the same deploy flow on the local rules (fixture, never queues); the reconnecting / offline banner offers it; no spec with blocked requests yet. A real `LocalSession` is session-switch's (the session type has no universe commands or stores until then): the fixture is this package's ground |
+| Cold start: title on the boot set, progress, Play only when the hangar data is resident | spec `coldstart.spec.ts` (`&planet=1&holdboot=1`); run 4 failed on the spec's own text match (innerText is upper-cased), fixed |
+| Wave-2 flight-ui, map, audio specs; FakeSession conformance | not re-run (nothing of theirs changed) |
 
 ## 5. Left, in order
 
-1. Look at every screenshot of `out/screens/shell-menu/` and iterate the look (contrast, the scrim's dim, sizes at 4K).
-2. The contrast sampler (sample the brightest backdrop behind each text box; the lab can freeze the drift phase)
-   and the CDP main-thread measurement (the HUD's method, `tests/browser/flight-ui/hud.perf.spec.ts`).
-3. Transit assertions: per-frame camera step <= the path's own bound (|d sample/du| x du), frame times, the
-   night pad's exposure within 1 EV at hand-over (the lab's `sunEvAtPad` is a first prior: replace it with the
-   render core's photometric prior), a refused spawn re-targeting to the alternative (the fixture's `refuseNext`).
-4. The turntable rig and the presentation-only display vessel (`assembleVessel` + `vesselPartSnapshots`), the
-   exploded stage view (`splitForStage`); the spectate rig.
-5. The mouse spec; the Practice spec with requests blocked; the cold-start fixture test.
-6. Identity screen (`IdentityHost` exists in the deps; no screen yet) and the recovery code card.
-7. Audio: buses music and comms in `AudioProbe` (LEAD NOTE 1), the UI sound set and the menu score via
-   tools/audio (ElevenLabs, budget 60 USD), nothing before the first gesture.
-8. The HUD and map label atlas on the shipped type (request shell-menu-4).
+1. Run 5's result (section 7), then the perf spec again on the final tree (the scrim now clips to scrolled
+   ancestors: re-measure the 0.5 ms line).
+2. Practice spec with requests blocked (`page.route('**', abort)` for anything outside the page's own files) and
+   from `&link=offline`.
+3. A refused spawn re-targeting in the browser (`&refuse=1`).
+4. The exploded stage view (`splitForStage`) and the spectate rig; the turntable shows the display vessel the
+   lab assembled (one presentable vehicle today); the app's host must build its own per chosen vehicle.
+5. Settings' graphics rows from capability-settings' `GraphicsSettings` (src/bench/settings.ts) through
+   `SettingsHost` (app-integration-1 or the next round: the lab passes `settings: null`).
+6. Audio (NOT STARTED): buses music and comms wait for the lead's join of `AudioBusNameV2` into `AudioBusName`
+   (still separate in src/core/contracts/audio.ts); the UI sound set and the menu score via tools/audio
+   (ElevenLabs, budget 60 USD); nothing before the first gesture. (labs/audio and tests/unit/audio have another
+   agent's uncommitted edits today: leave them.)
+7. The HUD and map label atlas on the shipped type (request shell-menu-4).
 
 ## 6. Decisions and why
 
-- The shell imports only src/core (boundaries): the key tables, the number formatters, the camera and the
-  render core reach it through `ShellDeps`, and what it needs done outside the DOM is a `ShellIntent`.
-- The launch queue is not a state of the machine: it lives in the spawn flow and shows on the pad screen and the
-  briefing. A commit starts the transit at once (frontend-ux 5.10); if the request is queued during the transit the
-  camera rises back and the briefing shows the queue (`waitForPad`); when the queue seats it, `depart` starts the
-  transit from any deploy screen.
-- The HUD's visual language (src/core/ui/theme.ts colours, the unit `min(1vh, 0.5625vw)`), not the research's
-  amber: the brief says match the HUD.
-- A vehicle whose pad class nothing states (no `VehicleCapabilities`, no `padInterface`: the case of
-  meridian-lunar today) is treated as the LARGEST class, and the screen says "assumed".
-- Launches per hour need a rules field (request shell-menu-1); until it exists the pad screen states the pad count
-  and the wait per class and omits the rate.
-- Practice in the lab is the menu fixture on the local rules (its own pads, never queuing); the real switch to a
-  `LocalSession` is session-switch's (the World session has no `universe`/`stores` yet).
+- The shell imports only src/core (boundaries): keys, formatters, the camera and the render core reach it
+  through `ShellDeps`; what it needs done outside the DOM is a `ShellIntent`.
+- PRESENTABLE ONLY (lead decision of 2026-11-24): the Hangar and the deploy flow offer `presentableVehicleIds(defs)`
+  (src/core/access/presentable.ts) first and list the others disabled as "Not yet available" (the brief shows the
+  full fleet in the Hangar); My Ships does not resume a ship of a vehicle that cannot be shown; the turntable intent
+  names only a presentable vehicle; the lab builds its display vessel from `firstPresentableVehicleId`. NOTE:
+  presentable.ts and the vessel feature's use of it were in the working tree, NOT committed, when 1fb6167 was
+  made; 1fb6167 needs that commit to compile on its own.
+- The pad class is the analysis' (`VehicleCapabilities.padClass`, derived by fleet-data from the class limits of
+  the rules in force and the vehicle's lift-off mass and diameter, or its pad interface). No "assumed" class.
+- A change of screen is drawn at once; store changes and live text wait for the 10 Hz text clock; a store
+  change does not rebuild a screen under a text field being typed in.
+- The launch queue lives in the spawn flow and shows on the pad screen and the briefing (never a blocking page).
+- Launches per hour need a rules field (request shell-menu-1, still open: `UniverseRules.pads` has no cycle); the
+  pad screen states the pad count and the wait per class and omits the rate.
+- Identity: everything about what a callsign may be is the service's (`check` answers, `rule()` words); the
+  recovery code is shown once and Back does not leave its card.
+- The transit's exposure: the eye's EV to 100 km, a prior below, and from the hold down the meter's own reading
+  of the pad (it keeps metering under a hint), so the hand-over lands where the flight view settles.
+- Contrast is measured on the page itself: the text made transparent, the backdrop (scene, scrim, panel fill,
+  vignette) captured four times over 1.5 s of the drift, each text's colour against every pixel in its tight
+  glyph rectangles; the 2nd percentile is held to 4.5:1; text of disabled controls is reported, not held (WCAG
+  1.4.3 exempts inactive components).
 
 ## 7. Browser runs (real Chrome, real GPU, through the gate)
 
-- Run 1 (test 1 only, at f9ecee8): the page loaded with the render packages (terrain, ocean, sky, atmosphere,
-  site), and the keyboard-only flow passed every focus assertion through title -> hub/play (`launch`) ->
-  deploy/vehicle (`vehicle-meridian-lunar`) -> deploy/pad (`pad-ka-lae-lc-1`) -> deploy/briefing
-  (`launch-commit`) -> transit -> flight; in flight the shell's root was hidden and NO scrim rectangle was
-  published (`{ hidden: true, scrim: 0 }` asserted); Esc opened the flight menu (`fm-resume`, "If you leave now"
-  present). It then failed: Esc in the flight menu closed it and the LAB's own Esc listener reopened it (fixed in
-  b9b6eb1: the lab ignores a key the shell marked handled).
-- Screenshots looked at from run 1 (out/screens/shell-menu/): `hub-play-1280` (three cards, lobby row, tab bar
-  with Q/E caps, prompt plate; the PRACTICE card's kicker overlapped its title: fixed), `deploy-pad-1280` (class
-  outlook "HEAVY VEHICLE · 1 PAD CAN TAKE IT", Ka Lae with local solar time and sun elevation, LC-1 free; the site
-  view showed too much black sky: camera moved overhead), `flight-menu-1280` over the sunlit pad (panels legible
-  on the scrim; the free subtitle and status line were NOT legible over the sky: vignette and text shadows added).
-  Also saved, not yet looked at: `title-1280`, `deploy-vehicle-1280`, `deploy-briefing-1280`, `transit-1280`,
-  `flight-1280`.
-- Run 2 (all 7 tests, at b9b6eb1): every test failed at page init: the vessel-visual feature reports
-  `vehicle: part "<id>" has no visual definition` for the 32 parts of the vehicles fleet-data added today. The lab
-  now leaves that feature out (31201be; its vessel is the fake's stand-in without parts).
-- Run 3 (all 7 tests, at 31201be; it waited 26 minutes behind the lead's image gate): test 1 failed at the
-  vehicle step because the spec expected `vehicle-meridian-lunar` focused, and fleet-data's new vehicles sort
-  before it (the spec now accepts the first vehicle and pad of whatever the library holds); test 2 failed at
-  `page.goBack()`: Chrome SKIPS a history entry pushed without a user gesture, so Back left the page (the trap now
-  pushes its entry on the first key or pointer press and after each Back; be4199b). Tests 3 and later ran while
-  those two fixes were being written: the dev server reloaded the lab mid-test, so their failures say nothing (test
-  3 timed out waiting for `deploy/vehicle` right after a reload). Log:
-  `C:\Users\Shriv\AppData\Local\Temp\claude\27587f90db9339a2\ba338de1-7e7d-4ce7-bfa7-dd716f0b858a\scratchpad\shell-menu-run3.log`.
-- NEXT: rerun the whole spec at be4199b (or later) on a quiet tree, look at every picture, and fill section 4.
+- Runs 1-3: first builder (run 3's failures of tests 3-7 were the render-latency bug of 822c443, not reloads: the
+  harness's page server has `watch: null`).
+- Run 4 (14723e1, 12 tests, 12.3 min): 7 passed (keyboard flow, Back everywhere, launch queue, three large
+  resolutions, perf), 5 failed: cold start (spec text match), contrast by day (16 texts), night exposure (1.93 EV),
+  slow acknowledgement (stale transit text), mouse (click through a rebuilt control). All five fixed in 1fb6167.
+- Pictures looked at from run 4 (out/screens/shell-menu/): title (wordmark top left, limb, ticker, "Press any
+  key" over the bright limb: plate added), hub-play (cards, lobby row, tabs; panels touched: gap added),
+  deploy-vehicle and hub-hangar (detail overflowed the screen over the status line: moved to the right column;
+  empty space where the vehicle should be: turntable added), deploy-pad 1280 and 4K (list ran off the screen:
+  scrolls now; "free in 0:00" for an occupied pad: the lobby's tick is used now), deploy-briefing (Launch card
+  under the panel: right column now), launch-queue-reconnecting (banner over the tabs: moved right),
+  flight-menu (subtitle weak over the sky: full ink + top vignette), hub-universe and hub-credits (ran off the
+  screen: the column scrolls, up/down scroll it), hub-settings (clean), flight-night-handover (flood-lit pad).
+- Run 5 (1fb6167): RUNNING when this was written.

@@ -13,7 +13,7 @@
  */
 import { fetchDefSource } from '@/core/defs/fetchSource';
 import { loadDefs } from '@/core/defs/loader';
-import { padLocationOf, padOf } from '@/core/defs/sites';
+import { padLocationOf, padOf, padsOf } from '@/core/defs/sites';
 import type { LinkState, UniverseRules } from '@/core/contracts/net';
 import type { SpawnRequest } from '@/core/contracts/session';
 import type { BodySnapshot } from '@/core/contracts/sim';
@@ -92,7 +92,9 @@ async function boot(): Promise<void> {
     link: (query.get('link') as LinkState['state'] | null) ?? 'online',
     admission: query.get('admission') === 'queued' ? { status: 'queued', position: 214, etaSeconds: 190 } : undefined,
   });
-  if (query.get('refuse') === '1') fixture.refuseNext('The pad was taken a moment before you.', { site: site.id, pad: padOf(site).id });
+  // &refuse=1: the first launch is refused with another pad of the first pad's class as the alternative.
+  const altPad = padsOf(site).find((p) => p.id !== padOf(site).id && p.class === padOf(site).class) ?? padOf(site);
+  if (query.get('refuse') === '1') fixture.refuseNext('The pad was taken a moment before you.', { site: site.id, pad: altPad.id });
   const practice = createMenuFixture(defs, { rulesId: 'local', padLoad: 'free', link: 'local' });
 
   // ------------------------------------------------------------------------------------------------ camera
