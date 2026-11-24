@@ -41,7 +41,7 @@ Must NOT change: the shipped bodies' seven stated limits (they stay as the first
 Made on a clean worktree of HEAD (06b05ba) exactly as requested (`WARP_LEVELS` with 1e6 and 1e7,
 `BodyDef.warpAltitudeLimits?`): `npm run typecheck` clean after two narrowings in tests
 (`src/core/defs/loader.test.ts:68`, `tests/unit/solar-system/bodySystem.test.ts:228`: the Earth's stated
-list read with `!`), and THE MISSION FLIES 36 OF 36 AT THE GOLDEN 72c0893583aa427d: the pilot's margin
+list read with `!`), and THE MISSION FLIES 36 OF 36 AT THE GOLDEN f6efbe54f52a40de (the golden of that HEAD): the pilot's margin
 never reaches the two new levels, so the flight does not move. NOT COMMITTED, because the headless suites do
 not stay green without changing a recording of a package that is in the middle of its work:
 - `tests/unit/sim-world/viewReference.test.ts` (island-core's snapshot reference of the wave-3 World, 200
@@ -56,3 +56,10 @@ not stay green without changing a recording of a package that is in the middle o
 With the table at eleven levels and everything else of this note in place those three files pass. The
 patch is two edits in `src/core/contracts/defs.ts` and the two narrowings; it goes in with the reference's
 re-record, in one commit, as the migration row says.
+
+**Correction (lead, 2026-11-24, later the same day).** The hash in the lead note above was first written
+as `72c0893583aa427d`. That was wrong: the worktree was of HEAD 06b05ba, whose `tests/mission/golden.json`
+already held island-core's re-baseline of 91119ab, `f6efbe54f52a40de`, and the mission test compares with
+that file. The run flew 36 of 36 to `f6efbe54f52a40de`; the hash had been written from memory and not read
+from the run. The conclusion is unchanged (the golden of that HEAD is met with the change in). The messages
+of the commits d4d6d61, efc708f and 60c2da1 carry the wrong hash and cannot be changed.

@@ -1462,7 +1462,8 @@ get real cabins is the user's decision (OPEN_QUESTIONS Q15).
   hour by the class of the VEHICLE are: heavy 144 (the 6 heavy pads only), medium 336 (its 8 pads and the 6
   heavy: 14), light 600 (all 25). Nothing
   in the engine, the tests or the menu states a pad count or a rate: counts come from the site files,
-  rates from `pads x 3600 / cycle` with the cycle of the rules. What a player count needs is in 16.3.
+  rates from `pads x 3600 / cycle` with the cycle of the rules (`UniverseRules.pads.meanCycle`, 150 s: the
+  planning number; no timer of a pad is run by it). What a player count needs is in 16.3.
 
 ### 9.4 Pad rules (each timer names its base, section 3; all `UniverseRules` fields)
 

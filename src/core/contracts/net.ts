@@ -142,6 +142,19 @@ export interface UniverseRules {
     cohortOfferWait: number;
     /** 6.2: how far a single-owner island may trail its pilot (the commit lag cap). 0 in the first release. */
     lagCap: number;
+    /**
+     * 6.2 (request island-core-2): when an unattended member that is not stepped must be stepped again. It is
+     * watched for a threshold coming near: a part's skin above `watchTemperatureFraction` of its limit, a
+     * joint above `watchJointFraction` of its load limit, or the ground within `watchGroundTime` (s) at its
+     * present rate of descent. Fractions in 0..1. Defaults 0.9, 0.8, 2 s.
+     */
+    watchTemperatureFraction: number;
+    watchJointFraction: number;
+    watchGroundTime: number;
+    /** 6.2 (request island-core-2): the step of the Reduced tier, s (a whole number of ticks). Default 0.5 s. */
+    reducedStep: number;
+    /** 6.2 (request island-core-2): a member that has coasted with nothing acting on it this long goes on rails, s. Default 0.5 s. */
+    coastTimeToRails: number;
   };
 
   /** Claiming a passive vessel and materialising beside one (ARCHITECTURE U4, U5, 7.3). */
@@ -163,6 +176,21 @@ export interface UniverseRules {
     clearingTime: number;
     clearingAccelMax: number;
     clearingTimeout: number;
+    /**
+     * 7.3 (request island-core-2): how often the Armed tier tests an unattended member against the armed
+     * margins, s (a whole number of ticks: 12 ticks, 10 Hz). Default 0.1 s.
+     */
+    armedTestInterval: number;
+    /**
+     * 7.3 (request island-core-2): the worst-case mutual acceleration assumed when the time for two members
+     * to reach each other is estimated, m/s^2. Default 60.
+     */
+    reachAcceleration: number;
+    /**
+     * 6.2 (request island-core-2): an island's reference orbit is replaced when a member is further from it
+     * than this, m. Default 30 km.
+     */
+    referenceOffsetMax: number;
   };
 
   /** Loss of a socket and leaving (ARCHITECTURE U16). */
@@ -257,6 +285,13 @@ export interface UniverseRules {
     clearDistance: number;
     /** Safing after clearance; wreckage inside the keep-out radius is removed at its end. Default 20 s. */
     safingTime: number;
+    /**
+     * The mean cycle of a pad, s (request shell-menu-1; ARCHITECTURE 5.9, 9.3): dwell, lift-off, clearance
+     * and safing of one launch, as planned for. It is the planning number the menu shows launches per hour
+     * with (`pads of the class and above x 3600 / meanCycle`) and the launch complex is sized with; no timer
+     * of a pad is run by it. Default 150 s (24 launches per pad-hour).
+     */
+    meanCycle: number;
     /** Keep-out radius by pad class (a pad's own `keepOutRadius` overrides it). Defaults 300 / 450 / 600 m. */
     keepOutRadius: Record<PadClass, number>;
     /**
@@ -444,6 +479,11 @@ export const DEFAULT_UNIVERSE_RULES: UniverseRules = {
     cohortHorizon: 14 * DAY,
     cohortOfferWait: 60,
     lagCap: 0,
+    watchTemperatureFraction: 0.9,
+    watchJointFraction: 0.8,
+    watchGroundTime: 2,
+    reducedStep: 0.5,
+    coastTimeToRails: 0.5,
   },
   claim: {
     joinDistanceBase: 1000,
@@ -457,6 +497,9 @@ export const DEFAULT_UNIVERSE_RULES: UniverseRules = {
     clearingTime: 15,
     clearingAccelMax: 0.5,
     clearingTimeout: 30,
+    armedTestInterval: 0.1,
+    reachAcceleration: 60,
+    referenceOffsetMax: 30_000,
   },
   disconnect: {
     pingInterval: 1,
@@ -511,6 +554,7 @@ export const DEFAULT_UNIVERSE_RULES: UniverseRules = {
     clearAltitude: 1500,
     clearDistance: 1000,
     safingTime: 20,
+    meanCycle: 150,
     keepOutRadius: { light: 300, medium: 450, heavy: 600 },
     classLimits: {
       light: { ...DEFAULT_PAD_CLASS_LIMITS.light },
@@ -619,6 +663,11 @@ export const UNIVERSE_RULE_TIMERS: Readonly<Record<string, TimerBase>> = {
   'pads.maxStayUpTime': 'upTime',
   'pads.disconnectGrace': 'upTime',
   'pads.safingTime': 'ticks',
+  'pads.meanCycle': 'ticks',
+  'claim.armedTestInterval': 'ticks',
+  'time.watchGroundTime': 'ticks',
+  'time.reducedStep': 'ticks',
+  'time.coastTimeToRails': 'ticks',
   'pads.restRecoveryTime': 'ticks',
   'expiry.craftRetention': 'wall',
   'expiry.unownedAssemblyRetention': 'wall',

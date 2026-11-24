@@ -68,4 +68,11 @@ Followed: `src/core/contracts/net.test.ts` (the default's numbers) and, in your 
 provisional limits itself (medium 7 m) and keeps its three findings, and a test beside it holds that the
 defaults ARE the proposed limits and report nothing. What rule 7a asks of a rules change, on a clean
 worktree of HEAD (06b05ba) with this change: codec 29 of 29, pins 3 of 3, the mission 36 of 36 at the golden
-72c0893583aa427d.
+f6efbe54f52a40de.
+
+**Correction (lead, 2026-11-24, later the same day).** The hash in the resolution above was first written
+as `72c0893583aa427d`. That was wrong: the worktree was of HEAD 06b05ba, whose `tests/mission/golden.json`
+already held island-core's re-baseline of 91119ab, `f6efbe54f52a40de`, and the mission test compares with
+that file. The run flew 36 of 36 to `f6efbe54f52a40de`; the hash had been written from memory and not read
+from the run. The conclusion is unchanged (the golden of that HEAD is met with the change in). The messages
+of the commits d4d6d61, efc708f and 60c2da1 carry the wrong hash and cannot be changed.

@@ -37,5 +37,12 @@ case: `createModuleState` in `src/sim/vessel/assemble.ts` (`case 'dockingPort': 
 the wider type and the cast are gone from that function) and `restingState` in `labs/audio/labVehicle.ts`.
 `asModuleState` and the wider type in `src/sim/vessel/modules/dockingPortState.ts` and `staging.ts` are
 yours to simplify; they still compile. No existing part, no codec layout and no hash changed: the mission
-flew 36 of 36 at the golden 72c0893583aa427d on a clean worktree of HEAD (06b05ba) with this change and the
+flew 36 of 36 at the golden f6efbe54f52a40de on a clean worktree of HEAD (06b05ba) with this change and the
 class limits of request fleet-data-4.
+
+**Correction (lead, 2026-11-24, later the same day).** The hash in the resolution above was first written
+as `72c0893583aa427d`. That was wrong: the worktree was of HEAD 06b05ba, whose `tests/mission/golden.json`
+already held island-core's re-baseline of 91119ab, `f6efbe54f52a40de`, and the mission test compares with
+that file. The run flew 36 of 36 to `f6efbe54f52a40de`; the hash had been written from memory and not read
+from the run. The conclusion is unchanged (the golden of that HEAD is met with the change in). The messages
+of the commits d4d6d61, efc708f and 60c2da1 carry the wrong hash and cannot be changed.

@@ -1509,3 +1509,19 @@ failed twice, both times on a tree that moved under the run.**
   clipped-white and mean-level numbers), rule 15a, STATUS, the LEAD NOTES of `shell-menu` and
   `capability-settings`. The budget baseline is NOT re-recorded (it predates the flip; look 2 adds 0.007 ms
   to the tonemap and exposure line).
+
+**Correction to this section (2026-11-24, 14:10).** Where the lead items above say the mission flew at "the
+golden" on the clean worktree of 06b05ba, the hash was reported to the lead and written into three commit
+messages and three request files as `72c0893583aa427d`. It was `f6efbe54f52a40de`: that HEAD's
+`golden.json` already held island-core's re-baseline of 91119ab, and the hash had been written from memory
+instead of read from the run. The request files are corrected; the commit messages cannot be. RULE FOR
+THE NEXT RUN: a reported hash is read from `tests/mission/golden.json` of the tree that flew, in the same
+command as the run.
+
+**Later the same day.** Rule fields: `pads.meanCycle` (request shell-menu-1) and the island's eight
+constants (request island-core-2), each with today's value; the wire's rules document carries them, and
+request `lead-10` asks wire-protocol for the wire form of the SAS velocity reference and for its word on
+the longer rules message. MIGRATION_V2 principle 5 counts island-core's re-baseline (seven in all). The
+shared tree's mission stood at 35 of 37 at that time with golden `f0c0855ea40d8c59`: the two failures are
+the trajectory guard's clamp and debris entries under formation by the join distance (island-core-1,
+accepted), which the lead re-records when island-core's successor reports with its table.

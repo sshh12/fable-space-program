@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (lead, 2026-11-24: `UniverseRules.pads.meanCycle`)
 From: shell-menu
 Owner path: src/core/contracts/net.ts (`UniverseRules.pads`), data/defs/rules/*.json
 Blocking: no (the pad screen states the pads and the wait per class; the launches per hour wait for this field)
@@ -20,3 +20,13 @@ A field `UniverseRules.pads.meanCycle: number` (s, base 'ticks'), default 150 in
 `UNIVERSE_RULE_TIMERS`, stated by every rules document as the lead decides. The app then passes
 `padCycleSeconds: (rules) => rules.pads.meanCycle` to `createShell` (one line); nothing in src/shell changes.
 Nothing else in the contract should change.
+
+## Resolution (lead, 2026-11-24)
+
+`UniverseRules.pads.meanCycle: number` (s; `'pads.meanCycle': 'ticks'` in `UNIVERSE_RULE_TIMERS`), default 150
+in `DEFAULT_UNIVERSE_RULES`, so every rules document has it (a rules file is the default with its own values
+over it; no file under `data/defs/rules` changed). It is the PLANNING number (dwell, lift-off, clearance and
+safing of one launch as the complex is sized with, ARCHITECTURE 5.9 and 9.3); no timer of a pad is run by
+it. The app's one line is yours: `padCycleSeconds: (rules) => rules.pads.meanCycle`. Launches per hour by
+the class of the vehicle with the release complex: heavy 144, medium 336, light 600 (ARCHITECTURE 9.3).
+The wire's rules document carries the field (`src/net/codec/common.ts`).

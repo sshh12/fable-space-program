@@ -1,4 +1,4 @@
-Status: open
+Status: resolved for the lead's files (2026-11-24); the wire form of the velocity reference is request lead-10 to wire-protocol
 From: island-core
 Owner path: src/core/contracts/net.ts (`UniverseRules`, `WireCommand` / `InputSample`), docs/MIGRATION_V2.md (principle 5)
 Blocking: no
@@ -36,3 +36,32 @@ Three things the island needs from the lead's files; each has a workaround insid
    'surface' | 'orbit' }`, or a bit of `InputSample`.
 3. MIGRATION_V2 principle 5 counts the re-baseline of 91119ab (and the one that formation by the join
    distance will need, request island-core-1).
+
+## Resolution (lead, 2026-11-24)
+
+1. **Rule fields**, each with the value the island's code uses today (nothing reads them yet, so nothing
+   moves; durations in seconds, as every rule):
+
+   | Field | Default | The constant it replaces |
+   |---|---|---|
+   | `claim.armedTestInterval` | 0.1 s (12 ticks, 10 Hz; base 'ticks') | `ARMED_TEST_TICKS` |
+   | `claim.reachAcceleration` | 60 m/s^2 | `REACH_ACCELERATION` |
+   | `claim.referenceOffsetMax` | 30,000 m | the offset at which a reference orbit is replaced (not built yet) |
+   | `time.watchTemperatureFraction` | 0.9 | `WATCH_TEMPERATURE_FRACTION` |
+   | `time.watchJointFraction` | 0.8 | `WATCH_JOINT_FRACTION` |
+   | `time.watchGroundTime` | 2 s (base 'ticks') | `WATCH_GROUND_TIME` |
+   | `time.reducedStep` | 0.5 s (base 'ticks') | `REDUCED_DT` |
+   | `time.coastTimeToRails` | 0.5 s (base 'ticks') | `COAST_TIME_TO_RAILS` |
+
+   The three watch fields are flat members of `time`, not an object: every rule path is `group.field`
+   (the timers table and its test read them that way). The interval is stated in seconds like every
+   duration; convert with `Math.round(seconds * TICKS_PER_SECOND)` (0.1 x 120 is 12.000000000000002 in
+   floating point). The wire's rules document carries all eight (`src/net/codec/common.ts`).
+2. **The velocity reference on the wire** is not the lead's to add: `WireCommand`, `InputSample` and
+   `WireControlState` are the wire section of net.ts, which is wire-protocol's. The session already has the
+   command (`PlayerCommands.setNavballMode`); what is missing is its wire form. Request
+   `docs/requests/lead-10.md` asks wire-protocol for it, with the exact member.
+3. **MIGRATION_V2 principle 5 counts the re-baseline of 91119ab** (`f6efbe54f52a40de`, behind the EXACT
+   comparison of the record before and after). The one that formation by the join distance needs is
+   counted when island-core's successor reports with its table and the trajectory guard's debris entries
+   are re-recorded (request island-core-1, accepted).
