@@ -124,6 +124,45 @@ test('a slow acknowledgement holds the transit in its drift at the hold altitude
   await expectNoErrors(page, pageLog);
 });
 
+test('the first Play: a callsign checked as typed, taken with suggestions, created, the recovery code once; then the Hangar turntable', async ({ page, pageLog }) => {
+  await openLab(page, '&queue=free&identity=new');
+  await press(page, 'Enter', 'hub/play', 'launch');
+  await press(page, 'Enter', 'hub/play/identity', 'callsign');
+  await page.keyboard.type('kestrel-41');
+  await expect(page.locator('[data-testid="callsign-verdict"]')).toContainText('is taken');
+  await expect(page.locator('[data-testid="callsign-verdict"] .sh-chip').first()).toHaveText('KESTREL-41-2');
+  await page.keyboard.press('Enter');
+  expect((await hooks(page)).state).toBe('hub/play/identity');
+  await page.locator('[data-focus="callsign"]').fill('a!');
+  await expect(page.locator('[data-testid="callsign-verdict"]')).toContainText('A callsign is');
+  await page.locator('[data-focus="callsign"]').fill('');
+  await page.keyboard.type('heron-9');
+  await expect(page.locator('[data-testid="callsign-verdict"]')).toContainText('HERON-9 is available');
+  await shot(page, 'identity-callsign-1280');
+  await press(page, 'Enter', undefined, 'recovery-saved');
+  await expect(page.locator('[data-testid="recovery-code"] .sh-code')).toHaveText(/^([2-9A-HJ-NP-Z]{4}-){4}[2-9A-HJ-NP-Z]{4}$/);
+  await shot(page, 'identity-recovery-1280');
+  // The code is shown once: Back does not leave it; the card goes on to the deploy flow.
+  await press(page, 'Escape');
+  expect((await hooks(page)).focus).toBe('recovery-saved');
+  await press(page, 'Enter', 'deploy/vehicle', 'vehicle-*');
+  await expect(page.locator('.sh-top-right')).toContainText('HERON-9');
+  // Only presentable vehicles are offered: the others are listed, disabled.
+  const offered = await page.locator('.sh-main [data-focus^="vehicle-"]:not([aria-disabled="true"])').count();
+  const listed = await page.locator('.sh-main [data-focus^="vehicle-"]').count();
+  expect(offered).toBeGreaterThan(0);
+  console.log(`[fleet] ${offered} of ${listed} vehicles offered`);
+  await press(page, 'Escape', 'hub/play');
+  await press(page, 'KeyE', 'hub/hangar');
+  await page.evaluate(() => window.__test!.waitFrames(150));
+  await shot(page, 'hub-hangar-turntable-1280');
+  await press(page, 'KeyL');
+  await press(page, 'KeyI');
+  await page.evaluate(() => window.__test!.waitFrames(60));
+  await shot(page, 'hub-hangar-turntable-turned-1280');
+  await expectNoErrors(page, pageLog);
+});
+
 for (const [w, h] of [
   [2560, 1440],
   [3840, 2160],

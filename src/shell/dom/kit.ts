@@ -61,7 +61,7 @@ const SHELL_CSS = `
   --ink: ${C.text}; --ink-2: ${C.label}; --ink-3: ${C.dim};
   --accent: ${C.accent}; --ok: ${C.good}; --warn: ${C.caution}; --alert: ${C.warning};
   --line: ${C.line};
-  --fill: rgba(9, 13, 19, 0.58); --fill-strong: rgba(9, 13, 19, 0.74); --fill-focus: rgba(30, 52, 70, 0.62);
+  --fill: rgba(9, 13, 19, 0.66); --fill-strong: rgba(9, 13, 19, 0.8); --fill-focus: rgba(30, 52, 70, 0.72);
   --t-fast: 120ms; --t-base: 220ms; --t-exit: 160ms; --t-screen: 420ms;
   --ease: cubic-bezier(0.2, 0, 0, 1); --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   position: fixed; inset: 0; pointer-events: none; color: var(--ink);
@@ -75,8 +75,9 @@ const SHELL_CSS = `
 /* A gradient vignette behind the left columns and the bottom bands: free text (titles, the status line) stays
    legible over a bright scene. A plain gradient over the canvas: no blur, no blend (frontend-ux fact 7). */
 .sh-vignette { position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(90deg, rgba(4, 7, 11, 0.66) 0%, rgba(4, 7, 11, 0.44) 30%, rgba(4, 7, 11, 0.12) 48%, rgba(4, 7, 11, 0) 60%),
-              linear-gradient(0deg, rgba(4, 7, 11, 0.55) 0%, rgba(4, 7, 11, 0) 16%); }
+  background: linear-gradient(90deg, rgba(4, 7, 11, 0.7) 0%, rgba(4, 7, 11, 0.5) 30%, rgba(4, 7, 11, 0.14) 48%, rgba(4, 7, 11, 0) 60%),
+              linear-gradient(180deg, rgba(4, 7, 11, 0.62) 0%, rgba(4, 7, 11, 0.3) 9%, rgba(4, 7, 11, 0) 18%),
+              linear-gradient(0deg, rgba(4, 7, 11, 0.6) 0%, rgba(4, 7, 11, 0) 16%); }
 .sh-title, .sh-subtitle, .sh-status, .sh-wordmark, .sh-begin, .sh-tab, .sh-top-right { text-shadow: 0 0 0.5em rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.6); }
 .sh-safe {
   position: absolute; left: 50%; top: 50%;
@@ -87,9 +88,27 @@ const SHELL_CSS = `
   grid-template-rows: auto 1fr auto auto;
 }
 .sh-top { grid-column: 1 / -1; grid-row: 1; display: flex; align-items: center; gap: calc(2.2 * var(--u)); min-height: calc(7 * var(--u)); }
-.sh-main { grid-column: 1 / span 5; grid-row: 2; min-height: 0; display: flex; flex-direction: column; gap: calc(1.6 * var(--u)); padding-top: calc(2.4 * var(--u)); }
+.sh-main { grid-column: 1 / span 5; grid-row: 2; min-height: 0; display: flex; flex-direction: column; gap: calc(1.6 * var(--u)); padding-top: calc(2.4 * var(--u)); padding-bottom: calc(1.6 * var(--u)); overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
+.sh-main::-webkit-scrollbar, .sh-scroll::-webkit-scrollbar { display: none; }
+.sh-screen > * { display: flex; flex-direction: column; gap: calc(1.4 * var(--u)); flex-shrink: 0; }
+.sh-screen > * > * { flex-shrink: 0; }
 .sh-main.sh-wide { grid-column: 1 / span 7; }
-.sh-aside { grid-column: 9 / span 4; grid-row: 2; align-self: end; display: flex; flex-direction: column; gap: calc(1.2 * var(--u)); }
+.sh-aside { grid-column: 8 / span 5; grid-row: 2 / span 2; align-self: end; display: flex; flex-direction: column; gap: calc(1.2 * var(--u)); min-height: 0; max-height: 100%; padding-bottom: calc(1.6 * var(--u)); }
+.sh-main.sh-wide ~ .sh-aside { grid-column: 9 / span 4; }
+.sh-scroll, .sh-list.sh-scroll { overflow-y: auto; scrollbar-width: none; max-height: calc(44 * var(--u)); overscroll-behavior: contain; }
+.sh-commit { min-height: calc(13 * var(--u)); border-color: rgba(85, 212, 255, 0.55); }
+.sh-commit .sh-card-title { font-size: max(26px, calc(3.6 * var(--u))); }
+.sh-detail-title { font-family: ${SHELL_FONTS.display}; font-weight: 700; font-size: max(24px, calc(3.4 * var(--u))); text-transform: uppercase; line-height: 1; margin: calc(0.4 * var(--u)) 0 calc(0.8 * var(--u)); }
+.sh-panel .sh-body + .sh-body { margin-top: calc(0.5 * var(--u)); }
+.sh-panel > * + .sh-label, .sh-panel > * + .sh-readouts, .sh-panel > * + .sh-ladder { margin-top: calc(1.3 * var(--u)); }
+.sh-panel > .sh-label + * { margin-top: calc(0.45 * var(--u)); }
+.sh-row.sh-static { cursor: default; }
+.sh-code { font-family: ${SHELL_FONTS.display}; font-weight: 700; font-feature-settings: 'tnum' 1; font-size: max(26px, calc(3.6 * var(--u))); letter-spacing: 0.08em; margin: calc(0.6 * var(--u)) 0 calc(1.0 * var(--u)); user-select: text; }
+.sh-callsign-row { display: flex; align-items: center; gap: calc(1.0 * var(--u)); }
+.sh-callsign-row .sh-field { flex: 1; }
+.sh-verdict { min-height: 1.6em; margin: calc(0.8 * var(--u)) 0 calc(0.4 * var(--u)); font-family: ${SHELL_FONTS.label}; font-weight: 600; letter-spacing: 0.06em; display: flex; flex-wrap: wrap; align-items: center; gap: calc(0.8 * var(--u)); }
+.sh-chip { font: inherit; color: var(--ink); background: var(--fill-strong); border: 1px solid var(--line); border-radius: 2px; padding: calc(0.2 * var(--u)) calc(0.8 * var(--u)); cursor: pointer; pointer-events: auto; }
+.sh-chip.is-focus { border-color: var(--accent); color: var(--accent); }
 .sh-status { grid-column: 1 / span 7; grid-row: 3; align-self: end; font-family: ${SHELL_FONTS.label}; font-weight: 500; font-size: max(12px, calc(1.25 * var(--u))); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); padding-bottom: calc(0.8 * var(--u)); contain: layout; }
 .sh-prompts { grid-column: 6 / -1; grid-row: 4; justify-self: end; display: flex; gap: calc(2 * var(--u)); align-items: center; min-height: calc(4.5 * var(--u)); }
 .sh-pointer { pointer-events: auto; }
@@ -103,7 +122,7 @@ const SHELL_CSS = `
 .sh-wordmark .sh-wm-2 { font-weight: 500; font-size: 0.42em; letter-spacing: 0.32em; color: var(--ink-2); margin-top: calc(1.2 * var(--u)); }
 .sh-title { font-family: ${SHELL_FONTS.display}; font-weight: 700; text-transform: uppercase; font-size: max(34px, calc(5.2 * var(--u))); line-height: 0.95; letter-spacing: 0.005em; margin: 0; }
 .sh-title::after { content: ''; display: block; width: calc(6 * var(--u)); height: max(2px, calc(0.25 * var(--u))); background: var(--accent); margin-top: calc(1.2 * var(--u)); }
-.sh-subtitle { font-family: ${SHELL_FONTS.label}; font-weight: 500; font-size: max(14px, calc(1.6 * var(--u))); color: var(--ink-2); letter-spacing: 0.02em; margin: 0; }
+.sh-subtitle { font-family: ${SHELL_FONTS.label}; font-weight: 500; font-size: max(14px, calc(1.6 * var(--u))); color: var(--ink); letter-spacing: 0.02em; margin: 0; }
 .sh-label { font-family: ${SHELL_FONTS.label}; font-weight: 600; font-size: max(12px, calc(1.25 * var(--u))); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
 .sh-body { font-size: max(14px, calc(1.5 * var(--u))); color: var(--ink); margin: 0; }
 .sh-body.sh-dim { color: var(--ink-2); }
@@ -115,8 +134,9 @@ const SHELL_CSS = `
 .sh-tab[aria-selected="true"] { color: var(--ink); }
 .sh-tab[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: calc(-0.4 * var(--u)); height: max(2px, calc(0.25 * var(--u))); background: var(--accent); }
 .sh-tab.is-focus { color: var(--accent); }
-.sh-top-right { margin-left: auto; display: flex; gap: calc(2.2 * var(--u)); align-items: center; font-family: ${SHELL_FONTS.label}; font-weight: 600; font-size: max(12px, calc(1.3 * var(--u))); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); contain: layout; }
-.sh-top-right b { color: var(--ink); font-weight: 600; }
+.sh-top-right { margin-left: auto; display: flex; gap: calc(2.2 * var(--u)); align-items: center; font-family: ${SHELL_FONTS.label}; font-weight: 600; font-size: max(12px, calc(1.3 * var(--u))); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); contain: layout; background: var(--fill); border: 1px solid var(--line); border-radius: 2px; padding: calc(0.5 * var(--u)) calc(1.2 * var(--u)); }
+.sh-top-right:empty { display: none; }
+.sh-top-right b { color: var(--ink); font-weight: 700; }
 .sh-dot { display: inline-block; width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--ok); margin-right: 0.45em; vertical-align: 0.05em; }
 .sh-dot.sh-warn-bg { background: var(--warn); } .sh-dot.sh-alert-bg { background: var(--alert); } .sh-dot.sh-off { background: var(--ink-3); }
 
@@ -157,13 +177,14 @@ const SHELL_CSS = `
 
 .sh-queue { border-left: max(3px, calc(0.3 * var(--u))) solid var(--warn); }
 .sh-queue .sh-queue-place { font-family: ${SHELL_FONTS.display}; font-weight: 700; font-size: max(28px, calc(4.2 * var(--u))); line-height: 1; font-feature-settings: 'tnum' 1; }
-.sh-banner { position: absolute; left: 50%; top: calc(9 * var(--u)); transform: translateX(-50%); min-width: calc(60 * var(--u)); max-width: 90vw; text-align: center; }
+.sh-banner { position: absolute; right: calc(5 * var(--u)); top: calc(13 * var(--u)); width: calc(52 * var(--u)); max-width: 40vw; text-align: left; display: flex; flex-direction: column; gap: calc(1.0 * var(--u)); }
 .sh-banner .sh-label { color: var(--warn); }
 .sh-field { width: 100%; font-family: ${SHELL_FONTS.display}; font-weight: 600; font-size: max(18px, calc(2.2 * var(--u))); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink); background: rgba(9, 13, 19, 0.72); border: 1px solid var(--line); border-radius: 2px; padding: calc(0.6 * var(--u)) calc(1.0 * var(--u)); outline: none; pointer-events: auto; }
 .sh-field.is-focus, .sh-field:focus { border-color: var(--accent); }
 .sh-ticker { font-family: ${SHELL_FONTS.label}; font-weight: 500; font-size: max(13px, calc(1.4 * var(--u))); color: var(--ink); letter-spacing: 0.04em; }
 .sh-ticker::before { content: ''; display: inline-block; border-left: 0.55em solid var(--accent); border-top: 0.32em solid transparent; border-bottom: 0.32em solid transparent; margin-right: 0.7em; vertical-align: 0.05em; }
-.sh-begin { grid-column: 1 / -1; grid-row: 2; align-self: end; justify-self: center; text-align: center; margin-bottom: calc(6 * var(--u)); }
+.sh-begin { grid-column: 1 / -1; grid-row: 2; align-self: end; justify-self: center; text-align: center; margin-bottom: calc(6 * var(--u)); background: var(--fill-strong); border: 1px solid var(--line); border-radius: 2px; padding: calc(1.0 * var(--u)) calc(2.6 * var(--u)); }
+.sh-begin[hidden] { display: none; }
 .sh-begin .sh-label { font-size: max(15px, calc(1.8 * var(--u))); letter-spacing: 0.32em; color: var(--ink); }
 .sh-progress { display: grid; grid-template-columns: 1fr auto; gap: 0.2em 1.4em; font-family: ${SHELL_FONTS.label}; font-weight: 500; font-size: max(12px, calc(1.25 * var(--u))); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
 .sh-progress .sh-num { color: var(--ink); text-align: right; }
@@ -283,10 +304,23 @@ export function scrimRectsOf(root: HTMLElement, canvasRect: DOMRect, dpr: number
   for (const e of Array.from(root.querySelectorAll<HTMLElement>('[data-scrim]'))) {
     const r = e.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
-    const x0 = Math.max(0, (r.left - canvasRect.left) * dpr);
-    const y0 = Math.max(0, (r.top - canvasRect.top) * dpr);
-    const x1 = Math.min(canvasRect.width * dpr, (r.right - canvasRect.left) * dpr);
-    const y1 = Math.min(canvasRect.height * dpr, (r.bottom - canvasRect.top) * dpr);
+    // What of the panel is seen: its box clipped by every scrolling ancestor (a long list or column scrolled).
+    let left = r.left;
+    let top = r.top;
+    let right = r.right;
+    let bottom = r.bottom;
+    for (let a = e.parentElement; a && a !== root; a = a.parentElement) {
+      if (a.scrollHeight <= a.clientHeight + 1 && a.scrollWidth <= a.clientWidth + 1) continue;
+      const c = a.getBoundingClientRect();
+      left = Math.max(left, c.left);
+      top = Math.max(top, c.top);
+      right = Math.min(right, c.right);
+      bottom = Math.min(bottom, c.bottom);
+    }
+    const x0 = Math.max(0, (left - canvasRect.left) * dpr);
+    const y0 = Math.max(0, (top - canvasRect.top) * dpr);
+    const x1 = Math.min(canvasRect.width * dpr, (right - canvasRect.left) * dpr);
+    const y1 = Math.min(canvasRect.height * dpr, (bottom - canvasRect.top) * dpr);
     if (x1 - x0 < 1 || y1 - y0 < 1) continue;
     out.push({ x0, y0, x1, y1, cornerRadius: 2 * dpr, blur: Number(e.dataset['scrim'] || '0.6'), dim: Number(e.dataset['scrimDim'] || '0.42'), opacity });
   }

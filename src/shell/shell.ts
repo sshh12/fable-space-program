@@ -17,6 +17,7 @@
  */
 import type { SpawnRequest } from '@/core/contracts/session';
 import { activate, el, focusable, installShellStyles, nextInDirection, scrimRectsOf, type Direction, type ScrimRect } from './dom/kit';
+import { identityScreen, newIdentityFlow, type IdentityFlow } from './identity';
 import { createShellMachine, HUB_TABS, stateName, type ShellEvent, type ShellMachine, type ShellState } from './machine';
 import * as S from './screens';
 import { createSpawnFlow, type SpawnFlow } from './spawnFlow';
@@ -84,6 +85,8 @@ export function createShell(deps: ShellDeps): Shell {
   let focusId: string | null = null;
   const focusMemory = new Map<string, string>();
   let dirty = true;
+  /** True while the only reason to rebuild is a store change. */
+  let storeOnly = false;
   let textClock = 0;
   /** Test hooks: text refreshes on the text clock (rebuilds and live text), and screen changes (drawn at once). */
   let textRefreshes = 0;
@@ -92,6 +95,8 @@ export function createShell(deps: ShellDeps): Shell {
   let lastScrim = '';
   let lastScrimCount = 0;
   let overlayPanel: 'controls' | 'rules' | 'settings' | null = null;
+  /** The identity screen's state across its rebuilds (the first Play). */
+  let identityFlow: IdentityFlow = newIdentityFlow();
 
   // A change of screen is drawn at once (the next key acts on what the player sees: a key pressed in the frame
   // after a change must not reach the screen before it); store changes and live text wait for the text clock.
@@ -99,6 +104,7 @@ export function createShell(deps: ShellDeps): Shell {
   const send = (e: ShellEvent): void => {
     if (!machine.send(e)) return;
     dirty = true;
+    storeOnly = false;
     if (stateName(machine.state()) !== shown) render();
   };
 
@@ -144,7 +150,13 @@ export function createShell(deps: ShellDeps): Shell {
   // Store changes rebuild the screen (at most at the text rate); the live text refreshes on its own clock.
   const storeOffs: (() => void)[] = [];
   const watchStores = (s: ShellSession): void => {
-    for (const store of [s.stores.pads, s.stores.ships, s.stores.presence, s.stores.rules, s.stores.link, s.stores.launchQueue, s.stores.feed]) storeOffs.push(store.subscribe(() => (dirty = true)));
+    for (const store of [s.stores.pads, s.stores.ships, s.stores.presence, s.stores.rules, s.stores.link, s.stores.launchQueue, s.stores.feed])
+      storeOffs.push(
+        store.subscribe(() => {
+          if (!dirty) storeOnly = true;
+          dirty = true;
+        }),
+      );
   };
   watchStores(deps.lobby);
   if (deps.practice) watchStores(deps.practice);
@@ -157,10 +169,13 @@ export function createShell(deps: ShellDeps): Shell {
     spawn,
     sel,
     send,
-    rebuild: () => (dirty = true),
+    rebuild: () => {
+      dirty = true;
+      storeOnly = false;
+    },
     commit,
-    transitStatus: transitText,
-    holdingSeconds: holding,
+    transitStatus: () => transitText,
+    holdingSeconds: () => holding,
   });
 
   const screenFor = (st: ShellState): S.ScreenView | null => {
@@ -173,6 +188,12 @@ export function createShell(deps: ShellDeps): Shell {
       case 'hub':
         if (st.overlay === 'controls') return S.controlsScreen(c);
         if (st.overlay === 'lobby') return S.lobbyScreen(c);
+        if (st.overlay === 'identity' && deps.identity) {
+          return identityScreen(c, deps.identity, identityFlow, () => {
+            identityFlow = newIdentityFlow();
+            send({ type: 'launch' });
+          });
+        }
         switch (st.tab) {
           case 'play':
             return S.playScreen(c);
@@ -244,6 +265,7 @@ export function createShell(deps: ShellDeps): Shell {
     if (e) tabs.append(el('span', 'sh-key', deps.keys.label(e)));
     const right = el('div', 'sh-top-right');
     right.dataset['live'] = 'top';
+    right.dataset['scrim'] = '0.7';
     top.append(tabs, right);
   };
 
@@ -309,7 +331,8 @@ export function createShell(deps: ShellDeps): Shell {
         send({ type: 'side', side: 'practice', on: true });
         if (machine.state().main === 'hub') send({ type: 'launch' });
       });
-      b.append(el('span', 'sh-key', '↵'), 'Practice offline');
+      const enter = keyOf('menu', 'menu:activate');
+      b.append(...(enter ? [el('span', 'sh-key', deps.keys.label(enter))] : []), 'Practice offline');
       return b;
     };
     const inMenu = st.main === 'hub' || st.main === 'deploy' || st.main === 'title';
@@ -346,10 +369,14 @@ export function createShell(deps: ShellDeps): Shell {
   };
 
   const render = (): void => {
-    dirty = false;
-    textClock = 0;
     const st = machine.state();
     const name = stateName(st);
+    // A store change does not rebuild the screen under a text field being typed in (it would take the caret):
+    // it waits until the field is left. A change of screen or the screen's own rebuild goes ahead.
+    if (storeOnly && name === lastName && document.activeElement instanceof HTMLInputElement && root.contains(document.activeElement)) return;
+    dirty = false;
+    storeOnly = false;
+    textClock = 0;
     shown = name;
     ensureSpawnSession();
     if (focusId) focusMemory.set(lastName, focusId);
@@ -382,14 +409,17 @@ export function createShell(deps: ShellDeps): Shell {
     v.live?.();
     const remembered = changed ? focusMemory.get(name) : focusId;
     setFocus(remembered && root.querySelector(`[data-focus="${remembered}"]`) ? remembered : (v.focus ?? firstFocusable()));
-    if (changed) {
-      scrimFollow = SCRIM_FOLLOW_S;
+    if (changed) scrimFollow = SCRIM_FOLLOW_S;
+    // The camera is framed on a change of screen, and on the turntable again when another craft is chosen.
+    if (changed || (v.subject === 'turntable' && sel.vehicleId !== framedVehicle)) {
+      framedVehicle = sel.vehicleId;
       deps.intent({ kind: 'frame', screen: name, subject: v.subject, vehicleId: sel.vehicleId, siteId: sel.siteId, free: freeArea() });
     }
     lastName = name;
     publishScrim(false);
   };
   let lastName = '';
+  let framedVehicle: string | null = null;
 
   const firstFocusable = (): string | null => root.querySelector<HTMLElement>('.sh-main [data-focus], .sh-banner [data-focus]')?.dataset['focus'] ?? null;
 
@@ -401,6 +431,8 @@ export function createShell(deps: ShellDeps): Shell {
     if (!e) return;
     e.classList.add('is-focus');
     if (document.activeElement !== e) e.focus({ preventScroll: true });
+    // A long list (pads, the fleet) scrolls inside its panel to keep the focus in view.
+    e.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   };
 
   const focusables = (): { id: string; rect: DOMRect }[] =>
@@ -412,12 +444,19 @@ export function createShell(deps: ShellDeps): Shell {
     const all = focusables();
     const cur = all.find((c) => c.id === focusId);
     if (!cur) {
-      setFocus(all[0]?.id ?? null);
+      if (all.length === 0 && (dir === 'up' || dir === 'down')) scrollPage(dir === 'down' ? 1 : -1);
+      else setFocus(all[0]?.id ?? null);
       return true;
     }
     const next = nextInDirection(cur.rect, all.filter((c) => c.id !== cur.id), dir);
     if (next) setFocus(next);
+    else if (dir === 'up' || dir === 'down') scrollPage(dir === 'down' ? 1 : -1);
     return true;
+  };
+  /** Up and down past the last control scroll a long read (the rules, the credits) by most of a page. */
+  const scrollPage = (sign: number): void => {
+    const box = Array.from(root.querySelectorAll<HTMLElement>('.sh-main, .sh-scroll')).find((b) => b.scrollHeight > b.clientHeight + 1);
+    if (box) box.scrollBy({ top: sign * box.clientHeight * 0.8, behavior: reduced ? 'auto' : 'smooth' });
   };
 
   const runAction = (action: string): boolean => {
@@ -522,13 +561,16 @@ export function createShell(deps: ShellDeps): Shell {
     const t = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-focus]');
     if (t && root.contains(t) && t.dataset['focus'] !== focusId && t.getAttribute('aria-disabled') !== 'true') setFocus(t.dataset['focus']!);
   };
+  // What a click went through, as it was when it was dispatched: a control's click may rebuild the screen (and
+  // detach its target) before the event reaches the root and the document.
+  const onControl = (e: Event): boolean => e.composedPath().some((n) => n instanceof HTMLElement && (n.dataset['focus'] !== undefined || n.classList.contains('sh-prompt')));
   const onRootClick = (e: MouseEvent): void => {
     const st = machine.state();
-    if (st.main === 'title' && deps.boot().playReady && !(e.target as HTMLElement).closest('[data-focus]')) send({ type: 'begin' });
+    if (st.main === 'title' && deps.boot().playReady && !onControl(e)) send({ type: 'begin' });
   };
   const onDocClick = (e: MouseEvent): void => {
     // A click on the scene (not on a panel) begins from the title too.
-    if (machine.state().main === 'title' && deps.boot().playReady && !root.contains(e.target as Node)) send({ type: 'begin' });
+    if (machine.state().main === 'title' && deps.boot().playReady && !e.composedPath().includes(root)) send({ type: 'begin' });
   };
   // History trap: one entry is kept above the page's; Back (and the mouse's back button) is menu-back.
   // Chrome skips, on Back, a history entry that was pushed without a user gesture (its history intervention), so
@@ -573,6 +615,11 @@ export function createShell(deps: ShellDeps): Shell {
     dirty = true;
   };
   window.addEventListener('resize', onResize);
+  // A scrolled list or column moves its panels: the scrim follows them for a moment.
+  const onScroll = (): void => {
+    scrimFollow = SCRIM_FOLLOW_S;
+  };
+  root.addEventListener('scroll', onScroll, { capture: true, passive: true });
 
   return {
     machine,
@@ -581,7 +628,11 @@ export function createShell(deps: ShellDeps): Shell {
     },
     action: runAction,
     update(realDt) {
-      if (isHolding) holding += realDt;
+      if (isHolding) {
+        // Past the threshold the transit offers the way back: its prompt bar changes.
+        if (holding <= S.TRANSIT_BACK_AFTER_S && holding + realDt > S.TRANSIT_BACK_AFTER_S) dirty = true;
+        holding += realDt;
+      }
       textClock += realDt;
       if (dirty && textClock >= 1 / TEXT_HZ) {
         textClock = 0;
@@ -638,6 +689,7 @@ export function createShell(deps: ShellDeps): Shell {
       window.removeEventListener('popstate', onPopState);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('resize', onResize);
+      root.removeEventListener('scroll', onScroll, { capture: true });
       document.removeEventListener('click', onDocClick);
       offSpawn();
       spawn.dispose();

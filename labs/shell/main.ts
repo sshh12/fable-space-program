@@ -18,7 +18,11 @@ import type { LinkState, UniverseRules } from '@/core/contracts/net';
 import type { SpawnRequest } from '@/core/contracts/session';
 import type { BodySnapshot } from '@/core/contracts/sim';
 import type { VehicleCapabilities } from '@/core/contracts/vehicle';
+import { firstPresentableVehicleId } from '@/core/access/presentable';
+import { createIdentityFixture } from '@/core/fakes/identityFixture';
+import { deltaVToOrbit } from '@/sim/nav/reach';
 import { analyzeVehicle } from '@/sim/vessel/analyze';
+import { assembleVessel, vesselPartSnapshots } from '@/sim/vessel/public';
 import { createFakeSession, FAKE_SESSION_DEFAULT_UT } from '@/core/fakes/fakeSession';
 import { createMenuFixture, menuShipsFixture } from '@/core/fakes/menuStores';
 import { quat } from '@/core/math/quat';
@@ -65,7 +69,11 @@ async function boot(): Promise<void> {
     const now = solarViewAt(earth0, loc.latDeg, loc.lonDeg).localSolarHours;
     ut += ((((Number(padHour) - now) % 24) + 24) % 24) * 3600;
   }
-  const sim = createFakeSession(defs, { scene: 'pad', siteId: site.id, ut, ground: { height: padElevation, originHeight: 0 } });
+  // The vessel on the pad, and the Hangar's turntable: the first PRESENTABLE vehicle of the library (every part has
+  // a visual; today the lunar stack), assembled with the frozen facade. A vehicle that cannot be shown is never built here.
+  const displayId = firstPresentableVehicleId(defs);
+  const display = displayId ? { vehicleId: displayId, parts: vesselPartSnapshots(assembleVessel(defs, displayId)) } : {};
+  const sim = createFakeSession(defs, { scene: 'pad', siteId: site.id, ut, ground: { height: padElevation, originHeight: 0 }, ...display });
   const app = await createLabApp({ canvas, name: 'shell', defs, sim, features: [], autoReady: false });
   const errors = (m: string): void => app.testApi.reportError(m);
   const fonts = loadShellFonts('/assets/ui/fonts/', errors).then(() => {
@@ -110,6 +118,8 @@ async function boot(): Promise<void> {
     frameMs: number[];
     last: { u: number; angle: number; fixed: Vec3 } | null;
     holding: boolean;
+    /** True once the path is below the hold: the pad's exposure is the meter's reading from then on. */
+    metering: boolean;
   }
   let transit: TransitRun | null = null;
   /** The last transit's record and the exposure at its hand-over (EV100), kept for the test after the transit ends. */
@@ -123,8 +133,33 @@ async function boot(): Promise<void> {
       const pos = v3.add(earth.rRoot, v3.add(v3.scale(up, radius + SITE_VIEW_ALTITUDE), v3.scale(north, -SITE_VIEW_ALTITUDE * 0.35)));
       return { positionRoot: pos, qViewToRoot: lookAt(pos, v3.add(earth.rRoot, v3.scale(up, radius)), up) };
     }
+    if (s === 'turntable') {
+      const pose = turntablePose(earth);
+      if (pose) return pose;
+    }
     return menuEye(earth, radius, { altitude: MENU_ALTITUDE, sunBehindLimbDeg: 2, t: (performance.now() - t0) / 1000, drift: !reduced });
   };
+  /**
+   * The turntable: the display vessel on its pad seen from a slow orbit about it (the player turns it with J / L
+   * and zooms with I / K), at a distance from its height. Null without a display vessel.
+   */
+  const turntable = { yaw: 0.9, zoom: 1 };
+  const displayHeight = displayId ? analyzeVehicle(defs, defs.vehicles[displayId]!, {}).height : 0;
+  function turntablePose(earth: BodySnapshot): EyePose | null {
+    const snap = app.snapshot();
+    const vessel = snap.vessels.find((v) => v.id === snap.activeVesselId);
+    if (!vessel || displayHeight <= 0) return null;
+    const up = v3.normalize(v3.sub(vessel.rRoot, earth.rRoot));
+    const north = v3.normalize(v3.reject(quat.rotate(earth.qFixedToRoot, v3.new(0, 0, 1)), up));
+    const east = v3.cross(north, up);
+    const yaw = turntable.yaw + (reduced ? 0 : ((performance.now() - t0) / 1000) * 0.05);
+    const pitch = 0.1;
+    const dist = displayHeight * 1.3 * turntable.zoom;
+    const target = v3.add(vessel.rRoot, v3.scale(up, displayHeight * 0.05));
+    const around = v3.add(v3.scale(east, Math.cos(yaw)), v3.scale(north, Math.sin(yaw)));
+    const eye = v3.add(target, v3.add(v3.scale(around, dist * Math.cos(pitch)), v3.scale(up, dist * Math.sin(pitch))));
+    return { positionRoot: eye, qViewToRoot: lookAt(eye, target, up) };
+  }
   const current = (): EyePose => {
     const c = app.camera.spec;
     return c.type === 'free' ? { positionRoot: c.positionRoot, qViewToRoot: c.qViewToRoot } : eyeFor(subject);
@@ -138,6 +173,20 @@ async function boot(): Promise<void> {
 
   const ev = (): number => app.renderer.exposureInfo().ev100;
   const analyses = new WeakMap<UniverseRules, Map<string, VehicleCapabilities>>();
+  // The reach ladder's costs: solar-system-sim's deltaVToOrbit from the launch body's parking orbit; passing a
+  // body costs the transfer without its last leg (the capture), being bound about it the whole of it.
+  const reachCosts = new Map<string, { flyby: number; orbit: number } | null>();
+  const reachCost = (bodyId: string, refuelled: boolean): { flyby: number; orbit: number } | null => {
+    if (refuelled) return null;
+    if (!reachCosts.has(bodyId)) {
+      const r = deltaVToOrbit(defs, bodyId);
+      const capture = r.legs[r.legs.length - 1]?.deltaV ?? 0;
+      reachCosts.set(bodyId, Number.isFinite(r.total) ? { flyby: Math.max(0, r.total - capture), orbit: r.total } : null);
+    }
+    return reachCosts.get(bodyId)!;
+  };
+  // The account: an existing one by default (Play goes straight to the deploy flow); &identity=new is the first Play.
+  const identity = createIdentityFixture({ callsign: query.get('identity') === 'new' ? null : 'PLOVER-7', taken: ['KESTREL-41', 'ORION', 'VEGA'], answerSeconds: 0.25 });
   const shell = createShell({
     root: uiRoot,
     canvas,
@@ -160,11 +209,11 @@ async function boot(): Promise<void> {
       let byVehicle = analyses.get(rules);
       if (!byVehicle) analyses.set(rules, (byVehicle = new Map()));
       let caps = byVehicle.get(vehicleId);
-      if (!caps) byVehicle.set(vehicleId, (caps = analyzeVehicle(defs, defs.vehicles[vehicleId]!, { rules })));
+      if (!caps) byVehicle.set(vehicleId, (caps = analyzeVehicle(defs, defs.vehicles[vehicleId]!, { rules, reachCost })));
       return caps;
     },
     settings: null,
-    identity: null,
+    identity,
     padCycleSeconds: () => null,
     capacityReport: () => null,
     wallNow: () => Date.now(),
@@ -177,7 +226,8 @@ async function boot(): Promise<void> {
         case 'frame': {
           if (transit || flightCamera) return;
           glide = { from: current(), t: 0 };
-          subject = i.subject === 'turntable' || i.subject === 'flight' ? 'earth' : i.subject;
+          // The turntable shows the display vessel only: the shell offers presentable vehicles, and this lab's is the first of them.
+          subject = i.subject === 'flight' || (i.subject === 'turntable' && i.vehicleId !== displayId) ? 'earth' : i.subject;
           const w = window.innerWidth;
           lensX = i.subject === 'earth' ? 0 : ((i.free.x0 + i.free.x1) / 2 / w) * 2 - 1;
           return;
@@ -186,7 +236,7 @@ async function boot(): Promise<void> {
           const earth = earthOf();
           const startFixed = rootToFixed(earth, current().positionRoot);
           const padEv = sunEvAtPad(earth);
-          transit = { plan: { radius, padLatDeg: loc.latDeg, padLonDeg: loc.lonDeg, padHeight: padElevation, startFixed, endOffsetEnu: v3.new(-60, -160, 60), holdAltitude: 3000, startEv: ev(), padEv, duration: 10 }, u: 0, speed: 1, holdAngle: 0, acknowledged: false, practice: i.practice, request: i.request, steps: [], bounds: [], frameMs: [], last: null, holding: false };
+          transit = { plan: { radius, padLatDeg: loc.latDeg, padLonDeg: loc.lonDeg, padHeight: padElevation, startFixed, endOffsetEnu: v3.new(-60, -160, 60), holdAltitude: 3000, startEv: ev(), padEv, duration: 10 }, u: 0, speed: 1, holdAngle: 0, acknowledged: false, practice: i.practice, request: i.request, steps: [], bounds: [], frameMs: [], last: null, holding: false, metering: false };
           lastTransit = null;
           lensX = 0;
           return;
@@ -206,6 +256,10 @@ async function boot(): Promise<void> {
           glide = { from: current(), t: 0 };
           subject = 'earth';
           setTimeout(() => shell.left(), GLIDE_S * 1000);
+          return;
+        case 'turntable':
+          turntable.yaw += i.turn * (Math.PI / 6);
+          turntable.zoom = Math.min(2.5, Math.max(0.45, turntable.zoom * 0.8 ** i.zoom));
           return;
         case 'capture':
           if (i.on) void document.documentElement.requestFullscreen().catch(() => undefined);
@@ -237,11 +291,8 @@ async function boot(): Promise<void> {
     app.renderer.context.resources.publish('ui.navball', navball.view);
     const built = buildFeatures(imported.modules, { defs, sim, ctx: app.renderer.context, gpu: app.gpu, terrain, navball, mfdPainter: createMfdPainter(), query });
     for (const p of [...imported.problems, ...built.problems]) errors(p);
-    // The vessel visuals are left out: this lab's vessel is the fake's stand-in without parts, and the visuals
-    // of the whole library are warmed at start-up (vehicle art arrives with fleet-data's vehicles, not here).
-    const vessel = built.handles['vehicle.createVesselVisualFeature'] as { id?: string; feature?: { id: string } } | undefined;
-    const vesselIds = new Set([vessel?.id, vessel?.feature?.id].filter((x): x is string => typeof x === 'string'));
-    const features = built.features.filter((f) => !vesselIds.has(f.id));
+    // The vessel feature warms and draws presentable vehicles only (src/core/access/presentable.ts).
+    const features = built.features;
     bootSteps[2]!.total = features.length;
     for (const f of features) {
       await app.renderer.addFeature(f);
@@ -282,7 +333,13 @@ async function boot(): Promise<void> {
       shell.transitStatus(tr.holding ? 'Securing range · waiting for the launch to be confirmed' : tr.u < hold ? `${site.name} · ${padOf(site, tr.request.pad).name}` : 'Pad clear', tr.holding);
       // Below the hold the pad is in view: the exposure heads for what the meter reads there (it keeps metering
       // under a hint), so the hand-over lands on the pad's settled exposure, by day or by night.
-      if (tr.u >= hold) tr.plan.padEv += (app.renderer.exposureInfo().targetEv100 - tr.plan.padEv) * Math.min(1, dt * 2);
+      if (tr.u >= hold) {
+        const metered = app.renderer.exposureInfo().targetEv100;
+        if (!tr.metering) {
+          tr.metering = true;
+          tr.plan.padEv = metered;
+        } else tr.plan.padEv += (metered - tr.plan.padEv) * Math.min(1, dt * 4);
+      }
       const sample = transitSample(tr.plan, tr.u, tr.holdAngle);
       const pose = transitPose(earth, sample);
       const fixed = rootToFixed(earth, pose.positionRoot);
@@ -319,6 +376,7 @@ async function boot(): Promise<void> {
     }
     fixture.advance(dt);
     practice.advance(dt);
+    identity.advance(dt);
     if (!menuHidden) shell.update(dt);
   });
   // Esc / P in flight open the flight menu (the flight table's action; this lab has no flight controller).

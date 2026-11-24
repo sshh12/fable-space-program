@@ -24,10 +24,14 @@ interface ScreenContrast {
 
 function report(scene: string, screens: ScreenContrast[]): { screen: string; text: string; p2: number }[] {
   fs.mkdirSync(outDir, { recursive: true });
-  const rows = screens.map((s) => ({ screen: s.screen, worst: s.texts.reduce((m, t) => Math.min(m, t.p2), Infinity), texts: s.texts.sort((a, b) => a.p2 - b.p2) }));
+  const rows = screens.map((s) => {
+    const texts = s.texts.sort((a, b) => a.p2 - b.p2);
+    const active = texts.filter((t) => !t.disabled);
+    return { screen: s.screen, worst: active[0]?.p2 ?? Infinity, worstText: active[0] ?? null, disabledTexts: texts.length - active.length, texts };
+  });
   fs.writeFileSync(path.join(outDir, `contrast-${scene}.json`), JSON.stringify(rows, null, 1));
-  for (const r of rows) console.log(`[contrast ${scene}] ${r.screen}: worst ${r.worst.toFixed(2)}:1 over ${r.texts.length} texts${r.texts[0] ? ` ("${r.texts[0].text}" ${r.texts[0].px}px, worst pixel ${r.texts[0].min.toFixed(2)}:1)` : ''}`);
-  return screens.flatMap((s) => s.texts.filter((t) => t.p2 < MIN_CONTRAST).map((t) => ({ screen: s.screen, text: t.text, p2: Math.round(t.p2 * 100) / 100 })));
+  for (const r of rows) console.log(`[contrast ${scene}] ${r.screen}: worst ${r.worst.toFixed(2)}:1 over ${r.texts.length - r.disabledTexts} texts${r.worstText ? ` ("${r.worstText.text}" ${r.worstText.px}px, worst pixel ${r.worstText.min.toFixed(2)}:1)` : ''}; ${r.disabledTexts} of disabled controls not held to it`);
+  return screens.flatMap((s) => s.texts.filter((t) => t.p2 < MIN_CONTRAST && !t.disabled).map((t) => ({ screen: s.screen, text: t.text, p2: Math.round(t.p2 * 100) / 100 })));
 }
 
 async function measure(page: Parameters<typeof textContrast>[0], screens: ScreenContrast[], screen: string, scene: string): Promise<void> {

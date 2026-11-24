@@ -177,7 +177,9 @@ export function transitSample(plan: TransitPlan, u: number, holdAngle = 0): Tran
   // Exposure: the eye's EV until 100 km, then toward the pad's prior, reaching it at the end of the path.
   const w = smooth((Math.log(Math.max(h1 * 1.0001, 1e5)) - Math.log(Math.min(altitude, 1e5))) / (Math.log(Math.max(h1 * 1.0001, 1e5)) - Math.log(h1)));
   const targetEv100 = plan.startEv + (plan.padEv - plan.startEv) * w;
-  const rateEvPerS = Math.max(0.5, (Math.abs(plan.padEv - plan.startEv) / Math.max(plan.duration, 1e-3)) * 4);
+  // At least 2 EV a second: the pad's exposure may be refined from the meter on the last stretch, and the
+  // exposure must land on it by the hand-over.
+  const rateEvPerS = Math.max(2, (Math.abs(plan.padEv - plan.startEv) / Math.max(plan.duration, 1e-3)) * 4);
   return { positionFixed: over, targetFixed: look, upFixed: up, altitude, exposureHint: { targetEv100, rateEvPerS } };
 }
 

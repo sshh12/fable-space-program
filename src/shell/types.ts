@@ -51,10 +51,19 @@ export interface BootProgress {
   playReady: boolean;
 }
 
-/** The identity seam (ARCHITECTURE 25): the account's callsign, the server's check, and the account's creation. */
+/** The account service's answer for a callsign: free, taken (with free ones like it), or not a callsign (the service's words why). */
+export type CallsignCheck = { status: 'available' } | { status: 'taken'; suggestions: string[] } | { status: 'invalid'; reason: string };
+
+/**
+ * The identity seam (ARCHITECTURE 25, decision 47; frontend-ux 5.4): the account's callsign (null until the
+ * first Play creates the account), the service's check of a callsign, a callsign the service proposes, the
+ * service's rule in words, and the account's creation (its recovery code, shown once).
+ */
 export interface IdentityHost {
   callsign(): string | null;
-  check(name: string): Promise<'available' | 'taken'>;
+  check(name: string): Promise<CallsignCheck>;
+  generate(): string;
+  rule(): string;
   create(name: string): Promise<{ recoveryCode: string }>;
 }
 
@@ -72,7 +81,10 @@ export interface SettingsHost {
 export type ShellIntent =
   /** The input context to switch to (InputSystem.setContext). */
   | { kind: 'context'; context: 'menu' | 'transit' | 'flight' }
-  /** The camera's subject for a screen and the free area it should frame it into, CSS px of the viewport. */
+  /**
+   * The camera's subject for a screen and the free area it should frame it into, CSS px of the viewport. For
+   * 'turntable' `vehicleId` is the craft to show: always a PRESENTABLE vehicle (every part has a visual), never another.
+   */
   | { kind: 'frame'; screen: string; subject: 'earth' | 'turntable' | 'site' | 'flight'; vehicleId: string | null; siteId: string | null; free: { x0: number; y0: number; x1: number; y1: number } }
   /** Begin the transit to a pad for this request (the spawn is in flight; `practice` = a LocalSession's). */
   | { kind: 'transit'; request: SpawnRequest; practice: boolean }
@@ -85,6 +97,8 @@ export type ShellIntent =
   | { kind: 'leave' }
   /** The player's explicit choice on the capture control (fullscreen and keyboard lock are opt-in). */
   | { kind: 'capture'; on: boolean }
+  /** The turntable (Hangar, choose a craft): turn the display vessel by `turn` steps (+ = to the right) and zoom by `zoom` steps (+ = closer). */
+  | { kind: 'turntable'; turn: number; zoom: number }
   | { kind: 'watchPad'; siteId: string; padId: string }
   | { kind: 'trackShip'; vesselId: string };
 

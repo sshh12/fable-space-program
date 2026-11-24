@@ -22,7 +22,8 @@ test('the title reports the boot progress and opens Play only when the hangar da
   await expect(status).toContainText('Definitions');
   await expect(status).toContainText('Hangar');
   // Every step but the hangar finishes; the hangar's stays open and Play with it.
-  await page.waitForFunction(() => /The view from orbit\s*done/.test((document.querySelector('.sh-title-status') as HTMLElement | null)?.innerText ?? ''), undefined, { timeout: 120_000 });
+  // (innerText carries the label's text-transform: compare without case.)
+  await page.waitForFunction(() => /the view from orbit\s*done/i.test((document.querySelector('.sh-title-status') as HTMLElement | null)?.innerText ?? ''), undefined, { timeout: 120_000 });
   expect(await page.locator('.sh-begin .sh-label').textContent()).toBe('');
   await saveScreenshot(page, 'shell-menu', 'coldstart-loading-1280');
   await page.keyboard.press('Enter');

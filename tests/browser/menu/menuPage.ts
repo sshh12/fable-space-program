@@ -99,10 +99,13 @@ interface TextBox {
   rects: { x: number; y: number; w: number; h: number }[];
   rgba: [number, number, number, number];
   px: number;
+  disabled: boolean;
 }
 
 export interface ContrastResult {
   text: string;
+  /** Text of a disabled control (WCAG 1.4.3 exempts inactive components): reported, not held to the ratio. */
+  disabled: boolean;
   /** Contrast ratio at the 2nd percentile of the pixels behind the text (98 % of them give at least this), and at the worst pixel. */
   p2: number;
   min: number;
@@ -124,7 +127,7 @@ const ratio = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.
  */
 export async function textContrast(page: Page, opts: { captures?: number; spanFrames?: number; save?: string } = {}): Promise<ContrastResult[]> {
   const boxes = await page.evaluate(() => {
-    const out: { text: string; rects: { x: number; y: number; w: number; h: number }[]; rgba: [number, number, number, number]; px: number }[] = [];
+    const out: { text: string; rects: { x: number; y: number; w: number; h: number }[]; rgba: [number, number, number, number]; px: number; disabled: boolean }[] = [];
     const root = document.querySelector('.sh-root');
     if (!root || (root as HTMLElement).hidden) return out;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -151,7 +154,7 @@ export async function textContrast(page: Page, opts: { captures?: number; spanFr
       if (rects.length === 0) continue;
       const rgba = parse(cs.color);
       rgba[3] *= opacity;
-      out.push({ text: t.slice(0, 60), rects, rgba, px: parseFloat(cs.fontSize) });
+      out.push({ text: t.slice(0, 60), rects, rgba, px: parseFloat(cs.fontSize), disabled: host.closest('[aria-disabled="true"]') !== null });
     }
     return out;
   });
@@ -200,7 +203,7 @@ export async function textContrast(page: Page, opts: { captures?: number; spanFr
     }
     if (ratios.length === 0) continue;
     ratios.sort((p, q) => p - q);
-    results.push({ text: b.text, p2: ratios[Math.floor(ratios.length * 0.02)]!, min: ratios[0]!, px: b.px });
+    results.push({ text: b.text, disabled: b.disabled, p2: ratios[Math.floor(ratios.length * 0.02)]!, min: ratios[0]!, px: b.px });
   }
   return results;
 }

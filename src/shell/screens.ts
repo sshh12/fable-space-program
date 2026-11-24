@@ -8,8 +8,10 @@ import type { LaunchSiteDef, VehicleDef } from '@/core/contracts/defs';
 import type { LobbySummary, PadClass, ShipRecord, UniverseRules } from '@/core/contracts/net';
 import type { SpawnRequest, SpawnSlot } from '@/core/contracts/session';
 import type { VehicleCapabilities } from '@/core/contracts/vehicle';
+import { presentableVehicleIds } from '@/core/access/presentable';
 import { padLocationOf } from '@/core/defs/sites';
 import { el, focusable } from './dom/kit';
+import { needsIdentity } from './identity';
 import { leaveOutcome } from './leaveOutcome';
 import type { HubTab, ShellEvent, ShellState } from './machine';
 import { classOutlook, cohortLeadSeconds, launchesPerHour, padRows, type PadRow, type VehicleFit } from './pads';
@@ -61,14 +63,16 @@ export interface ScreenCtx {
   send(e: ShellEvent): void;
   rebuild(): void;
   commit(request: SpawnRequest): void;
-  /** Transit status words from the host (gates), null when none. */
-  transitStatus: string | null;
-  /** Seconds the transit has held at its gate (0 when it is not holding). */
-  holdingSeconds: number;
+  /** Transit status words from the host (gates), null when none: read live (the host changes them every frame). */
+  transitStatus(): string | null;
+  /** Seconds the transit has held at its gate (0 when it is not holding), read live. */
+  holdingSeconds(): number;
 }
 
 const NBSP = ' ';
 const upper = (s: string): string => s.toUpperCase();
+/** Seconds of holding drift after which the transit offers the way back to the menu (frontend-ux 5.11). */
+export const TRANSIT_BACK_AFTER_S = 20;
 
 // ---------------------------------------------------------------------------------------------- helpers
 
@@ -100,7 +104,8 @@ function titleBlock(title: string, subtitle: string | null): HTMLElement {
 const sitesOf = (ctx: ScreenCtx): LaunchSiteDef[] => Object.values(ctx.deps.defs.sites).sort((a, b) => a.name.localeCompare(b.name));
 const vehiclesOf = (ctx: ScreenCtx): VehicleDef[] => Object.values(ctx.deps.defs.vehicles).sort((a, b) => a.name.localeCompare(b.name));
 const rulesOf = (ctx: ScreenCtx): UniverseRules => ctx.session.stores.rules.get();
-const liveTickOf = (ctx: ScreenCtx): number => ctx.deps.snapshot()?.time.liveTick ?? ctx.session.stores.presence.get().lobbies[0]?.liveTick ?? 0;
+/** The live tick the pad states are stated against: the lobby's (its pads' clock), else the snapshot's (a session without a lobby list). */
+const liveTickOf = (ctx: ScreenCtx): number => ctx.session.stores.presence.get().lobbies[0]?.liveTick ?? ctx.deps.snapshot()?.time.liveTick ?? 0;
 
 /** The analysis of a vehicle under the rules in force, its pad class (derived there) and what a pad must take. */
 function classOfVehicle(ctx: ScreenCtx, v: VehicleDef): { cls: PadClass; caps: VehicleCapabilities; fit: VehicleFit } {
@@ -117,6 +122,7 @@ export function titleScreen(ctx: ScreenCtx): ScreenView {
   main.append(el('div', 'sh-wordmark', el('span', '', 'Fable'), el('span', 'sh-wm-2', 'Space Program')));
   const progress = el('div', 'sh-progress');
   const begin = el('div', 'sh-begin');
+  begin.dataset['scrim'] = '0.7';
   const beginLabel = el('div', 'sh-label');
   begin.append(beginLabel);
   const status = panel('sh-title-status', 0.5);
@@ -133,6 +139,7 @@ export function titleScreen(ctx: ScreenCtx): ScreenView {
       }),
     );
     status.hidden = boot.playReady;
+    begin.hidden = !boot.playReady;
     beginLabel.textContent = boot.playReady ? 'Press any key to begin' : '';
     capture.replaceChildren(el('span', 'sh-key', 'F'), `Fullscreen and keyboard capture: ${deps.captured() ? 'on' : 'off'}`);
   };
@@ -174,7 +181,8 @@ export function playScreen(ctx: ScreenCtx): ScreenView {
   const main = el('div', '');
   main.append(titleBlock('Play', null));
   const ships = deps.lobby.stores.ships.get();
-  const idle = ships.filter((s) => s.sessionState === 'idle');
+  const offered = new Set(presentableVehicleIds(deps.defs));
+  const idle = ships.filter((s) => s.sessionState === 'idle' && offered.has(s.vehicleId));
   const lobby = deps.lobby.stores.presence.get().lobbies[0] ?? null;
   const admitted = lobby === null || lobby.status === 'open';
   const cards = el('div', 'sh-cards');
@@ -186,7 +194,7 @@ export function playScreen(ctx: ScreenCtx): ScreenView {
     return c;
   };
   cards.append(
-    card('launch', 'Live universe', 'Launch', 'Pick a craft and a pad. Fly.', () => ctx.send({ type: 'launch' }), admitted ? null : 'Waiting for a place in the lobby'),
+    card('launch', 'Live universe', 'Launch', 'Pick a craft and a pad. Fly.', () => launchLive(ctx), admitted ? null : 'Waiting for a place in the lobby'),
     card('resume', `${idle.length} waiting`, 'Resume', idle[0] ? `${idle[0].name} · ${idle[0].situation}` : 'No ship to resume', () => ctx.send({ type: 'tab', tab: 'ships' }), idle.length > 0 ? null : 'No ship to resume'),
     card('practice', 'Offline', 'Practice', 'Your own pads, no network. Nothing is kept.', () => startPractice(ctx), deps.practice ? null : 'Not offered on this page'),
   );
@@ -200,6 +208,12 @@ export function playScreen(ctx: ScreenCtx): ScreenView {
   list.append(rows);
   main.append(list);
   return { main, prompts: [{ action: 'menu:activate', text: 'Select' }, { action: 'menu:back', text: 'Back' }], focus: 'launch', subject: 'earth' };
+}
+
+/** Into the live universe: on the first Play the identity screen comes first (an account needs a callsign), then the deploy flow. */
+function launchLive(ctx: ScreenCtx): void {
+  if (needsIdentity(ctx.deps.identity)) ctx.send({ type: 'overlay', overlay: 'identity' });
+  else ctx.send({ type: 'launch' });
 }
 
 function startPractice(ctx: ScreenCtx): void {
@@ -222,7 +236,7 @@ export function lobbyScreen(ctx: ScreenCtx): ScreenView {
   grid.append(readout('Status', upper(l.status)), readout('Online', `${deps.format.number(l.online)} / ${deps.format.number(l.softCap)}`), readout('Flying', deps.format.number(l.flying)), readout('Ships kept', deps.format.number(l.shipsSaved)), readout('Stations', deps.format.number(l.stations)), readout('Ships last', isNever(rules.expiry.craftRetention) ? 'for ever' : formatSpan(rules.expiry.craftRetention)));
   p.append(grid, el('p', 'sh-body sh-dim', l.timeModelSummary));
   main.append(p);
-  const join = focusable(el('button', 'sh-card'), 'join', () => ctx.send({ type: 'launch' }));
+  const join = focusable(el('button', 'sh-card'), 'join', () => launchLive(ctx));
   join.dataset['scrim'] = '0.7';
   join.append(el('span', 'sh-card-title', l.status === 'open' ? 'Join and launch' : 'Waiting for a place'), el('span', 'sh-card-text', l.status === 'queued' && l.position !== null ? `You are ${ordinal(l.position)} in the admission queue · ${l.etaSeconds !== null ? formatEstimate(l.etaSeconds) : 'wait unknown'}` : 'Pick a craft and a pad.'));
   if (l.status !== 'open') join.setAttribute('aria-disabled', 'true');
@@ -232,13 +246,25 @@ export function lobbyScreen(ctx: ScreenCtx): ScreenView {
 
 // ---------------------------------------------------------------------------------------------- vehicles
 
+/** The menu words of a vehicle (`visuals/vehicles/<id>`: presentation data, free to change), when the library has them. */
+interface VehicleMenuText {
+  title: string;
+  tagline: string;
+  description: string;
+  role: string;
+  difficulty: string;
+}
+const menuTextOf = (ctx: ScreenCtx, vehicleId: string): VehicleMenuText | null => (ctx.deps.defs.sections[`visuals/vehicles/${vehicleId}`] as VehicleMenuText | undefined) ?? null;
+
 function vehicleDetail(ctx: ScreenCtx, v: VehicleDef): HTMLElement {
   const { deps } = ctx;
   const fmt = deps.format;
   const { cls, caps } = classOfVehicle(ctx, v);
-  const p = panel('', 0.65);
+  const text = menuTextOf(ctx, v.id);
+  const p = panel('sh-strong', 0.7);
   p.dataset['testid'] = 'vehicle-detail';
-  p.append(el('div', 'sh-label', 'Selected craft'), el('div', 'sh-row-main', v.name));
+  p.append(el('div', 'sh-label sh-accent', text ? `${text.role} · ${text.difficulty}` : 'Selected craft'), el('div', 'sh-detail-title', text?.title ?? v.name));
+  if (text) p.append(el('p', 'sh-body', text.tagline), el('p', 'sh-body sh-dim', text.description));
   const grid = el('div', 'sh-readouts');
   grid.append(
     readout('Δv vacuum', fmt.deltaV(caps.deltaVTotal)),
@@ -250,45 +276,67 @@ function vehicleDetail(ctx: ScreenCtx, v: VehicleDef): HTMLElement {
   );
   p.append(grid);
   p.append(el('p', 'sh-body sh-dim', `${upper(cls)} pad class · ${fmt.mass(caps.massWet)} · ${caps.diameter.toFixed(2)} m across`));
-  const ladder = el('div', 'sh-ladder');
-  for (const r of caps.reach) {
-    const body = deps.defs.bodies[r.bodyId]?.name ?? r.bodyId;
-    ladder.append(el('span', r.margin >= 0 ? 'sh-ok' : 'sh-dim', `${r.margin >= 0 ? '✓' : '✗'} ${body} ${r.kind}`));
+  if (caps.reach.length > 0) {
+    const ladder = el('div', 'sh-ladder');
+    for (const r of caps.reach) {
+      const body = deps.defs.bodies[r.bodyId]?.name ?? r.bodyId;
+      ladder.append(el('span', r.margin >= 0 ? 'sh-ok' : 'sh-dim', `${r.margin >= 0 ? '✓' : '✗'} ${body} ${r.kind}${r.needsRefuel ? ' (refuelled)' : ''}`));
+    }
+    p.append(el('div', 'sh-label', 'Can reach (estimate)'), ladder);
   }
-  p.append(el('div', 'sh-label', 'Can reach (estimate)'), ladder);
   return p;
 }
 
+/**
+ * The fleet, the Hangar's and the deploy flow's: the vehicles that can be SHOWN (every part has a visual:
+ * `presentableVehicleIds`, the lead's decision of 2026-11-24) are offered, first; the others are listed as not
+ * yet available and cannot be chosen, shown on the turntable or launched.
+ */
 export function vehicleScreen(ctx: ScreenCtx, inDeploy: boolean): ScreenView {
+  const { deps } = ctx;
   const main = el('div', '');
   main.append(titleBlock(inDeploy ? 'Choose a craft' : 'Hangar', inDeploy ? (ctx.practice ? 'Practice · offline' : null) : 'The fleet'));
-  const vehicles = vehiclesOf(ctx);
-  if (!ctx.sel.vehicleId || !vehicles.some((v) => v.id === ctx.sel.vehicleId)) ctx.sel.vehicleId = vehicles[0]?.id ?? null;
-  const list = panel('', 0.6);
-  const rows = el('div', 'sh-list');
+  const offered = new Set(presentableVehicleIds(deps.defs));
+  const all = vehiclesOf(ctx);
+  const vehicles = [...all.filter((v) => offered.has(v.id)), ...all.filter((v) => !offered.has(v.id))];
+  if (!ctx.sel.vehicleId || !offered.has(ctx.sel.vehicleId)) ctx.sel.vehicleId = vehicles.find((v) => offered.has(v.id))?.id ?? null;
+  const list = panel('', 0.65);
+  const rows = el('div', 'sh-list sh-scroll');
   for (const v of vehicles) {
     const { cls } = classOfVehicle(ctx, v);
-    const r = row(`vehicle-${v.id}`, v.id === ctx.sel.vehicleId ? 'sh-chevron' : '', v.name, `${v.crew.length > 0 ? `${v.crew.length} crew` : 'uncrewed'} · ${v.stages.length} stages`, right(upper(cls), 'pad class'), () => {
-      ctx.sel.vehicleId = v.id;
-      if (inDeploy) ctx.send({ type: 'step', step: 'pad' });
-      else ctx.rebuild();
-    });
-    r.addEventListener('focus', () => {
-      if (ctx.sel.vehicleId !== v.id) {
+    const shown = offered.has(v.id);
+    const r = row(
+      `vehicle-${v.id}`,
+      v.id === ctx.sel.vehicleId ? 'sh-chevron' : '',
+      menuTextOf(ctx, v.id)?.title ?? v.name,
+      shown ? `${v.crew.length > 0 ? `${v.crew.length} crew` : 'uncrewed'} · ${v.stages.length} stages` : 'Not yet available · its models are still being built',
+      right(upper(cls), 'pad class'),
+      () => {
+        if (!shown) return;
         ctx.sel.vehicleId = v.id;
-        ctx.rebuild();
-      }
-    });
+        if (inDeploy) ctx.send({ type: 'step', step: 'pad' });
+        else ctx.rebuild();
+      },
+      !shown,
+    );
+    if (shown)
+      r.addEventListener('focus', () => {
+        if (ctx.sel.vehicleId !== v.id) {
+          ctx.sel.vehicleId = v.id;
+          ctx.rebuild();
+        }
+      });
     rows.append(r);
   }
   list.append(rows);
   main.append(list);
   const v = vehicles.find((x) => x.id === ctx.sel.vehicleId);
-  if (v) main.append(vehicleDetail(ctx, v));
+  const turn = (t: number, z: number): (() => boolean) => () => (v ? (deps.intent({ kind: 'turntable', turn: t, zoom: z }), true) : false);
   return {
     main,
-    prompts: [{ action: 'menu:stages', text: 'Stages' }, { action: 'menu:rotateLeft', text: 'Rotate' }, ...(inDeploy ? [{ action: 'menu:activate', text: 'Choose' }] : []), { action: 'menu:back', text: 'Back' }],
-    actions: { 'menu:stages': () => true, 'menu:rotateLeft': () => true, 'menu:rotateRight': () => true, 'menu:zoomIn': () => true, 'menu:zoomOut': () => true },
+    aside: v ? vehicleDetail(ctx, v) : undefined,
+    prompts: [...(v ? [{ action: 'menu:rotateLeft', text: 'Turn' }, { action: 'menu:zoomIn', text: 'Zoom' }] : []), ...(inDeploy && v ? [{ action: 'menu:activate', text: 'Choose' }] : []), { action: 'menu:back', text: 'Back' }],
+    actions: { 'menu:rotateLeft': turn(-1, 0), 'menu:rotateRight': turn(1, 0), 'menu:zoomIn': turn(0, 1), 'menu:zoomOut': turn(0, -1) },
     focus: ctx.sel.vehicleId ? `vehicle-${ctx.sel.vehicleId}` : undefined,
     subject: 'turntable',
   };
@@ -377,9 +425,11 @@ export function padScreen(ctx: ScreenCtx): ScreenView {
   const phase = ctx.spawn.phase();
   if (phase.kind === 'queued') main.append(queuePanel(ctx, phase));
   if (phase.kind === 'refused') main.append(refusalPanel(ctx, phase));
-  const list = panel('', 0.6);
-  const rowsEl = el('div', 'sh-list');
-  const firstUsable: { id: string | null } = { id: null };
+  const list = panel('', 0.65);
+  const rowsEl = el('div', 'sh-list sh-scroll');
+  // The focus starts on the best pad for this vehicle: a free pad of its own class (a larger pad's slot is
+  // another class's too), else any free pad that takes it, else the first that takes it.
+  const firstUsable: { id: string | null; rank: number } = { id: null, rank: 3 };
   const solarNodes: { node: HTMLElement; site: LaunchSiteDef }[] = [];
   for (const site of sites) {
     const group = el('div', 'sh-group');
@@ -391,7 +441,11 @@ export function padScreen(ctx: ScreenCtx): ScreenView {
     for (const r of padRows([site], states, cls, tick, fit)) {
       const w = padStateWords(r, fmt);
       const id = `pad-${site.id}-${r.padId}`;
-      if (r.usable && firstUsable.id === null) firstUsable.id = id;
+      if (r.usable) {
+        const free = r.state?.state === 'free';
+        const rank = free && r.class === cls ? 0 : free ? 1 : 2;
+        if (rank < firstUsable.rank) Object.assign(firstUsable, { id, rank });
+      }
       rowsEl.append(
         row(id, w.glyph, `${r.name}`, r.usable ? `${upper(r.class)} pad` : `${upper(r.class)} pad · too small for this vehicle`, right(w.value, w.caption), () => {
           if (!r.usable) return;
@@ -507,10 +561,10 @@ export function briefingScreen(ctx: ScreenCtx): ScreenView {
   launch.dataset['scrim'] = '0.7';
   launch.append(el('span', 'sh-card-title', phase.kind === 'queued' ? 'Waiting for a pad' : 'Launch'), el('span', 'sh-card-text', phase.kind === 'queued' ? 'You launch as soon as your place comes up.' : `${pad.name} · ${upper(pad.class)} pad`));
   if (phase.kind === 'queued') launch.setAttribute('aria-disabled', 'true');
-  main.append(launch);
+  launch.classList.add('sh-commit');
   const prompts: PromptEntry[] = [{ action: 'menu:activate', text: 'Launch' }, { action: 'menu:back', text: 'Back' }];
   if (phase.kind === 'queued') prompts.unshift({ action: 'menu:edit', text: 'Leave queue', run: () => void ctx.spawn.leaveQueue() });
-  return { main, prompts, actions: { 'menu:edit': () => (phase.kind === 'queued' ? (void ctx.spawn.leaveQueue(), true) : false) }, focus: 'launch-commit', subject: 'site' };
+  return { main, aside: launch, prompts, actions: { 'menu:edit': () => (phase.kind === 'queued' ? (void ctx.spawn.leaveQueue(), true) : false) }, focus: 'launch-commit', subject: 'site' };
 }
 
 // ---------------------------------------------------------------------------------------------- my ships
@@ -526,6 +580,7 @@ export function shipsScreen(ctx: ScreenCtx): ScreenView {
   const ships = deps.lobby.stores.ships.get();
   const rules = deps.lobby.stores.rules.get();
   const now = deps.wallNow();
+  const offered = new Set(presentableVehicleIds(deps.defs));
   const main = el('div', '');
   main.append(titleBlock('My ships', `${deps.format.number(ships.length)} of ${deps.format.number(rules.expiry.shipSlots)} slots`));
   const list = panel('', 0.6);
@@ -537,12 +592,14 @@ export function shipsScreen(ctx: ScreenCtx): ScreenView {
     const soon = left !== null && left < 86400;
     const kept = left === null ? 'kept' : formatSpan(Math.max(0, left));
     const vehicle = deps.defs.vehicles[s.vehicleId]?.name ?? s.vehicleId;
-    const r = row(`ship-${s.vesselId}`, s.sessionState === 'idle' ? 'sh-free' : 'sh-busy', s.name, `${vehicle} · ${where(s, ctx)}`, right(kept, soon ? 'expires soon' : 'kept for'), () => {
-      if (s.sessionState !== 'idle') return;
+    // A ship of a vehicle that cannot be shown yet (a part without a visual) is listed but not resumed from here.
+    const shown = offered.has(s.vehicleId);
+    const r = row(`ship-${s.vesselId}`, s.sessionState === 'idle' && shown ? 'sh-free' : 'sh-busy', s.name, `${vehicle} · ${where(s, ctx)}${shown ? '' : ' · its craft cannot be shown yet'}`, right(kept, soon ? 'expires soon' : 'kept for'), () => {
+      if (s.sessionState !== 'idle' || !shown) return;
       ctx.sel.shipId = s.vesselId;
       deps.intent({ kind: 'resume', vesselId: s.vesselId });
       ctx.send({ type: 'resume' });
-    }, s.sessionState !== 'idle');
+    }, s.sessionState !== 'idle' || !shown);
     if (soon) r.querySelector('.sh-row-right')?.classList.add('sh-warn');
     r.addEventListener('focus', () => {
       if (ctx.sel.shipId !== s.vesselId) {
@@ -687,7 +744,8 @@ export function settingsScreen(ctx: ScreenCtx, setScale: (s: number) => void, se
     const g = panel('', 0.6);
     const gl = el('div', 'sh-list');
     gl.append(row('set-preset', '', 'Graphics preset', m.graphics.calibratedWallMs !== null ? 'Chosen by the calibration' : 'From the adapter class', right(upper(m.graphics.preset), m.graphics.predictedGpuMs !== null ? `${m.graphics.predictedGpuMs.toFixed(1)} ms` : null), () => host.runCalibration?.()));
-    for (const r of host.graphicsRows()) gl.append(row(`set-g-${r.label}`, '', r.label, r.detail, right(r.value), () => undefined));
+    // The graphics rows are read-outs of the capability package's model (its own screen changes them): not focusable.
+    for (const r of host.graphicsRows()) gl.append(el('div', 'sh-row sh-static', el('span', 'sh-glyph'), el('span', 'sh-row-main', r.label, el('span', 'sh-row-sub', r.detail)), right(r.value)));
     g.append(el('div', 'sh-label', 'Graphics'), gl);
     const a = panel('', 0.6);
     const al = el('div', 'sh-list');
@@ -713,12 +771,12 @@ export function transitScreen(ctx: ScreenCtx): ScreenView {
   main.append(box);
   const live = (): void => {
     const phase = ctx.spawn.phase();
-    const words = ctx.transitStatus ?? (phase.kind === 'requesting' ? 'Waiting for the launch to be confirmed' : '');
-    status.textContent = ctx.holdingSeconds > 20 ? `${words} · still waiting for the server` : words;
+    const words = ctx.transitStatus() ?? (phase.kind === 'requesting' ? 'Waiting for the launch to be confirmed' : '');
+    status.textContent = ctx.holdingSeconds() > TRANSIT_BACK_AFTER_S ? `${words} · still waiting for the server` : words;
   };
   live();
   const prompts: PromptEntry[] = [{ action: 'transit:skip', text: 'Skip' }];
-  if (ctx.holdingSeconds > 20) prompts.push({ action: 'transit:back', text: 'Back to menu' });
+  if (ctx.holdingSeconds() > TRANSIT_BACK_AFTER_S) prompts.push({ action: 'transit:back', text: 'Back to menu' });
   return { main, prompts, subject: 'flight', live };
 }
 
