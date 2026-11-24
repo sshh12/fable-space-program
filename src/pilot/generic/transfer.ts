@@ -20,11 +20,11 @@
  * throttle to the remaining delta-v, staging on flame-out).
  */
 import type { DefLibrary, ScenarioDef } from '@/core/contracts/defs';
-import type { Patch, SimSnapshot } from '@/core/contracts/sim';
+import type { BodySnapshot, Patch, SimSnapshot } from '@/core/contracts/sim';
 import { conicRadiusCrossing, timeSincePeriapsis } from '@/core/math/conic';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { PilotCore, type PilotLogEntry } from '../core';
-import { compassSearch, type Budget, type NodeVars, type Plan } from '../planner';
+import { compassSearch, minNormNewton, type Budget, type NodeVars, type Plan } from '../planner';
 import {
   aimDeparture,
   bestWindow,
@@ -67,6 +67,13 @@ export const APPROACH_TOLERANCE_SHARE = 0.1;
 /** For a moon target the planet flyby's periapsis is aimed at this share of the moon's orbit radius (tangent to it: the least speed relative to the moon). */
 export const MOON_FLYBY_SHARE = 1;
 
+/** The late corrections toward a moon: inside this many moon-orbit radii of the planet, at most this many, each while the moon's sphere is at least this far ahead (s). */
+export const MOON_LATE_CORRECTION_RADII = 3;
+export const MOON_LATE_CORRECTIONS = 3;
+export const MOON_LATE_CORRECTION_MIN_LEAD = 2 * 3600;
+/** A correction toward a moon first brings the closest approach to this share of the moon's sphere (then it sets the periapsis). */
+export const MOON_AIM_SOI_SHARE = 0.3;
+
 /** Cost of a patch list for an arrival at `bodyId` with periapsis radius `rp`: km of periapsis error, or the closest approach plus a penalty. */
 function arrivalCost(patches: readonly Patch[], bodyId: string, parentId: string, rp: number, radius: number): number {
   const at = costAtBody(patches, bodyId, rp, radius);
@@ -92,6 +99,18 @@ function costAtBody(patches: readonly Patch[], bodyId: string, rp: number, radiu
   return null;
 }
 
+/** Signed periapsis error about `bodyId` on its first patch, km (an impact: below the surface, negative), or null without such a patch. */
+function signedPeriapsisError(patches: readonly Patch[], bodyId: string, rp: number, radius: number): number | null {
+  for (const p of patches) {
+    if (p.bodyId !== bodyId) continue;
+    const peri = p.markers.find((m) => m.kind === 'periapsis');
+    if (peri) return (v3.len(peri.r) - rp) / 1000;
+    if (p.markers.some((m) => m.kind === 'impact')) return -(rp - radius) / 1000 - 1;
+    return null;
+  }
+  return null;
+}
+
 export class TransferPilot extends PilotCore {
   readonly targetId: string;
   /** The target's planet (the target itself when it orbits the origin's parent). */
@@ -103,6 +122,7 @@ export class TransferPilot extends PilotCore {
   private departedUt = NaN;
   private corrections = 0;
   private moonCorrected = false;
+  private moonLateCorrections = 0;
   private approachCorrected = false;
   /** Delta-v of every burn flown, m/s (planned), by label. */
   get flown(): Readonly<Record<string, number>> {
@@ -152,7 +172,17 @@ export class TransferPilot extends PilotCore {
   }
 
   protected start(): void {
-    this.originId = this.v.bodyId;
+    const here = this.v.bodyId;
+    if (here === this.planetId || here === this.targetId) {
+      // taking over on the way in: a start on the arrival hyperbola, or a flight resumed in the planet's sphere
+      this.starId = this.defs.bodies[this.planetId]!.parent ?? '';
+      this.departedUt = this.s.simUt;
+      this.corrections = 2;
+      this.cmd.setTarget({ kind: 'body', id: here });
+      this.go('cruise', Infinity, `taking over in the sphere of ${here}`);
+      return;
+    }
+    this.originId = here;
     const origin = this.defs.bodies[this.originId]!;
     this.starId = origin.parent ?? '';
     if (!this.starId || this.defs.bodies[this.planetId]!.parent !== this.starId) {
@@ -246,14 +276,31 @@ export class TransferPilot extends PilotCore {
           return;
         }
         if (this.v.bodyId === this.planetId && this.planetId !== this.targetId) {
+          const cost = (p: readonly Patch[]): number => arrivalCost(p, this.targetId, this.planetId, this.periapsisRadius(this.targetId), this.equatorialRadius(this.targetId));
           if (!this.moonCorrected) {
+            // early, at the sphere's edge: the moon on its osculating orbit (the predictor's first closest approach of a long patch is not the pass)
             this.moonCorrected = true;
             this.cmd.setTarget({ kind: 'body', id: this.targetId });
-            this.planCorrection('moon-correction', this.targetId, (p) => arrivalCost(p, this.targetId, this.planetId, this.periapsisRadius(this.targetId), this.equatorialRadius(this.targetId)));
+            this.planCorrection('moon-correction', this.targetId, cost, this.moonStages(false), Infinity);
             return;
           }
+          const aM = meanOrbit(this.bodySnap(this.targetId), this.body(), this.defs.bodies[this.planetId]!.mu).a;
+          const near = v3.len(this.v.r) < MOON_LATE_CORRECTION_RADII * aM;
+          const entry = this.soiChangeUt(s.patches.current);
+          if (near && this.moonLateCorrections < MOON_LATE_CORRECTIONS && (entry === null || entry - s.simUt > MOON_LATE_CORRECTION_MIN_LEAD)) {
+            // late, inside MOON_LATE_CORRECTION_RADII moon orbits: the predictor's closest approach is the pass itself;
+            // again (up to MOON_LATE_CORRECTIONS) while a burn left the periapsis off and the moon's sphere is far enough
+            const err = signedPeriapsisError(s.patches.current, this.targetId, this.periapsisRadius(this.targetId), this.equatorialRadius(this.targetId));
+            if (err === null || Math.abs(err) * 1000 > Math.max(20e3, APPROACH_TOLERANCE_SHARE * (this.periapsisRadius(this.targetId) - this.equatorialRadius(this.targetId)))) {
+              this.moonLateCorrections++;
+              this.planCorrection(`moon-late-correction-${this.moonLateCorrections}`, this.targetId, cost, this.moonStages(true));
+              return;
+            }
+            this.moonLateCorrections = MOON_LATE_CORRECTIONS;
+          }
           const next = this.soiChangeUt(s.patches.current);
-          if (next !== null) this.warpFor(next - s.simUt - 60);
+          const inbound = this.moonLateCorrections > 0 ? null : this.radiusTime(s.patches.current, MOON_LATE_CORRECTION_RADII * aM);
+          if (next !== null || inbound !== null) this.warpFor(Math.min(next ?? Infinity, inbound ?? Infinity) - s.simUt - 60);
           else this.fail(`no encounter with ${this.targetId} after the correction`);
           return;
         }
@@ -263,7 +310,8 @@ export class TransferPilot extends PilotCore {
           const err = costAtBody(s.patches.current, this.targetId, rp, R) ?? Infinity;
           if (!this.approachCorrected && err * 1000 > Math.max(20e3, APPROACH_TOLERANCE_SHARE * (rp - R))) {
             this.approachCorrected = true;
-            this.planCorrection('approach-correction', this.targetId, (p) => arrivalCost(p, this.targetId, '', rp, R));
+            // best effort: a capture at a periapsis that is off still binds the craft
+            this.planCorrection('approach-correction', this.targetId, (p) => arrivalCost(p, this.targetId, '', rp, R), undefined, Infinity);
             return;
           }
           this.planCapture();
@@ -282,6 +330,21 @@ export class TransferPilot extends PilotCore {
     }
   }
 
+  /** The time the first patch next comes in to radius `r` about its body (null when it does not, or is inside). */
+  private radiusTime(patches: readonly Patch[], r: number): number | null {
+    const p = patches[0];
+    if (!p || v3.len(this.v.r) <= r) return null;
+    const nu = conicRadiusCrossing(p.conic, r);
+    if (nu === null) return null;
+    const t = p.conic.tPeriapsis + timeSincePeriapsis(p.conic, -nu);
+    return Number.isFinite(t) && t > this.s.simUt ? t : null;
+  }
+
+  /** The snapshot of the body the vessel is about. */
+  private body(): BodySnapshot {
+    return this.bodySnap(this.v.bodyId);
+  }
+
   /** Time of the first SOI change on a patch list (null when none). */
   private soiChangeUt(patches: readonly Patch[]): number | null {
     for (const p of patches) if (p.endReason === 'soiExit' || p.endReason === 'soiEnter') return p.tEnd;
@@ -297,15 +360,28 @@ export class TransferPilot extends PilotCore {
     if (this.planetId === this.targetId) return arrivalCost(patches, this.planetId, this.starId, this.planetAimRadius(), this.equatorialRadius(this.planetId));
     const atMoon = costAtBody(patches, this.targetId, this.periapsisRadius(this.targetId), this.equatorialRadius(this.targetId));
     if (atMoon !== null) return atMoon;
-    const pp = patches.find((p) => p.bodyId === this.planetId);
-    if (!pp) {
-      const c = arrivalCost(patches, this.planetId, this.starId, this.planetAimRadius(), this.equatorialRadius(this.planetId));
-      return 1e6 + c;
-    }
+    const miss = this.moonMiss(patches);
+    if (miss === null) return 1e6 + arrivalCost(patches, this.planetId, this.starId, this.planetAimRadius(), this.equatorialRadius(this.planetId));
+    return 1e3 + miss / 1000;
+  }
+
+  /**
+   * Closest approach to the target moon along the planned planet patch (the one after the node, else the first), m:
+   * the predictor's closest-approach marker when the moon is the target, else the pilot's own, within three
+   * moon-orbit radii of the periapsis, with the moon on its osculating orbit about the planet. Null without a patch
+   * about the planet.
+   */
+  private moonMiss(patches: readonly Patch[], markers = true): number | null {
+    const about = patches.filter((p) => p.bodyId === this.planetId);
+    const pp = about.find((p) => p.afterNodeId !== undefined) ?? about[0];
+    if (!pp) return null;
+    // the predictor's own closest approach when the moon is the target (it orbits the patch's body): the ephemeris, not the osculating orbit
+    let marked = Infinity;
+    if (markers) for (const m of pp.markers) if (m.kind === 'closestApproach' && m.value !== undefined) marked = Math.min(marked, m.value);
+    if (Number.isFinite(marked)) return marked;
     const moon = this.bodySnap(this.targetId);
     const planet = this.bodySnap(this.planetId);
     const aM = meanOrbit(moon, planet, this.defs.bodies[this.planetId]!.mu).a;
-    // the part of the planet patch within three moon-orbit radii (where the flyby crosses the moon's orbit)
     let t0 = pp.tStart;
     let t1 = pp.tEnd;
     const nu = conicRadiusCrossing(pp.conic, 3 * aM);
@@ -317,8 +393,22 @@ export class TransferPilot extends PilotCore {
         t1 = Math.min(t1, tp + dt);
       }
     }
-    if (!(t1 > t0)) return 1e3 + 1e9;
-    return 1e3 + closestToMoon(pp.conic, t0, t1, moon, planet).distance / 1000;
+    if (!(t1 > t0)) return null;
+    return closestToMoon(pp.conic, t0, t1, moon, planet).distance;
+  }
+
+  /**
+   * The moon-encounter stage of a correction: the closest approach brought to MOON_AIM_SOI_SHARE of the moon's
+   * sphere, km; once the plan meets the moon, its periapsis radius about the moon stands for the closest approach
+   * (an impact: negative). Null without a planet patch.
+   */
+  private moonApproachResidual(patches: readonly Patch[], markers: boolean): number | null {
+    const soi = this.bodySnap(this.targetId).soiRadius ?? this.defs.bodies[this.targetId]!.radius * 10;
+    const aim = MOON_AIM_SOI_SHARE * soi;
+    const inside = signedPeriapsisError(patches, this.targetId, aim, this.equatorialRadius(this.targetId));
+    if (inside !== null) return inside;
+    const d = this.moonMiss(patches, markers);
+    return d === null ? null : (d - aim) / 1000;
   }
 
   private planDeparture(): void {
@@ -396,37 +486,77 @@ export class TransferPilot extends PilotCore {
     const cost = (snap: SimSnapshot): number => this.heliocentricCost(snap.patches.planned);
     const limit = this.planetId === this.targetId ? 1e4 : 1e6;
     this.note(`${label}: cost before ${this.heliocentricCost(this.s.patches.current).toFixed(1)}`);
-    this.runCorrection(label, cost, limit, `no encounter with ${this.planetId}`);
+    if (this.planetId === this.targetId) {
+      const rp = this.planetAimRadius();
+      const R = this.equatorialRadius(this.planetId);
+      this.runCorrection(label, cost, [(snap) => signedPeriapsisError(snap.patches.planned, this.planetId, rp, R)], limit, `no encounter with ${this.planetId}`);
+    } else this.runCorrection(label, cost, this.moonStages(false), limit, `no encounter with ${this.planetId}`);
   }
 
-  private planCorrection(label: string, bodyId: string, costOf: (p: readonly Patch[]) => number): void {
+  /** The two stages of a correction toward the target moon: into its sphere, then the periapsis about it. */
+  private moonStages(markers: boolean): ((snap: SimSnapshot) => number | null)[] {
+    const rp = this.periapsisRadius(this.targetId);
+    const R = this.equatorialRadius(this.targetId);
+    return [(snap) => this.moonApproachResidual(snap.patches.planned, markers), (snap) => signedPeriapsisError(snap.patches.planned, this.targetId, rp, R)];
+  }
+
+  /** A correction toward `bodyId`; `limit`: the cost at or above which the plan is rejected (Infinity: an early correction that only brings the miss down). */
+  private planCorrection(label: string, bodyId: string, costOf: (p: readonly Patch[]) => number, stages?: ((snap: SimSnapshot) => number | null)[], limit = 1e4): void {
+    const rp = this.periapsisRadius(bodyId);
+    const R = this.equatorialRadius(bodyId);
     this.note(`${label}: arrival cost before ${costOf(this.s.patches.current).toFixed(1)} km`);
-    this.runCorrection(label, (snap) => costOf(snap.patches.planned), 1e4, `no encounter with ${bodyId}`);
+    this.runCorrection(label, (snap) => costOf(snap.patches.planned), stages ?? [(snap) => signedPeriapsisError(snap.patches.planned, bodyId, rp, R)], limit, `no encounter with ${bodyId}`);
   }
 
-  private runCorrection(label: string, cost: (snap: SimSnapshot) => number, limit: number, why: string): void {
+  /**
+   * A correction node 15 minutes ahead: the smallest burn that removes the error of each stage in turn (Newton on
+   * the stage's signed residual with the minimum-norm step, planner.ts `minNormNewton`: for the planet, the
+   * periapsis error; for a moon, first the closest approach, then the periapsis about it). When the first stage
+   * has nothing to measure yet (no patch about the planet), a compass search on `cost` comes first.
+   */
+  private runCorrection(label: string, cost: (snap: SimSnapshot) => number, stages: ((snap: SimSnapshot) => number | null)[], limit: number, why: string): void {
     const start: NodeVars = { ut: this.s.simUt + 900, prograde: 0, normal: 0, radial: 0 };
+    const vars = [
+      { key: 'prograde' as const, probe: 0.5, maxStep: 100 },
+      { key: 'normal' as const, probe: 0.5, maxStep: 100 },
+      { key: 'radial' as const, probe: 0.5, maxStep: 100 },
+    ];
+    const asResiduals =
+      (f: (snap: SimSnapshot) => number | null) =>
+      (snap: SimSnapshot): number[] | null => {
+        const e = f(snap);
+        return e === null ? null : [e];
+      };
     this.beginManeuver({
       label,
       initial: start,
       plan: (budget: Budget): Plan =>
         (function* (): Plan {
-          const r = yield* compassSearch(
-            start,
-            {
-              vars: [
-                { key: 'prograde', steps: [20, 5, 1, 0.25, 0.05, 0.01] },
-                { key: 'normal', steps: [20, 5, 1, 0.25, 0.05, 0.01] },
-                { key: 'radial', steps: [20, 5, 1, 0.25, 0.05, 0.01] },
-              ],
-              cost,
-              tolerance: 2,
-            },
-            budget,
-          );
-          return r.best;
+          let x = start;
+          for (let i = 0; i < stages.length; i++) {
+            let r = yield* minNormNewton(x, { vars, residuals: asResiduals(stages[i]!), tolerance: 2, maxIterations: 12 }, budget);
+            if (!Number.isFinite(r.cost) && i === 0) {
+              const c = yield* compassSearch(
+                x,
+                {
+                  vars: [
+                    { key: 'prograde', steps: [20, 5, 1, 0.25, 0.05] },
+                    { key: 'normal', steps: [20, 5, 1, 0.25, 0.05] },
+                    { key: 'radial', steps: [20, 5, 1, 0.25, 0.05] },
+                  ],
+                  cost,
+                  tolerance: 50,
+                },
+                budget,
+              );
+              x = c.best;
+              r = yield* minNormNewton(x, { vars, residuals: asResiduals(stages[i]!), tolerance: 2, maxIterations: 12 }, budget);
+            }
+            if (Number.isFinite(r.cost)) x = r.best;
+          }
+          return x;
         })(),
-      reject: (snap) => (cost(snap) >= limit ? why : null),
+      reject: (snap) => (cost(snap) >= limit ? `${why} (${stages.map((f, i) => `stage ${i + 1} residual ${f(snap)?.toFixed(1) ?? 'none'} km`).join(', ')})` : null),
       describe: (snap) => `cost after ${cost(snap).toFixed(1)}`,
       skipBelow: 0.3,
       then: () => this.go('cruise'),

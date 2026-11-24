@@ -13,14 +13,15 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
-import type { DefLibrary } from '../../../src/core/contracts/defs';
+import type { DefLibrary, ScenarioDef } from '../../../src/core/contracts/defs';
+import type { Vec3 } from '../../../src/core/math/vec3';
 import { createTransferPilot } from '../../../src/pilot/generic/transfer';
 import { runHeadless } from '../../../src/pilot/runner';
 import { createSession } from '../../../src/session';
 import { createFsTileSource } from '../../../src/terrain/fsTileSource';
 import { createTerrainProvider } from '../../../src/terrain/provider';
 import { loadStaged, repoRoot } from './fixtures';
-import { departurePlane } from './flightPlane';
+import { arrivalStart, departurePlane } from './flightPlane';
 
 const TILES = path.join(repoRoot, 'data', 'tiles');
 const GATE = process.env['SOLAR_SYSTEM_FLIGHTS'] ?? '';
@@ -42,14 +43,24 @@ export interface FlightResult {
   wallSeconds: number;
 }
 
-/** Fly scenario `scenarioId` from `startUt` to `targetId`, in the departure plane of its window; the end state and the pilot's record. */
-export async function fly(scenarioId: string, targetId: string, startUt: number): Promise<FlightResult> {
+/**
+ * Fly scenario `scenarioId` to `targetId`: from `startUt` in the departure plane of its window, or (with `arrival`)
+ * from a state at the planet's sphere on the window's arrival hyperbola; the end state and the pilot's record.
+ */
+export async function fly(scenarioId: string, targetId: string, startUt: number, arrival?: { startUt: number; bodyId: string; r: Vec3; v: Vec3 }): Promise<FlightResult> {
   const t0 = performance.now();
   const { defs: base } = await loadStaged();
   const sc0 = base.scenarios[scenarioId]!;
   if (sc0.start.kind !== 'orbit') throw new Error(`${scenarioId}: not an orbit start`);
-  const plane = await departurePlane(targetId, startUt, sc0.start.inclinationDeg, base.bodies['earth']!.radius + sc0.start.periapsisAltitude);
-  const sc = { ...sc0, startUt, start: { ...sc0.start, ...plane } };
+  let sc: ScenarioDef;
+  if (arrival) {
+    const tuple = (x: Vec3): [number, number, number] => [x.x, x.y, x.z];
+    sc = { ...sc0, startUt: arrival.startUt, start: { kind: 'state', bodyId: arrival.bodyId, r: tuple(arrival.r), v: tuple(arrival.v), attitude: 'retrograde' } };
+  } else {
+    const plane = await departurePlane(targetId, startUt, sc0.start.inclinationDeg, base.bodies['earth']!.radius + sc0.start.periapsisAltitude);
+    sc = { ...sc0, startUt, start: { ...sc0.start, ...plane } };
+  }
+  startUt = sc.startUt;
   const defs: DefLibrary = { ...base, scenarios: { ...base.scenarios, [sc.id]: sc } };
   const terrain = await createTerrainProvider(defs, createFsTileSource(TILES), { preload: 'launchSystems' });
   const sim = createSession(defs, sc.id, { terrain });
@@ -70,7 +81,7 @@ export async function fly(scenarioId: string, targetId: string, startUt: number)
   const flown = { ...pilot.flown };
   const total = Object.values(flown).reduce((a, b) => a + b, 0);
   const wallSeconds = (performance.now() - t0) / 1000;
-  log.unshift(`parking orbit: ${sc.start.kind === 'orbit' ? `${sc.start.inclinationDeg.toFixed(2)} deg, node ${sc.start.lanDeg.toFixed(2)} deg` : ''}`);
+  log.unshift(sc.start.kind === 'orbit' ? `parking orbit: ${sc.start.inclinationDeg.toFixed(2)} deg, node ${sc.start.lanDeg.toFixed(2)} deg` : `arrival start in the sphere of ${sc.start.kind === 'state' ? sc.start.bodyId : '?'} at ${sc.startUt}`);
   log.push(`end: ${run.reason}, body ${v.bodyId}, e ${s.readouts.eccentricity.toFixed(4)}, flown ${total.toFixed(0)} of ${deltaVStart.toFixed(0)} m/s, ${(run.simTime / 86400).toFixed(1)} d, ${wallSeconds.toFixed(0)} s wall`);
   if (process.env['SOLAR_SYSTEM_VERBOSE']) console.log(log.join('\n'));
   return {
@@ -121,5 +132,27 @@ describe.skipIf(!runs('callisto'))('a transfer flight to a moon of a giant: Call
     expect(r.e).toBeLessThan(1);
     expect(r.periapsisAltitude).toBeGreaterThan(0);
     expect(r.total).toBeLessThan(r.deltaVStart);
+  }, 3_600_000);
+});
+
+/**
+ * The arrival legs (until request solar-system-sim-4 lets a craft cross the Sun's sphere on this World): each
+ * target's flight from the planet's sphere on its window's arrival hyperbola, the periapsis off the aim by
+ * `share`, with the stack the departure would leave. Gated with the flights (SOLAR_SYSTEM_FLIGHTS=arrival or 1).
+ */
+describe.skipIf(!runs('arrival'))('the arrival legs: from the planet sphere on the window hyperbola into a bound orbit', () => {
+  const PARK = 6371000 + 200000;
+  it.each([
+    ['mars', 'transfer-leo-200', 977493600, 1.5],
+    ['venus', 'transfer-leo-200', 991573200, 1.5],
+    ['callisto', 'transfer-albatross-leo-200', 948790800, 1.006],
+    ['phobos', 'transfer-leo-200', 977493600, 1],
+  ] as const)('%s (%s, window from %i)', async (targetId, scenarioId, windowFrom, share) => {
+    const start = await arrivalStart(targetId, windowFrom, PARK, share);
+    const r = await fly(scenarioId, targetId, start.startUt, start);
+    expect(r.failure, r.log.join('\n')).toBeNull();
+    expect(r.bodyId).toBe(targetId);
+    expect(r.e).toBeLessThan(1);
+    expect(r.periapsisAltitude).toBeGreaterThan(0);
   }, 3_600_000);
 });
