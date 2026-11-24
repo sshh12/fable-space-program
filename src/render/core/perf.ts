@@ -71,6 +71,13 @@ interface PendingFrame {
   cpu: Map<string, number>;
 }
 
+/** One frame's GPU timings as read back: the summed total, every pass (ms), and the main-thread frame time (the page's 'frame' zone, else the renderer's own), ms. */
+export interface GpuFrameRecord {
+  total: number;
+  passes: Record<string, number>;
+  cpuMs: number;
+}
+
 export class Perf implements PerfRecorder {
   private readonly querySet: GPUQuerySet | null;
   private readonly resolveBuffer: GPUBuffer | null;
@@ -100,6 +107,8 @@ export class Perf implements PerfRecorder {
    * open when `resolve` runs inside `renderer.render()`, so its time enters the CPU window when it closes.
    */
   private frameZoneUsed = false;
+  /** Called with every frame whose timestamps have been read back (CoreRenderer.onGpuFrame; the calibration's frame log). */
+  private frameListener: ((f: GpuFrameRecord) => void) | null = null;
 
   constructor(
     private readonly device: GPUDevice,
@@ -317,6 +326,12 @@ export class Perf implements PerfRecorder {
     for (const [name, ms] of passMs) passes[name] = { gpuMs: ms, cpuMs: frame.cpu.get(name) ?? 0 };
     for (const [name, ms] of frame.cpu) if (!passes[name]) passes[name] = { gpuMs: 0, cpuMs: ms };
     this.latestPasses = passes;
+    this.frameListener?.({ total, passes: Object.fromEntries(passMs), cpuMs: frame.cpu.get('frame') ?? frame.cpu.get('core.render') ?? 0 });
+  }
+
+  /** Receive every frame's GPU passes as they are read back (null: stop). */
+  setFrameListener(fn: ((f: GpuFrameRecord) => void) | null): void {
+    this.frameListener = fn;
   }
 
   /** Newest summed GPU time (ms), returned once (null when nothing new arrived since the last call). */

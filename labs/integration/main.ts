@@ -25,6 +25,7 @@
  *   &probe=casters              log the cascades handed to drawShadow (render-core lab probe)
  *   &map=1                      the map view, active while the camera kind is 'map' (window.__integration.mapCamera)
  *   &flighthud=1                the flight HUD over the canvas (its panels are the map's obstacles)
+ *   &withart=1                  only the vehicles whose parts all have art (request capability-settings-2)
  *   &ballast=1                  add a ballast pass at the end of the frame (feature lab-ballast, off until
  *                               setBallast): perf runs keep the GPU as busy as the full game's frame
  * plus every camera / renderer parameter of createLabApp (body=, lat=, lon=, alt=, heading=, pitch=,
@@ -413,7 +414,12 @@ async function boot(): Promise<void> {
 
   // &pads=<n>: the first site with n pads, in memory (syntheticPads.ts): the per-pad paths of the site feature
   // and of the terrain in a picture. No definition file changes.
-  const library: DefLibrary = await loadDefs(fetchDefSource());
+  // &withart=1: only the vehicles whose parts all have art, and the scenarios that fly them (the library holds
+  // vehicles of fleet-data whose parts have no visual yet, which the vehicle feature reports at init: request
+  // capability-settings-2). Off by default: the page is as it was.
+  const fullLibrary = await loadDefs(fetchDefSource());
+  const withArt = Object.fromEntries(Object.entries(fullLibrary.vehicles).filter(([, v]) => v.parts.every((pt) => fullLibrary.parts[pt.def]?.visual)));
+  const library: DefLibrary = query.get('withart') === '1' ? { ...fullLibrary, vehicles: withArt, scenarios: Object.fromEntries(Object.entries(fullLibrary.scenarios).filter(([, sc]) => sc.vehicle in withArt)) } : fullLibrary;
   let syntheticPads: Awaited<ReturnType<typeof withSyntheticPads>> | null = null;
   if (query.has('pads')) {
     // The natural ground under the new pads, from a height authority of the library as it is.

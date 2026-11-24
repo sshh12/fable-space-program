@@ -5,6 +5,8 @@
 export { createRenderer, EXACT_METER_FRAMES, EXACT_SETTLE_ROUNDS, SEQUENCE_ALIGN, type CoreRenderer, type ExactInfo, type ExposureInfo, type HdrPixels, type RendererOptions } from './renderer';
 export { CONTACT_SHADOW_DEFAULT, CONTACT_SHADOW_LEGACY, type ContactShader, type ContactShadowParams } from './lighting/ao';
 export { coreOf, type CoreApi, type FullscreenPipelineDesc, type ManagedTarget, type TemporalFeature } from './coreApi';
+export { CORE_QUALITY, governorBudgetMs, paramsAt, QUALITY_LEVELS, renderScaleCap, type CoreQuality, type QualityChange, type QualitySetting, type RegisteredSetting } from './quality';
+export type { GpuFrameRecord } from './perf';
 export { createSceneBindings, type SceneBindings, type SceneBindingSet } from './sceneBindings';
 export type { CoreShaderLibrary, Tracked } from './shaders/library';
 export type { CoreSharedResources } from './resources';

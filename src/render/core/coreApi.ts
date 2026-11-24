@@ -5,6 +5,7 @@
 import type { RenderContext } from '@/core/contracts/render';
 import type { CloudShadowParams } from './frame/uniforms';
 import type { MeshSystem } from './mesh/meshSystem';
+import type { CoreQuality } from './quality';
 import type { SceneBindings, SceneBindingSet } from './sceneBindings';
 import type { CoreShaderLibrary, Tracked } from './shaders/library';
 import type { MipGenerator } from './util/gpu';
@@ -90,6 +91,12 @@ export interface CoreApi {
    * multiples of 16, so `sequenceIndex() & 15` equals `frame.frameIndex & 15`. Call it inside a frame hook.
    */
   sequenceIndex(): number;
+  /**
+   * The quality levels in force (src/render/core/quality.ts, RENDER_API section 20): `params(settingId)` of a
+   * setting the feature declared in `RenderFeature.quality` (read it where it is used: a live setting
+   * changes from one frame to the next), `onRebuild(settingId, fn)` for a 'rebuild' setting.
+   */
+  quality: CoreQuality;
 }
 
 const registry = new WeakMap<RenderContext, CoreApi>();

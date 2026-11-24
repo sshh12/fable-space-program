@@ -8,6 +8,7 @@ import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeatu
 import { oceanSwellHeight } from '@/core/geo/oceanSwell';
 import { quat, v3, type Vec3 } from '@/core/math';
 import { coreOf, createSceneBindings, f32ToF16, lensShiftOf, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
+import { OCEAN_QUALITY, withNearRange } from './quality';
 import { buildCascades, type OceanCascadeSet } from './cascades';
 import { buildFarWaves } from './farWaves';
 import { OceanFft } from './fft';
@@ -494,6 +495,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
     id: options.id ?? OCEAN_FEATURE_ID,
     order: options.order ?? 0,
     requires: ['scene.colorCopy', 'post.reactive'],
+    // Its setting 'ocean' (quality.ts; RENDER_API section 20).
+    quality: OCEAN_QUALITY,
     debug,
 
     init(c) {
@@ -733,7 +736,8 @@ export function createOceanFeature(options: { id?: string; order?: number } = {}
       }
       const pose = bi >= 0 ? frame.bodies[bi]! : null;
       const body = pose ? (bodies.get(pose.id) ?? null) : null;
-      const t = body?.tunables ?? null;
+      // The near field's radii at the level of the setting 'ocean' (quality.ts): the data's own at Ultra.
+      const t = withNearRange(body?.tunables ?? null, coreOf(ctx).quality.params('ocean', OCEAN_QUALITY)['nearRange']!);
       const camAboveSea = pose && t ? v3.len(pose.cameraFixed) - t.seaRadius : Infinity;
       lastCameraHeight = Number.isFinite(camAboveSea) ? camAboveSea : Number.NaN;
       nearField = forcedOff ? { bodyIndex: -1, fadeStart: t?.fadeStart ?? 0, fadeEnd: t?.fadeEnd ?? 0 } : nearFieldValue(bi, body !== null, camAboveSea, t?.fadeStart ?? 0, t?.fadeEnd ?? 0);

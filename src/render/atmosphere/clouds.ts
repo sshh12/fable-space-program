@@ -9,6 +9,7 @@ import type { BodyPose, FrameContext, RenderContext } from '@/core/contracts/ren
 import type { TileManifest } from '@/core/contracts/terrain';
 import { DEG, mat3, quat, v3, type Vec3 } from '@/core/math';
 import { cameraBasis, coreOf, f16ToF32, readTexturePixels, taaJitter, type CoreApi, type ManagedTarget, type Tracked } from '@/render/core';
+import { ATMOSPHERE_QUALITY } from './quality';
 import { resolveCloudParams, type CloudParams } from './params';
 import type { MarchBody } from './select';
 import { FINE_TILE_SIZE, scissorOf } from './select';
@@ -755,7 +756,7 @@ export class CloudSystem {
    * is coarsened to fit it, shapes and opacity stay).
    */
   stepBudget(frame: FrameContext): number {
-    return Math.max(8, Math.round(this.ctx.quality.cloudSteps * frame.qualityScale));
+    return Math.max(8, Math.round(coreOf(this.ctx).quality.params('clouds', ATMOSPHERE_QUALITY)['steps']! * frame.qualityScale));
   }
 
   /** Switch the cloud terms of the uniform block and of the deferred lighting off. */

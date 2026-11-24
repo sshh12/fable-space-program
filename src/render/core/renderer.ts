@@ -11,6 +11,7 @@ import {
   type FrameContext,
   type LodObserver,
   type PerfSnapshot,
+  type QualityProfile,
   type QualitySettings,
   type RenderContext,
   type RenderFeature,
@@ -30,12 +31,13 @@ import { AmbientOcclusion, type ContactShader, type ContactShadowParams } from '
 import { DeferredLighting } from './lighting/deferred';
 import { createMeshSystem, SHADOW_PASS_WGSL } from './mesh/meshSystem';
 import { TextureManager } from './mesh/textures';
-import { Perf } from './perf';
+import { Perf, type GpuFrameRecord } from './perf';
 import { ExposureMeter } from './post/exposureMeter';
 import { FarExposure } from './post/farExposure';
 import { CUT_ADAPT_SECONDS, CUT_ADAPT_TAU, EV_DARK_FLOOR, exposureFromEv100, exposureHintOf, followExposureHint, interiorFarGain, sunThroughAir, type EmissiveHint, type MeterInput } from './post/exposure';
 import { DEFAULT_GOVERNOR, governorStep, initialGovernorState, type GovernorConfig, type GovernorState } from './post/governor';
 import { PostProcess } from './post/postProcess';
+import { CORE_QUALITY, governorBudgetMs, legacyQualityView, QualityState, renderScaleCap } from './quality';
 import { DEFAULT_LOOK, displayLinear, srgbEncode, Tonemap, type Look } from './post/tonemap';
 import { createSharedResources, type CoreSharedResources } from './resources';
 import { createSceneBindings } from './sceneBindings';
@@ -47,7 +49,11 @@ import { ShadowSystem } from './shadows/shadowSystem';
 import { createTextureChecked, f16ToF32, generateBlueNoise, MipGenerator, readTexturePixels } from './util/gpu';
 
 export interface RendererOptions {
-  quality?: Partial<QualitySettings>;
+  /**
+   * A pinned internal resolution scale (the labs' and the app's `scale=`): it wins over the pixel cap and
+   * the floor of a quality profile. Everything else of the quality is `Renderer.setQuality` (RENDER_API 20).
+   */
+  quality?: Partial<Pick<QualitySettings, 'renderScaleMin' | 'renderScaleMax'>>;
   tilesUrl?: string;
   skyUrl?: string;
   assetsUrl?: string;
@@ -249,6 +255,19 @@ export interface CoreRenderer extends Renderer {
    */
   warm(): Promise<void>;
   resetPerf(): void;
+  /**
+   * Perf attribution mode from now on (RendererOptions.perfFeatures at creation): every feature hook in a
+   * pass of its own, so every pass name is `<featureId>.<pass>` and a feature's cost is exact. For the
+   * calibration's shots (src/bench); it adds a few passes' cost, so the game runs without it.
+   */
+  setPerfAttribution(on: boolean): void;
+  /**
+   * The quality governor on (the default) or off: off pins the quality scale at 1 and the internal
+   * resolution at the profile's cap, as a lab's `governor=off&scale=1` does (the calibration's shots).
+   */
+  setGovernor(on: boolean): void;
+  /** Receive every frame's GPU pass timings as they are read back (the calibration's frame log); null stops. */
+  onGpuFrame(fn: ((frame: GpuFrameRecord) => void) | null): void;
   /** p50 / p99 / mean (amortised over all frames) of every GPU pass over the measurement window, ms. */
   passStats(): Record<string, { p50: number; p99: number; mean: number }>;
   /** Ids of registered features in call order of a hook. */
@@ -335,6 +354,9 @@ export interface ExactInfo {
   /** Who was not idle after the first metering: the features that the step in the frame index sets to work. */
   busyLeadIn: string[];
 }
+/** The fade a 'rebuild' quality setting is applied under (Renderer.setQuality): out, then in, s; 1 s in all. */
+const FADE_OUT_S = 0.35;
+const FADE_IN_S = 0.65;
 /** Time constant with which the gain on the outside of an interior view follows its target, s. */
 const FAR_GAIN_TAU = 0.25;
 
@@ -415,6 +437,9 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   const resources = createSharedResources(device);
   const perf = new Perf(device, gpu.hasFeature('timestamp-query'));
   const quality: QualitySettings = { ...DEFAULT_QUALITY, ...opts.quality };
+  // The quality levels in force: every setting at 'ultra' and no pixel cap until setQuality (quality.ts).
+  const qualityState = new QualityState(CORE_QUALITY);
+  const pinnedScale = opts.quality?.renderScaleMin !== undefined || opts.quality?.renderScaleMax !== undefined;
   const ctx: RenderContext = {
     device,
     canvasFormat: gpu.canvasFormat,
@@ -502,6 +527,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     createTextureChecked: (desc) => createTextureChecked(device, desc, reportError),
     sequenceIndex: () => frameIndex - sequenceStart,
+    quality: qualityState,
   };
   registerCore(ctx, core);
 
@@ -510,7 +536,14 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   let bodiesKnown = false;
   const lighting = new DeferredLighting(ctx, shaders);
   lighting.setSpotShadows(spotShadows.arrayView, spotShadows.uniform);
-  const ao = new AmbientOcclusion(ctx, shaders, core, contactShader);
+  const ao = new AmbientOcclusion(ctx, shaders, core, contactShader, CORE_QUALITY.settings.find((s) => s.id === 'ambientOcclusion')!.levels.map((l) => l.params));
+  qualityState.onRebuild('shadows', (p) => shadows.setMapSize(p['mapSize']!));
+  // The fade a 'rebuild' setting is applied under (setQuality): the canvas darkened by a constant, after the overlay.
+  const fadePipeline = fullscreenPipeline({
+    label: 'core.fade',
+    fragment: '@fragment fn fs(in: FullscreenOut) -> @location(0) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }',
+    targets: [{ format: gpu.canvasFormat, blend: { color: { srcFactor: 'zero', dstFactor: 'one-minus-constant', operation: 'add' }, alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' } } }],
+  });
   const tonemap = new Tonemap(ctx, shaders, look);
   const post = new PostProcess(ctx, shaders, core, gpu.hasFeature('rg11b10ufloat-renderable'));
   const meter = new ExposureMeter(ctx, shaders);
@@ -536,7 +569,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       .catch(() => {})
       .then(() => {
         coreWarmWaiting = false;
-        const list: Tracked<unknown>[] = [...tonemap.pipelines(), ...ao.pipelines(), ...post.pipelines(), ...meter.pipelines(), ...farExposure.pipelines(), depthHalfPipeline, ...meshes.pipelines()];
+        const list: Tracked<unknown>[] = [...tonemap.pipelines(), ...ao.pipelines(), ...post.pipelines(), ...meter.pipelines(), ...farExposure.pipelines(), depthHalfPipeline, fadePipeline, ...meshes.pipelines()];
         if (lightingAhead) list.push(...lighting.pipelines());
         return shaders.warm(list);
       });
@@ -556,10 +589,39 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
   // ------------------------------------------------------------------------------------------ targets
   let displayW = Math.max(1, canvas.width);
   let displayH = Math.max(1, canvas.height);
-  const governorCfg: GovernorConfig = { ...DEFAULT_GOVERNOR, renderScaleMin: quality.renderScaleMin, renderScaleMax: quality.renderScaleMax, ...opts.governor };
+  let governorCfg: GovernorConfig = { ...DEFAULT_GOVERNOR, renderScaleMin: quality.renderScaleMin, renderScaleMax: quality.renderScaleMax, ...opts.governor };
   let governor: GovernorState = initialGovernorState(governorCfg);
+  /**
+   * The governor's limits from the profile in force (quality.ts): the resolution cap of its pixel cap on this
+   * display, its floor, the budget of its target frame rate. A pinned scale (RendererOptions.quality) and a
+   * budget given in RendererOptions.governor win. Without a profile the limits are the renderer's options.
+   */
+  const applyQualityLimits = (): void => {
+    const p = qualityState.profile();
+    if (!p) return;
+    const cap = renderScaleCap(p.pixelCap, displayW, displayH);
+    const scaleMax = pinnedScale ? quality.renderScaleMax : cap;
+    const scaleMin = pinnedScale ? quality.renderScaleMin : Math.min(p.renderScaleMin, cap);
+    governorCfg = { ...governorCfg, renderScaleMin: scaleMin, renderScaleMax: scaleMax, budgetMs: opts.governor?.budgetMs ?? governorBudgetMs(p.targetFps) };
+    Object.assign(quality, legacyQualityView(qualityState, scaleMin, scaleMax, DEFAULT_QUALITY));
+    // The scale follows a lower cap at once; a raised one is approached by the governor's recovery.
+    governor = { ...governor, renderScale: Math.max(scaleMin, Math.min(scaleMax, governor.renderScale)) };
+  };
+  /** The fade of a rebuild (setQuality): its opacity over the canvas now, 0 = none. Wall-clock driven, so it ends even without frames. */
+  let fade: { start: number; outS: number; inFrom: number | null; inS: number } | null = null;
+  const fadeAlpha = (now: number): number => {
+    if (!fade || deterministic) return 0;
+    if (fade.inFrom === null) return Math.min(1, (now - fade.start) / (1000 * fade.outS));
+    return Math.max(0, 1 - (now - fade.inFrom) / (1000 * fade.inS));
+  };
+  /** setQuality calls run one after the other. */
+  let qualityQueue: Promise<void> = Promise.resolve();
   let deterministic = false;
   let cycleNoise = false;
+  /** The governor acts (setGovernor); off = quality scale 1 and the resolution at its cap, as in deterministic mode. */
+  let governorOn = true;
+  /** Every feature hook in a pass of its own (RendererOptions.perfFeatures; setPerfAttribution). */
+  let perfAttribution = Boolean(opts.perfFeatures);
 
   const tex = (label: string, format: GPUTextureFormat, w: number, h: number, usage: GPUTextureUsageFlags): GPUTexture =>
     createTextureChecked(device, { label, format, size: [w, h], usage }, reportError);
@@ -856,7 +918,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
 
     // Governor and dynamic resolution (off while deterministic).
     const gpuMs = perf.takeGpuMs();
-    if (deterministic) governor = { ...governor, qualityScale: 1, renderScale: governorCfg.renderScaleMax, cooldown: 0 };
+    if (deterministic || !governorOn) governor = { ...governor, qualityScale: 1, renderScale: governorCfg.renderScaleMax, cooldown: 0 };
     else governor = governorStep(governor, gpuMs, governorCfg);
     const [rw, rh] = renderSizeFor(governor.renderScale);
     allocateTargets(rw, rh);
@@ -1012,7 +1074,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     device.queue.writeBuffer(frameUniformBuffer, 0, frameUniformData);
     perf.cpuEnd('core.uniforms');
 
-    const attribution = Boolean(opts.perfFeatures) || (!deterministic && frameIndex % 64 === 32);
+    const attribution = perfAttribution || (!deterministic && frameIndex % 64 === 32);
     const encoder = device.createCommandEncoder({ label: `frame ${frameIndex}` });
 
     // The reactive mask starts every frame at 0 (features draw into it in compositeAtmosphere / preTransparent).
@@ -1085,7 +1147,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     perf.gpuGap('core.copies');
 
     // 4. AO + contact shadows, deferred lighting
-    ao.run(encoder, frame, perf, frameBindGroup, T.views.normal, shadows.current()[0]?.capture.texelSize ?? 0, camera.kind === 'interior');
+    ao.run(encoder, frame, perf, frameBindGroup, T.views.normal, shadows.current()[0]?.capture.texelSize ?? 0, camera.kind === 'interior', qualityState.params('ambientOcclusion'));
     {
       const pass = encoder.beginRenderPass({
         label: 'lighting',
@@ -1223,6 +1285,16 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       attribution,
       (pass) => tonemap.draw(pass, resolved.color, resolved.bloom, { bloomMix: resolved.bloomMix, sharpness: resolved.sharpness, dither: 1 }, { rects: resources.get('ui.scrimRects'), levels: resolved.scrimLevels }),
     );
+    // The fade of a quality rebuild, over everything (setQuality).
+    const fadeNow = fadeAlpha(now);
+    if (fadeNow > 0) {
+      const pass = encoder.beginRenderPass({ label: 'fade', colorAttachments: [color(canvasView, true)], timestampWrites: perf.gpuPass('core.fade') });
+      pass.setBindGroup(0, frameBindGroup);
+      pass.setPipeline(fadePipeline.get());
+      pass.setBlendConstant({ r: fadeNow, g: fadeNow, b: fadeNow, a: fadeNow });
+      pass.draw(3);
+      pass.end();
+    }
 
     perf.cpuEnd('core.render');
     perf.counter('renderWidth', rw);
@@ -1265,6 +1337,8 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
     },
     async addFeature(feature) {
       if (features.some((f) => f.id === feature.id)) throw new Error(`render core: duplicate feature id "${feature.id}"`);
+      // Its settings are known before its init, so the init may register a rebuild and read its parameters.
+      if (feature.quality) qualityState.register(feature.quality);
       await feature.init(ctx);
       featureSeq.set(feature, seq++);
       features.push(feature);
@@ -1280,6 +1354,31 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       if (canvas.width !== displayW) canvas.width = displayW;
       if (canvas.height !== displayH) canvas.height = displayH;
       historyReset = true;
+      applyQualityLimits();
+    },
+    setQuality(profile: QualityProfile): Promise<void> {
+      const run = async (): Promise<void> => {
+        const change = qualityState.set(profile);
+        applyQualityLimits();
+        if (change.rebuild.length === 0) return;
+        if (deterministic) {
+          await qualityState.rebuild(change.rebuild);
+          return;
+        }
+        // Out over FADE_OUT_S, the rebuilds while the frame is dark, in over FADE_IN_S: 1 s in all.
+        const f = { start: performance.now(), outS: FADE_OUT_S, inFrom: null as number | null, inS: FADE_IN_S };
+        fade = f;
+        await new Promise<void>((resolve) => setTimeout(resolve, 1000 * FADE_OUT_S));
+        try {
+          await qualityState.rebuild(change.rebuild);
+        } finally {
+          f.inFrom = performance.now();
+          await new Promise<void>((resolve) => setTimeout(resolve, 1000 * FADE_IN_S));
+          if (fade === f) fade = null;
+        }
+      };
+      qualityQueue = qualityQueue.then(run, run);
+      return qualityQueue;
     },
     render,
     isIdle() {
@@ -1448,6 +1547,15 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       await shaders.warmed();
     },
     resetPerf: () => perf.reset(),
+    setPerfAttribution(on) {
+      perfAttribution = on;
+    },
+    setGovernor(on) {
+      governorOn = on;
+    },
+    onGpuFrame(fn) {
+      perf.setFrameListener(fn);
+    },
     passStats: () => perf.passStats(),
     featureOrder: () => features.map((f) => f.id),
     dispose() {

@@ -11,6 +11,7 @@ import { padLocationOf, padsOf } from '@/core/defs/sites';
 import { dirToTile, latLonToDir, type TileKey } from '@/core/geo/cubeSphere';
 import { DEG, mat3, quat, v3, type Mat3, type Vec3 } from '@/core/math';
 import { coreOf, frustumTangents, lensShiftOf, MAX_BODIES, type SceneBindings, type TemporalFeature, type Tracked } from '@/render/core';
+import { TERRAIN_QUALITY } from './quality';
 import type { TerrainAuthority } from '@/terrain';
 import { createTileSource } from '@/terrain/tileSource';
 import { createGridMesh, GRID_VERTEX_LAYOUT, type GridMesh } from './gridMesh';
@@ -563,7 +564,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
     b.cap = warpLevelCap(b.tree.faceSize, b.speed, terrain.maxRenderLevel);
 
     // The full K of the render height, shrunk where the view would not fit into the tile pools.
-    const targetK = Math.min(LOD_K_MAX, Math.max(LOD_K_MIN, lodK(frame.renderSize[1], frame.camera.fovY, ctx.quality.terrainPxPerQuad) * lodScale));
+    const targetK = Math.min(LOD_K_MAX, Math.max(LOD_K_MIN, lodK(frame.renderSize[1], frame.camera.fovY, coreOf(ctx).quality.params('terrain', TERRAIN_QUALITY)['pxPerQuad']!) * lodScale));
     b.targetK = targetK;
     b.K = b.K === 0 || cut ? targetK : b.K + (targetK - b.K) * (1 - Math.exp(-dt / 0.25));
     for (let level = 1; level < b.invRange.length; level++) {
@@ -864,6 +865,8 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
 
   const feature: TerrainFeature = {
     id: options.id ?? 'terrain',
+    // Its setting 'terrain' (quality.ts; RENDER_API section 20).
+    quality: TERRAIN_QUALITY,
     order: options.order ?? -50,
 
     async init(c: RenderContext) {
@@ -1043,7 +1046,7 @@ export function createTerrainFeature(ctx: RenderContext, terrainProviderFactory:
       let lead: BodyState | null = null;
       for (const b of active) if (!lead || frame.bodies[b.bodyIndex]!.cameraAltitude < frame.bodies[lead.bodyIndex]!.cameraAltitude) lead = b;
       if (lead) {
-        const fullK = lodK(frame.renderSize[1], frame.camera.fovY, ctx.quality.terrainPxPerQuad);
+        const fullK = lodK(frame.renderSize[1], frame.camera.fovY, coreOf(ctx).quality.params('terrain', TERRAIN_QUALITY)['pxPerQuad']!);
         // (Never below what K's own floor lets take effect: the way back up would be idle time.)
         lodScale = Math.max(Math.min(1, LOD_K_MIN / fullK), fitLodScale(lodScale, Math.min(1, lead.K / fullK), demand.ratio, frame.realDt));
       }

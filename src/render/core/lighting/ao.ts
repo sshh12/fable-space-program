@@ -350,6 +350,19 @@ const AO_END = /* wgsl */ `
 const AO_FS_FIRST = AO_HEAD + AO_MAIN + CONTACT_FIRST + AO_END;
 const AO_FS_NEAR = AO_HEAD + CONTACT_NEAR_DECLS + AO_MAIN + CONTACT_NEAR + AO_END;
 
+/** The GTAO sampling of the Ultra level of the quality setting 'ambientOcclusion' (src/render/core/quality.ts): the text above, unchanged. */
+const AO_ULTRA = { slices: 2, steps: 6 };
+/** The shader with another number of slices and steps per side (a level of 'ambientOcclusion' below Ultra). */
+function aoFragment(base: string, slices: number, steps: number): string {
+  if (slices === AO_ULTRA.slices && steps === AO_ULTRA.steps) return base;
+  const from = `const AO_SLICES = ${AO_ULTRA.slices};
+const AO_STEPS = ${AO_ULTRA.steps};`;
+  if (base.split(from).length !== 2) throw new Error('core.ao: the slice and step constants are not where the quality levels expect them');
+  return base.replace(from, `const AO_SLICES = ${Math.round(slices)};
+const AO_STEPS = ${Math.round(steps)};`);
+}
+const aoKey = (p: Readonly<Record<string, number>>): string => `${p['slices']}x${p['steps']}`;
+
 export class AmbientOcclusion {
   view!: GPUTextureView;
   depthView!: GPUTextureView;
@@ -358,7 +371,8 @@ export class AmbientOcclusion {
   private aoTex: GPUTexture | null = null;
   private depthTex: GPUTexture | null = null;
   private readonly layout: GPUBindGroupLayout;
-  private readonly pipeline: Tracked<GPURenderPipeline>;
+  /** One pipeline per GTAO sampling the quality levels use (all created ahead: a change of level compiles nothing), keyed slices x steps. */
+  private readonly variants = new Map<string, Tracked<GPURenderPipeline>>();
   private readonly contactBuffer: GPUBuffer | null;
   private readonly contactData = new Float32Array(16);
   /** The shader the pass runs. */
@@ -372,6 +386,8 @@ export class AmbientOcclusion {
     _shaders: CoreShaderLibrary,
     private readonly core: CoreApi,
     shader: ContactShader = 'near',
+    /** The parameters of every level of the setting 'ambientOcclusion'. */
+    levels: readonly Readonly<Record<string, number>>[] = [AO_ULTRA],
   ) {
     const fragment = shader === 'first' ? AO_FS_FIRST : AO_FS_NEAR;
     this.shader = shader;
@@ -382,7 +398,13 @@ export class AmbientOcclusion {
     if (shader !== 'first') entries.push({ binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } });
     this.layout = ctx.device.createBindGroupLayout({ label: 'core.ao', entries });
     this.contactBuffer = shader !== 'first' ? ctx.device.createBuffer({ label: 'core.ao.contact', size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }) : null;
-    this.pipeline = core.fullscreenPipeline({ label: 'core.ao', fragment, layouts: [this.layout], targets: [{ format: 'rg8unorm' }, { format: 'r32float' }] });
+    for (const p of levels) {
+      const key = aoKey(p);
+      if (this.variants.has(key)) continue;
+      const label = key === aoKey(AO_ULTRA) ? 'core.ao' : `core.ao.${key}`;
+      this.variants.set(key, core.fullscreenPipeline({ label, fragment: aoFragment(fragment, p['slices']!, p['steps']!), layouts: [this.layout], targets: [{ format: 'rg8unorm' }, { format: 'r32float' }] }));
+    }
+    if (!this.variants.has(aoKey(AO_ULTRA))) throw new Error('core.ao: the levels lack the Ultra sampling');
     this.resize(2, 2);
   }
 
@@ -402,7 +424,7 @@ export class AmbientOcclusion {
 
   /** The stage's tracked pipelines, for `shaders.warm`. */
   pipelines(): Tracked<unknown>[] {
-    return [this.pipeline];
+    return [...this.variants.values()];
   }
 
   /** Change the rules of the contact march (what is not given stays). */
@@ -412,9 +434,11 @@ export class AmbientOcclusion {
 
   /**
    * `nearTexel`: the texel of the finest sun cascade (m; 0 = there is none); `interior`: the camera is an
-   * interior one (its own fade applies).
+   * interior one (its own fade applies); `level`: the parameters of the current level of 'ambientOcclusion'.
    */
-  run(encoder: GPUCommandEncoder, _frame: FrameContext, perf: Perf, frameGroup: GPUBindGroup, normal: GPUTextureView, nearTexel: number, interior: boolean): void {
+  run(encoder: GPUCommandEncoder, _frame: FrameContext, perf: Perf, frameGroup: GPUBindGroup, normal: GPUTextureView, nearTexel: number, interior: boolean, level: Readonly<Record<string, number>> = AO_ULTRA): void {
+    const pipeline = this.variants.get(aoKey(level));
+    if (!pipeline) throw new Error(`core.ao: no pipeline for the sampling ${aoKey(level)}`);
     if (this.contactBuffer) {
       const p = this.contact;
       const fade = interior ? p.interiorFade : p.fade;
@@ -455,7 +479,7 @@ export class AmbientOcclusion {
       timestampWrites: perf.gpuPass('core.ao'),
     });
     pass.setBindGroup(0, frameGroup);
-    pass.setPipeline(this.pipeline.get());
+    pass.setPipeline(pipeline.get());
     pass.setBindGroup(1, this.group);
     pass.draw(3);
     pass.end();

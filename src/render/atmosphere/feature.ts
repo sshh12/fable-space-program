@@ -14,6 +14,7 @@
 import type { BodyDef } from '@/core/contracts/defs';
 import { RENDER_FORMATS, type FrameContext, type RenderContext, type RenderFeature } from '@/core/contracts/render';
 import { cameraBasis, coreOf, f16ToF32, lensShiftOf, MAX_BODIES, readTexturePixels, type CoreApi, type ManagedTarget, type TemporalFeature, type Tracked } from '@/render/core';
+import { ATMOSPHERE_QUALITY } from './quality';
 import { airglowShows, resolveAirglow, type AirglowLayer } from './airglow';
 import { CloudSystem, type CoverageImage } from './clouds';
 import { AERIAL_SIZE, MULTISCATTER_LUT_SIZE, SKY_IRRADIANCE_LUT_SIZE, SKY_VIEW_LUT_SIZE, TRANSMITTANCE_LUT_SIZE } from './math';
@@ -247,6 +248,8 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
   const feature: AtmosphereFeature = {
     id,
     order: opts.order ?? 0,
+    // Its settings 'clouds' and 'atmosphere' (quality.ts; RENDER_API section 20).
+    quality: ATMOSPHERE_QUALITY,
 
     async init(c) {
       ctx = c;
@@ -358,7 +361,7 @@ export function createAtmosphereFeature(options: AtmosphereFeatureOptions | Rend
       const [rw, rh] = frame.renderSize;
       const tanY = Math.tan(frame.camera.fovY / 2);
       selection = selectMarchBodies(layers, frame.bodies, ctx.defs, { ...basis, tanHalfFovX: (tanY * rw) / rh, tanHalfFovY: tanY, lensShift: lensShiftOf(frame.camera) }, {
-        baseSteps: ctx.quality.atmosphereSteps,
+        baseSteps: coreOf(ctx).quality.params('atmosphere', ATMOSPHERE_QUALITY)['steps']!,
         qualityScale: frame.qualityScale,
         renderHeight: rh,
         fovY: frame.camera.fovY,

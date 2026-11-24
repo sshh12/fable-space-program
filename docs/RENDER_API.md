@@ -15,7 +15,8 @@ import { createLabApp, createLabPlanetFeature } from '@/render/core/lab';
 Contents: 1 Quick start · 2 Frame graph and hook rules · 3 Bind groups · 4 Frame uniforms (group 0) ·
 5 Shader library and chunks · 6 G-buffer · 7 Lighting inputs (what to publish) · 8 Sun shadows ·
 9 Transparents · 10 Mesh system · 11 Utilities (`coreOf`) · 12 Photometric conventions · 13 Exposure,
-TAA, governor · 14 Perf and attribution · 15 Lab app · 16 Checklist · 17 Recipes · 18 Changes in wave 2
+TAA, governor · 14 Perf and attribution · 15 Lab app · 16 Checklist · 17 Recipes · 18 Changes in wave 2 ·
+19 Additions of sub-wave 3.2 · 20 Quality settings (wave 4.1)
 
 ---
 
@@ -2028,3 +2029,89 @@ URLs moved to a file source as well; grep `skyUrl` and `assetsUrl` under src/ fo
 | `CameraState.lensShift` honoured; `FrameUniforms.lensShift` (the struct grew by one vec4: `OFFSET.bodies` 164 -> 168, 3024 -> 3040 bytes); chunk function `ndcRay(ndc)`; `lensShiftOf`, `frustumTangents`; `buildProjection(..., lensShift)`, `Projection.lensShift` (19.5) | every feature that forms rays or culls by hand | Rays through `viewRay` / `ndcRay`; culling through `frustumTangents` |
 | `TerrainFeatureOptions.tileSource`; `WorkerInit.source` replaces `tilesUrl`; `TileStreamer(ctx, defs, bodyIds, options, source?)`; `loadLowResAlbedo(source, manifest, meanColor)` (was `tilesUrl`); `TileResult.bakeMs` / `imageMs` are the job's time until the bake is done and what the images took beyond it (19.6) | the app shell, the terrain lab | None for the default |
 | Lab camera: `&lensshift=`, `&evhint=`, `LabCameraSettings.lensShift` / `exposureHint`; lab app: `&frameorigin=` | labs | None |
+
+## 20. Quality settings (wave 4.1, `capability-settings`)
+
+ARCHITECTURE 18.8 and 24; the contract is `FeatureQualityDecl`, `QualityProfile` and `Renderer.setQuality`
+(`src/core/contracts/render.ts`); the core's side is `src/render/core/quality.ts`; the calibration, the
+presets and the settings screen's model are `src/bench` (docs/handoff/capability-settings.md).
+
+### 20.1 Declare a setting, read its level
+
+```ts
+// src/render/<pkg>/quality.ts
+export const MY_QUALITY: FeatureQualityDecl = {
+  featureId: 'my-feature',
+  settings: [{
+    id: 'mySetting', label: 'My setting',
+    levels: [
+      { name: 'low', params: { steps: 16 } }, { name: 'medium', params: { steps: 24 } },
+      { name: 'high', params: { steps: 28 } }, { name: 'ultra', params: { steps: 32 } },   // Ultra = today's value
+    ],
+    apply: 'live',                                   // or 'rebuild'
+    costModel: { exponent: 1, ratios: { low: 0.5, medium: 0.75, high: 0.9, ultra: 1 }, constantMs: 0 },
+    weight: 2,                                       // what the solver gives a level of it against the others
+  }],
+};
+
+// the feature object
+quality: MY_QUALITY,
+// where the number is used (every frame for a live setting):
+const steps = coreOf(ctx).quality.params('mySetting', MY_QUALITY)['steps']!;
+// a 'rebuild' setting, in init:
+coreOf(ctx).quality.onRebuild('mySetting', async (p) => { /* reallocate what p sizes */ });
+```
+
+- The core registers `RenderFeature.quality` in `addFeature`, before `init`. Pass your own declaration to
+  `params` as well: a page that wraps your feature without forwarding `quality` still works (the
+  declaration is registered on first use). A second instance of the same feature (another id, the same
+  declaration) shares the setting; a different declaration of a taken id is refused.
+- **Ultra must be the parameters you used before the setting existed**: with no profile, and with the
+  Ultra preset, the picture and the cost are today's (`tests/browser/bench/settings.spec.ts` holds
+  `pad-noon` to the bit; the reference images are the gate).
+- A live setting must not branch on a threshold that pops: scale counts, as with `frame.qualityScale`
+  (17.5). Every pipeline a level needs is created in `init` (`shaders.warm`), so changing a level compiles
+  nothing (the core's AO creates one pipeline per sampling of its levels).
+- `apply: 'rebuild'`: `Renderer.setQuality` fades the frame out (0.35 s), awaits every rebuild callback,
+  fades in (0.65 s), then resolves. In deterministic mode there is no fade. Calls run one after another.
+
+### 20.2 The profile
+
+`renderer.setQuality({ pixelCap, renderScaleMin, targetFps, levels })`:
+
+- `pixelCap` (megapixels) caps the internal resolution at `min(1, sqrt(pixelCap / display MP))` of the
+  display (`renderScaleCap`; recomputed on `resize`): presets 0.9, 1.6, 2.4, 3.7 MP, so a preset is the same
+  load at 1080p and at 4K. `renderScaleMin` is the governor's floor. A scale pinned by
+  `RendererOptions.quality` (the labs' and the app's `scale=`) wins over both.
+- The governor's budget is `0.66 x 1000 / targetFps` (`governorBudgetMs`: 11 ms at 60 fps, as before); a
+  `budgetMs` in `RendererOptions.governor` wins.
+- A setting not listed in `levels` is at 'ultra'. `coreOf(ctx).quality.profile()` is the profile in force
+  (null before the first `setQuality`: every setting at 'ultra', no pixel cap, the renderer as it was).
+- The deprecated `RenderContext.quality` (`QualitySettings`) is kept equal to the resolved profile until the
+  lead retires it (request capability-settings-1); no feature reads it.
+
+### 20.3 The settings of the tree
+
+| Setting | Declared by | Apply | Parameters low / medium / high / ultra | Where it acts |
+|---|---|---|---|---|
+| `shadows` | core | rebuild | `mapSize` 1024 / 1536 / 2048 / 2048 | side of the sun-shadow cascade array (`ShadowSystem.setMapSize`; republishes `'shadow.cascades'`) |
+| `ambientOcclusion` | core | live | `slices` x `steps` 1x4 / 2x4 / 2x6 / 2x6 | the GTAO pass (`lighting/ao.ts`, one pipeline per sampling) |
+| `clouds` | atmosphere | live | `steps` 48 / 64 / 80 / 96 | the step budget of a cloud ray (`clouds.ts stepBudget`), before `qualityScale` |
+| `atmosphere` | atmosphere | live | `steps` 12 / 16 / 20 / 24 | samples of a shell that fills the view (`select.ts baseSteps`) |
+| `terrain` | terrain | live | `pxPerQuad` 14 / 11 / 9 / 8 | the on-screen quad size the LOD selection aims at (`lodK`) |
+| `ocean` | ocean | live | `nearRange` 0.4 / 0.6 / 0.8 / 1 | the near field's radii (nearFieldFadeStartM / EndM) scaled: the forward wave surface ends nearer, the far sheet takes over with the same hand-over rules |
+| `effects` | vfx | live | `particles` 0.4 / 0.6 / 0.8 / 1, `march` 0.6 / 0.8 / 1 / 1 | particle emission rates and the step counts of every ray-marched volume, on top of `qualityScale` |
+
+The pixel cap and the floor are the profile's own members, not settings. Not implemented this wave (no
+consumer exists yet): "other craft detail" (full-detail remote vessels; the vehicle feature has no
+remote-vessel LOD until `fleet-models-pads`) and "texture budget" (reduced mips of vehicle and cockpit
+textures: the core's texture manager loads every level). Their cost models are measured in the hand-off.
+
+### 20.4 For measurements
+
+- `CoreRenderer.setPerfAttribution(on)`: attribution mode from now on (section 14), the runtime form of
+  `RendererOptions.perfFeatures`.
+- `CoreRenderer.setGovernor(on)`: off pins the quality scale at 1 and the resolution at the profile's cap
+  (what `governor=off` does for a page, at run time).
+- `CoreRenderer.onGpuFrame(fn)`: every frame's GPU passes as they are read back (`GpuFrameRecord`: total,
+  passes, the main thread's frame time); the calibration's frame log. `null` stops it.

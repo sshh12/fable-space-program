@@ -10,6 +10,7 @@ import type { VesselSnapshot } from '@/core/contracts/sim';
 import { activeVesselOf } from '@/core/access/snapshotAccess';
 import { quat, v3, type Vec3, type Vec3Tuple } from '@/core/math';
 import { coreOf, sunVisibilityAt } from '@/render/core';
+import { VFX_QUALITY } from './quality';
 import { ChuteSystem } from './chutes';
 import { gatherPlumeClusters, type PlumeCluster } from './clusters';
 import { G, PROBE_FOCUS, PROBE_PAD, VfxCommon } from './common';
@@ -359,6 +360,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
   const feature: VfxFeature = {
     id: options.id ?? VFX_FEATURE_ID,
     order: options.order ?? 0,
+    // Its setting 'effects' (quality.ts; RENDER_API section 20).
+    quality: VFX_QUALITY,
 
     init(c) {
       ctx = c;
@@ -449,7 +452,10 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
           const hv = v3.len(focus.r) - bodyDef.radius;
           density = focus.aero.airDensity * Math.exp(Math.min(20, Math.max(-20, (hv - d.altitude) / scaleHeight)));
         }
-        const out = director.update(frame, d, placed, effectTime, simDt, density / 1.2);
+        // The level of 'effects' thins the particles on top of the governor's scale (quality.ts); at Ultra the frame itself.
+        const fx = coreOf(ctx).quality.params('effects', VFX_QUALITY)['particles']!;
+        const emitFrame = fx === 1 ? frame : { ...frame, qualityScale: frame.qualityScale * fx };
+        const out = director.update(emitFrame, d, placed, effectTime, simDt, density / 1.2);
         dust.update(frame, d, out.dustSheets, noiseTime);
         for (const e of out.emitters) particles.emit(e);
         for (const f of out.fireballs) fireballs.spawn(f, effectTime, d.up, Math.min(1, density / 1.2));
@@ -457,7 +463,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
         foam.update(frame, d, effectTime);
         const floorLevel = out.water !== null || out.ground !== null ? Math.max(out.water ?? -1e30, out.ground ?? -1e30) : null;
         for (const e of chutes.update(frame, d, effectTime, simDt, floorLevel)) particles.emit(e);
-        for (const e of fireballs.update(frame, d, effectTime, simDt, density, floorLevel)) particles.emit(e);
+        for (const e of fireballs.update(emitFrame, d, effectTime, simDt, density, floorLevel)) particles.emit(e);
         particles.prepare(frame, effectTime, d.rebase, depthUsable);
 
         const originRel = v3.sub(d.originRoot, frame.camera.positionRoot);
@@ -538,7 +544,8 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       g[G.time] = effectTime;
       g[G.time + 1] = simDt;
       g[G.time + 2] = noiseTime;
-      g[G.time + 3] = frame.qualityScale;
+      // The march scale of every volume: the governor's quality scale times the level of 'effects' (quality.ts).
+      g[G.time + 3] = frame.qualityScale * coreOf(ctx).quality.params('effects', VFX_QUALITY)['march']!;
       const [hw, hh] = volumes.size;
       g[G.half] = hw;
       g[G.half + 1] = hh;
