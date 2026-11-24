@@ -64,10 +64,11 @@ export async function departurePlane(targetId: string, startUt: number, floorInc
  * The start of an arrival leg: the craft at the planet's sphere (0.98 of its radius) on the hyperbola of the
  * window's arrival excess velocity. For a planet: its periapsis `periapsisShare` x the aim radius at the window's
  * arrival time, in the plane through the asymptote nearest the planet's equator. For a moon: its periapsis at the
- * moon's position at the prograde pass nearest the arrival, `periapsisShare` x the moon's distance out. Whole
+ * moon's position at the prograde pass nearest the arrival, `periapsisShare` x the moon's distance out (with
+ * `meetMoon` false, as for a planet, in the plane nearest the moon's orbit: a tiny moon's rendezvous). Whole
  * seconds (on the tick grid), BCI of the planet.
  */
-export async function arrivalStart(targetId: string, windowFromUt: number, parkingRadius: number, periapsisShare = 1): Promise<{ startUt: number; bodyId: string; r: Vec3; v: Vec3 }> {
+export async function arrivalStart(targetId: string, windowFromUt: number, parkingRadius: number, periapsisShare = 1, meetMoon = true): Promise<{ startUt: number; bodyId: string; r: Vec3; v: Vec3 }> {
   const { system } = await loadStaged();
   const { arc, planetId, aimRadius } = await pilotWindow(targetId, windowFromUt, parkingRadius);
   const P = system.body(planetId);
@@ -79,7 +80,7 @@ export async function arrivalStart(targetId: string, windowFromUt: number, parki
   let h: Vec3;
   let pHat: Vec3;
   const nuInfOf = (r: number): number => Math.acos(-1 / (1 + (r * vinf * vinf) / mu));
-  if (targetId !== planetId) {
+  if (targetId !== planetId && meetMoon) {
     // a moon: the flyby's periapsis where the moon is at that moment (what the heliocentric correction arranges),
     // `periapsisShare` - 1 of the moon's orbit radius outside it, prograde with the moon
     const W = system.orbitNormal(targetId, arc.arriveUt)!;
@@ -111,7 +112,8 @@ export async function arrivalStart(targetId: string, windowFromUt: number, parki
     pHat = best.p;
     rp = periapsisShare * v3.len(system.stateRelative(targetId, planetId, tPeri).r);
   } else {
-    const pole = quat.rotate(system.orientation(planetId, arc.arriveUt), { x: 0, y: 0, z: 1 });
+    // a planet (or a tiny moon reached by a rendezvous): the plane nearest the planet's equator (the moon's orbit)
+    const pole = targetId !== planetId ? system.orbitNormal(targetId, arc.arriveUt)! : quat.rotate(system.orientation(planetId, arc.arriveUt), { x: 0, y: 0, z: 1 });
     h = v3.normalize(v3.reject(pole, d));
     const nu = nuInfOf(rp);
     pHat = v3.sub(v3.scale(d, -Math.cos(nu)), v3.scale(v3.cross(h, d), Math.sin(nu)));

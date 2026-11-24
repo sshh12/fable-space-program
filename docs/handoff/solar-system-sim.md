@@ -20,13 +20,14 @@ BLOCKING, island-core: in the star's sphere the island integrates offsets from a
 takes the offset for the Sun-centred state):
 - the DEPARTURE half from the 200 km parking orbit to the Earth's sphere exit: flown (Mars, 2030-12-24 window);
 - the ARRIVAL half from the planet's sphere on the window's arrival hyperbola into a bound orbit: flown for Mars,
-  Venus and Callisto; Phobos not (the pilot has no rendezvous yet: section 6);
+  Venus and Callisto; Phobos's rendezvous flies to the velocity match 279 km from Phobos and stops there (section 6);
 - the cruise between them (two heliocentric corrections, written) is not flown: it waits for request -4.
 
 **Not done** (in the order a successor should take them):
 0. When island-core has request -4 in: `SOLAR_SYSTEM_FLIGHTS=1 ... transferFlight.test.ts` (section 6) flies the
    five full flights; fix what the cruise shows (the corrections are written and untested in flight).
-1. Phobos: the rendezvous after a Mars capture (section 6 has the design and the numbers it needs).
+1. Phobos: one trim a quarter revolution before the meeting on the predictor's closest approach (section 6, "what is
+   left"); the rest of the rendezvous is built and flown.
 2. The Callisto full flight needs the cruiser's full 10.9 km/s: fleet-data is reworking the Albatross in the shared
    tree (four tanks, the last two filled by the depot; its own scenario now states those resources). When that is
    committed, give data/defs/scenarios/transfer-albatross-leo-200.json the same `resources` (all four tanks full):
@@ -193,7 +194,7 @@ ownChain(current, planned), targetChain, { count, horizon, targetHeadUt })`; `la
 | A Neptune approach finds Triton | Met |
 | Chain closest approaches against brute force at 1 s: 1 m, 0.1 s; cost at most 1 ms for three LEO orbits | Met (two LEO orbits, a 14 km/s head-on pass, a lunar arrival across an SOI change); 0.08 ms for three LEO orbits |
 | Rails of every body and a craft at 1e7x for 250 years: phase error under 1 mm of arc; no NaN | Met with `propagateAtTick` (double-double reduction): 1.2e-5 mm of arc for a low orbit over 47,337 frames; every body finite at every frame. The plain float64 `propagate(o, tick / 120)` is 6 mm: the island should take `propagateAtTick` for rails (not requested yet; a numerics change of island-core's) |
-| Transfer pilot: Mars from 200 km with 6.5 km/s, three dates; Venus, Titan or Callisto, Phobos | NOT MET as whole flights: blocked by request -4 (the World cannot carry a craft through the Sun's sphere). Flown in halves under real physics: the Mars departure (2030-12-24 window: 3,669 m/s planned in 57 evaluations, flown; the Earth's sphere left on the predicted arc that enters Mars's sphere); the arrival legs into a bound orbit: Mars (e 0.960, 1,174 m/s), Venus (e 0.934, 603 m/s), Callisto with the Albatross (e 0.769, 3,516 m/s). Phobos not flown (no rendezvous). Section 6 |
+| Transfer pilot: Mars from 200 km with 6.5 km/s, three dates; Venus, Titan or Callisto, Phobos | NOT MET as whole flights: blocked by request -4 (the World cannot carry a craft through the Sun's sphere). Flown in halves under real physics: the Mars departure (2030-12-24 window: 3,669 m/s planned in 57 evaluations, flown; the Earth's sphere left on the predicted arc that enters Mars's sphere); the arrival legs into a bound orbit: Mars (e 0.960, 1,174 m/s), Venus (e 0.934, 603 m/s), Callisto with the Albatross (e 0.769, 3,516 m/s). Phobos: the rendezvous flies to a velocity match 279 km from Phobos and the closing is refused there (not bound). Section 6 |
 | deltaVToOrbit: Mars, Jupiter, Mercury against hand values to 2 %; the table for 32 bodies with and without refuel | Met (Hohmann legs against a hand computation: within 2 %); the table with the broken-plane and seven-year columns: section 4 |
 | Terrain guard green; 27-body provider within 10 % of today's two-body provider; a body released after its last slot | Met: 27 bodies ('launchSystems') 625 ms and 162.8 MiB against the two-body provider's 737 ms and 162.8 MiB; release tested (every tile dropped). Guard: section 1 |
 | Measured: heliocentric predictPatches (budget 20 ms); body snapshot for 32 bodies | 0.14 ms (LEO departure through the Sun's sphere), 0.24 ms (heliocentric Mars flyby); buildBodySnapshots 38.5 us |
@@ -288,7 +289,8 @@ SOLAR_SYSTEM_FLIGHTS=mars,venus ...     # the whole flights of those targets
 | Mars arrival leg | 1001891310 in Mars's sphere, periapsis 1.5 x the aim | FLOWN: approach correction 12.4 m/s, capture 1,162 m/s, bound e 0.960, periapsis 221 km, apoapsis 172,511 km; 1.8 d, 3 s wall |
 | Venus | 991573200 (2031-06-05 window, 127.8 d, plane 19 deg) | Departure FLOWN: 3,743 m/s, 42 evaluations, 46 km off; after the burn the encounter stands (periapsis 114,662 km). Then BLOCKED. Arrival leg (1002526270) FLOWN: correction 27.5 m/s, capture 575 m/s, bound e 0.934, periapsis 311.5 km; 2.0 d, 2 s wall |
 | Callisto (transfer-albatross-leo-200) | 948790800 (2030-01-25 window, 910 d to Jupiter, plane 21.6 deg) | Departure FLOWN: 6,328 m/s planned (13 evaluations, the Jupiter flyby 21,535 km off the aim), 6,245 flown: the Canopus-N's slow spool leaves 83 m/s unflown at PilotCore's cut-off; short of Jupiter's sphere after the burn. Then BLOCKED. Arrival leg (1020326145, the flyby's periapsis at Callisto's position) FLOWN: early correction 1.81 m/s, late 1.92 m/s, capture 3,512 m/s, bound e 0.769, periapsis 113 km, apoapsis 16,878 km; 77.6 d, 11 s wall. Budget: 6.33 + about 0.1 of corrections + 3.52 = 9.9 of the cruiser's 10.9 (the committed vehicle; section 0 item 2) |
-| Phobos | - | NOT FLOWN: no rendezvous in the pilot (below) |
+| Phobos (arrival leg, 2035 window) | 1137045227 in Mars's sphere, periapsis at Phobos's orbit radius | NOT MET. The rendezvous flies as far as the velocity match: approach 0.94 m/s (the periapsis on Phobos's orbit), capture at Mars 1,061 m/s (at 5,981 km), plane change at apoapsis 5.24 m/s, phasing 574 m/s (an 11.25 h orbit, 1.47 Phobos periods), trim at its apoapsis 11.8 m/s, the meeting 279 km from Phobos (aimed 33 km), match 291 m/s; then the closing burn from 279 km needs more than RENDEZVOUS_CLOSING_MAX (60 m/s) and is refused. 12.7 d, 8 s wall (clean worktree: the shared tree's session creation crashed at that moment in island-core's src/sim/view/frame.ts). The gated test fails here, as it should |
+
 
 Budget against section 4 (Mars, measured halves): departure 3,669 + arrival 1,174 = 4,843 m/s of 6,517 (the
 cruise corrections unmeasured; the departure's finite-burn error must come out of the 1,674 m/s left);
@@ -297,16 +299,20 @@ deltaVToOrbit says 3.70 with aerobraking for the best window of 2029-31. Venus 3
 flight is expected near a minute once the cruise runs on rails at the top level. Departure halves: scratch tool
 of the second builder (the test's starts, stopped at the end of the burn); the arrival legs: the gated test.
 
-**Phobos: what the pilot needs** (its sphere of 16.6 km is crossed in about 8 s at the 2 km/s of a flyby, and its
-surface reaches 14.0 km, so a bound orbit lies between 14.0 and 16.6 km at about 7 m/s): (1) in Mars's sphere an
-approach correction that puts the periapsis ON Phobos's orbit (radius 9,376 km and in its plane: two residuals,
-the radius and the out-of-plane offset, for the Newton step); (2) the capture at that periapsis into a high
-ellipse; (3) at its apoapsis the plane change to Phobos's plane (the periapsis then lies on Phobos's orbit);
-(4) at periapsis the phasing burn: a period of (the time Phobos needs to reach the periapsis) + m Phobos periods;
-(5) at the meeting periapsis the velocity match (about 30-120 m/s), which leaves the craft co-orbiting within
-Phobos's sphere; (6) the circularisation about Phobos at 15.3 km. Phobos's osculating orbit precesses 0.43 deg a
-day, about 70 km at its radius, so (4) must be refined on the predictor's encounter, not on the osculating orbit.
-Budget: the 2035 window is the one that fits the 6.5 km/s stack (departure 3.62 + about 1.9 coplanar at Mars).
+**Phobos: what is built and what is left.** Built (src/pilot/generic/transfer.ts, `rendezvousTick`, for any moon
+whose sphere a tangent flyby crosses in less than TINY_MOON_CROSSING, 1 h): (1) an approach correction that puts
+the periapsis ON the moon's orbit (radius and out-of-plane residuals); (2) the capture at Mars into the high
+ellipse; (3) at its apoapsis the plane change to the moon's plane; (4) at the next periapsis the phasing burn from
+an analytic first guess (the period that brings the moon RENDEZVOUS_STANDOFF_SOI_SHARE x its sphere ahead after
+whole moon periods; Newton's probes on the 9.7-day ellipse would shift the meeting by radians) refined by Newton;
+(5) a trim at the phasing orbit's apoapsis; (6) the velocity match at the closest approach, flown only within ten
+standoffs (else the phasing again, twice at most); (7) closing burns into the sphere with the periapsis at 15.3 km
+(between Phobos's highest ground, 14.0 km, and its 16.6 km sphere), at most four, each capped; (8) a circular
+capture at that periapsis. LEFT: the meeting lands 279 km off because steps 4-5 place Phobos on its osculating
+orbit, which drifts from the ephemeris by about 250 km in half a day (its periapsis and node precess fast); add a
+trim a quarter revolution before the meeting on the predictor's closest-approach marker (reliable that close,
+where over a long patch it is not), then (7) starts within a few standoffs. Budget: the 2035 window fits the
+6.5 km/s stack (departure 3,643 + about 1,950 at Mars as flown to the match).
 
 **Measured on the way** (the defects fixed here): the old Stumpff form lost the long arcs (1 - cos z cancels near
 the upper bracket); a departure aimed by the arc between the centres misses by gigametres; a compass search moves

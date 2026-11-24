@@ -69,12 +69,13 @@ view reference passes 3 of 3); each item is what the island needs to be right on
    tests/unit/solar-system/defaults.test.ts tests/unit/terrain-core/lazyResidency.test.ts`; `npm run
    test:mission` (the golden unchanged: the same two bodies preloaded in the same order).
 
-7. **A vessel about a body without terrain (found in the transfer flights, 2026-11-24).** On the staged library a
-   craft in the Sun's sphere reaches a call that asks the terrain provider about 'sun', which has no terrain
-   section, and the provider throws "body "sun" is not served by this provider". Every caller of
-   `heightAt` / `normalAt` / `surfaceKind` / `prewarmCollision` / `ensureLoaded` / `residency` on the island's
-   body should be guarded by `frames.base(bodyId).hasTerrain` as src/sim/world/start.ts and record.ts already
-   are (the giants and the Sun have none). Details of the call site in docs/handoff/solar-system-sim.md section 6.
+7. **A vessel about a body without terrain (found in the transfer flights, 2026-11-24).** On the staged library the
+   map's impact marker on the Sun reaches `Seat.hintImpact` -> `IslandImpl.hintImpact` (island.ts:1189) ->
+   `TerrainPolicy.request` -> `ensureLoaded('sun', ...)`, and the provider throws "body "sun" is not served by this
+   provider" (the Sun has no terrain section). Guard `hintImpact` / `TerrainPolicy.track` by
+   `frames.base(bodyId).hasTerrain`, as src/sim/world/start.ts and record.ts are. The impact marker itself came from
+   the defect of request solar-system-sim-4 (blocking); this guard is needed independently of it (a real impact on
+   a giant's floor is a marker on a body without terrain too).
 
 Must NOT change: anything on the shipped library (each item above is identical there or not reached).
 

@@ -146,9 +146,9 @@ describe.skipIf(!runs('arrival'))('the arrival legs: from the planet sphere on t
     ['mars', 'transfer-leo-200', 977493600, 1.5],
     ['venus', 'transfer-leo-200', 991573200, 1.5],
     ['callisto', 'transfer-albatross-leo-200', 948790800, 1.006],
-    ['phobos', 'transfer-leo-200', 977493600, 1],
+    ['phobos', 'transfer-leo-200', 1119636000, 1],
   ] as const)('%s (%s, window from %i)', async (targetId, scenarioId, windowFrom, share) => {
-    const start = await arrivalStart(targetId, windowFrom, PARK, share);
+    const start = await arrivalStart(targetId, windowFrom, PARK, share, targetId !== 'phobos');
     const r = await fly(scenarioId, targetId, start.startUt, start);
     expect(r.failure, r.log.join('\n')).toBeNull();
     expect(r.bodyId).toBe(targetId);

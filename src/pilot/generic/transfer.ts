@@ -36,6 +36,7 @@ import {
   ejectionDeltaV,
   ejectionPoint,
   meanOrbit,
+  stateOnConic,
   synodic,
   timeToDirection,
   windowArc,
@@ -80,6 +81,20 @@ export const MOON_AIM_SOI_SHARE = 0.3;
  * misses NO_ENCOUNTER + the closest approach; nothing measurable NOTHING_FOUND. So a miss never beats an encounter.
  */
 export const MOON_MISS = 1e8;
+/** A moon whose sphere a tangent flyby crosses in less than this (s) is reached by a rendezvous after a capture at the planet. */
+export const TINY_MOON_CROSSING = 3600;
+/** The rendezvous meets the moon this many of its spheres away, matches its velocity there, then closes in. */
+export const RENDEZVOUS_STANDOFF_SOI_SHARE = 2;
+/** Closing burns flown at most before the rendezvous gives up (each trims what the last left), and the largest one, m/s. */
+export const RENDEZVOUS_CLOSINGS = 4;
+export const RENDEZVOUS_CLOSING_MAX = 60;
+/** The velocity match is flown only within this many standoffs of the moon; otherwise the phasing is flown again (at most RENDEZVOUS_PHASINGS more times). */
+export const RENDEZVOUS_MATCH_STANDOFFS = 10;
+export const RENDEZVOUS_PHASINGS = 2;
+/** The phasing orbit's period is at least this share of the moon's (its apoapsis then clears the moon's orbit). */
+export const RENDEZVOUS_MIN_PERIOD_SHARE = 1.15;
+/** The phasing and its trim are planned this long after the apsis, s. */
+export const RENDEZVOUS_APSIS_OFFSET = 60;
 export const NO_ENCOUNTER = 1e9;
 export const NOTHING_FOUND = 1e12;
 
@@ -128,6 +143,11 @@ export class TransferPilot extends PilotCore {
   private corrections = 0;
   private moonCorrected = false;
   private moonLateCorrections = 0;
+  /** The rendezvous step for a tiny moon (rendezvousTick), and whether the target is one (decided in the planet's sphere). */
+  private rv = 0;
+  private closings = 0;
+  private phasings = 0;
+  private tiny: boolean | null = null;
   private approachCorrected = false;
   /** Delta-v of every burn flown, m/s (planned), by label. */
   get flown(): Readonly<Record<string, number>> {
@@ -164,6 +184,7 @@ export class TransferPilot extends PilotCore {
   }
 
   private periapsisRadius(bodyId: string): number {
+    if (bodyId === this.targetId && this.tiny === true) return this.tinyOrbitRadius();
     const alt = bodyId === this.targetId && this.opts.periapsisAltitude !== undefined ? this.opts.periapsisAltitude : TransferPilot.defaultPeriapsisAltitude(this.defs, bodyId);
     return this.equatorialRadius(bodyId) + alt;
   }
@@ -280,6 +301,10 @@ export class TransferPilot extends PilotCore {
           this.warpFor(Math.max(60, until - s.simUt) - 120);
           return;
         }
+        if (this.v.bodyId === this.planetId && this.planetId !== this.targetId && this.isTinyMoon()) {
+          this.rendezvousTick();
+          return;
+        }
         if (this.v.bodyId === this.planetId && this.planetId !== this.targetId) {
           const cost = (p: readonly Patch[]): number => arrivalCost(p, this.targetId, this.planetId, this.periapsisRadius(this.targetId), this.equatorialRadius(this.targetId));
           if (!this.moonCorrected) {
@@ -309,6 +334,11 @@ export class TransferPilot extends PilotCore {
           else this.fail(`no encounter with ${this.targetId} after the correction`);
           return;
         }
+        if (this.v.bodyId === this.targetId && this.tiny === true) {
+          // the closing burn set the periapsis between the ground and the sphere: a circular orbit there
+          this.planCapture();
+          return;
+        }
         if (this.v.bodyId === this.targetId) {
           const rp = this.periapsisRadius(this.targetId);
           const R = this.equatorialRadius(this.targetId);
@@ -327,7 +357,7 @@ export class TransferPilot extends PilotCore {
       }
       case 'orbit': {
         if (this.v.bodyId === this.targetId && this.rd.eccentricity < 1) {
-          this.note(`bound about ${this.targetId}: e ${this.rd.eccentricity.toFixed(4)}, periapsis ${(this.rd.periapsisAltitude / 1000).toFixed(1)} km, apoapsis ${(this.rd.apoapsisAltitude / 1000).toFixed(0)} km`);
+          this.note(`bound about ${this.targetId}: e ${this.rd.eccentricity.toFixed(4)}, periapsis ${(this.rd.periapsisAltitude / 1000).toFixed(2)} km, apoapsis ${(this.rd.apoapsisAltitude / 1000).toFixed(2)} km`);
           this.done = true;
         } else this.fail(`not bound about ${this.targetId} after the capture (body ${this.v.bodyId}, e ${this.rd.eccentricity.toFixed(4)})`);
         return;
@@ -519,18 +549,26 @@ export class TransferPilot extends PilotCore {
    * periapsis error; for a moon, first the closest approach, then the periapsis about it). When the first stage
    * has nothing to measure yet (no patch about the planet), a compass search on `cost` comes first.
    */
-  private runCorrection(label: string, cost: (snap: SimSnapshot) => number, stages: ((snap: SimSnapshot) => number | null)[], limit: number, why: string): void {
-    const start: NodeVars = { ut: this.s.simUt + 900, prograde: 0, normal: 0, radial: 0 };
+  private runCorrection(
+    label: string,
+    cost: (snap: SimSnapshot) => number,
+    stages: ((snap: SimSnapshot) => number | number[] | null)[],
+    limit: number,
+    why: string,
+    opts: { ut?: number; tolerance?: number; maxDeltaV?: number; initial?: Partial<NodeVars> } = {},
+  ): void {
+    const start: NodeVars = { ut: opts.ut ?? this.s.simUt + 900, prograde: 0, normal: 0, radial: 0, ...opts.initial };
+    const tolerance = opts.tolerance ?? 2;
     const vars = [
       { key: 'prograde' as const, probe: 0.5, maxStep: 100 },
       { key: 'normal' as const, probe: 0.5, maxStep: 100 },
       { key: 'radial' as const, probe: 0.5, maxStep: 100 },
     ];
     const asResiduals =
-      (f: (snap: SimSnapshot) => number | null) =>
+      (f: (snap: SimSnapshot) => number | number[] | null) =>
       (snap: SimSnapshot): number[] | null => {
         const e = f(snap);
-        return e === null ? null : [e];
+        return e === null ? null : Array.isArray(e) ? e : [e];
       };
     this.beginManeuver({
       label,
@@ -539,7 +577,7 @@ export class TransferPilot extends PilotCore {
         (function* (): Plan {
           let x = start;
           for (let i = 0; i < stages.length; i++) {
-            let r = yield* minNormNewton(x, { vars, residuals: asResiduals(stages[i]!), tolerance: 2, maxIterations: 12 }, budget);
+            let r = yield* minNormNewton(x, { vars, residuals: asResiduals(stages[i]!), tolerance, maxIterations: 12 }, budget);
             if (!Number.isFinite(r.cost) && i === 0) {
               const c = yield* compassSearch(
                 x,
@@ -555,44 +593,231 @@ export class TransferPilot extends PilotCore {
                 budget,
               );
               x = c.best;
-              r = yield* minNormNewton(x, { vars, residuals: asResiduals(stages[i]!), tolerance: 2, maxIterations: 12 }, budget);
+              r = yield* minNormNewton(x, { vars, residuals: asResiduals(stages[i]!), tolerance, maxIterations: 12 }, budget);
             }
             if (Number.isFinite(r.cost)) x = r.best;
           }
           return x;
         })(),
-      reject: (snap) => (cost(snap) >= limit ? `${why} (${stages.map((f, i) => `stage ${i + 1} residual ${f(snap)?.toFixed(1) ?? 'none'} km`).join(', ')})` : null),
+      reject: (snap) => {
+        const n = snap.nodes[0];
+        if (opts.maxDeltaV !== undefined && n && Math.hypot(n.dv.prograde, n.dv.normal, n.dv.radial) > opts.maxDeltaV) return `the ${label} burn exceeds ${opts.maxDeltaV} m/s`;
+        return cost(snap) >= limit ? `${why} (${stages.map((f, i) => `stage ${i + 1} residual ${JSON.stringify(f(snap))} km`).join(', ')})` : null;
+      },
       describe: (snap) => `cost after ${cost(snap).toFixed(1)}`,
       skipBelow: 0.3,
       then: () => this.go('cruise'),
     });
   }
 
-  private planCapture(): void {
+  /** Capture at the periapsis about `bodyId` (default the target) into its capture ellipse (a tiny moon: a circular orbit there). */
+  private planCapture(bodyId = this.targetId, then: () => void = () => this.go('orbit')): void {
     const s = this.s;
     const p = s.patches.current[0];
     const peri = p?.markers.find((m) => m.kind === 'periapsis');
-    if (!p || p.bodyId !== this.targetId || !peri) {
-      this.fail(`no periapsis about ${this.targetId} to capture at`);
+    if (!p || p.bodyId !== bodyId || !peri) {
+      this.fail(`no periapsis about ${bodyId} to capture at`);
       return;
     }
-    const target = this.defs.bodies[this.targetId]!;
+    const body = this.defs.bodies[bodyId]!;
     const rp = v3.len(peri.r);
-    const ra = this.captureApoapsis(this.targetId, rp);
+    const ra = bodyId === this.targetId && this.isTinyMoon() ? rp : this.captureApoapsis(bodyId, rp);
     const aHyp = p.conic.a;
-    const dv = aHyp < 0 ? captureDeltaV(target.mu, aHyp, rp, ra) : 0;
-    this.note(`capture: ${dv.toFixed(0)} m/s retrograde at periapsis ${(rp / 1000 - this.equatorialRadius(this.targetId) / 1000).toFixed(1)} km`);
-    if (!(dv > 0)) {
-      this.go('orbit');
+    const dv = aHyp < 0 ? captureDeltaV(body.mu, aHyp, rp, ra) : Math.sqrt(body.mu * (2 / rp - 1 / aHyp)) - Math.sqrt(body.mu * (2 / rp - 2 / (rp + ra)));
+    this.note(`capture about ${bodyId}: ${dv.toFixed(1)} m/s retrograde at periapsis ${((rp - this.equatorialRadius(bodyId)) / 1000).toFixed(2)} km`);
+    if (!(dv > 0.12)) {
+      then();
       return;
     }
     this.beginManeuver({
-      label: 'capture',
+      label: bodyId === this.targetId ? 'capture' : `capture-${bodyId}`,
       initial: { ut: peri.ut, prograde: -dv, normal: 0, radial: 0 },
-      trim: false,
+      trim: bodyId === this.targetId && this.isTinyMoon(),
       timeout: peri.ut - s.simUt + 7200,
-      then: () => this.go('orbit'),
+      then,
     });
+  }
+
+  // ----------------------------------------------------------------------------------- the rendezvous
+
+  /**
+   * A tiny moon (a flyby crosses its sphere in less than TINY_MOON_CROSSING at the speed relative to it of a flyby
+   * tangent to its orbit) is reached by a rendezvous after a capture at the planet, not by a flyby.
+   */
+  private isTinyMoon(): boolean {
+    if (this.tiny !== null) return this.tiny;
+    if (this.planetId === this.targetId) return (this.tiny = false);
+    const muP = this.defs.bodies[this.planetId]!.mu;
+    const aM = meanOrbit(this.bodySnap(this.targetId), this.bodySnap(this.planetId), muP).a;
+    const p0 = this.s.patches.current[0];
+    const vinf2 = p0 && p0.bodyId === this.planetId && p0.conic.a < 0 ? -muP / p0.conic.a : 0;
+    const vrel = Math.sqrt(vinf2 + (2 * muP) / aM) - Math.sqrt(muP / aM);
+    const soi = this.bodySnap(this.targetId).soiRadius ?? 10 * this.defs.bodies[this.targetId]!.radius;
+    return (this.tiny = vrel > 0 && (2 * soi) / vrel < TINY_MOON_CROSSING);
+  }
+
+  /** The planned (after the node, else the first) patch about the planet. */
+  private planetPatch(patches: readonly Patch[]): Patch | null {
+    const about = patches.filter((p) => p.bodyId === this.planetId);
+    return about.find((p) => p.afterNodeId !== undefined) ?? about[0] ?? null;
+  }
+
+  /** The moon's orbit about the planet now (normal and radius), and the standoff of the meeting. */
+  private moonOrbit(): { W: Vec3; a: number; standoff: number; soi: number } {
+    const M = this.bodySnap(this.targetId);
+    const soi = M.soiRadius ?? 10 * this.defs.bodies[this.targetId]!.radius;
+    return { W: M.orbit!.W, a: meanOrbit(M, this.bodySnap(this.planetId), this.defs.bodies[this.planetId]!.mu).a, standoff: RENDEZVOUS_STANDOFF_SOI_SHARE * soi, soi };
+  }
+
+  /** The radius of the orbit about a tiny moon: between its highest ground and its sphere. */
+  private tinyOrbitRadius(): number {
+    const d = this.defs.bodies[this.targetId]!;
+    const top = d.radius + (d.terrain?.maxElevation ?? 0);
+    return 0.5 * (top + this.moonOrbit().soi);
+  }
+
+  private rendezvousTick(): void {
+    const s = this.s;
+    const cur = s.patches.current[0]!;
+    const orbit = this.moonOrbit();
+    const none = (): number => NOTHING_FOUND;
+    switch (this.rv) {
+      case 0: {
+        // on the hyperbola: the periapsis ON the moon's orbit (its radius, in its plane)
+        this.rv = 1;
+        this.cmd.setTarget({ kind: 'body', id: this.targetId });
+        const onOrbit = (snap: SimSnapshot): number[] | null => {
+          const p = this.planetPatch(snap.patches.planned);
+          if (!p) return null;
+          const rp = p.conic.p / (1 + p.conic.e);
+          return [(rp - orbit.a) / 1000, (rp * v3.dot(p.conic.P, orbit.W)) / 1000];
+        };
+        this.note(`rendezvous: the periapsis on ${this.targetId}'s orbit (${(orbit.a / 1000).toFixed(0)} km)`);
+        this.runCorrection('rendezvous-approach', (snap) => Math.hypot(...(onOrbit(snap) ?? [NOTHING_FOUND])), [onOrbit], Infinity, '', { tolerance: 1 });
+        return;
+      }
+      case 1: {
+        this.rv = 2;
+        this.planCapture(this.planetId, () => this.go('cruise'));
+        return;
+      }
+      case 2: {
+        // bound about the planet: at the apoapsis, the moon's plane (the periapsis stays on the moon's orbit)
+        const apo = cur.markers.find((m) => m.kind === 'apoapsis');
+        if (cur.conic.e >= 1 || !apo) {
+          this.fail(`not bound about ${this.planetId} for the rendezvous`);
+          return;
+        }
+        this.rv = 3;
+        const e1 = v3.normalize(v3.anyOrthogonal(orbit.W));
+        const e2 = v3.cross(orbit.W, e1);
+        const plane = (snap: SimSnapshot): number[] | null => {
+          const p = this.planetPatch(snap.patches.planned);
+          if (!p || p.afterNodeId === undefined) return null;
+          const rp = p.conic.p / (1 + p.conic.e);
+          return [(v3.dot(p.conic.W, e1) * orbit.a) / 1000, (v3.dot(p.conic.W, e2) * orbit.a) / 1000, (rp - orbit.a) / 1000];
+        };
+        this.runCorrection('rendezvous-plane', (snap) => Math.hypot(...(plane(snap) ?? [NOTHING_FOUND])), [plane], Infinity, '', { ut: apo.ut, tolerance: 1 });
+        return;
+      }
+      case 3:
+      case 4: {
+        // 3: phasing AT the next periapsis (it stays on the moon's orbit); 4: its trim at the phasing orbit's apoapsis.
+        // Both put the moon STANDOFF ahead of the craft at the periapsis half a revolution or more after the node (the
+        // moon on its osculating orbit: smooth, where the predictor's closest approach jumps between minima)
+        const at = cur.markers.find((m) => m.kind === (this.rv === 3 ? 'periapsis' : 'apoapsis'));
+        if (!at || cur.conic.period === null) {
+          this.fail(`no ${this.rv === 3 ? 'periapsis' : 'apoapsis'} for the phasing`);
+          return;
+        }
+        const phasing = this.rv === 3;
+        const label = phasing ? 'rendezvous-phasing' : 'rendezvous-trim';
+        this.rv++;
+        // a minute past the apsis: a node exactly on it gives the predictor no patch after it to measure
+        const ut = at.ut + RENDEZVOUS_APSIS_OFFSET;
+        const M = this.bodySnap(this.targetId);
+        const P = this.bodySnap(this.planetId);
+        const phase = (snap: SimSnapshot): number | null => {
+          const p = this.planetPatch(snap.patches.planned);
+          if (!p || p.conic.period === null) return null;
+          // the phasing (just past a periapsis) aims at the periapsis after next; its trim (just past the apoapsis) at the next
+          let t = p.conic.tPeriapsis;
+          while (t <= ut + (phasing ? 0.5 * p.conic.period : 0)) t += p.conic.period;
+          const m = bodyStateAt(M, P, t).r;
+          const ang = Math.atan2(v3.dot(v3.cross(p.conic.P, m), orbit.W), v3.dot(p.conic.P, m));
+          return (ang * orbit.a - orbit.standoff) / 1000;
+        };
+        // the phasing's first guess: the period that brings the moon STANDOFF ahead after whole moon periods (Newton's
+        // probes on the long capture ellipse would shift the meeting by radians)
+        let initial: Partial<NodeVars> = {};
+        if (phasing && M.orbit && M.orbit.period !== null) {
+          const mu = this.defs.bodies[this.planetId]!.mu;
+          const rp = cur.conic.p / (1 + cur.conic.e);
+          const m0 = bodyStateAt(M, P, ut).r;
+          const theta0 = Math.atan2(v3.dot(v3.cross(cur.conic.P, m0), orbit.W), v3.dot(cur.conic.P, m0));
+          const nM = (2 * Math.PI) / M.orbit.period;
+          let T = (((orbit.standoff / orbit.a - theta0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / nM;
+          while (T < RENDEZVOUS_MIN_PERIOD_SHARE * M.orbit.period) T += M.orbit.period;
+          const aPh = Math.cbrt(mu * (T / (2 * Math.PI)) ** 2);
+          initial = { prograde: Math.sqrt(mu * (2 / rp - 1 / aPh)) - Math.sqrt(mu * (2 / rp - 1 / cur.conic.a)) };
+          this.note(`rendezvous: phasing period ${(T / 3600).toFixed(2)} h (${(T / M.orbit.period).toFixed(2)} of ${this.targetId}'s), ${initial.prograde!.toFixed(1)} m/s`);
+        }
+        this.runCorrection(label, (snap) => Math.abs(phase(snap) ?? NOTHING_FOUND), [phase], Infinity, '', { ut, tolerance: 0.5, initial });
+        return;
+      }
+      case 5: {
+        // the meeting: at the closest approach, match the moon's velocity
+        const cas = cur.markers.filter((m) => m.kind === 'closestApproach' && m.value !== undefined);
+        if (cas.length === 0 || cur.conic.period === null) {
+          this.fail(`no closest approach to ${this.targetId} for the meeting`);
+          return;
+        }
+        const ca = cas.reduce((a, b) => (b.value! < a.value! ? b : a));
+        if (ca.value! > RENDEZVOUS_MATCH_STANDOFFS * orbit.standoff) {
+          if (++this.phasings > RENDEZVOUS_PHASINGS) {
+            this.fail(`the rendezvous does not meet ${this.targetId}: closest approach ${(ca.value! / 1000).toFixed(1)} km after ${this.phasings - 1} phasings`);
+            return;
+          }
+          this.note(`rendezvous: closest approach ${(ca.value! / 1000).toFixed(1)} km, too far for the match: phasing again`);
+          this.rv = 3;
+          return;
+        }
+        this.rv = 6;
+        const craft = stateOnConic(cur.conic, ca.ut);
+        const moonV = bodyStateAt(this.bodySnap(this.targetId), this.bodySnap(this.planetId), ca.ut).v;
+        const dv = v3.sub(moonV, craft.v);
+        const pro = v3.normalize(craft.v);
+        const nrm = v3.normalize(v3.cross(craft.r, craft.v));
+        const rad = v3.cross(pro, nrm);
+        this.note(`rendezvous: closest approach ${(ca.value! / 1000).toFixed(1)} km in ${((ca.ut - s.simUt) / 60).toFixed(0)} min; match ${v3.len(dv).toFixed(1)} m/s`);
+        this.beginManeuver({ label: 'rendezvous-match', initial: { ut: ca.ut, prograde: v3.dot(dv, pro), normal: v3.dot(dv, nrm), radial: v3.dot(dv, rad) }, then: () => this.go('cruise') });
+        return;
+      }
+      case 6: {
+        // co-orbiting outside the moon's sphere: a closing burn into it, the periapsis at the orbit radius about it
+        this.rv = 7;
+        this.closings++;
+        const rw = this.tinyOrbitRadius();
+        const close = (snap: SimSnapshot): number | null => {
+          const at = periapsisAbout(snap.patches.planned, this.targetId);
+          if (at !== null) return (at - rw) / 1000;
+          const p = this.planetPatch(snap.patches.planned);
+          let best = Infinity;
+          if (p) for (const m of p.markers) if (m.kind === 'closestApproach' && m.value !== undefined) best = Math.min(best, m.value);
+          return Number.isFinite(best) ? (best - rw) / 1000 : null;
+        };
+        this.note(`rendezvous: closing to ${(rw / 1000).toFixed(1)} km about ${this.targetId}`);
+        this.runCorrection('rendezvous-closing', (snap) => Math.abs(close(snap) ?? NOTHING_FOUND), [close], Infinity, '', { ut: s.simUt + 120, tolerance: 0.1, maxDeltaV: RENDEZVOUS_CLOSING_MAX });
+        return;
+      }
+      default: {
+        // waiting for the entry into the moon's sphere; a closing burn that left it short is flown again
+        const next = this.soiChangeUt(s.patches.current);
+        if (next !== null) this.warpFor(next - s.simUt - 30);
+        else if (this.closings < RENDEZVOUS_CLOSINGS) this.rv = 6;
+        else this.fail(`no entry into the sphere of ${this.targetId} after ${this.closings} closing burns`);
+      }
+    }
   }
 }
 
