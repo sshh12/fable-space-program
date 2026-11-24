@@ -121,7 +121,10 @@ describe('definition loader', () => {
         expect(first.flatRadius, site.id).toBeGreaterThan(0);
         expect(first.blendRadius, site.id).toBeGreaterThan(first.flatRadius);
         expect(Number.isFinite(first.mountHeight), site.id).toBe(true);
-        expect(first.structures.length).toBeGreaterThan(0);
+        // Structures stand only where the ground was surveyed (tools/vehicle/site-ground.ts surveys a site's first
+        // pad): a pad without a survey has none, and every pad states its list.
+        for (const p of pads) expect(Array.isArray(p.structures), `${site.id}/${p.id}`).toBe(true);
+        if (lib.sections[`visuals/sites/${site.id}`] !== undefined) expect(first.structures.length, site.id).toBeGreaterThan(0);
         // Every pad has its location; the first pad stands at the reference point.
         expect(Object.keys(site.location.pads!).sort()).toEqual(pads.map((p) => p.id).sort());
         expect(site.location.pads![first.id]).toEqual({ latDeg: site.location.latDeg, lonDeg: site.location.lonDeg, padElevation: site.location.padElevation });

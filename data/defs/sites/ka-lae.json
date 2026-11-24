@@ -30,6 +30,118 @@
       },
       "mountHeight": 18,
       "structures": { "$ref": "ka-lae.structures.json" }
+    },
+    {
+      "id": "lc-2",
+      "name": "Launch Complex 2 (heavy)",
+      "offsetEnu": [
+        -3280,
+        -2590
+      ],
+      "azimuthDeg": 90,
+      "class": "heavy",
+      "flatRadius": 450,
+      "blendRadius": 900,
+      "mountHeight": 18,
+      "structures": []
+    },
+    {
+      "id": "lc-3",
+      "name": "Launch Complex 3 (medium)",
+      "offsetEnu": [
+        -16720,
+        650
+      ],
+      "azimuthDeg": 90,
+      "class": "medium",
+      "flatRadius": 300,
+      "blendRadius": 600,
+      "mountHeight": 10,
+      "structures": []
+    },
+    {
+      "id": "lc-4",
+      "name": "Launch Complex 4 (light)",
+      "offsetEnu": [
+        2330,
+        4820
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-5",
+      "name": "Launch Complex 5 (light)",
+      "offsetEnu": [
+        -5440,
+        -6310
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-6",
+      "name": "Launch Complex 6 (light)",
+      "offsetEnu": [
+        -15130,
+        4040
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-7",
+      "name": "Launch Complex 7 (light)",
+      "offsetEnu": [
+        11840,
+        19700
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-8",
+      "name": "Launch Complex 8 (light)",
+      "offsetEnu": [
+        -3910,
+        -4960
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-9",
+      "name": "Launch Complex 9 (medium)",
+      "offsetEnu": [
+        -17500,
+        1940
+      ],
+      "azimuthDeg": 90,
+      "class": "medium",
+      "flatRadius": 300,
+      "blendRadius": 600,
+      "mountHeight": 10,
+      "structures": []
     }
   ],
   "recoveryZones": [

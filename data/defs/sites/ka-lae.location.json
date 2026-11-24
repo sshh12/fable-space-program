@@ -1,5 +1,47 @@
 {
   "latDeg": 18.987556,
   "lonDeg": -155.603239,
-  "padElevation": 21.62
+  "padElevation": 21.62,
+  "pads": {
+    "lc-2": {
+      "latDeg": 18.964261,
+      "lonDeg": -155.63443,
+      "padElevation": 77.65
+    },
+    "lc-3": {
+      "latDeg": 18.993334,
+      "lonDeg": -155.762263,
+      "padElevation": 45.14
+    },
+    "lc-4": {
+      "latDeg": 19.030902,
+      "lonDeg": -155.581073,
+      "padElevation": 157.98
+    },
+    "lc-5": {
+      "latDeg": 18.930802,
+      "lonDeg": -155.65496,
+      "padElevation": 45.31
+    },
+    "lc-6": {
+      "latDeg": 19.023833,
+      "lonDeg": -155.747167,
+      "padElevation": 195.09
+    },
+    "lc-7": {
+      "latDeg": 19.164688,
+      "lonDeg": -155.490512,
+      "padElevation": 72.11
+    },
+    "lc-8": {
+      "latDeg": 18.942946,
+      "lonDeg": -155.640416,
+      "padElevation": 34.62
+    },
+    "lc-9": {
+      "latDeg": 19.004928,
+      "lonDeg": -155.769694,
+      "padElevation": 48.56
+    }
+  }
 }

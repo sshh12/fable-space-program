@@ -488,7 +488,11 @@ export async function loadDefs(source: DefSource): Promise<DefLibrary> {
   }
   const stated = await loadDir<VehicleDef>(source, files, 'vehicles');
   const vehicles: Record<string, VehicleDef> = {};
-  for (const [id, v] of Object.entries(stated)) {
+  // The library lists the vehicles stated flat in their files first and the vehicles composed of assemblies
+  // after them, each in file order. (Consumers that took the first vehicle of the library for the original
+  // stack keep it until they name the vehicle they mean: request fleet-data-3.)
+  const order = Object.entries(stated).sort(([, a], [, b]) => Number(a.uses !== undefined) - Number(b.uses !== undefined));
+  for (const [id, v] of order) {
     const file = `vehicles/${id}.json`;
     for (const k of ['parts', 'stageGroups', 'stages', 'abort']) {
       if (!Array.isArray((v as unknown as Record<string, unknown>)[k])) throw new DefError(file, `"${k}" must be an array (it may be empty)`);

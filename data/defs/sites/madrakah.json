@@ -1,0 +1,254 @@
+{
+  "id": "madrakah",
+  "name": "Madrakah Coast Spaceport",
+  "bodyId": "earth",
+  "location": {
+    "$ref": "madrakah.location.json"
+  },
+  "pads": [
+    {
+      "id": "lc-1",
+      "name": "Launch Complex 1 (heavy)",
+      "offsetEnu": [
+        0,
+        0
+      ],
+      "azimuthDeg": 90,
+      "class": "heavy",
+      "flatRadius": 450,
+      "blendRadius": 900,
+      "mountHeight": 18,
+      "structures": []
+    },
+    {
+      "id": "lc-2",
+      "name": "Launch Complex 2 (heavy)",
+      "offsetEnu": [
+        149.8,
+        2520
+      ],
+      "azimuthDeg": 90,
+      "class": "heavy",
+      "flatRadius": 450,
+      "blendRadius": 900,
+      "mountHeight": 18,
+      "structures": []
+    },
+    {
+      "id": "lc-3",
+      "name": "Launch Complex 3 (heavy)",
+      "offsetEnu": [
+        -750.4,
+        4859.9
+      ],
+      "azimuthDeg": 90,
+      "class": "heavy",
+      "flatRadius": 450,
+      "blendRadius": 900,
+      "mountHeight": 18,
+      "structures": []
+    },
+    {
+      "id": "lc-4",
+      "name": "Launch Complex 4 (heavy)",
+      "offsetEnu": [
+        -6691.2,
+        16319.5
+      ],
+      "azimuthDeg": 90,
+      "class": "heavy",
+      "flatRadius": 450,
+      "blendRadius": 900,
+      "mountHeight": 18,
+      "structures": []
+    },
+    {
+      "id": "lc-5",
+      "name": "Launch Complex 5 (medium)",
+      "offsetEnu": [
+        -5941.4,
+        18809.6
+      ],
+      "azimuthDeg": 90,
+      "class": "medium",
+      "flatRadius": 300,
+      "blendRadius": 600,
+      "mountHeight": 10,
+      "structures": []
+    },
+    {
+      "id": "lc-6",
+      "name": "Launch Complex 6 (medium)",
+      "offsetEnu": [
+        -5401.5,
+        20219.6
+      ],
+      "azimuthDeg": 90,
+      "class": "medium",
+      "flatRadius": 300,
+      "blendRadius": 600,
+      "mountHeight": 10,
+      "structures": []
+    },
+    {
+      "id": "lc-7",
+      "name": "Launch Complex 7 (medium)",
+      "offsetEnu": [
+        -6181.6,
+        21509.5
+      ],
+      "azimuthDeg": 90,
+      "class": "medium",
+      "flatRadius": 300,
+      "blendRadius": 600,
+      "mountHeight": 10,
+      "structures": []
+    },
+    {
+      "id": "lc-8",
+      "name": "Launch Complex 8 (medium)",
+      "offsetEnu": [
+        -5461.7,
+        22829.6
+      ],
+      "azimuthDeg": 90,
+      "class": "medium",
+      "flatRadius": 300,
+      "blendRadius": 600,
+      "mountHeight": 10,
+      "structures": []
+    },
+    {
+      "id": "lc-9",
+      "name": "Launch Complex 9 (medium)",
+      "offsetEnu": [
+        -6241.8,
+        24119.5
+      ],
+      "azimuthDeg": 90,
+      "class": "medium",
+      "flatRadius": 300,
+      "blendRadius": 600,
+      "mountHeight": 10,
+      "structures": []
+    },
+    {
+      "id": "lc-10",
+      "name": "Launch Complex 10 (medium)",
+      "offsetEnu": [
+        -5371.9,
+        25349.6
+      ],
+      "azimuthDeg": 90,
+      "class": "medium",
+      "flatRadius": 300,
+      "blendRadius": 600,
+      "mountHeight": 10,
+      "structures": []
+    },
+    {
+      "id": "lc-11",
+      "name": "Launch Complex 11 (light)",
+      "offsetEnu": [
+        -5162,
+        26609.6
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-12",
+      "name": "Launch Complex 12 (light)",
+      "offsetEnu": [
+        -5012.1,
+        27599.6
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-13",
+      "name": "Launch Complex 13 (light)",
+      "offsetEnu": [
+        -4682.1,
+        28559.7
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-14",
+      "name": "Launch Complex 14 (light)",
+      "offsetEnu": [
+        -4322.2,
+        29519.7
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-15",
+      "name": "Launch Complex 15 (light)",
+      "offsetEnu": [
+        -3992.3,
+        30479.7
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    },
+    {
+      "id": "lc-16",
+      "name": "Launch Complex 16 (light)",
+      "offsetEnu": [
+        -3662.4,
+        31949.7
+      ],
+      "azimuthDeg": 90,
+      "class": "light",
+      "flatRadius": 150,
+      "blendRadius": 300,
+      "mountHeight": 4,
+      "structures": []
+    }
+  ],
+  "recoveryZones": [
+    {
+      "name": "Arabian Sea",
+      "latDeg": 14,
+      "lonDeg": 63,
+      "radiusKm": 700
+    },
+    {
+      "name": "Central Indian Ocean",
+      "latDeg": -8,
+      "lonDeg": 76,
+      "radiusKm": 1600
+    },
+    {
+      "name": "South Indian Ocean",
+      "latDeg": -30,
+      "lonDeg": 85,
+      "radiusKm": 2000
+    }
+  ]
+}

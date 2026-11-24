@@ -41,9 +41,9 @@
   "cockpit": null,
   "cameras": {
     "chase": {
-      "defaultDistance": 160,
+      "defaultDistance": 150,
       "minDistance": 12,
-      "maxDistance": 4000
+      "maxDistance": 3000
     }
   }
 }

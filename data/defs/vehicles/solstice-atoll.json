@@ -39,7 +39,7 @@
     "chase": {
       "defaultDistance": 100,
       "minDistance": 8,
-      "maxDistance": 2500
+      "maxDistance": 3000
     }
   }
 }
