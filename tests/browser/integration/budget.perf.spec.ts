@@ -167,7 +167,9 @@ for (const { checkpoint, kind, scene, index } of ROWS) {
     test.setTimeout(40 * 60_000);
     let info!: LabInfo;
     const row = await withGpuLock(async (): Promise<Row> => {
-      info = await openIntegration(page, `${scene.query}&hud=0&perf=features&scale=1&governor=off&ballast=1`);
+      // BUDGET_LOOK=1|2 (capability-settings): the page on that display curve (`corelook=`, RENDER_API 13.1), for an A/B of a row.
+      const look = process.env.BUDGET_LOOK === '1' || process.env.BUDGET_LOOK === '2' ? `&corelook=${process.env.BUDGET_LOOK}` : '';
+      info = await openIntegration(page, `${scene.query}&hud=0&perf=features&scale=1&governor=off&ballast=1${look}`);
       // BUDGET_QUALITY=ultra (capability-settings): the Ultra preset applied through Renderer.setQuality before the
       // measurement, every declared setting at 'ultra' and the 3.7 MP cap (the table is stated at Ultra).
       if (process.env.BUDGET_QUALITY === 'ultra') await page.evaluate(() => window.__lab!.renderer.setQuality!({ pixelCap: 3.7, renderScaleMin: 0.6, targetFps: 60, levels: Object.fromEntries(window.__lab!.renderer.core.quality.settings().map((x) => [x.setting.id, 'ultra' as const])) }));
