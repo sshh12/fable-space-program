@@ -6,14 +6,13 @@
  */
 import type { MilestoneRecord, Patch, SimEvent, SimSnapshot, SurfaceTarget } from '@/core/contracts/sim';
 import { v3 } from '@/core/math/vec3';
-import { comStateOf } from '../island';
 import { buildSurfaceTargets } from '../nav/surfaceTargets';
 import { nextRadiusCrossing } from '../orbit/events';
 import { makeOrbit } from '../orbit/kepler';
 import { helmCraft, radarAltitude, structureOf } from '../vessel';
 import { anyEngineBurning } from '../vessel/modules/engine';
 import type { PlanSubject } from '../view/planning';
-import type { ViewVessel } from '../view/snapshot';
+import { comOf, type ViewVessel } from '../view/snapshot';
 import { MilestoneEvaluator, type MilestoneFrame, type MilestoneHost, type OrbitSummary } from './milestones';
 import { FlightRecord } from './record';
 import type { World } from './sim';
@@ -80,9 +79,9 @@ export class MissionWatch implements MilestoneHost {
    */
   observe(a: ViewVessel, dt: number, full: boolean): void {
     const v = a.vessel;
-    const com = comStateOf(v);
+    const com = comOf(a);
     const comRadius = v3.len(com.r);
-    const touching = this.record.observe(v, a.bodyId, dt);
+    const touching = this.record.observe(v, a.bodyId, dt, a.r, a.v);
     const frame: MilestoneFrame = {
       ut: this.w.ut,
       vesselId: v.id,
@@ -127,7 +126,7 @@ export class MissionWatch implements MilestoneHost {
   standardData(): Record<string, number> {
     const w = this.w;
     const a = w.view.focus();
-    return this.record.standardData(a.vessel, a.bodyId, w.view.envOf(a), comStateOf(a.vessel), w.ut, { liftoffUt: this.liftoffUt, incompleteQueries: w.incompleteQueries, terrainWarpClamps: w.terrainWarpClamps, vesselCount: w.roster.length });
+    return this.record.standardData(a.vessel, a.bodyId, w.view.envOf(a), comOf(a), w.ut, { liftoffUt: this.liftoffUt, incompleteQueries: w.incompleteQueries, terrainWarpClamps: w.terrainWarpClamps, vesselCount: w.roster.length });
   }
 
   radarAltitude(): number {
@@ -137,7 +136,7 @@ export class MissionWatch implements MilestoneHost {
 
   orbit(): OrbitSummary {
     const a = this.w.view.focus();
-    const s = comStateOf(a.vessel);
+    const s = comOf(a);
     const body = this.w.frames.info(a.bodyId);
     const o = a.orbit ?? makeOrbit(a.bodyId, body.mu, s.r, s.v, this.w.ut);
     const c = o.conic;

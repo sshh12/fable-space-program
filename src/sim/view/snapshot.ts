@@ -15,6 +15,7 @@ import type { Quat } from '@/core/math/quat';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { utOfTick } from '../clock';
+import type { ReferenceOrbit } from '../island';
 import { comStateOf, type BodyFrames } from '../island/frames';
 import { computeLandingTargetReadout, groundTrackDirection } from '../nav/landingTarget';
 import { launchWindowReadout } from '../nav/launchWindow';
@@ -28,8 +29,21 @@ import { PATCH_REFRESH_STEPS, type Planning, type PlanSubject } from './planning
 
 /** A vessel as the view reads it: an island member, or an object of the clock outside the island. */
 export interface ViewVessel {
+  /**
+   * The vessel. Its own `r`, `v` are NOT read by the view: in an island that integrates offsets from a
+   * reference orbit (the star's sphere of influence) they are metres from the reference point. `r`, `v`
+   * below are the state about the body.
+   */
   vessel: Vessel;
   bodyId: string;
+  /** Position and velocity of the vessel's VES origin in BCI of `bodyId` at the tick. */
+  r: Vec3;
+  v: Vec3;
+  /**
+   * Set when the vessel's own `r`, `v` (and `previous`) are offsets: the island's reference orbit and the
+   * BCI state of its point at the tick. Null = they are BCI already (`r`, `v` are then the vessel's own).
+   */
+  frame: { reference: ReferenceOrbit; r: Vec3; v: Vec3 } | null;
   /** 'full': a member of the island; 'rails' and 'reduced': outside it. */
   tier: FidelityTier;
   mode: VesselSnapshot['translationMode'];
@@ -38,10 +52,17 @@ export interface ViewVessel {
   revision: number;
   /** The vessel's step environment (the sun sample it flies with, the air of its body). */
   env: VesselEnvironment;
-  /** Pose at the start of the last step (presentation interpolation); null = none. */
+  /** Pose at the start of the last step, in the vessel's own frame (presentation interpolation); null = none. */
   previous: { r: Vec3; v: Vec3; q: Quat } | null;
   /** Tick the reduced-tier state refers to. */
   reducedTick: number;
+}
+
+/** Centre-of-mass state of a vessel in view, BCI of its body. */
+export function comOf(e: ViewVessel): { r: Vec3; v: Vec3 } {
+  const v = e.vessel;
+  const com = v.mp.com;
+  return { r: v3.add(e.r, quat.rotate(v.q, com)), v: v3.add(e.v, quat.rotate(v.q, v3.cross(v.w, com))) };
 }
 
 const cloneControls = (c: ControlInputs): ControlInputs => ({ pitch: c.pitch, yaw: c.yaw, roll: c.roll, translate: { x: c.translate.x, y: c.translate.y, z: c.translate.z }, throttle: c.throttle });
@@ -52,7 +73,7 @@ export function situationOf(frames: BodyFrames, e: ViewVessel, ut: number): Vess
   const s = surfaceSituation(v);
   if (s !== null) return s;
   const base = frames.base(e.bodyId);
-  const com = comStateOf(v);
+  const com = comOf(e);
   const atm = base.def.atmosphere;
   if (atm && frames.altitudeAt(e.bodyId, com.r, ut) < atm.simTop) return 'flying';
   const o = e.orbit ?? makeOrbit(e.bodyId, base.info.mu, com.r, com.v, ut);
@@ -84,19 +105,36 @@ export class StageFigures {
     let c = this.cache.get(record);
     if (!c || c.step !== bucket || c.parts !== v.parts.length) {
       const infos = stagingInfo(v, env(), craft);
-      const g = this.frames.gravityAt(e.bodyId, v.r);
+      const g = this.frames.gravityAt(e.bodyId, e.r);
       c = { step: bucket, parts: v.parts.length, infos, acceleration: infos.map((s) => s.twr * g) };
       this.cache.set(record, c);
     }
-    const g = this.frames.gravityAt(e.bodyId, v.r);
+    const g = this.frames.gravityAt(e.bodyId, e.r);
     const cached = c;
     return cached.infos.map((s, i) => ({ ...s, twr: cached.acceleration[i]! / g, actionKinds: s.actionKinds.slice() }));
   }
 }
 
 /** Place a vessel snapshot at the presentation time utP = simUt - lag (alpha = fraction of the last step). */
-export function present(frames: BodyFrames, e: ViewVessel, snap: VesselSnapshot, tick: number, utP: number, lag: number, alpha: number, bodyRoot: Vec3, bodyVel: Vec3): void {
+export function present(frames: BodyFrames, e: ViewVessel, snap: VesselSnapshot, tick: number, utP: number, lag: number, alpha: number, bodyRoot: Vec3, bodyVel: Vec3, atOrigin = false): void {
   const v = e.vessel;
+  if (e.frame !== null) {
+    // The vessel's own state is an offset from its island's reference point: it is taken back over the lag
+    // in that frame (the two fall together, so the offset moves by its own small velocity alone), and the
+    // reference point by its velocity. The offset is the ROOT position when the render root is that point.
+    let r = v.r;
+    let vel = v.v;
+    if (e.orbit === null && e.previous) {
+      r = v3.lerp(e.previous.r, v.r, alpha);
+      vel = v3.lerp(e.previous.v, v.v, alpha);
+    } else r = v3.addScaled(v.r, v.v, -lag);
+    if (e.previous) snap.q = quat.slerp(e.previous.q, v.q, alpha);
+    snap.r = v3.add(v3.addScaled(e.frame.r, e.frame.v, -lag), r);
+    snap.v = v3.add(e.frame.v, vel);
+    snap.rRoot = atOrigin ? v3.clone(r) : v3.add(bodyRoot, snap.r);
+    snap.vRoot = atOrigin ? v3.clone(vel) : v3.add(bodyVel, snap.v);
+    return;
+  }
   if (v.hold !== null && v.anchor) {
     // Landed vessels ride the body: evaluate exactly at the presentation time.
     const qf = frames.orientPresented(e.bodyId, tick, lag);
@@ -149,10 +187,10 @@ export function wreckSnapshot(frames: BodyFrames, e: ViewVessel, ut: number): Ve
     situation: 'landed',
     translationMode: 'landed',
     bodyId: e.bodyId,
-    r: v3.clone(v.r),
-    v: v3.clone(v.v),
-    rRoot: v3.add(root.r, v.r),
-    vRoot: v3.add(root.v, v.v),
+    r: v3.clone(e.r),
+    v: v3.clone(e.v),
+    rRoot: v3.add(root.r, e.r),
+    vRoot: v3.add(root.v, e.v),
     q: quat.clone(v.q),
     w: v3.zero(),
     mass: 0,
@@ -230,7 +268,7 @@ export function buildReadouts(frames: BodyFrames, a: ViewVessel, env: VesselEnvi
   const com = subject.com;
   const orbital = computeOrbitalReadouts({ system, bodyId: a.bodyId, r: com.r, v: com.v, ut, targetBodyId: planning.targetBodyId, patches: planning.patches });
   const vr = vesselReadouts(v, env, planning.stageInfos(subject));
-  const dirFixed = quat.rotateInv(env.qFixedToInertial, v3.normalize(v.r));
+  const dirFixed = quat.rotateInv(env.qFixedToInertial, v3.normalize(a.r));
   let launchWindow: Readouts['launchWindow'] = null;
   if (v.hold !== null && a.bodyId === system.rootId && planning.targetBodyId !== null && frames.info(planning.targetBodyId).parentId === a.bodyId) {
     launchWindow = launchWindowReadout({
@@ -238,12 +276,12 @@ export function buildReadouts(frames: BodyFrames, a: ViewVessel, env: VesselEnvi
       bodyId: a.bodyId,
       latitude: orbital.latitude,
       longitude: orbital.longitude,
-      elevation: v3.len(v.r) - base.info.radius,
+      elevation: v3.len(a.r) - base.info.radius,
       ut,
       targetBodyId: planning.targetBodyId,
     });
   }
-  const track = groundTrackDirection(system, a.bodyId, v.r, v.v, ut);
+  const track = groundTrackDirection(system, a.bodyId, a.r, a.v, ut);
   return {
     met: liftoffUt === null ? 0 : Math.max(0, ut - liftoffUt),
     ...orbital,
@@ -323,9 +361,9 @@ export function buildSnapshot(s: SnapshotSource): SimSnapshot {
   const bodies = system.buildBodySnapshots(utP);
   const bodyIndex = new Map<string, number>();
   // The render root: every ROOT position and velocity below is relative to the centre of the root's body.
-  const origin = root.shifted ? bodies.find((b) => b.id === root.bodyId)! : null;
-  const originR = origin ? v3.clone(origin.rRoot) : null;
-  const originV = origin ? v3.clone(origin.vRoot) : null;
+  const origin = root.originIn(bodies, utP);
+  const originR = origin ? origin.r : null;
+  const originV = origin ? origin.v : null;
   bodies.forEach((b, i) => {
     bodyIndex.set(b.id, i);
     // Orientation on the clock (base + offset): the same rotation the physics and landed vessels use.
@@ -340,23 +378,30 @@ export function buildSnapshot(s: SnapshotSource): SimSnapshot {
   for (const e of s.vessels) {
     const v = e.vessel;
     const b = bodies[bodyIndex.get(e.bodyId)!]!;
+    // A member of the island whose reference point is the render root: its offset IS its ROOT position.
+    const atOrigin = e.frame !== null && root.isAt(e.frame.reference);
     const snap = toVesselSnapshot(v, {
       bodyId: e.bodyId,
       tier: e.tier,
       situation: situationOf(frames, e, simUt),
       translationMode: e.mode,
-      rRoot: v3.add(b.rRoot, v.r),
-      vRoot: v3.add(b.vRoot, v.v),
+      rRoot: atOrigin ? v3.clone(v.r) : v3.add(b.rRoot, e.r),
+      vRoot: atOrigin ? v3.clone(v.v) : v3.add(b.vRoot, e.v),
       sunVisibility: e.env.sunVisibility,
-      gravity: frames.gravityAt(e.bodyId, v.r),
+      gravity: frames.gravityAt(e.bodyId, e.r),
       stages: (craft: number) => s.figures.of(e, craft, s.focusPresent ? a : null, planning, s.subject, () => s.envOf(e)),
       revision: e.revision,
       // The air at the vessel now (the rule of `Readouts.chuteEnvelope`): without it no chute envelope is stated.
-      inAir: e.env.atmosphereAt(v3.len(v.r) - e.env.radius).density > 0,
+      inAir: e.env.atmosphereAt(v3.len(e.r) - e.env.radius).density > 0,
       poseOnly: s.relevant ? !s.relevant(e) : false,
     });
+    if (e.frame !== null) {
+      // (The vessel package states the vessel's own `r`, `v`: here they are offsets.)
+      snap.r = v3.clone(e.r);
+      snap.v = v3.clone(e.v);
+    }
     if (lag > 0) {
-      present(frames, e, snap, s.tick, utP, lag, alpha, b.rRoot, b.vRoot);
+      present(frames, e, snap, s.tick, utP, lag, alpha, b.rRoot, b.vRoot, atOrigin);
       snap.age = Math.max(0, snap.age - lag);
     }
     vessels.push(snap);
@@ -373,8 +418,8 @@ export function buildSnapshot(s: SnapshotSource): SimSnapshot {
   let lockout = false;
   let complete = true;
   if (!s.focusPresent) {
-    readouts = emptyReadouts(planning.targetBodyId === null ? null : bodyTargetReadout(system, a.bodyId, a.vessel.r, a.vessel.v, simUt, planning.targetBodyId, null, null));
-    navball = computeNavball({ mode: planning.navballMode, q: a.vessel.q, r: a.vessel.r, v: a.vessel.v, qFixedToInertial: env.qFixedToInertial, spin: env.spin });
+    readouts = emptyReadouts(planning.targetBodyId === null ? null : bodyTargetReadout(system, a.bodyId, a.r, a.v, simUt, planning.targetBodyId, null, null));
+    navball = computeNavball({ mode: planning.navballMode, q: a.vessel.q, r: a.r, v: a.v, qFixedToInertial: env.qFixedToInertial, spin: env.spin });
   } else {
     const v = a.vessel;
     readouts = buildReadouts(frames, a, env, planning, s.subject, s.surfaceTargets, s.liftoffUt);
@@ -385,17 +430,17 @@ export function buildSnapshot(s: SnapshotSource): SimSnapshot {
     if (planning.targetBodyId !== null) {
       const tb = bodies[bodyIndex.get(planning.targetBodyId)!]!;
       const ab = bodies[bodyIndex.get(a.bodyId)!]!;
-      targetDir = v3.sub(tb.rRoot, v3.add(ab.rRoot, v.r));
+      targetDir = v3.sub(tb.rRoot, v3.add(ab.rRoot, a.r));
     } else if (craft && s.target) {
       // A vessel or a port: the read-out, the direction to it and the velocity relative to it (the relative markers; prograde in the target mode).
       readouts.target = craftTargetReadout(system, a, s.target, craft, planning.approaches, simUt);
       ({ targetDir, relativeVelocity } = craftTargetVectors(system, a, s.target, craft, simUt));
     }
-    navball = computeNavball({ mode: planning.navballMode, q: v.q, r: v.r, v: v.v, qFixedToInertial: env.qFixedToInertial, spin: env.spin, maneuverDv: dv, targetDir, relativeVelocity, liftVectorVes: v.aero.liftDirVes });
+    navball = computeNavball({ mode: planning.navballMode, q: v.q, r: a.r, v: a.v, qFixedToInertial: env.qFixedToInertial, spin: env.spin, maneuverDv: dv, targetDir, relativeVelocity, liftVectorVes: v.aero.liftDirVes });
     stages = planning.stageInfos(s.subject).map((x) => ({ ...x, actionKinds: x.actionKinds.slice() }));
     nextStage = nextLiveStage(v);
     lockout = helmCraft(v).stageLockout > 0;
-    if (frames.base(a.bodyId).hasTerrain) complete = s.terrain.finalAt(a.bodyId, quat.rotateInv(env.qFixedToInertial, v3.normalize(v.r)));
+    if (frames.base(a.bodyId).hasTerrain) complete = s.terrain.finalAt(a.bodyId, quat.rotateInv(env.qFixedToInertial, v3.normalize(a.r)));
   }
   return {
     ut: utP,

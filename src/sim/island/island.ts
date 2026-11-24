@@ -1229,7 +1229,8 @@ export class IslandImpl implements Island {
   // ------------------------------------------------------------------------------------- terrain
 
   hintImpact(vesselId: string, point: { bodyId: string; latitude: number; longitude: number } | null): void {
-    if (point === null) {
+    // A body without terrain (the star, a giant) has no disc to load.
+    if (point === null || !this.frames.base(point.bodyId).hasTerrain) {
       this.impactHints.delete(vesselId);
       return;
     }

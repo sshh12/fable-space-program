@@ -46,7 +46,7 @@ describe('snapshot of an island of 64 vessels with a relevance cut of 10', () =>
     for (const m of island.members) island.settle(m.vessel.id);
     island.refreshMargins();
     const planning = new Planning(frames);
-    const root = new RenderRoot(system, 'soiBody');
+    const root = new RenderRoot(frames, 'soiBody');
     root.reset('earth');
     const figures = new StageFigures(frames);
     const focusId = island.members[0]!.vessel.id;

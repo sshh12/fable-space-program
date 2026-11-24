@@ -12,10 +12,11 @@ import { PHYSICS_DT } from '@/core/contracts/defs';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3 } from '@/core/math/vec3';
 import type { InputReceipt, Island, IslandInput } from '../island';
-import { comStateOf, type BodyFrames } from '../island/frames';
+import type { BodyFrames } from '../island/frames';
 import type { Vessel } from '../vessel';
 import type { Planning } from './planning';
 import type { Presenter } from './presenter';
+import { comOf } from './snapshot';
 
 type Stamp = 'tick' | 'accountId' | 'seq';
 /** An input of the pilot without its stamp (the seat stamps it for the island's tick). */
@@ -87,7 +88,7 @@ export class PilotSeat {
   setTarget(ref: TargetRef | null): void {
     const h = this.h;
     const a = h.view.focus();
-    h.plan.setTarget(ref, h.frames.altitudeAt(a.bodyId, comStateOf(a.vessel).r, h.island.ut), h.frames.base(a.bodyId).def.navballSwitchAltitude);
+    h.plan.setTarget(ref, h.frames.altitudeAt(a.bodyId, comOf(a).r, h.island.ut), h.frames.base(a.bodyId).def.navballSwitchAltitude);
     const mode = h.active.sas.mode;
     const needsPort = mode === 'portAlign' && h.plan.targetCraft?.portId == null;
     if (h.view.present && (SAS_TARGET_MODES as readonly SasMode[]).includes(mode) && (h.plan.targetCraft === null || needsPort)) this.input({ kind: 'command', vesselId: h.active.id, command: { kind: 'sasMode', mode: 'stability' } });
@@ -135,7 +136,7 @@ export class PilotSeat {
   afterAdvance(): void {
     const h = this.h;
     const a = h.view.focus();
-    const alt = h.frames.altitudeAt(a.bodyId, comStateOf(a.vessel).r, h.island.ut);
+    const alt = h.frames.altitudeAt(a.bodyId, comOf(a).r, h.island.ut);
     h.plan.followAltitude(alt, h.frames.base(a.bodyId).def.navballSwitchAltitude);
     this.sendReference();
     // A targeted vessel that is gone is no target.
@@ -148,7 +149,7 @@ export class PilotSeat {
   frameChanged(fromBodyId: string, toBodyId: string): number | null {
     const h = this.h;
     const to = h.frames.info(toBodyId);
-    const predicted = h.plan.frameChanged(fromBodyId, toBodyId, v3.len(h.active.r) - to.radius, to.def.navballSwitchAltitude);
+    const predicted = h.plan.frameChanged(fromBodyId, toBodyId, v3.len(h.view.focus().r) - to.radius, to.def.navballSwitchAltitude);
     this.sendReference();
     return predicted;
   }

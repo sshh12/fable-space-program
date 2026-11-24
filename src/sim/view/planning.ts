@@ -43,7 +43,8 @@ export interface PlanSubject {
   bodyId: string;
   /** On its conic (mode 'rails'). */
   onRails: boolean;
-  /** Centre-of-mass state in BCI of `bodyId`. */
+  /** Position of the vessel's VES origin and state of its centre of mass, BCI of `bodyId` (never the vessel's own `r`, `v`: they may be offsets). */
+  r: Vec3;
   com: { r: Vec3; v: Vec3 };
   ut: number;
   /** Step count of the session (the refresh cadence of the stage figures). */
@@ -220,14 +221,14 @@ export class Planning {
       this.stageInfoDirty = false;
       this.stageInfoStep = bucket;
       // Full-throttle acceleration of every stage: what its thrust-to-weight ratio is at any gravity.
-      const g = s.present ? this.frames.gravityAt(s.bodyId, s.vessel.r) : 1;
+      const g = s.present ? this.frames.gravityAt(s.bodyId, s.r) : 1;
       this.stageAcceleration = this.stageInfo.map((x) => x.twr * g);
     }
     // The cache is refreshed by physics steps and by changes of the vehicle, neither of which happens on a
     // coast: delta-v, burn time and propellant do not change there, the local gravity does. The ratio is
     // restated at the gravity of now on every read (request flight-ui-8).
     if (s.present) {
-      const g = this.frames.gravityAt(s.bodyId, s.vessel.r);
+      const g = this.frames.gravityAt(s.bodyId, s.r);
       for (let i = 0; i < this.stageInfo.length; i++) this.stageInfo[i]!.twr = this.stageAcceleration[i]! / g;
     }
     return this.stageInfo;

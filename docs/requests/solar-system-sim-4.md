@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (island-core, the commit that adds this resolution)
 From: solar-system-sim
 Owner path: src/sim/view/host.ts, src/sim/view/presenter.ts, src/sim/view/snapshot.ts, src/sim/world/warpLadder.ts, src/sim/island/island.ts (island-core)
 Blocking: YES for every flight that leaves a planet's sphere on the Sun-rooted (staged) library: the transfer-pilot
@@ -46,3 +46,22 @@ tests/unit/solar-system/transferFlight.test.ts --silent=false -t 977493600` (abo
 Must NOT change: the shipped library (its root is the Earth; no reference orbit is used there), the golden.
 When this is in, the six flights of tests/unit/solar-system/transferFlight.test.ts are the check (hand-off
 solar-system-sim section 6 has the commands and the numbers measured up to the exit).
+
+## Resolution
+1. The view never reads a member's own `r`, `v`: `ViewVessel` carries the state about the body (`r`, `v`:
+   `Island.stateOf`) and, in an island with a reference orbit, `frame { reference, r, v }` (the reference
+   point); `comOf(e)` is the centre of mass about the body. The plan subject (`PlanSubject.r`, `.com`), the
+   snapshot's vessel state, the stage figures' gravity, the read-outs, the navball, the target geometry, the
+   presenter's environment aim, the warp ladder's subject, the navball's altitude switch and the objective
+   observer take those. The render root is the reference-orbit point where the focus island has one
+   (`frame.origin = { kind: 'orbit', bodyId, r0, v0, t0 }`, ARCHITECTURE section 3): a member's offset is
+   its ROOT position, a new epoch with its rebase starts at every hand-over and at every new reference orbit.
+2. `IslandImpl.hintImpact` drops a hint on a body without terrain.
+3. `tests/unit/sim-world/heliocentric.test.ts`: a capsule leaves the Earth's sphere on the staged library;
+   the snapshot's state about the star equals the Earth's state plus the craft's Earth-centred conic to
+   under 1 m and 1 mm/s, the read-outs and the first patch are those of an ellipse about the star, the
+   render root is the reference point (the craft under 100 m from it, the rebase names the Earth's centre),
+   the warp reaches the top level and a ten-day rails cruise and a presentation snapshot stay sane. It failed
+   before the change at "expected 1.74 to be greater than 1e11".
+Unchanged on the shipped library: mission 35 of 37 at the golden, the 200 recorded view states.
+To re-run on your side: the six flights of tests/unit/solar-system/transferFlight.test.ts.

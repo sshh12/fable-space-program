@@ -11,12 +11,12 @@ import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import type { Vec3 } from '@/core/math/vec3';
 import { utOfTick } from '../clock';
 import { IslandEnv, type Departure, type FarSet, type Island } from '../island';
-import { comStateOf, type BodyFrames } from '../island/frames';
+import type { BodyFrames } from '../island/frames';
 import { vesselClearance, type Vessel } from '../vessel';
 import { RenderRoot } from './frame';
 import { planSubject, viewOfDeparted, viewOfFar, viewOfMember } from './host';
 import type { Planning, PlanSubject } from './planning';
-import { buildSnapshot, StageFigures, wreckSnapshot, type SnapshotSource, type ViewVessel } from './snapshot';
+import { buildSnapshot, comOf, StageFigures, wreckSnapshot, type SnapshotSource, type ViewVessel } from './snapshot';
 import { craftTargetHold } from './target';
 
 /** Pending events kept for consumers that never drain the queue. */
@@ -64,12 +64,12 @@ export class Presenter {
     private readonly h: PresentedHost,
     renderRoot: 'soiBody' | 'rootBody',
   ) {
-    this.root = new RenderRoot(h.frames.system, renderRoot);
+    this.root = new RenderRoot(h.frames, renderRoot);
     this.figures = new StageFigures(h.frames);
     this.lostEnv = new IslandEnv(h.frames.terrain);
     h.plan.resolveTarget = (vesselId) => {
       const e = this.vesselById(vesselId);
-      return e ? { bodyId: e.bodyId, ...comStateOf(e.vessel), revision: e.revision } : null;
+      return e ? { bodyId: e.bodyId, ...comOf(e), revision: e.revision } : null;
     };
   }
 
@@ -119,10 +119,10 @@ export class Presenter {
   envOf(e: ViewVessel): VesselEnvironment {
     const h = this.h;
     const ut = utOfTick(h.tick);
-    if (e === this.lost) return h.frames.aim(this.lostEnv, e.bodyId, e.vessel.r, ut);
+    if (e === this.lost) return h.frames.aim(this.lostEnv, e.bodyId, e.r, ut);
     if (h.island.member(e.vessel.id)?.vessel === e.vessel) return h.island.environmentOf(e.vessel.id)!;
     const o = h.far.find(e.vessel.id);
-    return o ? h.frames.aim(o.env, o.bodyId, e.vessel.r, ut) : e.env;
+    return o ? h.frames.aim(o.env, o.bodyId, e.r, ut) : e.env;
   }
 
   /** Clearance between the part envelopes of two vessels on the same body, m (null when unknown ids or different bodies). */
@@ -141,7 +141,7 @@ export class Presenter {
 
   /** An event into the queue. `bodyId`: the SOI body its positions were produced about (an event of a vessel's step). */
   push(e: SimEvent, bodyId?: string): void {
-    if (bodyId !== undefined) this.root.noteEvent(e, bodyId);
+    if (bodyId !== undefined) this.root.noteEvent(e, bodyId, this.h.island.bodyId === bodyId ? this.h.island.reference : null);
     this.events.push(e);
     if (this.events.length > MAX_PENDING_EVENTS) this.events.splice(0, this.events.length - MAX_PENDING_EVENTS);
     this.eventsView = null;
@@ -155,7 +155,7 @@ export class Presenter {
   /** A session starts (again) with the pilot's vessel about `bodyId`: the first frame has its origin there, no epoch before it. */
   reset(bodyId: string): void {
     this.lost = null;
-    this.root.reset(bodyId);
+    this.root.reset(bodyId, this.h.island.bodyId === bodyId ? this.h.island.reference : null);
   }
 
   /** The pilot's vessel left the island for good. */
@@ -174,9 +174,10 @@ export class Presenter {
     this.wreck = null;
   }
 
-  /** The render root follows the pilot's vessel to its SOI body. True when it moved. */
+  /** The render root follows the pilot's vessel: to its SOI body, or to its island's reference orbit (a new one after every rebase). True when it moved. */
   follow(): boolean {
-    return this.root.follow(this.focus().bodyId);
+    const a = this.focus();
+    return this.root.follow(a.bodyId, a.frame ? a.frame.reference : null);
   }
 
   // ------------------------------------------------------------------------------------------ snapshot
@@ -185,6 +186,8 @@ export class Presenter {
     const h = this.h;
     h.plan.noteTargetRevision();
     h.refresh();
+    // The render root is at the pilot's vessel whatever replaced its island's reference orbit since the host last said so (a member that was the anchor left).
+    if (this.present) this.follow();
     const vessels: ViewVessel[] = [];
     for (const v of h.roster) {
       const e = this.entry(v);

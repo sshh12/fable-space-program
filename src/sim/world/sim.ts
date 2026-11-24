@@ -165,7 +165,7 @@ export class World implements SimWorld, PresentedHost, PacedClock, SeatHost {
     this.active = placed.vessel;
     const body = this.frames.info(placed.bodyId);
     this.view.reset(placed.bodyId);
-    this.plan.resetNavball(v3.len(placed.vessel.r) - body.radius, body.def.navballSwitchAltitude);
+    this.plan.resetNavball(v3.len(this.island.stateOf(placed.vessel.id)!.r) - body.radius, body.def.navballSwitchAltitude);
     this.seat.sendReference();
     if (sc.start.kind !== 'pad') this.mission.liftoffUt = sc.startUt;
   }

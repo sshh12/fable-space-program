@@ -36,18 +36,18 @@ export class FlightRecord {
     private readonly surfaceTargets: readonly SurfaceTarget[],
   ) {}
 
-  /** After an advance of `dt` seconds (0 = a rails advance): the peaks and the state just before first contact. Returns whether the vessel touches. */
-  observe(v: Vessel, bodyId: string, dt: number): boolean {
+  /** After an advance of `dt` seconds (0 = a rails advance): the peaks and the state just before first contact. `r`, `vel`: the vessel's BCI state when its own is an offset. Returns whether the vessel touches. */
+  observe(v: Vessel, bodyId: string, dt: number, r: Vec3 = v.r, vel: Vec3 = v.v): boolean {
     const base = this.frames.base(bodyId);
-    const rl = v3.len(v.r);
+    const rl = v3.len(r);
     if (v.gLoad > this.peakG && v.hold === null) this.peakG = v.gLoad;
     if (v.gDose > this.peakGDose) this.peakGDose = v.gDose;
     // surface-relative velocity for the touchdown capture
-    const up = v3.scale(v.r, 1 / rl);
+    const up = v3.scale(r, 1 / rl);
     const sp = base.info.spin;
-    const gx = v.v.x - (sp.y * v.r.z - sp.z * v.r.y);
-    const gy = v.v.y - (sp.z * v.r.x - sp.x * v.r.z);
-    const gz = v.v.z - (sp.x * v.r.y - sp.y * v.r.x);
+    const gx = vel.x - (sp.y * r.z - sp.z * r.y);
+    const gy = vel.y - (sp.z * r.x - sp.x * r.z);
+    const gz = vel.z - (sp.x * r.y - sp.y * r.x);
     const vz = gx * up.x + gy * up.y + gz * up.z;
     const touching = v.contact.anyContact || v.contact.waterSubmersion > 0;
     if (dt > 0) {

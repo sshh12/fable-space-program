@@ -11,11 +11,10 @@ import type { TargetReadout } from '@/core/contracts/sim';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import type { BodySystem } from '../bodies/bodySystem';
-import { comStateOf } from '../island/frames';
 import { navballTargetVectors, vesselTargetReadout, type BodyState } from '../nav/target';
 import type { ChainApproach } from '../orbit/chainApproach';
-import { dockFace, findPartByKey, type Vessel } from '../vessel';
-import type { ViewVessel } from './snapshot';
+import { dockFace, findPartByKey } from '../vessel';
+import { comOf, type ViewVessel } from './snapshot';
 
 /** A selected vessel or port (a body target is the planner's `targetBodyId`). */
 export interface TargetCraft {
@@ -28,12 +27,13 @@ export interface TargetCraft {
 export const targetRefOf = (t: TargetCraft): TargetRef => (t.portId === null ? { kind: 'vessel', id: t.vesselId } : { kind: 'port', vesselId: t.vesselId, portId: t.portId });
 
 /** The mating face of the docking port at part `index` of a vessel as a state in BCI of the vessel's body, with its outward axis (ROOT axes); null when the part is no port. */
-function portState(v: Vessel, bodyId: string, index: number): { state: BodyState; axis: Vec3 } | null {
+function portState(e: ViewVessel, index: number): { state: BodyState; axis: Vec3 } | null {
+  const v = e.vessel;
   const part = v.parts[index];
   const face = part ? dockFace(part) : null;
   if (!face) return null;
   return {
-    state: { bodyId, r: v3.add(v.r, quat.rotate(v.q, face.pos)), v: v3.add(v.v, quat.rotate(v.q, v3.cross(v.w, face.pos))) },
+    state: { bodyId: e.bodyId, r: v3.add(e.r, quat.rotate(v.q, face.pos)), v: v3.add(e.v, quat.rotate(v.q, v3.cross(v.w, face.pos))) },
     axis: quat.rotate(v.q, face.dir),
   };
 }
@@ -50,12 +50,12 @@ export interface TargetGeometry {
 }
 
 export function targetGeometry(a: ViewVessel, t: ViewVessel, craft: TargetCraft): TargetGeometry {
-  const ownPort = portState(a.vessel, a.bodyId, a.vessel.helm.controlPart);
-  const targetPort = craft.portId === null ? null : portState(t.vessel, t.bodyId, findPartByKey(t.vessel, craft.portId));
+  const ownPort = portState(a, a.vessel.helm.controlPart);
+  const targetPort = craft.portId === null ? null : portState(t, findPartByKey(t.vessel, craft.portId));
   const portToPort = ownPort !== null && targetPort !== null;
   return {
-    own: portToPort ? ownPort.state : { bodyId: a.bodyId, ...comStateOf(a.vessel) },
-    target: portToPort ? targetPort.state : { bodyId: t.bodyId, ...comStateOf(t.vessel) },
+    own: portToPort ? ownPort.state : { bodyId: a.bodyId, ...comOf(a) },
+    target: portToPort ? targetPort.state : { bodyId: t.bodyId, ...comOf(t) },
     portToPort,
     ownAxis: ownPort ? ownPort.axis : null,
     targetAxis: targetPort ? targetPort.axis : null,
