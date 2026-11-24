@@ -25,7 +25,8 @@ export interface DebrisFate {
   vesselId: string;
   name: string;
   ut: number;
-  reason: 'burnedUp' | 'impact' | 'expired' | 'limit';
+  /** 'lost': destroyed outright (a destruct, the floor of a body without a surface). */
+  reason: 'burnedUp' | 'impact' | 'expired' | 'limit' | 'lost';
   bodyId: string;
   latitudeDeg: number;
   longitudeDeg: number;

@@ -274,14 +274,15 @@ export interface AdvanceReport {
 
 /**
  * The next instant at which the island cannot go on coasting on rails: a member enters an atmosphere or
- * meets the ground and must be integrated from there. (A sphere-of-influence change does not stop a rails
- * advance: the island hands over at the event's own instant and goes on.)
+ * meets the ground and must be integrated from there, or a queued input is due ('input': it is applied at
+ * its own tick, `vesselId` is empty). (A sphere-of-influence change does not stop a rails advance: the island
+ * hands over at the event's own instant and goes on.)
  */
 export interface IslandEvent {
   /** Event instant, s; a rails advance lands on the first whole tick at or after it. */
   ut: number;
   tick: number;
-  kind: 'atmosphere' | 'impact';
+  kind: 'atmosphere' | 'impact' | 'input';
   vesselId: string;
 }
 

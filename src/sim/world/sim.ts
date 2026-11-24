@@ -285,7 +285,7 @@ export class World implements SimWorld, PresentedHost, PacedClock, SeatHost {
       this.plan.stageInfoDirty = true;
     }
     for (const d of report.departures) {
-      if (d.reason === 'burnedUp' || d.reason === 'impact') this.debris.fate(d.vessel, d.bodyId, d.reason, d.ut, false);
+      if (d.reason === 'burnedUp' || d.reason === 'impact' || d.reason === 'destroyed') this.debris.fate(d.vessel, d.bodyId, d.reason === 'destroyed' ? 'lost' : d.reason, d.ut, false);
       this.gone.add(d.vessel);
       if (d.vessel === this.active) this.view.lose(d);
     }

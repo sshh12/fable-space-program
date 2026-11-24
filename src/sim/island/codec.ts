@@ -26,7 +26,7 @@ import { hashLibrary } from '@/core/defs/hash';
 import { decodeVessel, encodeVessel, hashBytes, libraryResolver, VesselDecodeError } from '../vessel';
 import { Reader, Writer } from '../vessel/codec';
 import type { IslandCommand, IslandDeps, IslandInit, IslandInput, IslandTimer, MemberMode, ReservationState, StepMode } from './api';
-import type { IslandImpl } from './island';
+import { inputOrder, type IslandImpl } from './island';
 import { IslandOpError } from './ops';
 import type { RailsEvent, RailsEventKind } from './rails';
 import { orbitOf } from './rails';
@@ -284,8 +284,10 @@ export function encodeIsland(island: IslandImpl, names: boolean): Uint8Array {
     b.bool(s.reference === 'orbit');
     wOptTick(b, s.latchOpenTick);
   }
-  b.uint(island.queue.length);
-  for (const i of island.queue) wInput(b, i);
+  // The queue in the canonical order of inputs: the order they arrived in is no state.
+  const queue = island.queue.slice().sort(inputOrder);
+  b.uint(queue.length);
+  for (const i of queue) wInput(b, i);
 
   const out = new Writer();
   for (const m of MAGIC) out.u8(m);

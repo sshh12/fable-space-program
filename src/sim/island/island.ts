@@ -157,6 +157,8 @@ function hasArmedEngine(v: Vessel): boolean {
 }
 
 const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/** The canonical order of inputs (ARCHITECTURE 6.1): tick, account id, sequence. */
+export const inputOrder = (a: IslandInput, b: IslandInput): number => a.tick - b.tick || byId(a.accountId, b.accountId) || a.seq - b.seq;
 const pairKey = (a: string, b: string): string => (a < b ? `${a}\n${b}` : `${b}\n${a}`);
 export const orderedPair = (a: string, b: string): PairRef => (a < b ? { a, b } : { a: b, b: a });
 
@@ -678,6 +680,12 @@ export class IslandImpl implements Island {
     return seat && seat.vesselId === rec.vessel.id ? seat.controls : NEUTRAL_CONTROLS;
   }
 
+  /** Some account has a seat in the member's vessel. */
+  private seated(rec: Rec): boolean {
+    for (const seat of this.seats.values()) if (seat.vesselId === rec.vessel.id) return true;
+    return false;
+  }
+
   private seatFor(rec: Rec): Seat | null {
     const seat = rec.pilot !== null ? this.seats.get(rec.pilot) : undefined;
     return seat && seat.vesselId === rec.vessel.id ? seat : null;
@@ -697,12 +705,17 @@ export class IslandImpl implements Island {
   }
 
   mustIntegrate(): boolean {
+    // An input that is due and not applied yet may start a burn: the next step applies it and then knows.
+    if (this.queue.some((i) => i.tick <= this.tick)) return true;
     for (const rec of this.recs) if (this.memberMustIntegrate(rec, this.envAt(rec, this.ut), this.ut)) return true;
     return false;
   }
 
   nextEvent(): IslandEvent | null {
     let best: IslandEvent | null = null;
+    // A queued input is applied at its tick: the island cannot coast past it.
+    const q = this.nextInputTick();
+    if (q !== null) best = { ut: utOfTick(q), tick: q, kind: 'input', vesselId: '' };
     for (const rec of this.recs) {
       const ev = rec.railsEvent;
       if (!ev || (ev.kind !== 'atmosphere' && ev.kind !== 'impact')) continue;
@@ -764,9 +777,10 @@ export class IslandImpl implements Island {
     const ut0 = this.ut;
     const dt = PHYSICS_DT;
     const utNew = utOfTick(this.tick + 1);
-    for (const seat of this.seats.values()) {
-      const rec = this.rec(seat.vesselId);
-      if (rec) this.updateSasHold(rec, seat);
+    // The hold direction is the helm's: the seat of the member's pilot, members in slot order (never the order seats were made in).
+    for (const rec of this.recs) {
+      const seat = this.seatFor(rec);
+      if (seat) this.updateSasHold(rec, seat);
     }
     const groups = this.pairGroups();
     // Members in id order; vessels a step brings into being are stepped once in the same tick, after them.
@@ -803,7 +817,8 @@ export class IslandImpl implements Island {
   }
 
   private begin(): AdvanceReport {
-    this.report = emptyReport();
+    this.report = this.carried;
+    this.carried = emptyReport();
     return this.report;
   }
 
@@ -957,6 +972,8 @@ export class IslandImpl implements Island {
     this.detach(rec);
     this.report.departures.push(d);
     if (reason === 'burnedUp' || reason === 'impact') this.report.events.push({ type: 'vesselRemoved', ut, vesselId: d.vesselId, reason });
+    // Destroyed outright (below the floor of a body without a surface, a range-safety destruct): the vessel is lost.
+    else if (reason === 'destroyed') this.report.events.push({ type: 'vesselRemoved', ut, vesselId: d.vesselId, reason: 'lost' });
     if (this.reference !== null) {
       if (this.recs.length === 0) this.setReference(null);
       else if (wasAnchor) this.rebase(this.ut, 'anchor');
@@ -1314,12 +1331,13 @@ export class IslandImpl implements Island {
   advanceTo(tick: number): AdvanceReport {
     this.policy.throwIfBroken();
     this.begin();
+    // The inputs of this tick first: one of them may forbid the coast.
+    this.applyQueued();
     let landing = tick;
     if (this.mergeTick !== null) landing = Math.min(landing, this.mergeTick);
     const next = this.nextEvent();
     if (next) landing = Math.min(landing, next.tick);
     if (!(landing > this.tick) || this.mustIntegrate()) return this.end();
-    this.applyQueued();
     const target = utOfTick(landing);
     this.terrainWork();
     if (!this.railsWarp) this.enterRailsWarp();
@@ -1327,12 +1345,14 @@ export class IslandImpl implements Island {
     const before = this.ut;
     // Every free member is on its conic before any of them moves (a hand-over on the way takes them all).
     for (const rec of this.recs) if (rec.vessel.hold === null && rec.orbit === null) this.toRails(rec, before);
+    const sampledAbout = new Map<Rec, string>();
     for (const rec of this.recs.slice()) {
       if (rec.removed) continue;
       const v = rec.vessel;
       if (v.hold !== null) {
         rideBody(v, this.envAt(rec, target), 0);
         this.refreshSun(rec, target);
+        sampledAbout.set(rec, this.bodyId);
         continue;
       }
       const seat = this.seatFor(rec);
@@ -1343,6 +1363,7 @@ export class IslandImpl implements Island {
       }
       this.advanceOnRails(rec, target);
       this.refreshSun(rec, target);
+      sampledAbout.set(rec, this.bodyId);
       if (holdBefore && seat) {
         const holdAfter = this.sasHoldDirection(rec, seat, target);
         if (holdAfter) {
@@ -1353,6 +1374,8 @@ export class IslandImpl implements Island {
       }
       rec.previous = null;
     }
+    // A member that was sampled before the island handed over (the anchor crossed later in the loop) is sampled again in the frame of the landing.
+    for (const rec of this.recs) if (sampledAbout.get(rec) !== this.bodyId) this.refreshSun(rec, target);
     this.tick = landing;
     this.stampAges();
     this.counters.railsAdvances++;
@@ -1382,30 +1405,57 @@ export class IslandImpl implements Island {
 
   // ------------------------------------------------------------------------------------------ inputs
 
+  /**
+   * An input stamped for a later tick is queued and applied AT that tick (a rails advance lands there). One
+   * stamped for the island's tick or earlier is applied now, at the island's tick, together with whatever
+   * is still queued for this tick, all of them in the canonical order (tick, account, sequence): which of
+   * two inputs of one tick arrived first never decides.
+   */
   applyInput(input: IslandInput): InputReceipt {
     if (!Number.isFinite(input.tick)) return { appliedTick: this.tick, accepted: false, reason: 'Invalid tick' };
     if (input.tick > this.tick) {
       this.queue.push(input);
       return { appliedTick: input.tick, accepted: true };
     }
-    return this.applyNow(input);
+    if (!this.queue.some((i) => i.tick <= this.tick)) return this.applyNow(input);
+    this.queue.push(input);
+    return this.applyDue(this.carried, input) ?? { appliedTick: this.tick, accepted: false, reason: 'Not applied' };
   }
 
-  /** The inputs stamped for the island's tick, in the order (account, sequence). */
+  /** The inputs stamped for the island's tick (or before it), in the canonical order, into the report of the advance that begins. */
   private applyQueued(): void {
-    if (this.queue.length === 0) return;
+    this.applyDue(this.report, null);
+  }
+
+  /** Apply every queued input that is due, in the canonical order; their outcomes go into `into`. Returns the receipt of `wanted`. */
+  private applyDue(into: AdvanceReport, wanted: IslandInput | null): InputReceipt | null {
+    if (!this.queue.some((i) => i.tick <= this.tick)) return null;
     const due = this.queue.filter((i) => i.tick <= this.tick);
-    if (due.length === 0) return;
     this.queue = this.queue.filter((i) => i.tick > this.tick);
-    due.sort((a, b) => a.tick - b.tick || byId(a.accountId, b.accountId) || a.seq - b.seq);
+    due.sort(inputOrder);
     const outer = this.report;
+    let mine: InputReceipt | null = null;
     for (const input of due) {
       const receipt = this.applyNow(input);
-      if (receipt.outcome) outer.commands.push(receipt.outcome);
-      if (receipt.report) mergeReports(outer, receipt.report);
+      if (input === wanted) {
+        mine = receipt;
+        continue;
+      }
+      if (receipt.outcome) into.commands.push(receipt.outcome);
+      if (receipt.report) mergeReports(into, receipt.report);
     }
     this.report = outer;
+    return mine;
   }
+
+  /** The tick of the earliest input queued for a later tick; null = none. */
+  private nextInputTick(): number | null {
+    let t: number | null = null;
+    for (const i of this.queue) if (i.tick > this.tick && (t === null || i.tick < t)) t = i.tick;
+    return t;
+  }
+  /** Outcomes of queued inputs that were applied between two advances (with an input that arrived at their tick): the next advance reports them. */
+  private carried: AdvanceReport = emptyReport();
 
   private applyNow(input: IslandInput): InputReceipt {
     const appliedTick = this.tick;
@@ -1414,7 +1464,8 @@ export class IslandImpl implements Island {
     switch (input.kind) {
       case 'controls': {
         const seat = this.seats.get(input.accountId);
-        if (!seat || seat.vesselId !== input.vesselId) return refuse('Not at the helm');
+        // Several accounts may sit in one vessel; the helm alone steers it (ARCHITECTURE 7.5, "one helm or none").
+        if (!seat || seat.vesselId !== input.vesselId || this.rec(input.vesselId)?.pilot !== input.accountId) return refuse('Not at the helm');
         // Without command authority (no living crew in a command part, no remote avionics) the levers stay where they are.
         if (this.rec(input.vesselId)?.controllable === false) return refuse(NO_AUTHORITY);
         seat.controls = clampControls(input.controls);
@@ -1423,7 +1474,7 @@ export class IslandImpl implements Island {
       }
       case 'reference': {
         const seat = this.seats.get(input.accountId);
-        if (!seat || seat.vesselId !== input.vesselId) return refuse('Not at the helm');
+        if (!seat || seat.vesselId !== input.vesselId || this.rec(input.vesselId)?.pilot !== input.accountId) return refuse('Not at the helm');
         seat.reference = input.reference;
         return ok;
       }
@@ -1431,7 +1482,7 @@ export class IslandImpl implements Island {
         const rec = this.rec(input.vesselId);
         const seat = this.seats.get(input.accountId);
         if (!rec) return refuse('No vessel');
-        if (!seat || seat.vesselId !== input.vesselId) return refuse('Not at the helm');
+        if (!seat || seat.vesselId !== input.vesselId || rec.pilot !== input.accountId) return refuse('Not at the helm');
         if (!rec.controllable) return refuse(NO_AUTHORITY);
         const saved = this.report;
         this.report = emptyReport();
@@ -1449,19 +1500,23 @@ export class IslandImpl implements Island {
           const old = this.seats.get(input.accountId);
           if (old) {
             const prev = this.rec(old.vesselId);
-            if (prev && prev.pilot === input.accountId) prev.pilot = null;
-            old.vesselId = rec.vessel.id;
+            if (prev && prev !== rec) {
+              if (prev.pilot === input.accountId) prev.pilot = null;
+              old.vesselId = rec.vessel.id;
+              prev.attended = this.seated(prev);
+            }
           } else this.seats.set(input.accountId, this.newSeat(input.accountId, rec));
-          rec.pilot = input.accountId;
+          // A vacant helm is taken at once; an occupied one stays with its pilot until a `helm` input grants it.
+          if (rec.pilot === null) rec.pilot = input.accountId;
           rec.attended = true;
           if (rec.mode === 'armed') {
             rec.mode = 'rails';
             rec.tier = 'full';
           }
         } else {
+          if (this.seats.get(input.accountId)?.vesselId === rec.vessel.id) this.seats.delete(input.accountId);
           if (rec.pilot === input.accountId) rec.pilot = null;
-          rec.attended = false;
-          this.seats.delete(input.accountId);
+          rec.attended = this.seated(rec);
         }
         return ok;
       }
@@ -1480,9 +1535,13 @@ export class IslandImpl implements Island {
           if (part < 0) return refuse('No such part');
           v.helm.controlPart = part;
         }
-        if (rec.pilot !== null && rec.pilot !== input.pilot) this.seats.delete(rec.pilot);
+        // The pilot that was at the helm keeps its seat (it is aboard still); the new one is seated if it was not.
         rec.pilot = input.pilot;
-        if (input.pilot !== null && !this.seats.has(input.pilot)) this.seats.set(input.pilot, this.newSeat(input.pilot, rec));
+        if (input.pilot !== null) {
+          const seat = this.seats.get(input.pilot);
+          if (!seat) this.seats.set(input.pilot, this.newSeat(input.pilot, rec));
+          else seat.vesselId = v.id;
+        }
         this.report.events.push({ type: 'helmChanged', ut: this.ut, vesselId: v.id, accountId: input.pilot, callsign: null, craftId: v.crafts[v.helm.craft]!.craftId });
         return ok;
       }
@@ -1553,9 +1612,9 @@ export class IslandImpl implements Island {
             seat!.controls.throttle = 0;
             break;
           case 'graceEnd':
-            rec.attended = false;
             if (rec.pilot === input.accountId) rec.pilot = null;
             this.seats.delete(input.accountId);
+            rec.attended = this.seated(rec);
             break;
         }
         return ok;
@@ -1612,8 +1671,10 @@ export class IslandImpl implements Island {
 
   private afterStructureChange(rec: Rec): void {
     rec.controllable = isControllable(rec.vessel);
-    if (rec.vessel.hold === null && rec.mode === 'rails') {
+    // The conic was that of the centre of mass before the change: a member on one (on rails, or Armed) is integrated from here.
+    if (rec.vessel.hold === null && (rec.mode === 'rails' || rec.mode === 'armed')) {
       rec.mode = 'integrated';
+      rec.tier = 'full';
       rec.orbit = null;
       rec.railsEvent = null;
     }
