@@ -110,7 +110,7 @@ const liveTickOf = (ctx: ScreenCtx): number => ctx.session.stores.presence.get()
 /** The analysis of a vehicle under the rules in force, its pad class (derived there) and what a pad must take. */
 function classOfVehicle(ctx: ScreenCtx, v: VehicleDef): { cls: PadClass; caps: VehicleCapabilities; fit: VehicleFit } {
   const rules = rulesOf(ctx);
-  const caps = ctx.deps.capabilities(v.id, rules);
+  const caps = ctx.deps.capabilities(v, rules);
   return { cls: caps.padClass, caps, fit: { massWet: caps.massWet, diameter: caps.diameter, rules } };
 }
 
@@ -253,6 +253,8 @@ interface VehicleMenuText {
   description: string;
   role: string;
   difficulty: string;
+  /** Shown first to a new player (fleet-data: the light and medium vehicles). */
+  firstOffer?: boolean;
 }
 const menuTextOf = (ctx: ScreenCtx, vehicleId: string): VehicleMenuText | null => (ctx.deps.defs.sections[`visuals/vehicles/${vehicleId}`] as VehicleMenuText | undefined) ?? null;
 
@@ -298,8 +300,12 @@ export function vehicleScreen(ctx: ScreenCtx, inDeploy: boolean): ScreenView {
   main.append(titleBlock(inDeploy ? 'Choose a craft' : 'Hangar', inDeploy ? (ctx.practice ? 'Practice · offline' : null) : 'The fleet'));
   const offered = new Set(presentableVehicleIds(deps.defs));
   const all = vehiclesOf(ctx);
-  const vehicles = [...all.filter((v) => offered.has(v.id)), ...all.filter((v) => !offered.has(v.id))];
-  if (!ctx.sel.vehicleId || !offered.has(ctx.sel.vehicleId)) ctx.sel.vehicleId = vehicles.find((v) => offered.has(v.id))?.id ?? null;
+  // The order of the offer: presentable first-offer vehicles (the light and medium ones a new player is shown
+  // first, so new players do not all queue for the heavy pads), then the other presentable ones (all of them
+  // when none is a first offer: never an empty offer), then the ones that cannot be shown yet, disabled.
+  const firstOffer = all.filter((v) => offered.has(v.id) && menuTextOf(ctx, v.id)?.firstOffer === true);
+  const vehicles = [...firstOffer, ...all.filter((v) => offered.has(v.id) && !firstOffer.includes(v)), ...all.filter((v) => !offered.has(v.id))];
+  if (!ctx.sel.vehicleId || !offered.has(ctx.sel.vehicleId)) ctx.sel.vehicleId = vehicles[0] && offered.has(vehicles[0].id) ? vehicles[0].id : null;
   const list = panel('', 0.65);
   const rows = el('div', 'sh-list sh-scroll');
   for (const v of vehicles) {

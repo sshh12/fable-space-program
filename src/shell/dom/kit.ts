@@ -91,7 +91,7 @@ const SHELL_CSS = `
 .sh-main { grid-column: 1 / span 5; grid-row: 2; min-height: 0; display: flex; flex-direction: column; gap: calc(1.6 * var(--u)); padding-top: calc(2.4 * var(--u)); padding-bottom: calc(1.6 * var(--u)); overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
 .sh-main::-webkit-scrollbar, .sh-scroll::-webkit-scrollbar { display: none; }
 .sh-screen > * { display: flex; flex-direction: column; gap: calc(1.4 * var(--u)); flex-shrink: 0; }
-.sh-screen > * > * { flex-shrink: 0; }
+.sh-screen > * > *, .sh-list > * { flex-shrink: 0; }
 .sh-main.sh-wide { grid-column: 1 / span 7; }
 .sh-aside { grid-column: 8 / span 5; grid-row: 2 / span 2; align-self: end; display: flex; flex-direction: column; gap: calc(1.2 * var(--u)); min-height: 0; max-height: 100%; padding-bottom: calc(1.6 * var(--u)); }
 .sh-main.sh-wide ~ .sh-aside { grid-column: 9 / span 4; }

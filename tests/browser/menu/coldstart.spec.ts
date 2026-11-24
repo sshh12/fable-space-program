@@ -29,8 +29,10 @@ test('the title reports the boot progress and opens Play only when the hangar da
   await page.keyboard.press('Enter');
   await page.evaluate(() => window.__test!.waitFrames(20));
   expect((await hooks(page)).state).toBe('title');
-  // Nothing of the render packages was fetched for the title (the boot set is enough).
-  expect(asked.filter((p) => p.startsWith('/tiles/') || p.includes('/packs/'))).toEqual([]);
+  // Nothing but the boot set was fetched for the title: of the tiles only the index, the manifests and the
+  // low-resolution globals the planet stand-in draws; no tile page, no pack.
+  const bootSet = (p: string): boolean => p === '/tiles/index.json' || /^\/tiles\/[^/]+\/manifest\.json$/.test(p) || /^\/tiles\/[^/]+\/globals\//.test(p);
+  expect(asked.filter((p) => (p.startsWith('/tiles/') && !bootSet(p)) || p.includes('/packs/'))).toEqual([]);
   await page.evaluate(() => (window.__shell as unknown as { releaseHangar(): void }).releaseHangar());
   await page.waitForFunction(() => document.querySelector('.sh-begin .sh-label')?.textContent === 'Press any key to begin', undefined, { timeout: 10_000 });
   await expect(status).toBeHidden();

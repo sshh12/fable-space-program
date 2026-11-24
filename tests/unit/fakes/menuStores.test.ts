@@ -74,7 +74,8 @@ describe('the menu fixture', () => {
     const ships = menuShipsFixture(defs, 1_800_000_000_000);
     expect(ships.length).toBeGreaterThan(0);
     for (const s of ships) {
-      expect(defs.vehicles[s.vehicleId]).toBeDefined();
+      // The ship names a vehicle of the library (its id among the library's ids: nothing is looked up).
+      expect(Object.keys(defs.vehicles)).toContain(s.vehicleId);
       expect(defs.bodies[s.bodyId]).toBeDefined();
     }
   });

@@ -5,7 +5,7 @@
  * settings model, and a sink for the scrim rectangles. What the shell needs done outside the DOM (the camera's
  * framing and flights, the input context, the keyboard capture) it asks for as an intent.
  */
-import type { DefLibrary } from '@/core/contracts/defs';
+import type { DefLibrary, VehicleDef } from '@/core/contracts/defs';
 import type { UniverseRules } from '@/core/contracts/net';
 import type { ClientStores, SpawnRequest, UniverseCommands } from '@/core/contracts/session';
 import type { SimSnapshot } from '@/core/contracts/sim';
@@ -123,7 +123,7 @@ export interface ShellDeps {
    * through the host, which may cache it): the read-outs, the reach ladder and the PAD CLASS, which is derived
    * there from the class limits of the rules and the vehicle's lift-off mass and diameter (or its pad interface).
    */
-  capabilities(vehicleId: string, rules: UniverseRules): VehicleCapabilities;
+  capabilities(vehicle: VehicleDef, rules: UniverseRules): VehicleCapabilities;
   settings: SettingsHost | null;
   identity: IdentityHost | null;
   /** Mean pad cycle of the rules in force, s (launches per hour per class); null while the rules state none (request shell-menu-1). */

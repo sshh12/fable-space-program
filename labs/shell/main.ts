@@ -18,7 +18,7 @@ import type { LinkState, UniverseRules } from '@/core/contracts/net';
 import type { SpawnRequest } from '@/core/contracts/session';
 import type { BodySnapshot } from '@/core/contracts/sim';
 import type { VehicleCapabilities } from '@/core/contracts/vehicle';
-import { firstPresentableVehicleId } from '@/core/access/presentable';
+import { presentableVehicles } from '@/core/access/presentable';
 import { createIdentityFixture } from '@/core/fakes/identityFixture';
 import { deltaVToOrbit } from '@/sim/nav/reach';
 import { analyzeVehicle } from '@/sim/vessel/analyze';
@@ -71,7 +71,8 @@ async function boot(): Promise<void> {
   }
   // The vessel on the pad, and the Hangar's turntable: the first PRESENTABLE vehicle of the library (every part has
   // a visual; today the lunar stack), assembled with the frozen facade. A vehicle that cannot be shown is never built here.
-  const displayId = firstPresentableVehicleId(defs);
+  const displayVehicle = presentableVehicles(defs)[0] ?? null;
+  const displayId = displayVehicle?.id ?? null;
   const display = displayId ? { vehicleId: displayId, parts: vesselPartSnapshots(assembleVessel(defs, displayId)) } : {};
   const sim = createFakeSession(defs, { scene: 'pad', siteId: site.id, ut, ground: { height: padElevation, originHeight: 0 }, ...display });
   const app = await createLabApp({ canvas, name: 'shell', defs, sim, features: [], autoReady: false });
@@ -125,7 +126,7 @@ async function boot(): Promise<void> {
   }
   let transit: TransitRun | null = null;
   /** The last transit's record and the exposure at its hand-over (EV100), kept for the test after the transit ends. */
-  let lastTransit: (TransitRun & { handOverEv: number | null; handOverAt: number | null }) | null = null;
+  let lastTransit: (TransitRun & { handOverEv: number | null; handOverTarget: number | null; handOverAt: number | null }) | null = null;
   let flightCamera = false;
   const eyeFor = (s: Subject): EyePose => {
     const earth = earthOf();
@@ -146,7 +147,7 @@ async function boot(): Promise<void> {
    * and zooms with I / K), at a distance from its height. Null without a display vessel.
    */
   const turntable = { yaw: 0.9, zoom: 1 };
-  const displayHeight = displayId ? analyzeVehicle(defs, defs.vehicles[displayId]!, {}).height : 0;
+  const displayHeight = displayVehicle ? analyzeVehicle(defs, displayVehicle, {}).height : 0;
   function turntablePose(earth: BodySnapshot): EyePose | null {
     const snap = app.snapshot();
     const vessel = snap.vessels.find((v) => v.id === snap.activeVesselId);
@@ -206,12 +207,13 @@ async function boot(): Promise<void> {
     publishScrim: (rects) => app.setScrim(rects.length > 0 ? rects : null),
     boot: () => ({ steps: bootSteps, playReady: bootSteps.every((s) => s.finished) }),
     snapshot: () => app.snapshot(),
-    capabilities: (vehicleId, rules) => {
-      // fleet-data's analysis under the rules in force (its pad class from the rules' class limits), once per vehicle and rules document.
+    capabilities: (vehicle, rules) => {
+      // fleet-data's analysis of the definition the menu lists, under the rules in force (its pad class from the
+      // rules' class limits), once per vehicle and rules document.
       let byVehicle = analyses.get(rules);
       if (!byVehicle) analyses.set(rules, (byVehicle = new Map()));
-      let caps = byVehicle.get(vehicleId);
-      if (!caps) byVehicle.set(vehicleId, (caps = analyzeVehicle(defs, defs.vehicles[vehicleId]!, { rules, reachCost })));
+      let caps = byVehicle.get(vehicle.id);
+      if (!caps) byVehicle.set(vehicle.id, (caps = analyzeVehicle(defs, vehicle, { rules, reachCost })));
       return caps;
     },
     settings: null,
@@ -351,10 +353,12 @@ async function boot(): Promise<void> {
         tr.frameMs.push(frameMs);
       }
       tr.last = { u: tr.u, angle: tr.holdAngle, fixed };
-      place(pose, sample.exposureHint);
+      // Below the hold the floodlit or sunlit pad comes into view in the last seconds: the exposure may move as
+      // fast as an eye adapts (8 EV a second) so it is on the pad's reading at the hand-over.
+      place(pose, tr.metering ? { targetEv100: sample.exposureHint.targetEv100, rateEvPerS: Math.max(sample.exposureHint.rateEvPerS, 8) } : sample.exposureHint);
       if (tr.u >= 1) {
         transit = null;
-        lastTransit = { ...tr, handOverEv: ev(), handOverAt: performance.now() };
+        lastTransit = { ...tr, handOverEv: ev(), handOverTarget: app.renderer.exposureInfo().targetEv100, handOverAt: performance.now() };
         flightCamera = true;
         app.camera.settings.exposureHint = null;
         app.camera.spec = { type: 'orbit', target: { vesselId: app.snapshot().activeVesselId ?? '' }, yaw: -0.35, pitch: 0.18, distance: 180 };
@@ -401,7 +405,7 @@ async function boot(): Promise<void> {
     transit: () => (transit ? { u: transit.u, holding: transit.holding, steps: transit.steps.slice(), acknowledged: transit.acknowledged } : null),
     /** The last finished transit: per-frame steps and their bounds (m), frame times (ms), the exposure at the hand-over and now. */
     lastTransit: () =>
-      lastTransit ? { steps: lastTransit.steps.slice(), bounds: lastTransit.bounds.slice(), frameMs: lastTransit.frameMs.slice(), handOverEv: lastTransit.handOverEv, secondsSince: lastTransit.handOverAt === null ? null : (performance.now() - lastTransit.handOverAt) / 1000, evNow: ev() } : null,
+      lastTransit ? { steps: lastTransit.steps.slice(), bounds: lastTransit.bounds.slice(), frameMs: lastTransit.frameMs.slice(), handOverEv: lastTransit.handOverEv, handOverTarget: lastTransit.handOverTarget, secondsSince: lastTransit.handOverAt === null ? null : (performance.now() - lastTransit.handOverAt) / 1000, evNow: ev() } : null,
     /** Measure the page without the menu (the CDP A/B): the shell is not updated and its DOM is hidden; the scene is unchanged. */
     setMenuHidden: (on: boolean) => {
       menuHidden = on;
