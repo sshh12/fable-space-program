@@ -17,7 +17,7 @@
  *   a rectangle over most of the frame   (the pass takes the one draw by itself; the scissors forced as well)
  *   a buffer written directly            (the core does not know its contents: the one draw)
  *
- * and the first three again under the camera curve (look 2). Two more tests: an overlay drawn after the scrim
+ * and the first three again under the curve as it was (look 1; the game's look is 2 since 2026-11-24). Two more tests: an overlay drawn after the scrim
  * (`drawOverlay`, in the same pass) is not cut by the scrim's scissors; and over the live scenes of two
  * reference images (the integration lab's pad at noon and its low orbit) the pass as it runs is the pass as
  * the sweep made it, with no rectangle and under a menu's four panels.
@@ -166,7 +166,8 @@ test('the scrim inside scissors is the scrim of the one draw to the bit: none, r
   save('none-before-the-scrim', before.image);
   expect(none.draw.drawn).toBe('single');
   expect(before.draw.drawn).toBe('base');
-  expect(now.draw, 'no rectangle: the pass without the scrim alone').toMatchObject({ drawn: 'base', scissors: 0, scissorPixels: 0, look: 1 });
+  // (The page runs the game's look: 2 since the lead's decision of 2026-11-24; it was 1.)
+  expect(now.draw, 'no rectangle: the pass without the scrim alone').toMatchObject({ drawn: 'base', scissors: 0, scissorPixels: 0, look: 2 });
   const dBefore = difference(none.image, before.image);
   const dNow = difference(none.image, now.image);
   console.log(`  no rectangle: the pass before the scrim against the one draw: ${told(dBefore)}; the pass as it runs: ${told(dNow)}`);
@@ -303,7 +304,7 @@ for (const live of LIVE) {
     const now = await shot(page, 'auto', `${live.name}, no rectangle`);
     save(`live-${live.name}-none`, now.image);
     expect(sweep.draw.drawn).toBe('single');
-    expect(now.draw).toMatchObject({ drawn: 'base', scissors: 0, look: 1 });
+    expect(now.draw).toMatchObject({ drawn: 'base', scissors: 0, look: 2 });
     const dBefore = difference(sweep.image, before.image);
     const dNow = difference(sweep.image, now.image);
     console.log(`  ${live.name}, no rectangle: the pass before the scrim against the sweep's pass: ${told(dBefore)}; the pass as it runs: ${told(dNow)}`);
@@ -316,23 +317,23 @@ for (const live of LIVE) {
   });
 }
 
-test('under the camera curve (look 2) both shaders of the pass carry the curve: the same comparisons', async ({ page, pageLog }) => {
-  // (`corelook` is the page's switch; `look` was its name until it was found taken by two labs' cameras.)
-  await openLab(page, '&corelook=2&look=2');
+test('under the curve as it was (look 1, kept for one round as the comparison) both shaders of the pass carry that curve: the same comparisons', async ({ page, pageLog }) => {
+  // (`corelook` is the page's switch. The tests above run the game's look, 2; this one was their look-2 twin while the default was 1.)
+  await openLab(page, '&corelook=1');
   await publish(page, null);
-  const none = await shot(page, 'single', 'look 2, no rectangle');
-  const before = await shot(page, 'base', 'look 2, no rectangle');
-  const now = await shot(page, 'auto', 'look 2, no rectangle');
-  expect(none.draw.look, 'the page runs the camera curve').toBe(2);
-  expect(now.draw).toMatchObject({ drawn: 'base', look: 2 });
-  save('look2-none-one-draw', none.image);
+  const none = await shot(page, 'single', 'look 1, no rectangle');
+  const before = await shot(page, 'base', 'look 1, no rectangle');
+  const now = await shot(page, 'auto', 'look 1, no rectangle');
+  expect(none.draw.look, 'the page runs the curve as it was').toBe(1);
+  expect(now.draw).toMatchObject({ drawn: 'base', look: 1 });
+  save('look1-none-one-draw', none.image);
   const dBefore = difference(none.image, before.image);
   const dNow = difference(none.image, now.image);
-  console.log(`  look 2, no rectangle: the pass without the scrim against the one draw: ${told(dBefore)}; the pass as it runs: ${told(dNow)}`);
+  console.log(`  look 1, no rectangle: the pass without the scrim against the one draw: ${told(dBefore)}; the pass as it runs: ${told(dNow)}`);
   expect(dBefore.differing, told(dBefore)).toBe(0);
   expect(dNow.differing, told(dNow)).toBe(0);
-  await sameAsOneDraw(page, 'look2-rounded', ROUNDED, none.image);
-  await sameAsOneDraw(page, 'look2-overlapping', OVERLAPPING, none.image);
+  await sameAsOneDraw(page, 'look1-rounded', ROUNDED, none.image);
+  await sameAsOneDraw(page, 'look1-overlapping', OVERLAPPING, none.image);
   await publish(page, null);
   await page.evaluate(() => window.__lab!.setTonemapPath('auto'));
   await expectNoErrors(page, pageLog);
