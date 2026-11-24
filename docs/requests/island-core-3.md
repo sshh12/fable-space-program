@@ -12,9 +12,10 @@ which discs earlier, unrelated requests left in the cache. The simulation and th
 the island's terrain regime in `terrainWork`) and at 150 m (the events of a conic and the impact marker:
 `IMPACT_PREDICTION_LAMBDA`), i.e. finer than the Moon's pinned pyramid below about 200 km.
 This is the cause of review finding 16: `LUNAR_ORBIT.data.radarAltitude` was 104688.159 in the records of
-2026-11-24 and is 104688.063 since the view predicts with the three-period encounter search (the impact
-hints, and with them the resident discs near that sub-point, moved); state, position and altitude are equal
-to the bit.
+2026-11-24 and is 104688.063 since commit 4c9a569, which changed what the view predicts (the three-period
+encounter search, and with it the impact hints) and how the real-world tools preload terrain; which of the
+two moved the resident tiles near that sub-point was not isolated. State, position and altitude are equal
+to the bit in both.
 
 ## Evidence
 `createRealTerrain`, the Moon, the direction of latitude 2.5877 deg, longitude 171.5265 deg (the milestone's
