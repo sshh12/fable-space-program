@@ -313,13 +313,32 @@ export interface Vessel {
   struct: unknown;
 }
 
+/**
+ * A structural change as the code made it, in the terms of the wire's operations (`IslandOpBody`): parts by
+ * their index in `Vessel.parts` BEFORE the change, the vessel by the id it had before. `split` is one call
+ * of `separateVessel` that removed no part (`cut`: the child part of each cut joint); `destroy` is one call
+ * of `destroyParts` (the separation of what the parts held together is part of it).
+ */
+export type StructuralRecord =
+  | { op: 'split'; vesselId: string; cut: number[]; newVesselIds: string[] }
+  | { op: 'destroy'; vesselId: string; parts: number[]; cause: 'impact' | 'overheat' | 'overstress' | 'explosion'; newVesselIds: string[] };
+
+/** Which path the integrator took for a vessel in one step. */
+export type StepPath = 'none' | 'held' | 'free' | 'substep';
+
 export interface StepResult {
   events: SimEvent[];
   spawned: Vessel[];
+  /** The structural changes of the step, in the order they were made (the island reports them as operations). */
+  records?: StructuralRecord[];
+  /** The path of the step: 'free' = RK4, 'substep' = the sub-stepped path, 'held' = riding the body, 'none' = nothing integrated. */
+  path?: StepPath;
+  /** The vessel's own probes asked for the sub-stepped path (a ground or water probe in range). */
+  probeNear?: boolean;
 }
 
 /** Collector handed through staging and failure code during one call. */
-export interface StepContext {
+export interface StepContext extends StepResult {
   ut: number;
   /** Null when no environment is available (structural, dynamics-free use through the public facade). */
   env: VesselEnvironment | null;
@@ -327,6 +346,11 @@ export interface StepContext {
   instant: boolean;
   events: SimEvent[];
   spawned: Vessel[];
+  /**
+   * Predict mode (ARCHITECTURE 6.4): threshold transitions are suppressed. A joint's stress and a crew's dose
+   * stop at their limits, nothing is destroyed, no canopy fails, no touchdown is confirmed.
+   */
+  predict?: boolean;
 }
 
 export const GIMBAL_MIN_THRUST_FRACTION = 0.05;

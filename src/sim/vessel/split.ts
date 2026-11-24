@@ -192,6 +192,7 @@ function vacantHelm(v: Vessel): Vessel['helm'] {
  */
 export function separateVessel(vessel: Vessel, cut: readonly number[], removed: readonly number[], ctx: StepContext): Vessel[] {
   const parts = vessel.parts;
+  const idBefore = vessel.id;
   const compParts = components(parts, vessel.links, cut, removed);
   if (compParts.length === 0) {
     vessel.parts = [];
@@ -225,6 +226,7 @@ export function separateVessel(vessel: Vessel, cut: readonly number[], removed: 
       parts[i]!.stress = 0;
       invalidateStructure(vessel);
     }
+    if (ctx.records && cut.length > 0) ctx.records.push({ op: 'split', vesselId: idBefore, cut: cut.slice(), newVesselIds: [] });
     return [];
   }
 
@@ -338,6 +340,8 @@ export function separateVessel(vessel: Vessel, cut: readonly number[], removed: 
   }
   for (const a of all) computeMassProps(a.vessel);
   for (const v of created) ctx.spawned.push(v);
+  // A pure split is an operation of its own; a separation after destroyed parts is part of that destroy (dynamics/failure.ts).
+  if (ctx.records && removed.length === 0) ctx.records.push({ op: 'split', vesselId: idBefore, cut: cut.slice(), newVesselIds: created.map((v) => v.id) });
   return created;
 }
 

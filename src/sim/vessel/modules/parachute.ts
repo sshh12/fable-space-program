@@ -54,14 +54,15 @@ export function chuteEnvelope(def: ParachuteDef, altitude: number, mach: number,
 /**
  * Advance the parachute state machines. (hx, hy, hz): unit direction of travel through the air in VES.
  */
-export function updateParachutes(vessel: Vessel, st: Structure, altitude: number, mach: number, speed: number, q: number, hx: number, hy: number, hz: number, dt: number, ut: number, events: SimEvent[]): void {
+export function updateParachutes(vessel: Vessel, st: Structure, altitude: number, mach: number, speed: number, q: number, hx: number, hy: number, hz: number, dt: number, ut: number, events: SimEvent[], predict = false): void {
   for (let i = 0; i < st.chutes.length; i++) {
     const c = st.chutes[i]!;
     const s = c.state;
     s.envelope = chuteEnvelope(c.def, altitude, mach, speed, q);
     if (s.state !== 'reefed' && s.state !== 'full') continue;
     const partId = eventPartId(vessel, vessel.parts[c.part]!);
-    if (s.envelope === 'unsafe') {
+    // Predict mode: a canopy outside its envelope is held as it is; its failure is the server's event (ARCHITECTURE 6.4).
+    if (s.envelope === 'unsafe' && !predict) {
       s.state = 'failed';
       s.inflation = 0;
       c.rt.canopies = 0;

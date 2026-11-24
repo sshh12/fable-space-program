@@ -102,6 +102,7 @@ export function stepThermal(
   airTemp: number,
   dt: number,
   overheated: number[],
+  predict = false,
 ): void {
   const heating = env.heating;
   const parts = vessel.parts;
@@ -168,7 +169,9 @@ export function stepThermal(
       const Tn = temps[s.index]!;
       if (Tn < 2.7) temps[s.index] = 2.7;
       if (Tn > s.maxTemp) {
-        if (overheated.indexOf(ref.part) < 0) overheated.push(ref.part);
+        // Predict mode: the surface is held at its limit and the part is not reported (ARCHITECTURE 6.4).
+        if (predict) temps[s.index] = s.maxTemp;
+        else if (overheated.indexOf(ref.part) < 0) overheated.push(ref.part);
       }
     }
   }

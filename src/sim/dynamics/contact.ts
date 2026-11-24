@@ -92,6 +92,16 @@ function legActive(pr: Probe): boolean {
   return lg === null || (lg.state.deploy >= LEG_LOCKED && !lg.state.broken[pr.leg]);
 }
 
+/** The broadphase of a vessel that is known to be far from every surface: no probe is in range, nothing is asked of the terrain. */
+export function noContactBroadphase(vessel: Vessel, st: Structure): boolean {
+  st.waterHere = false;
+  st.waterHeight = -Infinity;
+  st.buried = false;
+  vessel.groundClearance = Infinity;
+  clearNear(st);
+  return false;
+}
+
 /**
  * Decide whether this step needs contact sub-steps: finds the probes within CONTACT_RANGE (plus the
  * distance covered in one step) of terrain or water, samples the water surface, and stores the height of

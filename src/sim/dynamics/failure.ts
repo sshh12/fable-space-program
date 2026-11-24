@@ -101,6 +101,7 @@ export function destroyParts(vessel: Vessel, indices: readonly number[], cause: 
   }
   const hadHold = vessel.hold;
   const created = separateVessel(vessel, [], indices, ctx);
+  if (ctx.records) ctx.records.push({ op: 'destroy', vesselId, parts: indices.slice(), cause, newVesselIds: created.map((v) => v.id) });
   const pieces = vessel.destroyed ? created : [vessel, ...created];
   for (const v of pieces) {
     if (hadHold === 'clamps') {
@@ -150,6 +151,8 @@ export function checkLoads(vessel: Vessel, dt: number, ctx: StepContext): void {
       if (!m || m.type !== 'command' || m.crew <= 0 || !m.crewAlive) continue;
       if (g > G_DOSE_THRESHOLD) c.gDose += (g - G_DOSE_THRESHOLD) * dt;
       else if (g < G_DOSE_RECOVERY_BELOW && c.gDose > 0) c.gDose = Math.max(0, c.gDose - G_DOSE_RECOVERY_RATE * dt);
+      // Predict mode: the dose stops at its limit and the outcome is the server's (ARCHITECTURE 6.4).
+      if (ctx.predict && c.gDose > G_DOSE_LIMIT) c.gDose = G_DOSE_LIMIT;
       if (c.gDose > worst) worst = c.gDose;
       if (c.gDose > G_DOSE_LIMIT) {
         m.crewAlive = false;
@@ -178,7 +181,10 @@ export function checkLoads(vessel: Vessel, dt: number, ctx: StepContext): void {
     const over = g > j.maxAccelG || (j.maxQAlpha !== undefined && !p.shielded && qAlpha > j.maxQAlpha);
     if (over) {
       p.stress += dt;
-      if (p.stress > JOINT_OVERSTRESS_TIME) (broken ??= []).push(i);
+      // Predict mode: a joint is held at its limit; whether it breaks is the server's event.
+      if (ctx.predict) {
+        if (p.stress > JOINT_OVERSTRESS_TIME) p.stress = JOINT_OVERSTRESS_TIME;
+      } else if (p.stress > JOINT_OVERSTRESS_TIME) (broken ??= []).push(i);
     } else if (p.stress > 0) {
       p.stress = Math.max(0, p.stress - dt);
     }

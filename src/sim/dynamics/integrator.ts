@@ -15,6 +15,7 @@
  * stepped with this function; debris gets NEUTRAL_CONTROLS.
  */
 import type { ControlInputs } from '@/core/contracts/controls';
+import type { SimEvent } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import { mat3 } from '@/core/math/mat';
 import { quat, type Quat } from '@/core/math/quat';
@@ -30,7 +31,7 @@ import { anyPending, processPending } from '../vessel/staging';
 import { structureOf, type Structure } from '../vessel/structure';
 import type { StepContext, StepResult, Vessel } from '../vessel/types';
 import { aeroOut, evalAero, hasLiftingCapsule, refreshAeroCoefficients } from './aero';
-import { contactBroadphase, contactOut, evalContact, type BodyState } from './contact';
+import { contactBroadphase, contactOut, evalContact, noContactBroadphase, type BodyState, type ContactOut } from './contact';
 import { checkLoads, collapseLegs, destroyParts } from './failure';
 import { stepThermal } from './thermal';
 
@@ -57,9 +58,162 @@ let sInvMass = 0;
 const acc = [0, 0, 0];
 const body: BodyState = { rx: 0, ry: 0, rz: 0, vx: 0, vy: 0, vz: 0, m: [1, 0, 0, 0, 1, 0, 0, 0, 1], wx: 0, wy: 0, wz: 0 };
 const overheated: number[] = [];
+/** Where the touchdown and splash events of a predict-mode step go (ARCHITECTURE 6.4: never predicted). */
+const unconfirmed: SimEvent[] = [];
+// The island's reference point for the step in hand (VesselEnvironment.origin): its state and acceleration
+// at the step start, and the time into the step of the evaluation in hand. Unused without an origin.
+let sOrigin = false;
+let sTau = 0;
+let sRx = 0;
+let sRy = 0;
+let sRz = 0;
+let sRVx = 0;
+let sRVy = 0;
+let sRVz = 0;
+let sRAx = 0;
+let sRAy = 0;
+let sRAz = 0;
+
+/** How a step is taken (ARCHITECTURE 6.2, 6.4, 7.4). Absent = exactly v1's step. */
+export interface StepOptions {
+  /** 'predict' suppresses threshold transitions: nothing is destroyed, no joint breaks, no canopy fails, no touchdown is confirmed. Default 'authoritative'. */
+  mode?: 'authoritative' | 'predict';
+  /** The vessel's pair is inside the speculative-contact margin: the step takes the sub-stepped path whatever its own probes say. */
+  pairContact?: boolean;
+  /**
+   * The island's lockstep: called once, when the vessel is ready for its sub-steps, with the run that holds
+   * them. The callee runs `substepForces` and `substepIntegrate` for every sub-step of this run (and of the
+   * runs of the other vessels of the group, which it may start from inside this call, each with its own
+   * `stepVessel`); the step finishes when it returns. Absent = the vessel sub-steps alone.
+   */
+  lockstep?: (run: SubstepRun) => void;
+  /** Collect the structural changes of the step in `StepResult.records`. */
+  records?: boolean;
+}
+
+/**
+ * One vessel's sub-stepped step between two sub-steps: what `substepForces` evaluates and
+ * `substepIntegrate` advances. The pair pass reads and changes `body` (the centre of mass in the frame of
+ * the step, the rotation matrix VES -> frame, the body rate in VES) and the totals `Fx..Tz` in between.
+ */
+export interface SubstepRun {
+  vessel: Vessel;
+  st: Structure;
+  env: VesselEnvironment;
+  events: SimEvent[];
+  /** Length of one sub-step, s, and the number of sub-steps of the step. */
+  h: number;
+  count: number;
+  inAir: boolean;
+  rho: number;
+  /** Body-fixed force and torque about the centre of mass held over the step (VES). */
+  bfx: number;
+  bfy: number;
+  bfz: number;
+  btx: number;
+  bty: number;
+  btz: number;
+  invMass: number;
+  body: BodyState;
+  q: Quat;
+  /** Non-gravitational force of the sub-step in hand (frame axes, N) and torque about the centre of mass (VES axes, N m). */
+  Fx: number;
+  Fy: number;
+  Fz: number;
+  Tx: number;
+  Ty: number;
+  Tz: number;
+  sumx: number;
+  sumy: number;
+  sumz: number;
+  maxForce: number;
+  any: boolean;
+  submerged: number;
+  out: ContactOut;
+  /** The state is an offset from the island's reference point: its state and acceleration at the step start. */
+  offset: boolean;
+  ox: number;
+  oy: number;
+  oz: number;
+  ovx: number;
+  ovy: number;
+  ovz: number;
+  oax: number;
+  oay: number;
+  oaz: number;
+}
+
+function newRun(own: boolean): SubstepRun {
+  return {
+    vessel: null as unknown as Vessel,
+    st: null as unknown as Structure,
+    env: null as unknown as VesselEnvironment,
+    events: unconfirmed,
+    h: 0,
+    count: CONTACT_SUBSTEPS,
+    inAir: false,
+    rho: 0,
+    bfx: 0,
+    bfy: 0,
+    bfz: 0,
+    btx: 0,
+    bty: 0,
+    btz: 0,
+    invMass: 0,
+    body: own ? { rx: 0, ry: 0, rz: 0, vx: 0, vy: 0, vz: 0, m: [1, 0, 0, 0, 1, 0, 0, 0, 1], wx: 0, wy: 0, wz: 0 } : body,
+    q: { x: 0, y: 0, z: 0, w: 1 },
+    Fx: 0,
+    Fy: 0,
+    Fz: 0,
+    Tx: 0,
+    Ty: 0,
+    Tz: 0,
+    sumx: 0,
+    sumy: 0,
+    sumz: 0,
+    maxForce: 0,
+    any: false,
+    submerged: 0,
+    out: own ? { fx: 0, fy: 0, fz: 0, tx: 0, ty: 0, tz: 0, maxForce: 0, anyContact: false, submergedVolume: 0, crashedParts: [], collapsedLegs: [] } : contactOut,
+    offset: false,
+    ox: 0,
+    oy: 0,
+    oz: 0,
+    ovx: 0,
+    ovy: 0,
+    ovz: 0,
+    oax: 0,
+    oay: 0,
+    oaz: 0,
+  };
+}
+/** The run of a vessel that sub-steps alone: the module's own scratch, as before the lockstep existed. */
+const soloRun = newRun(false);
+
+/**
+ * Battin's form of the gravity difference of Encke's method (ARCHITECTURE section 4): the acceleration of a
+ * point at offset p from a reference point at R, both attracted by mu at the origin, less the acceleration of
+ * the reference point, evaluated without the cancellation of two nearly equal vectors. With
+ * q = p.(p + 2R) / R.R and s = (1 + q)^(3/2): -mu / (|R|^3 s) x (p - F R), F = s - 1 = q (3 + 3q + q^2) / (1 + s).
+ */
+export function gravityDifference(mu: number, Rx: number, Ry: number, Rz: number, px: number, py: number, pz: number, out: number[]): void {
+  const R2 = Rx * Rx + Ry * Ry + Rz * Rz;
+  const q = (px * (px + 2 * Rx) + py * (py + 2 * Ry) + pz * (pz + 2 * Rz)) / R2;
+  const s = Math.pow(1 + q, 1.5);
+  const F = (q * (3 + q * (3 + q))) / (1 + s);
+  const k = -mu / (R2 * Math.sqrt(R2) * s);
+  out[0] = k * (px - F * Rx);
+  out[1] = k * (py - F * Ry);
+  out[2] = k * (pz - F * Rz);
+}
+const gd = [0, 0, 0];
 
 /** Acceleration of the CoM at (p, v): gravity + held body force + aerodynamics re-evaluated for v. */
 function accel(px: number, py: number, pz: number, vx: number, vy: number, vz: number): void {
+  if (sOrigin) {
+    accelOffset(px, py, pz, vx, vy, vz);
+    return;
+  }
   const r2 = px * px + py * py + pz * pz;
   const r1 = Math.sqrt(r2);
   const k = -sEnv.mu / (r2 * r1);
@@ -84,6 +238,148 @@ function accel(px: number, py: number, pz: number, vx: number, vy: number, vz: n
   acc[0] = ax;
   acc[1] = ay;
   acc[2] = az;
+}
+
+/**
+ * The same for a state that is an OFFSET from the island's reference point: gravity is the difference
+ * between the acceleration at the vessel and at the reference point, which moves on its own orbit during
+ * the step (to second order in the time into the step, which is exact to far below a nanometre for a step
+ * of 1/120 s on any orbit about the star).
+ */
+function accelOffset(px: number, py: number, pz: number, vx: number, vy: number, vz: number): void {
+  const t = sTau;
+  const Rx = sRx + (sRVx + 0.5 * sRAx * t) * t;
+  const Ry = sRy + (sRVy + 0.5 * sRAy * t) * t;
+  const Rz = sRz + (sRVz + 0.5 * sRAz * t) * t;
+  gravityDifference(sEnv.mu, Rx, Ry, Rz, px, py, pz, gd);
+  let ax = gd[0]! + sBfx * sInvMass;
+  let ay = gd[1]! + sBfy * sInvMass;
+  let az = gd[2]! + sBfz * sInvMass;
+  if (sInAir) {
+    const qx = Rx + px;
+    const qy = Ry + py;
+    const qz = Rz + pz;
+    const rho = sEnv.atmosphereAt(Math.sqrt(qx * qx + qy * qy + qz * qz) - sEnv.radius).density;
+    if (rho > 0) {
+      const sp = sEnv.spin;
+      const ux = sRVx + sRAx * t + vx - (sp.y * qz - sp.z * qy);
+      const uy = sRVy + sRAy * t + vy - (sp.z * qx - sp.x * qz);
+      const uz = sRVz + sRAz * t + vz - (sp.x * qy - sp.y * qx);
+      const m = sM;
+      const w = sVessel.w;
+      evalAero(sVessel, sSt, rho, m[0]! * ux + m[3]! * uy + m[6]! * uz, m[1]! * ux + m[4]! * uy + m[7]! * uz, m[2]! * ux + m[5]! * uy + m[8]! * uz, w.x, w.y, w.z, aeroOut);
+      ax += (m[0]! * aeroOut.fx + m[1]! * aeroOut.fy + m[2]! * aeroOut.fz) * sInvMass;
+      ay += (m[3]! * aeroOut.fx + m[4]! * aeroOut.fy + m[5]! * aeroOut.fz) * sInvMass;
+      az += (m[6]! * aeroOut.fx + m[7]! * aeroOut.fy + m[8]! * aeroOut.fz) * sInvMass;
+    }
+  }
+  acc[0] = ax;
+  acc[1] = ay;
+  acc[2] = az;
+}
+
+/**
+ * Forces of sub-step `i` of a run: the held body force, aerodynamics for the current sub-state and the
+ * ground contact and buoyancy. Leaves the totals in `Fx..Tz`; nothing is integrated.
+ */
+export function substepForces(run: SubstepRun, i: number): void {
+  const b = run.body;
+  const bm = b.m;
+  const env = run.env;
+  const sp = env.spin;
+  const tau = i * run.h;
+  const qf = tau === 0 ? env.qFixedToInertial : quat.mul(quat.fromRotVec({ x: sp.x * tau, y: sp.y * tau, z: sp.z * tau }), env.qFixedToInertial);
+  // Aerodynamics for the current sub-state (density of the step start; the vessel is within metres of the surface).
+  let fx = run.bfx;
+  let fy = run.bfy;
+  let fz = run.bfz;
+  let tx = run.btx;
+  let ty = run.bty;
+  let tz = run.btz;
+  const out = run.out;
+  if (run.offset) {
+    // Offsets from the island's reference point: far from every surface (the island drops its reference
+    // before a member comes near one), so there is no ground and no water to touch.
+    if (run.inAir) {
+      const Rx = run.ox + (run.ovx + 0.5 * run.oax * tau) * tau;
+      const Ry = run.oy + (run.ovy + 0.5 * run.oay * tau) * tau;
+      const Rz = run.oz + (run.ovz + 0.5 * run.oaz * tau) * tau;
+      const qx = Rx + b.rx;
+      const qy = Ry + b.ry;
+      const qz = Rz + b.rz;
+      const ux = run.ovx + run.oax * tau + b.vx - (sp.y * qz - sp.z * qy);
+      const uy = run.ovy + run.oay * tau + b.vy - (sp.z * qx - sp.x * qz);
+      const uz = run.ovz + run.oaz * tau + b.vz - (sp.x * qy - sp.y * qx);
+      evalAero(run.vessel, run.st, run.rho, bm[0]! * ux + bm[3]! * uy + bm[6]! * uz, bm[1]! * ux + bm[4]! * uy + bm[7]! * uz, bm[2]! * ux + bm[5]! * uy + bm[8]! * uz, b.wx, b.wy, b.wz, aeroOut);
+      fx += aeroOut.fx;
+      fy += aeroOut.fy;
+      fz += aeroOut.fz;
+      tx += aeroOut.tx;
+      ty += aeroOut.ty;
+      tz += aeroOut.tz;
+    }
+    out.fx = out.fy = out.fz = out.tx = out.ty = out.tz = 0;
+    out.maxForce = 0;
+    out.anyContact = false;
+    out.submergedVolume = 0;
+  } else {
+    if (run.inAir) {
+      const ux = b.vx - (sp.y * b.rz - sp.z * b.ry);
+      const uy = b.vy - (sp.z * b.rx - sp.x * b.rz);
+      const uz = b.vz - (sp.x * b.ry - sp.y * b.rx);
+      evalAero(run.vessel, run.st, run.rho, bm[0]! * ux + bm[3]! * uy + bm[6]! * uz, bm[1]! * ux + bm[4]! * uy + bm[7]! * uz, bm[2]! * ux + bm[5]! * uy + bm[8]! * uz, b.wx, b.wy, b.wz, aeroOut);
+      fx += aeroOut.fx;
+      fy += aeroOut.fy;
+      fz += aeroOut.fz;
+      tx += aeroOut.tx;
+      ty += aeroOut.ty;
+      tz += aeroOut.tz;
+    }
+    evalContact(run.vessel, run.st, env, b, qf, env.ut, run.events, out);
+  }
+  // Total non-gravitational force in the frame's axes.
+  run.Fx = bm[0]! * fx + bm[1]! * fy + bm[2]! * fz + out.fx;
+  run.Fy = bm[3]! * fx + bm[4]! * fy + bm[5]! * fz + out.fy;
+  run.Fz = bm[6]! * fx + bm[7]! * fy + bm[8]! * fz + out.fz;
+  run.Tx = tx + out.tx;
+  run.Ty = ty + out.ty;
+  run.Tz = tz + out.tz;
+  if (out.maxForce > run.maxForce) run.maxForce = out.maxForce;
+  if (out.anyContact) run.any = true;
+  run.submerged = out.submergedVolume;
+}
+
+/** Integrate sub-step `i` of a run with the totals in `Fx..Tz` (semi-implicit Euler; gravity of the sub-state). */
+export function substepIntegrate(run: SubstepRun, i: number): void {
+  const b = run.body;
+  const bm = b.m;
+  const h = run.h;
+  const Fx = run.Fx;
+  const Fy = run.Fy;
+  const Fz = run.Fz;
+  run.sumx += bm[0]! * Fx + bm[3]! * Fy + bm[6]! * Fz;
+  run.sumy += bm[1]! * Fx + bm[4]! * Fy + bm[7]! * Fz;
+  run.sumz += bm[2]! * Fx + bm[5]! * Fy + bm[8]! * Fz;
+  const invMass = run.invMass;
+  if (run.offset) {
+    const tau = i * h;
+    gravityDifference(run.env.mu, run.ox + (run.ovx + 0.5 * run.oax * tau) * tau, run.oy + (run.ovy + 0.5 * run.oay * tau) * tau, run.oz + (run.ovz + 0.5 * run.oaz * tau) * tau, b.rx, b.ry, b.rz, gd);
+    b.vx += (gd[0]! + Fx * invMass) * h;
+    b.vy += (gd[1]! + Fy * invMass) * h;
+    b.vz += (gd[2]! + Fz * invMass) * h;
+  } else {
+    const r2 = b.rx * b.rx + b.ry * b.ry + b.rz * b.rz;
+    const kg = -run.env.mu / (r2 * Math.sqrt(r2));
+    b.vx += (kg * b.rx + Fx * invMass) * h;
+    b.vy += (kg * b.ry + Fy * invMass) * h;
+    b.vz += (kg * b.rz + Fz * invMass) * h;
+  }
+  integrateRate(run.vessel, run.Tx, run.Ty, run.Tz, h, 1, b);
+  b.rx += b.vx * h;
+  b.ry += b.vy * h;
+  b.rz += b.vz * h;
+  run.q = quat.normalize(quat.mul(run.q, quat.fromRotVec({ x: b.wx * h, y: b.wy * h, z: b.wz * h })));
+  b.m = mat3.fromQuat(run.q) as number[];
 }
 
 /** Semi-implicit rigid-body rate update: w' = w + dt I^-1 (tau - wm x I wm) with the mid-point rate, fixed-point iterated. */
@@ -164,8 +460,11 @@ function wantsThrust(vessel: Vessel, st: Structure, controls: ControlInputs): bo
   return rcsTranslationActive(vessel, controls.translate);
 }
 
-export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: ControlInputs, dt: number): StepResult {
-  const ctx: StepContext = { ut: env.ut, env, instant: false, events: [], spawned: [] };
+export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: ControlInputs, dt: number, opts?: StepOptions): StepResult {
+  const predict = opts !== undefined && opts.mode === 'predict';
+  const ctx: StepContext = { ut: env.ut, env, instant: false, events: [], spawned: [], path: 'none', probeNear: false };
+  if (predict) ctx.predict = true;
+  if (opts !== undefined && opts.records) ctx.records = [];
   vessel.age += dt;
   vessel.stepCount++;
   processPending(vessel, dt, ctx);
@@ -202,13 +501,30 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
   let vcx = v.x + m[0]! * wcx + m[1]! * wcy + m[2]! * wcz;
   let vcy = v.y + m[3]! * wcx + m[4]! * wcy + m[5]! * wcz;
   let vcz = v.z + m[6]! * wcx + m[7]! * wcy + m[8]! * wcz;
-  const rLen = Math.sqrt(rcx * rcx + rcy * rcy + rcz * rcz);
+  // The centre of mass about the body: the state itself, or the island's reference point plus the offset.
+  const origin = env.origin;
+  let arx = rcx;
+  let ary = rcy;
+  let arz = rcz;
+  let avx = vcx;
+  let avy = vcy;
+  let avz = vcz;
+  if (origin !== undefined) {
+    arx = origin.r.x + rcx;
+    ary = origin.r.y + rcy;
+    arz = origin.r.z + rcz;
+    avx = origin.v.x + vcx;
+    avy = origin.v.y + vcy;
+    avz = origin.v.z + vcz;
+  }
+  const rLen = Math.sqrt(arx * arx + ary * ary + arz * arz);
   const altitude = rLen - env.radius;
   const atm = env.atmosphereAt(altitude);
+  const airTemp = atm.temperature;
   const sp = env.spin;
-  const uax = vcx - (sp.y * rcz - sp.z * rcy);
-  const uay = vcy - (sp.z * rcx - sp.x * rcz);
-  const uaz = vcz - (sp.x * rcy - sp.y * rcx);
+  const uax = avx - (sp.y * arz - sp.z * ary);
+  const uay = avy - (sp.z * arx - sp.x * arz);
+  const uaz = avz - (sp.x * ary - sp.y * arx);
   const speed = Math.sqrt(uax * uax + uay * uay + uaz * uaz);
   const rho = atm.density;
   const qDyn = 0.5 * rho * speed * speed;
@@ -236,7 +552,7 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
 
   // ------------------------------------------------------------------ modules, control, actuators
   if (st.legs.length > 0) updateLegs(vessel, st, dt);
-  if (st.chutes.length > 0) updateParachutes(vessel, st, altitude, mach, speed, qDyn, hx, hy, hz, dt, env.ut, ctx.events);
+  if (st.chutes.length > 0) updateParachutes(vessel, st, altitude, mach, speed, qDyn, hx, hy, hz, dt, env.ut, ctx.events, predict);
   computeAuthority(vessel, st);
   sasUpdate(vessel, st, controls, rho, qDyn, vax, vay, vaz, dt);
   const act = applyActuators(vessel, st, sasOut.ux, sasOut.uy, sasOut.uz, vessel.appliedControls.translate, dt, env.ut, ctx.events);
@@ -262,9 +578,9 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
     aero.plasmaIntensity = 0;
     // The ground carries the weight: proper acceleration = -gravity.
     const k = gLocal / rLen;
-    vessel.properAccel.x = (m[0]! * rcx + m[3]! * rcy + m[6]! * rcz) * k;
-    vessel.properAccel.y = (m[1]! * rcx + m[4]! * rcy + m[7]! * rcz) * k;
-    vessel.properAccel.z = (m[2]! * rcx + m[5]! * rcy + m[8]! * rcz) * k;
+    vessel.properAccel.x = (m[0]! * arx + m[3]! * ary + m[6]! * arz) * k;
+    vessel.properAccel.y = (m[1]! * arx + m[4]! * ary + m[7]! * arz) * k;
+    vessel.properAccel.z = (m[2]! * arx + m[5]! * ary + m[8]! * arz) * k;
     vessel.gLoad += (gLocal / G0 - vessel.gLoad) * (1 - Math.exp(-dt / G_FILTER_TAU));
     vessel.contact.anyContact = true;
     vessel.contact.maxForce = mp.mass * gLocal;
@@ -272,6 +588,7 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
     vessel.groundClearance = 0;
     vessel.airborneTime = 0;
     vessel.surface = vessel.hold === 'clamps' ? 'prelaunch' : 'landed';
+    ctx.path = 'held';
     return ctx;
   }
 
@@ -320,8 +637,12 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
   body.wz = w0z;
   let qNew: Quat = vessel.q;
   let mNew: number[] = m;
-  const near = contactBroadphase(vessel, st, env, dt);
-  if (st.buried) {
+  // A state given as an offset from the island's reference point is far from every surface: no probe is asked.
+  const probeNear = origin !== undefined ? noContactBroadphase(vessel, st) : contactBroadphase(vessel, st, env, dt);
+  ctx.probeNear = probeNear;
+  const near = probeNear || (opts !== undefined && opts.pairContact === true);
+  let cOut: ContactOut = contactOut;
+  if (st.buried && !predict) {
     // Entirely below the terrain (it got past the probes, e.g. at extreme speed): an impact.
     const all: number[] = [];
     for (let i = 0; i < vessel.parts.length; i++) all.push(i);
@@ -332,6 +653,22 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
 
   if (!near) {
     // -------------------------------------------------------------- free flight: RK4 + attitude
+    ctx.path = 'free';
+    sOrigin = origin !== undefined;
+    if (origin !== undefined) {
+      sRx = origin.r.x;
+      sRy = origin.r.y;
+      sRz = origin.r.z;
+      sRVx = origin.v.x;
+      sRVy = origin.v.y;
+      sRVz = origin.v.z;
+      const o2 = sRx * sRx + sRy * sRy + sRz * sRz;
+      const ok = -env.mu / (o2 * Math.sqrt(o2));
+      sRAx = ok * sRx;
+      sRAy = ok * sRy;
+      sRAz = ok * sRz;
+    }
+    sTau = 0;
     sEnv = env;
     sVessel = vessel;
     sSt = st;
@@ -349,6 +686,7 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
     const v2x = vcx + k1x * h2;
     const v2y = vcy + k1y * h2;
     const v2z = vcz + k1z * h2;
+    sTau = h2;
     accel(rcx + vcx * h2, rcy + vcy * h2, rcz + vcz * h2, v2x, v2y, v2z);
     const k2x = acc[0]!;
     const k2y = acc[1]!;
@@ -363,6 +701,7 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
     const v4x = vcx + k3x * dt;
     const v4y = vcy + k3y * dt;
     const v4z = vcz + k3z * dt;
+    sTau = dt;
     accel(rcx + v3x * dt, rcy + v3y * dt, rcz + v3z * dt, v4x, v4y, v4z);
     const s6 = dt / 6;
     rcx += s6 * (vcx + 2 * v2x + 2 * v3x + v4x);
@@ -380,83 +719,86 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
     contact.waterSubmersion = 0;
   } else {
     // -------------------------------------------------------------- contact / buoyancy sub-steps
-    const h = dt / CONTACT_SUBSTEPS;
-    body.rx = rcx;
-    body.ry = rcy;
-    body.rz = rcz;
-    body.vx = vcx;
-    body.vy = vcy;
-    body.vz = vcz;
-    body.m = m;
-    let q = vessel.q;
-    let sumx = 0;
-    let sumy = 0;
-    let sumz = 0;
-    let maxForce = 0;
-    let any = false;
-    let submerged = 0;
-    contactOut.crashedParts.length = 0;
-    contactOut.collapsedLegs.length = 0;
-    for (let i = 0; i < CONTACT_SUBSTEPS; i++) {
-      const bm = body.m;
-      const tau = i * h;
-      const qf = tau === 0 ? env.qFixedToInertial : quat.mul(quat.fromRotVec({ x: sp.x * tau, y: sp.y * tau, z: sp.z * tau }), env.qFixedToInertial);
-      // Aerodynamics for the current sub-state (density of the step start; the vessel is within metres of the surface).
-      let fx = bfx;
-      let fy = bfy;
-      let fz = bfz;
-      let tx = btx;
-      let ty = bty;
-      let tz = btz;
-      if (inAir) {
-        const ux = body.vx - (sp.y * body.rz - sp.z * body.ry);
-        const uy = body.vy - (sp.z * body.rx - sp.x * body.rz);
-        const uz = body.vz - (sp.x * body.ry - sp.y * body.rx);
-        evalAero(vessel, st, rho, bm[0]! * ux + bm[3]! * uy + bm[6]! * uz, bm[1]! * ux + bm[4]! * uy + bm[7]! * uz, bm[2]! * ux + bm[5]! * uy + bm[8]! * uz, body.wx, body.wy, body.wz, aeroOut);
-        fx += aeroOut.fx;
-        fy += aeroOut.fy;
-        fz += aeroOut.fz;
-        tx += aeroOut.tx;
-        ty += aeroOut.ty;
-        tz += aeroOut.tz;
-      }
-      evalContact(vessel, st, env, body, qf, env.ut, ctx.events, contactOut);
-      // Total non-gravitational force in BCI.
-      const Fx = bm[0]! * fx + bm[1]! * fy + bm[2]! * fz + contactOut.fx;
-      const Fy = bm[3]! * fx + bm[4]! * fy + bm[5]! * fz + contactOut.fy;
-      const Fz = bm[6]! * fx + bm[7]! * fy + bm[8]! * fz + contactOut.fz;
-      sumx += bm[0]! * Fx + bm[3]! * Fy + bm[6]! * Fz;
-      sumy += bm[1]! * Fx + bm[4]! * Fy + bm[7]! * Fz;
-      sumz += bm[2]! * Fx + bm[5]! * Fy + bm[8]! * Fz;
-      if (contactOut.maxForce > maxForce) maxForce = contactOut.maxForce;
-      if (contactOut.anyContact) any = true;
-      submerged = contactOut.submergedVolume;
-      const r2 = body.rx * body.rx + body.ry * body.ry + body.rz * body.rz;
-      const kg = -env.mu / (r2 * Math.sqrt(r2));
-      body.vx += (kg * body.rx + Fx * invMass) * h;
-      body.vy += (kg * body.ry + Fy * invMass) * h;
-      body.vz += (kg * body.rz + Fz * invMass) * h;
-      integrateRate(vessel, tx + contactOut.tx, ty + contactOut.ty, tz + contactOut.tz, h, 1, body);
-      body.rx += body.vx * h;
-      body.ry += body.vy * h;
-      body.rz += body.vz * h;
-      q = quat.normalize(quat.mul(q, quat.fromRotVec({ x: body.wx * h, y: body.wy * h, z: body.wz * h })));
-      body.m = mat3.fromQuat(q) as number[];
+    ctx.path = 'substep';
+    const lockstep = opts !== undefined ? opts.lockstep : undefined;
+    // A vessel that sub-steps alone uses the module's scratch; one of a lockstep group has a run of its own,
+    // because the runs of the group are advanced in turn.
+    const run = lockstep !== undefined ? newRun(true) : soloRun;
+    const b = run.body;
+    run.vessel = vessel;
+    run.st = st;
+    run.env = env;
+    run.events = predict ? unconfirmed : ctx.events;
+    run.h = dt / CONTACT_SUBSTEPS;
+    run.count = CONTACT_SUBSTEPS;
+    run.inAir = inAir;
+    run.rho = rho;
+    run.bfx = bfx;
+    run.bfy = bfy;
+    run.bfz = bfz;
+    run.btx = btx;
+    run.bty = bty;
+    run.btz = btz;
+    run.invMass = invMass;
+    b.rx = rcx;
+    b.ry = rcy;
+    b.rz = rcz;
+    b.vx = vcx;
+    b.vy = vcy;
+    b.vz = vcz;
+    b.m = m;
+    b.wx = w0x;
+    b.wy = w0y;
+    b.wz = w0z;
+    run.q = vessel.q;
+    run.sumx = 0;
+    run.sumy = 0;
+    run.sumz = 0;
+    run.maxForce = 0;
+    run.any = false;
+    run.submerged = 0;
+    run.offset = origin !== undefined;
+    if (origin !== undefined) {
+      run.ox = origin.r.x;
+      run.oy = origin.r.y;
+      run.oz = origin.r.z;
+      run.ovx = origin.v.x;
+      run.ovy = origin.v.y;
+      run.ovz = origin.v.z;
+      const o2 = run.ox * run.ox + run.oy * run.oy + run.oz * run.oz;
+      const ok = -env.mu / (o2 * Math.sqrt(o2));
+      run.oax = ok * run.ox;
+      run.oay = ok * run.oy;
+      run.oaz = ok * run.oz;
     }
-    rcx = body.rx;
-    rcy = body.ry;
-    rcz = body.rz;
-    vcx = body.vx;
-    vcy = body.vy;
-    vcz = body.vz;
-    qNew = q;
-    mNew = body.m;
-    ngx = sumx / CONTACT_SUBSTEPS;
-    ngy = sumy / CONTACT_SUBSTEPS;
-    ngz = sumz / CONTACT_SUBSTEPS;
-    contact.anyContact = any;
-    contact.maxForce = maxForce;
-    contact.waterSubmersion = st.buoyVolume > 0 ? submerged / st.buoyVolume : 0;
+    cOut = run.out;
+    cOut.crashedParts.length = 0;
+    cOut.collapsedLegs.length = 0;
+    unconfirmed.length = 0;
+    if (lockstep !== undefined) lockstep(run);
+    else {
+      for (let i = 0; i < CONTACT_SUBSTEPS; i++) {
+        substepForces(run, i);
+        substepIntegrate(run, i);
+      }
+    }
+    rcx = b.rx;
+    rcy = b.ry;
+    rcz = b.rz;
+    vcx = b.vx;
+    vcy = b.vy;
+    vcz = b.vz;
+    qNew = run.q;
+    mNew = b.m;
+    body.wx = b.wx;
+    body.wy = b.wy;
+    body.wz = b.wz;
+    ngx = run.sumx / CONTACT_SUBSTEPS;
+    ngy = run.sumy / CONTACT_SUBSTEPS;
+    ngz = run.sumz / CONTACT_SUBSTEPS;
+    contact.anyContact = run.any;
+    contact.maxForce = run.maxForce;
+    contact.waterSubmersion = st.buoyVolume > 0 ? run.submerged / st.buoyVolume : 0;
   }
 
   // ------------------------------------------------------------------ write back (origin from the CoM)
@@ -518,7 +860,8 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
   if (!floating && vessel.airborneTime > 1) vessel.inWater = false;
   if (floating && groundSpeed < SPLASH_SPEED) {
     vessel.splashTimer += dt;
-    if (vessel.splashTimer >= SPLASH_TIME && vessel.surface !== 'splashed') {
+    // Predict mode: the splashdown is confirmed by the server's state, never here.
+    if (!predict && vessel.splashTimer >= SPLASH_TIME && vessel.surface !== 'splashed') {
       vessel.surface = 'splashed';
       // Parachutes are released once the capsule is down.
       for (let i = 0; i < st.chutes.length; i++) {
@@ -538,12 +881,17 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
 
   // ------------------------------------------------------------------ thermal and failures
   overheated.length = 0;
-  stepThermal(vessel, st, env, rho, speed, hx, hy, hz, atm.temperature, dt, overheated);
+  stepThermal(vessel, st, env, rho, speed, hx, hy, hz, airTemp, dt, overheated, predict);
   let structureChanged = false;
-  if (near && contactOut.collapsedLegs.length > 0) collapseLegs(vessel, contactOut.collapsedLegs, ctx);
-  if (near && contactOut.crashedParts.length > 0) {
-    const crashed = contactOut.crashedParts.slice();
-    contactOut.crashedParts.length = 0;
+  if (predict) {
+    // Threshold outcomes are the server's (ARCHITECTURE 6.4): a leg does not collapse and nothing is crushed here.
+    cOut.collapsedLegs.length = 0;
+    cOut.crashedParts.length = 0;
+  }
+  if (near && cOut.collapsedLegs.length > 0) collapseLegs(vessel, cOut.collapsedLegs, ctx);
+  if (near && cOut.crashedParts.length > 0) {
+    const crashed = cOut.crashedParts.slice();
+    cOut.crashedParts.length = 0;
     destroyParts(vessel, crashed, 'impact', ctx);
     structureChanged = true;
   }
@@ -554,8 +902,9 @@ export function stepVessel(vessel: Vessel, env: VesselEnvironment, controls: Con
   if (!structureChanged && !vessel.destroyed) checkLoads(vessel, dt, ctx);
   if (vessel.destroyed || structureChanged) return ctx;
 
-  // Sleep: resting on the ground, slow, not rotating relative to it, nothing thrusting or pending.
-  if (contact.anyContact && !floating && vessel.thrust === 0 && !anyPending(vessel)) {
+  // Sleep: resting on the ground, slow, not rotating relative to it, nothing thrusting or pending. (Predict
+  // mode: the touchdown is confirmed by the server's state; the replica keeps the vessel in contact.)
+  if (!predict && contact.anyContact && !floating && vessel.thrust === 0 && !anyPending(vessel)) {
     const wrx = w.x - (n[0]! * sp.x + n[3]! * sp.y + n[6]! * sp.z);
     const wry = w.y - (n[1]! * sp.x + n[4]! * sp.y + n[7]! * sp.z);
     const wrz = w.z - (n[2]! * sp.x + n[5]! * sp.y + n[8]! * sp.z);
