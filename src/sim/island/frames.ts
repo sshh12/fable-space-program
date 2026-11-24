@@ -10,6 +10,7 @@ import type { TerrainProvider } from '@/core/contracts/terrain';
 import { quat, type Quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import type { BodyInfo, BodySystem } from '../bodies/bodySystem';
+import { altitudeAboveSurface, surfaceRadius } from '../bodies/shape';
 import { baseTickOf, baseUtOfTick, floorTick, nearestTick, offsetOfTick, utOfTick } from '../clock';
 import type { Vessel } from '../vessel';
 import { bodyEnvBase, IslandEnv, OrientationCache, type BodyEnvBase } from './environment';
@@ -60,14 +61,30 @@ export class BodyFrames {
   /** Aim an environment at a vessel whose BCI position about `bodyId` is `r`, at `ut` (the start of the step it is passed to). */
   aim(env: IslandEnv, bodyId: string, r: Vec3, ut: number): IslandEnv {
     const base = this.bases.get(bodyId)!;
-    env.aim(base, ut, this.orientAt(bodyId, ut), Math.hypot(r.x, r.y, r.z) - base.info.radius);
+    const q = this.orientAt(bodyId, ut);
+    // On a body with a shape the air is sampled at the altitude above the spheroid under the vessel, not above the mean sphere.
+    const datum = base.def.shape ? surfaceRadius(base.def, quat.rotateInv(q, r)) - base.info.radius : 0;
+    env.aim(base, ut, q, Math.hypot(r.x, r.y, r.z) - base.info.radius, datum);
     return env;
   }
 
-  /** The sun sample of a point at BCI position `r` about `bodyId` at `ut` (`Vessel.sun`). */
+  /**
+   * Altitude of a BCI position about `bodyId` at `ut` above the body's reference surface: the spheroid of a
+   * body with a shape (ARCHITECTURE 8.3), the sphere of its radius otherwise (then exactly `|r| - radius`).
+   */
+  altitudeAt(bodyId: string, r: Vec3, ut: number): number {
+    const base = this.bases.get(bodyId)!;
+    if (!base.def.shape) return v3.len(r) - base.info.radius;
+    return altitudeAboveSurface(base.def, quat.rotateInv(this.orientAt(bodyId, ut), r));
+  }
+
+  /**
+   * The sun sample of a point at BCI position `r` about `bodyId` at `ut` (`Vessel.sun`), computed in the
+   * frame of the body's planet system: far from the root body the root-frame position would lose the digits
+   * a sunrise needs (request solar-system-sim-1; the same numbers to the bit on a root-centred library).
+   */
   sunSample(bodyId: string, r: Vec3, ut: number): { dir: Vec3; visibility: number } {
-    const posRoot = v3.add(this.system.stateRoot(bodyId, ut).r, r);
-    return { dir: this.system.sunDirection(posRoot, ut).dir, visibility: this.system.sunVisibility(posRoot, ut) };
+    return { dir: this.system.sunDirectionAt(bodyId, r, ut).dir, visibility: this.system.sunVisibilityAt(bodyId, r, ut) };
   }
 
   /** The band-limited surface the events of a conic are found against. */

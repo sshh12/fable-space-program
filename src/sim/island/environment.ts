@@ -60,6 +60,9 @@ export class IslandEnv implements VesselEnvironment {
   sunDir: Vec3 = { x: 1, y: 0, z: 0 };
   sunVisibility = 1;
 
+  private surfaceOffset = 0;
+  /** The air at `altitude` above the mean sphere, on a body whose reference surface stands `surfaceOffset` above that sphere here. */
+  private readonly atmosphereAboveSurface = (altitude: number): AtmosphereSample => this.base!.atmosphereAt(altitude - this.surfaceOffset);
   /** Altitude of the vessel this environment is aimed at (selects how surfaceKind is evaluated). */
   private vesselAltitude = 0;
   private base: BodyEnvBase | null = null;
@@ -98,8 +101,12 @@ export class IslandEnv implements VesselEnvironment {
     return this.terrain.surfaceKind(this.bodyId, dirFixed);
   };
 
-  /** Point the environment at body `base` at time `ut` for a vessel at altitude `altitude` above the datum. */
-  aim(base: BodyEnvBase, ut: number, qFixedToInertial: Quat, altitude: number): void {
+  /**
+   * Point the environment at body `base` at time `ut` for a vessel at altitude `altitude` above the datum.
+   * `surfaceOffset`: the radius of the body's reference surface under the vessel less its mean radius (0 on a
+   * body without a shape); the air is sampled at the altitude above that surface.
+   */
+  aim(base: BodyEnvBase, ut: number, qFixedToInertial: Quat, altitude: number, surfaceOffset = 0): void {
     this.base = base;
     this.ut = ut;
     this.bodyId = base.info.id;
@@ -107,7 +114,8 @@ export class IslandEnv implements VesselEnvironment {
     this.radius = base.info.radius;
     this.qFixedToInertial = qFixedToInertial;
     this.spin = base.info.spin;
-    this.atmosphereAt = base.atmosphereAt;
+    this.surfaceOffset = surfaceOffset;
+    this.atmosphereAt = surfaceOffset === 0 ? base.atmosphereAt : this.atmosphereAboveSurface;
     this.heating = base.def.atmosphere ? base.def.atmosphere.heating : null;
     this.surfaceFriction = base.def.terrain ? base.def.terrain.surfaceFriction : 0.8;
     this.vesselAltitude = altitude;

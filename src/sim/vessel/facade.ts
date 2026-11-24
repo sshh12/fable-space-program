@@ -2,6 +2,7 @@
  * What the world orchestrator reads from a vessel: staging info, snapshot building, vessel-level
  * readouts, the integration predicate and the state hash.
  */
+import { hasCommandAuthority } from './modules/remoteCommand';
 import type { TimedStageAction } from '@/core/contracts/defs';
 import type { ChuteEnvelope, CraftSnapshot, FidelityTier, ModuleState, PartSnapshot, Readouts, StageInfo, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
 import type { VesselEnvironment } from '@/core/contracts/simInternal';
@@ -71,8 +72,9 @@ export function surfaceSituation(vessel: Vessel): Extract<VesselSituation, 'prel
   return vessel.surface === 'none' ? null : vessel.surface;
 }
 
+/** A command part with authority is aboard: living crew in a command module, or one flagged remote (modules/remoteCommand.ts). */
 export function isControllable(vessel: Vessel): boolean {
-  return vessel.parts.some((p) => p.def.modules.some((m) => m.type === 'command'));
+  return hasCommandAuthority(vessel);
 }
 
 export interface WorldSideSnapshotFields {

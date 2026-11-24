@@ -450,6 +450,19 @@ describe('lunar-direct flown headless from the pad to splashdown', () => {
     note('trajectory guard', `all 400 samples bit-identical: the attended craft (${guard.samples.filter((s) => s.attended.bodyId === a.defs.rootBodyId).length} about ${a.defs.rootBodyId}, ${guard.samples.filter((s) => s.attended.bodyId !== a.defs.rootBodyId).length} about another body) and the first vessel it shed, the launch clamps (${clamps} samples)`, 'bit for bit');
   });
 
+  it('step paths: no vessel step of the flight took the sub-stepped path without its own ground or water probe within reach, where v1 would not have', () => {
+    // The islands' counters through the host (WorldStats; src/sim/island `IslandCounters`): a vessel step is on
+    // the RK4 path, or sub-stepped with its own probe near (v1's rule), or sub-stepped without one (a pair in
+    // the contact regime, which no hook produces in this flight). The replay takes the same paths.
+    expect(a.world.pairSubsteps).toBe(0);
+    expect(a.world.probeSubsteps).toBeGreaterThan(0);
+    expect(a.world.freeSteps).toBeGreaterThan(a.world.probeSubsteps);
+    expect(b.world.pairSubsteps).toBe(0);
+    expect(b.world.probeSubsteps).toBe(a.world.probeSubsteps);
+    expect(b.world.freeSteps).toBe(a.world.freeSteps);
+    note('step paths', `${a.world.freeSteps} vessel steps on the RK4 path, ${a.world.probeSubsteps} sub-stepped with a probe near the ground or water, ${a.world.pairSubsteps} sub-stepped without one`, '0 without a probe');
+  });
+
   it('trajectory guard: every piece of debris meets its recorded fate within 2 s and 500 m', () => {
     const guard = readGuard();
     const rows = debrisDifferences(guard, fatesOf(a.debris), survivorsOf(a.run.last), (id) => a.defs.bodies[id]!);

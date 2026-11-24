@@ -21,6 +21,8 @@ beforeAll(async () => {
 });
 
 const moon = (): FakeEnv => makeEnv({ mu: MOON_MU, radius: MOON_RADIUS, friction: 0.7 });
+/** Surface gravity of that body, m/s^2. */
+const LUNAR_G = MOON_MU / (MOON_RADIUS * MOON_RADIUS);
 const altitude = (v: Vessel, env: FakeEnv): number => v3.len(v.r) - env.radius;
 
 /** One part of `def` as a vessel of its own. */
@@ -120,6 +122,13 @@ describe('single-part fragments meet the ground', () => {
           expect(att.name, label).not.toBe('upright');
           const destroyed = r.events.find((e) => e.type === 'partDestroyed');
           expect(destroyed && destroyed.type === 'partDestroyed' ? destroyed.cause : '', label).toBe('impact');
+          // It can only break where falling over supplies the speed: the far end of a body that topples about
+          // its contact edge lands at up to about sqrt(3 g D) (a rod of the length of the part's longest lever,
+          // the diagonal of its bounds), on top of the speed of the drop itself. A compact part never gets there.
+          const b = def.bounds;
+          const lever = Math.hypot(b.yMax - b.yMin, 2 * b.radius);
+          const tolerance = Math.min(...(def.contactPoints ?? []).map((c) => c.crashTolerance), Infinity);
+          expect(Math.sqrt(2 * LUNAR_G * 0.3) + Math.sqrt(3 * LUNAR_G * lever), `${label}: ${lever.toFixed(1)} m of lever against ${tolerance} m/s`).toBeGreaterThan(tolerance);
           broke.push(label);
           continue;
         }
@@ -134,7 +143,9 @@ describe('single-part fragments meet the ground', () => {
       }
     }
     console.log(`${log.join('\n')}\nbroken by toppling over: ${broke.join('; ') || 'none'}`);
-    expect(broke.length).toBeLessThan(10);
+    // Toppling breaks stay a small share of the drops, whatever the size of the library (9 of 100 drops with
+    // the 25 parts of the lunar stack; request fleet-data-7): each one is judged above, this is the tripwire.
+    expect(broke.length).toBeLessThan(0.1 * ATTITUDES.length * Object.keys(defs.parts).length);
   }, 240000);
 
   it('a hard impact destroys the part at the surface instead of letting it through', () => {

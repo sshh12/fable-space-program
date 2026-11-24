@@ -14,6 +14,7 @@ import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import { quat, type Quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
 import { v3, type Vec3 } from '@/core/math/vec3';
+import { belowFloor, floorAltitude } from '../bodies/shape';
 import { CONTROL_TICKS, SUN_SAMPLE_TICKS, TICKS_PER_SECOND, ceilTick, utOfTick } from '../clock';
 import { rcsTranslationActive } from '../control/allocation';
 import { substepForces, substepIntegrate, type StepOptions, type SubstepRun } from '../dynamics/integrator';
@@ -130,6 +131,15 @@ export interface Rec {
   removed: boolean;
 }
 
+/** What a member's step starts from (taken before it, compared after it). */
+interface PreStep {
+  env: IslandEnv;
+  must: boolean;
+  parts: number;
+  crewAlive: boolean;
+  id: string;
+}
+
 const cloneControls = (c: ControlInputs): ControlInputs => ({ pitch: c.pitch, yaw: c.yaw, roll: c.roll, translate: { x: c.translate.x, y: c.translate.y, z: c.translate.z }, throttle: c.throttle });
 
 function hasArmedEngine(v: Vessel): boolean {
@@ -146,6 +156,9 @@ function hasArmedEngine(v: Vessel): boolean {
 const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const pairKey = (a: string, b: string): string => (a < b ? `${a}\n${b}` : `${b}\n${a}`);
 export const orderedPair = (a: string, b: string): PairRef => (a < b ? { a, b } : { a: b, b: a });
+
+/** Why a seat's controls and commands are refused on a vessel nobody aboard can command. */
+const NO_AUTHORITY = 'No command authority';
 
 const FREE_HOOK: PairHook = { regime: () => 'free', solve: () => undefined };
 
@@ -780,7 +793,7 @@ export class IslandImpl implements Island {
   }
 
   /** What is done for a member before its vessel is stepped: the pose for interpolation, the environment, the sun sample, leaving rails. */
-  private preStep(rec: Rec, ut0: number): { env: IslandEnv; must: boolean; parts: number; id: string } {
+  private preStep(rec: Rec, ut0: number): PreStep {
     const v = rec.vessel;
     v3.copyTo(rec.prevR, v.r);
     v3.copyTo(rec.prevV, v.v);
@@ -796,7 +809,7 @@ export class IslandImpl implements Island {
       this.leaveRails(rec);
       this.report.replan.push(v.id);
     }
-    return { env, must, parts: v.parts.length, id: v.id };
+    return { env, must, parts: v.parts.length, crewAlive: v.crewAlive, id: v.id };
   }
 
   /** A member's vessel id changed (a separation of an assembly renames its pieces): the order, the seat and the pair lists follow. */
@@ -832,7 +845,7 @@ export class IslandImpl implements Island {
   }
 
   /** What follows a member's step: events, new vessels, a destroyed vessel, the state machine, the terrain accounting. */
-  private postStep(rec: Rec, pre: { env: IslandEnv; must: boolean; parts: number; id: string }, res: StepResult, ut0: number, utNew: number, dt: number, born: Rec[]): boolean {
+  private postStep(rec: Rec, pre: PreStep, res: StepResult, ut0: number, utNew: number, dt: number, born: Rec[]): boolean {
     const v = rec.vessel;
     if (v.id !== pre.id) this.renamed(rec, pre.id);
     const env = pre.env;
@@ -845,7 +858,8 @@ export class IslandImpl implements Island {
     for (const ev of res.events) this.report.events.push(ev);
     if (res.records) this.reportRecords(rec, res.records);
     for (const s of res.spawned) born.push(this.adopt(s, rec));
-    if (v.parts.length !== pre.parts) rec.controllable = isControllable(v);
+    // Command authority goes with the command parts and with their crew.
+    if (v.parts.length !== pre.parts || v.crewAlive !== pre.crewAlive) rec.controllable = isControllable(v);
     if (v.destroyed || v.parts.length === 0) {
       const burned = res.events.some((x) => x.type === 'partDestroyed' && x.cause === 'overheat');
       this.depart(rec, burned ? 'burnedUp' : 'impact', utNew);
@@ -1071,8 +1085,23 @@ export class IslandImpl implements Island {
 
   // ------------------------------------------------------------------------------- periodic upkeep
 
-  /** Control-tick cadence, after the step: the hand-over of an integrated anchor and the armed margins. */
+  /**
+   * A body without a surface (ARCHITECTURE 8.3): a member below the body's floor is destroyed, cause
+   * 'overstress'. A threshold outcome: the authoritative mode produces it, the predict mode never does.
+   */
+  private checkFloor(): void {
+    const def = this.frames.base(this.bodyId).def;
+    if (this.mode !== 'authoritative' || floorAltitude(def) === null) return;
+    const q = this.frames.orientAt(this.bodyId, this.ut);
+    for (const rec of this.recs.slice()) {
+      if (rec.removed || !belowFloor(def, quat.rotateInv(q, this.posOf(rec, this.ut)))) continue;
+      this.applyOp({ op: 'destroy', slot: rec.slot, parts: rec.vessel.parts.map((_, i) => i), cause: 'overstress' });
+    }
+  }
+
+  /** Control-tick cadence, after the step: the floor of a body without a surface, the hand-over of an integrated anchor, the armed margins. */
   private upkeep(): void {
+    this.checkFloor();
     this.checkSoiIntegrated();
     this.refreshMargins();
     this.clearNascent();
@@ -1359,6 +1388,8 @@ export class IslandImpl implements Island {
       case 'controls': {
         const seat = this.seats.get(input.accountId);
         if (!seat || seat.vesselId !== input.vesselId) return refuse('Not at the helm');
+        // Without command authority (no living crew in a command part, no remote avionics) the levers stay where they are.
+        if (this.rec(input.vesselId)?.controllable === false) return refuse(NO_AUTHORITY);
         seat.controls = clampControls(input.controls);
         seat.sasHold = input.sasHold ? v3.clone(input.sasHold) : null;
         return ok;
@@ -1374,6 +1405,7 @@ export class IslandImpl implements Island {
         const seat = this.seats.get(input.accountId);
         if (!rec) return refuse('No vessel');
         if (!seat || seat.vesselId !== input.vesselId) return refuse('Not at the helm');
+        if (!rec.controllable) return refuse(NO_AUTHORITY);
         const saved = this.report;
         this.report = emptyReport();
         const result = this.command(rec, input.command);

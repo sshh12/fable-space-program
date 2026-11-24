@@ -69,7 +69,7 @@ export class FarSet {
     o.env.sunVisibility = vessel.sun.visibility;
     if (vessel.hold === null) {
       const base = this.frames.base(bodyId);
-      const alt = v3.len(vessel.r) - base.info.radius;
+      const alt = this.frames.altitudeAt(bodyId, vessel.r, utOfTick(tick));
       const atm = base.def.atmosphere;
       if (atm && alt < atm.simTop) o.tier = 'reduced';
       else if (from.orbit !== null) {
@@ -263,7 +263,7 @@ export class FarSet {
       }
       // Out of the atmosphere on a coast: Kepler takes over.
       const info = f.info(o.bodyId);
-      const alt = v3.len(v.r) - info.radius;
+      const alt = f.altitudeAt(o.bodyId, v.r, utOfTick(o.reducedTick));
       const atm = info.def.atmosphere;
       if ((!atm || alt >= atm.simTop) && v3.dot(v.r, v.v) > 0) {
         o.orbit = orbitOf(f, o.bodyId, comStateOf(v), utOfTick(o.reducedTick));

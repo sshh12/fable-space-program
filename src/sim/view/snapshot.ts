@@ -52,9 +52,8 @@ export function situationOf(frames: BodyFrames, e: ViewVessel, ut: number): Vess
   if (s !== null) return s;
   const base = frames.base(e.bodyId);
   const com = comStateOf(v);
-  const rl = v3.len(com.r);
   const atm = base.def.atmosphere;
-  if (atm && rl - base.info.radius < atm.simTop) return 'flying';
+  if (atm && frames.altitudeAt(e.bodyId, com.r, ut) < atm.simTop) return 'flying';
   const o = e.orbit ?? makeOrbit(e.bodyId, base.info.mu, com.r, com.v, ut);
   const rp = o.conic.p / (1 + o.conic.e);
   if (o.period === null) return 'escaping';
@@ -247,6 +246,8 @@ export function buildReadouts(frames: BodyFrames, a: ViewVessel, env: VesselEnvi
   return {
     met: liftoffUt === null ? 0 : Math.max(0, ut - liftoffUt),
     ...orbital,
+    // On a body with a shape the altitude is above its spheroid (Jupiter's 1-bar level is 1,580 km above its mean sphere at the equator).
+    ...(base.def.shape ? { altitudeAsl: frames.altitudeAt(a.bodyId, com.r, ut) } : {}),
     docking: null,
     altitudeRadar: shownRadarAltitude(v, env),
     ...vr,

@@ -15,7 +15,7 @@ import { v3, type Vec3 } from '@/core/math/vec3';
 import type { BodyFrames } from '../island/frames';
 import { defaultNavballMode, navballModeAfter } from '../nav/navball';
 import { nodeBurnInfo, nodeDeltaVInertial, type BurnEngine } from '../orbit/maneuver';
-import { predictPatchesWithOrbits, stateOnPatches, type PatchWithOrbit } from '../orbit/patches';
+import { predictPatchesWithOrbits, stateOnPatches, THREE_PERIOD_ENCOUNTER_SEARCH, type PatchWithOrbit } from '../orbit/patches';
 import type { WarpEvent } from '../orbit/warp';
 import { helmCraft, nextLiveStage, stagingInfo, type Vessel } from '../vessel';
 
@@ -127,7 +127,7 @@ export class Planning {
       this.patches = { current: [], planned: [] };
       return false;
     }
-    const p = predictPatchesWithOrbits(this.frames.system, { bodyId: s.bodyId, r: s.com.r, v: s.com.v }, s.ut, this.nodes, { targetBodyId: this.targetBodyId, terrainHeight: this.frames.coarseHeight });
+    const p = predictPatchesWithOrbits(this.frames.system, { bodyId: s.bodyId, r: s.com.r, v: s.com.v }, s.ut, this.nodes, { targetBodyId: this.targetBodyId, terrainHeight: this.frames.coarseHeight, encounterRevolutions: THREE_PERIOD_ENCOUNTER_SEARCH });
     this.patchItems = p;
     this.patches = { current: p.current.map((x) => x.patch), planned: p.planned.map((x) => x.patch) };
     this.patchRefreshes++;

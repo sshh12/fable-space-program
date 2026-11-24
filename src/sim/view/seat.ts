@@ -117,7 +117,7 @@ export class PilotSeat {
   afterAdvance(): void {
     const h = this.h;
     const a = h.view.focus();
-    const alt = v3.len(comStateOf(a.vessel).r) - h.frames.info(a.bodyId).radius;
+    const alt = h.frames.altitudeAt(a.bodyId, comStateOf(a.vessel).r, h.island.ut);
     h.plan.followAltitude(alt, h.frames.base(a.bodyId).def.navballSwitchAltitude);
     this.sendReference();
     const dropped = h.plan.updateBurn(h.view.subject());

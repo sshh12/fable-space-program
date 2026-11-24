@@ -70,7 +70,9 @@ export async function createRealTerrain(defs: DefLibrary, opts: RealTerrainOptio
   requireTiles(defs);
   const base = createFsTileSource(tilesRoot);
   const source = opts.wrapSource ? opts.wrapSource(base) : base;
-  return createTerrainProvider(defs, source, opts.cacheBytes !== undefined ? { cacheBytes: opts.cacheBytes } : {});
+  // 'launchSystems': the bodies of the launch sites' systems are resident from the start, every other body is loaded by its first
+  // request (on the staged library 27 resident pyramids do not fit the cache budget); the same as 'all' on the shipped library.
+  return createTerrainProvider(defs, source, { preload: 'launchSystems', ...(opts.cacheBytes !== undefined ? { cacheBytes: opts.cacheBytes } : {}) });
 }
 
 /**

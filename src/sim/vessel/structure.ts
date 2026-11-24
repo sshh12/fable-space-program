@@ -3,6 +3,7 @@
  * or removed (staging, failures) - actuator lists with VES-frame geometry, propellant flow groups, exposed
  * aerodynamic elements, contact probes, buoyancy spheres, thermal surfaces.
  */
+import { refreshPortStates } from './modules/dockingPortState';
 import type { ContactPointDef, MachTable, PartDef } from '@/core/contracts/defs';
 import { quat } from '@/core/math/quat';
 import { DEG } from '@/core/math/scalar';
@@ -412,6 +413,9 @@ export function rebuildStructure(vessel: Vessel): Structure {
   const parts = vessel.parts;
   const n = parts.length;
   for (const p of parts) p.shielded = isShieldedBy(parts, p);
+  // The stored state of every docking port follows the structure it was just rebuilt for: every structural
+  // change (a stage, a split, a jettisoned fairing, a merge) invalidates the structure and so passes here.
+  refreshPortStates(vessel);
 
   const s: Structure = {
     carried: { probes: [], buoyWet: [], wake: [] },
