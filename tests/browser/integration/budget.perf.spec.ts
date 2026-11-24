@@ -39,7 +39,8 @@
  * presentation sweep, to be run on a machine as quiet as the recording's). In that mode a line that is over
  * while its package costs what it cost when the baseline was recorded is reported, not failed: the gate
  * asks "unchanged", and the recorded baseline holds such rows (the pad's terrain; the cockpit where it has
- * no line). Without BUDGET_COMPARE every line is asserted as before.
+ * no line). Without BUDGET_COMPARE every line is asserted as before. BUDGET_QUALITY=ultra applies the Ultra preset
+ * (Renderer.setQuality) to every row before it is measured: the gate of capability-settings.
  *
  *   node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/integration/budget.perf.spec.ts --project=perf
  */
@@ -167,6 +168,9 @@ for (const { checkpoint, kind, scene, index } of ROWS) {
     let info!: LabInfo;
     const row = await withGpuLock(async (): Promise<Row> => {
       info = await openIntegration(page, `${scene.query}&hud=0&perf=features&scale=1&governor=off&ballast=1`);
+      // BUDGET_QUALITY=ultra (capability-settings): the Ultra preset applied through Renderer.setQuality before the
+      // measurement, every declared setting at 'ultra' and the 3.7 MP cap (the table is stated at Ultra).
+      if (process.env.BUDGET_QUALITY === 'ultra') await page.evaluate(() => window.__lab!.renderer.setQuality!({ pixelCap: 3.7, renderScaleMin: 0.6, targetFps: 60, levels: Object.fromEntries(window.__lab!.renderer.core.quality.settings().map((x) => [x.setting.id, 'ultra' as const])) }));
       if (scene.cockpit) expect(await page.evaluate(() => window.__integration!.sitAtWindowBelow()), 'the vehicle has a cockpit seat with a window to look through').not.toBeNull();
       if (scene.stack) {
         await page.evaluate((c) => {
