@@ -1,14 +1,26 @@
 /**
  * WebGPU adapter/device acquisition shared by the app and every lab page.
  *
- * Facts this encodes (docs/research/webgpu-harness.md):
- *  - `powerPreference` is ignored by Chrome on Windows, so the adapter is verified after the fact and a
- *    non-discrete or fallback adapter is reported as an error instead of silently running on the iGPU.
+ * Facts this encodes (docs/research/webgpu-harness.md, docs/research/v2/frontend-ux.md section 2):
+ *  - The HARD failures stay errors: no WebGPU, no adapter, a fallback (software) adapter, a missing required
+ *    feature or limit. Whether an integrated GPU, an older card or a laptop is enough is NOT decided here
+ *    (ARCHITECTURE 24): `adapterClass` is a hint from the vendor and architecture tables, and the calibration
+ *    on the real renderer decides (src/bench). Production Chrome leaves `adapter.info.description` empty, so
+ *    a name test classed every Intel adapter, Arc included, as integrated; the description is used only when
+ *    the browser gives one, and never alone against the architecture.
+ *  - `powerPreference` is ignored by Chrome on Windows (crbug 369219127): a hybrid laptop may run on the
+ *    iGPU; the class says so and the calibration measures it.
  *  - Limits default to the WebGPU minimums unless requested: everything the engine relies on is raised
  *    here and checked, with a clear message when the adapter falls short.
  *  - Uncaptured GPU errors and device loss are surfaced through `onError` (tests fail on any of them).
+ * The inline capability gate (src/gate/classify.ts) holds the same table: it imports nothing, and
+ * tests/unit/bench/gate.test.ts checks that both give the same class for every fixture.
  */
+import type { CapabilityReport } from '../contracts/net';
 import type { AdapterReport } from '../contracts/testApi';
+
+/** The adapter class of ARCHITECTURE 24: a hint that seeds the preset before the calibration has run. */
+export type AdapterClass = CapabilityReport['adapterClass'];
 
 export class GpuUnavailableError extends Error {
   constructor(message: string) {
@@ -50,6 +62,8 @@ export interface GpuHandle {
   adapter: GPUAdapter;
   device: GPUDevice;
   report: AdapterReport;
+  /** The class hint of the adapter (`classifyAdapter`); never a reason to refuse it. */
+  adapterClass: AdapterClass;
   /** navigator.gpu.getPreferredCanvasFormat() */
   canvasFormat: GPUTextureFormat;
   hasFeature(name: GPUFeatureName): boolean;
@@ -58,8 +72,6 @@ export interface GpuHandle {
 export interface AcquireOptions {
   /** Called for uncaptured GPU errors and device loss. */
   onError?: (message: string) => void;
-  /** Allow integrated / software adapters (never set in the shipped app; useful for nothing but diagnostics). */
-  allowNonDiscrete?: boolean;
 }
 
 function describeAdapter(adapter: GPUAdapter, device: GPUDevice | null): AdapterReport {
@@ -81,13 +93,40 @@ function describeAdapter(adapter: GPUAdapter, device: GPUDevice | null): Adapter
   };
 }
 
-const INTEGRATED_HINT = /\b(uhd|iris|hd graphics|radeon\(tm\) graphics|radeon graphics|vega \d|swiftshader|llvmpipe|basic render)\b/i;
+/**
+ * Vendor and architecture tables of the adapter class (frontend-ux 9.2). `adapter.info.architecture` is what
+ * Chrome reports from its GPU list (lower case, e.g. 'blackwell', 'xe-hpg', 'gen-12lp', 'rdna-3'):
+ *  - NVIDIA: every WebGPU-capable NVIDIA adapter is a discrete GPU (desktop or laptop).
+ *  - Intel: the HPG architectures (Arc: Alchemist, Battlemage) are discrete; the LP / Gen ones integrated;
+ *    an architecture the table does not know is 'unknown', never integrated by default.
+ *  - AMD: the same architecture names cover desktop cards and APUs (RDNA 3 is the 7900 XTX and the 780M),
+ *    so AMD is 'unknown' unless the browser gives a description that names an integrated part.
+ *  - Apple, Qualcomm, ARM, Imagination: integrated.
+ */
+const INTEL_DISCRETE = /^(xe-?hpg|xe2-?hpg|alchemist|battlemage|dg2)/;
+const INTEL_INTEGRATED = /^(gen-?\d|xe-?lp|xe2-?lp|xe-?lpg|xe2-?lpg)/;
+const INTEGRATED_VENDORS = /^(apple|qualcomm|arm|imagination|img-tec|mali|adreno|powervr)/;
+/** Only consulted when the browser fills `description` (developer flags, some drivers). */
+const INTEGRATED_NAME = /\b(uhd|iris|hd graphics|radeon\(tm\) graphics|radeon graphics|radeon \d{3}m|vega \d+ graphics|swiftshader|llvmpipe|basic render)\b/i;
+const DISCRETE_NAME = /\b(arc|geforce|rtx|gtx|quadro|radeon rx|radeon pro)\b/i;
 
-/** Heuristic: true when the adapter looks like an integrated or software GPU. */
-export function looksIntegrated(report: AdapterReport): boolean {
-  if (report.isFallbackAdapter) return true;
-  if (report.vendor === 'intel') return !/\barc\b/i.test(report.description);
-  return INTEGRATED_HINT.test(report.description);
+/** The adapter class hint (ARCHITECTURE 24): from the vendor and the architecture, a filled description only refining it. */
+export function classifyAdapter(report: Pick<AdapterReport, 'vendor' | 'architecture' | 'description'>): AdapterClass {
+  const vendor = report.vendor.toLowerCase();
+  const arch = report.architecture.toLowerCase();
+  const name = report.description;
+  if (vendor === 'nvidia') return 'discrete';
+  if (vendor === 'intel') {
+    if (INTEL_DISCRETE.test(arch)) return 'discrete';
+    if (INTEL_INTEGRATED.test(arch)) return 'integrated';
+    if (name && DISCRETE_NAME.test(name)) return 'discrete';
+    if (name && INTEGRATED_NAME.test(name)) return 'integrated';
+    return 'unknown';
+  }
+  if (INTEGRATED_VENDORS.test(vendor)) return 'integrated';
+  if (name && INTEGRATED_NAME.test(name)) return 'integrated';
+  if (name && DISCRETE_NAME.test(name)) return 'discrete';
+  return 'unknown';
 }
 
 export async function acquireGpu(opts: AcquireOptions = {}): Promise<GpuHandle> {
@@ -98,10 +137,10 @@ export async function acquireGpu(opts: AcquireOptions = {}): Promise<GpuHandle> 
   if (!adapter) throw new GpuUnavailableError('No WebGPU adapter was returned by the browser.');
 
   const pre = describeAdapter(adapter, null);
-  if (!opts.allowNonDiscrete && looksIntegrated(pre)) {
+  if (pre.isFallbackAdapter) {
     throw new GpuUnavailableError(
-      `The browser selected "${pre.description || pre.vendor}" which looks like an integrated or software GPU. ` +
-        'Set your browser to "High performance" in Windows Settings > System > Display > Graphics, then reload.',
+      'The browser offers only a software (fallback) WebGPU adapter. Update the graphics driver; on a laptop set the browser to ' +
+        '"High performance" in Windows Settings > System > Display > Graphics, then restart the browser.',
     );
   }
 
@@ -137,6 +176,7 @@ export async function acquireGpu(opts: AcquireOptions = {}): Promise<GpuHandle> 
     adapter,
     device,
     report,
+    adapterClass: classifyAdapter(report),
     canvasFormat: navigator.gpu.getPreferredCanvasFormat(),
     hasFeature: (name) => device.features.has(name),
   };

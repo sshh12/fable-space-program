@@ -4,6 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
+    <!-- Documents the capability gate's block page reads (src/gate/index.ts): players online, and the credits. -->
+    <meta name="fsp-status" content="/status.json" />
+    <meta name="fsp-credits" content="/defs/visuals/credits.json" />
     <title>Meridian - Lunar Flight Simulator</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23cfd6e4'/%3E%3C/svg%3E" />
     <style>
@@ -97,6 +100,12 @@
         <p id="fatal-message"></p>
       </div>
     </div>
-    <script type="module" src="/src/app/main.ts"></script>
+    <!-- The capability gate (ARCHITECTURE 24) runs first: the main bundle is loaded only when it passes, and a
+         blocked visitor gets the block page without ever requesting it (in a build the main bundle is a chunk
+         only this dynamic import names). tools/server/gatePlugin.ts inlines the gate into this page. -->
+    <script type="module" data-fsp-gate>
+      import { startGate } from '/src/gate/index.ts';
+      void startGate(() => import('/src/app/main.ts'));
+    </script>
   </body>
 </html>
