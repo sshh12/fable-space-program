@@ -74,6 +74,15 @@ export const MOON_LATE_CORRECTION_MIN_LEAD = 2 * 3600;
 /** A correction toward a moon first brings the closest approach to this share of the moon's sphere (then it sets the periapsis). */
 export const MOON_AIM_SOI_SHARE = 0.3;
 
+/**
+ * The scales of the arrival costs (km): an encounter costs its periapsis error (less than the sphere's radius, under
+ * 1e8 km for every body); a plan that meets the planet but not the target moon MOON_MISS + the miss; a plan that
+ * misses NO_ENCOUNTER + the closest approach; nothing measurable NOTHING_FOUND. So a miss never beats an encounter.
+ */
+export const MOON_MISS = 1e8;
+export const NO_ENCOUNTER = 1e9;
+export const NOTHING_FOUND = 1e12;
+
 /** Cost of a patch list for an arrival at `bodyId` with periapsis radius `rp`: km of periapsis error, or the closest approach plus a penalty. */
 function arrivalCost(patches: readonly Patch[], bodyId: string, parentId: string, rp: number, radius: number): number {
   const at = costAtBody(patches, bodyId, rp, radius);
@@ -83,32 +92,28 @@ function arrivalCost(patches: readonly Patch[], bodyId: string, parentId: string
     if (p.bodyId !== parentId) continue;
     for (const m of p.markers) if (m.kind === 'closestApproach' && m.value !== undefined) best = Math.min(best, m.value);
   }
-  return Number.isFinite(best) ? 1e4 + best / 1000 : 1e9;
+  return Number.isFinite(best) ? NO_ENCOUNTER + best / 1000 : NOTHING_FOUND;
 }
 
-/** km of periapsis error on the first patch about `bodyId` (an impact: the depth below the wanted periapsis), or null without one. */
-function costAtBody(patches: readonly Patch[], bodyId: string, rp: number, radius: number): number | null {
-  for (const p of patches) {
-    if (p.bodyId !== bodyId) continue;
-    const peri = p.markers.find((m) => m.kind === 'periapsis');
-    const imp = p.markers.find((m) => m.kind === 'impact');
-    if (peri) return Math.abs(v3.len(peri.r) - rp) / 1000;
-    if (imp) return (rp - radius) / 1000 + 1;
-    return 1e3;
-  }
+/**
+ * Periapsis radius of the first patch about `bodyId`: its conic's (the vacuum periapsis, also when the patch ends
+ * at an atmosphere entry, an impact or a moon's sphere before reaching it), or null without such a patch.
+ */
+function periapsisAbout(patches: readonly Patch[], bodyId: string): number | null {
+  for (const p of patches) if (p.bodyId === bodyId) return p.conic.p / (1 + p.conic.e);
   return null;
 }
 
-/** Signed periapsis error about `bodyId` on its first patch, km (an impact: below the surface, negative), or null without such a patch. */
-function signedPeriapsisError(patches: readonly Patch[], bodyId: string, rp: number, radius: number): number | null {
-  for (const p of patches) {
-    if (p.bodyId !== bodyId) continue;
-    const peri = p.markers.find((m) => m.kind === 'periapsis');
-    if (peri) return (v3.len(peri.r) - rp) / 1000;
-    if (p.markers.some((m) => m.kind === 'impact')) return -(rp - radius) / 1000 - 1;
-    return null;
-  }
-  return null;
+/** km of periapsis error about `bodyId` (the conic's periapsis against `rp`), or null without a patch about it. */
+function costAtBody(patches: readonly Patch[], bodyId: string, rp: number, _radius: number): number | null {
+  const r = periapsisAbout(patches, bodyId);
+  return r === null ? null : Math.abs(r - rp) / 1000;
+}
+
+/** Signed periapsis error about `bodyId`, km (below `rp` negative; below the surface it stays continuous), or null without a patch about it. */
+function signedPeriapsisError(patches: readonly Patch[], bodyId: string, rp: number, _radius: number): number | null {
+  const r = periapsisAbout(patches, bodyId);
+  return r === null ? null : (r - rp) / 1000;
 }
 
 export class TransferPilot extends PilotCore {
@@ -354,15 +359,15 @@ export class TransferPilot extends PilotCore {
   /**
    * Cost of a heliocentric plan: for the planet itself, the arrival cost at the planet; for a moon, km of the
    * periapsis error at the moon when the plan meets it, else 1,000 + the closest approach to the moon in km along
-   * the planet patch (the moon on its orbit about the planet), else 1e6 + the closest approach to the planet.
+   * the planet patch (MOON_MISS + km), else the arrival cost at the planet (NO_ENCOUNTER + its closest approach).
    */
   private heliocentricCost(patches: readonly Patch[]): number {
     if (this.planetId === this.targetId) return arrivalCost(patches, this.planetId, this.starId, this.planetAimRadius(), this.equatorialRadius(this.planetId));
     const atMoon = costAtBody(patches, this.targetId, this.periapsisRadius(this.targetId), this.equatorialRadius(this.targetId));
     if (atMoon !== null) return atMoon;
     const miss = this.moonMiss(patches);
-    if (miss === null) return 1e6 + arrivalCost(patches, this.planetId, this.starId, this.planetAimRadius(), this.equatorialRadius(this.planetId));
-    return 1e3 + miss / 1000;
+    if (miss === null) return arrivalCost(patches, this.planetId, this.starId, this.planetAimRadius(), this.equatorialRadius(this.planetId));
+    return MOON_MISS + miss / 1000;
   }
 
   /**
@@ -471,7 +476,7 @@ export class TransferPilot extends PilotCore {
         })(),
       reject: (snap) => {
         const c = cost(snap);
-        return c >= 1e4 ? `no encounter with the planet (closest approach ${c < 1e9 ? `${(c - 1e4).toFixed(0)} km` : 'not found'})` : null;
+        return c >= NO_ENCOUNTER ? `no encounter with the planet (closest approach ${c < NOTHING_FOUND ? `${(c - NO_ENCOUNTER).toFixed(0)} km` : 'not found'})` : null;
       },
       describe: (snap) => `arrival cost ${cost(snap).toFixed(1)} km`,
       timeout: initial.ut - s.simUt + 7200,
@@ -484,7 +489,7 @@ export class TransferPilot extends PilotCore {
 
   private planHeliocentricCorrection(label: string): void {
     const cost = (snap: SimSnapshot): number => this.heliocentricCost(snap.patches.planned);
-    const limit = this.planetId === this.targetId ? 1e4 : 1e6;
+    const limit = NO_ENCOUNTER;
     this.note(`${label}: cost before ${this.heliocentricCost(this.s.patches.current).toFixed(1)}`);
     if (this.planetId === this.targetId) {
       const rp = this.planetAimRadius();
@@ -501,7 +506,7 @@ export class TransferPilot extends PilotCore {
   }
 
   /** A correction toward `bodyId`; `limit`: the cost at or above which the plan is rejected (Infinity: an early correction that only brings the miss down). */
-  private planCorrection(label: string, bodyId: string, costOf: (p: readonly Patch[]) => number, stages?: ((snap: SimSnapshot) => number | null)[], limit = 1e4): void {
+  private planCorrection(label: string, bodyId: string, costOf: (p: readonly Patch[]) => number, stages?: ((snap: SimSnapshot) => number | null)[], limit = NO_ENCOUNTER): void {
     const rp = this.periapsisRadius(bodyId);
     const R = this.equatorialRadius(bodyId);
     this.note(`${label}: arrival cost before ${costOf(this.s.patches.current).toFixed(1)} km`);
