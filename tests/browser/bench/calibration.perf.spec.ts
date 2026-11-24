@@ -46,7 +46,14 @@ function needsRecorder(page: Page): { done(): Promise<ShotNeeds[]> } {
     if (!DATA.test(p) || seen.has(p)) return;
     seen.add(p);
     const bucket = by.get(current)!;
-    pending.push(req.sizes().then((s) => void bucket.set(p, s.responseBodySize), () => void bucket.set(p, 0)));
+    // Only what arrived: a probe that found nothing (404) is not a need.
+    pending.push(
+      (async () => {
+        const res = await req.response();
+        if (!res || !res.ok()) return;
+        bucket.set(p, (await req.sizes().catch(() => ({ responseBodySize: 0 }))).responseBodySize);
+      })(),
+    );
   });
   return {
     async done() {
@@ -107,8 +114,12 @@ test('the calibration on the reference GPU: seed preset first, refused until res
     const recorded = await recorder.done();
     record['needsRecorded'] = recorded.map((n) => ({ shotId: n.shotId, files: n.paths.length, bytes: n.bytes }));
     if (process.env.NEEDS_RECORD === '1') {
+      // The page server serves the library as it was when it started (tools/server/dataPlugin.ts): the list
+      // written now is read by the next run.
       writeNeeds(recorded);
-      await openPage(page, '/labs/bench/', { timeoutMs: 240_000 });
+      save();
+      test.info().annotations.push({ type: 'needs', description: 'recorded into data/defs/render/quality.json; run again without NEEDS_RECORD' });
+      return;
     }
     const listed = new Set(table().needs?.flatMap((n) => n.paths) ?? []);
     const all = recorded.flatMap((n) => n.paths);

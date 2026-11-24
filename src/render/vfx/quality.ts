@@ -5,7 +5,9 @@
  *    dust sheets, fireballs, splashes); both on top of the governor's quality scale, the same way it is
  *    applied (the image converges to the same picture, noisier or thinner). Ultra = 1 and 1: the feature as
  *    it was before the setting.
- * Cost model: measured on the reference GPU (docs/handoff/capability-settings.md).
+ * Cost model measured on the reference GPU (RTX 5090, 2560 x 1440, attribution mode, the lift-off with every
+ * other setting at Ultra; docs/handoff/capability-settings.md section 6). High (fewer particles, the same
+ * march) costs what Ultra costs there: the plume and smoke marches are the effects' cost, not the particles.
  */
 import type { FeatureQualityDecl } from '@/core/contracts/render';
 
@@ -22,7 +24,7 @@ export const VFX_QUALITY: FeatureQualityDecl = {
         { name: 'ultra', params: { particles: 1, march: 1 } },
       ],
       apply: 'live',
-      costModel: { exponent: 1, ratios: { low: 0.6, medium: 0.8, high: 0.95, ultra: 1 }, constantMs: 0 },
+      costModel: { exponent: 0.5, ratios: { low: 0.72, medium: 0.86, high: 1, ultra: 1 }, constantMs: 0 },
       weight: 2,
     },
   ],

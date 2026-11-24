@@ -95,7 +95,7 @@ async function main(): Promise<void> {
   const canvas = document.getElementById('viewport') as HTMLCanvasElement;
   const library = await loadDefs(fetchDefSource());
   const defs = presentableLibrary(library);
-  const table = parseQualityTable(await (await fetch('/defs/render/quality.json')).json());
+  const table = parseQualityTable(await (await fetch('/defs/render/quality.json', { cache: 'no-store' })).json());
   const terrain = await createTerrainProvider(defs, createFetchTileSource('/tiles'));
   const createSession = await importRealSession();
   if (!createSession) throw new Error('bench lab: src/session does not export createSession');
