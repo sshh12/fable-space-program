@@ -328,45 +328,46 @@ export interface UniverseRules {
      */
     accountsPerAddressPerHour: number;
     /**
-     * Wire-layer bounds (added by `wire-protocol`, fix round of 2026-11-16, with the lead's authorisation):
-     * OPTIONAL until the default rules document carries them at the tighten step; a document without a field
-     * takes `WIRE_LIMIT_DEFAULTS` (wire section below). Read them through `wireLimits(rules)`. Units in the
-     * field names; durations in seconds.
+     * Wire-layer bounds (added by `wire-protocol`, fix round of 2026-11-16). REQUIRED since the tighten step
+     * after sub-wave 3.2: every rules document states them (data/defs/rules), and `wireLimits(rules)` reads
+     * them from the document. `WIRE_LIMIT_DEFAULTS` (wire section below) are the values of the default
+     * document and what a rules object built in code starts from. Units in the field names; durations in
+     * seconds.
      */
     /** Upstream bucket of one socket, checked before decoding: sustained bytes and frames per second and the bucket sizes. */
-    upstreamBytesPerSecond?: number;
-    upstreamBurstBytes?: number;
-    upstreamFramesPerSecond?: number;
-    upstreamBurstFrames?: number;
+    upstreamBytesPerSecond: number;
+    upstreamBurstBytes: number;
+    upstreamFramesPerSecond: number;
+    upstreamBurstFrames: number;
     /** Pings and time-sync probes accepted per second, and messages of any kind accepted before the welcome. */
-    pingsPerSecond?: number;
-    timeSyncsPerSecond?: number;
-    handshakeMessages?: number;
+    pingsPerSecond: number;
+    timeSyncsPerSecond: number;
+    handshakeMessages: number;
     /** Per-type limits: plans (ARCHITECTURE 13.3: at most 1 Hz), quick-comms, targets, seat requests (spawn, attach, detach, spawn cancel). */
-    plansPerSecond?: number;
-    quicksPerSecond?: number;
-    targetsPerSecond?: number;
-    seatRequestsPerSecond?: number;
+    plansPerSecond: number;
+    quicksPerSecond: number;
+    targetsPerSecond: number;
+    seatRequestsPerSecond: number;
     /** `names` requests per second, and ids one request may ask for (vessel names and account callsigns). */
-    nameRequestsPerSecond?: number;
-    namesPerRequest?: number;
+    nameRequestsPerSecond: number;
+    namesPerRequest: number;
     /** Input samples one client frame may carry in all. */
-    inputSamplesPerFrame?: number;
+    inputSamplesPerFrame: number;
     /** A socket whose outgoing queue holds more than this many bytes, or a record older than this many seconds, is closed (a slow consumer). */
-    sendQueueBytes?: number;
-    sendQueueAge?: number;
+    sendQueueBytes: number;
+    sendQueueAge: number;
     /** Downstream budget (lead decision of 2026-11-16): the sustained average per client, the burst rate allowed for at most `downstreamBurstSeconds` in any `downstreamBurstWindow` seconds. */
-    downstreamBytesPerSecond?: number;
-    downstreamBurstBytesPerSecond?: number;
-    downstreamBurstSeconds?: number;
-    downstreamBurstWindow?: number;
+    downstreamBytesPerSecond: number;
+    downstreamBurstBytesPerSecond: number;
+    downstreamBurstSeconds: number;
+    downstreamBurstWindow: number;
     /** Island delta rate per client: the target and the floor, Hz (the rate adapts between them to what the budget leaves). */
-    deltaRateTarget?: number;
-    deltaRateFloor?: number;
+    deltaRateTarget: number;
+    deltaRateFloor: number;
     /** An island-enter message up to this many bytes is outside the bucket; beyond it the excess is charged. */
-    islandEnterFreeBytes?: number;
+    islandEnterFreeBytes: number;
     /** Share of the sustained budget the relevant set and the view models (class 3) are guaranteed, 0..1. */
-    relevantFloorShare?: number;
+    relevantFloorShare: number;
   };
 
   /** Where planning work runs (ARCHITECTURE 6.3). */
@@ -542,6 +543,32 @@ export const DEFAULT_UNIVERSE_RULES: UniverseRules = {
     timeMessageWindow: 10,
     subscriptionsPerSecond: 5,
     accountsPerAddressPerHour: 10,
+    // The wire layer's 24 limits (the default document states them since the tighten step after sub-wave 3.2;
+    // `WIRE_LIMIT_DEFAULTS` below names the same numbers for the wire layer).
+    upstreamBytesPerSecond: 16_000,
+    upstreamBurstBytes: 80 * 1024,
+    upstreamFramesPerSecond: 60,
+    upstreamBurstFrames: 120,
+    pingsPerSecond: 2,
+    timeSyncsPerSecond: 2,
+    handshakeMessages: 8,
+    plansPerSecond: 1,
+    quicksPerSecond: 1,
+    targetsPerSecond: 5,
+    seatRequestsPerSecond: 2,
+    nameRequestsPerSecond: 2,
+    namesPerRequest: 64,
+    inputSamplesPerFrame: 128,
+    sendQueueBytes: 1024 * 1024,
+    sendQueueAge: 10,
+    downstreamBytesPerSecond: 6000,
+    downstreamBurstBytesPerSecond: 24_000,
+    downstreamBurstSeconds: 60,
+    downstreamBurstWindow: 600,
+    deltaRateTarget: 30,
+    deltaRateFloor: 10,
+    islandEnterFreeBytes: 256 * 1024,
+    relevantFloorShare: 0.1,
   },
   planning: {
     workerMaxEstimateMs: 50,
@@ -980,11 +1007,11 @@ export interface LinkState {
   queuePosition: number | null;
   /**
    * While queued for ADMISSION (state 'queued': the lobby is full): the estimated wait until a place frees,
-   * s of wall time, beside `queuePosition`; null otherwise. Optional until the tighten step (absent = null).
+   * s of wall time, beside `queuePosition`; null otherwise.
    * This is the admission queue. The LAUNCH queue (a full pad class) is a different queue and lives in
    * `ClientStores.launchQueue` (session.ts): a player can be admitted and then wait for a pad.
    */
-  queueEtaSeconds?: number | null;
+  queueEtaSeconds: number | null;
   /** Tick up to which the pilot's island is durable (ARCHITECTURE 13.3 `Durable`); null when local. */
   durableTick: number | null;
   /** Player-facing reason for the current state when it is not 'online' or 'local'. */
@@ -1042,43 +1069,48 @@ export interface CapabilityReport {
 export const WIRE_PROTOCOL_VERSION = 2;
 
 /**
- * Defaults of the optional wire fields of `UniverseRules.limits` (used while the rules document in force does
- * not carry them; the default document receives them at the tighten step). Units as on the fields.
+ * The wire layer's limits as the DEFAULT rules document states them (`DEFAULT_UNIVERSE_RULES.limits`: one
+ * statement of each number). Every rules document carries the 24 fields since the tighten step after
+ * sub-wave 3.2, so nothing is completed from this table any more; it is what a test or a tool that builds
+ * limits in code starts from. Units as on the fields.
  */
 export const WIRE_LIMIT_DEFAULTS = {
-  upstreamBytesPerSecond: 16_000,
-  upstreamBurstBytes: 80 * 1024,
-  upstreamFramesPerSecond: 60,
-  upstreamBurstFrames: 120,
-  pingsPerSecond: 2,
-  timeSyncsPerSecond: 2,
-  handshakeMessages: 8,
-  plansPerSecond: 1,
-  quicksPerSecond: 1,
-  targetsPerSecond: 5,
-  seatRequestsPerSecond: 2,
-  nameRequestsPerSecond: 2,
-  namesPerRequest: 64,
-  inputSamplesPerFrame: 128,
-  sendQueueBytes: 1024 * 1024,
-  sendQueueAge: 10,
-  downstreamBytesPerSecond: 6000,
-  downstreamBurstBytesPerSecond: 24_000,
-  downstreamBurstSeconds: 60,
-  downstreamBurstWindow: 600,
-  deltaRateTarget: 30,
-  deltaRateFloor: 10,
-  islandEnterFreeBytes: 256 * 1024,
-  relevantFloorShare: 0.1,
-} as const;
+  upstreamBytesPerSecond: DEFAULT_UNIVERSE_RULES.limits.upstreamBytesPerSecond,
+  upstreamBurstBytes: DEFAULT_UNIVERSE_RULES.limits.upstreamBurstBytes,
+  upstreamFramesPerSecond: DEFAULT_UNIVERSE_RULES.limits.upstreamFramesPerSecond,
+  upstreamBurstFrames: DEFAULT_UNIVERSE_RULES.limits.upstreamBurstFrames,
+  pingsPerSecond: DEFAULT_UNIVERSE_RULES.limits.pingsPerSecond,
+  timeSyncsPerSecond: DEFAULT_UNIVERSE_RULES.limits.timeSyncsPerSecond,
+  handshakeMessages: DEFAULT_UNIVERSE_RULES.limits.handshakeMessages,
+  plansPerSecond: DEFAULT_UNIVERSE_RULES.limits.plansPerSecond,
+  quicksPerSecond: DEFAULT_UNIVERSE_RULES.limits.quicksPerSecond,
+  targetsPerSecond: DEFAULT_UNIVERSE_RULES.limits.targetsPerSecond,
+  seatRequestsPerSecond: DEFAULT_UNIVERSE_RULES.limits.seatRequestsPerSecond,
+  nameRequestsPerSecond: DEFAULT_UNIVERSE_RULES.limits.nameRequestsPerSecond,
+  namesPerRequest: DEFAULT_UNIVERSE_RULES.limits.namesPerRequest,
+  inputSamplesPerFrame: DEFAULT_UNIVERSE_RULES.limits.inputSamplesPerFrame,
+  sendQueueBytes: DEFAULT_UNIVERSE_RULES.limits.sendQueueBytes,
+  sendQueueAge: DEFAULT_UNIVERSE_RULES.limits.sendQueueAge,
+  downstreamBytesPerSecond: DEFAULT_UNIVERSE_RULES.limits.downstreamBytesPerSecond,
+  downstreamBurstBytesPerSecond: DEFAULT_UNIVERSE_RULES.limits.downstreamBurstBytesPerSecond,
+  downstreamBurstSeconds: DEFAULT_UNIVERSE_RULES.limits.downstreamBurstSeconds,
+  downstreamBurstWindow: DEFAULT_UNIVERSE_RULES.limits.downstreamBurstWindow,
+  deltaRateTarget: DEFAULT_UNIVERSE_RULES.limits.deltaRateTarget,
+  deltaRateFloor: DEFAULT_UNIVERSE_RULES.limits.deltaRateFloor,
+  islandEnterFreeBytes: DEFAULT_UNIVERSE_RULES.limits.islandEnterFreeBytes,
+  relevantFloorShare: DEFAULT_UNIVERSE_RULES.limits.relevantFloorShare,
+};
 
-export type WireLimits = UniverseRules['limits'] & { -readonly [K in keyof typeof WIRE_LIMIT_DEFAULTS]: number };
+export type WireLimits = UniverseRules['limits'];
 
-/** The limits of a rules document with every wire field filled (the document's value, else the default). */
+/**
+ * The limits of a rules document. Every document states the wire fields since the tighten step after
+ * sub-wave 3.2 (the default document has them and a rules file is the default with its own values over
+ * it), so this is the document's own block; a limits object built in code that leaves one out is refused
+ * by the compiler. Kept as the one place the wire layer reads its limits from.
+ */
 export function wireLimits(rules: Pick<UniverseRules, 'limits'>): WireLimits {
-  const out = { ...WIRE_LIMIT_DEFAULTS, ...rules.limits } as WireLimits;
-  for (const k of Object.keys(WIRE_LIMIT_DEFAULTS) as (keyof typeof WIRE_LIMIT_DEFAULTS)[]) if (out[k] === undefined) out[k] = WIRE_LIMIT_DEFAULTS[k];
-  return out;
+  return rules.limits;
 }
 
 /**

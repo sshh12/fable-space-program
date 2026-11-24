@@ -577,6 +577,38 @@ const perClassNumber: Codec<Record<PadClass, number>> = struct<Record<PadClass, 
 const padLimits: Codec<PadLimits> = struct<PadLimits>({ maxLiftoffMass: f64, maxDiameter: f64 });
 const perClassLimits: Codec<Record<PadClass, PadLimits>> = struct<Record<PadClass, PadLimits>>({ light: padLimits, medium: padLimits, heavy: padLimits });
 
+/**
+ * The 24 wire-layer limits were optional members when the layout of protocol 2 was frozen and are required
+ * since the contract tighten after sub-wave 3.2. THE LAYOUT IS UNCHANGED: the limits block still has their
+ * presence bits, which every sender now sets; a document that arrives without one of them is refused
+ * (`badValue`), where it used to be completed from the defaults.
+ */
+type WireLimitKey = 'upstreamBytesPerSecond' | 'upstreamBurstBytes' | 'upstreamFramesPerSecond' | 'upstreamBurstFrames' | 'pingsPerSecond' | 'timeSyncsPerSecond' | 'handshakeMessages' | 'plansPerSecond' | 'quicksPerSecond' | 'targetsPerSecond' | 'seatRequestsPerSecond' | 'nameRequestsPerSecond' | 'namesPerRequest' | 'inputSamplesPerFrame' | 'sendQueueBytes' | 'sendQueueAge' | 'downstreamBytesPerSecond' | 'downstreamBurstBytesPerSecond' | 'downstreamBurstSeconds' | 'downstreamBurstWindow' | 'deltaRateTarget' | 'deltaRateFloor' | 'islandEnterFreeBytes' | 'relevantFloorShare';
+type LimitsOnTheWire = Omit<R['limits'], WireLimitKey> & Partial<Pick<R['limits'], WireLimitKey>>;
+const WIRE_LIMIT_KEYS: readonly WireLimitKey[] = ['upstreamBytesPerSecond', 'upstreamBurstBytes', 'upstreamFramesPerSecond', 'upstreamBurstFrames', 'pingsPerSecond', 'timeSyncsPerSecond', 'handshakeMessages', 'plansPerSecond', 'quicksPerSecond', 'targetsPerSecond', 'seatRequestsPerSecond', 'nameRequestsPerSecond', 'namesPerRequest', 'inputSamplesPerFrame', 'sendQueueBytes', 'sendQueueAge', 'downstreamBytesPerSecond', 'downstreamBurstBytesPerSecond', 'downstreamBurstSeconds', 'downstreamBurstWindow', 'deltaRateTarget', 'deltaRateFloor', 'islandEnterFreeBytes', 'relevantFloorShare'];
+
+function statedLimits(layout: Codec<LimitsOnTheWire>): Codec<R['limits']> {
+  return {
+    min: layout.min,
+    write: (w, v) => layout.write(w, v),
+    read(r) {
+      const out = layout.read(r);
+      for (const k of WIRE_LIMIT_KEYS) {
+        if (out[k] === undefined) {
+          r.fail('badValue');
+          out[k] = 0;
+        }
+      }
+      return out as R['limits'];
+    },
+    random(g) {
+      const out = layout.random(g);
+      for (const k of WIRE_LIMIT_KEYS) if (out[k] === undefined) out[k] = f64.random(g);
+      return out as R['limits'];
+    },
+  };
+}
+
 /** The rules document, field by field (a field added to `UniverseRules` fails to compile here until it is added). */
 export const universeRules: Codec<UniverseRules> = struct<R>({
   id,
@@ -702,7 +734,8 @@ export const universeRules: Codec<UniverseRules> = struct<R>({
     sweepInterval: f64,
     outageExtensionThreshold: f64,
   }),
-  limits: struct<R['limits']>({
+  limits: statedLimits(
+    struct<LimitsOnTheWire>({
     inputsPerSecond: f64,
     commandsPerSecond: f64,
     timeMessages: f64,
@@ -733,6 +766,7 @@ export const universeRules: Codec<UniverseRules> = struct<R>({
     deltaRateFloor: opt(f64),
     islandEnterFreeBytes: opt(f64),
     relevantFloorShare: opt(f64),
-  }),
+    }),
+  ),
   planning: struct<R['planning']>({ workerMaxEstimateMs: f64, weakClientCpuScore: nullable(f64) }),
 });
