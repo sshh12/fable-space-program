@@ -145,6 +145,21 @@ describe('pads and waits per class', () => {
     expect(unknown.liveWaitSeconds).toBeNull();
   });
 
+  it('a pad takes a vehicle only when its own limits take its mass and diameter (padLimitsOf with the rules in force)', () => {
+    const rules = DEFAULT_UNIVERSE_RULES;
+    const big = rules.pads.classLimits.heavy;
+    const narrow = { ...pad('h2', 'heavy'), maxDiameter: big.maxDiameter / 2 };
+    const s1 = site('s', [pad('h1', 'heavy'), narrow]);
+    const states = padsOfSite(s1).map(([s, p]) => state(s, p, false, 0));
+    const fit = { massWet: big.maxLiftoffMass * 0.9, diameter: big.maxDiameter * 0.9, rules };
+    expect(padRows([s1], states, 'heavy', 0, fit).map((r) => r.usable)).toEqual([true, false]);
+    expect(classOutlook([s1], states, 'heavy', 0, rules, fit).padCount).toBe(1);
+    // Over the class limit itself: no pad of the class takes it.
+    expect(classOutlook([s1], states, 'heavy', 0, rules, { ...fit, massWet: big.maxLiftoffMass * 1.1 }).padCount).toBe(0);
+    // Without a fit only the class counts (the outlook of a class, not of a vehicle).
+    expect(classOutlook([s1], states, 'heavy', 0, rules).padCount).toBe(2);
+  });
+
   it('launches per hour are pads x 3600 / cycle, and unknown without a cycle', () => {
     expect(launchesPerHour(6, 150)).toBe(144);
     expect(launchesPerHour(6, null)).toBeNull();
