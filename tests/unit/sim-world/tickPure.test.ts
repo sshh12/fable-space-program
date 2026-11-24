@@ -45,7 +45,7 @@ interface Reached {
 }
 
 /** The vessel of the session's active entry (the sun sample is vessel state; the snapshot shows only its visible fraction). */
-const vesselOf = (sim: DiagnosedSession): Vessel => (sim as unknown as { active: { vessel: Vessel } }).active.vessel;
+const vesselOf = (sim: DiagnosedSession): Vessel => (sim as unknown as { active: Vessel }).active;
 
 function reached(sim: DiagnosedSession): Reached {
   const s: SimSnapshot = sim.snapshot();

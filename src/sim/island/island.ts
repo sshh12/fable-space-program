@@ -419,6 +419,8 @@ export class IslandImpl implements Island {
     const first = this.recs.length === 0;
     this.insert(rec);
     this.sunToEnv(rec);
+    // The age of a member is the island's time since it came into being (the vessel package only counts the steps it is given).
+    vessel.age = (this.tick - rec.bornTick) / TICKS_PER_SECOND;
     if (this.reference !== null) {
       // The vessel is given in BCI: its state becomes the offset from the reference point.
       const o = this.refAt(this.ut);

@@ -33,6 +33,8 @@ export interface FarObject {
   controllable: boolean;
   env: IslandEnv;
   removed: boolean;
+  /** Place in the order the objects are advanced in (the host's: the order its vessels came into being). */
+  order: number;
 }
 
 /** What the far set tells its host. */
@@ -60,9 +62,9 @@ export class FarSet {
    * them a free vessel inside an atmosphere enters the reduced tier and any other goes on rails from its
    * state at the tick.
    */
-  add(vessel: Vessel, bodyId: string, tick: number, from: { bornTick: number; revision: number; orbit: Orbit | null; railsEvent: RailsEvent | null }): FarObject {
+  add(vessel: Vessel, bodyId: string, tick: number, from: { bornTick: number; revision: number; orbit: Orbit | null; railsEvent: RailsEvent | null; order: number }): FarObject {
     if (!(vessel.mp.mass > 0)) structureOf(vessel);
-    const o: FarObject = { vessel, bodyId, tier: 'rails', orbit: null, railsEvent: null, reducedTick: tick, bornTick: from.bornTick, revision: from.revision, controllable: isControllable(vessel), env: new IslandEnv(this.frames.terrain), removed: false };
+    const o: FarObject = { vessel, bodyId, tier: 'rails', orbit: null, railsEvent: null, reducedTick: tick, bornTick: from.bornTick, revision: from.revision, controllable: isControllable(vessel), env: new IslandEnv(this.frames.terrain), removed: false, order: from.order };
     o.env.sunDir = vessel.sun.dir;
     o.env.sunVisibility = vessel.sun.visibility;
     if (vessel.hold === null) {
@@ -75,7 +77,10 @@ export class FarSet {
         o.railsEvent = from.railsEvent;
       } else this.toRails(o, utOfTick(tick));
     }
-    this.objects.push(o);
+    // Objects are advanced in the host's order, whatever the order they left the island in: the events of one advance come out in it.
+    let at = this.objects.length;
+    while (at > 0 && this.objects[at - 1]!.order > o.order) at--;
+    this.objects.splice(at, 0, o);
     return o;
   }
 

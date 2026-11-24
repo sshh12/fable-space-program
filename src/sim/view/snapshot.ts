@@ -10,11 +10,11 @@ import type { ControlInputs } from '@/core/contracts/controls';
 import { PHYSICS_DT } from '@/core/contracts/defs';
 import type { TimeLimitKind, TimeView } from '@/core/contracts/net';
 import type { FidelityTier, MilestoneRecord, Readouts, SimEvent, SimSnapshot, StageInfo, SurfaceTarget, VesselSituation, VesselSnapshot } from '@/core/contracts/sim';
+import type { VesselEnvironment } from '@/core/contracts/simInternal';
 import type { Quat } from '@/core/math/quat';
 import { quat } from '@/core/math/quat';
 import { v3, type Vec3 } from '@/core/math/vec3';
 import { utOfTick } from '../clock';
-import type { IslandEnv } from '../island/environment';
 import { comStateOf, type BodyFrames } from '../island/frames';
 import { computeLandingTargetReadout, groundTrackDirection } from '../nav/landingTarget';
 import { launchWindowReadout } from '../nav/launchWindow';
@@ -35,7 +35,8 @@ export interface ViewVessel {
   /** Orbit of the centre of mass while on a conic. */
   orbit: Orbit | null;
   revision: number;
-  env: IslandEnv;
+  /** The vessel's step environment (the sun sample it flies with, the air of its body). */
+  env: VesselEnvironment;
   /** Pose at the start of the last step (presentation interpolation); null = none. */
   previous: { r: Vec3; v: Vec3; q: Quat } | null;
   /** Tick the reduced-tier state refers to. */
@@ -74,7 +75,7 @@ export class StageFigures {
    * of the staging panel; any other craft with a command part aboard has its own; a craft nobody can fire
    * (debris) lists none.
    */
-  of(e: ViewVessel, craft: number, focus: ViewVessel | null, planning: Planning, subject: PlanSubject, env: () => IslandEnv): StageInfo[] {
+  of(e: ViewVessel, craft: number, focus: ViewVessel | null, planning: Planning, subject: PlanSubject, env: () => VesselEnvironment): StageInfo[] {
     const v = e.vessel;
     if (e === focus && craft === v.helm.craft) return planning.stageInfos(subject).map((s) => ({ ...s, actionKinds: s.actionKinds.slice() }));
     if (!v.parts.some((p) => p.craft === craft && p.command !== null)) return [];
@@ -220,7 +221,7 @@ export const emptyReadouts = (target: Readouts['target']): Readouts => ({
 });
 
 /** The read-outs of the focus vessel. */
-export function buildReadouts(frames: BodyFrames, a: ViewVessel, env: IslandEnv, planning: Planning, subject: PlanSubject, surfaceTargets: readonly SurfaceTarget[], liftoffUt: number | null): Readouts {
+export function buildReadouts(frames: BodyFrames, a: ViewVessel, env: VesselEnvironment, planning: Planning, subject: PlanSubject, surfaceTargets: readonly SurfaceTarget[], liftoffUt: number | null): Readouts {
   const v = a.vessel;
   const ut = subject.ut;
   const system = frames.system;
@@ -293,7 +294,7 @@ export interface SnapshotSource {
   wreck: VesselSnapshot | null;
   subject: PlanSubject;
   /** The step environment of a vessel at the tick. */
-  envOf(e: ViewVessel): IslandEnv;
+  envOf(e: ViewVessel): VesselEnvironment;
   /** Full part snapshots only for vessels inside the relevance cut; absent = every vessel. */
   relevant?: (e: ViewVessel) => boolean;
   time: TimeView;
