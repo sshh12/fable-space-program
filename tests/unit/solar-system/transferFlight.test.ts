@@ -156,3 +156,19 @@ describe.skipIf(!runs('arrival'))('the arrival legs: from the planet sphere on t
     expect(r.periapsisAltitude).toBeGreaterThan(0);
   }, 3_600_000);
 });
+
+describe.skipIf(!runs('phobos'))('a transfer flight to a tiny moon: Phobos (SOI 16.6 km)', () => {
+  // one day before the pilot's Lambert window of 2035-06-26 to Mars; the rendezvous after the capture at Mars
+  it('the 6.5 km/s stack from a 200 km Earth orbit into a closed orbit about Phobos, between its highest ground and its sphere', async () => {
+    const r = await fly('transfer-leo-200', 'phobos', 1119636000);
+    expect(r.failure, r.log.join('\n')).toBeNull();
+    expect(r.bodyId).toBe('phobos');
+    expect(r.e).toBeLessThan(1);
+    const { defs } = await loadStaged();
+    const ph = defs.bodies['phobos']!;
+    // periapsis above the highest ground, apoapsis inside the sphere (16.6 km): altitudes above the reference radius
+    expect(r.periapsisAltitude).toBeGreaterThan(ph.terrain!.maxElevation);
+    expect(ph.radius + r.apoapsisAltitude).toBeLessThan(16.6e3);
+    expect(r.total).toBeLessThan(r.deltaVStart);
+  }, 3_600_000);
+});

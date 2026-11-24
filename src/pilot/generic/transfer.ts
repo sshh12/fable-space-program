@@ -91,6 +91,12 @@ export const RENDEZVOUS_CLOSING_MAX = 60;
 /** The velocity match is flown only within this many standoffs of the moon; otherwise the phasing is flown again (at most RENDEZVOUS_PHASINGS more times). */
 export const RENDEZVOUS_MATCH_STANDOFFS = 10;
 export const RENDEZVOUS_PHASINGS = 2;
+/** Where in the band between a tiny moon's highest ground and its sphere the orbit is aimed (the thrusters' 0.1 m/s leaves about a kilometre of apoapsis above it). */
+export const TINY_ORBIT_BAND_SHARE = 0.35;
+/** Trims at most toward the circular orbit about a tiny moon (each takes what the thrusters left of the last). */
+export const TINY_ORBIT_TRIMS = 8;
+/** The last trim of the meeting is planned this share of the phasing orbit's period before the meeting periapsis. */
+export const RENDEZVOUS_FINAL_TRIM_SHARE = 0.25;
 /** The phasing orbit's period is at least this share of the moon's (its apoapsis then clears the moon's orbit). */
 export const RENDEZVOUS_MIN_PERIOD_SHARE = 1.15;
 /** The phasing and its trim are planned this long after the apsis, s. */
@@ -147,6 +153,8 @@ export class TransferPilot extends PilotCore {
   private rv = 0;
   private closings = 0;
   private phasings = 0;
+  private finalTrimmed = false;
+  private circularizations = 0;
   private tiny: boolean | null = null;
   private approachCorrected = false;
   /** Delta-v of every burn flown, m/s (planned), by label. */
@@ -356,6 +364,31 @@ export class TransferPilot extends PilotCore {
         return;
       }
       case 'orbit': {
+        if (this.v.bodyId === this.targetId && this.tiny === true && this.circularizations < TINY_ORBIT_TRIMS) {
+          // a tiny moon: the orbit must stay between its ground and its sphere; trims toward the circle at the orbit radius
+          this.circularizations++;
+          const rw = this.tinyOrbitRadius();
+          const top = this.defs.bodies[this.targetId]!.radius + (this.defs.bodies[this.targetId]!.terrain?.maxElevation ?? 0);
+          const soi = this.moonOrbit().soi;
+          const c = s.patches.current[0]!.conic;
+          const rp = c.p / (1 + c.e);
+          const ra = c.e < 1 ? c.p / (1 - c.e) : Infinity;
+          if (rp < top || ra > soi) {
+            // above the ground: at the periapsis, the apoapsis down to it (a circle there); below it: both to the orbit radius
+            const peri = s.patches.current[0]!.markers.find((m) => m.kind === 'periapsis');
+            const atPeri = rp >= top && peri !== undefined && peri.ut > s.simUt + 60;
+            const circle = (snap: SimSnapshot): number[] | null => {
+              const p = snap.patches.planned.find((q) => q.bodyId === this.targetId && q.afterNodeId !== undefined);
+              if (!p || !(p.conic.e < 1)) return null;
+              const pr = p.conic.p / (1 + p.conic.e);
+              const pa = p.conic.p / (1 - p.conic.e);
+              return atPeri ? [(pa - rp) / 1000] : [(pr - rw) / 1000, (pa - rw) / 1000];
+            };
+            this.note(`about ${this.targetId}: periapsis ${(rp / 1000).toFixed(2)} km, apoapsis ${(ra / 1000).toFixed(2)} km from its centre (ground to ${(top / 1000).toFixed(2)}, sphere ${(soi / 1000).toFixed(2)}): trim to ${(rw / 1000).toFixed(2)} km`);
+            this.runCorrection(`circularize-${this.circularizations}`, (snap) => Math.hypot(...(circle(snap) ?? [NOTHING_FOUND])), [circle], Infinity, '', { ut: atPeri ? peri!.ut : s.simUt + 120, tolerance: 0.1, probe: 0.02, then: () => this.go('orbit') });
+            return;
+          }
+        }
         if (this.v.bodyId === this.targetId && this.rd.eccentricity < 1) {
           this.note(`bound about ${this.targetId}: e ${this.rd.eccentricity.toFixed(4)}, periapsis ${(this.rd.periapsisAltitude / 1000).toFixed(2)} km, apoapsis ${(this.rd.apoapsisAltitude / 1000).toFixed(2)} km`);
           this.done = true;
@@ -555,14 +588,15 @@ export class TransferPilot extends PilotCore {
     stages: ((snap: SimSnapshot) => number | number[] | null)[],
     limit: number,
     why: string,
-    opts: { ut?: number; tolerance?: number; maxDeltaV?: number; initial?: Partial<NodeVars> } = {},
+    opts: { ut?: number; tolerance?: number; maxDeltaV?: number; initial?: Partial<NodeVars>; probe?: number; then?: () => void } = {},
   ): void {
     const start: NodeVars = { ut: opts.ut ?? this.s.simUt + 900, prograde: 0, normal: 0, radial: 0, ...opts.initial };
     const tolerance = opts.tolerance ?? 2;
+    const probe = opts.probe ?? 0.5;
     const vars = [
-      { key: 'prograde' as const, probe: 0.5, maxStep: 100 },
-      { key: 'normal' as const, probe: 0.5, maxStep: 100 },
-      { key: 'radial' as const, probe: 0.5, maxStep: 100 },
+      { key: 'prograde' as const, probe, maxStep: 200 * probe },
+      { key: 'normal' as const, probe, maxStep: 200 * probe },
+      { key: 'radial' as const, probe, maxStep: 200 * probe },
     ];
     const asResiduals =
       (f: (snap: SimSnapshot) => number | number[] | null) =>
@@ -605,8 +639,8 @@ export class TransferPilot extends PilotCore {
         return cost(snap) >= limit ? `${why} (${stages.map((f, i) => `stage ${i + 1} residual ${JSON.stringify(f(snap))} km`).join(', ')})` : null;
       },
       describe: (snap) => `cost after ${cost(snap).toFixed(1)}`,
-      skipBelow: 0.3,
-      then: () => this.go('cruise'),
+      skipBelow: opts.probe !== undefined ? 0.12 : 0.3,
+      then: opts.then ?? ((): void => this.go('cruise')),
     });
   }
 
@@ -669,11 +703,11 @@ export class TransferPilot extends PilotCore {
     return { W: M.orbit!.W, a: meanOrbit(M, this.bodySnap(this.planetId), this.defs.bodies[this.planetId]!.mu).a, standoff: RENDEZVOUS_STANDOFF_SOI_SHARE * soi, soi };
   }
 
-  /** The radius of the orbit about a tiny moon: between its highest ground and its sphere. */
+  /** The radius of the orbit about a tiny moon: TINY_ORBIT_BAND_SHARE of the way from its highest ground to its sphere. */
   private tinyOrbitRadius(): number {
     const d = this.defs.bodies[this.targetId]!;
     const top = d.radius + (d.terrain?.maxElevation ?? 0);
-    return 0.5 * (top + this.moonOrbit().soi);
+    return top + TINY_ORBIT_BAND_SHARE * (this.moonOrbit().soi - top);
   }
 
   private rendezvousTick(): void {
@@ -715,9 +749,21 @@ export class TransferPilot extends PilotCore {
           const p = this.planetPatch(snap.patches.planned);
           if (!p || p.afterNodeId === undefined) return null;
           const rp = p.conic.p / (1 + p.conic.e);
-          return [(v3.dot(p.conic.W, e1) * orbit.a) / 1000, (v3.dot(p.conic.W, e2) * orbit.a) / 1000, (rp - orbit.a) / 1000];
+          const r = [(v3.dot(p.conic.W, e1) * orbit.a) / 1000, (v3.dot(p.conic.W, e2) * orbit.a) / 1000, (rp - orbit.a) / 1000];
+          // after a reversal, a term that tells a reversed orbit (normal against the moon's) from a matched one
+          if (reversing) r.push(((1 - v3.dot(p.conic.W, orbit.W)) * orbit.a) / 1000);
+          return r;
         };
-        this.runCorrection('rendezvous-plane', (snap) => Math.hypot(...(plane(snap) ?? [NOTHING_FOUND])), [plane], Infinity, '', { ut: apo.ut, tolerance: 1 });
+        // an orbit that runs against the moon is reversed at the apoapsis, where that is cheapest (Newton cannot leave it)
+        let initial: Partial<NodeVars> = {};
+        const reversing = v3.dot(cur.conic.W, orbit.W) < 0;
+        if (reversing) {
+          const mu = this.defs.bodies[this.planetId]!.mu;
+          const ra = cur.conic.p / (1 - cur.conic.e);
+          initial = { prograde: -2 * Math.sqrt(mu * (2 / ra - 1 / cur.conic.a)) };
+          this.note(`rendezvous: the orbit runs against ${this.targetId}'s: reversed at the apoapsis (${(-initial.prograde!).toFixed(0)} m/s)`);
+        }
+        this.runCorrection('rendezvous-plane', (snap) => Math.hypot(...(plane(snap) ?? [NOTHING_FOUND])), [plane], Infinity, '', { ut: apo.ut, tolerance: 1, initial });
         return;
       }
       case 3:
@@ -766,6 +812,36 @@ export class TransferPilot extends PilotCore {
         return;
       }
       case 5: {
+        // a quarter revolution before the meeting, a last trim on the predictor's closest approach (reliable that close;
+        // the moon's osculating orbit has drifted from the ephemeris by hundreds of km over the phasing)
+        if (!this.finalTrimmed) {
+          const peri = cur.markers.find((m) => m.kind === 'periapsis');
+          if (!peri || cur.conic.period === null) {
+            this.fail('no periapsis for the meeting');
+            return;
+          }
+          const lead = RENDEZVOUS_FINAL_TRIM_SHARE * cur.conic.period;
+          if (peri.ut - s.simUt > lead + 900) {
+            this.warpFor(peri.ut - lead - s.simUt);
+            return;
+          }
+          this.finalTrimmed = true;
+          const meetAt = peri.ut;
+          const meet = (snap: SimSnapshot): number | null => {
+            const p = this.planetPatch(snap.patches.planned);
+            if (!p || p.afterNodeId === undefined) return null;
+            let best: number | null = null;
+            let dt = Infinity;
+            for (const m of p.markers) {
+              if (m.kind !== 'closestApproach' || m.value === undefined || Math.abs(m.ut - meetAt) >= dt) continue;
+              dt = Math.abs(m.ut - meetAt);
+              best = m.value;
+            }
+            return best === null ? null : (best - orbit.standoff) / 1000;
+          };
+          this.runCorrection('rendezvous-final-trim', (snap) => Math.abs(meet(snap) ?? NOTHING_FOUND), [meet], Infinity, '', { tolerance: 1, maxDeltaV: RENDEZVOUS_CLOSING_MAX });
+          return;
+        }
         // the meeting: at the closest approach, match the moon's velocity
         const cas = cur.markers.filter((m) => m.kind === 'closestApproach' && m.value !== undefined);
         if (cas.length === 0 || cur.conic.period === null) {
@@ -780,6 +856,7 @@ export class TransferPilot extends PilotCore {
           }
           this.note(`rendezvous: closest approach ${(ca.value! / 1000).toFixed(1)} km, too far for the match: phasing again`);
           this.rv = 3;
+          this.finalTrimmed = false;
           return;
         }
         this.rv = 6;

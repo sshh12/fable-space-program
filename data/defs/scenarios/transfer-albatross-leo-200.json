@@ -1,6 +1,6 @@
 {
   "id": "transfer-albatross-leo-200",
-  "name": "Transfer: the Albatross cruiser in a 200 km parking orbit (10.9 km/s)",
+  "name": "Transfer: the Albatross cruiser in a 200 km parking orbit, all four tanks full",
   "vehicle": "meridian-albatross",
   "site": "ka-lae",
   "pad": "lc-2",
@@ -16,6 +16,14 @@
     "trueAnomalyDeg": 0
   },
   "stagesAlreadyFired": 4,
+  "resources": {
+    "sc-tank-3": {
+      "LH2": 45000
+    },
+    "sc-tank-4": {
+      "LH2": 45000
+    }
+  },
   "target": null,
   "suggestedLanding": null,
   "milestones": []
