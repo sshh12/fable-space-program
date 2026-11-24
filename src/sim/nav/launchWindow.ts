@@ -23,6 +23,7 @@ import type { BodySystem } from '../bodies/bodySystem';
 import { primeMeridianAngle } from '../bodies/rotation';
 import { azimuthOf, enuBasis, fixedPosition } from '../frames/bodyFrames';
 import { brentRoot } from '../orbit/roots';
+import { transferWindows } from './transfer';
 
 export const DEFAULT_PARKING_ALTITUDE = 185000;
 export const DEFAULT_TRANSFER_TIME = 4 * 86400;
@@ -169,4 +170,74 @@ export function angleFromTargetPlane(system: BodySystem, bodyId: string, rFixed:
   if (!target.ephemeris) throw new Error(`angleFromTargetPlane: ${targetBodyId} has no orbit`);
   const r = quat.rotate(system.orientation(bodyId, t), rFixed);
   return Math.asin(Math.max(-1, Math.min(1, v3.dot(v3.normalize(r), target.ephemeris.normalAt(t)))));
+}
+
+/** A launch opportunity from a pad toward a target (the contract's `LaunchWindow`, session.ts). */
+export interface PadLaunchWindow {
+  /** Launch instant, s: the pad's plane crossing (a body orbiting the pad's body) or the departure of the transfer window. */
+  ut: number;
+  /** Surface-relative launch azimuth, degrees clockwise from north. */
+  azimuthDeg: number;
+  /** Inclination of the plane launched into against the plane wanted, rad (0 for a coplanar crossing). */
+  relativeInclination: number;
+  /** Phase angle of the target at `ut`, rad: ahead of the pad in the target's plane (a body orbiting the pad's body), or of the transfer (interplanetary). */
+  phaseAngle: number;
+}
+
+/**
+ * Launch windows from a pad toward a target body between two times (PlanningService.launchWindows):
+ *  - a body that orbits the pad's body (a moon): every crossing of its orbit plane by the pad (both kinds),
+ *    with the launch azimuth into that plane; out of reach of the pad's latitude, the due-east launches when
+ *    the target is in the launch plane after the transfer time, with the plane's relative inclination;
+ *  - a body about the pad body's parent, or a moon of one: the transfer windows (one per synodic period,
+ *    src/sim/nav/transfer.ts), each launched into the plane that holds the pad and the departure asymptote.
+ * Other targets have no window from this pad (an empty list).
+ */
+export function launchWindowsForPad(
+  system: BodySystem,
+  pad: { bodyId: string; latitude: number; longitude: number; elevation: number },
+  targetBodyId: string,
+  fromUt: number,
+  toUt: number,
+  opts: { parkingAltitude?: number; maxCount?: number } = {},
+): PadLaunchWindow[] {
+  const maxCount = opts.maxCount ?? 64;
+  const out: PadLaunchWindow[] = [];
+  const body = system.body(pad.bodyId);
+  const target = system.body(targetBodyId);
+  const rFixed = fixedPosition(pad.latitude, pad.longitude, body.radius + pad.elevation);
+  if (target.parentId === pad.bodyId) {
+    let t = fromUt;
+    while (t < toUt && out.length < maxCount) {
+      const w = computeLaunchWindow({ system, bodyId: pad.bodyId, latitude: pad.latitude, longitude: pad.longitude, elevation: pad.elevation, ut: t, targetBodyId, kind: 'next', ...(opts.parkingAltitude !== undefined ? { parkingAltitude: opts.parkingAltitude } : {}) });
+      if (!w || w.launchUt >= toUt) break;
+      const nT = target.ephemeris!.normalAt(w.launchUt);
+      const { r, enu } = padStateRoot(system, pad.bodyId, rFixed, w.launchUt);
+      const relInc = w.coplanar ? 0 : Math.acos(Math.max(-1, Math.min(1, v3.dot(enu.north, nT))));
+      const rt = system.stateRelParent(targetBodyId, w.launchUt).r;
+      const rp = v3.reject(r, nT);
+      const phase = Math.atan2(v3.dot(v3.cross(rp, rt), nT), v3.dot(rp, rt));
+      out.push({ ut: w.launchUt, azimuthDeg: w.launchAzimuthDeg, relativeInclination: relInc, phaseAngle: phase });
+      t = w.launchUt + 60;
+    }
+    return out;
+  }
+  const parent = body.parentId;
+  const planetId = target.parentId === parent ? targetBodyId : target.parentId;
+  if (parent === null || planetId === null || system.body(planetId).parentId !== parent) return out;
+  const rot = body.rotation;
+  const vOrb = Math.sqrt(body.mu / (body.radius + (opts.parkingAltitude ?? DEFAULT_PARKING_ALTITUDE)));
+  const vRot = rot.kind === 'uniform' ? Math.abs(rot.rate) * Math.hypot(rFixed.x, rFixed.y) : 0;
+  for (const arc of transferWindows(system, pad.bodyId, planetId, fromUt, toUt)) {
+    if (out.length >= maxCount) break;
+    const { r, enu } = padStateRoot(system, pad.bodyId, rFixed, arc.departUt);
+    const up = v3.normalize(r);
+    const along = v3.reject(arc.vInfDepart, up);
+    const dL = v3.len(along) > 0 ? v3.normalize(along) : enu.east;
+    const azI = azimuthOf(dL, enu);
+    const planeNormal = v3.normalize(v3.cross(up, dL));
+    const relInc = Math.acos(Math.max(-1, Math.min(1, v3.dot(planeNormal, enu.north))));
+    out.push({ ut: arc.departUt, azimuthDeg: surfaceAzimuth(azI, vOrb, vRot) * RAD, relativeInclination: relInc, phaseAngle: arc.phaseAngle });
+  }
+  return out;
 }
