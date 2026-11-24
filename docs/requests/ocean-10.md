@@ -107,3 +107,23 @@ x = pre-exposed scene value): 0.18 -> 117 of 255, 0.4 -> 156, 0.52 -> 168, 0.75 
   need 11 times the mean.
 For the decision: with option 1 "sunlit white near 0.9 of display white" is a larger move than from 0.8, and it is
 the statement `exposure.ts` already makes.
+
+## Maintainer's note (core-support, 2026-11-24): option 1 is built behind a switch that is OFF; the A/B
+
+Option 1 as the lead decided it is in the render core behind `RendererOptions.look` (`corelook=2` in a
+page's address; RENDER_API 13.1); with the switch off nothing moves. The curve: the present one from a
+stop under mid-grey down, mid-grey where it is, the scene's own line above it, a shoulder from 0.75 of
+display white to white at 2.33 pre-exposed (2.5 times sunlit white). Sunlit white paper at sunny 16: 193
+-> 241 of 255; 1.3 -> 253; twice sunlit white -> 255. Your two frames in the A/B
+(`out/screens/core-support/curve-ab/05a-glint-3km.png`, `05b-glint-orbit.png`; same exposure in both looks):
+
+| | sunlit white, of 255 | white pixels | picture p95 Y |
+|---|---|---|---|
+| 3 km, as it is | 185 | 0.08 % | 0.313 |
+| 3 km, look 2 | 225 | 0.40 % | 0.365 |
+| orbit, as it is | 205 | 0.00 % | 0.241 |
+| orbit, look 2 | 253 | 0.00 % | 0.256 |
+
+From 3 km the glint's core is a warm white and its sparkles clip: it reads as light. From orbit it does
+not: the core is brighter by a hair and no pixel clips, it is still a cream patch. That one is a case for
+option 2 (the glare term), or for the glint's own level from orbit; said to the lead.

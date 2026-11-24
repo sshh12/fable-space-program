@@ -1,4 +1,4 @@
-Status: open
+Status: open (the bound is built behind the render core's look switch, which is off until the lead decides: see the maintainer's note of 2026-11-24)
 From: ocean
 Owner path: src/render/core/post/exposure.ts (the meter), render core
 Blocking: yes        (the mission's last scene: the sea goes black for seconds after the splashdown; the ocean's part is fixed, the camera's is not)
@@ -47,3 +47,35 @@ stays where it is when a canopy comes into the frame. Acceptance: `warp-splash.s
 sea's brightness in every sample.
 
 Must not change: the daylight bounds (vfx-4, vfx-7, vfx-8), the cabin's metering.
+
+## Maintainer's note (core-support, 2026-11-24): built behind the render core's look switch, which is OFF
+
+The bound you ask for exists, with the display curve of ocean-10, behind one switch (`RendererOptions.look`,
+`corelook=2` in a page's address; RENDER_API 13.1). The switch is off until the lead has looked at the A/B,
+so in the game as it stands today nothing has changed: `warp-splash.spec.ts` still prints its KNOWN line.
+
+What I found in the recorded frames (your scene, the real app, the meter's inputs recorded every sample with
+`CoreRenderer.meterInput()`; out/screens/core-support/curve-ab/meter/09-splashdown-at-dawn.json). Not as you
+wrote it: the bounds under the sun are not off at that hour. The sun stands 2.8 degrees up and its disc is
+whole, so they hold, but they hold the highlight term to a quarter stop over the frame's mean OR THE PRIOR,
+and the prior is sunny 16 for that sun (EV100 12.24), 3.3 stops over a sea that the sky lights (mean term
+8.9). The two canopies (13 % of the lit pixels once they stand in the water, not one per cent) are sunlit
+white: the highlight term takes the target to the prior plus a quarter, 12.49.
+
+With look 2 (rules and numbers in RENDER_API 13.1, `METER2_*` in exposure.ts):
+- under a low sun, inside the air, the highlight term may raise the target by 1 EV over what the mean and
+  the prior ask for, and what stands more than 2 stops over the 75th percentile of the metered pixels counts
+  at that level in the mean (the camera looking down at the sea: the canopies raise the target by under a
+  stop and a half);
+- and the sky's bulk is held at 0.7 pre-exposed, which with a sky in the frame is what sets the exposure of
+  this scene: EV100 11.56 before the contact, 11.56 to 11.86 after it (8.44 to 12.55 with the switch off).
+  That is 2.7 stops over today's exposure before the contact: with the camera curve a sky at 3.5
+  pre-exposed, where today's exposure puts it, is white, so either the sky clips or the sea is darker. The
+  sea's median is Y 0.03 to 0.04 throughout (0.25 before the contact and 0.009 with the canopies today).
+  Whether that sea is right is for you and the lead to say from the sheet:
+  `out/screens/core-support/curve-ab/09-splashdown-at-dawn.png` (both looks, before the contact, +3 s, +8 s,
+  +15 s). The canopies clip there (4.6 % of the frame white at +8 s, the orange gores go yellow).
+
+Unit tests on your scene's recorded frames: `tests/unit/render-core/exposureLook2.test.ts`. Your acceptance
+(no KNOWN line; then the sea's level in every sample) is to be stated when the switch is flipped; the
+sea's level will be the one above, not today's 0.127.
