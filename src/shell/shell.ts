@@ -25,6 +25,8 @@ import type { ShellDeps, ShellSession } from './types';
 
 /** The HUD's text refresh rate: live text on the menu changes at most this often (frontend-ux 4.11). */
 const TEXT_HZ = 10;
+/** The keys that act while a text field has the focus (they leave it or confirm it); every other key types. */
+const TEXT_FIELD_KEYS: ReadonlySet<string> = new Set(['Enter', 'NumpadEnter', 'Escape', 'ArrowUp', 'ArrowDown']);
 /** Seconds after a screen change during which the scrim follows the panels every frame (the enter animation). */
 const SCRIM_FOLLOW_S = 0.6;
 
@@ -542,9 +544,9 @@ export function createShell(deps: ShellDeps): Shell {
     }
     const action = table.find((k) => k.code === e.code)?.action ?? null;
     if (!action) return;
-    // In a text field only the keys that leave it act: Enter (activate the screen's default), Esc and the arrows up/down.
-    if (editing && !['menu:activate', 'menu:back', 'menu:up', 'menu:down'].includes(action)) return;
-    if (editing && action === 'menu:back' && e.code !== 'Escape') return;
+    // In a text field only the keys that leave it act: Enter (activate the screen's default), Esc and the arrows
+    // up/down. A letter that is also a menu key (W, S, ...) or Space is typed into the field.
+    if (editing && !TEXT_FIELD_KEYS.has(e.code)) return;
     if (e.repeat && action !== 'menu:up' && action !== 'menu:down' && action !== 'menu:left' && action !== 'menu:right') {
       e.preventDefault();
       return;

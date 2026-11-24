@@ -176,6 +176,7 @@ async function boot(): Promise<void> {
 
   const ev = (): number => app.renderer.exposureInfo().ev100;
   const analyses = new WeakMap<UniverseRules, Map<string, VehicleCapabilities>>();
+  let vesselFeature: { status?(): unknown; stats?: unknown } | null = null;
   // The reach ladder's costs: solar-system-sim's deltaVToOrbit from the launch body's parking orbit; passing a
   // body costs the transfer without its last leg (the capture), being bound about it the whole of it.
   const reachCosts = new Map<string, { flyby: number; orbit: number } | null>();
@@ -296,6 +297,7 @@ async function boot(): Promise<void> {
     const built = buildFeatures(imported.modules, { defs, sim, ctx: app.renderer.context, gpu: app.gpu, terrain, navball, mfdPainter: createMfdPainter(), query });
     for (const p of [...imported.problems, ...built.problems]) errors(p);
     // The vessel feature warms and draws presentable vehicles only (src/core/access/presentable.ts).
+    vesselFeature = (built.handles['vehicle.createVesselVisualFeature'] as { status?(): unknown; stats?: unknown } | undefined) ?? null;
     const features = built.features;
     bootSteps[2]!.total = features.length;
     for (const f of features) {
@@ -359,9 +361,11 @@ async function boot(): Promise<void> {
       if (tr.u >= 1) {
         transit = null;
         lastTransit = { ...tr, handOverEv: ev(), handOverTarget: app.renderer.exposureInfo().targetEv100, handOverAt: performance.now() };
+        // This lab has no flight controller and no chase rig: its flight camera holds the transit's last pose (the
+        // pose the app's chase rig must start from: TransitPlan.endOffsetEnu), so the hand-over has no cut and the
+        // meter settles on the view the transit's exposure was led to.
         flightCamera = true;
         app.camera.settings.exposureHint = null;
-        app.camera.spec = { type: 'orbit', target: { vesselId: app.snapshot().activeVesselId ?? '' }, yaw: -0.35, pitch: 0.18, distance: 180 };
         shell.handOver();
       }
     } else if (!flightCamera) {
@@ -402,6 +406,12 @@ async function boot(): Promise<void> {
     practice,
     camera: () => app.cameraState(),
     exposure: () => app.renderer.exposureInfo(),
+    /** What the vessel feature drew and passed over (its stats and status), and the snapshot's active vessel and its part count. */
+    vessel: () => {
+      const snap = app.snapshot();
+      const v = snap.vessels.find((x) => x.id === snap.activeVesselId);
+      return { feature: vesselFeature ? { status: vesselFeature.status?.(), stats: vesselFeature.stats } : null, active: v ? { id: v.id, vehicleId: v.vehicleId, parts: v.parts.length, crafts: v.crafts.length } : null };
+    },
     transit: () => (transit ? { u: transit.u, holding: transit.holding, steps: transit.steps.slice(), acknowledged: transit.acknowledged } : null),
     /** The last finished transit: per-frame steps and their bounds (m), frame times (ms), the exposure at the hand-over and now. */
     lastTransit: () =>

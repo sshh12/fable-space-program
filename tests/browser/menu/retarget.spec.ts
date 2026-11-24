@@ -16,8 +16,12 @@ test('a refused launch rises back with the reason and the alternative, and the a
   await press(page, 'Enter', 'deploy/vehicle');
   await press(page, 'Enter', 'deploy/pad');
   await press(page, 'Enter', 'deploy/briefing', 'launch-commit');
-  await press(page, 'Enter', 'transit');
+  // The fixture refuses at once: the transit begins and rises back in the same task (the state passes through
+  // 'transit' between two frames), so the test waits for where it lands.
+  const changes = (await hooks(page)).screenChanges;
+  await press(page, 'Enter');
   await page.waitForFunction(() => window.__shell!.hooks().spawn === 'refused' && window.__shell!.hooks().main === 'deploy', undefined, { timeout: 60_000 });
+  expect((await hooks(page)).screenChanges).toBeGreaterThanOrEqual(changes + 2);
   const refused = page.locator('[data-testid="spawn-refused"]');
   await expect(refused).toContainText('The pad was taken a moment before you.');
   await expect(refused.locator('[data-focus="take-alternative"]')).toBeVisible();

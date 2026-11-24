@@ -89,7 +89,7 @@ test('at a night pad: the exposure at the hand-over is within 1 EV of settled, a
   await page.waitForFunction(() => (window.__shell!.lastTransit()?.secondsSince ?? 0) > 10, undefined, { timeout: 60_000 });
   const settled = (await page.evaluate(() => window.__shell!.lastTransit()))!;
   const ex = await page.evaluate(() => window.__shell!.exposure());
-  console.log(`[night hand-over] EV100 at hand-over ${at.handOverEv!.toFixed(2)}, settled ${settled.evNow.toFixed(2)} (meter target ${ex.targetEv100.toFixed(2)}), difference ${(settled.evNow - at.handOverEv!).toFixed(2)} EV`);
+  console.log(`[night hand-over] EV100 at hand-over ${at.handOverEv!.toFixed(2)} (meter target there ${at.handOverTarget?.toFixed(2)}), settled ${settled.evNow.toFixed(2)} (meter target ${ex.targetEv100.toFixed(2)}), difference ${(settled.evNow - at.handOverEv!).toFixed(2)} EV`);
   expect(Math.abs(settled.evNow - at.handOverEv!)).toBeLessThanOrEqual(1);
   const off = at.steps.map((s, i) => ({ i, s, b: at.bounds[i]! })).filter((x) => x.s > x.b + 0.01);
   expect(off).toEqual([]);

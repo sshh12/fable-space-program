@@ -32,6 +32,9 @@ test('the deploy flow by keyboard only, with the focus at every step, to control
   const closed = await page.evaluate(() => ({ hidden: (document.querySelector('.sh-root') as HTMLElement).hidden, scrim: window.__shell!.hooks().scrimRects }));
   expect(closed).toEqual({ hidden: true, scrim: 0 });
   await shot(page, 'flight-1280');
+  // The display vessel (the first presentable vehicle) stands on the pad and is drawn.
+  const vessel = await page.evaluate(() => (window.__shell as unknown as { vessel(): unknown }).vessel());
+  console.log(`[vessel] ${JSON.stringify(vessel)}`);
   await press(page, 'Escape', 'flightMenu', 'fm-resume');
   await expect(page.locator('[data-testid="leave-outcome"]')).toContainText('If you leave now');
   await shot(page, 'flight-menu-1280');

@@ -23,6 +23,8 @@ export interface LastTransit {
   bounds: number[];
   frameMs: number[];
   handOverEv: number | null;
+  /** The meter's target at the hand-over (what the view there would settle to). */
+  handOverTarget: number | null;
   secondsSince: number | null;
   evNow: number;
 }
