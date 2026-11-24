@@ -5,8 +5,8 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { v3 } from '@/core/math/vec3';
-import { decodeIsland, type Island, type PairHook } from '@/sim/island';
-import { islandAt, loadLibraryOver, orbiter, PILOT, relative, setup, TICK0, type Setup } from './helpers';
+import { comStateOf, decodeIsland, REFERENCE_OFFSET_MAX, REFERENCE_SETTLE_SPEED, type AdvanceReport, type Island, type PairHook } from '@/sim/island';
+import { controls, input, islandAt, loadLibraryOver, orbiter, PILOT, relative, setup, TICK0, type Setup } from './helpers';
 
 const AU = 1.495978707e11;
 
@@ -88,4 +88,77 @@ describe('an island at 30 AU', () => {
     }
     expect(copy.hash()).toBe(island.hash());
   });
+
+  it('the reference orbit follows the anchor: replaced when the anchor has finished a burn, and when its offset passes 30 km; each is a rebase operation and moves nothing', () => {
+    const island = pair(100);
+    const rebases = (report: AdvanceReport): number => report.ops.filter((o) => o.body.op === 'rebase').length;
+    const anchorOffset = (): { r: number; v: number } => {
+      const v = island.member('alpha')!.vessel;
+      const com = comStateOf(v);
+      return { r: v3.len(com.r), v: v3.len(com.v) };
+    };
+    // Coasting: the anchor stays on the reference orbit and nothing is replaced.
+    let count = 0;
+    for (let k = 0; k < 240; k++) count += rebases(island.step());
+    expect(count).toBe(0);
+    expect(anchorOffset().r).toBeLessThan(1e-3);
+    // A translation burn of the anchor with its thrusters: 4 s of it.
+    expect(island.applyInput(input(island.tick, { kind: 'command', vesselId: 'alpha', command: { kind: 'rcs', on: true } })).outcome?.ok).toBe(true);
+    island.applyInput(input(island.tick, { kind: 'controls', vesselId: 'alpha', controls: controls({ translate: { x: 0, y: 1, z: 0 } }), sasHold: null }));
+    for (let k = 0; k < 480; k++) count += rebases(island.step());
+    // While it burns the reference stands: the anchor has left it by the burn's delta-v.
+    expect(count).toBe(0);
+    expect(island.member('alpha')!.mode).toBe('integrated');
+    const burned = anchorOffset();
+    expect(burned.v).toBeGreaterThan(REFERENCE_SETTLE_SPEED * 10);
+    // The burn ends: at the next control tick the reference orbit is the anchor's again.
+    const before = relative(island, 'alpha', 'bravo');
+    const state = v3.clone(island.stateOf('bravo')!.r);
+    island.applyInput(input(island.tick, { kind: 'controls', vesselId: 'alpha', controls: controls(), sasHold: null }));
+    let report = island.step();
+    let waited = 1;
+    while (rebases(report) === 0 && waited < 8) {
+      report = island.step();
+      waited++;
+    }
+    expect(rebases(report)).toBe(1);
+    expect(waited).toBeLessThanOrEqual(4);
+    expect(report.frameChange).toMatchObject({ fromBodyId: star, toBodyId: star });
+    expect(island.reference!.tick).toBe(island.tick);
+    expect(anchorOffset().r).toBeLessThan(1e-3);
+    expect(anchorOffset().v).toBeLessThan(1e-9);
+    // Nothing moved: the two are where the steps put them (their separation changes by the steps alone).
+    const after = relative(island, 'alpha', 'bravo');
+    expect(v3.dist(after.v, before.v)).toBeLessThan(1e-6);
+    expect(v3.dist(after.r, before.r)).toBeLessThan(burned.v * waited * (1 / 120) + 1e-3);
+    expect(v3.dist(island.stateOf('bravo')!.r, state)).toBeLessThan(30_000);
+    // And it is not replaced again while the anchor coasts.
+    count = 0;
+    for (let k = 0; k < 240; k++) count += rebases(island.step());
+    expect(count).toBe(0);
+    // The offset limit: a reference point 40 km from the anchor (given as a rebase operation) is replaced at the next control tick.
+    const far = island.stateOf('alpha')!;
+    island.applyOp({ op: 'rebase', anchor: island.member('alpha')!.slot, bodyId: star, r: v3.add(far.r, { x: 40_000, y: 0, z: 0 }), v: far.v });
+    expect(anchorOffset().r).toBeGreaterThan(REFERENCE_OFFSET_MAX);
+    count = 0;
+    for (let k = 0; k < 4; k++) count += rebases(island.step());
+    expect(count).toBe(1);
+    expect(anchorOffset().r).toBeLessThan(1);
+    // A checkpoint taken in the middle of a burn rebases at the same tick as the island it was taken from.
+    const burning = pair(100);
+    burning.applyInput(input(burning.tick, { kind: 'command', vesselId: 'alpha', command: { kind: 'rcs', on: true } }));
+    burning.applyInput(input(burning.tick, { kind: 'controls', vesselId: 'alpha', controls: controls({ translate: { x: 1, y: 0, z: 0 } }), sasHold: null }));
+    for (let k = 0; k < 200; k++) burning.step();
+    const copy = decodeIsland(s.deps, burning.encode());
+    for (const i of [burning, copy]) i.applyInput(input(burning.tick + 40, { kind: 'controls', vesselId: 'alpha', controls: controls(), sasHold: null }));
+    count = 0;
+    for (let k = 0; k < 120; k++) {
+      const a = rebases(burning.step());
+      const b = rebases(copy.step());
+      expect(b, `tick ${burning.tick}`).toBe(a);
+      count += a;
+    }
+    expect(count).toBe(1);
+    expect(copy.hash()).toBe(burning.hash());
+  }, 60_000);
 });

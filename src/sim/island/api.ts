@@ -542,3 +542,16 @@ export const COAST_TIME_TO_RAILS = 0.5;
 export const REDUCED_DT = 0.5;
 /** Worst-case mutual acceleration in the reach time, m/s^2 (ARCHITECTURE 6.2). */
 export const REACH_ACCELERATION = 60;
+/**
+ * The reference orbit of an island in the star's sphere of influence is replaced by one at the anchor's centre
+ * of mass (a `rebase` operation; ARCHITECTURE 7.3) when the anchor's offset from the reference point passes
+ * this distance, m.
+ */
+export const REFERENCE_OFFSET_MAX = 30_000;
+/**
+ * ... and when the anchor has finished a burn: it coasts (no thrust, no thruster force) with its centre of
+ * mass off the reference orbit by more than this distance, m, or this speed, m/s. Both are far above what
+ * coasting on the reference orbit leaves (the rounding of two Kepler evaluations) and far below any burn.
+ */
+export const REFERENCE_SETTLE_DISTANCE = 1;
+export const REFERENCE_SETTLE_SPEED = 1e-3;

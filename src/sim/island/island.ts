@@ -46,6 +46,9 @@ import {
   ARMED_TEST_TICKS,
   COAST_TIME_TO_RAILS,
   REACH_ACCELERATION,
+  REFERENCE_OFFSET_MAX,
+  REFERENCE_SETTLE_DISTANCE,
+  REFERENCE_SETTLE_SPEED,
   type AddOptions,
   type AdvanceReport,
   type AppliedOp,
@@ -338,7 +341,7 @@ export class IslandImpl implements Island {
   }
 
   /** Start a reference orbit at the anchor's centre of mass, or move the one there is (a `rebase` operation). */
-  private rebase(ut: number, why: 'frame' | 'offset' | 'anchor'): void {
+  private rebase(ut: number, why: 'frame' | 'offset' | 'burn' | 'anchor'): void {
     const a = this.anchor();
     if (!a) return;
     const com = comStateOf(a.vessel);
@@ -365,6 +368,28 @@ export class IslandImpl implements Island {
     this.refCacheUt = NaN;
     if (why !== 'frame') this.report.frameChange = { fromBodyId: this.bodyId, toBodyId: this.bodyId, ut };
     this.report.ops.push({ tick: this.tick, body: { op: 'rebase', anchor: a.slot, bodyId: this.bodyId, r: v3.clone(state.r), v: v3.clone(state.v) }, checksum: checksumOfVessel(a.vessel) });
+  }
+
+  /**
+   * The reference orbit follows the anchor (ARCHITECTURE 7.3), looked at on the control-tick cadence: it is
+   * replaced when the anchor's centre of mass has moved `REFERENCE_OFFSET_MAX` from the reference point (a
+   * long burn), and when the anchor has finished a burn. "Finished" is read off the state, not off a
+   * history: the anchor coasts (on its conic, or integrated with no thrust and no thruster force) and is off
+   * the reference orbit by more than the settle limits. A replay and a replica therefore rebase at the same
+   * ticks, and an island restored from its codec does too.
+   */
+  private checkReference(): void {
+    if (this.reference === null) return;
+    const a = this.anchor();
+    if (!a || a.vessel.hold !== null) return;
+    const com = comStateOf(a.vessel);
+    const offset = v3.len(com.r);
+    if (offset > REFERENCE_OFFSET_MAX) {
+      this.rebase(this.ut, 'offset');
+      return;
+    }
+    const coasting = a.mode !== 'integrated' || v3.len(a.vessel.properAccel) === 0;
+    if (coasting && (offset > REFERENCE_SETTLE_DISTANCE || v3.len(com.v) > REFERENCE_SETTLE_SPEED)) this.rebase(this.ut, 'burn');
   }
 
   /** Give the reference orbit up: every member's state becomes its BCI state. */
@@ -1103,6 +1128,7 @@ export class IslandImpl implements Island {
   private upkeep(): void {
     this.checkFloor();
     this.checkSoiIntegrated();
+    this.checkReference();
     this.refreshMargins();
     this.clearNascent();
     this.watchThresholds();
