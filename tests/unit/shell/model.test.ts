@@ -11,7 +11,9 @@ import { createShellMachine, DEPLOY_STEPS, HUB_TABS, INITIAL_SHELL_STATE, MAIN_S
 import { classOutlook, launchesPerHour, padHosts, padRows, usableClasses } from '@/shell/pads';
 import { formatSpan, rulesView } from '@/shell/rulesView';
 import { solarViewAt } from '@/shell/solar';
-import { formatNumber } from '@/ui/format';
+import { createFakeSession } from '@/core/fakes/fakeSession';
+import { leaveOutcome, shouldGuardUnload } from '@/shell/leaveOutcome';
+import { formatApsis, formatDuration, formatNumber } from '@/ui/format';
 import { loadLibrary } from '../../../tools/sim/realWorld';
 
 const fmt = { number: formatNumber };
@@ -199,5 +201,32 @@ describe('the solar view of a site', () => {
     const west = solarViewAt(body, 0, -89);
     expect(west.localSolarHours).toBeCloseTo(6 + 1 / 15, 6);
     expect(west.phase).toBe('dawn');
+  });
+});
+
+describe('the leave line and the leave guard', () => {
+  const fmtLeave = { apsis: formatApsis, duration: formatDuration };
+  it('only a flight under way arms the guard; the menu (no active vessel) and a lobby session without a flight never do', () => {
+    const pad = createFakeSession(defs, { scene: 'pad' });
+    const s0 = pad.snapshot();
+    expect(shouldGuardUnload(s0)).toBe(s0.scenario !== null && s0.scenario.startKind !== 'pad');
+    expect(shouldGuardUnload({ ...s0, activeVesselId: null, scenario: null })).toBe(false);
+    expect(shouldGuardUnload({ ...s0, scenario: null })).toBe(false);
+    expect(shouldGuardUnload({ ...s0, staging: { ...s0.staging, nextStage: 1 } })).toBe(true);
+    expect(shouldGuardUnload({ ...s0, staging: { ...s0.staging, nextStage: 1 }, mission: { ...s0.mission, failed: true } })).toBe(false);
+    const orbit = createFakeSession(defs, { scene: 'lowOrbit' }).snapshot();
+    expect(shouldGuardUnload({ ...orbit, scenario: { id: 'x', startKind: 'state', stagesAlreadyFired: 0 }, staging: { ...orbit.staging, nextStage: 0 } })).toBe(true);
+  });
+
+  it('states what leaving does on the pad and in orbit, with the rules numbers', () => {
+    const rules = defs.rules!['default']!;
+    const pad = leaveOutcome(createFakeSession(defs, { scene: 'pad' }).snapshot(), rules, fmtLeave)!;
+    expect(pad.lines.join(' ')).toContain('rolled back');
+    expect(pad.lines.join(' ')).toContain(formatSpan(rules.expiry.craftRetention));
+    const orbit = leaveOutcome(createFakeSession(defs, { scene: 'lowOrbit' }).snapshot(), rules, fmtLeave)!;
+    expect(orbit.status).toContain('ORBITING');
+    expect(orbit.lines[0]).toContain('stays in its orbit');
+    const menu = createFakeSession(defs, { scene: 'pad' }).snapshot();
+    expect(leaveOutcome({ ...menu, activeVesselId: null }, rules, fmtLeave)).toBeNull();
   });
 });
