@@ -61,7 +61,7 @@ tree as read on 2026-11-10. Nothing in this file has been executed.
    history. The recorded files are pinned by `tools/dev/guard-pins.test.ts`. Debris is compared
    by fate (impact or decay within 2 s and 500 m, or the same orbit), because its stepping tier changes by
    design when the 25 km bubble becomes islands and the Reduced tier.
-5. **The golden mission hash is re-baselined exactly seven times**, each behind its guard: after the tick grid
+5. **The golden mission hash is re-baselined exactly eight times**, each behind its guard: after the tick grid
    (3.1, envelope), after the id and codec change (3.4, bit-exact guard), once more inside wave 3 by lead
    authorisation for tick-pure state (2026-11-12, together with the one re-record of the trajectory guard; it
    moves the control tick, so the flight moves as it does under a shifted start, and what can be asked of it
@@ -80,9 +80,14 @@ tree as read on 2026-11-10. Nothing in this file has been executed.
    is again the EXACT comparison of the record before and after
    (`tests/mission/rebaseline/2026-11-24-armed-{before,after}.json`: 17 of 17 milestones equal, 596,933
    steps both) with the trajectory guard passing in full. Made so far: the tick grid, the id and codec
-   change, tick-pure state, the tighten and the Armed tier; 4.3 and 4.4 are to come. (Formation by the
-   join distance, request island-core-1, is accepted and will need one more, which is counted here when
-   the trajectory guard's debris entries are re-recorded with it.) **The episode of 2026-11-12:** commit 01c4d2f changed `cameras.cockpit.seat`
+   change, tick-pure state, the tighten, the Armed tier and formation; 4.3 and 4.4 are to come. And once for
+   formation by the join distance (commit 2e23f69, request island-core-1 accepted: golden
+   `f0c0855ea40d8c59`, it was `f6efbe54f52a40de`): the EXACT comparison of the record is 17 of 17
+   milestones and 596,933 steps, and the lead's own audit found the attended craft bit-identical to the
+   pinned trajectory guard at 400 of 400 samples. THE GUARD'S UNATTENDED ENTRIES ARE NOT RE-RECORDED YET:
+   the audit found that a piece in the Reduced tier is re-admitted to the island on a position up to 59
+   ticks old (request lead-12), which shapes the fate of the Heron ascent stage; the mission stands at 35
+   of 37 until that is fixed, and the fix will move the golden once more, counted here when it is made. **The episode of 2026-11-12:** commit 01c4d2f changed `cameras.cockpit.seat`
    from `cdr` to `plt` in `data/defs/vehicles/meridian-lunar.json` (request cockpit-18), and the golden was
    re-baselined to `e7cdbc4b452f686d` on the proof that the flight was the same in every number. It was the
    wrong remedy and was taken back the same day, the field to `cdr` and the golden to `b8221b0fd316207e`: the

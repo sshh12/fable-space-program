@@ -1525,3 +1525,29 @@ the longer rules message. MIGRATION_V2 principle 5 counts island-core's re-basel
 shared tree's mission stood at 35 of 37 at that time with golden `f0c0855ea40d8c59`: the two failures are
 the trajectory guard's clamp and debris entries under formation by the join distance (island-core-1,
 accepted), which the lead re-records when island-core's successor reports with its table.
+
+**The trajectory guard after island-core's formation (2026-11-24, 15:00-15:40): AUDITED, A FINDING, NOT
+RE-RECORDED.** Flown on a clean worktree of HEAD 55995c5: the mission is 35 of 37 at the golden
+`f0c0855ea40d8c59` (read from that tree's golden.json); the two failures are the guard's.
+- The attended craft: bit-identical to the pinned guard at 400 of 400 samples, and equal to island-core's
+  own record at every vessel and every fate.
+- The clamps (`samples[7..11].firstShed`, r up to 8 ulp, v 5, q 17): explained and clean. A held vessel is
+  placed on the rotating Earth by one of two expressions of the same rotation, one inside the island and
+  one outside; the clamps now leave the island 33 s after lift-off instead of at 27 km.
+- Fairing panel 3 (511.9 m) and the Kestrel apex cover (695.8 m): the Reduced tier takes them over earlier
+  than the recording did; clean.
+- THE HERON ASCENT STAGE (8.6 s, 57.9 km): NOT clean. A Reduced piece is tested for the join distance and
+  admitted on a position up to 59 ticks old (`src/sim/island/far.ts`, `joinInto` / `advanceReduced` /
+  `release`): the stage is re-admitted at an apparent 947 m when it is 2,263 m away, displaced 1.83 km, and
+  flies its entry in the Full tier that the design would not have given it. Request `lead-12`.
+- Prepared and NOT installed (`out/lead-baseline-v2/trajectory-guard/candidates/`): `candidate-all.json`
+  (44 leaf values in 8 entries; would give 37 of 37 but pins a value the defect produced) and
+  `candidate-without-ascent-stage.json` (41 values in 7 entries; 36 of 37 until the fix). The pin of the
+  guard is unchanged. `tools/dev/guard-pins.test.ts` carried another package's uncommitted pin edits at
+  that time.
+- MIGRATION_V2 principle 5 counts eight re-baselines, island-core's two among them, and says that the
+  second one's unattended entries wait for lead-12.
+
+**Step 4.1c, the two warp levels: IN** (c56ea35). The view reference differs in the clock block of 6 of
+200 states (two numbers each), not in every state as the earlier note said; six by-design entries, the
+recording untouched (request lead-11).
