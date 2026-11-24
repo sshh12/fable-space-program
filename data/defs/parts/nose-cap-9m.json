@@ -141,7 +141,7 @@
         4.5
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -150,7 +150,7 @@
         2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -159,7 +159,7 @@
         -2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -168,7 +168,7 @@
         -4.5
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -177,7 +177,7 @@
         -2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -186,7 +186,7 @@
         2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     }
   ],
   "buoyancy": [],
@@ -209,5 +209,8 @@
       ]
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/nose-cap-9m.json",
+    "optional": true
+  }
 }

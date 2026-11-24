@@ -118,5 +118,8 @@
       ]
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/rcs-quad-220.json",
+    "optional": true
+  }
 }

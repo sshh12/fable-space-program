@@ -165,7 +165,7 @@
         4.5
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -174,7 +174,7 @@
         2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -183,7 +183,7 @@
         -2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -192,7 +192,7 @@
         -4.5
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -201,7 +201,7 @@
         -2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -210,7 +210,7 @@
         2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -219,7 +219,7 @@
         4.5
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -228,7 +228,7 @@
         2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -237,7 +237,7 @@
         -2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -246,7 +246,7 @@
         -4.5
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -255,7 +255,7 @@
         -2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -264,7 +264,7 @@
         2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     }
   ],
   "buoyancy": [],
@@ -279,5 +279,8 @@
       "separationPlaneY": 6.6
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/adapter-9m.json",
+    "optional": true
+  }
 }

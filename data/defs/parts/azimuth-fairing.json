@@ -141,7 +141,7 @@
         1.1
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -150,7 +150,7 @@
         0
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -159,7 +159,7 @@
         -1.1
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -168,7 +168,7 @@
         0
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     }
   ],
   "buoyancy": [],
@@ -188,5 +188,8 @@
       ]
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/azimuth-fairing.json",
+    "optional": true
+  }
 }

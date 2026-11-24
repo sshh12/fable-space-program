@@ -212,7 +212,7 @@
         3.3
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -221,7 +221,7 @@
         1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -230,7 +230,7 @@
         -1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -239,7 +239,7 @@
         -3.3
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -248,7 +248,7 @@
         -1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -257,7 +257,7 @@
         1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -266,7 +266,7 @@
         3.3
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -275,7 +275,7 @@
         1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -284,7 +284,7 @@
         -1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -293,7 +293,7 @@
         -3.3
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -302,7 +302,7 @@
         -1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -311,7 +311,7 @@
         1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     }
   ],
   "buoyancy": [
@@ -337,5 +337,8 @@
     "maxQAlpha": 4000
   },
   "modules": [],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/solstice-s1.json",
+    "optional": true
+  }
 }

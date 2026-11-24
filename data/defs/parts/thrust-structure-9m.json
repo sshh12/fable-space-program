@@ -199,7 +199,7 @@
         4.5
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -208,7 +208,7 @@
         2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -217,7 +217,7 @@
         -2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -226,7 +226,7 @@
         -4.5
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -235,7 +235,7 @@
         -2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -244,7 +244,7 @@
         2.25
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     }
   ],
   "buoyancy": [],
@@ -253,5 +253,8 @@
     "maxQAlpha": 3000
   },
   "modules": [],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/thrust-structure-9m.json",
+    "optional": true
+  }
 }

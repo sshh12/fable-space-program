@@ -340,5 +340,8 @@
       }
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/egret-cabin.json",
+    "optional": true
+  }
 }

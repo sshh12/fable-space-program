@@ -46,53 +46,7 @@
       }
     ]
   },
-  "contactPoints": [
-    {
-      "pos": [
-        0,
-        -0.4,
-        0
-      ],
-      "radius": 0.1,
-      "crashTolerance": 2
-    },
-    {
-      "pos": [
-        0,
-        -0.45,
-        0.09
-      ],
-      "radius": 0.05,
-      "crashTolerance": 2
-    },
-    {
-      "pos": [
-        0.09,
-        -0.45,
-        0
-      ],
-      "radius": 0.05,
-      "crashTolerance": 2
-    },
-    {
-      "pos": [
-        0,
-        -0.45,
-        -0.09
-      ],
-      "radius": 0.05,
-      "crashTolerance": 2
-    },
-    {
-      "pos": [
-        -0.09,
-        -0.45,
-        0
-      ],
-      "radius": 0.05,
-      "crashTolerance": 2
-    }
-  ],
+  "contactPoints": [],
   "buoyancy": [],
   "joint": {
     "maxAccelG": 15
@@ -143,5 +97,8 @@
       "sound": "engine.lander-ascent"
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/lyra-k.json",
+    "optional": true
+  }
 }

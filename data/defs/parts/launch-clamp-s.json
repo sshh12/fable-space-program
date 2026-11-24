@@ -44,5 +44,8 @@
       "type": "launchClamp"
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/launch-clamp-s.json",
+    "optional": true
+  }
 }

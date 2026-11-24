@@ -143,5 +143,8 @@
       "sound": "engine.lander-descent"
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/wren-1v.json",
+    "optional": true
+  }
 }

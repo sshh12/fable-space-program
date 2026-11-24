@@ -303,5 +303,8 @@
       }
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/pathfinder-bus.json",
+    "optional": true
+  }
 }

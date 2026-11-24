@@ -141,7 +141,7 @@
         3.3
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -150,7 +150,7 @@
         1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -159,7 +159,7 @@
         -1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -168,7 +168,7 @@
         -3.3
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -177,7 +177,7 @@
         -1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -186,7 +186,7 @@
         1.65
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     }
   ],
   "buoyancy": [],
@@ -217,5 +217,8 @@
       ]
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/fairing-6m6-ogive.json",
+    "optional": true
+  }
 }

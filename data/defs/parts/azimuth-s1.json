@@ -257,7 +257,7 @@
         1.1
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -266,7 +266,7 @@
         0.55
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -275,7 +275,7 @@
         -0.55
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -284,7 +284,7 @@
         -1.1
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -293,7 +293,7 @@
         -0.55
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -302,7 +302,7 @@
         0.55
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -311,7 +311,7 @@
         1.1
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -320,7 +320,7 @@
         0.55
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -329,7 +329,7 @@
         -0.55
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -338,7 +338,7 @@
         -1.1
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -347,7 +347,7 @@
         -0.55
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     },
     {
       "pos": [
@@ -356,7 +356,7 @@
         0.55
       ],
       "radius": 0.05,
-      "crashTolerance": 3
+      "crashTolerance": 6
     }
   ],
   "buoyancy": [
@@ -382,5 +382,8 @@
     "maxQAlpha": 3000
   },
   "modules": [],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/azimuth-s1.json",
+    "optional": true
+  }
 }

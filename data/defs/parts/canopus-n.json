@@ -139,5 +139,8 @@
       "sound": "engine.hydrolox-vacuum"
     }
   ],
-  "visual": null
+  "visual": {
+    "$ref": "../visuals/parts/canopus-n.json",
+    "optional": true
+  }
 }
