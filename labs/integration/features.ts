@@ -95,7 +95,8 @@ const ADAPTERS: Record<FeaturePackage, FactoryCall[]> = {
     // With a cockpit feature the capsule's windows are the cockpit's: its interior is scene geometry behind
     // its own transparent glazing, so the vehicle must not close them with its opaque outer panes while the
     // camera is outside (docs/requests/cockpit-8.md). Whoever composes the app's features does the same.
-    { name: 'createVesselVisualFeature', args: (_env, present) => [{ exteriorGlass: !present.includes('cockpit') }] },
+    // (&norebase=ghosts: the origin test's switch, tests/browser/integration/origin.spec.ts part 3.)
+    { name: 'createVesselVisualFeature', args: (env, present) => [{ exteriorGlass: !present.includes('cockpit'), debugNoGhostRebase: (env.query.get('norebase') ?? '').split(',').includes('ghosts') }] },
     { name: 'createSiteFeature', args: () => [] },
   ],
   cockpit: [{ name: 'createCockpitFeature', args: (env) => [env.ctx, { navball: env.navball, mfdPainter: env.mfdPainter }] }],

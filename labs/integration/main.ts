@@ -116,6 +116,15 @@ export interface IntegrationLab {
    */
   setRenderRoot(bodyId: string): boolean;
   /**
+   * From the next snapshot on the vessel is no longer stated, as a vessel that expired: the vessel feature
+   * draws it on as a ghost. False when no other vessel than the active one has that id.
+   */
+  dropVessel(vesselId: string): boolean;
+  /** From the next snapshot on every open parachute of the active vessel is cut away; returns how many were open. */
+  cutParachutes(): number;
+  /** An explosion event in the next snapshot, at a point of the active vessel's frame (VES axes, m). */
+  burst(posVes: Vec3): boolean;
+  /**
    * A/B switch for the near cloud shadow (the optical-depth map around the camera): off = every reader of
    * the frame's near placement (deferred lighting, forward-lit shaders) sees no near map; the far term stays.
    */
@@ -463,9 +472,53 @@ async function boot(): Promise<void> {
     const unrolled = inner;
     inner = withSnapshotMap(unrolled, (s) => ({ ...s, vessels: s.vessels.map((v) => (v.id === s.activeVesselId ? { ...v, q: quat.mul(v.q, turn) } : v)) }));
   }
+  // Staged by a spec (window.__integration.dropVessel / cutParachutes / burst): what a session states when a
+  // vessel expires, the parachutes are cut away or a part bursts, laid over every snapshot from then on.
+  const staged: { dropped: Set<string>; cut: boolean; burst: { posVes: Vec3; ut: number | null } | null } = { dropped: new Set(), cut: false, burst: null };
+  // &twin=<m>: a second vessel, a copy of the active one that many metres along its +X with the same velocity
+  // (its own vessel and craft ids), for what needs another vessel in the picture: one that can leave the snapshot.
+  const twinOffset = query.has('twin') && Number.isFinite(Number(query.get('twin'))) ? Number(query.get('twin')) : null;
+  const unstaged = inner;
+  inner = withSnapshotMap(unstaged, (s) => {
+    if (twinOffset === null && staged.dropped.size === 0 && !staged.cut && !staged.burst) return s;
+    let vessels = s.vessels;
+    const original = twinOffset === null ? undefined : s.vessels.find((v) => v.id === s.activeVesselId);
+    if (original) {
+      const craftId = (id: string): string => `twin-of-${id}`;
+      vessels = [
+        ...vessels,
+        {
+          ...original,
+          id: `twin-of-${original.id}`,
+          name: `${original.name} (twin)`,
+          rRoot: v3.add(original.rRoot, quat.rotate(original.q, { x: twinOffset!, y: 0, z: 0 })),
+          ...(original.crafts ? { crafts: original.crafts.map((c) => ({ ...c, id: craftId(c.id), parent: null })) } : {}),
+          parts: original.parts.map((p) => (p.craftId !== undefined ? { ...p, craftId: craftId(p.craftId) } : p)),
+        },
+      ];
+    }
+    if (staged.dropped.size > 0) vessels = vessels.filter((v) => !staged.dropped.has(v.id));
+    if (staged.cut) {
+      vessels = vessels.map((v) =>
+        v.id !== s.activeVesselId
+          ? v
+          : { ...v, parts: v.parts.map((p) => ({ ...p, modules: p.modules.map((m) => (m.type === 'parachute' && (m.state === 'full' || m.state === 'reefed') ? { ...m, state: 'cut' as const } : m)) })) },
+      );
+    }
+    let events = s.events;
+    const active = s.vessels.find((v) => v.id === s.activeVesselId);
+    if (staged.burst && active) {
+      // The event belongs to the instant it was staged at: every snapshot of that instant states it, none after.
+      staged.burst.ut ??= s.ut;
+      if (staged.burst.ut === s.ut) events = [...events, { type: 'explosion', ut: s.ut, vesselId: active.id, posRoot: v3.add(active.rRoot, quat.rotate(active.q, staged.burst.posVes)), energy: 2e8 }];
+      else staged.burst = null;
+    }
+    return { ...s, vessels, events };
+  });
   const sim = withSunOverride(inner, () => sunOverride);
 
-  const app = await createLabApp({ canvas, name: 'integration', defs, sim, features: [], autoReady: false });
+  // (&norebase=core: the origin test's switch, tests/browser/integration/origin.spec.ts part 3.)
+  const app = await createLabApp({ canvas, name: 'integration', defs, sim, features: [], autoReady: false, renderer: { debugNoFrameRebase: (query.get('norebase') ?? '').split(',').includes('core') } });
   const ctx = app.renderer.context;
 
   // The navball texture the cockpit instrument shows (the HUD renders it in the app).
@@ -780,6 +833,24 @@ async function boot(): Promise<void> {
     setRenderRoot(bodyId) {
       if (!fakeSession) return false;
       fakeSession.setRenderRoot(bodyId);
+      return true;
+    },
+    dropVessel(vesselId) {
+      const s = app.snapshot();
+      if (vesselId === s.activeVesselId || !s.vessels.some((v) => v.id === vesselId)) return false;
+      staged.dropped.add(vesselId);
+      return true;
+    },
+    cutParachutes() {
+      const s = app.snapshot();
+      const active = s.vessels.find((v) => v.id === s.activeVesselId);
+      let open = 0;
+      for (const p of active?.parts ?? []) for (const m of p.modules) if (m.type === 'parachute' && (m.state === 'full' || m.state === 'reefed')) open++;
+      if (open > 0) staged.cut = true;
+      return open;
+    },
+    burst(posVes) {
+      staged.burst = { posVes, ut: null };
       return true;
     },
     setNearCloudShadow(on) {

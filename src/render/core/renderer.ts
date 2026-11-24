@@ -67,6 +67,12 @@ export interface RendererOptions {
    */
   pipelineWarm?: boolean;
   /**
+   * TEST ONLY (tests/browser/integration/origin.spec.ts, the lab's `&norebase=core`): do NOT read the previous
+   * frame's snapshot and camera in the new frame when the origin of ROOT positions is replaced (RENDER_API
+   * 19.1). The origin test shows with it that it sees a missing rebase. Default false; nothing else sets it.
+   */
+  debugNoFrameRebase?: boolean;
+  /**
    * The shader of the contact shadow (lighting/ao.ts; requests cockpit-10, vehicle-pad-10): 'near' (the
    * default: the rules for the near field) or 'first' (the first rule alone, the pass as it was: for A/B).
    * Also by the page's address, `contact=first`, and by the env of the page's server, VITE_CORE_CONTACT=first
@@ -834,7 +840,7 @@ export async function createRenderer(canvas: HTMLCanvasElement, gpu: GpuHandle, 
       prevSnapshot = snapshot;
       prevCamera = camera;
       historyReset = true;
-    } else if (frameChange.kind === 'rebase' && prevSnapshot !== snapshot) {
+    } else if (frameChange.kind === 'rebase' && prevSnapshot !== snapshot && !opts.debugNoFrameRebase) {
       const held = rebaseHeldAt(frameChange.rebase, snapshot.ut - prevSnapshot.ut);
       prevSnapshot = rebaseSnapshot(prevSnapshot, held);
       prevCamera = { ...prevCamera, positionRoot: rebasePoint(prevCamera.positionRoot, held) };

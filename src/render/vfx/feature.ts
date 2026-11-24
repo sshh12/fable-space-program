@@ -66,6 +66,11 @@ export interface VfxDebug {
   stats(): Record<string, number>;
   /** Kind of the effect domain ('surface' | 'space'), null before the first frame. */
   domainKind(): string | null;
+  /**
+   * The velocity at which the effect domain's origin passed the eye in the last frame, m/s (ROOT axes): what
+   * every particle's streak is drawn from. Null before the first frame and in the frame a domain starts. For tests.
+   */
+  domainVelocity(): Vec3 | null;
 }
 
 export interface VfxFeature extends RenderFeature {
@@ -645,6 +650,7 @@ export function createVfxFeature(_ctx?: RenderContext | null, options: VfxOption
       readParticles: () => particles.read(),
       stats: () => ({ ...stats }),
       domainKind: () => dom?.state.kind ?? null,
+      domainVelocity: () => (domainVelocity ? { ...domainVelocity } : null),
     },
   };
   return feature;

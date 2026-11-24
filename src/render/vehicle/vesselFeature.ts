@@ -47,6 +47,11 @@ export interface VesselVisualOptions {
    * Set false when a cockpit feature shows its interior through its own transparent glazing from outside.
    */
   exteriorGlass?: boolean;
+  /**
+   * TEST ONLY (tests/browser/integration/origin.spec.ts, the lab's `&norebase=ghosts`): do NOT read the ghosts'
+   * held positions in the new frame when the origin of ROOT positions is replaced. Default false.
+   */
+  debugNoGhostRebase?: boolean;
   /** Seconds a removed (expired) vessel takes to fade out (default 1.2). */
   fadeSeconds?: number;
   /** Most local lights this feature registers per frame (default 4 of the core's 16). */
@@ -77,6 +82,8 @@ export interface VesselVisualStats {
 
 export interface VesselVisualFeature extends RenderFeature, TemporalFeature {
   readonly stats: VesselVisualStats;
+  /** Where the ghosts of the last frame were drawn (vessels that left the snapshot and fade out), camera-relative, m. For tests. */
+  ghostPlacements(): { vesselId: string; originRelCam: Vec3 }[];
   /** The generated visual of a part definition (undefined before init or for a part without one). */
   partVisual(defId: string): PartVisual | undefined;
   /**
@@ -210,6 +217,8 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
   const plans = new Map<string, VesselPlan>();
   const reported = new Set<string>();
   let ghosts: Ghost[] = [];
+  /** Where each ghost of the last frame was drawn (ghostPlacements). */
+  const ghostPlaces: { vesselId: string; originRelCam: Vec3 }[] = [];
   /** The epoch of the ROOT frame the ghosts' positions and velocities are held in. */
   const frameEpochs = new FrameEpochTracker();
   let lastUt = Number.NaN;
@@ -454,6 +463,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
     id: 'vehicle',
     order: 0,
     stats,
+    ghostPlacements: () => ghostPlaces.map((g) => ({ vesselId: g.vesselId, originRelCam: { ...g.originRelCam } })),
     partVisual: (defId) => visuals.get(defId)?.visual,
     anim: (craftId, instanceId) => {
       pruneDue = true;
@@ -492,7 +502,7 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
       // from the previous snapshot, which the core hands over in the new frame already.)
       const frameChange = observeFrame(frameEpochs, snapshot.frame);
       if (frameChange.kind === 'drop') ghosts = [];
-      else if (frameChange.kind === 'rebase') {
+      else if (frameChange.kind === 'rebase' && !options.debugNoGhostRebase) {
         for (const g of ghosts) {
           const held = rebaseHeldAt(frameChange.rebase, snapshot.ut - g.ut0);
           g.vessel = { ...g.vessel, rRoot: rebasePoint(g.vessel.rRoot, held), vRoot: rebaseVelocity(g.vessel.vRoot, held) };
@@ -517,14 +527,16 @@ export function createVesselVisualFeature(options: VesselVisualOptions = {}): Ve
         const eye = frame.camera.positionRoot;
         const prevEye = frame.prevCamera.positionRoot;
         ghosts = ghosts.filter((g) => frame.realTime - g.t0 < fadeSeconds && !alive.has(g.vessel.id));
+        ghostPlaces.length = 0;
         for (const g of ghosts) {
           const age = snapshot.ut - g.ut0;
           const pos = v3.addScaled(g.vessel.rRoot, g.vessel.vRoot, age);
           const prevPos = v3.addScaled(g.vessel.rRoot, g.vessel.vRoot, age - dt);
           const parent = { originRelCam: v3.sub(pos, eye), q: g.vessel.q, prevOriginRelCam: v3.sub(prevPos, prevEye), prevQ: g.vessel.q };
           drawVessel(frame, g.vessel, g.plan, parent, 1 - (frame.realTime - g.t0) / fadeSeconds, 0, false);
+          ghostPlaces.push({ vesselId: g.vessel.id, originRelCam: parent.originRelCam });
         }
-      }
+      } else ghostPlaces.length = 0;
       for (const id of plans.keys()) {
         if (alive.has(id) || ghosts.some((g) => g.vessel.id === id)) continue;
         plans.delete(id);
