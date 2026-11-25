@@ -439,7 +439,7 @@ round: the near tier in both bands, a landed pair with probes (contact form at 6
 
 ## 7. Chrome run
 
-Last run, protocol 2 (0.6): `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/net
+Last run, protocol 3 (0.7), 2026-11-24: HeadlessChrome 157, 30 cases, 0 failed, 723 ms (1 Playwright test passed in 3.0 s). Before it, protocol 2 (0.6): `node tools/dev/heavy.mjs --class=gpu -- npx playwright test tests/browser/net
 --project=functional`, 2026-11-17: HeadlessChrome 157, 30 cases, 0 failed, 706 ms (1 Playwright test passed in
 2.1 s), with the re-recorded transcripts and fixtures. After the size changes of 0.5: 30 of 30, 694 ms. After the fix round: 30 of 30, 687 ms. First delivery: 30 cases, 0 failed, 803 ms. Every Node case (26), the three fixtures fetched from the
 dev server, and the WHATWG WebSocket transport against the RFC 6455 test server the spec starts. The page uses no
