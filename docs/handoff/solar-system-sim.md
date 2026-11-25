@@ -14,25 +14,24 @@ residency and the shared tile store interface; c1bb1b2 tools/bodies/activate.mjs
 window, the 3-D departure aimed through the origin's sphere, reach with broken-plane arcs, both settings of the
 two defaults tested; fba410b the pilot's takeover in a planet's sphere, Newton corrections, the arrival legs.
 
-**Where the flights stand (read section 6).** Every flight is flown under real physics through the player's
-commands, in two halves, because the World of HEAD cannot carry a craft through the Sun's sphere (request -4,
-BLOCKING, island-core: in the star's sphere the island integrates offsets from a reference orbit, and the view
-takes the offset for the Sun-centred state):
-- the DEPARTURE half from the 200 km parking orbit to the Earth's sphere exit: flown (Mars, 2030-12-24 window);
-- the ARRIVAL half from the planet's sphere on the window's arrival hyperbola into a bound orbit: flown for Mars,
-  Venus and Callisto; Phobos's rendezvous flies to the velocity match 279 km from Phobos and stops there (section 6);
-- the cruise between them (two heliocentric corrections, written) is not flown: it waits for request -4.
+**Where the flights stand (final, 2026-11-24; read section 6).** On the World of island-core's 26d272a (request -4
+resolved: the view reads body-centred state in a reference-orbit island) the whole transfers fly under real
+physics through the player's commands, departure through the cruise in the Sun's sphere to the capture: Mars from
+three dates, Venus, and Phobos to a closed orbit between its highest ground and its sphere. Callisto does NOT: on
+fleet-data's reworked Albatross (committed: four tanks, 10,234 m/s) my departure burn ends about 370 s in with the
+World's "Every command part was lost" - no part destroyed, no crew event, the vessel still whole; fleet-data's own
+departure test of the same ship passes on the same tree (SAS prograde, throttle 1, no wait), so the cause lies
+between PilotCore's maneuver hold on that ship and the World's controllable flag and was not found. Callisto's
+arrival leg (from Jupiter's sphere) flies on the reworked ship. The marginal bodies are not flown (section 6).
 
 **Not done** (in the order a successor should take them):
-0. When island-core has request -4 in: `SOLAR_SYSTEM_FLIGHTS=1 ... transferFlight.test.ts` (section 6) flies the
-   five full flights; fix what the cruise shows (the corrections are written and untested in flight).
-1. Phobos: one trim a quarter revolution before the meeting on the predictor's closest approach (section 6, "what is
-   left"); the rest of the rendezvous is built and flown.
-2. The Callisto full flight needs the cruiser's full 10.9 km/s: fleet-data is reworking the Albatross in the shared
-   tree (four tanks, the last two filled by the depot; its own scenario now states those resources). When that is
-   committed, give data/defs/scenarios/transfer-albatross-leo-200.json the same `resources` (all four tanks full):
-   on the committed vehicle it has 10.9 km/s, on the shared tree's 6.6 km/s.
-3. The planning service (`PlanningService` of session.ts) is not wired by this package: `LocalSession` is
+0. Callisto whole: find why the World stops counting the Albatross controllable during my 35-minute departure burn
+   (reproduce: `SOLAR_SYSTEM_FLIGHTS=callisto ... transferFlight.test.ts`; fleet-data's DeparturePilot flies the
+   burn on SAS prograde and passes). A split departure (two perigee burns) would also shorten each burn.
+1. The marginal bodies (section 6): the pilot departs from a CIRCULAR parking orbit only; flying the refuelled
+   cruiser from the high refuel orbit needs `ejectionBurn` on an elliptical orbit (the burn at its periapsis, the
+   apse line set by the scenario to the window's ejection point) and the Albatross issue of item 0.
+2. The planning service (`PlanningService` of session.ts) is not wired by this package: `LocalSession` is
    universe-directory's (4.2). Its five calls map to functions here (section 2, "For the planning service").
 
 **Decisions taken, and why**
@@ -72,6 +71,10 @@ data/defs/scenarios/transfer-albatross-leo-200.json, starts at the library's ear
 reach default `fromUt` is unchanged) and is not flown by the mission: the golden 72c0893583aa427d is unaffected by
 reasoning from the import graph; the mission was not re-run (the flights and the blocker were checked on a clean
 worktree of 8c41d1a outside the repository, data/tiles and node_modules linked).
+
+The last round's one change on the mission's graph, src/terrain/provider.ts, only adds two authority members
+(`pinnedBand`, `stableHeightAt`); no existing query changes, so the golden of that day (27dd19a26303c181,
+island-core's) is unaffected by reasoning; the mission was not re-run by this package.
 
 **The golden during this package.** At 12:53 the shared tree's `npm run test:mission` failed its golden
 (2cc620fabf5771ee, 596,933 steps). Flown from a clean worktree of HEAD (b6d80ab, every commit of this package in
@@ -154,6 +157,9 @@ ownChain(current, planned), targetChain, { count, horizon, targetHeadUt })`; `la
 `proximityPlot` = `lvlhOffset` sampled along the two chains.
 
 ### src/terrain
+- `TerrainAuthority.pinnedBand(bodyId): number` (the resident level's data wavelength, lambda0 2^-R) and
+  `.stableHeightAt(bodyId, dir, lambdaMin)` (heightAt at max(lambdaMin, pinnedBand): a read-out's height, independent
+  of the cache; request island-core-3).
 - `TerrainProviderOptions.preload?: 'all' | 'launchSystems' | readonly string[]` (default 'all'),
   `.sharedStore?: SharedTileStore`. `TerrainAuthority` gains `preloadedIds`, `loadedBodies()`,
   `loadBody(bodyId, slot?)`, `release(slot)`; `TerrainDiagnostics` gains `residency` and `unloadedQueries`.
@@ -194,8 +200,9 @@ ownChain(current, planned), targetChain, { count, horizon, targetHeadUt })`; `la
 | A Neptune approach finds Triton | Met |
 | Chain closest approaches against brute force at 1 s: 1 m, 0.1 s; cost at most 1 ms for three LEO orbits | Met (two LEO orbits, a 14 km/s head-on pass, a lunar arrival across an SOI change); 0.08 ms for three LEO orbits |
 | Rails of every body and a craft at 1e7x for 250 years: phase error under 1 mm of arc; no NaN | Met with `propagateAtTick` (double-double reduction): 1.2e-5 mm of arc for a low orbit over 47,337 frames; every body finite at every frame. The plain float64 `propagate(o, tick / 120)` is 6 mm: the island should take `propagateAtTick` for rails (not requested yet; a numerics change of island-core's) |
-| Transfer pilot: Mars from 200 km with 6.5 km/s, three dates; Venus, Titan or Callisto, Phobos | NOT MET as whole flights: blocked by request -4 (the World cannot carry a craft through the Sun's sphere). Flown in halves under real physics: the Mars departure (2030-12-24 window: 3,669 m/s planned in 57 evaluations, flown; the Earth's sphere left on the predicted arc that enters Mars's sphere); the arrival legs into a bound orbit: Mars (e 0.960, 1,174 m/s), Venus (e 0.934, 603 m/s), Callisto with the Albatross (e 0.769, 3,516 m/s). Phobos: the rendezvous flies to a velocity match 279 km from Phobos and the closing is refused there (not bound). Section 6 |
+| Transfer pilot: Mars from 200 km with 6.5 km/s, three dates; Venus, Titan or Callisto, Phobos | MET for Mars x3 (4,872 / 4,709 / 4,467 m/s of 6,517; bound e 0.959 / 0.959 / 0.960; 15 / 16 / 14 s wall), Venus (4,309 m/s, e 0.934, 15 s) and Phobos (6,086 m/s, a closed orbit 15.1-16.4 km from its centre inside its 16.6 km sphere, e 0.019, 45 s): whole flights, gated. NOT MET for Callisto as a whole flight (the reworked Albatross's departure burn ends in the World's "Every command part was lost"); its arrival leg flies (3,481 m/s, e 0.779). Section 6 |
 | deltaVToOrbit: Mars, Jupiter, Mercury against hand values to 2 %; the table for 32 bodies with and without refuel | Met (Hohmann legs against a hand computation: within 2 %); the table with the broken-plane and seven-year columns: section 4 |
+| Read-out heights independent of the cache (request island-core-3, added) | Met: `stableHeightAt` equal to the bit at the request's point before and after an unrelated 30 km disc is made resident, where `heightAt` moves 0.098 m (tests/unit/terrain-core/readoutHeight.test.ts); the Moon's pinned band 2,665.1 m |
 | Terrain guard green; 27-body provider within 10 % of today's two-body provider; a body released after its last slot | Met: 27 bodies ('launchSystems') 625 ms and 162.8 MiB against the two-body provider's 737 ms and 162.8 MiB; release tested (every tile dropped). Guard: section 1 |
 | Measured: heliocentric predictPatches (budget 20 ms); body snapshot for 32 bodies | 0.14 ms (LEO departure through the Sun's sphere), 0.24 ms (heliocentric Mars flyby); buildBodySnapshots 38.5 us |
 
@@ -241,12 +248,13 @@ table and the four bodies with the options.
 
 ## 5. Requests
 
-| Request | To | What |
-|---|---|---|
-| solar-system-sim-1 | island-core | items 1 and 6 are the two defaults left OFF (what flips, what it changes, how to verify; both settings tested in tests/unit/solar-system/defaults.test.ts); sunlight in the planet frame; altitude above the spheroid; the floor of the giants; vessel-target navigation; item 7: guard terrain calls on bodies without terrain |
-| solar-system-sim-2 | lead | the two warp levels and the optional warp limits (held by the lead) |
-| solar-system-sim-3 | fleet-data, lead | take `brokenPlane` and a seven-year `searchSpan` in the reach table (Mercury, Pluto, Charon close); Mimas to Q17 |
-| solar-system-sim-4 | island-core | BLOCKING the full flights: a craft in the Sun's sphere is handed to the view, the plan and the warp ladder as its reference-orbit offset |
+| Request | To | What | State |
+|---|---|---|---|
+| solar-system-sim-1 | island-core | the two defaults (items 1, 6), sunlight in the planet frame, altitude above the spheroid, the giants' floor, vessel targets, the terrain guard on bodies without terrain (item 7) | resolved (4c9a569, a7d53a5; item 7 in 26d272a); both library defaults stay as tested in defaults.test.ts |
+| solar-system-sim-2 | lead | the two warp levels and the optional warp limits | held by the lead |
+| solar-system-sim-3 | fleet-data, lead | the reach table with `brokenPlane` and a seven-year `searchSpan`; Mimas to Q17 | resolved by fleet-data (every body closes with a stated number of depot flights; six marginal and unflown) |
+| solar-system-sim-4 | island-core | a craft in the Sun's sphere handed to the view as its reference-orbit offset (BLOCKING) | resolved (26d272a) |
+| island-core-3 (to this package) | solar-system-sim | read-out heights independent of the cache | resolved here: `pinnedBand`, `stableHeightAt`; island-core takes them in src/sim |
 
 ## 6. The transfer pilot and its flights
 
@@ -283,36 +291,43 @@ SOLAR_SYSTEM_FLIGHTS=mars,venus ...     # the whole flights of those targets
 
 | Flight | Start | Status, measured |
 |---|---|---|
-| Mars 1 (transfer-leo-200, 6,517 m/s) | 977493600, i 19 deg, node 176.71 deg; window 2030-12-24, 283.3 d, excess 3,280 / 3,475 m/s | Departure FLOWN: 3,669 m/s planned (plane change 0.6 deg) in 48 evaluations, periapsis 62 km off the aim; burn flown and trimmed; the Earth's sphere left at 3.99 d; the finite burn leaves the arc short of Mars's sphere (the first correction's work). Then BLOCKED (request -4) |
-| Mars 2 | 1050422400 (2033-04-16 window, plane 56.4 deg) | Departure FLOWN: 3,596 m/s, 82 evaluations, 65 km off; after the burn the encounter stands (Mars's sphere at 203.5 d, periapsis 465,131 km: the correction's work). Then BLOCKED |
-| Mars 3 | 1119636000 (2035-06-26 window, 201.9 d, plane 19 deg) | Departure FLOWN: 3,643 m/s, 54 evaluations, 50 km off; after the burn short of Mars's sphere. Then BLOCKED |
-| Mars arrival leg | 1001891310 in Mars's sphere, periapsis 1.5 x the aim | FLOWN: approach correction 12.4 m/s, capture 1,162 m/s, bound e 0.960, periapsis 221 km, apoapsis 172,511 km; 1.8 d, 3 s wall |
-| Venus | 991573200 (2031-06-05 window, 127.8 d, plane 19 deg) | Departure FLOWN: 3,743 m/s, 42 evaluations, 46 km off; after the burn the encounter stands (periapsis 114,662 km). Then BLOCKED. Arrival leg (1002526270) FLOWN: correction 27.5 m/s, capture 575 m/s, bound e 0.934, periapsis 311.5 km; 2.0 d, 2 s wall |
-| Callisto (transfer-albatross-leo-200) | 948790800 (2030-01-25 window, 910 d to Jupiter, plane 21.6 deg) | Departure FLOWN: 6,328 m/s planned (13 evaluations, the Jupiter flyby 21,535 km off the aim), 6,245 flown: the Canopus-N's slow spool leaves 83 m/s unflown at PilotCore's cut-off; short of Jupiter's sphere after the burn. Then BLOCKED. Arrival leg (1020326145, the flyby's periapsis at Callisto's position) FLOWN: early correction 1.81 m/s, late 1.92 m/s, capture 3,512 m/s, bound e 0.769, periapsis 113 km, apoapsis 16,878 km; 77.6 d, 11 s wall. Budget: 6.33 + about 0.1 of corrections + 3.52 = 9.9 of the cruiser's 10.9 (the committed vehicle; section 0 item 2) |
-| Phobos (arrival leg, 2035 window) | 1137045227 in Mars's sphere, periapsis at Phobos's orbit radius | NOT MET. The rendezvous flies as far as the velocity match: approach 0.94 m/s (the periapsis on Phobos's orbit), capture at Mars 1,061 m/s (at 5,981 km), plane change at apoapsis 5.24 m/s, phasing 574 m/s (an 11.25 h orbit, 1.47 Phobos periods), trim at its apoapsis 11.8 m/s, the meeting 279 km from Phobos (aimed 33 km), match 291 m/s; then the closing burn from 279 km needs more than RENDEZVOUS_CLOSING_MAX (60 m/s) and is refused. 12.7 d, 8 s wall (clean worktree: the shared tree's session creation crashed at that moment in island-core's src/sim/view/frame.ts). The gated test fails here, as it should |
+| Flight (whole, gated) | Start | Measured, end to end |
+|---|---|---|
+| Mars 1 (transfer-leo-200) | 977493600, plane 19 deg; window 2030-12-24, 283 d | departure 3,669, correction 54.9, late 1.1, capture 1,148: 4,872 m/s of 6,517; bound e 0.959, periapsis 213 km; 284 d; 15 s wall |
+| Mars 2 | 1050422400, plane 56.4 deg; 2033-04-16 | 3,595 + 48.3 + 2.6 + 0.9 + 1,062 = 4,709 m/s; e 0.959, periapsis 200 km; 201 d; 16 s |
+| Mars 3 | 1119636000, plane 19 deg; 2035-06-26 | 3,643 + 122.4 + 0.3 + 2.4 + 700 = 4,467 m/s; e 0.960, periapsis 219 km; 208 d; 14 s |
+| Venus | 991573200; 2031-06-05, 128 d | 3,749 + 28.5 + 6.4 + 0.6 + 525 = 4,309 m/s; e 0.934, periapsis 284 km; 130 d; 15 s |
+| Phobos | 1119636000 (the 2035 Mars window) | departure, cruise, then the rendezvous at Mars (approach 23 m/s, capture at Phobos's orbit radius 1,041, the orbit reversed at apoapsis 320, phasing 425, trims, match, closing, capture about Phobos, circular trims): 6,086 m/s of 6,517; a closed orbit 15.1 km x 16.4 km from Phobos's centre (its highest ground 14.0 km, its sphere 16.6 km), e 0.019; 222 d; 45 s |
+| Callisto (transfer-albatross-leo-200, 10,234 m/s) | 948790800; 2030-01-25, 910 d | NOT MET: the departure burn (6,328 m/s planned, 35 min at 0.33 g) ends about 370 s in with the World's "Every command part was lost" (above) |
+| Arrival legs (`SOLAR_SYSTEM_FLIGHTS=arrival`) | the planet's sphere on each window's hyperbola | Mars 1,174 m/s, e 0.960, 3 s; Venus 601, e 0.934, 3 s; Callisto 3,481, e 0.779, 14 s; Phobos 1,986, e 0.041 inside its sphere, 27 s |
 
-
-Budget against section 4 (Mars, measured halves): departure 3,669 + arrival 1,174 = 4,843 m/s of 6,517 (the
-cruise corrections unmeasured; the departure's finite-burn error must come out of the 1,674 m/s left);
-deltaVToOrbit says 3.70 with aerobraking for the best window of 2029-31. Venus 3,743 + 603 = 4,346 of 6,517
+Against the reach table (section 4; deltaVToOrbit aerobrakes where it can, the pilot captures by burning):
+Mars 4.47-4.87 km/s flown against 3.70 (aerobraked) and about 4.6 propulsive; Venus 4.31 against 3.65 aerobraked;
+Phobos 6.09 against 4.25 (the table's moon-orbit model is the coplanar sum; the flight pays a 320 m/s reversal and
+the phasing). Venus 3,743 + 603 = 4,346 of 6,517
 (deltaVToOrbit 3.65 with aerobraking). Wall time: the departure half about 10 s, the arrival legs 2-11 s; a whole
 flight is expected near a minute once the cruise runs on rails at the top level. Departure halves: scratch tool
 of the second builder (the test's starts, stopped at the end of the burn); the arrival legs: the gated test.
 
-**Phobos: what is built and what is left.** Built (src/pilot/generic/transfer.ts, `rendezvousTick`, for any moon
-whose sphere a tangent flyby crosses in less than TINY_MOON_CROSSING, 1 h): (1) an approach correction that puts
-the periapsis ON the moon's orbit (radius and out-of-plane residuals); (2) the capture at Mars into the high
-ellipse; (3) at its apoapsis the plane change to the moon's plane; (4) at the next periapsis the phasing burn from
-an analytic first guess (the period that brings the moon RENDEZVOUS_STANDOFF_SOI_SHARE x its sphere ahead after
-whole moon periods; Newton's probes on the 9.7-day ellipse would shift the meeting by radians) refined by Newton;
-(5) a trim at the phasing orbit's apoapsis; (6) the velocity match at the closest approach, flown only within ten
-standoffs (else the phasing again, twice at most); (7) closing burns into the sphere with the periapsis at 15.3 km
-(between Phobos's highest ground, 14.0 km, and its 16.6 km sphere), at most four, each capped; (8) a circular
-capture at that periapsis. LEFT: the meeting lands 279 km off because steps 4-5 place Phobos on its osculating
-orbit, which drifts from the ephemeris by about 250 km in half a day (its periapsis and node precess fast); add a
-trim a quarter revolution before the meeting on the predictor's closest-approach marker (reliable that close,
-where over a long patch it is not), then (7) starts within a few standoffs. Budget: the 2035 window fits the
-6.5 km/s stack (departure 3,643 + about 1,950 at Mars as flown to the match).
+**The rendezvous with a tiny moon** (`rendezvousTick`, for a moon whose sphere a tangent flyby crosses in less than
+TINY_MOON_CROSSING): the periapsis on the moon's orbit; the capture at the planet; at its apoapsis the moon's plane
+(an orbit that runs against the moon is reversed there first); the phasing at periapsis from an analytic period
+(whole moon periods to a standoff of two spheres) refined by Newton on the moon's osculating orbit; a trim at the
+phasing orbit's apoapsis; a last trim a quarter revolution before the meeting on the predictor's closest approach
+(the osculating orbit drifts about 250 km from the ephemeris in half a day); the velocity match within ten
+standoffs (else the phasing again); capped closing burns into the sphere; the capture at the periapsis; trims to
+the circle TINY_ORBIT_BAND_SHARE of the way from the highest ground to the sphere (the thrusters' 0.1 m/s floor
+leaves about a kilometre of apoapsis above it).
+
+**The marginal bodies (fleet-data's six: Dione, Enceladus, Io, Mercury, Mimas, Miranda): NOT flown.** What stops
+it, exactly: (1) the refuelled cruiser starts its departure in the HIGH refuel orbit (perigee 200 km, apogee 0.4
+of the Earth's sphere); the pilot's `ejectionBurn` assumes a circular parking orbit (circular speed at the burn
+point), so a departure from that ellipse needs its generalisation (the burn at the ellipse's periapsis, the apse
+line set by the scenario to the window's ejection point; about 40 lines in transferMath.ts) - the multi-flight
+assembly itself (depot flights, docking, transfer) is outside this package's pilot; (2) every flight of the
+reworked Albatross currently ends in the departure burn (Callisto, above), and Mercury, Enceladus and Mimas all
+need it; (3) Mercury's capture (5.3 km/s at 0.33 g, about 27 minutes at a small body) has not been tried. Enceladus
+and Mimas (spheres of 483 and 495 km) would take the tiny-moon rendezvous at Saturn, which flies for Phobos.
 
 **Measured on the way** (the defects fixed here): the old Stumpff form lost the long arcs (1 - cos z cancels near
 the upper bracket); a departure aimed by the arc between the centres misses by gigametres; a compass search moves

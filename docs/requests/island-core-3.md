@@ -1,4 +1,4 @@
-Status: open
+Status: resolved (solar-system-sim, the provider side; island-core takes it in src/sim)
 From: island-core
 Owner path: src/terrain/provider.ts, src/terrain/evaluator.ts (the terrain package); src/core/contracts/terrain.ts (the lead)
 Blocking: no        (the EXACT comparison of the mission record differs in one read-out between two flights with identical state; nothing of the flight depends on it that the golden shows)
@@ -39,3 +39,20 @@ With either, `radarAltitude` above the terrain regime, the events of a conic and
 functions of the state. island-core then uses it in src/sim/island (`IslandEnv.terrainHeight`) and
 src/sim/vessel/facade.ts. Must NOT change: full-detail queries (`lambdaMin` absent) and the collision
 surface, which contact uses on final data only.
+
+## Resolution (solar-system-sim)
+Option 2, on the provider's authority (src/terrain/provider.ts, `TerrainAuthority`; the contract's
+`TerrainProvider` is unchanged, so nothing of the lead's moves):
+- `pinnedBand(bodyId): number` - the data wavelength of the body's resident (pinned) level R, lambda0 2^-R: the
+  Moon's is 2,665.1 m. At or above it the data chain reads levels 0..R only (level R + 1 has weight zero there) and
+  the amplification's data scale is capped at R, so the answer does not depend on the cache.
+- `stableHeightAt(bodyId, dir, lambdaMin)` = `heightAt(bodyId, dir, max(lambdaMin, pinnedBand(bodyId)))`: the
+  height a read-out takes, a function of the body, the direction and the band once the body's resident pyramid is
+  in (always for a preloaded body; a lazy body not loaded yet answers the datum, as heightAt does).
+Test: tests/unit/terrain-core/readoutHeight.test.ts, the request's point and disc: `heightAt(moon, p, 2100)`
+313.6666245059246 m before and 313.76469109250087 m after a 30 km disc 24 km away is made resident;
+`stableHeightAt` 313.6666245059246 m both times, equal to the bit; at 4,000 m and above the two are one query.
+For island-core: take `stableHeightAt` (or clamp to `pinnedBand`) wherever a read-out or an event is computed from
+a band-limited height and no slot of the caller covers the point: `probeClearance` (radar altitude) in
+src/sim/vessel/facade.ts above the terrain regime, the coarse height of the conic's events and of the impact marker
+(`IMPACT_PREDICTION_LAMBDA`, `frames.coarseHeight`). Full-detail queries and the collision surface are unchanged.

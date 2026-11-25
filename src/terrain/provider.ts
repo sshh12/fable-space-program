@@ -109,6 +109,20 @@ export type TerrainAuthority = TerrainProvider &
     cachedTiles(): string[];
     /** Analytic height split into its parts (tests, tools). */
     heightParts(bodyId: string, dir: Vec3, lambdaMin: number): HeightParts;
+    /**
+     * The finest wavelength the PINNED pyramid resolves everywhere on a body, m: the data wavelength of its resident
+     * level R, lambda0 2^-R (request island-core-3). A band-limited query at or above it reads levels 0..R only
+     * (the data chain's weight of level R + 1 is zero there, and the amplification's data scale is capped at R),
+     * so its answer does not depend on which finer tiles other requests left in the cache.
+     */
+    pinnedBand(bodyId: string): number;
+    /**
+     * The band-limited height a READ-OUT takes (radar altitude above the terrain regime, the events of a conic, the
+     * impact marker): `heightAt(bodyId, dir, max(lambdaMin, pinnedBand(bodyId)))`, a function of the body, the
+     * direction and the band alone once the body's resident pyramid is in (always for a preloaded body; a lazy body
+     * not loaded yet answers the datum, as heightAt does, and counts in `unloadedQueries`).
+     */
+    stableHeightAt(bodyId: string, dir: Vec3, lambdaMin: number): number;
     /** Ids of the bodies served. */
     readonly bodyIds: readonly string[];
     /** Ids of the bodies preloaded at creation (held for the provider's life). */
@@ -295,7 +309,19 @@ export async function createTerrainProvider(defs: DefLibrary, tileSource: TileSo
     return ev.height(log2Band(lambdaMin));
   };
 
+  const pinnedBand = (bodyId: string): number => {
+    if (!ids.includes(bodyId)) throw new Error(`terrain: body "${bodyId}" is not served by this provider (served: ${ids.join(', ')})`);
+    const b = bodies.get(bodyId);
+    // a lazy body not loaded yet: its runtime (and so lambda0) is not built; heightAt answers the datum for it
+    return b ? 2 ** (b.terrain.log2Lambda0 - b.terrain.residentLevel) : Infinity;
+  };
+
   const authority: TerrainAuthority = {
+    pinnedBand,
+    stableHeightAt(bodyId: string, dir: Vec3, lambdaMin: number): number {
+      const band = pinnedBand(bodyId);
+      return heightAt(bodyId, dir, Number.isFinite(band) ? Math.max(lambdaMin, band) : lambdaMin);
+    },
     bodyIds: ids,
     preloadedIds: preloaded,
 

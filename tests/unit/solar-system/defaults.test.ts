@@ -1,6 +1,8 @@
 /**
- * The two defaults this package leaves for island-core to flip (request solar-system-sim-1 items 1 and 6), each
- * under BOTH settings, so that the flip is a one-line change with its effect already tested:
+ * The two defaults of request solar-system-sim-1 items 1 and 6, each under BOTH settings. Resolved by island-core
+ * (4c9a569) without flipping either library default: the view passes THREE_PERIOD_ENCOUNTER_SEARCH where it
+ * predicts (src/sim/view/planning.ts) and createRealTerrain passes 'launchSystems' (tools/sim/realWorld.ts); the
+ * defaults below are what every other caller still gets:
  *  - `PredictOptions.encounterRevolutions` (src/sim/orbit/patches.ts): DEFAULT_ENCOUNTER_REVOLUTIONS = 1 (v1's
  *    window: a closed patch is searched for an encounter over its first revolution) and
  *    THREE_PERIOD_ENCOUNTER_SEARCH = 3 (ARCHITECTURE 8.4): an orbit about the Earth that meets the Moon on its
